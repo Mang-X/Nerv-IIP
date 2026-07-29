@@ -903,7 +903,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Cancel_outbound_order_releases_inventory_reservation_and_cancels_open_picking_tasks()
+    public async Task Cancel_outbound_order_releases_inventory_reservation_and_cancels_active_picking_tasks()
     {
         await using var dbContext = CreateContext();
         var outbound = OutboundOrder.Create(
@@ -925,6 +925,7 @@ public sealed class WmsInventoryBoundaryTests
         await new DispatchWcsTaskCommandHandler(dbContext).Handle(
             new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-OUT-001", """{"step":1}"""),
             CancellationToken.None);
+        warehouseTask.Start("user-001", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CancelOutboundOrderCommandHandler(dbContext, inventory).Handle(
@@ -1466,7 +1467,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Recording_progress_on_an_open_picking_task_renews_its_inventory_reservation()
+    public async Task Recording_manual_progress_on_an_in_progress_picking_task_renews_its_inventory_reservation()
     {
         await using var dbContext = CreateContext();
         var outbound = OutboundOrder.Create(
@@ -1488,9 +1489,20 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.WarehouseTasks.Add(pickingTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventoryClient = new FakeWmsInventoryReservationClient("reservation-renew-001");
+        pickingTask.Start("user-001", pickingTask.Version);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new RecordWarehouseTaskProgressCommandHandler(dbContext, inventoryClient).Handle(
-            new RecordWarehouseTaskProgressCommand(pickingTask.Id, 1m),
+        await new RecordWarehouseTaskProgressActionCommandHandler(dbContext, inventoryClient).Handle(
+            new RecordWarehouseTaskProgressActionCommand(
+                pickingTask.Id,
+                "org-001",
+                "env-dev",
+                "user-001",
+                "renew-progress-001",
+                pickingTask.Version,
+                1m,
+                WarehouseTaskType.Picking,
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         var renewal = Assert.Single(inventoryClient.RenewalRequests);

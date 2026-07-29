@@ -110,6 +110,18 @@ try
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteCountExecutionCommand>, CompleteCountExecutionCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<StartWarehouseTaskCommand>,
+        WarehouseTaskActionCommandLock<StartWarehouseTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<RecordWarehouseTaskProgressActionCommand>,
+        WarehouseTaskActionCommandLock<RecordWarehouseTaskProgressActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<ReportWarehouseTaskExceptionCommand>,
+        WarehouseTaskActionCommandLock<ReportWarehouseTaskExceptionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWarehouseTaskActionCommand>,
+        WarehouseTaskActionCommandLock<CompleteWarehouseTaskActionCommand>>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = WmsFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
@@ -194,6 +206,7 @@ try
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
     app.UseMiddleware<WmsLifecycleConflictMiddleware>();
+    app.UseMiddleware<WarehouseTaskActionPersistenceConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();

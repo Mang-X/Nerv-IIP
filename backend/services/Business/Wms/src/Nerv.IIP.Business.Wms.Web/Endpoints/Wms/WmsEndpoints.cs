@@ -55,7 +55,16 @@ public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
     }
 }
 
-public sealed record CreateInboundOrderRequest(string OrganizationId, string EnvironmentId, string InboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsInboundLineInput> Lines);
+public sealed record CreateInboundOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string InboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SiteCode,
+    IReadOnlyCollection<WmsInboundLineInput> Lines,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null);
 public sealed record CreateInboundOrderResponse(InboundOrderId InboundOrderId);
 public sealed record ListInboundOrdersRequest(
     string? OrganizationId,
@@ -64,8 +73,22 @@ public sealed record ListInboundOrdersRequest(
     int Take = 100,
     string? Status = null,
     string? Keyword = null,
-    InboundOrderId? InboundOrderId = null);
-public sealed record CreatePutawayTaskRequest(InboundOrderId InboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
+    InboundOrderId? InboundOrderId = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false);
+public sealed record CreatePutawayTaskRequest(
+    InboundOrderId InboundOrderId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null);
 public sealed record ListWarehouseTasksRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -73,11 +96,60 @@ public sealed record ListWarehouseTasksRequest(
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
-    string? OperatorUserId = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
 public sealed record RecordWarehouseTaskProgressRequest(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity);
 public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskId);
+public sealed record StartWarehouseTaskActionRequest(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+public sealed record RecordWarehouseTaskProgressActionRequest(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+public sealed record ReportWarehouseTaskExceptionActionRequest(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    string ExceptionCode,
+    string Reason,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+public sealed record CompleteWarehouseTaskActionRequest(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    string? DifferenceReason = null,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
 public sealed record CompleteInboundOrderRequest(
     InboundOrderId InboundOrderId,
     string IdempotencyKey,
@@ -88,7 +160,16 @@ public sealed record CompleteMovementResponse(InventoryMovementRequestId? Reques
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
 public sealed record CancelInboundOrdersForSourceResponse(int CancelledCount);
-public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
+public sealed record CreateOutboundOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OutboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SiteCode,
+    IReadOnlyCollection<WmsOutboundLineInput> Lines,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(
     string? OrganizationId,
@@ -97,10 +178,24 @@ public sealed record ListOutboundOrdersRequest(
     int Take = 100,
     string? Status = null,
     string? Keyword = null,
-    OutboundOrderId? OutboundOrderId = null);
+    OutboundOrderId? OutboundOrderId = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false);
 public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
-public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
+public sealed record CreatePickingTaskRequest(
+    OutboundOrderId OutboundOrderId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null);
 public sealed record CompleteOutboundOrderRequest(
     OutboundOrderId OutboundOrderId,
     string PackReviewNo,
@@ -111,7 +206,17 @@ public sealed record CompleteOutboundOrderRequest(
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
 public sealed record CancelOutboundOrderResponse(OutboundOrderId OutboundOrderId, string Status);
 public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
-public sealed record CreateCountExecutionRequest(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity);
+public sealed record CreateCountExecutionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CountNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    decimal ExpectedQuantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
 public sealed record ListCountExecutionsRequest(
     string OrganizationId,
@@ -121,7 +226,11 @@ public sealed record ListCountExecutionsRequest(
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
-    CountExecutionId? CountExecutionId = null);
+    CountExecutionId? CountExecutionId = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false);
 public sealed record CompleteCountExecutionRequest(
     CountExecutionId CountExecutionId,
     decimal CountedQuantity,
@@ -179,7 +288,16 @@ public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<Cre
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreateInboundOrderEndpoint>());
     public override async Task HandleAsync(CreateInboundOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateInboundOrderCommand(req.OrganizationId, req.EnvironmentId, req.InboundOrderNo, req.SourceDocumentType, req.SourceDocumentId, req.SiteCode, req.Lines), ct);
+        var id = await sender.Send(new CreateInboundOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.InboundOrderNo,
+            req.SourceDocumentType,
+            req.SourceDocumentId,
+            req.SiteCode,
+            req.Lines,
+            req.AssignedOperatorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateInboundOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -196,7 +314,13 @@ public sealed class ListInboundOrdersEndpoint(ISender sender) : WmsEndpoint<List
             req.Take,
             req.Status,
             req.Keyword,
-            req.InboundOrderId), ct);
+            req.InboundOrderId,
+            req.LocationCode,
+            req.LotNo,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -206,7 +330,15 @@ public sealed class CreatePutawayTaskEndpoint(ISender sender) : WmsEndpoint<Crea
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreatePutawayTaskEndpoint>());
     public override async Task HandleAsync(CreatePutawayTaskRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePutawayTaskCommand(req.InboundOrderId, req.TaskNo, req.LineNo, req.FromLocationCode, req.ToLocationCode, req.Quantity), ct);
+        var id = await sender.Send(new CreatePutawayTaskCommand(
+            req.InboundOrderId,
+            req.TaskNo,
+            req.LineNo,
+            req.FromLocationCode,
+            req.ToLocationCode,
+            req.Quantity,
+            req.AssignedOperatorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateWarehouseTaskResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -216,7 +348,20 @@ public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPutawayTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Putaway, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        var response = await sender.Send(new ListWarehouseTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            WarehouseTaskType.Putaway,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.LocationCode,
+            req.Keyword,
+            req.LotNo,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -266,7 +411,16 @@ public sealed class CreateOutboundOrderEndpoint(ISender sender) : WmsEndpoint<Cr
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreateOutboundOrderEndpoint>());
     public override async Task HandleAsync(CreateOutboundOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateOutboundOrderCommand(req.OrganizationId, req.EnvironmentId, req.OutboundOrderNo, req.SourceDocumentType, req.SourceDocumentId, req.SiteCode, req.Lines), ct);
+        var id = await sender.Send(new CreateOutboundOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OutboundOrderNo,
+            req.SourceDocumentType,
+            req.SourceDocumentId,
+            req.SiteCode,
+            req.Lines,
+            req.AssignedOperatorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateOutboundOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -283,7 +437,13 @@ public sealed class ListOutboundOrdersEndpoint(ISender sender) : WmsEndpoint<Lis
             req.Take,
             req.Status,
             req.Keyword,
-            req.OutboundOrderId), ct);
+            req.OutboundOrderId,
+            req.LocationCode,
+            req.LotNo,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -293,7 +453,15 @@ public sealed class CreatePickingTaskEndpoint(ISender sender) : WmsEndpoint<Crea
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreatePickingTaskEndpoint>());
     public override async Task HandleAsync(CreatePickingTaskRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePickingTaskCommand(req.OutboundOrderId, req.TaskNo, req.LineNo, req.FromLocationCode, req.ToLocationCode, req.Quantity), ct);
+        var id = await sender.Send(new CreatePickingTaskCommand(
+            req.OutboundOrderId,
+            req.TaskNo,
+            req.LineNo,
+            req.FromLocationCode,
+            req.ToLocationCode,
+            req.Quantity,
+            req.AssignedOperatorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateWarehouseTaskResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -303,7 +471,20 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPickingTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Picking, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        var response = await sender.Send(new ListWarehouseTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            WarehouseTaskType.Picking,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.LocationCode,
+            req.Keyword,
+            req.LotNo,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -313,7 +494,20 @@ public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReplenishmentTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Replenishment, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        var response = await sender.Send(new ListWarehouseTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            WarehouseTaskType.Replenishment,
+            req.Skip,
+            req.Take,
+            req.Status,
+            req.LocationCode,
+            req.Keyword,
+            req.LotNo,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -335,6 +529,214 @@ public sealed class CompleteWarehouseTaskEndpoint(ISender sender) : WmsEndpoint<
     {
         await sender.Send(new CompleteWarehouseTaskCommand(req.WarehouseTaskId), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
+public abstract class WarehouseTaskActionEndpoint<TRequest>(
+    ISender sender,
+    WarehouseTaskType expectedTaskType)
+    : WmsEndpoint<TRequest, ResponseData<WarehouseTaskActionResult>>
+    where TRequest : notnull
+{
+    protected ISender Sender { get; } = sender;
+
+    protected WarehouseTaskType ExpectedTaskType { get; } = expectedTaskType;
+
+    protected WarehouseTaskId ResolveWarehouseTaskId(WarehouseTaskId requestId)
+    {
+        var routeId = Route<string>("warehouseTaskId");
+        return string.IsNullOrWhiteSpace(routeId)
+            ? requestId
+            : new WarehouseTaskId(Guid.Parse(routeId));
+    }
+
+    protected void ConfigureActionContract(WmsEndpointContract contract) =>
+        ConfigureWmsContract(contract, StatusCodes.Status409Conflict);
+}
+
+public sealed class StartPutawayTaskEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<StartWarehouseTaskActionRequest>(sender, WarehouseTaskType.Putaway)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<StartPutawayTaskEndpoint>());
+
+    public override async Task HandleAsync(StartWarehouseTaskActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new StartWarehouseTaskCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RecordPutawayTaskProgressEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<RecordWarehouseTaskProgressActionRequest>(sender, WarehouseTaskType.Putaway)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<RecordPutawayTaskProgressEndpoint>());
+
+    public override async Task HandleAsync(RecordWarehouseTaskProgressActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new RecordWarehouseTaskProgressActionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExecutedQuantity,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReportPutawayTaskExceptionEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<ReportWarehouseTaskExceptionActionRequest>(sender, WarehouseTaskType.Putaway)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<ReportPutawayTaskExceptionEndpoint>());
+
+    public override async Task HandleAsync(ReportWarehouseTaskExceptionActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new ReportWarehouseTaskExceptionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExceptionCode,
+            req.Reason,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CompletePutawayTaskEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<CompleteWarehouseTaskActionRequest>(sender, WarehouseTaskType.Putaway)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<CompletePutawayTaskEndpoint>());
+
+    public override async Task HandleAsync(CompleteWarehouseTaskActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new CompleteWarehouseTaskActionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExecutedQuantity,
+            req.DifferenceReason,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class StartPickingTaskEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<StartWarehouseTaskActionRequest>(sender, WarehouseTaskType.Picking)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<StartPickingTaskEndpoint>());
+
+    public override async Task HandleAsync(StartWarehouseTaskActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new StartWarehouseTaskCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RecordPickingTaskProgressEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<RecordWarehouseTaskProgressActionRequest>(sender, WarehouseTaskType.Picking)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<RecordPickingTaskProgressEndpoint>());
+
+    public override async Task HandleAsync(RecordWarehouseTaskProgressActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new RecordWarehouseTaskProgressActionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExecutedQuantity,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReportPickingTaskExceptionEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<ReportWarehouseTaskExceptionActionRequest>(sender, WarehouseTaskType.Picking)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<ReportPickingTaskExceptionEndpoint>());
+
+    public override async Task HandleAsync(ReportWarehouseTaskExceptionActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new ReportWarehouseTaskExceptionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExceptionCode,
+            req.Reason,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CompletePickingTaskEndpoint(ISender sender)
+    : WarehouseTaskActionEndpoint<CompleteWarehouseTaskActionRequest>(sender, WarehouseTaskType.Picking)
+{
+    public override void Configure() => ConfigureActionContract(WmsEndpointContracts.Get<CompletePickingTaskEndpoint>());
+
+    public override async Task HandleAsync(CompleteWarehouseTaskActionRequest req, CancellationToken ct)
+    {
+        var result = await Sender.Send(new CompleteWarehouseTaskActionCommand(
+            ResolveWarehouseTaskId(req.WarehouseTaskId),
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorUserId,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.ExecutedQuantity,
+            req.DifferenceReason,
+            ExpectedTaskType,
+            req.AuthorizedTeamIds,
+            req.AuthorizedSiteCodes,
+            req.OrganizationWideScope), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -401,7 +803,17 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreateCountExecutionEndpoint>());
     public override async Task HandleAsync(CreateCountExecutionRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateCountExecutionCommand(req.OrganizationId, req.EnvironmentId, req.CountNo, req.SkuCode, req.UomCode, req.SiteCode, req.LocationCode, req.ExpectedQuantity), ct);
+        var id = await sender.Send(new CreateCountExecutionCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.CountNo,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.LocationCode,
+            req.ExpectedQuantity,
+            req.AssignedOperatorUserId,
+            req.AssignedTeamId), ct);
         await Send.OkAsync(new CreateCountExecutionResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -419,7 +831,11 @@ public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<Li
             req.Status,
             req.LocationCode,
             req.Keyword,
-            req.CountExecutionId), ct);
+            req.CountExecutionId,
+            req.AssignedOperatorUserIds,
+            req.AssignedTeamIds,
+            req.SiteCodes,
+            req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -538,6 +954,14 @@ public static class WmsEndpointContracts
         new(typeof(ListReplenishmentTasksEndpoint), "GET", "/api/business/v1/wms/replenishment-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReplenishmentTasks"),
         new(typeof(RecordWarehouseTaskProgressEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsWarehouseTaskProgress"),
         new(typeof(CompleteWarehouseTaskEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWarehouseTask"),
+        new(typeof(StartPutawayTaskEndpoint), "POST", "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/start", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "startWmsPutawayTask"),
+        new(typeof(RecordPutawayTaskProgressEndpoint), "POST", "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsPutawayTaskProgress"),
+        new(typeof(ReportPutawayTaskExceptionEndpoint), "POST", "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/exception", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "reportWmsPutawayTaskException"),
+        new(typeof(CompletePutawayTaskEndpoint), "POST", "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsPutawayTask"),
+        new(typeof(StartPickingTaskEndpoint), "POST", "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/start", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "startWmsPickingTask"),
+        new(typeof(RecordPickingTaskProgressEndpoint), "POST", "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsPickingTaskProgress"),
+        new(typeof(ReportPickingTaskExceptionEndpoint), "POST", "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "reportWmsPickingTaskException"),
+        new(typeof(CompletePickingTaskEndpoint), "POST", "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsPickingTask"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
         new(typeof(CancelOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "cancelWmsOutboundOrder"),
         new(typeof(ListBackorderOrdersEndpoint), "GET", "/api/business/v1/wms/backorder-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsBackorderOrders"),

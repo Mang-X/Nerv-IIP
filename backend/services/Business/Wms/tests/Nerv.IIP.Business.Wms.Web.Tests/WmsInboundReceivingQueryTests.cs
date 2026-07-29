@@ -50,7 +50,12 @@ public sealed class WmsInboundReceivingQueryTests
 
         await using var context = CreateContext(databaseName, databaseRoot);
         var result = await new ListInboundOrdersQueryHandler(context)
-            .Handle(new ListInboundOrdersQuery("org-001", "env-dev"), CancellationToken.None);
+            .Handle(
+                new ListInboundOrdersQuery(
+                    "org-001",
+                    "env-dev",
+                    OrganizationWideScope: true),
+                CancellationToken.None);
 
         var a = result.Items.Single(x => x.InboundOrderNo == "IN-Q-A");
         Assert.Equal(InboundQualityGateStatuses.Pending, a.QualityGateStatus);

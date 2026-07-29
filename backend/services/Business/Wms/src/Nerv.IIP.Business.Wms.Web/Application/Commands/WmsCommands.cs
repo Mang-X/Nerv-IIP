@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -8,6 +10,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
@@ -54,7 +57,9 @@ public sealed record CreateInboundOrderCommand(
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsInboundLineInput> Lines) : ICommand<InboundOrderId>;
+    IReadOnlyCollection<WmsInboundLineInput> Lines,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null) : ICommand<InboundOrderId>;
 
 public sealed class CreateInboundOrderCommandValidator : AbstractValidator<CreateInboundOrderCommand>
 {
@@ -67,6 +72,8 @@ public sealed class CreateInboundOrderCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Lines).NotEmpty();
+        RuleFor(x => x.AssignedOperatorUserId).MaximumLength(150);
+        RuleFor(x => x.AssignedTeamId).MaximumLength(100);
     }
 }
 
@@ -82,7 +89,9 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
+            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)),
+            request.AssignedOperatorUserId,
+            request.AssignedTeamId);
         var existingOrder = await dbContext.InboundOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(
@@ -109,6 +118,8 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
         if (existing.SourceDocumentType != proposed.SourceDocumentType
             || existing.SourceDocumentId != proposed.SourceDocumentId
             || existing.SiteCode != proposed.SiteCode
+            || existing.AssignedOperatorUserId != proposed.AssignedOperatorUserId
+            || existing.AssignedTeamId != proposed.AssignedTeamId
             || existing.Lines.Count != proposed.Lines.Count)
         {
             return false;
@@ -131,7 +142,15 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
     }
 }
 
-public sealed record CreatePutawayTaskCommand(InboundOrderId InboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity) : ICommand<WarehouseTaskId>;
+public sealed record CreatePutawayTaskCommand(
+    InboundOrderId InboundOrderId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreatePutawayTaskCommand, WarehouseTaskId>
@@ -152,7 +171,9 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
                 || existingTask.SourceOrderLineNo != request.LineNo
                 || existingTask.FromLocationCode != request.FromLocationCode
                 || existingTask.ToLocationCode != request.ToLocationCode
-                || existingTask.PlannedQuantity != request.Quantity)
+                || existingTask.PlannedQuantity != request.Quantity
+                || existingTask.AssignedOperatorUserId != request.AssignedOperatorUserId
+                || existingTask.AssignedTeamId != request.AssignedTeamId)
             {
                 throw new KnownException($"Warehouse task '{request.TaskNo}' already exists with different putaway facts.");
             }
@@ -160,7 +181,14 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
             return existingTask.Id;
         }
 
-        var task = inbound.CreatePutawayTask(request.TaskNo, request.LineNo, request.FromLocationCode, request.ToLocationCode, request.Quantity);
+        var task = inbound.CreatePutawayTask(
+            request.TaskNo,
+            request.LineNo,
+            request.FromLocationCode,
+            request.ToLocationCode,
+            request.Quantity,
+            request.AssignedOperatorUserId,
+            request.AssignedTeamId);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -354,7 +382,9 @@ public sealed record CreateOutboundOrderCommand(
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsOutboundLineInput> Lines) : ICommand<OutboundOrderId>;
+    IReadOnlyCollection<WmsOutboundLineInput> Lines,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null) : ICommand<OutboundOrderId>;
 
 public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreateOutboundOrderCommand, OutboundOrderId>
@@ -378,14 +408,24 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new OutboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.RequestedQuantity, x.PickLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)));
+            request.Lines.Select(x => new OutboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.RequestedQuantity, x.PickLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)),
+            request.AssignedOperatorUserId,
+            request.AssignedTeamId);
         dbContext.OutboundOrders.Add(order);
         await Task.CompletedTask;
         return order.Id;
     }
 }
 
-public sealed record CreatePickingTaskCommand(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity) : ICommand<WarehouseTaskId>;
+public sealed record CreatePickingTaskCommand(
+    OutboundOrderId OutboundOrderId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePickingTaskCommandHandler(
     ApplicationDbContext dbContext,
@@ -422,7 +462,9 @@ public sealed class CreatePickingTaskCommandHandler(
             inventoryReservationId,
             reservation?.LocationCode,
             reservation?.LotNo,
-            reservation?.SerialNo);
+            reservation?.SerialNo,
+            request.AssignedOperatorUserId,
+            request.AssignedTeamId);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -523,9 +565,29 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
         var previouslyExecutedQuantity = task.ExecutedQuantity;
         task.RecordProgress(request.ExecutedQuantity);
+        await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
+            dbContext,
+            inventoryReservationClient,
+            task,
+            previouslyExecutedQuantity,
+            logger,
+            cancellationToken);
+    }
+}
+
+internal static class WarehouseTaskInventoryReservationRenewal
+{
+    public static async Task RenewAfterProgressAsync(
+        ApplicationDbContext dbContext,
+        IWmsInventoryReservationClient? inventoryReservationClient,
+        WarehouseTask task,
+        decimal previouslyExecutedQuantity,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
         if (inventoryReservationClient is null ||
             task.TaskType != WarehouseTaskType.Picking ||
-            task.Status != WarehouseTaskStatus.Open ||
+            task.Status is not (WarehouseTaskStatus.Open or WarehouseTaskStatus.InProgress) ||
             task.ExecutedQuantity <= previouslyExecutedQuantity)
         {
             return;
@@ -539,27 +601,29 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
             .Where(x => x.LineNo == task.SourceOrderLineNo)
             .Select(x => x.InventoryReservationId)
             .SingleOrDefaultAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(reservationId))
+        if (string.IsNullOrWhiteSpace(reservationId))
         {
-            try
-            {
-                await inventoryReservationClient.RenewAsync(
-                    new WmsInventoryReservationRenewalRequest(reservationId),
-                    cancellationToken);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                logger?.LogWarning(
-                    "Inventory reservation renewal timed out for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
-                    task.Id);
-            }
-            catch (Exception exception) when (exception is HttpRequestException or KnownException)
-            {
-                logger?.LogWarning(
-                    exception,
-                    "Inventory reservation renewal failed for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
-                    task.Id);
-            }
+            return;
+        }
+
+        try
+        {
+            await inventoryReservationClient.RenewAsync(
+                new WmsInventoryReservationRenewalRequest(reservationId),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger?.LogWarning(
+                "Inventory reservation renewal timed out for active WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                task.Id);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or KnownException)
+        {
+            logger?.LogWarning(
+                exception,
+                "Inventory reservation renewal failed for active WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                task.Id);
         }
     }
 }
@@ -574,6 +638,504 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
         task.RecordProgress(task.PlannedQuantity);
+    }
+}
+
+public sealed record WarehouseTaskActionResult(
+    WarehouseTaskId WarehouseTaskId,
+    string TaskType,
+    string Status,
+    long Version,
+    decimal ExecutedQuantity,
+    decimal DifferenceQuantity,
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
+
+public interface IWarehouseTaskActionCommand
+{
+    WarehouseTaskId WarehouseTaskId { get; }
+
+    string OrganizationId { get; }
+
+    string EnvironmentId { get; }
+
+    string ActorUserId { get; }
+
+    string IdempotencyKey { get; }
+
+    long ExpectedVersion { get; }
+
+    WarehouseTaskType ExpectedTaskType { get; }
+
+    IReadOnlyCollection<string>? AuthorizedTeamIds { get; }
+
+    IReadOnlyCollection<string>? AuthorizedSiteCodes { get; }
+
+    bool OrganizationWideScope { get; }
+}
+
+public sealed record StartWarehouseTaskCommand(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    WarehouseTaskType ExpectedTaskType,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false)
+    : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
+
+public sealed record RecordWarehouseTaskProgressActionCommand(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    WarehouseTaskType ExpectedTaskType,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false)
+    : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
+
+public sealed record ReportWarehouseTaskExceptionCommand(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    string ExceptionCode,
+    string Reason,
+    WarehouseTaskType ExpectedTaskType,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false)
+    : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
+
+public sealed record CompleteWarehouseTaskActionCommand(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    string? DifferenceReason,
+    WarehouseTaskType ExpectedTaskType,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false)
+    : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
+
+public sealed class StartWarehouseTaskCommandValidator : AbstractValidator<StartWarehouseTaskCommand>
+{
+    public StartWarehouseTaskCommandValidator() => WarehouseTaskActionValidation.Configure(this);
+}
+
+public sealed class RecordWarehouseTaskProgressActionCommandValidator
+    : AbstractValidator<RecordWarehouseTaskProgressActionCommand>
+{
+    public RecordWarehouseTaskProgressActionCommandValidator()
+    {
+        WarehouseTaskActionValidation.Configure(this);
+        RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class ReportWarehouseTaskExceptionCommandValidator
+    : AbstractValidator<ReportWarehouseTaskExceptionCommand>
+{
+    public ReportWarehouseTaskExceptionCommandValidator()
+    {
+        WarehouseTaskActionValidation.Configure(this);
+        RuleFor(x => x.ExceptionCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
+public sealed class CompleteWarehouseTaskActionCommandValidator
+    : AbstractValidator<CompleteWarehouseTaskActionCommand>
+{
+    public CompleteWarehouseTaskActionCommandValidator()
+    {
+        WarehouseTaskActionValidation.Configure(this);
+        RuleFor(x => x.ExecutedQuantity).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DifferenceReason).MaximumLength(1000);
+    }
+}
+
+internal static class WarehouseTaskActionValidation
+{
+    public static void Configure<TCommand>(AbstractValidator<TCommand> validator)
+        where TCommand : IWarehouseTaskActionCommand
+    {
+        validator.RuleFor(x => x.WarehouseTaskId).NotEmpty();
+        validator.RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        validator.RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        validator.RuleFor(x => x.ActorUserId).NotEmpty().MaximumLength(150);
+        validator.RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+        validator.RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+        validator.RuleForEach(x => x.AuthorizedTeamIds).NotEmpty().MaximumLength(100);
+        validator.RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class StartWarehouseTaskCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<StartWarehouseTaskCommand, WarehouseTaskActionResult>
+{
+    public Task<WarehouseTaskActionResult> Handle(
+        StartWarehouseTaskCommand request,
+        CancellationToken cancellationToken) =>
+        WarehouseTaskActionExecution.ExecuteAsync(
+            dbContext,
+            request,
+            "start",
+            new
+            {
+                request.ActorUserId,
+                request.ExpectedVersion,
+                request.ExpectedTaskType,
+            },
+            task => task.Start(request.ActorUserId, request.ExpectedVersion),
+            cancellationToken);
+}
+
+public sealed class RecordWarehouseTaskProgressActionCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    ILogger<RecordWarehouseTaskProgressActionCommandHandler>? logger = null)
+    : ICommandHandler<RecordWarehouseTaskProgressActionCommand, WarehouseTaskActionResult>
+{
+    public async Task<WarehouseTaskActionResult> Handle(
+        RecordWarehouseTaskProgressActionCommand request,
+        CancellationToken cancellationToken)
+    {
+        var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+            x => x.Id == request.WarehouseTaskId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId,
+            cancellationToken);
+        var previouslyExecutedQuantity = task?.ExecutedQuantity ?? 0m;
+        var result = await WarehouseTaskActionExecution.ExecuteAsync(
+            dbContext,
+            request,
+            "progress",
+            new
+            {
+                request.ActorUserId,
+                request.ExpectedVersion,
+                request.ExpectedTaskType,
+                request.ExecutedQuantity,
+            },
+            task => task.RecordProgress(
+                request.ExecutedQuantity,
+                request.ActorUserId,
+                request.ExpectedVersion),
+            cancellationToken);
+        await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
+            dbContext,
+            inventoryReservationClient,
+            task!,
+            previouslyExecutedQuantity,
+            logger,
+            cancellationToken);
+        return result;
+    }
+}
+
+public sealed class ReportWarehouseTaskExceptionCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ReportWarehouseTaskExceptionCommand, WarehouseTaskActionResult>
+{
+    public Task<WarehouseTaskActionResult> Handle(
+        ReportWarehouseTaskExceptionCommand request,
+        CancellationToken cancellationToken) =>
+        WarehouseTaskActionExecution.ExecuteAsync(
+            dbContext,
+            request,
+            "exception",
+            new
+            {
+                request.ActorUserId,
+                request.ExpectedVersion,
+                request.ExpectedTaskType,
+                request.ExceptionCode,
+                request.Reason,
+            },
+            task => task.ReportException(
+                request.ExceptionCode,
+                request.Reason,
+                request.ActorUserId,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+public sealed class CompleteWarehouseTaskActionCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CompleteWarehouseTaskActionCommand, WarehouseTaskActionResult>
+{
+    public Task<WarehouseTaskActionResult> Handle(
+        CompleteWarehouseTaskActionCommand request,
+        CancellationToken cancellationToken) =>
+        WarehouseTaskActionExecution.ExecuteAsync(
+            dbContext,
+            request,
+            "complete",
+            new
+            {
+                request.ActorUserId,
+                request.ExpectedVersion,
+                request.ExpectedTaskType,
+                request.ExecutedQuantity,
+                request.DifferenceReason,
+            },
+            task => task.Complete(
+                request.ExecutedQuantity,
+                request.ActorUserId,
+                request.DifferenceReason,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+public sealed class WarehouseTaskActionCommandLock<TCommand> : ICommandLock<TCommand>
+    where TCommand : IBaseCommand, IWarehouseTaskActionCommand
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        TCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-wms:warehouse-task-action:{command.WarehouseTaskId}",
+            30));
+    }
+}
+
+internal static class WarehouseTaskActionExecution
+{
+    public static async Task<WarehouseTaskActionResult> ExecuteAsync<TCommand>(
+        ApplicationDbContext dbContext,
+        TCommand command,
+        string action,
+        object payload,
+        Action<WarehouseTask> mutate,
+        CancellationToken cancellationToken)
+        where TCommand : IWarehouseTaskActionCommand
+    {
+        var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+            x => x.Id == command.WarehouseTaskId
+                && x.OrganizationId == command.OrganizationId
+                && x.EnvironmentId == command.EnvironmentId,
+            cancellationToken)
+            ?? throw new WmsLifecycleConflictException(action, "task-not-found-or-scope-mismatch");
+        EnsureTaskType(task, command.ExpectedTaskType, action);
+        EnsureActorCanExecute(task, command, action);
+
+        var normalizedIdempotencyKey = WmsText.IdempotencyKey(command.IdempotencyKey);
+        var fingerprint = Fingerprint(payload);
+        var existingReceipt = await dbContext.WarehouseTaskActionReceipts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == command.OrganizationId
+                    && x.EnvironmentId == command.EnvironmentId
+                    && x.WarehouseTaskId == command.WarehouseTaskId
+                    && x.Action == action
+                    && x.IdempotencyKey == normalizedIdempotencyKey,
+                cancellationToken);
+        if (existingReceipt is not null)
+        {
+            if (!existingReceipt.MatchesPayload(fingerprint))
+            {
+                throw new WmsIdempotencyConflictException();
+            }
+
+            return FromReceipt(task.TaskType, existingReceipt);
+        }
+
+        try
+        {
+            mutate(task);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            throw new WmsLifecycleConflictException(action, task.Status.ToString());
+        }
+
+        var result = FromTask(task);
+        dbContext.WarehouseTaskActionReceipts.Add(WarehouseTaskActionReceipt.Create(
+            command.OrganizationId,
+            command.EnvironmentId,
+            command.WarehouseTaskId,
+            action,
+            normalizedIdempotencyKey,
+            fingerprint,
+            result.Status,
+            result.Version,
+            result.ExecutedQuantity,
+            result.DifferenceQuantity));
+        return result;
+    }
+
+    private static void EnsureTaskType(
+        WarehouseTask task,
+        WarehouseTaskType expectedTaskType,
+        string action)
+    {
+        if (task.TaskType != expectedTaskType)
+        {
+            throw new WmsLifecycleConflictException(action, "task-type-mismatch");
+        }
+    }
+
+    private static void EnsureActorCanExecute<TCommand>(
+        WarehouseTask task,
+        TCommand command,
+        string action)
+        where TCommand : IWarehouseTaskActionCommand
+    {
+        var actorUserId = WmsText.Required(command.ActorUserId, nameof(command.ActorUserId));
+        if (!string.IsNullOrWhiteSpace(task.AssignedOperatorUserId))
+        {
+            if (!string.Equals(task.AssignedOperatorUserId, actorUserId, StringComparison.Ordinal))
+            {
+                throw new WmsLifecycleConflictException(action, "assignment-mismatch");
+            }
+
+            return;
+        }
+
+        var authorizedTeamIds = NormalizeScopes(command.AuthorizedTeamIds);
+        if (!string.IsNullOrWhiteSpace(task.AssignedTeamId))
+        {
+            if (!authorizedTeamIds.Contains(task.AssignedTeamId))
+            {
+                throw new WmsLifecycleConflictException(action, "team-scope-mismatch");
+            }
+
+            return;
+        }
+
+        if (command.OrganizationWideScope)
+        {
+            return;
+        }
+
+        var authorizedSiteCodes = NormalizeScopes(command.AuthorizedSiteCodes);
+        if (!authorizedSiteCodes.Contains(task.SiteCode))
+        {
+            throw new WmsLifecycleConflictException(action, "site-scope-mismatch");
+        }
+    }
+
+    private static HashSet<string> NormalizeScopes(IEnumerable<string>? values) =>
+        values?
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .ToHashSet(StringComparer.Ordinal)
+        ?? new HashSet<string>(StringComparer.Ordinal);
+
+    private static string Fingerprint(object payload)
+    {
+        var json = JsonSerializer.Serialize(payload);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+    }
+
+    private static WarehouseTaskActionResult FromTask(WarehouseTask task)
+    {
+        var status = task.Status.ToString();
+        var allowedActions = status == WarehouseTaskStatus.Open.ToString()
+            ? new[] { "start" }
+            : status == WarehouseTaskStatus.InProgress.ToString()
+                ? new[] { "progress", "exception", "complete" }
+                : [];
+        var blockReasons = allowedActions.Length == 0
+            ? new[] { "TASK_TERMINAL" }
+            : [];
+        return new WarehouseTaskActionResult(
+            task.Id,
+            task.TaskType.ToString(),
+            status,
+            task.Version,
+            task.ExecutedQuantity,
+            Math.Max(0, task.PlannedQuantity - task.ExecutedQuantity),
+            allowedActions,
+            blockReasons);
+    }
+
+    private static WarehouseTaskActionResult FromReceipt(
+        WarehouseTaskType taskType,
+        WarehouseTaskActionReceipt receipt)
+    {
+        var allowedActions = receipt.ResultStatus == WarehouseTaskStatus.Open.ToString()
+            ? new[] { "start" }
+            : receipt.ResultStatus == WarehouseTaskStatus.InProgress.ToString()
+                ? new[] { "progress", "exception", "complete" }
+                : [];
+        var blockReasons = allowedActions.Length == 0
+            ? new[] { "TASK_TERMINAL" }
+            : [];
+        return new WarehouseTaskActionResult(
+            receipt.WarehouseTaskId,
+            taskType.ToString(),
+            receipt.ResultStatus,
+            receipt.ResultVersion,
+            receipt.ResultExecutedQuantity,
+            receipt.ResultDifferenceQuantity,
+            allowedActions,
+            blockReasons);
+    }
+}
+
+public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
+    RequestDelegate next,
+    ILogger<WarehouseTaskActionPersistenceConflictMiddleware> logger)
+{
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await next(context);
+        }
+        catch (DbUpdateConcurrencyException exception) when (
+            exception.Entries.Any(entry => entry.Entity is WarehouseTask))
+        {
+            logger.LogInformation(
+                "WMS warehouse-task optimistic concurrency conflict. Path={Path}",
+                context.Request.Path);
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new WmsLifecycleConflictResponse(false, "warehouse-task-concurrency-conflict"),
+                context.RequestAborted);
+        }
+        catch (DbUpdateException exception) when (
+            exception.Entries.Any(entry => entry.Entity is WarehouseTaskActionReceipt)
+            && HasPostgreSqlUniqueViolation(exception))
+        {
+            logger.LogInformation(
+                "WMS warehouse-task action receipt uniqueness conflict. Path={Path}",
+                context.Request.Path);
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new WmsLifecycleConflictResponse(false, WmsIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
+        }
+    }
+
+    private static bool HasPostgreSqlUniqueViolation(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            var sqlState = current.GetType().GetProperty("SqlState")?.GetValue(current) as string;
+            if (string.Equals(sqlState, "23505", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -797,7 +1359,8 @@ public sealed class CancelOutboundOrderCommandHandler(
                 && x.EnvironmentId == outbound.EnvironmentId
                 && x.TaskType == WarehouseTaskType.Picking
                 && x.SourceOrderNo == outbound.OutboundOrderNo
-                && x.Status == WarehouseTaskStatus.Open)
+                && (x.Status == WarehouseTaskStatus.Open
+                    || x.Status == WarehouseTaskStatus.InProgress))
             .ToArrayAsync(cancellationToken);
         var openPickingTaskIds = openPickingTasks.Select(x => x.Id).ToArray();
         var cancellableWcsTasks = await dbContext.WcsTasks
@@ -868,7 +1431,8 @@ public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbCont
                 && x.EnvironmentId == request.EnvironmentId
                 && x.TaskType == WarehouseTaskType.Putaway
                 && inboundOrderNos.Contains(x.SourceOrderNo)
-                && x.Status == WarehouseTaskStatus.Open)
+                && (x.Status == WarehouseTaskStatus.Open
+                    || x.Status == WarehouseTaskStatus.InProgress))
             .ToArrayAsync(cancellationToken);
         var openPutawayTaskIds = openPutawayTasks.Select(x => x.Id).ToArray();
         var cancellableWcsTasks = await dbContext.WcsTasks
@@ -970,7 +1534,17 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
     }
 }
 
-public sealed record CreateCountExecutionCommand(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity) : ICommand<CountExecutionId>;
+public sealed record CreateCountExecutionCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string CountNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    decimal ExpectedQuantity,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null) : ICommand<CountExecutionId>;
 
 public sealed class CreateCountExecutionCommandHandler(
     ApplicationDbContext dbContext,
@@ -979,7 +1553,17 @@ public sealed class CreateCountExecutionCommandHandler(
 {
     public async Task<CountExecutionId> Handle(CreateCountExecutionCommand request, CancellationToken cancellationToken)
     {
-        var count = CountExecution.Create(request.OrganizationId, request.EnvironmentId, request.CountNo, request.SkuCode, request.UomCode, request.SiteCode, request.LocationCode, request.ExpectedQuantity);
+        var count = CountExecution.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.CountNo,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.ExpectedQuantity,
+            request.AssignedOperatorUserId,
+            request.AssignedTeamId);
         if (inventoryReservationClient is not null)
         {
             var countTask = await inventoryReservationClient.CreateCountTaskAsync(ToInventoryCountTaskRequest(count), cancellationToken);

@@ -61,7 +61,8 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForCancelW
                     && x.TaskType == WarehouseTaskType.Picking
                     && x.SourceOrderNo == payload.SourceDocumentId
                     && x.SourceOrderLineNo == payload.SourceDocumentLineId
-                    && x.Status == WarehouseTaskStatus.Open)
+                    && (x.Status == WarehouseTaskStatus.Open
+                        || x.Status == WarehouseTaskStatus.InProgress))
                 .ToArrayAsync(cancellationToken);
             foreach (var task in openPickingTasks)
             {

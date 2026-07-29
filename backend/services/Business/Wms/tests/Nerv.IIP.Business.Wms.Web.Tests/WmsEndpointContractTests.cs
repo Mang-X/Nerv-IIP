@@ -30,6 +30,7 @@ using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecuti
 using InventoryMovementRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate.InventoryMovementRequest;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
+using WarehouseTaskStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskStatus;
 using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
 using SupplierReturnRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate.SupplierReturnRequest;
@@ -76,7 +77,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(30, contracts.Length);
+        Assert.Equal(38, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
@@ -154,6 +155,20 @@ public sealed class WmsEndpointContractTests
             "org-001", "env-dev", "IN-PO-002", "purchase-order", "PO-002", "SITE-01",
             [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
         dbContext.InboundOrders.AddRange(matching, unrelated);
+        var activePutaway = WarehouseTask.CreatePutaway(
+            "org-001",
+            "env-dev",
+            "PUT-PO-001",
+            "IN-PO-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "STAGE-01",
+            "BIN-01",
+            3m);
+        activePutaway.Start("user-001", activePutaway.Version);
+        dbContext.WarehouseTasks.Add(activePutaway);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var cancelled = await new CancelInboundOrdersForSourceCommandHandler(dbContext).Handle(
@@ -164,6 +179,7 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Cancelled", matching.Status.ToString());
         Assert.Equal("purchase-order-cancelled", matching.CancellationReason);
         Assert.Equal("Open", unrelated.Status.ToString());
+        Assert.Equal(WarehouseTaskStatus.Cancelled, activePutaway.Status);
     }
 
     [Theory]
@@ -530,7 +546,14 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListInboundOrdersQueryHandler(dbContext).Handle(
-            new ListInboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "page",
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -556,13 +579,15 @@ public sealed class WmsEndpointContractTests
                 "env-dev",
                 Skip: 0,
                 Take: 1,
-                InboundOrderId: target.Id),
+                InboundOrderId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var crossTenant = await handler.Handle(
             new ListInboundOrdersQuery(
                 "org-002",
                 "env-dev",
-                InboundOrderId: target.Id),
+                InboundOrderId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(1, exact.Total);
@@ -670,7 +695,14 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "page",
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -696,13 +728,15 @@ public sealed class WmsEndpointContractTests
                 "env-dev",
                 Skip: 0,
                 Take: 1,
-                OutboundOrderId: target.Id),
+                OutboundOrderId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var crossTenant = await handler.Handle(
             new ListOutboundOrdersQuery(
                 "org-002",
                 "env-dev",
-                OutboundOrderId: target.Id),
+                OutboundOrderId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(1, exact.Total);
@@ -733,7 +767,14 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 10, "InventoryPostingFailed", "DO-FAILED"),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                10,
+                "InventoryPostingFailed",
+                "DO-FAILED",
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         var item = Assert.Single(result.Items);
@@ -798,7 +839,16 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 1, 1, "Open", "BIN-A", null, "page"),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                1,
+                1,
+                "Open",
+                "BIN-A",
+                "page",
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -810,21 +860,37 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public async Task Warehouse_task_query_returns_empty_when_operator_filter_is_supplied_until_assignment_field_exists()
+    public async Task Warehouse_task_query_filters_persisted_operator_assignment()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.WarehouseTasks.Add(
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OPERATOR-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m));
+            WarehouseTask.CreatePutaway(
+                "org-001",
+                "env-dev",
+                "PUT-OPERATOR-001",
+                "IN-001",
+                "10",
+                "SKU-001",
+                "pcs",
+                "SITE-01",
+                "RECV-01",
+                "BIN-A",
+                3m,
+                assignedOperatorUserId: "user-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, null, null, "user-001", null),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                AssignedOperatorUserIds: ["user-001"]),
             CancellationToken.None);
 
-        Assert.Equal(0, result.Total);
-        Assert.Empty(result.Items);
+        Assert.Equal(1, result.Total);
+        Assert.Equal("user-001", Assert.Single(result.Items).AssignedOperatorUserId);
     }
 
     [Fact]
@@ -844,7 +910,15 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
-            new ListCountExecutionsQuery("org-001", "env-dev", 1, 1, "Open", "BIN-A", "page"),
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "BIN-A",
+                "page",
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -890,13 +964,15 @@ public sealed class WmsEndpointContractTests
                 "env-dev",
                 Skip: 0,
                 Take: 1,
-                CountExecutionId: target.Id),
+                CountExecutionId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var crossTenant = await handler.Handle(
             new ListCountExecutionsQuery(
                 "org-002",
                 "env-dev",
-                CountExecutionId: target.Id),
+                CountExecutionId: target.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         Assert.Equal(1, exact.Total);
@@ -949,7 +1025,8 @@ public sealed class WmsEndpointContractTests
             new ListCountExecutionsQuery(
                 "org-001",
                 "env-dev",
-                CountExecutionId: count.Id),
+                CountExecutionId: count.Id,
+                OrganizationWideScope: true),
             CancellationToken.None);
 
         var item = Assert.Single(result.Items);
@@ -981,16 +1058,39 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var inboundResult = await new ListInboundOrdersQueryHandler(dbContext).Handle(
-            new ListInboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "0",
+                null,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var outboundResult = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "0",
+                null,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var warehouseResult = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, "2", null, null, null),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                Status: "2",
+                OrganizationWideScope: true),
             CancellationToken.None);
         var countResult = await new ListCountExecutionsQueryHandler(dbContext).Handle(
-            new ListCountExecutionsQuery("org-001", "env-dev", 0, 100, "0", null, null),
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                Status: "0",
+                OrganizationWideScope: true),
             CancellationToken.None);
         var wcsResult = await new ListWcsTasksQueryHandler(dbContext).Handle(
             new ListWcsTasksQuery("org-001", "env-dev", null, null, 0, 100, "2", null, null),

@@ -38,6 +38,8 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
         dbContext.OutboundOrders.Add(outbound);
         dbContext.WarehouseTasks.Add(pickingTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        pickingTask.Start("user-001", pickingTask.Version);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var wcsTask = WcsTask.Dispatch(
             "org-001",

@@ -69,6 +69,14 @@ public sealed class WmsLifecycleConflictOpenApiTests
         "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
         "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete",
         "/api/business/v1/wms/count-executions/{countExecutionId}/complete",
+        "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/start",
+        "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/progress",
+        "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/exception",
+        "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/complete",
+        "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/start",
+        "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress",
+        "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception",
+        "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
     ];
 
     private static DbUpdateException UniqueConflict(string constraintName) =>
