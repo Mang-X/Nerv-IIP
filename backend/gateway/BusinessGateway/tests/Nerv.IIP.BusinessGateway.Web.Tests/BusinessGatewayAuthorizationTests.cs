@@ -952,6 +952,17 @@ public sealed class BusinessGatewayAuthorizationTests
             toLocationCode = "BIN-01",
             quantity = 1,
         },
+        "/api/business-console/v1/wms/inbound-orders/inbound-order-001/assignment" or
+        "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/assignment" or
+        "/api/business-console/v1/wms/outbound-orders/outbound-order-001/assignment" or
+        "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/assignment" or
+        "/api/business-console/v1/wms/count-executions/count-execution-001/assignment" => new
+        {
+            poolCode = "POOL-WAREHOUSE",
+            operatorPrincipalId = "user-emp-049",
+            idempotencyKey = "assign-wms-authz",
+            expectedVersion = 1,
+        },
         "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete" => new
         {
             idempotencyKey = "complete-in-001",
@@ -1010,6 +1021,7 @@ public sealed class BusinessGatewayAuthorizationTests
         },
         "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new
         {
+            expectedVersion = 1,
             adapterType = "agv",
             externalTaskId = "EXT-001",
             payloadJson = "{}",
@@ -1325,9 +1337,14 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/counts", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsReceiptsManage);
@@ -1335,8 +1352,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/assignment", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/picking-tasks", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/assignment", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsShipmentsManage);
@@ -1345,6 +1364,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch", BusinessGatewayPermissions.WmsAutomationManage);

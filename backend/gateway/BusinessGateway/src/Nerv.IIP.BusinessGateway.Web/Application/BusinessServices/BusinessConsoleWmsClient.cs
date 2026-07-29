@@ -2,6 +2,21 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessWmsClient
 {
+    Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsWorkScopeCatalog> GetShipmentWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsWorkScopeCatalog> GetCountWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateWmsInboundOrderRequest request,
@@ -13,6 +28,12 @@ public interface IBusinessWmsClient
         string? inboundOrderId,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsAssignmentResult> AssignInboundOrderAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsAssignInboundOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
         string internalBearerToken,
         string inboundOrderId,
@@ -22,6 +43,12 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleWmsWarehouseTaskListResponse> ListPutawayTasksAsync(
         string internalBearerToken,
         BusinessWmsWarehouseTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsAssignmentResult> AssignPutawayTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPutawayTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleWmsWarehouseTaskActionResult> StartPutawayTaskAsync(
@@ -65,6 +92,12 @@ public interface IBusinessWmsClient
         string? outboundOrderId,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsAssignmentResult> AssignOutboundOrderAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessWmsAssignOutboundOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
         string internalBearerToken,
         string outboundOrderId,
@@ -74,6 +107,12 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleWmsWarehouseTaskListResponse> ListPickingTasksAsync(
         string internalBearerToken,
         BusinessWmsWarehouseTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsAssignmentResult> AssignPickingTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPickingTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleWmsWarehouseTaskActionResult> StartPickingTaskAsync(
@@ -122,6 +161,12 @@ public interface IBusinessWmsClient
         BusinessWmsCountExecutionListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsAssignmentResult> AssignCountExecutionAsync(
+        string internalBearerToken,
+        string countExecutionId,
+        BusinessWmsAssignCountExecutionRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
@@ -131,7 +176,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
         string internalBearerToken,
         string warehouseTaskId,
-        BusinessConsoleDispatchWmsWcsTaskRequest request,
+        BusinessWmsDispatchWcsTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> FailWcsTaskAsync(
@@ -164,6 +209,24 @@ public interface IBusinessWmsClient
 
 public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessWmsClient
 {
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        GetWorkScopesAsync(internalBearerToken, "receipts", request, cancellationToken);
+
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetShipmentWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        GetWorkScopesAsync(internalBearerToken, "shipments", request, cancellationToken);
+
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetCountWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        GetWorkScopesAsync(internalBearerToken, "counts", request, cancellationToken);
+
     public Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateWmsInboundOrderRequest request,
@@ -192,6 +255,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         return new BusinessConsoleWmsInboundOrderListResponse(page.Items, page.Total, null, "unsupported");
     }
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignInboundOrderAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsAssignInboundOrderRequest request,
+        CancellationToken cancellationToken) =>
+        AssignAsync(
+            internalBearerToken,
+            $"inbound-orders/{Uri.EscapeDataString(inboundOrderId)}",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
         string internalBearerToken,
         string inboundOrderId,
@@ -213,6 +287,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             HttpMethod.Get,
             "/api/business/v1/wms/putaway-tasks?" + WmsWarehouseTaskListQuery(request),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsAssignmentResult> AssignPutawayTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPutawayTaskRequest request,
+        CancellationToken cancellationToken) =>
+        AssignAsync(
+            internalBearerToken,
+            $"putaway-tasks/{Uri.EscapeDataString(warehouseTaskId)}",
+            request,
             cancellationToken);
 
     public Task<BusinessConsoleWmsWarehouseTaskActionResult> StartPutawayTaskAsync(
@@ -310,6 +395,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             cancellationToken);
     }
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignOutboundOrderAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessWmsAssignOutboundOrderRequest request,
+        CancellationToken cancellationToken) =>
+        AssignAsync(
+            internalBearerToken,
+            $"outbound-orders/{Uri.EscapeDataString(outboundOrderId)}",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
         string internalBearerToken,
         string outboundOrderId,
@@ -331,6 +427,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             HttpMethod.Get,
             "/api/business/v1/wms/picking-tasks?" + WmsWarehouseTaskListQuery(request),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsAssignmentResult> AssignPickingTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPickingTaskRequest request,
+        CancellationToken cancellationToken) =>
+        AssignAsync(
+            internalBearerToken,
+            $"picking-tasks/{Uri.EscapeDataString(warehouseTaskId)}",
+            request,
             cancellationToken);
 
     public Task<BusinessConsoleWmsWarehouseTaskActionResult> StartPickingTaskAsync(
@@ -435,6 +542,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignCountExecutionAsync(
+        string internalBearerToken,
+        string countExecutionId,
+        BusinessWmsAssignCountExecutionRequest request,
+        CancellationToken cancellationToken) =>
+        AssignAsync(
+            internalBearerToken,
+            $"count-executions/{Uri.EscapeDataString(countExecutionId)}",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
@@ -483,7 +601,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
         string internalBearerToken,
         string warehouseTaskId,
-        BusinessConsoleDispatchWmsWcsTaskRequest request,
+        BusinessWmsDispatchWcsTaskRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleDispatchWmsWcsTaskResponse>(
             internalBearerToken,
@@ -572,6 +690,36 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             null,
             cancellationToken);
 
+    private Task<BusinessConsoleWmsWorkScopeCatalog> GetWorkScopesAsync(
+        string internalBearerToken,
+        string catalog,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsWorkScopeCatalog>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/wms/work-scopes/{Uri.EscapeDataString(catalog)}?" +
+            AppendAuthorizedSites(
+                Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("actorPrincipalId", request.ActorPrincipalId)),
+                request.AuthorizedSiteCodes),
+            null,
+            cancellationToken);
+
+    private Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        string internalBearerToken,
+        string resourcePath,
+        object request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsAssignmentResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/{resourcePath}/assignment",
+            request,
+            cancellationToken);
+
     private Task<BusinessConsoleWmsWarehouseTaskActionResult> WarehouseTaskActionAsync(
         string internalBearerToken,
         string taskCollection,
@@ -598,48 +746,67 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     private static string WmsListQuery(
         BusinessWmsScopedListRequest request,
         (string Name, object? Value) exactId) =>
-        Query(
-            ("organizationId", request.OrganizationId),
-            ("environmentId", request.EnvironmentId),
-            ("skip", request.Skip),
-            ("take", request.Take),
-            ("status", request.Status),
-            ("keyword", request.Keyword),
-            ("assignedOperatorUserIds", request.AssignedOperatorUserIds),
-            ("assignedTeamIds", request.AssignedTeamIds),
-            ("siteCodes", request.SiteCodes),
-            ("organizationWideScope", request.OrganizationWideScope ? true : null),
-            exactId);
+        AppendAuthorizedSites(
+            Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("actorPrincipalId", request.ActorPrincipalId),
+                ("scopeKind", request.ScopeKind),
+                ("scopeId", request.ScopeId),
+                ("locationCode", request.LocationCode),
+                ("lotNo", request.LotNo),
+                ("siteCode", request.SiteCode),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("status", request.Status),
+                ("keyword", request.Keyword),
+                exactId),
+            request.AuthorizedSiteCodes);
 
     private static string WmsWarehouseTaskListQuery(BusinessWmsWarehouseTaskListRequest request) =>
-        Query(
-            ("organizationId", request.OrganizationId),
-            ("environmentId", request.EnvironmentId),
-            ("locationCode", request.LocationCode),
-            ("lotNo", request.LotNo),
-            ("skip", request.Skip),
-            ("take", request.Take),
-            ("status", request.Status),
-            ("keyword", request.Keyword),
-            ("assignedOperatorUserIds", request.AssignedOperatorUserIds),
-            ("assignedTeamIds", request.AssignedTeamIds),
-            ("siteCodes", request.SiteCodes),
-            ("organizationWideScope", request.OrganizationWideScope ? true : null));
+        AppendAuthorizedSites(
+            Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("actorPrincipalId", request.ActorPrincipalId),
+                ("scopeKind", request.ScopeKind),
+                ("scopeId", request.ScopeId),
+                ("locationCode", request.LocationCode),
+                ("lotNo", request.LotNo),
+                ("siteCode", request.SiteCode),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("status", request.Status),
+                ("keyword", request.Keyword)),
+            request.AuthorizedSiteCodes);
 
     private static string WmsCountExecutionListQuery(BusinessWmsCountExecutionListRequest request) =>
-        Query(
-            ("organizationId", request.OrganizationId),
-            ("environmentId", request.EnvironmentId),
-            ("locationCode", request.LocationCode),
-            ("skip", request.Skip),
-            ("take", request.Take),
-            ("status", request.Status),
-            ("keyword", request.Keyword),
-            ("countExecutionId", request.CountExecutionId),
-            ("assignedOperatorUserIds", request.AssignedOperatorUserIds),
-            ("assignedTeamIds", request.AssignedTeamIds),
-            ("siteCodes", request.SiteCodes),
-            ("organizationWideScope", request.OrganizationWideScope ? true : null));
+        AppendAuthorizedSites(
+            Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("actorPrincipalId", request.ActorPrincipalId),
+                ("scopeKind", request.ScopeKind),
+                ("scopeId", request.ScopeId),
+                ("locationCode", request.LocationCode),
+                ("siteCode", request.SiteCode),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("status", request.Status),
+                ("keyword", request.Keyword),
+                ("countExecutionId", request.CountExecutionId)),
+            request.AuthorizedSiteCodes);
+
+    private static string AppendAuthorizedSites(
+        string query,
+        IReadOnlyCollection<string> authorizedSiteCodes)
+    {
+        var sites = authorizedSiteCodes
+            .Where(siteCode => !string.IsNullOrWhiteSpace(siteCode))
+            .Select(siteCode =>
+                $"authorizedSiteCodes={Uri.EscapeDataString(siteCode.Trim())}");
+        return string.Join('&', [query, .. sites]);
+    }
 
     private sealed record BusinessConsoleWmsInboundOrderDownstreamListResponse(
         IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,

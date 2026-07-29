@@ -81,10 +81,10 @@ public sealed class BusinessGatewayWmsTests
         await client.DispatchWcsTaskAsync("internal-token-001", "warehouse-task-001", ValidDispatchWcsRequest(), CancellationToken.None);
         await client.FailWcsTaskAsync("internal-token-001", "EXT-001", ValidFailWcsRequest(), CancellationToken.None);
         await client.CompleteWcsTaskAsync("internal-token-001", "EXT-001", ValidCompleteWcsRequest(), CancellationToken.None);
-        await client.StartPutawayTaskAsync("internal-token-001", "putaway-task-001", ValidStartTaskAction("putaway-task-001", teamId: "TEAM-A"), CancellationToken.None);
-        await client.RecordPutawayTaskProgressAsync("internal-token-001", "putaway-task-001", ValidProgressTaskAction("putaway-task-001", teamId: "TEAM-A"), CancellationToken.None);
-        await client.ReportPutawayTaskExceptionAsync("internal-token-001", "putaway-task-001", ValidExceptionTaskAction("putaway-task-001", teamId: "TEAM-A"), CancellationToken.None);
-        await client.CompletePutawayTaskAsync("internal-token-001", "putaway-task-001", ValidCompleteTaskAction("putaway-task-001", teamId: "TEAM-A"), CancellationToken.None);
+        await client.StartPutawayTaskAsync("internal-token-001", "putaway-task-001", ValidStartTaskAction("putaway-task-001", poolCode: "POOL-A"), CancellationToken.None);
+        await client.RecordPutawayTaskProgressAsync("internal-token-001", "putaway-task-001", ValidProgressTaskAction("putaway-task-001", poolCode: "POOL-A"), CancellationToken.None);
+        await client.ReportPutawayTaskExceptionAsync("internal-token-001", "putaway-task-001", ValidExceptionTaskAction("putaway-task-001", poolCode: "POOL-A"), CancellationToken.None);
+        await client.CompletePutawayTaskAsync("internal-token-001", "putaway-task-001", ValidCompleteTaskAction("putaway-task-001", poolCode: "POOL-A"), CancellationToken.None);
         await client.StartPickingTaskAsync("internal-token-001", "picking-task-001", ValidStartTaskAction("picking-task-001", siteCode: "SITE-A"), CancellationToken.None);
         await client.RecordPickingTaskProgressAsync("internal-token-001", "picking-task-001", ValidProgressTaskAction("picking-task-001", siteCode: "SITE-A"), CancellationToken.None);
         await client.ReportPickingTaskExceptionAsync("internal-token-001", "picking-task-001", ValidExceptionTaskAction("picking-task-001", siteCode: "SITE-A"), CancellationToken.None);
@@ -135,9 +135,10 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("LOT-CAPTURED-001", completeInboundLine.GetProperty("lotNo").GetString());
         Assert.Equal("2026-01-16", completeInboundLine.GetProperty("productionDate").GetString());
         Assert.Equal("2027-01-16", completeInboundLine.GetProperty("expiryDate").GetString());
-        Assert.Contains("\"actorUserId\":\"user-admin\"", handler.RequestBodies[12], StringComparison.Ordinal);
-        Assert.Contains("\"authorizedTeamIds\":[\"TEAM-A\"]", handler.RequestBodies[12], StringComparison.Ordinal);
-        Assert.Contains("\"actorUserId\":\"user-admin\"", handler.RequestBodies[16], StringComparison.Ordinal);
+        Assert.Contains("\"actorPrincipalId\":\"user-admin\"", handler.RequestBodies[12], StringComparison.Ordinal);
+        Assert.Contains("\"scopeKind\":\"work-pool\"", handler.RequestBodies[12], StringComparison.Ordinal);
+        Assert.Contains("\"scopeId\":\"POOL-A\"", handler.RequestBodies[12], StringComparison.Ordinal);
+        Assert.Contains("\"actorPrincipalId\":\"user-admin\"", handler.RequestBodies[16], StringComparison.Ordinal);
         Assert.Contains("\"authorizedSiteCodes\":[\"SITE-A\"]", handler.RequestBodies[16], StringComparison.Ordinal);
     }
 
@@ -241,13 +242,17 @@ public sealed class BusinessGatewayWmsTests
             new BusinessWmsScopedListRequest(
                 "org-001",
                 "env-dev",
-                10,
-                20,
-                "Open",
-                "IN-001",
                 "user-001",
-                "TEAM-A",
-                "SITE-A"),
+                ["SITE-A"],
+                "self",
+                "user-001",
+                LocationCode: null,
+                LotNo: null,
+                SiteCode: "SITE-A",
+                Skip: 10,
+                Take: 20,
+                Status: "Open",
+                Keyword: "IN-001"),
             "0199aa00-0000-7000-8000-000000000001",
             CancellationToken.None);
         var putaway = await client.ListPutawayTasksAsync(
@@ -255,26 +260,31 @@ public sealed class BusinessGatewayWmsTests
             new BusinessWmsWarehouseTaskListRequest(
                 "org-001",
                 "env-dev",
+                "user-001",
+                ["SITE-A"],
+                "work-pool",
+                "POOL-A",
                 "RECV-01",
                 "LOT-001",
+                "SITE-A",
                 15,
                 25,
                 "Open",
-                "PUT-001",
-                "user-001",
-                "TEAM-A",
-                "SITE-A"),
+                "PUT-001"),
             CancellationToken.None);
         var outbound = await client.ListOutboundOrdersAsync(
             "internal-token-001",
             new BusinessWmsScopedListRequest(
                 "org-001",
                 "env-dev",
-                20,
-                10,
-                "Completed",
-                "OUT-001",
-                OrganizationWideScope: true),
+                "user-001",
+                ["SITE-A"],
+                "site",
+                "SITE-A",
+                Skip: 20,
+                Take: 10,
+                Status: "Completed",
+                Keyword: "OUT-001"),
             "0199aa00-0000-7000-8000-000000000002",
             CancellationToken.None);
         var picking = await client.ListPickingTasksAsync(
@@ -282,26 +292,34 @@ public sealed class BusinessGatewayWmsTests
             new BusinessWmsWarehouseTaskListRequest(
                 "org-001",
                 "env-dev",
+                "user-001",
+                ["SITE-A"],
+                "work-pool",
+                "POOL-B",
                 "BIN-01",
                 null,
+                "SITE-A",
                 25,
                 35,
                 "Open",
-                "PICK-001",
-                AssignedTeamIds: "TEAM-B"),
+                "PICK-001"),
             CancellationToken.None);
         var count = await client.ListCountExecutionsAsync(
             "internal-token-001",
             new BusinessWmsCountExecutionListRequest(
                 "org-001",
                 "env-dev",
+                "user-001",
+                ["SITE-A"],
+                "site",
+                "SITE-A",
                 "BIN-02",
+                "SITE-A",
                 5,
                 15,
                 "Open",
                 "COUNT-001",
-                "0199aa00-0000-7000-8000-000000000003",
-                SiteCodes: "SITE-A"),
+                "0199aa00-0000-7000-8000-000000000003"),
             CancellationToken.None);
         var wcs = await client.ListWcsTasksAsync("internal-token-001", new BusinessConsoleWmsWcsTaskListRequest("org-001", "env-dev", "EXT-001", "warehouse-task-001", 30, 15, "Failed", true, "EXT"), CancellationToken.None);
         var gates = await client.ListReceivingQualityGatesAsync("internal-token-001", new BusinessConsoleWmsReceivingQualityGateListRequest("org-001", "env-dev", 5, 15, "rejected", "IN-GATE", IncludeNotRequired: true, InboundOrderNo: "IN-EXACT"), CancellationToken.None);
@@ -325,11 +343,11 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(5, returns.Total);
         Assert.Equal(
         [
-            "GET /api/business/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=IN-001&assignedOperatorUserIds=user-001&assignedTeamIds=TEAM-A&siteCodes=SITE-A&inboundOrderId=0199aa00-0000-7000-8000-000000000001",
-            "GET /api/business/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&locationCode=RECV-01&lotNo=LOT-001&skip=15&take=25&status=Open&keyword=PUT-001&assignedOperatorUserIds=user-001&assignedTeamIds=TEAM-A&siteCodes=SITE-A",
-            "GET /api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&skip=20&take=10&status=Completed&keyword=OUT-001&organizationWideScope=true&outboundOrderId=0199aa00-0000-7000-8000-000000000002",
-            "GET /api/business/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&locationCode=BIN-01&skip=25&take=35&status=Open&keyword=PICK-001&assignedTeamIds=TEAM-B",
-            "GET /api/business/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&locationCode=BIN-02&skip=5&take=15&status=Open&keyword=COUNT-001&countExecutionId=0199aa00-0000-7000-8000-000000000003&siteCodes=SITE-A",
+            "GET /api/business/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=self&scopeId=user-001&siteCode=SITE-A&skip=10&take=20&status=Open&keyword=IN-001&inboundOrderId=0199aa00-0000-7000-8000-000000000001&authorizedSiteCodes=SITE-A",
+            "GET /api/business/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=work-pool&scopeId=POOL-A&locationCode=RECV-01&lotNo=LOT-001&siteCode=SITE-A&skip=15&take=25&status=Open&keyword=PUT-001&authorizedSiteCodes=SITE-A",
+            "GET /api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=site&scopeId=SITE-A&skip=20&take=10&status=Completed&keyword=OUT-001&outboundOrderId=0199aa00-0000-7000-8000-000000000002&authorizedSiteCodes=SITE-A",
+            "GET /api/business/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=work-pool&scopeId=POOL-B&locationCode=BIN-01&siteCode=SITE-A&skip=25&take=35&status=Open&keyword=PICK-001&authorizedSiteCodes=SITE-A",
+            "GET /api/business/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=site&scopeId=SITE-A&locationCode=BIN-02&siteCode=SITE-A&skip=5&take=15&status=Open&keyword=COUNT-001&countExecutionId=0199aa00-0000-7000-8000-000000000003&authorizedSiteCodes=SITE-A",
             "GET /api/business/v1/wms/wcs-tasks?organizationId=org-001&environmentId=env-dev&externalTaskId=EXT-001&warehouseTaskId=warehouse-task-001&skip=30&take=15&status=Failed&failed=true&keyword=EXT",
             "GET /api/business/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE&includeNotRequired=true&inboundOrderNo=IN-EXACT",
             "GET /api/business/v1/wms/supplier-return-requests?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=RTS",
@@ -521,7 +539,7 @@ public sealed class BusinessGatewayWmsTests
     public async Task Wcs_write_facades_use_automation_permission_internal_token_and_route_ids()
     {
         var wms = new RecordingWmsClient();
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsAutomationManage);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -534,6 +552,7 @@ public sealed class BusinessGatewayWmsTests
 
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
         {
+            expectedVersion = 3,
             adapterType = "agv",
             externalTaskId = "EXT-001",
             payloadJson = "{}",
@@ -555,8 +574,300 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(["dispatch-wcs", "fail-wcs", "complete-wcs"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("warehouse-task-001", wms.LastDispatchWcsRequest!.WarehouseTaskId);
+        Assert.Equal("user-admin", wms.LastDispatchWcsRequest.DispatcherPrincipalId);
+        Assert.Equal(["S1"], wms.LastDispatchWcsRequest.AuthorizedSiteCodes);
+        Assert.Equal(3, wms.LastDispatchWcsRequest.ExpectedVersion);
         Assert.Equal("EXT-001", wms.LastFailWcsRequest!.ExternalTaskId);
         Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
+    }
+
+    [Fact]
+    public async Task Wms_work_scope_catalogs_inject_principal_and_exact_sites_for_each_capability()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [
+                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.WmsShipmentsRead,
+            ],
+            new AuthorizationScopeGrant(
+                "membership",
+                "warehouse-membership",
+                "site",
+                "SITE-B",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsShipmentsRead,
+                ]),
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsShipmentsRead,
+                ]),
+            new AuthorizationScopeGrant(
+                "user",
+                "untrusted-direct-grant",
+                "site",
+                "FORGED-SITE",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsShipmentsRead,
+                ]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        const string forged =
+            "?organizationId=org-001&environmentId=env-dev&actorPrincipalId=forged&authorizedSiteCodes=FORGED-SITE";
+
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/wms/work-scopes/receipts",
+                     "/api/business-console/v1/wms/work-scopes/shipments",
+                     "/api/business-console/v1/wms/work-scopes/counts",
+                 })
+        {
+            var response = await client.GetAsync(path + forged);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("user-admin", wms.LastWorkScopeCatalogRequest!.ActorPrincipalId);
+            Assert.Equal(
+                ["SITE-A", "SITE-B"],
+                wms.LastWorkScopeCatalogRequest.AuthorizedSiteCodes);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            Assert.Equal("user-admin", data.GetProperty("actorPrincipalId").GetString());
+            Assert.Equal(
+                ["self", "work-pool", "site"],
+                data.GetProperty("items")
+                    .EnumerateArray()
+                    .Select(item => item.GetProperty("scopeKind").GetString()!)
+                    .ToArray());
+        }
+
+        Assert.Equal(
+            ["receipt-scopes", "shipment-scopes", "count-scopes"],
+            wms.Calls);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.WmsShipmentsRead,
+                BusinessGatewayPermissions.WmsReceiptsRead,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+        Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));
+        Assert.Equal(
+            BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+            auth.LastContinuityMode);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+    }
+
+    [Fact]
+    public async Task Wms_assignment_facades_inject_trusted_assigner_sites_and_route_resource_ids()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsShipmentsManage,
+            ],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsManage,
+                    BusinessGatewayPermissions.WmsShipmentsManage,
+                ]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var scenarios = new[]
+        {
+            (
+                "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment",
+                "inbound-001",
+                "assign-inbound"),
+            (
+                "/api/business-console/v1/wms/putaway-tasks/putaway-001/assignment",
+                "putaway-001",
+                "assign-putaway"),
+            (
+                "/api/business-console/v1/wms/outbound-orders/outbound-001/assignment",
+                "outbound-001",
+                "assign-outbound"),
+            (
+                "/api/business-console/v1/wms/picking-tasks/picking-001/assignment",
+                "picking-001",
+                "assign-picking"),
+            (
+                "/api/business-console/v1/wms/count-executions/count-001/assignment",
+                "count-001",
+                "assign-count"),
+        };
+
+        foreach (var (path, resourceId, idempotencyKey) in scenarios)
+        {
+            var response = await client.PostAsJsonAsync(
+                path + "?organizationId=org-001&environmentId=env-dev",
+                new
+                {
+                    inboundOrderId = "forged-resource",
+                    outboundOrderId = "forged-resource",
+                    warehouseTaskId = "forged-resource",
+                    countExecutionId = "forged-resource",
+                    poolCode = "POOL-WAREHOUSE",
+                    operatorPrincipalId = "user-emp-049",
+                    idempotencyKey,
+                    expectedVersion = 3,
+                    assignerPrincipalId = "forged-principal",
+                    authorizedSiteCodes = new[] { "FORGED-SITE" },
+                });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertTrustedAssignment(
+                wms.LastAssignmentRequest!,
+                resourceId,
+                idempotencyKey);
+        }
+
+        Assert.Equal(
+            [
+                "assign-inbound-order",
+                "assign-putaway-task",
+                "assign-outbound-order",
+                "assign-picking-task",
+                "assign-count-execution",
+            ],
+            wms.Calls);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsShipmentsManage,
+                BusinessGatewayPermissions.WmsShipmentsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+        Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));
+        Assert.Equal(
+            BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+            auth.LastContinuityMode);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "stale-version")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "assignment-target-invalid")]
+    public async Task Wms_assignment_facade_preserves_governed_downstream_failure(
+        HttpStatusCode statusCode,
+        string safeCode)
+    {
+        var wms = new RecordingWmsClient
+        {
+            AssignmentFailure =
+                BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    statusCode,
+                    safeCode),
+        };
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(statusCode, response.StatusCode);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        Assert.Equal(safeCode, document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Wms_catalog_and_assignment_fail_closed_without_exact_site_grant()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [
+                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+            ],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "self",
+                "user-admin",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsReceiptsManage,
+                ]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var catalog = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
+        var assignment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, catalog.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, assignment.StatusCode);
+        Assert.Empty(wms.Calls);
+        Assert.Null(wms.LastWorkScopeCatalogRequest);
+        Assert.Null(wms.LastAssignmentRequest);
     }
 
     [Fact]
@@ -578,21 +889,26 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&skip=10&take=20&status=Open&keyword=IN&inboundOrderId=0199aa00-0000-7000-8000-000000000001&scopeKind=organization&scopeId=org-001");
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&skip=10&take=20&status=Open&keyword=IN&inboundOrderId=0199aa00-0000-7000-8000-000000000001");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("internal-test-token", inventory.LastInternalToken);
-        Assert.Equal(
+        Assert.Equivalent(
             new BusinessWmsScopedListRequest(
                 "org-001",
                 "env-dev",
-                10,
-                20,
-                "Open",
-                "IN",
-                OrganizationWideScope: true),
-            wms.LastInboundRequest);
+                "user-admin",
+                ["S1"],
+                "self",
+                "user-admin",
+                SiteCode: "S1",
+                Skip: 10,
+                Take: 20,
+                Status: "Open",
+                Keyword: "IN"),
+            wms.LastInboundRequest,
+            strict: true);
         Assert.Equal("0199aa00-0000-7000-8000-000000000001", wms.LastInboundOrderId);
         Assert.Equal("SKU-001", inventory.LastAvailabilityRequest!.SkuCode);
         Assert.Equal("S1", inventory.LastAvailabilityRequest.SiteCode);
@@ -624,7 +940,7 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=organization&scopeId=org-001");
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, inventory.AvailabilityCallCount);
@@ -655,7 +971,7 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&scopeKind=organization&scopeId=org-001");
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, inventory.AvailabilityCallCount);
@@ -699,11 +1015,10 @@ public sealed class BusinessGatewayWmsTests
         {
             new(
                 "role",
-                "role-wms-organization",
-                "organization",
-                "org-001",
-                [BusinessGatewayPermissions.WmsReceiptsRead],
-                OrganizationWide: true),
+                "role-wms-site",
+                "site",
+                "S1",
+                [BusinessGatewayPermissions.WmsReceiptsRead]),
         };
         if (inventoryGrant is not null)
         {
@@ -729,7 +1044,7 @@ public sealed class BusinessGatewayWmsTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
-            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&scopeKind=organization&scopeId=org-001");
+            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(0, inventory.AvailabilityCallCount);
@@ -769,7 +1084,7 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&scopeKind=organization&scopeId=org-001");
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, inventory.AvailabilityCallCount);
@@ -795,20 +1110,24 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002&scopeKind=organization&scopeId=org-001");
+        var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
-        Assert.Equal(
+        Assert.Equivalent(
             new BusinessWmsScopedListRequest(
                 "org-001",
                 "env-dev",
-                20,
-                10,
-                "Completed",
-                "OUT",
-                OrganizationWideScope: true),
-            wms.LastOutboundRequest);
+                "user-admin",
+                ["S1"],
+                "self",
+                "user-admin",
+                Skip: 20,
+                Take: 10,
+                Status: "Completed",
+                Keyword: "OUT"),
+            wms.LastOutboundRequest,
+            strict: true);
         Assert.Equal("0199aa00-0000-7000-8000-000000000002", wms.LastOutboundOrderId);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
@@ -866,9 +1185,9 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var putaway = await client.GetAsync("/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&locationCode=RECV-01&lotNo=LOT-001&skip=10&take=20&status=Open&keyword=PUT&scopeKind=organization&scopeId=org-001");
-        var picking = await client.GetAsync("/api/business-console/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&locationCode=BIN-01&skip=20&take=10&status=Open&keyword=PICK&scopeKind=organization&scopeId=org-001");
-        var count = await client.GetAsync("/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&locationCode=BIN-02&skip=5&take=15&status=Open&keyword=COUNT&countExecutionId=0199aa00-0000-7000-8000-000000000003&scopeKind=organization&scopeId=org-001");
+        var putaway = await client.GetAsync("/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&locationCode=RECV-01&lotNo=LOT-001&skip=10&take=20&status=Open&keyword=PUT");
+        var picking = await client.GetAsync("/api/business-console/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&locationCode=BIN-01&skip=20&take=10&status=Open&keyword=PICK");
+        var count = await client.GetAsync("/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&locationCode=BIN-02&skip=5&take=15&status=Open&keyword=COUNT&countExecutionId=0199aa00-0000-7000-8000-000000000003");
 
         Assert.Equal(HttpStatusCode.OK, putaway.StatusCode);
         Assert.Equal(HttpStatusCode.OK, picking.StatusCode);
@@ -881,42 +1200,57 @@ public sealed class BusinessGatewayWmsTests
         ],
         auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal("internal-test-token", wms.LastInternalToken);
-        Assert.Equal(
+        Assert.Equivalent(
             new BusinessWmsWarehouseTaskListRequest(
                 "org-001",
                 "env-dev",
+                "user-admin",
+                ["S1"],
+                "self",
+                "user-admin",
                 "RECV-01",
                 "LOT-001",
-                10,
-                20,
-                "Open",
-                "PUT",
-                OrganizationWideScope: true),
-            wms.LastPutawayTaskRequest);
-        Assert.Equal(
+                null,
+                Skip: 10,
+                Take: 20,
+                Status: "Open",
+                Keyword: "PUT"),
+            wms.LastPutawayTaskRequest,
+            strict: true);
+        Assert.Equivalent(
             new BusinessWmsWarehouseTaskListRequest(
                 "org-001",
                 "env-dev",
+                "user-admin",
+                ["S1"],
+                "self",
+                "user-admin",
                 "BIN-01",
                 null,
-                20,
-                10,
-                "Open",
-                "PICK",
-                OrganizationWideScope: true),
-            wms.LastPickingTaskRequest);
-        Assert.Equal(
+                null,
+                Skip: 20,
+                Take: 10,
+                Status: "Open",
+                Keyword: "PICK"),
+            wms.LastPickingTaskRequest,
+            strict: true);
+        Assert.Equivalent(
             new BusinessWmsCountExecutionListRequest(
                 "org-001",
                 "env-dev",
+                "user-admin",
+                ["S1"],
+                "self",
+                "user-admin",
                 "BIN-02",
-                5,
-                15,
-                "Open",
-                "COUNT",
-                "0199aa00-0000-7000-8000-000000000003",
-                OrganizationWideScope: true),
-            wms.LastCountExecutionListRequest);
+                null,
+                Skip: 5,
+                Take: 15,
+                Status: "Open",
+                Keyword: "COUNT",
+                CountExecutionId: "0199aa00-0000-7000-8000-000000000003"),
+            wms.LastCountExecutionListRequest,
+            strict: true);
 
         using var putawayDocument = JsonDocument.Parse(await putaway.Content.ReadAsStringAsync());
         using var pickingDocument = JsonDocument.Parse(await picking.Content.ReadAsStringAsync());
@@ -1018,29 +1352,13 @@ public sealed class BusinessGatewayWmsTests
             ],
             new AuthorizationScopeGrant(
                 "role",
-                "role-self",
-                "self",
-                "user-admin",
-                [BusinessGatewayPermissions.WmsReceiptsRead]),
-            new AuthorizationScopeGrant(
-                "role",
-                "role-team",
-                "team",
-                "TEAM-A",
-                [BusinessGatewayPermissions.WmsReceiptsRead]),
-            new AuthorizationScopeGrant(
-                "role",
-                "role-site",
+                "role-warehouse",
                 "site",
                 "SITE-A",
-                [BusinessGatewayPermissions.WmsReceiptsRead]),
-            new AuthorizationScopeGrant(
-                "role",
-                "role-organization",
-                "organization",
-                "org-001",
-                [BusinessGatewayPermissions.WmsShipmentsRead],
-                OrganizationWide: true));
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsShipmentsRead,
+                ]));
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -1050,90 +1368,84 @@ public sealed class BusinessGatewayWmsTests
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
-        const string forged = "&assignedOperatorUserIds=forged&assignedTeamIds=forged&siteCodes=forged&organizationWideScope=true&actorUserId=forged";
+        const string forged = "&actorPrincipalId=forged&authorizedSiteCodes=forged&assignedOperatorUserIds=forged&assignedPoolCodes=forged";
 
         var inbound = await client.GetAsync(
             "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin" + forged);
 
         Assert.Equal(HttpStatusCode.OK, inbound.StatusCode);
-        Assert.Equal("user-admin", wms.LastInboundRequest!.AssignedOperatorUserIds);
-        Assert.Null(wms.LastInboundRequest.AssignedTeamIds);
-        Assert.Null(wms.LastInboundRequest.SiteCodes);
-        Assert.False(wms.LastInboundRequest.OrganizationWideScope);
+        Assert.Equal("user-admin", wms.LastInboundRequest!.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], wms.LastInboundRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastInboundRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastInboundRequest.ScopeId);
 
         var putaway = await client.GetAsync(
-            "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A" + forged);
+            "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool&scopeId=POOL-A" + forged);
 
         Assert.Equal(HttpStatusCode.OK, putaway.StatusCode);
-        Assert.Null(wms.LastPutawayTaskRequest!.AssignedOperatorUserIds);
-        Assert.Equal("TEAM-A", wms.LastPutawayTaskRequest.AssignedTeamIds);
-        Assert.Null(wms.LastPutawayTaskRequest.SiteCodes);
-        Assert.False(wms.LastPutawayTaskRequest.OrganizationWideScope);
+        Assert.Equal("user-admin", wms.LastPutawayTaskRequest!.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], wms.LastPutawayTaskRequest.AuthorizedSiteCodes);
+        Assert.Equal("work-pool", wms.LastPutawayTaskRequest.ScopeKind);
+        Assert.Equal("POOL-A", wms.LastPutawayTaskRequest.ScopeId);
 
         var count = await client.GetAsync(
             "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A" + forged);
 
         Assert.Equal(HttpStatusCode.OK, count.StatusCode);
-        Assert.Null(wms.LastCountExecutionListRequest!.AssignedOperatorUserIds);
-        Assert.Null(wms.LastCountExecutionListRequest.AssignedTeamIds);
-        Assert.Equal("SITE-A", wms.LastCountExecutionListRequest.SiteCodes);
-        Assert.False(wms.LastCountExecutionListRequest.OrganizationWideScope);
+        Assert.Equal("user-admin", wms.LastCountExecutionListRequest!.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], wms.LastCountExecutionListRequest.AuthorizedSiteCodes);
+        Assert.Equal("site", wms.LastCountExecutionListRequest.ScopeKind);
+        Assert.Equal("SITE-A", wms.LastCountExecutionListRequest.ScopeId);
 
         var outbound = await client.GetAsync(
-            "/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=organization&scopeId=org-001" + forged);
+            "/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev" + forged);
 
         Assert.Equal(HttpStatusCode.OK, outbound.StatusCode);
-        Assert.Null(wms.LastOutboundRequest!.AssignedOperatorUserIds);
-        Assert.Null(wms.LastOutboundRequest.AssignedTeamIds);
-        Assert.Null(wms.LastOutboundRequest.SiteCodes);
-        Assert.True(wms.LastOutboundRequest.OrganizationWideScope);
+        Assert.Equal("user-admin", wms.LastOutboundRequest!.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], wms.LastOutboundRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastOutboundRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastOutboundRequest.ScopeId);
         Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
     [Theory]
-    [InlineData("work-center")]
     [InlineData("partial")]
-    [InlineData("implicit-multiple")]
+    [InlineData("forged-self")]
+    [InlineData("unauthorized-site")]
     [InlineData("permission-mismatch")]
-    [InlineData("no-grant")]
+    [InlineData("no-site-grant")]
     [InlineData("deny-all")]
     public async Task Wms_scoped_lists_fail_closed_before_downstream_when_scope_is_not_usable(string scenario)
     {
         var permission = BusinessGatewayPermissions.WmsReceiptsRead;
         var auth = scenario switch
         {
-            "work-center" => ScopeAuth(
+            "partial" or "forged-self" or "unauthorized-site" => ScopeAuth(
                 [permission],
-                new AuthorizationScopeGrant("role", "role-work-center", "work-center", "WC-A", [permission])),
-            "partial" => OrganizationScopeAuth(permission),
-            "implicit-multiple" => ScopeAuth(
-                [permission],
-                new AuthorizationScopeGrant("role", "role-self", "self", "user-admin", [permission]),
-                new AuthorizationScopeGrant("role", "role-team", "team", "TEAM-A", [permission])),
+                new AuthorizationScopeGrant("role", "role-warehouse", "site", "SITE-A", [permission])),
             "permission-mismatch" => ScopeAuth(
                 [permission],
                 new AuthorizationScopeGrant(
                     "role",
-                    "role-team",
-                    "team",
-                    "TEAM-A",
+                    "role-warehouse",
+                    "site",
+                    "SITE-A",
                     [BusinessGatewayPermissions.WmsShipmentsRead])),
             "deny-all" => new FakeBusinessGatewayAuthorizationClient(
                 _ => true,
                 dataScope: new AuthorizationDataScope([], [], [], DenyAll: true),
                 scopeGrants:
                 [
-                    new AuthorizationScopeGrant("role", "role-team", "team", "TEAM-A", [permission]),
+                    new AuthorizationScopeGrant("role", "role-warehouse", "site", "SITE-A", [permission]),
                 ]),
             _ => ScopeAuth([permission]),
         };
         var requestUri = scenario switch
         {
-            "work-center" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-A",
-            "partial" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=organization",
-            "permission-mismatch" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A",
-            "deny-all" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A",
+            "partial" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool",
+            "forged-self" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=forged-user",
+            "unauthorized-site" => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-B",
             _ => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev",
         };
         var wms = new RecordingWmsClient();
@@ -1162,16 +1474,13 @@ public sealed class BusinessGatewayWmsTests
             ],
             new AuthorizationScopeGrant(
                 "role",
-                "role-team",
-                "team",
-                "TEAM-A",
-                [BusinessGatewayPermissions.WmsReceiptsManage]),
-            new AuthorizationScopeGrant(
-                "role",
-                "role-site",
+                "role-warehouse",
                 "site",
                 "SITE-A",
-                [BusinessGatewayPermissions.WmsShipmentsManage]));
+                [
+                    BusinessGatewayPermissions.WmsReceiptsManage,
+                    BusinessGatewayPermissions.WmsShipmentsManage,
+                ]));
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -1182,31 +1491,31 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var putawayStart = await PostTaskActionAsync(client, "putaway", "putaway-001", "start", "team", "TEAM-A");
+        var putawayStart = await PostTaskActionAsync(client, "putaway", "putaway-001", "start", "work-pool", "POOL-A");
         Assert.Equal(HttpStatusCode.OK, putawayStart.StatusCode);
-        AssertTaskScope(wms.LastStartTaskRequest!, "putaway-001", teamId: "TEAM-A");
-        var putawayProgress = await PostTaskActionAsync(client, "putaway", "putaway-001", "progress", "team", "TEAM-A");
+        AssertTaskScope(wms.LastStartTaskRequest!, "putaway-001", "work-pool", "POOL-A");
+        var putawayProgress = await PostTaskActionAsync(client, "putaway", "putaway-001", "progress", "work-pool", "POOL-A");
         Assert.Equal(HttpStatusCode.OK, putawayProgress.StatusCode);
-        AssertTaskScope(wms.LastProgressTaskRequest!, "putaway-001", teamId: "TEAM-A");
-        var putawayException = await PostTaskActionAsync(client, "putaway", "putaway-001", "exception", "team", "TEAM-A");
+        AssertTaskScope(wms.LastProgressTaskRequest!, "putaway-001", "work-pool", "POOL-A");
+        var putawayException = await PostTaskActionAsync(client, "putaway", "putaway-001", "exception", "work-pool", "POOL-A");
         Assert.Equal(HttpStatusCode.OK, putawayException.StatusCode);
-        AssertTaskScope(wms.LastExceptionTaskRequest!, "putaway-001", teamId: "TEAM-A");
-        var putawayComplete = await PostTaskActionAsync(client, "putaway", "putaway-001", "complete", "team", "TEAM-A");
+        AssertTaskScope(wms.LastExceptionTaskRequest!, "putaway-001", "work-pool", "POOL-A");
+        var putawayComplete = await PostTaskActionAsync(client, "putaway", "putaway-001", "complete", "work-pool", "POOL-A");
         Assert.Equal(HttpStatusCode.OK, putawayComplete.StatusCode);
-        AssertTaskScope(wms.LastCompleteTaskRequest!, "putaway-001", teamId: "TEAM-A");
+        AssertTaskScope(wms.LastCompleteTaskRequest!, "putaway-001", "work-pool", "POOL-A");
 
         var pickingStart = await PostTaskActionAsync(client, "picking", "picking-001", "start", "site", "SITE-A");
         Assert.Equal(HttpStatusCode.OK, pickingStart.StatusCode);
-        AssertTaskScope(wms.LastStartTaskRequest!, "picking-001", siteCode: "SITE-A");
+        AssertTaskScope(wms.LastStartTaskRequest!, "picking-001", "site", "SITE-A");
         var pickingProgress = await PostTaskActionAsync(client, "picking", "picking-001", "progress", "site", "SITE-A");
         Assert.Equal(HttpStatusCode.OK, pickingProgress.StatusCode);
-        AssertTaskScope(wms.LastProgressTaskRequest!, "picking-001", siteCode: "SITE-A");
+        AssertTaskScope(wms.LastProgressTaskRequest!, "picking-001", "site", "SITE-A");
         var pickingException = await PostTaskActionAsync(client, "picking", "picking-001", "exception", "site", "SITE-A");
         Assert.Equal(HttpStatusCode.OK, pickingException.StatusCode);
-        AssertTaskScope(wms.LastExceptionTaskRequest!, "picking-001", siteCode: "SITE-A");
+        AssertTaskScope(wms.LastExceptionTaskRequest!, "picking-001", "site", "SITE-A");
         var pickingComplete = await PostTaskActionAsync(client, "picking", "picking-001", "complete", "site", "SITE-A");
         Assert.Equal(HttpStatusCode.OK, pickingComplete.StatusCode);
-        AssertTaskScope(wms.LastCompleteTaskRequest!, "picking-001", siteCode: "SITE-A");
+        AssertTaskScope(wms.LastCompleteTaskRequest!, "picking-001", "site", "SITE-A");
 
         Assert.Equal(
             [
@@ -1354,30 +1663,103 @@ public sealed class BusinessGatewayWmsTests
     private static void AssertTaskScope(
         object request,
         string expectedTaskId,
-        string? teamId = null,
-        string? siteCode = null)
+        string expectedScopeKind,
+        string expectedScopeId,
+        string siteCode = "SITE-A")
     {
         var values = request switch
         {
             BusinessWmsStartWarehouseTaskActionRequest x =>
-                (x.WarehouseTaskId, x.ActorUserId, x.AuthorizedTeamIds, x.AuthorizedSiteCodes, x.OrganizationWideScope),
+                (x.WarehouseTaskId, x.ActorPrincipalId, x.AuthorizedSiteCodes, x.ScopeKind, x.ScopeId),
             BusinessWmsRecordWarehouseTaskProgressActionRequest x =>
-                (x.WarehouseTaskId, x.ActorUserId, x.AuthorizedTeamIds, x.AuthorizedSiteCodes, x.OrganizationWideScope),
+                (x.WarehouseTaskId, x.ActorPrincipalId, x.AuthorizedSiteCodes, x.ScopeKind, x.ScopeId),
             BusinessWmsReportWarehouseTaskExceptionActionRequest x =>
-                (x.WarehouseTaskId, x.ActorUserId, x.AuthorizedTeamIds, x.AuthorizedSiteCodes, x.OrganizationWideScope),
+                (x.WarehouseTaskId, x.ActorPrincipalId, x.AuthorizedSiteCodes, x.ScopeKind, x.ScopeId),
             BusinessWmsCompleteWarehouseTaskActionRequest x =>
-                (x.WarehouseTaskId, x.ActorUserId, x.AuthorizedTeamIds, x.AuthorizedSiteCodes, x.OrganizationWideScope),
+                (x.WarehouseTaskId, x.ActorPrincipalId, x.AuthorizedSiteCodes, x.ScopeKind, x.ScopeId),
             _ => throw new InvalidOperationException($"Unexpected task request {request.GetType().Name}."),
         };
         Assert.Equal(expectedTaskId, values.WarehouseTaskId);
-        Assert.Equal("user-admin", values.ActorUserId);
-        Assert.Equal(
-            teamId is null ? null : [teamId],
-            values.AuthorizedTeamIds);
-        Assert.Equal(
-            siteCode is null ? null : [siteCode],
-            values.AuthorizedSiteCodes);
-        Assert.False(values.OrganizationWideScope);
+        Assert.Equal("user-admin", values.ActorPrincipalId);
+        Assert.Equal([siteCode], values.AuthorizedSiteCodes);
+        Assert.Equal(expectedScopeKind, values.ScopeKind);
+        Assert.Equal(expectedScopeId, values.ScopeId);
+    }
+
+    private static void AssertTrustedAssignment(
+        object request,
+        string expectedResourceId,
+        string expectedIdempotencyKey)
+    {
+        var values = request switch
+        {
+            BusinessWmsAssignInboundOrderRequest x =>
+                (
+                    x.InboundOrderId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.AssignerPrincipalId,
+                    x.AuthorizedSiteCodes,
+                    x.PoolCode,
+                    x.OperatorPrincipalId,
+                    x.IdempotencyKey,
+                    x.ExpectedVersion),
+            BusinessWmsAssignPutawayTaskRequest x =>
+                (
+                    x.WarehouseTaskId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.AssignerPrincipalId,
+                    x.AuthorizedSiteCodes,
+                    x.PoolCode,
+                    x.OperatorPrincipalId,
+                    x.IdempotencyKey,
+                    x.ExpectedVersion),
+            BusinessWmsAssignOutboundOrderRequest x =>
+                (
+                    x.OutboundOrderId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.AssignerPrincipalId,
+                    x.AuthorizedSiteCodes,
+                    x.PoolCode,
+                    x.OperatorPrincipalId,
+                    x.IdempotencyKey,
+                    x.ExpectedVersion),
+            BusinessWmsAssignPickingTaskRequest x =>
+                (
+                    x.WarehouseTaskId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.AssignerPrincipalId,
+                    x.AuthorizedSiteCodes,
+                    x.PoolCode,
+                    x.OperatorPrincipalId,
+                    x.IdempotencyKey,
+                    x.ExpectedVersion),
+            BusinessWmsAssignCountExecutionRequest x =>
+                (
+                    x.CountExecutionId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.AssignerPrincipalId,
+                    x.AuthorizedSiteCodes,
+                    x.PoolCode,
+                    x.OperatorPrincipalId,
+                    x.IdempotencyKey,
+                    x.ExpectedVersion),
+            _ => throw new InvalidOperationException(
+                $"Unexpected assignment request {request.GetType().Name}."),
+        };
+        Assert.Equal(expectedResourceId, values.Item1);
+        Assert.Equal("org-001", values.OrganizationId);
+        Assert.Equal("env-dev", values.EnvironmentId);
+        Assert.Equal("user-admin", values.AssignerPrincipalId);
+        Assert.Equal(["SITE-A"], values.AuthorizedSiteCodes);
+        Assert.Equal("POOL-WAREHOUSE", values.PoolCode);
+        Assert.Equal("user-emp-049", values.OperatorPrincipalId);
+        Assert.Equal(expectedIdempotencyKey, values.IdempotencyKey);
+        Assert.Equal(3, values.ExpectedVersion);
     }
 
     private static FakeBusinessGatewayAuthorizationClient ScopeAuth(
@@ -1396,10 +1778,9 @@ public sealed class BusinessGatewayWmsTests
             new AuthorizationScopeGrant(
                 "role",
                 "role-wms",
-                "organization",
-                "org-001",
-                permissionCodes,
-                OrganizationWide: true));
+                "site",
+                "S1",
+                permissionCodes));
 
     private static BusinessMasterDataPrincipalWorkContextResponse WmsPrincipalWorkContext() =>
         new(
@@ -1488,8 +1869,17 @@ public sealed class BusinessGatewayWmsTests
     private static BusinessConsoleCompleteWmsCountExecutionRequest ValidCompleteCountRequest() =>
         new("count-execution-001", "org-001", "env-dev", 1, "complete-count-001");
 
-    private static BusinessConsoleDispatchWmsWcsTaskRequest ValidDispatchWcsRequest() =>
-        new("warehouse-task-001", "org-001", "env-dev", "agv", "EXT-001", "{}");
+    private static BusinessWmsDispatchWcsTaskRequest ValidDispatchWcsRequest() =>
+        new(
+            "warehouse-task-001",
+            "org-001",
+            "env-dev",
+            "user-admin",
+            ["SITE-A"],
+            3,
+            "agv",
+            "EXT-001",
+            "{}");
 
     private static BusinessConsoleFailWmsWcsTaskRequest ValidFailWcsRequest() =>
         new("EXT-001", "org-001", "env-dev", "PLC_TIMEOUT", "PLC did not acknowledge.");
@@ -1499,7 +1889,7 @@ public sealed class BusinessGatewayWmsTests
 
     private static BusinessWmsStartWarehouseTaskActionRequest ValidStartTaskAction(
         string warehouseTaskId,
-        string? teamId = null,
+        string? poolCode = null,
         string? siteCode = null) =>
         new(
             warehouseTaskId,
@@ -1508,12 +1898,13 @@ public sealed class BusinessGatewayWmsTests
             "user-admin",
             $"idem-{warehouseTaskId}-start",
             3,
-            teamId is null ? null : [teamId],
-            siteCode is null ? null : [siteCode]);
+            [siteCode ?? "SITE-A"],
+            poolCode is null ? siteCode is null ? "self" : "site" : "work-pool",
+            poolCode ?? siteCode ?? "user-admin");
 
     private static BusinessWmsRecordWarehouseTaskProgressActionRequest ValidProgressTaskAction(
         string warehouseTaskId,
-        string? teamId = null,
+        string? poolCode = null,
         string? siteCode = null) =>
         new(
             warehouseTaskId,
@@ -1523,12 +1914,13 @@ public sealed class BusinessGatewayWmsTests
             $"idem-{warehouseTaskId}-progress",
             3,
             1m,
-            teamId is null ? null : [teamId],
-            siteCode is null ? null : [siteCode]);
+            [siteCode ?? "SITE-A"],
+            poolCode is null ? siteCode is null ? "self" : "site" : "work-pool",
+            poolCode ?? siteCode ?? "user-admin");
 
     private static BusinessWmsReportWarehouseTaskExceptionActionRequest ValidExceptionTaskAction(
         string warehouseTaskId,
-        string? teamId = null,
+        string? poolCode = null,
         string? siteCode = null) =>
         new(
             warehouseTaskId,
@@ -1539,12 +1931,13 @@ public sealed class BusinessGatewayWmsTests
             3,
             "LOCATION_BLOCKED",
             "Location is blocked.",
-            teamId is null ? null : [teamId],
-            siteCode is null ? null : [siteCode]);
+            [siteCode ?? "SITE-A"],
+            poolCode is null ? siteCode is null ? "self" : "site" : "work-pool",
+            poolCode ?? siteCode ?? "user-admin");
 
     private static BusinessWmsCompleteWarehouseTaskActionRequest ValidCompleteTaskAction(
         string warehouseTaskId,
-        string? teamId = null,
+        string? poolCode = null,
         string? siteCode = null) =>
         new(
             warehouseTaskId,
@@ -1554,9 +1947,10 @@ public sealed class BusinessGatewayWmsTests
             $"idem-{warehouseTaskId}-complete",
             3,
             1m,
-            "Verified difference.",
-            teamId is null ? null : [teamId],
-            siteCode is null ? null : [siteCode]);
+            [siteCode ?? "SITE-A"],
+            poolCode is null ? siteCode is null ? "self" : "site" : "work-pool",
+            poolCode ?? siteCode ?? "user-admin",
+            "Verified difference.");
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object body) =>
         new(statusCode)
@@ -1584,6 +1978,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public List<string> Calls { get; } = [];
 
     public string? LastInternalToken { get; private set; }
+
+    public BusinessWmsWorkScopeCatalogRequest? LastWorkScopeCatalogRequest { get; private set; }
+
+    public object? LastAssignmentRequest { get; private set; }
 
     public BusinessWmsScopedListRequest? LastInboundRequest { get; private set; }
 
@@ -1621,6 +2019,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessServiceProxyException? CompleteInboundFailure { get; init; }
 
+    public BusinessServiceProxyException? AssignmentFailure { get; init; }
+
     public BusinessConsoleCreateWmsOutboundOrderRequest? LastCreateOutboundRequest { get; private set; }
 
     public BusinessConsoleCreateWmsPickingTaskRequest? LastCreatePickingRequest { get; private set; }
@@ -1633,11 +2033,29 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessConsoleCompleteWmsCountExecutionRequest? LastCompleteCountRequest { get; private set; }
 
-    public BusinessConsoleDispatchWmsWcsTaskRequest? LastDispatchWcsRequest { get; private set; }
+    public BusinessWmsDispatchWcsTaskRequest? LastDispatchWcsRequest { get; private set; }
 
     public BusinessConsoleFailWmsWcsTaskRequest? LastFailWcsRequest { get; private set; }
 
     public BusinessConsoleCompleteWmsWcsTaskRequest? LastCompleteWcsRequest { get; private set; }
+
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        RecordWorkScopes(internalBearerToken, request, "receipt-scopes");
+
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetShipmentWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        RecordWorkScopes(internalBearerToken, request, "shipment-scopes");
+
+    public Task<BusinessConsoleWmsWorkScopeCatalog> GetCountWorkScopesAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        RecordWorkScopes(internalBearerToken, request, "count-scopes");
 
     public Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
         string internalBearerToken,
@@ -1650,6 +2068,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         return Task.FromResult(new BusinessConsoleCreateWmsInboundOrderResponse("inbound-order-001"));
     }
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignInboundOrderAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsAssignInboundOrderRequest request,
+        CancellationToken cancellationToken) =>
+        RecordAssignment(internalBearerToken, request, "inbound-order", inboundOrderId);
+
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
         string internalBearerToken,
         string inboundOrderId,
@@ -1661,6 +2086,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         Calls.Add("create-putaway");
         return Task.FromResult(new BusinessConsoleCreateWmsWarehouseTaskResponse("warehouse-task-001"));
     }
+
+    public Task<BusinessConsoleWmsAssignmentResult> AssignPutawayTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPutawayTaskRequest request,
+        CancellationToken cancellationToken) =>
+        RecordAssignment(internalBearerToken, request, "putaway-task", warehouseTaskId);
 
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
@@ -1690,6 +2122,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         return Task.FromResult(new BusinessConsoleCreateWmsOutboundOrderResponse("outbound-order-001"));
     }
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignOutboundOrderAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessWmsAssignOutboundOrderRequest request,
+        CancellationToken cancellationToken) =>
+        RecordAssignment(internalBearerToken, request, "outbound-order", outboundOrderId);
+
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
         string internalBearerToken,
         string outboundOrderId,
@@ -1701,6 +2140,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         Calls.Add("create-picking");
         return Task.FromResult(new BusinessConsoleCreateWmsWarehouseTaskResponse("warehouse-task-002"));
     }
+
+    public Task<BusinessConsoleWmsAssignmentResult> AssignPickingTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessWmsAssignPickingTaskRequest request,
+        CancellationToken cancellationToken) =>
+        RecordAssignment(internalBearerToken, request, "picking-task", warehouseTaskId);
 
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteOutboundOrderAsync(
         string internalBearerToken,
@@ -1737,6 +2183,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         return Task.FromResult(new BusinessConsoleCreateWmsCountExecutionResponse("count-execution-001"));
     }
 
+    public Task<BusinessConsoleWmsAssignmentResult> AssignCountExecutionAsync(
+        string internalBearerToken,
+        string countExecutionId,
+        BusinessWmsAssignCountExecutionRequest request,
+        CancellationToken cancellationToken) =>
+        RecordAssignment(internalBearerToken, request, "count-execution", countExecutionId);
+
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
@@ -1752,7 +2205,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
         string internalBearerToken,
         string warehouseTaskId,
-        BusinessConsoleDispatchWmsWcsTaskRequest request,
+        BusinessWmsDispatchWcsTaskRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -1802,7 +2255,11 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 "Created",
                 DateTime.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
                 "pending",
-                false),
+                false,
+                "S1",
+                "user-admin",
+                "POOL-WAREHOUSE",
+                3),
         ],
         47,
         null,
@@ -1846,7 +2303,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                         "Stock movement would make on-hand quantity negative."),
                 ],
                 DateTime.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
-                null),
+                null,
+                "user-admin",
+                "POOL-WAREHOUSE",
+                3),
         ],
         31));
     }
@@ -2097,6 +2557,77 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 DateTime.Parse("2026-06-01T10:20:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal)),
         ],
         37));
+    }
+
+    private Task<BusinessConsoleWmsWorkScopeCatalog> RecordWorkScopes(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        string call)
+    {
+        LastInternalToken = internalBearerToken;
+        LastWorkScopeCatalogRequest = request;
+        Calls.Add(call);
+        return Task.FromResult(new BusinessConsoleWmsWorkScopeCatalog(
+            request.ActorPrincipalId,
+            [
+                new(
+                    "self",
+                    request.ActorPrincipalId,
+                    "我的任务",
+                    null,
+                    null),
+                new(
+                    "work-pool",
+                    "POOL-WAREHOUSE",
+                    "仓储作业池",
+                    "SITE-A",
+                    "POOL-WAREHOUSE"),
+                new(
+                    "site",
+                    "SITE-A",
+                    "SITE-A",
+                    "SITE-A",
+                    null),
+            ]));
+    }
+
+    private Task<BusinessConsoleWmsAssignmentResult> RecordAssignment(
+        string internalBearerToken,
+        object request,
+        string resourceCategory,
+        string resourceId)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAssignmentRequest = request;
+        Calls.Add($"assign-{resourceCategory}");
+        if (AssignmentFailure is not null)
+        {
+            throw AssignmentFailure;
+        }
+
+        var values = request switch
+        {
+            BusinessWmsAssignInboundOrderRequest x =>
+                (x.PoolCode, x.OperatorPrincipalId, x.AssignerPrincipalId, x.ExpectedVersion),
+            BusinessWmsAssignPutawayTaskRequest x =>
+                (x.PoolCode, x.OperatorPrincipalId, x.AssignerPrincipalId, x.ExpectedVersion),
+            BusinessWmsAssignOutboundOrderRequest x =>
+                (x.PoolCode, x.OperatorPrincipalId, x.AssignerPrincipalId, x.ExpectedVersion),
+            BusinessWmsAssignPickingTaskRequest x =>
+                (x.PoolCode, x.OperatorPrincipalId, x.AssignerPrincipalId, x.ExpectedVersion),
+            BusinessWmsAssignCountExecutionRequest x =>
+                (x.PoolCode, x.OperatorPrincipalId, x.AssignerPrincipalId, x.ExpectedVersion),
+            _ => throw new InvalidOperationException(
+                $"Unexpected assignment request {request.GetType().Name}."),
+        };
+        return Task.FromResult(new BusinessConsoleWmsAssignmentResult(
+            resourceCategory,
+            resourceId,
+            "SITE-A",
+            values.PoolCode,
+            values.OperatorPrincipalId,
+            values.AssignerPrincipalId,
+            values.ExpectedVersion + 1));
     }
 
     private Task<BusinessConsoleWmsWarehouseTaskActionResult> RecordStart(

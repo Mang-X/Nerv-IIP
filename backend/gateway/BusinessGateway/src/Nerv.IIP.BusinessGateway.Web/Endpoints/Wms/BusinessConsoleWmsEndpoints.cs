@@ -29,6 +29,408 @@ public sealed class CreateBusinessConsoleWmsInboundOrderEndpoint(
         wms.CreateInboundOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+public abstract class BusinessConsoleWmsWorkScopeCatalogEndpoint
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleWmsWorkScopeCatalogRequest,
+        BusinessConsoleWmsWorkScopeCatalog>
+{
+    private readonly IBusinessWmsClient _wms;
+    private readonly IInternalServiceTokenProvider _tokenProvider;
+    private readonly string _permissionCode;
+
+    protected BusinessConsoleWmsWorkScopeCatalogEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        IBusinessWmsClient wms,
+        IInternalServiceTokenProvider tokenProvider,
+        string permissionCode)
+        : base(auth, permissionCode)
+    {
+        _wms = wms;
+        _tokenProvider = tokenProvider;
+        _permissionCode = permissionCode;
+    }
+
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleWmsWorkScopeCatalogRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsWorkScopeCatalogRequest request) =>
+        request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsWorkScopeCatalog> ForwardAsync(
+        BusinessConsoleWmsWorkScopeCatalogRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            _permissionCode);
+        return GetCatalogAsync(
+            _wms,
+            _tokenProvider.BearerToken,
+            new BusinessWmsWorkScopeCatalogRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes),
+            cancellationToken);
+    }
+
+    protected abstract Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/work-scopes/receipts")]
+[BusinessGatewayOperationId("getBusinessConsoleWmsReceiptWorkScopes")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+public sealed class GetBusinessConsoleWmsReceiptWorkScopesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsWorkScopeCatalogEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        wmsClient.GetReceiptWorkScopesAsync(
+            internalBearerToken,
+            request,
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/work-scopes/shipments")]
+[BusinessGatewayOperationId("getBusinessConsoleWmsShipmentWorkScopes")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+public sealed class GetBusinessConsoleWmsShipmentWorkScopesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsWorkScopeCatalogEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsShipmentsRead)
+{
+    protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        wmsClient.GetShipmentWorkScopesAsync(
+            internalBearerToken,
+            request,
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/work-scopes/counts")]
+[BusinessGatewayOperationId("getBusinessConsoleWmsCountWorkScopes")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+public sealed class GetBusinessConsoleWmsCountWorkScopesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsWorkScopeCatalogEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        wmsClient.GetCountWorkScopesAsync(
+            internalBearerToken,
+            request,
+            cancellationToken);
+}
+
+public abstract class BusinessConsoleWmsAssignmentEndpoint
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleAssignWmsResourceRequest,
+        BusinessConsoleWmsAssignmentResult>
+{
+    private readonly IBusinessWmsClient _wms;
+    private readonly IInternalServiceTokenProvider _tokenProvider;
+    private readonly string _permissionCode;
+    private readonly string _routeParameterName;
+
+    protected BusinessConsoleWmsAssignmentEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        IBusinessWmsClient wms,
+        IInternalServiceTokenProvider tokenProvider,
+        string permissionCode,
+        string routeParameterName)
+        : base(auth, permissionCode)
+    {
+        _wms = wms;
+        _tokenProvider = tokenProvider;
+        _permissionCode = permissionCode;
+        _routeParameterName = routeParameterName;
+    }
+
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleAssignWmsResourceRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleAssignWmsResourceRequest request) =>
+        request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsAssignmentResult> ForwardAsync(
+        BusinessConsoleAssignWmsResourceRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var resourceId = Route<string>(_routeParameterName);
+        if (string.IsNullOrWhiteSpace(resourceId))
+        {
+            throw new BusinessServiceProxyException(
+                System.Net.HttpStatusCode.UnprocessableEntity,
+                "resource-id-required");
+        }
+
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            _permissionCode);
+        return AssignAsync(
+            _wms,
+            _tokenProvider.BearerToken,
+            resourceId,
+            request,
+            trusted,
+            cancellationToken);
+    }
+
+    protected abstract Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleWmsInboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleWmsInboundOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsAssignmentEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsReceiptsManage,
+        "inboundOrderId")
+{
+    protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken) =>
+        wmsClient.AssignInboundOrderAsync(
+            internalBearerToken,
+            resourceId,
+            new BusinessWmsAssignInboundOrderRequest(
+                resourceId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.PoolCode,
+                request.OperatorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleWmsPutawayTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleWmsPutawayTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsAssignmentEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsReceiptsManage,
+        "warehouseTaskId")
+{
+    protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken) =>
+        wmsClient.AssignPutawayTaskAsync(
+            internalBearerToken,
+            resourceId,
+            new BusinessWmsAssignPutawayTaskRequest(
+                resourceId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.PoolCode,
+                request.OperatorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleWmsOutboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleWmsOutboundOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsAssignmentEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsShipmentsManage,
+        "outboundOrderId")
+{
+    protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken) =>
+        wmsClient.AssignOutboundOrderAsync(
+            internalBearerToken,
+            resourceId,
+            new BusinessWmsAssignOutboundOrderRequest(
+                resourceId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.PoolCode,
+                request.OperatorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleWmsPickingTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleWmsPickingTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsAssignmentEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsShipmentsManage,
+        "warehouseTaskId")
+{
+    protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken) =>
+        wmsClient.AssignPickingTaskAsync(
+            internalBearerToken,
+            resourceId,
+            new BusinessWmsAssignPickingTaskRequest(
+                resourceId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.PoolCode,
+                request.OperatorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/count-executions/{countExecutionId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleWmsCountExecution")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleWmsCountExecutionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleWmsAssignmentEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        BusinessGatewayPermissions.WmsReceiptsManage,
+        "countExecutionId")
+{
+    protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
+        IBusinessWmsClient wmsClient,
+        string internalBearerToken,
+        string resourceId,
+        BusinessConsoleAssignWmsResourceRequest request,
+        WmsTrustedRequestContext trusted,
+        CancellationToken cancellationToken) =>
+        wmsClient.AssignCountExecutionAsync(
+            internalBearerToken,
+            resourceId,
+            new BusinessWmsAssignCountExecutionRequest(
+                resourceId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.PoolCode,
+                request.OperatorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+}
+
 [Tags("Business Console WMS")]
 [HttpGet("/api/business-console/v1/wms/inbound-orders")]
 [BusinessGatewayOperationId("listBusinessConsoleWmsInboundOrders")]
@@ -38,21 +440,18 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
     private readonly IBusinessGatewayAuthorizationClient _auth;
     private readonly IBusinessWmsClient _wms;
     private readonly IBusinessInventoryClient _inventory;
-    private readonly PrincipalWorkScopeResolver _workScopeResolver;
     private readonly IInternalServiceTokenProvider _tokenProvider;
 
     public ListBusinessConsoleWmsInboundOrdersEndpoint(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessWmsClient wms,
         IBusinessInventoryClient inventory,
-        PrincipalWorkScopeResolver workScopeResolver,
         IInternalServiceTokenProvider tokenProvider)
         : base(auth, BusinessGatewayPermissions.WmsReceiptsRead)
     {
         _auth = auth;
         _wms = wms;
         _inventory = inventory;
-        _workScopeResolver = workScopeResolver;
         _tokenProvider = tokenProvider;
     }
 
@@ -70,28 +469,26 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            _workScopeResolver,
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
             AuthorizationResult,
-            request.OrganizationId,
-            request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsRead,
-            request.ScopeKind,
-            request.ScopeId,
-            cancellationToken);
+            BusinessGatewayPermissions.WmsReceiptsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         var response = await _wms.ListInboundOrdersAsync(
             _tokenProvider.BearerToken,
             new BusinessWmsScopedListRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.LocationCode,
+                request.LotNo,
+                request.SiteCode,
                 request.Skip,
                 request.Take,
                 request.Status,
-                request.Keyword,
-                scope.AssignedOperatorUserIds,
-                scope.AssignedTeamIds,
-                scope.SiteCodes,
-                scope.OrganizationWideScope),
+                request.Keyword),
             request.InboundOrderId,
             cancellationToken);
         var inventoryContext = await TryGetInventoryContextAsync(request, bearerToken, cancellationToken);
@@ -147,7 +544,7 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
             return ForbiddenInventoryContext(request, authorization.DenialReason ?? "forbidden");
         }
 
-        if (!await IsInventorySiteAuthorizedAsync(authorization, request, cancellationToken))
+        if (!IsInventorySiteAuthorized(authorization, request))
         {
             return ForbiddenInventoryContext(request, "work-scope-not-authorized");
         }
@@ -232,37 +629,21 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
         }
     }
 
-    private async Task<bool> IsInventorySiteAuthorizedAsync(
+    private static bool IsInventorySiteAuthorized(
         BusinessGatewayAuthorizationResult authorization,
-        BusinessConsoleWmsInboundOrderListRequest request,
-        CancellationToken cancellationToken)
+        BusinessConsoleWmsInboundOrderListRequest request)
     {
-        foreach (var candidate in new[]
-                 {
-                     (Kind: "site", Id: request.SiteCode!),
-                     (Kind: "organization", Id: request.OrganizationId),
-                 })
+        try
         {
-            try
-            {
-                await _workScopeResolver.ResolveAsync(
-                    authorization,
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    BusinessGatewayPermissions.InventoryLedgerRead,
-                    candidate.Kind,
-                    candidate.Id,
-                    cancellationToken);
-                return true;
-            }
-            catch (BusinessServiceProxyException exception)
-                when (exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
-            {
-                // Try the organization-wide authorization path before failing closed.
-            }
+            var trusted = WmsTrustedRequestContext.FromAuthorization(
+                authorization,
+                BusinessGatewayPermissions.InventoryLedgerRead);
+            return trusted.AuthorizedSiteCodes.Contains(request.SiteCode!, StringComparer.Ordinal);
         }
-
-        return false;
+        catch (BusinessServiceProxyException)
+        {
+            return false;
+        }
     }
 
     private static BusinessConsoleWmsInventoryContext ForbiddenInventoryContext(
@@ -323,7 +704,6 @@ public sealed class CreateBusinessConsoleWmsPutawayTaskEndpoint(
 public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
         auth,
@@ -343,18 +723,26 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver,
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
             AuthorizationResult,
-            request.OrganizationId,
-            request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsRead,
-            request.ScopeKind,
-            request.ScopeId,
-            cancellationToken);
+            BusinessGatewayPermissions.WmsReceiptsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListPutawayTasksAsync(
             tokenProvider.BearerToken,
-            BusinessConsoleWmsScopeProjection.ToTaskListRequest(request, scope),
+            new BusinessWmsWarehouseTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.LocationCode,
+                request.LotNo,
+                SiteCode: null,
+                request.Skip,
+                request.Take,
+                request.Status,
+                request.Keyword),
             cancellationToken);
     }
 }
@@ -362,11 +750,12 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/start")]
 [BusinessGatewayOperationId("startBusinessConsoleWmsPutawayTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -383,13 +772,23 @@ public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.StartPutawayTaskAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToStartRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsStartWarehouseTaskActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -397,11 +796,12 @@ public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/progress")]
 [BusinessGatewayOperationId("recordBusinessConsoleWmsPutawayTaskProgress")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -418,13 +818,24 @@ public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.RecordPutawayTaskProgressAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToProgressRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsRecordWarehouseTaskProgressActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExecutedQuantity,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -432,11 +843,12 @@ public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/exception")]
 [BusinessGatewayOperationId("reportBusinessConsoleWmsPutawayTaskException")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -453,13 +865,25 @@ public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ReportPutawayTaskExceptionAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToExceptionRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsReportWarehouseTaskExceptionActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExceptionCode,
+                request.Reason,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -467,11 +891,12 @@ public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsPutawayTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -488,13 +913,25 @@ public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.CompletePutawayTaskAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToCompleteRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsCompleteWarehouseTaskActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExecutedQuantity,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.DifferenceReason),
             cancellationToken);
     }
 }
@@ -557,7 +994,6 @@ public sealed class CreateBusinessConsoleWmsOutboundOrderEndpoint(
 public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsOutboundOrderListRequest, BusinessConsoleWmsOutboundOrderListResponse>(
         auth,
@@ -577,28 +1013,26 @@ public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver,
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
             AuthorizationResult,
-            request.OrganizationId,
-            request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsRead,
-            request.ScopeKind,
-            request.ScopeId,
-            cancellationToken);
+            BusinessGatewayPermissions.WmsShipmentsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListOutboundOrdersAsync(
             tokenProvider.BearerToken,
             new BusinessWmsScopedListRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                LocationCode: null,
+                LotNo: null,
+                SiteCode: null,
                 request.Skip,
                 request.Take,
                 request.Status,
-                request.Keyword,
-                scope.AssignedOperatorUserIds,
-                scope.AssignedTeamIds,
-                scope.SiteCodes,
-                scope.OrganizationWideScope),
+                request.Keyword),
             request.OutboundOrderId,
             cancellationToken);
     }
@@ -639,7 +1073,6 @@ public sealed class CreateBusinessConsoleWmsPickingTaskEndpoint(
 public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
         auth,
@@ -659,18 +1092,26 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver,
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
             AuthorizationResult,
-            request.OrganizationId,
-            request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsRead,
-            request.ScopeKind,
-            request.ScopeId,
-            cancellationToken);
+            BusinessGatewayPermissions.WmsShipmentsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListPickingTasksAsync(
             tokenProvider.BearerToken,
-            BusinessConsoleWmsScopeProjection.ToTaskListRequest(request, scope),
+            new BusinessWmsWarehouseTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.LocationCode,
+                request.LotNo,
+                SiteCode: null,
+                request.Skip,
+                request.Take,
+                request.Status,
+                request.Keyword),
             cancellationToken);
     }
 }
@@ -678,11 +1119,12 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/start")]
 [BusinessGatewayOperationId("startBusinessConsoleWmsPickingTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -699,13 +1141,23 @@ public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsShipmentsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.StartPickingTaskAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToStartRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsStartWarehouseTaskActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -713,11 +1165,12 @@ public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/progress")]
 [BusinessGatewayOperationId("recordBusinessConsoleWmsPickingTaskProgress")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -734,13 +1187,24 @@ public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsShipmentsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.RecordPickingTaskProgressAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToProgressRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsRecordWarehouseTaskProgressActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExecutedQuantity,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -748,11 +1212,12 @@ public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/exception")]
 [BusinessGatewayOperationId("reportBusinessConsoleWmsPickingTaskException")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -769,13 +1234,25 @@ public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsShipmentsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ReportPickingTaskExceptionAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToExceptionRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsReportWarehouseTaskExceptionActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExceptionCode,
+                request.Reason,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId),
             cancellationToken);
     }
 }
@@ -783,11 +1260,12 @@ public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsPickingTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
@@ -804,13 +1282,25 @@ public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver, AuthorizationResult, request.OrganizationId, request.EnvironmentId,
-            BusinessGatewayPermissions.WmsShipmentsManage, request.ScopeKind, request.ScopeId, cancellationToken);
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsShipmentsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.CompletePickingTaskAsync(
             tokenProvider.BearerToken,
             taskId,
-            scope.ToCompleteRequest(request with { WarehouseTaskId = taskId }),
+            new BusinessWmsCompleteWarehouseTaskActionRequest(
+                taskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.ExecutedQuantity,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.DifferenceReason),
             cancellationToken);
     }
 }
@@ -902,7 +1392,6 @@ public sealed class CreateBusinessConsoleWmsCountExecutionEndpoint(
 public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsCountExecutionListRequest, BusinessConsoleWmsCountExecutionListResponse>(
         auth,
@@ -922,30 +1411,26 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await BusinessConsoleWmsScopeProjection.ResolveAsync(
-            workScopeResolver,
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
             AuthorizationResult,
-            request.OrganizationId,
-            request.EnvironmentId,
-            BusinessGatewayPermissions.WmsReceiptsRead,
-            request.ScopeKind,
-            request.ScopeId,
-            cancellationToken);
+            BusinessGatewayPermissions.WmsReceiptsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListCountExecutionsAsync(
             tokenProvider.BearerToken,
             new BusinessWmsCountExecutionListRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
                 request.LocationCode,
+                SiteCode: null,
                 request.Skip,
                 request.Take,
                 request.Status,
                 request.Keyword,
-                request.CountExecutionId,
-                scope.AssignedOperatorUserIds,
-                scope.AssignedTeamIds,
-                scope.SiteCodes,
-                scope.OrganizationWideScope),
+                request.CountExecutionId),
             cancellationToken);
     }
 }
@@ -983,6 +1468,9 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch")]
 [BusinessGatewayOperationId("dispatchBusinessConsoleWmsWcsTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class DispatchBusinessConsoleWmsWcsTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -991,6 +1479,11 @@ public sealed class DispatchBusinessConsoleWmsWcsTaskEndpoint(
         auth,
         BusinessGatewayPermissions.WmsAutomationManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleDispatchWmsWcsTaskRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleDispatchWmsWcsTaskRequest request) => request.EnvironmentId;
@@ -1001,10 +1494,23 @@ public sealed class DispatchBusinessConsoleWmsWcsTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var warehouseTaskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsAutomationManage);
         return wms.DispatchWcsTaskAsync(
             tokenProvider.BearerToken,
             warehouseTaskId,
-            request with { WarehouseTaskId = warehouseTaskId },
+            new BusinessWmsDispatchWcsTaskRequest(
+                warehouseTaskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                request.ExpectedVersion,
+                request.AdapterType,
+                request.ExternalTaskId,
+                request.PayloadJson,
+                request.DeviceId),
             cancellationToken);
     }
 }
@@ -1133,141 +1639,6 @@ public sealed class ListBusinessConsoleWmsSupplierReturnRequestsEndpoint(
         wms.ListSupplierReturnRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
-internal sealed record BusinessConsoleWmsScopeProjection(
-    string? AssignedOperatorUserIds,
-    string? AssignedTeamIds,
-    string? SiteCodes,
-    bool OrganizationWideScope,
-    string ActorUserId)
-{
-    public static async Task<BusinessConsoleWmsScopeProjection> ResolveAsync(
-        PrincipalWorkScopeResolver resolver,
-        BusinessGatewayAuthorizationResult? authorization,
-        string organizationId,
-        string environmentId,
-        string permissionCode,
-        string? scopeKind,
-        string? scopeId,
-        CancellationToken cancellationToken)
-    {
-        var scope = await resolver.ResolveAsync(
-            authorization,
-            organizationId,
-            environmentId,
-            permissionCode,
-            scopeKind,
-            scopeId,
-            cancellationToken);
-        if (scope.Kind is "work-center" or "workshop")
-        {
-            throw new BusinessServiceProxyException(
-                System.Net.HttpStatusCode.Forbidden,
-                "wms-work-scope-not-supported");
-        }
-
-        var actorUserId = authorization?.PrincipalId;
-        if (string.IsNullOrWhiteSpace(actorUserId))
-        {
-            throw new BusinessServiceProxyException(
-                System.Net.HttpStatusCode.Forbidden,
-                "wms-principal-unresolved");
-        }
-
-        return new BusinessConsoleWmsScopeProjection(
-            Join(scope.AssignedUserIds),
-            Join(scope.TeamIds),
-            Join(scope.SiteCodes),
-            string.Equals(scope.Kind, "organization", StringComparison.Ordinal),
-            actorUserId);
-    }
-
-    public static BusinessWmsWarehouseTaskListRequest ToTaskListRequest(
-        BusinessConsoleWmsWarehouseTaskListRequest request,
-        BusinessConsoleWmsScopeProjection scope) =>
-        new(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.LocationCode,
-            request.LotNo,
-            request.Skip,
-            request.Take,
-            request.Status,
-            request.Keyword,
-            scope.AssignedOperatorUserIds,
-            scope.AssignedTeamIds,
-            scope.SiteCodes,
-            scope.OrganizationWideScope);
-
-    public IReadOnlyCollection<string>? AuthorizedTeamIds => Split(AssignedTeamIds);
-
-    public IReadOnlyCollection<string>? AuthorizedSiteCodes => Split(SiteCodes);
-
-    public BusinessWmsStartWarehouseTaskActionRequest ToStartRequest(
-        BusinessConsoleStartWmsWarehouseTaskRequest request) =>
-        new(
-            request.WarehouseTaskId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            ActorUserId,
-            request.IdempotencyKey,
-            request.ExpectedVersion,
-            AuthorizedTeamIds,
-            AuthorizedSiteCodes,
-            OrganizationWideScope);
-
-    public BusinessWmsRecordWarehouseTaskProgressActionRequest ToProgressRequest(
-        BusinessConsoleRecordWmsWarehouseTaskProgressRequest request) =>
-        new(
-            request.WarehouseTaskId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            ActorUserId,
-            request.IdempotencyKey,
-            request.ExpectedVersion,
-            request.ExecutedQuantity,
-            AuthorizedTeamIds,
-            AuthorizedSiteCodes,
-            OrganizationWideScope);
-
-    public BusinessWmsReportWarehouseTaskExceptionActionRequest ToExceptionRequest(
-        BusinessConsoleReportWmsWarehouseTaskExceptionRequest request) =>
-        new(
-            request.WarehouseTaskId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            ActorUserId,
-            request.IdempotencyKey,
-            request.ExpectedVersion,
-            request.ExceptionCode,
-            request.Reason,
-            AuthorizedTeamIds,
-            AuthorizedSiteCodes,
-            OrganizationWideScope);
-
-    public BusinessWmsCompleteWarehouseTaskActionRequest ToCompleteRequest(
-        BusinessConsoleCompleteWmsWarehouseTaskRequest request) =>
-        new(
-            request.WarehouseTaskId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            ActorUserId,
-            request.IdempotencyKey,
-            request.ExpectedVersion,
-            request.ExecutedQuantity,
-            request.DifferenceReason,
-            AuthorizedTeamIds,
-            AuthorizedSiteCodes,
-            OrganizationWideScope);
-
-    private static string? Join(IReadOnlyCollection<string> values) =>
-        values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
-
-    private static IReadOnlyCollection<string>? Split(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? null
-            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-}
-
 public sealed class BusinessConsoleWmsInboundOrderListRequestValidator
     : Validator<BusinessConsoleWmsInboundOrderListRequest>
 {
@@ -1292,6 +1663,30 @@ public sealed class BusinessConsoleWmsInboundOrderListRequestValidator
             .Must(BusinessConsoleWmsScopeKinds.Contains)
             .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
         RuleFor(x => x.ScopeId).MaximumLength(200);
+    }
+}
+
+public sealed class BusinessConsoleWmsWorkScopeCatalogRequestValidator
+    : Validator<BusinessConsoleWmsWorkScopeCatalogRequest>
+{
+    public BusinessConsoleWmsWorkScopeCatalogRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleAssignWmsResourceRequestValidator
+    : Validator<BusinessConsoleAssignWmsResourceRequest>
+{
+    public BusinessConsoleAssignWmsResourceRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PoolCode).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OperatorPrincipalId).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
     }
 }
 
@@ -1543,9 +1938,11 @@ public sealed class BusinessConsoleDispatchWmsWcsTaskRequestValidator
         RuleFor(x => x.WarehouseTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
         RuleFor(x => x.AdapterType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ExternalTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PayloadJson).NotEmpty();
+        RuleFor(x => x.DeviceId).MaximumLength(150);
     }
 }
 
@@ -1639,5 +2036,5 @@ public sealed class BusinessConsoleWmsReceivingQualityGateListRequestValidator :
 internal static class BusinessConsoleWmsScopeKinds
 {
     public static bool Contains(string? value) =>
-        value?.Trim() is "self" or "team" or "work-center" or "workshop" or "site" or "organization";
+        value?.Trim().ToLowerInvariant() is "self" or "work-pool" or "site";
 }

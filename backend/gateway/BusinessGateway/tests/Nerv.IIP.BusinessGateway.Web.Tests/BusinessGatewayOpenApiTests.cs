@@ -459,20 +459,78 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "get", "listBusinessConsoleWmsInboundOrders");
+        AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/receipts", "get", "getBusinessConsoleWmsReceiptWorkScopes");
+        AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/shipments", "get", "getBusinessConsoleWmsShipmentWorkScopes");
+        AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/counts", "get", "getBusinessConsoleWmsCountWorkScopes");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/wms/work-scopes/receipts",
+                     "/api/business-console/v1/wms/work-scopes/shipments",
+                     "/api/business-console/v1/wms/work-scopes/counts",
+                 })
+        {
+            AssertQueryParameters(paths, path, "get", "organizationId", "environmentId");
+            AssertNoQueryParameter(paths, path, "get", "actorPrincipalId");
+            AssertNoQueryParameter(paths, path, "get", "authorizedSiteCodes");
+            AssertResponseStatuses(paths, path, "get", "403");
+        }
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleWmsWorkScopeCatalogItem",
+            "scopeKind",
+            "scopeId",
+            "displayName",
+            "siteCode",
+            "poolCode");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "post", "createBusinessConsoleWmsInboundOrder");
+        AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/assignment", "post", "assignBusinessConsoleWmsInboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks", "post", "createBusinessConsoleWmsPutawayTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks", "get", "listBusinessConsoleWmsPutawayTasks");
+        AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/assignment", "post", "assignBusinessConsoleWmsPutawayTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete", "post", "completeBusinessConsoleWmsInboundOrder");
         AssertRequiredSchemaProperty(document, "BusinessConsoleWmsInboundLineCaptureInput", "lineNo");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "get", "listBusinessConsoleWmsOutboundOrders");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "post", "createBusinessConsoleWmsOutboundOrder");
+        AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/assignment", "post", "assignBusinessConsoleWmsOutboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", "post", "createBusinessConsoleWmsPickingTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/picking-tasks", "get", "listBusinessConsoleWmsPickingTasks");
+        AssertOperationId(paths, "/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/assignment", "post", "assignBusinessConsoleWmsPickingTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete", "post", "completeBusinessConsoleWmsOutboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry", "post", "retryBusinessConsoleWmsOutboundInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "post", "createBusinessConsoleWmsCountExecution");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "get", "listBusinessConsoleWmsCountExecutions");
+        AssertOperationId(paths, "/api/business-console/v1/wms/count-executions/{countExecutionId}/assignment", "post", "assignBusinessConsoleWmsCountExecution");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions/{countExecutionId}/complete", "post", "completeBusinessConsoleWmsCountExecution");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/assignment",
+                     "/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/assignment",
+                     "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/assignment",
+                     "/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/assignment",
+                     "/api/business-console/v1/wms/count-executions/{countExecutionId}/assignment",
+                 })
+        {
+            AssertQueryParameters(paths, path, "post", "organizationId", "environmentId");
+            AssertNoQueryParameter(paths, path, "post", "assignerPrincipalId");
+            AssertNoQueryParameter(paths, path, "post", "authorizedSiteCodes");
+            AssertResponseStatuses(paths, path, "post", "403", "409", "422");
+        }
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleAssignWmsResourceRequest",
+            "poolCode",
+            "operatorPrincipalId",
+            "idempotencyKey",
+            "expectedVersion");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleAssignWmsResourceRequest",
+            "assignerPrincipalId",
+            "authorizedSiteCodes",
+            "inboundOrderId",
+            "outboundOrderId",
+            "warehouseTaskId",
+            "countExecutionId");
         foreach (var path in new[]
                  {
                      "/api/business-console/v1/wms/inbound-orders",
@@ -513,6 +571,7 @@ public sealed class BusinessGatewayOpenApiTests
             AssertNoQueryParameter(paths, path, "post", "authorizedTeamIds");
             AssertNoQueryParameter(paths, path, "post", "authorizedSiteCodes");
             AssertNoQueryParameter(paths, path, "post", "organizationWideScope");
+            AssertResponseStatuses(paths, path, "post", "403", "409", "422");
         }
         foreach (var schemaName in new[]
                  {
@@ -532,6 +591,22 @@ public sealed class BusinessGatewayOpenApiTests
         }
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks", "get", "listBusinessConsoleWmsWcsTasks");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", "post", "dispatchBusinessConsoleWmsWcsTask");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleDispatchWmsWcsTaskRequest",
+            "expectedVersion");
+        AssertSchemaExcludesProperties(
+            document,
+            "BusinessConsoleDispatchWmsWcsTaskRequest",
+            "dispatcherPrincipalId",
+            "authorizedSiteCodes");
+        AssertResponseStatuses(
+            paths,
+            "/api/business-console/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch",
+            "post",
+            "403",
+            "409",
+            "422");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{externalTaskId}/fail", "post", "failBusinessConsoleWmsWcsTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{externalTaskId}/complete", "post", "completeBusinessConsoleWmsWcsTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/receiving-quality-gates", "get", "listBusinessConsoleWmsReceivingQualityGates");
@@ -878,6 +953,24 @@ public sealed class BusinessGatewayOpenApiTests
         foreach (var name in names)
         {
             Assert.Contains(name, parameters);
+        }
+    }
+
+    private static void AssertResponseStatuses(
+        JsonElement paths,
+        string path,
+        string method,
+        params string[] statusCodes)
+    {
+        var responses = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("responses");
+
+        foreach (var statusCode in statusCodes)
+        {
+            Assert.True(
+                responses.TryGetProperty(statusCode, out _),
+                $"{method.ToUpperInvariant()} {path} must document response {statusCode}.");
         }
     }
 
