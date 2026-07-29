@@ -519,6 +519,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign", "post", "assignBusinessConsoleMesDispatchTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
+        AssertOperationId(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "listBusinessConsoleMesReportableOperationTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "startBusinessConsoleMesOperationTask");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "idempotencyKey", 150);
@@ -536,6 +537,18 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "post", "createBusinessConsoleMesFinishedGoodsReceiptRequest");
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/mes/work-orders",
+                     "/api/business-console/v1/mes/operation-tasks",
+                     "/api/business-console/v1/mes/reportable-operation-tasks",
+                 })
+        {
+            AssertQueryParameters(paths, path, "get", "scopeKind", "scopeId");
+            AssertNoQueryParameter(paths, path, "get", "assignedUserIds");
+            AssertNoQueryParameter(paths, path, "get", "teamIds");
+            AssertNoQueryParameter(paths, path, "get", "workCenterIds");
+        }
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-link", "get", "getBusinessConsoleMesFinishedGoodsReceiptInventoryLink");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "get", "listBusinessConsoleMesDowntimeEvents");
         AssertOperationId(paths, "/api/business-console/v1/mes/downtime-events", "post", "recordBusinessConsoleMesDowntimeEvent");
@@ -1002,8 +1015,18 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterCode",
             "workCenterName",
             "deviceAssetCode",
-            "deviceAssetName");
+            "deviceAssetName",
+            "allowedActions",
+            "blockReasons",
+            "evaluatedAtUtc");
         AssertMesStatusEnum(document, "BusinessConsoleMesOperationTaskRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesOperationTaskItem",
+            "allowedActions",
+            "blockReasons",
+            "evaluatedAtUtc");
 
         AssertMesDisplayProperties(
             document,

@@ -2920,6 +2920,19 @@
     {
       "service": "Mes",
       "method": "GET",
+      "route": "/api/business/v1/mes/reportable-operation-tasks",
+      "operationId": "listBusinessMesReportableOperationTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesReportableOperationTasks"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
       "route": "/api/business/v1/mes/telemetry-production-report-candidates",
       "operationId": "listBusinessMesTelemetryProductionReportCandidates",
       "classification": "exposed",

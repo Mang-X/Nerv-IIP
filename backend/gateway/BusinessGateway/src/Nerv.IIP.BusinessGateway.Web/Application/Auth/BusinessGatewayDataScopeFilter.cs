@@ -10,26 +10,6 @@ public sealed class BusinessGatewayDataScopeFilter(
 {
     private const string NoScopeMatch = "__iam_scope_no_match__";
 
-    public async Task<BusinessConsoleMesWorkOrderListRequest> ApplyToMesWorkOrdersAsync(
-        BusinessConsoleMesWorkOrderListRequest request,
-        AuthorizationDataScope? dataScope,
-        CancellationToken cancellationToken)
-    {
-        if (dataScope is not { HasRestrictions: true })
-        {
-            return request;
-        }
-
-        var resolved = await ResolveAsync(request.OrganizationId, request.EnvironmentId, dataScope, cancellationToken);
-        return request with
-        {
-            WorkCenterIds = NarrowSingle(request.WorkCenterId, resolved.WorkCenterCodes),
-            DeviceAssetIds = string.IsNullOrWhiteSpace(request.DeviceAssetId)
-                ? null
-                : NarrowSingle(request.DeviceAssetId, resolved.DeviceAssetIds),
-        };
-    }
-
     public async Task<BusinessConsoleTelemetryAlarmListRequest> ApplyToTelemetryAlarmsAsync(
         BusinessConsoleTelemetryAlarmListRequest request,
         AuthorizationDataScope? dataScope,

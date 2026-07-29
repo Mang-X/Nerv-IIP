@@ -3937,7 +3937,54 @@ public sealed record BusinessConsoleMesWorkOrderListRequest(
     int Take = 100,
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null,
+    string? Statuses = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null,
     string? Statuses = null);
+
+public sealed record BusinessConsoleMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,
@@ -3991,7 +4038,10 @@ public sealed record BusinessConsoleMesOperationTaskItem(
     DateTimeOffset? ExistingEndUtc,
     string? OperationTaskNo = null,
     string? WorkCenterCode = null,
-    string? WorkCenterName = null);
+    string? WorkCenterName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
@@ -4426,7 +4476,10 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null);
+    string? TeamName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,

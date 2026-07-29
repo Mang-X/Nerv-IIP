@@ -1425,7 +1425,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesWorkOrderListRequest request,
+        BusinessMesWorkOrderListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
@@ -1535,7 +1535,12 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessMesOperationTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskListResponse> ListReportableOperationTasksAsync(
+        string internalBearerToken,
+        BusinessMesOperationTaskListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesOperationTaskActionResponse> StartOperationTaskAsync(
@@ -7318,7 +7323,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesWorkOrderListRequest request,
+        BusinessMesWorkOrderListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesWorkOrderListResponse>(
             internalBearerToken,
@@ -7559,12 +7564,23 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessMesOperationTaskListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesOperationTaskListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/operation-tasks?" + ListQuery(request),
+            "/api/business/v1/mes/operation-tasks?" + OperationTaskListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskListResponse> ListReportableOperationTasksAsync(
+        string internalBearerToken,
+        BusinessMesOperationTaskListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesOperationTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/reportable-operation-tasks?" + OperationTaskListQuery(request),
             null,
             cancellationToken);
 
@@ -7996,18 +8012,36 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("skip", request.Skip),
             ("take", request.Take));
 
-    private static string WorkOrderListQuery(BusinessConsoleMesWorkOrderListRequest request) =>
+    private static string OperationTaskListQuery(BusinessMesOperationTaskListRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
             ("status", request.Status),
-            ("statuses", request.Statuses),
             ("keyword", request.Keyword),
             ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("workOrderId", request.WorkOrderId),
+            ("assignedUserIds", request.AssignedUserIds),
+            ("teamIds", request.TeamIds),
+            ("workCenterIds", request.WorkCenterIds),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string WorkOrderListQuery(BusinessMesWorkOrderListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("assignedUserIds", request.AssignedUserIds),
+            ("teamIds", request.TeamIds),
             ("workCenterIds", request.WorkCenterIds),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
             ("deviceAssetIds", request.DeviceAssetIds),
+            ("statuses", request.Statuses),
             ("skip", request.Skip),
             ("take", request.Take));
 
