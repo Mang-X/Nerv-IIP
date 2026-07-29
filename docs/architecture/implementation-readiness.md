@@ -863,9 +863,9 @@ IndustrialTelemetry 现在按请求从同一组织、环境和设备范围内的
 
 ### 2026-07-28 WMS 角色范围与任务执行记录（MAN-629 / #1166）
 
-WMS 收货、上架、拣货、复核发货与盘点五类列表已接入服务端授权工作范围。公开请求只接受 `scopeKind/scopeId`，BusinessGateway 通过当前主体工作上下文解析 self、team、site 或 organization 候选，再把人员、班组、站点授权集合作为内部请求传给 WMS；work-center/workshop 等不适用于仓储的范围 fail closed。当前 MasterData 尚无独立仓库聚合，首版“仓库范围”使用授权 site candidate 映射 WMS `SiteCode`，不得从库位编码前缀猜测仓库。
+WMS 收货、上架、拣货、复核发货与盘点五类列表已接入 WMS 自有工作池授权。公开范围目录只提供 `self/work-pool/site`，公开请求只接受 `scopeKind/scopeId`；BusinessGateway 从 bearer 主体和 IAM 读取 principal、精确站点授权并注入固定权限，客户端不能提交可信字段。当前 MasterData 尚无独立仓库聚合，首版“仓库范围”使用 IAM 精确授权的 site 映射 WMS `SiteCode`，不得从库位编码前缀猜测仓库；不提供 team/organization scope，也不落 `assigned_team_id`。五类聚合均保存工作池/操作员派工与并发版本，遗留未派工记录默认不可见、不可执行。IAM seed v2 仅为 PDA 仓储角色增量授予 `SITE-001`，WMS seed 提供 emp049 可验收的确定性现场队列。
 
-WarehouseTask 已保存操作员、班组、站点派工快照及任务版本、累计执行量、批次/序列号、执行人和执行时间；上架/拣货任务新增 start、progress、exception、complete 四段人工动作。显式操作员派工优先于班组/站点，组织级范围只覆盖未派工任务，不能越过显式派工；进度采用累计数量且不可回退或超计划，上架必须足量完成，拣货短拣必须提交差异原因。任务动作使用数据库并发版本与持久幂等回执，同键同载荷可重放、同键异载荷拒绝；终态只返回空 `allowedActions`，PDA 不自行猜测可执行性。旧 `/warehouse-tasks/{id}/progress|complete` 保持 WCS adapter/callback 内部边界，不暴露为人工入口。离线队列、WCS 设备控制、波次拣货和独立仓库主数据不属于本切片。
+五类受控派工端点和上架/拣货任务的 start、progress、exception、complete 人工动作均已通过 BusinessGateway 暴露；派工与动作使用数据库并发版本及持久幂等回执，同键同载荷可重放、同键异载荷拒绝。人工执行与 WCS 使用相同任务锁和版本形成原子互斥，WCS callback 不会自动认领人工任务；进度采用累计数量且不可回退或超计划，上架必须足量完成，拣货短拣必须提交差异原因。终态只返回空 `allowedActions`，PDA 不自行猜测可执行性。旧 `/warehouse-tasks/{id}/progress|complete` 继续作为 WCS adapter/callback 内部边界。离线队列、WCS 设备控制、波次拣货和独立仓库主数据不属于本切片。
 
 ### 可以并行但不阻塞开工的事项
 

@@ -444,8 +444,8 @@ describe('generated API client contract', () => {
     expectTypeOf<
       Pick<BusinessConsoleStartWmsWarehouseTaskRequest, 'idempotencyKey' | 'expectedVersion'>
     >().toEqualTypeOf<{
-      idempotencyKey?: string | null
-      expectedVersion?: number
+      idempotencyKey: string
+      expectedVersion: number
     }>()
     expectTypeOf<
       Pick<
@@ -453,9 +453,9 @@ describe('generated API client contract', () => {
         'idempotencyKey' | 'expectedVersion' | 'executedQuantity'
       >
     >().toEqualTypeOf<{
-      idempotencyKey?: string | null
-      expectedVersion?: number
-      executedQuantity?: number
+      idempotencyKey: string
+      expectedVersion: number
+      executedQuantity: number
     }>()
     expectTypeOf<
       Pick<
@@ -463,10 +463,10 @@ describe('generated API client contract', () => {
         'idempotencyKey' | 'expectedVersion' | 'exceptionCode' | 'reason'
       >
     >().toEqualTypeOf<{
-      idempotencyKey?: string | null
-      expectedVersion?: number
-      exceptionCode?: string | null
-      reason?: string | null
+      idempotencyKey: string
+      expectedVersion: number
+      exceptionCode: string
+      reason: string
     }>()
     expectTypeOf<
       Pick<
@@ -474,9 +474,9 @@ describe('generated API client contract', () => {
         'idempotencyKey' | 'expectedVersion' | 'executedQuantity' | 'differenceReason'
       >
     >().toEqualTypeOf<{
-      idempotencyKey?: string | null
-      expectedVersion?: number
-      executedQuantity?: number
+      idempotencyKey: string
+      expectedVersion: number
+      executedQuantity: number
       differenceReason?: string | null
     }>()
   })

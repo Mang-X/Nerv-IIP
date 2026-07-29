@@ -57,7 +57,7 @@ public sealed record BusinessConsoleStartWmsWarehouseTaskRequest(
     [property: RouteParam] string WarehouseTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey,
+    [property: JsonRequired, Required] string IdempotencyKey,
     [property: JsonRequired, Required] long ExpectedVersion,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
@@ -66,9 +66,9 @@ public sealed record BusinessConsoleRecordWmsWarehouseTaskProgressRequest(
     [property: RouteParam] string WarehouseTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey,
+    [property: JsonRequired, Required] string IdempotencyKey,
     [property: JsonRequired, Required] long ExpectedVersion,
-    decimal ExecutedQuantity,
+    [property: JsonRequired, Required] decimal ExecutedQuantity,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -76,10 +76,10 @@ public sealed record BusinessConsoleReportWmsWarehouseTaskExceptionRequest(
     [property: RouteParam] string WarehouseTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey,
+    [property: JsonRequired, Required] string IdempotencyKey,
     [property: JsonRequired, Required] long ExpectedVersion,
-    string ExceptionCode,
-    string Reason,
+    [property: JsonRequired, Required] string ExceptionCode,
+    [property: JsonRequired, Required] string Reason,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -87,9 +87,9 @@ public sealed record BusinessConsoleCompleteWmsWarehouseTaskRequest(
     [property: RouteParam] string WarehouseTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string IdempotencyKey,
+    [property: JsonRequired, Required] string IdempotencyKey,
     [property: JsonRequired, Required] long ExpectedVersion,
-    decimal ExecutedQuantity,
+    [property: JsonRequired, Required] decimal ExecutedQuantity,
     string? DifferenceReason = null,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);

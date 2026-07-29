@@ -101,11 +101,11 @@ declaration against what actually shipped (facade + codegen + barrel for
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 38 | 26 | 12 | 0 |
 | Scheduling | 15 | 13 | 1 | 1 |
-| Wms | 38 | 28 | 5 | 5 |
-| **Total** | **396** | **325** | **48** | **23** |
+| Wms | 46 | 36 | 5 | 5 |
+| **Total** | **404** | **333** | **48** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (325) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (333) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
