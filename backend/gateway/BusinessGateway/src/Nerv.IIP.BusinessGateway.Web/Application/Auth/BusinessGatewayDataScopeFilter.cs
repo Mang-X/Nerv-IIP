@@ -81,7 +81,11 @@ public sealed class BusinessGatewayDataScopeFilter(
         var siteCodes = Normalize(dataScope.SiteCodes);
         var workshopCodes = Normalize(dataScope.WorkshopCodes);
         var explicitLineCodes = Normalize(dataScope.ProductionLineCodes);
-        if (dataScope.DenyAll)
+        var explicitWorkCenterCodes = Normalize(dataScope.WorkCenterCodes ?? []);
+        if (dataScope.DenyAll
+            || dataScope.SelfIds?.Count > 0
+            || dataScope.TeamCodes?.Count > 0
+            || dataScope.OrganizationIds?.Any(x => !string.Equals(x.Trim(), organizationId, StringComparison.Ordinal)) == true)
         {
             return new ResolvedDataScope([], []);
         }
@@ -99,7 +103,8 @@ public sealed class BusinessGatewayDataScopeFilter(
 
         var workCenters = await ListResourcesAsync(organizationId, environmentId, "work-center", cancellationToken);
         var scopedWorkCenterCodes = workCenters
-            .Where(x => Matches(x.SiteCode, siteCodes)
+            .Where(x => explicitWorkCenterCodes.Contains(x.Code)
+                || Matches(x.SiteCode, siteCodes)
                 || Matches(x.WorkshopCode, workshopCodes)
                 || Matches(x.LineCode, lineSet))
             .Select(x => x.Code)

@@ -2101,6 +2101,19 @@
     },
     {
       "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/principals/{userId}/work-context",
+      "operationId": "getBusinessMasterDataPrincipalWorkContext",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsolePrincipalWorkContext"
+      ]
+    },
+    {
+      "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/personnel-skills",
       "operationId": "assignBusinessMasterDataPersonnelSkill",

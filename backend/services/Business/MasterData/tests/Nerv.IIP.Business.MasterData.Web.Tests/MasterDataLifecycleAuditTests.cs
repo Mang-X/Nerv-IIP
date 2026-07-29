@@ -10,10 +10,16 @@ using NetCorePal.Extensions.DistributedTransactions;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Data.Sqlite;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
+using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
@@ -289,6 +295,206 @@ public sealed class MasterDataLifecycleAuditTests
         Assert.Equal("idem-disable-endpoint", audits[0].OperationId);
         Assert.Equal("idem-disable-endpoint-new-operation", audits[1].OperationId);
         Assert.All(audits, audit => Assert.Equal("retired", audit.Reason));
+    }
+
+    [Fact]
+    public async Task TeamMemberEndpoints_PersistAuthenticatedScopeCandidateAudit()
+    {
+        await using var factory = new MasterDataLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "audit-test-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:supervisor-001");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-team-member-add");
+        var body = new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            teamCode = "TEAM-001",
+            userId = "worker-001",
+            isLeader = true,
+            effectiveFrom = new DateOnly(2026, 7, 28),
+            effectiveTo = (DateOnly?)null,
+        };
+
+        var added = await client.PostAsJsonAsync("/api/business/v1/master-data/teams/TEAM-001/members", body);
+        Assert.True(added.IsSuccessStatusCode, await added.Content.ReadAsStringAsync());
+
+        client.DefaultRequestHeaders.Remove("X-Idempotency-Key");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-team-member-remove");
+        var removed = await client.SendAsync(new HttpRequestMessage(
+            HttpMethod.Delete,
+            "/api/business/v1/master-data/teams/TEAM-001/members/worker-001")
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                teamCode = "TEAM-001",
+                userId = "worker-001",
+                reason = "transferred",
+            }),
+        });
+        Assert.True(removed.IsSuccessStatusCode, await removed.Content.ReadAsStringAsync());
+
+        using var observerScope = factory.Services.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var audits = await observer.ScopeContextAuditEntries.AsNoTracking().OrderBy(x => x.OccurredAtUtc).ToArrayAsync();
+
+        Assert.Equal(2, audits.Length);
+        Assert.All(audits, audit => Assert.Equal("team-member", audit.ResourceType));
+        Assert.All(audits, audit => Assert.Equal("TEAM-001:worker-001", audit.ResourceCode));
+        Assert.All(audits, audit => Assert.Equal("user:supervisor-001", audit.ActorId));
+        Assert.Equal("team-member-assigned", audits[0].OperationKind);
+        Assert.Equal("null", audits[0].BeforeJson);
+        Assert.Equal("scope-candidate-assigned", audits[0].Reason);
+        Assert.Equal("idem-team-member-add", audits[0].OperationId);
+        Assert.Equal("TEAM-001:worker-001", audits[0].ResourceIdentity);
+        Assert.Contains("\"isLeader\":true", audits[0].AfterJson, StringComparison.Ordinal);
+        Assert.Equal("team-member-removed", audits[1].OperationKind);
+        Assert.Contains("\"disabled\":true", audits[1].AfterJson, StringComparison.Ordinal);
+        Assert.Equal("transferred", audits[1].Reason);
+        Assert.Equal("idem-team-member-remove", audits[1].OperationId);
+    }
+
+    [Fact]
+    public async Task WorkerCreateAndEmploymentStatusUpdate_PersistScopeAvailabilityAudit()
+    {
+        await using var factory = new MasterDataLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "audit-test-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:hr-001");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-worker-create");
+        var created = await client.PostAsJsonAsync("/api/business/v1/master-data/workers", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "EMP-AUDIT",
+            name = "审计员工",
+            userId = "user-worker-audit",
+            departmentCode = "DEPT-001",
+            jobTitle = "操作工",
+            employmentStatus = "active",
+            phone = (string?)null,
+            idempotencyKey = "worker-create-body",
+        });
+        Assert.True(created.IsSuccessStatusCode, await created.Content.ReadAsStringAsync());
+
+        client.DefaultRequestHeaders.Remove("X-Idempotency-Key");
+        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-worker-status");
+        var updated = await client.PatchAsJsonAsync("/api/business/v1/master-data/resources/worker/EMP-AUDIT", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resourceType = "worker",
+            code = "EMP-AUDIT",
+            employmentStatus = "on-leave",
+        });
+        Assert.True(updated.IsSuccessStatusCode, await updated.Content.ReadAsStringAsync());
+
+        using var observerScope = factory.Services.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var audits = await observer.ScopeContextAuditEntries.AsNoTracking().OrderBy(x => x.OccurredAtUtc).ToArrayAsync();
+
+        Assert.Equal(2, audits.Length);
+        Assert.Equal("worker-created", audits[0].OperationKind);
+        Assert.Equal("idem-worker-create", audits[0].OperationId);
+        Assert.Equal("null", audits[0].BeforeJson);
+        Assert.Contains("\"userId\":\"user-worker-audit\"", audits[0].AfterJson, StringComparison.Ordinal);
+        Assert.Equal("worker-scope-availability-updated", audits[1].OperationKind);
+        Assert.Equal("idem-worker-status", audits[1].OperationId);
+        Assert.Contains("\"employmentStatus\":\"active\"", audits[1].BeforeJson, StringComparison.Ordinal);
+        Assert.Contains("\"employmentStatus\":\"on-leave\"", audits[1].AfterJson, StringComparison.Ordinal);
+        Assert.All(audits, audit => Assert.Equal("user:hr-001", audit.ActorId));
+    }
+
+    [Fact]
+    public async Task ScopeLineageUpdates_PersistCanonicalBeforeAndAfterAudit()
+    {
+        var databaseName = $"master-data-scope-context-audit-{Guid.NewGuid():N}";
+        await using var provider = CreateProvider(databaseName);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "一车间", "SITE-001", null, null));
+        db.Teams.Add(Team.Create("org-001", "env-dev", "TEAM-001", "甲班", "DEPT-001", "SHIFT-001", "WS-001"));
+        db.ProductionLines.Add(ProductionLine.Create("org-001", "env-dev", "LINE-001", "一号线", "SITE-001", "WS-001"));
+        db.WorkCenters.Add(WorkCenter.CreateResource(
+            "org-001",
+            "env-dev",
+            "WC-001",
+            "一号工作中心",
+            480,
+            "work-center",
+            "SITE-001",
+            "LINE-001",
+            "WS-001",
+            "CAL-001",
+            "minute",
+            true));
+        await db.SaveChangesAsync();
+
+        var handler = new UpdateMasterDataResourceCommandHandler(db, new ReferenceDataCodeRepository(db));
+        await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "workshop",
+                "WS-001",
+                SiteCode: "SITE-002",
+                AuditContext: new("corr-workshop", "cause-workshop", "user:supervisor-001", "op-workshop")),
+            CancellationToken.None);
+        await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "team",
+                "TEAM-001",
+                ShiftCode: "SHIFT-002",
+                WorkshopCode: "WS-002",
+                AuditContext: new("corr-team", "cause-team", "user:supervisor-001", "op-team")),
+            CancellationToken.None);
+        await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "production-line",
+                "LINE-001",
+                SiteCode: "SITE-002",
+                WorkshopCode: "WS-002",
+                AuditContext: new("corr-line", "cause-line", "user:supervisor-001", "op-line")),
+            CancellationToken.None);
+        await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "work-center",
+                "WC-001",
+                PlantCode: "SITE-002",
+                LineCode: "LINE-002",
+                WorkshopCode: "WS-002",
+                AuditContext: new("corr-work-center", "cause-work-center", "user:supervisor-001", "op-work-center")),
+            CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var audits = await db.ScopeContextAuditEntries.AsNoTracking().OrderBy(x => x.ResourceType).ToArrayAsync();
+        Assert.Equal(4, audits.Length);
+        Assert.All(audits, audit => Assert.Equal("user:supervisor-001", audit.ActorId));
+        Assert.All(audits, audit => Assert.Equal("scope-lineage-updated", audit.Reason));
+        Assert.Contains(audits, audit =>
+            audit.ResourceType == "workshop"
+            && audit.BeforeJson.Contains("\"siteCode\":\"SITE-001\"", StringComparison.Ordinal)
+            && audit.AfterJson.Contains("\"siteCode\":\"SITE-002\"", StringComparison.Ordinal));
+        Assert.Contains(audits, audit =>
+            audit.ResourceType == "team"
+            && audit.BeforeJson.Contains("\"workshopCode\":\"WS-001\"", StringComparison.Ordinal)
+            && audit.AfterJson.Contains("\"workshopCode\":\"WS-002\"", StringComparison.Ordinal));
+        Assert.Contains(audits, audit =>
+            audit.ResourceType == "production-line"
+            && audit.BeforeJson.Contains("\"siteCode\":\"SITE-001\"", StringComparison.Ordinal)
+            && audit.AfterJson.Contains("\"workshopCode\":\"WS-002\"", StringComparison.Ordinal));
+        Assert.Contains(audits, audit =>
+            audit.ResourceType == "work-center"
+            && audit.BeforeJson.Contains("\"plantCode\":\"SITE-001\"", StringComparison.Ordinal)
+            && audit.AfterJson.Contains("\"lineCode\":\"LINE-002\"", StringComparison.Ordinal));
     }
 
     [Fact]

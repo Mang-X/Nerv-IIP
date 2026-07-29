@@ -53,6 +53,23 @@ internal static class BusinessGatewayIdempotencyKey
         return property is null ? null : Normalize(property.GetValue(body) as string);
     }
 
+    public static string? ResolveForAudit(HttpContext context, object? body)
+    {
+        var standard = NormalizeHeaders(context.Request.Headers["Idempotency-Key"]);
+        var legacy = NormalizeHeaders(context.Request.Headers["X-Idempotency-Key"]);
+        var bodyValue = FromBody(body);
+        var values = new[] { standard, legacy, bodyValue }
+            .Where(x => x is not null)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (values.Length > 1)
+        {
+            throw Mismatch();
+        }
+
+        return standard ?? legacy ?? bodyValue;
+    }
+
     private static string? NormalizeHeaders(Microsoft.Extensions.Primitives.StringValues values)
     {
         var normalized = values

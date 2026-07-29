@@ -114,10 +114,23 @@ public class RoleDataScope : Entity<RoleDataScopeId>
 public sealed record DataScopeBinding(string ScopeType, string ScopeCode)
 {
     public const string Site = "site";
+    public const string Self = "self";
+    public const string Team = "team";
+    public const string WorkCenter = "work-center";
     public const string Workshop = "workshop";
+    public const string Organization = "organization";
     public const string ProductionLine = "production-line";
 
-    public static readonly string[] KnownScopeTypes = [Site, Workshop, ProductionLine];
+    public static readonly string[] KnownScopeTypes =
+    [
+        Site,
+        Self,
+        Team,
+        WorkCenter,
+        Workshop,
+        Organization,
+        ProductionLine,
+    ];
 
     public static DataScopeBinding Normalize(DataScopeBinding binding) =>
         new(NormalizeScopeType(binding.ScopeType), NormalizeScopeCode(binding.ScopeCode));
@@ -148,3 +161,11 @@ public sealed record DataScopeBinding(string ScopeType, string ScopeCode)
         return scopeCode.Trim();
     }
 }
+
+public sealed record PermissionDataScopeGrant(
+    string SourceKind,
+    string SourceId,
+    string ScopeKind,
+    string ScopeId,
+    IReadOnlyCollection<string> ApplicablePermissionCodes,
+    bool OrganizationWide = false);

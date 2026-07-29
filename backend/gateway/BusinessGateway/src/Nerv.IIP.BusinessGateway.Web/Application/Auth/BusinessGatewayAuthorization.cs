@@ -17,7 +17,8 @@ public sealed record BusinessGatewayPermissionRequirement(
     string OrganizationId,
     string EnvironmentId,
     string? ResourceType,
-    string? ResourceId);
+    string? ResourceId,
+    bool IncludePrincipalContext = false);
 
 public sealed record BusinessGatewayAuthorizationResult(
     bool IsAllowed,
@@ -25,14 +26,18 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? PrincipalType,
     string? LoginName,
     string? DenialReason,
-    AuthorizationDataScope? DataScope = null)
+    AuthorizationDataScope? DataScope = null,
+    IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null,
+    IReadOnlyCollection<AuthorizationRole>? Roles = null)
 {
     public static BusinessGatewayAuthorizationResult Allowed(
         string principalId,
         string principalType,
         string loginName,
-        AuthorizationDataScope? dataScope = null) =>
-        new(true, principalId, principalType, loginName, null, dataScope);
+        AuthorizationDataScope? dataScope = null,
+        IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
+        IReadOnlyCollection<AuthorizationRole>? roles = null) =>
+        new(true, principalId, principalType, loginName, null, dataScope, scopeGrants, roles);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
         new(false, null, null, null, reason, null);
@@ -215,7 +220,8 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             requirement.OrganizationId,
             requirement.EnvironmentId,
             requirement.ResourceType,
-            requirement.ResourceId));
+            requirement.ResourceId,
+            requirement.IncludePrincipalContext));
 
         try
         {
@@ -237,7 +243,13 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             var body = envelope?.Data;
             healthState.RecordSuccess("IAM");
             return body is not null && body.Allowed
-                ? BusinessGatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!, body.DataScope)
+                ? BusinessGatewayAuthorizationResult.Allowed(
+                    body.PrincipalId!,
+                    body.PrincipalType!,
+                    body.LoginName!,
+                    body.DataScope,
+                    body.ScopeGrants,
+                    body.Roles)
                 : BusinessGatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
         }
         catch (Exception ex) when (IsDownstreamFailure(ex, cancellationToken))
@@ -262,7 +274,8 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             requirement.EnvironmentId,
             resourceType,
             resourceId,
-            "v2");
+            requirement.IncludePrincipalContext ? "with-context" : "authorization-only",
+            "v3");
     }
 
     private string AuthorizationCheckPath()
@@ -292,10 +305,31 @@ public static class BusinessGatewayAuthorization
         CancellationToken cancellationToken) =>
         await RequireAnyPermissionAsync(context, auth, [requirement], cancellationToken);
 
+    public static async Task<string?> RequirePermissionAsync(
+        HttpContext context,
+        IBusinessGatewayAuthorizationClient auth,
+        BusinessGatewayPermissionRequirement requirement,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
+        CancellationToken cancellationToken) =>
+        await RequireAnyPermissionAsync(context, auth, [requirement], continuityMode, cancellationToken);
+
     public static async Task<string?> RequireAnyPermissionAsync(
         HttpContext context,
         IBusinessGatewayAuthorizationClient auth,
         IReadOnlyCollection<BusinessGatewayPermissionRequirement> requirements,
+        CancellationToken cancellationToken) =>
+        await RequireAnyPermissionAsync(
+            context,
+            auth,
+            requirements,
+            ContinuityModeFor(context.Request.Method),
+            cancellationToken);
+
+    public static async Task<string?> RequireAnyPermissionAsync(
+        HttpContext context,
+        IBusinessGatewayAuthorizationClient auth,
+        IReadOnlyCollection<BusinessGatewayPermissionRequirement> requirements,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
         CancellationToken cancellationToken)
     {
         if (requirements.Count == 0)
@@ -338,7 +372,7 @@ public static class BusinessGatewayAuthorization
                 result = await auth.CheckAsync(
                     bearerToken,
                     requirement,
-                    ContinuityModeFor(context.Request.Method),
+                    continuityMode,
                     cancellationToken);
             }
             catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))

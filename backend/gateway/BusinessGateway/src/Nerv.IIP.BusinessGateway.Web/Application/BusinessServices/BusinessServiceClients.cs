@@ -14,8 +14,19 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
+public sealed record BusinessServiceAuditContext(
+    string Actor,
+    string CorrelationId,
+    string CausationId,
+    string? IdempotencyKey);
+
 public interface IBusinessMasterDataClient
 {
+    Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
+        string internalBearerToken,
+        BusinessMasterDataPrincipalWorkContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -29,6 +40,7 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
         BusinessConsoleUpdateMasterDataResourceRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMasterDataResourceDetail> SetResourceEnabledAsync(
@@ -119,11 +131,13 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> CreateWorkshopAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkshopRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateWorkerAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkerRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
@@ -134,16 +148,19 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
         string internalBearerToken,
         BusinessConsoleCreateProductionLineRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkCenterRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
@@ -164,11 +181,13 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> CreateTeamAsync(
         string internalBearerToken,
         BusinessConsoleCreateTeamRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> AddTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleAddTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleTeamMemberListResponse> ListTeamMembersAsync(
@@ -179,6 +198,7 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleRemoveTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
@@ -1771,31 +1791,53 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             request.Content = JsonContent.Create(body, options: jsonOptions ?? JsonOptions);
         }
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                response.StatusCode,
-                await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken));
-        }
-
+        HttpResponseMessage response;
         try
         {
-            return await ReadResponseDataAsync<TResponse>(response, jsonOptions ?? JsonOptions, cancellationToken);
+            response = await httpClient.SendAsync(request, cancellationToken);
         }
-        catch (JsonException ex)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.BadGateway,
-                "downstream-invalid-response",
+                HttpStatusCode.ServiceUnavailable,
+                "downstream-timeout",
                 ex);
         }
-        catch (InvalidOperationException ex)
+        catch (HttpRequestException ex)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.BadGateway,
-                "downstream-invalid-response",
+                HttpStatusCode.ServiceUnavailable,
+                "downstream-unavailable",
                 ex);
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    response.StatusCode,
+                    await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken));
+            }
+
+            try
+            {
+                return await ReadResponseDataAsync<TResponse>(response, jsonOptions ?? JsonOptions, cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "downstream-invalid-response",
+                    ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "downstream-invalid-response",
+                    ex);
+            }
         }
     }
 
@@ -2113,6 +2155,20 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMasterDataClient
 {
+    public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
+        string internalBearerToken,
+        BusinessMasterDataPrincipalWorkContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessMasterDataPrincipalWorkContextResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/master-data/principals/{Uri.EscapeDataString(request.UserId)}/work-context?"
+                + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
     public async Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -2164,13 +2220,15 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
         BusinessConsoleUpdateMasterDataResourceRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMasterDataResourceDetail>(
             internalBearerToken,
             HttpMethod.Patch,
             ResourcePath(request.ResourceType, request.Code),
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
 
     public Task<BusinessConsoleMasterDataResourceDetail> SetResourceEnabledAsync(
         string internalBearerToken,
@@ -2345,14 +2403,16 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleResourceItem> CreateWorkshopAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkshopRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", request, cancellationToken, auditContext);
 
     public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkerRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", request, cancellationToken, auditContext);
 
     /// <summary>
     /// 下游员工目录行的 wire 形状：MasterData 返回的是 <c>name</c>，facade 契约是
@@ -2427,20 +2487,23 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", request, cancellationToken, auditContext);
 
     public Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
         string internalBearerToken,
         BusinessConsoleCreateProductionLineRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", request, cancellationToken, auditContext);
 
     public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkCenterRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", request, cancellationToken, auditContext);
 
     public Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
         string internalBearerToken,
@@ -2463,14 +2526,21 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleResourceItem> CreateTeamAsync(
         string internalBearerToken,
         BusinessConsoleCreateTeamRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", request, cancellationToken);
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", request, cancellationToken, auditContext);
 
     public Task<BusinessConsoleResourceItem> AddTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleAddTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, $"/api/business/v1/master-data/teams/{Uri.EscapeDataString(request.TeamCode)}/members", request, cancellationToken);
+        CreateResourceAsync(
+            internalBearerToken,
+            $"/api/business/v1/master-data/teams/{Uri.EscapeDataString(request.TeamCode)}/members",
+            request,
+            cancellationToken,
+            auditContext);
 
     public Task<BusinessConsoleTeamMemberListResponse> ListTeamMembersAsync(
         string internalBearerToken,
@@ -2490,6 +2560,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleRemoveTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleResourceItem>(
             internalBearerToken,
@@ -2501,7 +2572,8 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("userId", request.UserId),
                 ("reason", request.Reason)),
             null,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message => ConfigureAuditHeaders(message, auditContext));
 
     public Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
         string internalBearerToken,
@@ -2585,13 +2657,30 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         string internalBearerToken,
         string path,
         object request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        BusinessServiceAuditContext? auditContext = null) =>
         SendAsync<BusinessConsoleResourceItem>(
             internalBearerToken,
             HttpMethod.Post,
             path,
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: auditContext is null
+                ? null
+                : message => ConfigureAuditHeaders(message, auditContext));
+
+    private static void ConfigureAuditHeaders(
+        HttpRequestMessage message,
+        BusinessServiceAuditContext auditContext)
+    {
+        message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", auditContext.Actor);
+        message.Headers.TryAddWithoutValidation("X-Correlation-Id", auditContext.CorrelationId);
+        message.Headers.TryAddWithoutValidation("X-Causation-Id", auditContext.CausationId);
+        if (!string.IsNullOrWhiteSpace(auditContext.IdempotencyKey))
+        {
+            message.Headers.TryAddWithoutValidation("X-Idempotency-Key", auditContext.IdempotencyKey);
+        }
+    }
 
     private static string ResourcePath(string resourceType, string code) =>
         $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";

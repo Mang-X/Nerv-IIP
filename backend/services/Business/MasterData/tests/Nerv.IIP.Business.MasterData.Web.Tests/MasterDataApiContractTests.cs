@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
@@ -100,7 +101,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(48, contracts.Count);
+        Assert.Equal(49, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -158,6 +159,19 @@ public sealed class MasterDataApiContractTests
             && x.Route == "/api/business/v1/master-data/skills/{skillCode}/archive"
             && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
             && x.OperationId == "archiveBusinessMasterDataSkill");
+    }
+
+    [Fact]
+    public void Principal_work_context_has_a_stable_read_contract()
+    {
+        Assert.Contains(
+            MasterDataEndpointContracts.All,
+            contract =>
+                contract.EndpointType == typeof(GetPrincipalWorkContextEndpoint)
+                && contract.HttpMethod == "GET"
+                && contract.Route == "/api/business/v1/master-data/principals/{userId}/work-context"
+                && contract.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+                && contract.OperationId == "getBusinessMasterDataPrincipalWorkContext");
     }
 
     [Fact]
@@ -1090,7 +1104,8 @@ public sealed class MasterDataApiContractTests
                 "team",
                 "TEAM-001",
                 DepartmentCode: "DEPT-ROOT",
-                ShiftCode: "SHIFT-NIGHT"),
+                ShiftCode: "SHIFT-NIGHT",
+                AuditContext: new("corr-team-update", "cause-team-update", "user:test", "op-team-update")),
             CancellationToken.None);
         Assert.Equal("DEPT-ROOT", team.DepartmentCode);
         Assert.Equal("SHIFT-NIGHT", team.ShiftCode);
@@ -1369,6 +1384,7 @@ public sealed class MasterDataApiContractTests
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "mass", 3, "half-up"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var scopeAudit = new MasterDataIntegrationEventContext("corr-create-core", "cause-create-core", "user:test", "op-create-core");
 
         var created = new[]
         {
@@ -1387,23 +1403,31 @@ public sealed class MasterDataApiContractTests
             await new CreateDepartmentCommandHandler(new DepartmentRepository(dbContext)).Handle(
                 new CreateDepartmentCommand("org-001", "env-dev", "D-001", "Production", null),
                 CancellationToken.None),
-            await new CreateTeamCommandHandler(new TeamRepository(dbContext)).Handle(
-                new CreateTeamCommand("org-001", "env-dev", "T-001", "Team A", "D-001", "S-001"),
+            await new CreateTeamCommandHandler(new TeamRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateTeamCommand("org-001", "env-dev", "T-001", "Team A", "D-001", "S-001", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new CreateWorkshopCommandHandler(new WorkshopRepository(dbContext)).Handle(
-                new CreateWorkshopCommand("org-001", "env-dev", "WS-001", "Workshop A", "SITE-001", "user-manager", "Process workshop"),
+            await new CreateWorkshopCommandHandler(new WorkshopRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateWorkshopCommand("org-001", "env-dev", "WS-001", "Workshop A", "SITE-001", "user-manager", "Process workshop", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new AddTeamMemberCommandHandler(new TeamMemberRepository(dbContext)).Handle(
-                new AddTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null),
+            await new AddTeamMemberCommandHandler(new TeamMemberRepository(dbContext), dbContext).Handle(
+                new AddTeamMemberCommand(
+                    "org-001",
+                    "env-dev",
+                    "T-001",
+                    "user-001",
+                    true,
+                    new DateOnly(2026, 1, 1),
+                    null,
+                    new("corr-add-1", "cause-add-1", "user:test", "op-add-1")),
                 CancellationToken.None),
             await new AssignPersonnelSkillCommandHandler(new PersonnelSkillRepository(dbContext)).Handle(
                 new AssignPersonnelSkillCommand("org-001", "env-dev", "user-001", "weighing", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
                 CancellationToken.None),
-            await new CreateSiteCommandHandler(new SiteRepository(dbContext)).Handle(
-                new CreateSiteCommand("org-001", "env-dev", "SITE-001", "Main Plant", "Asia/Shanghai"),
+            await new CreateSiteCommandHandler(new SiteRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateSiteCommand("org-001", "env-dev", "SITE-001", "Main Plant", "Asia/Shanghai", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new CreateProductionLineCommandHandler(new ProductionLineRepository(dbContext)).Handle(
-                new CreateProductionLineCommand("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"),
+            await new CreateProductionLineCommandHandler(new ProductionLineRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateProductionLineCommand("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001", AuditContext: scopeAudit),
                 CancellationToken.None),
             await new CreateShiftCommandHandler(new ShiftRepository(dbContext)).Handle(
                 new CreateShiftCommand("org-001", "env-dev", "S-001", "Night Shift", new TimeOnly(20, 0), new TimeOnly(8, 0), 720),
@@ -1411,8 +1435,8 @@ public sealed class MasterDataApiContractTests
             await new CreateWorkCalendarCommandHandler(new WorkCalendarRepository(dbContext)).Handle(
                 new CreateWorkCalendarCommand("org-001", "env-dev", "CAL-001", "Standard Calendar"),
                 CancellationToken.None),
-            await new CreateWorkCenterCommandHandler(new WorkCenterRepository(dbContext)).Handle(
-                new CreateWorkCenterCommand("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "SITE-001", "LINE-001", "CAL-001", "minute", true, "WS-001"),
+            await new CreateWorkCenterCommandHandler(new WorkCenterRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateWorkCenterCommand("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "SITE-001", "LINE-001", "CAL-001", "minute", true, "WS-001", AuditContext: scopeAudit),
                 CancellationToken.None),
             await new RegisterDeviceAssetCommandHandler(new DeviceAssetRepository(dbContext)).Handle(
                 new RegisterDeviceAssetCommand("org-001", "env-dev", "EQ-001", "Mixer 500", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()),
@@ -1428,7 +1452,10 @@ public sealed class MasterDataApiContractTests
         Assert.Contains(created, x => x.ResourceType == "workshop" && x.Code == "WS-001");
         Assert.Contains(created, x => x.ResourceType == "team-member" && x.Code == "T-001:user-001");
         Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "scratch");
-        Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
+        Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry =>
+            entry.State == EntityState.Added
+            && entry.Entity is not Domain.AggregatesModel.ScopeContextAuditAggregate.MasterDataScopeContextAuditEntry));
+        Assert.Equal(6, dbContext.ScopeContextAuditEntries.Local.Count);
     }
 
     [Fact]
@@ -1505,8 +1532,16 @@ public sealed class MasterDataApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var repository = new TeamMemberRepository(dbContext);
-        await new AddTeamMemberCommandHandler(repository).Handle(
-            new AddTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null),
+        await new AddTeamMemberCommandHandler(repository, dbContext).Handle(
+            new AddTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                true,
+                new DateOnly(2026, 1, 1),
+                null,
+                new("corr-add-2", "cause-add-2", "user:test", "op-add-2")),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1519,7 +1554,13 @@ public sealed class MasterDataApiContractTests
         Assert.True(member.IsLeader);
 
         await new RemoveTeamMemberCommandHandler(dbContext).Handle(
-            new RemoveTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", "transferred"),
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                "transferred",
+                new("corr-remove-1", "cause-remove-1", "user:test", "op-remove-1")),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

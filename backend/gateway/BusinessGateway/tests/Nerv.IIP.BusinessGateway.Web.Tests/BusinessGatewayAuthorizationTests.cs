@@ -1378,7 +1378,9 @@ public sealed class BusinessGatewayAuthorizationTests
 
 internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
-    AuthorizationDataScope? dataScope = null)
+    AuthorizationDataScope? dataScope = null,
+    IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
+    IReadOnlyCollection<AuthorizationRole>? roles = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1387,7 +1389,13 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
 
     public List<BusinessGatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeBusinessGatewayAuthorizationClient Allowed(AuthorizationDataScope? dataScope = null) => new(_ => true, dataScope);
+    public BusinessGatewayAuthorizationContinuityMode? LastContinuityMode { get; private set; }
+
+    public static FakeBusinessGatewayAuthorizationClient Allowed(
+        AuthorizationDataScope? dataScope = null,
+        IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
+        IReadOnlyCollection<AuthorizationRole>? roles = null) =>
+        new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
 
@@ -1400,13 +1408,31 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     public Task<BusinessGatewayAuthorizationResult> CheckAsync(
         string bearerToken,
         BusinessGatewayPermissionRequirement requirement,
+        CancellationToken cancellationToken) =>
+        CheckAsync(
+            bearerToken,
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            cancellationToken);
+
+    public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        BusinessGatewayPermissionRequirement requirement,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
         CancellationToken cancellationToken)
     {
         CallCount++;
         LastRequirement = requirement;
+        LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin", dataScope)
+            ? BusinessGatewayAuthorizationResult.Allowed(
+                "user-admin",
+                "user",
+                "admin",
+                dataScope,
+                scopeGrants,
+                roles)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

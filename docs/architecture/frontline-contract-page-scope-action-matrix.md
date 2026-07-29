@@ -39,10 +39,12 @@ MAN-619 / GitHub
 | `Workshop`     | 服务端验证请求的车间属于当前主体授权范围。                                                                                |
 | `Organization` | 只以 `organizationId + environmentId` 为硬 scope 的组织业务队列；它不是“我的任务”。                                       |
 
-当前主体作业上下文与可选范围 API 尚未交付，由
-[#1164](https://github.com/Mang-X/Nerv-IIP/issues/1164) 负责。因此下表中的
-`WorkCenter` 过滤如果没有主体授权校验，只记为“Organization 内业务过滤”，不升级为
-`WorkCenter` 授权范围。
+MAN-627 / [#1164](https://github.com/Mang-X/Nerv-IIP/issues/1164) 已交付
+`GET /api/business-console/v1/me/work-context`：它从实时 IAM 授权取得当前 principal，
+按本次 permission 的 role/membership grant 与 MasterData 候选范围求交，返回
+candidate/authorized scopes、可用 scope kinds、角色来源和 freshness。该 API 只证明范围
+选择已被服务端验证，不会自动替各域列表/命令下推范围；下表中的 `WorkCenter` 过滤若仍未
+接入该上下文或没有资源归属校验，仍只记为“Organization 内业务过滤”。
 
 ### 1.3 状态标签
 

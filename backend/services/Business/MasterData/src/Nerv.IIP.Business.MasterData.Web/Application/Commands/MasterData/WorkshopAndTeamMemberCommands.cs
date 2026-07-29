@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -13,9 +14,13 @@ public sealed record CreateWorkshopCommand(
     string SiteCode,
     string? ManagerUserId,
     string? Description,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateWorkshopCommandHandler(IWorkshopRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateWorkshopCommandHandler(
+    IWorkshopRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateWorkshopCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkshopCommand request, CancellationToken cancellationToken)
@@ -49,6 +54,15 @@ public sealed class CreateWorkshopCommandHandler(IWorkshopRepository repository,
             request.ManagerUserId,
             request.Description);
         await repository.AddAsync(workshop, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for workshop creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "workshop",
+            workshop.Id.ToString(),
+            workshop.Code,
+            new { siteCode = workshop.SiteCode, disabled = workshop.Disabled });
         return new MasterDataResourceResult("workshop", workshop.Code, workshop.Name);
     }
 }
@@ -60,9 +74,10 @@ public sealed record AddTeamMemberCommand(
     string UserId,
     bool IsLeader,
     DateOnly EffectiveFrom,
-    DateOnly? EffectiveTo) : ICommand<MasterDataResourceResult>;
+    DateOnly? EffectiveTo,
+    MasterDataIntegrationEventContext AuditContext) : ICommand<MasterDataResourceResult>;
 
-public sealed class AddTeamMemberCommandHandler(ITeamMemberRepository repository)
+public sealed class AddTeamMemberCommandHandler(ITeamMemberRepository repository, ApplicationDbContext dbContext)
     : ICommandHandler<AddTeamMemberCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(AddTeamMemberCommand request, CancellationToken cancellationToken)
@@ -81,6 +96,27 @@ public sealed class AddTeamMemberCommandHandler(ITeamMemberRepository repository
             request.EffectiveFrom,
             request.EffectiveTo);
         await repository.AddAsync(member, cancellationToken);
+        MasterDataScopeContextAudit.Add(
+            dbContext,
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "team-member-assigned",
+            "team-member",
+            member.Id.ToString(),
+            member.Code,
+            member.Code,
+            before: null,
+            after: new
+            {
+                teamCode = member.TeamCode,
+                userId = member.UserId,
+                isLeader = member.IsLeader,
+                effectiveFrom = member.EffectiveFrom,
+                effectiveTo = member.EffectiveTo,
+                disabled = member.Disabled,
+            },
+            "scope-candidate-assigned");
         return new MasterDataResourceResult("team-member", member.Code, member.UserId);
     }
 }
@@ -90,7 +126,8 @@ public sealed record RemoveTeamMemberCommand(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason) : ICommand<MasterDataResourceResult>;
+    string Reason,
+    MasterDataIntegrationEventContext AuditContext) : ICommand<MasterDataResourceResult>;
 
 public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<RemoveTeamMemberCommand, MasterDataResourceResult>
@@ -107,7 +144,37 @@ public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContex
                 cancellationToken)
             ?? throw new KnownException($"Team member '{request.TeamCode}:{request.UserId}' was not found.");
 
+        var before = new
+        {
+            teamCode = member.TeamCode,
+            userId = member.UserId,
+            isLeader = member.IsLeader,
+            effectiveFrom = member.EffectiveFrom,
+            effectiveTo = member.EffectiveTo,
+            disabled = member.Disabled,
+        };
         member.Remove(string.IsNullOrWhiteSpace(request.Reason) ? "removed" : request.Reason);
+        MasterDataScopeContextAudit.Add(
+            dbContext,
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "team-member-removed",
+            "team-member",
+            member.Id.ToString(),
+            member.Code,
+            member.Code,
+            before,
+            after: new
+            {
+                teamCode = member.TeamCode,
+                userId = member.UserId,
+                isLeader = member.IsLeader,
+                effectiveFrom = member.EffectiveFrom,
+                effectiveTo = member.EffectiveTo,
+                disabled = member.Disabled,
+            },
+            string.IsNullOrWhiteSpace(request.Reason) ? "removed" : request.Reason.Trim());
         return new MasterDataResourceResult("team-member", member.Code, member.UserId);
     }
 }

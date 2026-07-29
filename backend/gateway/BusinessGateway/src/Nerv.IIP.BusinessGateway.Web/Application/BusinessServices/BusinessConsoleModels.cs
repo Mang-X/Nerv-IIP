@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -59,6 +60,112 @@ public sealed record BusinessConsoleResourceListResponse(
     int Total,
     bool Truncated = false,
     int? Limit = null);
+
+public sealed record BusinessConsolePrincipalWorkContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PermissionCode,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMasterDataPrincipalWorkContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string UserId);
+
+public sealed record BusinessMasterDataWorkContextWorker(
+    string Id,
+    string UserId,
+    string EmployeeNo,
+    string Name,
+    string? DepartmentId,
+    string? DepartmentName,
+    string? JobTitle,
+    string EmploymentStatus);
+
+public sealed record BusinessMasterDataWorkContextTeam(
+    string Id,
+    string Name,
+    bool IsLeader,
+    string? WorkshopId,
+    string ShiftId);
+
+public sealed record BusinessMasterDataWorkContextReference(string Id, string Name);
+
+public sealed record BusinessMasterDataWorkContextCoveredWorkCenter(
+    string Id,
+    string Name,
+    string WorkshopId,
+    string Relationship);
+
+public sealed record BusinessMasterDataWorkContextShift(
+    string Id,
+    string Name,
+    TimeOnly StartsAt,
+    TimeOnly EndsAt,
+    bool CrossesMidnight);
+
+public sealed record BusinessMasterDataWorkContextScopeAncestor(string Kind, string Id);
+
+public sealed record BusinessMasterDataWorkContextCandidateScope(
+    string Kind,
+    string Id,
+    string DisplayName,
+    string Relationship,
+    IReadOnlyCollection<BusinessMasterDataWorkContextScopeAncestor> Ancestors);
+
+public sealed record BusinessMasterDataPrincipalWorkContextResponse(
+    string ResolutionStatus,
+    BusinessMasterDataWorkContextWorker? Worker,
+    IReadOnlyCollection<BusinessMasterDataWorkContextTeam> Teams,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCoveredWorkCenter> CoveredWorkCenters,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Workshops,
+    IReadOnlyCollection<BusinessMasterDataWorkContextShift> Shifts,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Sites,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> CandidateScopes,
+    IReadOnlyCollection<string> CandidateScopeKinds,
+    IReadOnlyCollection<string> Issues);
+
+public sealed record BusinessConsoleWorkScopeAuthorizationPath(
+    string SourceKind,
+    string SourceId,
+    string GrantScopeKind,
+    string GrantScopeId,
+    string Relationship,
+    IReadOnlyCollection<string> ApplicablePermissionCodes);
+
+public sealed record BusinessConsoleAuthorizedWorkScope(
+    string Kind,
+    string Id,
+    string DisplayName,
+    string Relationship,
+    IReadOnlyCollection<BusinessConsoleWorkScopeAuthorizationPath> AuthorizationPaths);
+
+public sealed record BusinessConsolePrincipalIdentity(
+    string Id,
+    string PrincipalType,
+    string? LoginName,
+    IReadOnlyCollection<AuthorizationRole> Roles);
+
+public sealed record BusinessConsolePrincipalWorkContextResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string ApplicablePermissionCode,
+    DateTimeOffset ResolvedAtUtc,
+    BusinessConsolePrincipalIdentity Principal,
+    string ResolutionStatus,
+    BusinessMasterDataWorkContextWorker? Worker,
+    IReadOnlyCollection<BusinessMasterDataWorkContextTeam> Teams,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCoveredWorkCenter> CoveredWorkCenters,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Workshops,
+    IReadOnlyCollection<BusinessMasterDataWorkContextShift> Shifts,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Sites,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> CandidateScopes,
+    IReadOnlyCollection<string> CandidateScopeKinds,
+    IReadOnlyCollection<BusinessConsoleAuthorizedWorkScope> AuthorizedScopes,
+    IReadOnlyCollection<string> AvailableScopeKinds,
+    BusinessConsoleAuthorizedWorkScope? SelectedScope,
+    IReadOnlyCollection<string> Issues);
 
 public sealed record BusinessConsoleListResourcesRequest(
     string OrganizationId,

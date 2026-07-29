@@ -289,7 +289,9 @@ public sealed record UpdateMasterDataResourceRequest(
     string? Phone = null,
     bool ClearCreditLimit = false);
 
-public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
+public sealed class UpdateMasterDataResourceEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<UpdateMasterDataResourceRequest, ResponseData<MasterDataResourceDetail>>
 {
     public override void Configure()
@@ -300,6 +302,7 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
 
     public override async Task HandleAsync(UpdateMasterDataResourceRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var response = await sender.Send(
             new UpdateMasterDataResourceCommand(
                 req.OrganizationId,
@@ -409,7 +412,8 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.JobTitle,
                 req.EmploymentStatus,
                 req.Phone,
-                req.ClearCreditLimit),
+                req.ClearCreditLimit,
+                operation),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -780,7 +784,9 @@ public sealed class CreateDepartmentEndpoint(ISender sender)
     }
 }
 
-public sealed class CreateTeamEndpoint(ISender sender)
+public sealed class CreateTeamEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateTeamRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -791,6 +797,7 @@ public sealed class CreateTeamEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateTeamRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateTeamCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -799,7 +806,8 @@ public sealed class CreateTeamEndpoint(ISender sender)
             req.DepartmentCode,
             req.ShiftCode,
             req.WorkshopCode,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -855,7 +863,9 @@ public sealed class ListPersonnelSkillMatrixEndpoint(ISender sender)
     }
 }
 
-public sealed class CreateSiteEndpoint(ISender sender)
+public sealed class CreateSiteEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateSiteRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -866,18 +876,22 @@ public sealed class CreateSiteEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateSiteRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateSiteCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.Code,
             req.Name,
             req.Timezone,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CreateWorkshopEndpoint(ISender sender)
+public sealed class CreateWorkshopEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateWorkshopRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -888,6 +902,7 @@ public sealed class CreateWorkshopEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateWorkshopRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateWorkshopCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -896,12 +911,15 @@ public sealed class CreateWorkshopEndpoint(ISender sender)
             req.SiteCode,
             req.ManagerUserId,
             req.Description,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CreateProductionLineEndpoint(ISender sender)
+public sealed class CreateProductionLineEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateProductionLineRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -912,6 +930,7 @@ public sealed class CreateProductionLineEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateProductionLineRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateProductionLineCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -919,7 +938,8 @@ public sealed class CreateProductionLineEndpoint(ISender sender)
             req.Name,
             req.SiteCode,
             req.WorkshopCode,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -974,7 +994,9 @@ public sealed class CreateWorkCalendarEndpoint(ISender sender)
     }
 }
 
-public sealed class CreateWorkCenterEndpoint(ISender sender)
+public sealed class CreateWorkCenterEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateWorkCenterRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -985,6 +1007,7 @@ public sealed class CreateWorkCenterEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateWorkCenterRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateWorkCenterCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -1003,7 +1026,8 @@ public sealed class CreateWorkCenterEndpoint(ISender sender)
             req.EfficiencyRate,
             req.NumberOfCapacities,
             req.CostCenterCode,
-            req.Bottleneck), ct);
+            req.Bottleneck,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1030,7 +1054,9 @@ public sealed record RemoveTeamMemberRequest(
     string UserId,
     string Reason = "");
 
-public sealed class AddTeamMemberEndpoint(ISender sender)
+public sealed class AddTeamMemberEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<AddTeamMemberRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -1041,6 +1067,7 @@ public sealed class AddTeamMemberEndpoint(ISender sender)
 
     public override async Task HandleAsync(AddTeamMemberRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new AddTeamMemberCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -1048,7 +1075,8 @@ public sealed class AddTeamMemberEndpoint(ISender sender)
             req.UserId,
             req.IsLeader,
             req.EffectiveFrom,
-            req.EffectiveTo), ct);
+            req.EffectiveTo,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1073,7 +1101,9 @@ public sealed class ListTeamMembersEndpoint(ISender sender)
     }
 }
 
-public sealed class RemoveTeamMemberEndpoint(ISender sender)
+public sealed class RemoveTeamMemberEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<RemoveTeamMemberRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -1084,12 +1114,14 @@ public sealed class RemoveTeamMemberEndpoint(ISender sender)
 
     public override async Task HandleAsync(RemoveTeamMemberRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new RemoveTeamMemberCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.TeamCode,
             req.UserId,
-            req.Reason), ct);
+            req.Reason,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1121,7 +1153,9 @@ public sealed record ListWorkerDirectoryRequest(
     int PageIndex = 1,
     int PageSize = 50);
 
-public sealed class CreateWorkerEndpoint(ISender sender)
+public sealed class CreateWorkerEndpoint(
+    ISender sender,
+    IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<CreateWorkerRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
@@ -1132,6 +1166,7 @@ public sealed class CreateWorkerEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateWorkerRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
         var result = await sender.Send(new CreateWorkerCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -1142,7 +1177,8 @@ public sealed class CreateWorkerEndpoint(ISender sender)
             req.JobTitle,
             req.EmploymentStatus,
             req.Phone,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            operation), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1172,6 +1208,30 @@ public sealed class ListWorkerDirectoryEndpoint(ISender sender)
             req.IncludeDisabled,
             req.PageIndex,
             req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record GetPrincipalWorkContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string UserId);
+
+public sealed class GetPrincipalWorkContextEndpoint(ISender sender)
+    : MasterDataEndpoint<GetPrincipalWorkContextRequest, ResponseData<PrincipalWorkContextResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<GetPrincipalWorkContextEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(GetPrincipalWorkContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetPrincipalWorkContextQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.UserId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -1742,6 +1802,7 @@ public static class MasterDataEndpointContracts
         new(typeof(AddTeamMemberEndpoint), "POST", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesManage, "addBusinessMasterDataTeamMember"),
         new(typeof(CreateWorkerEndpoint), "POST", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorker"),
         new(typeof(ListWorkerDirectoryEndpoint), "GET", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataWorkers"),
+        new(typeof(GetPrincipalWorkContextEndpoint), "GET", "/api/business/v1/master-data/principals/{userId}/work-context", BusinessPermissionCodes.MasterDataResourcesRead, "getBusinessMasterDataPrincipalWorkContext"),
         new(typeof(ListTeamMembersEndpoint), "GET", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataTeamMembers"),
         new(typeof(RemoveTeamMemberEndpoint), "DELETE", "/api/business/v1/master-data/teams/{teamCode}/members/{userId}", BusinessPermissionCodes.MasterDataResourcesManage, "removeBusinessMasterDataTeamMember"),
         new(typeof(AssignPersonnelSkillEndpoint), "POST", "/api/business/v1/master-data/personnel-skills", BusinessPermissionCodes.MasterDataResourcesManage, "assignBusinessMasterDataPersonnelSkill"),

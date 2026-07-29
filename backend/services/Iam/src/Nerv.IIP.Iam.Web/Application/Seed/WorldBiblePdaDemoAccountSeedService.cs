@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.Iam.Web.Application.Seed;
 /// 环境变量注入）时才执行；口令不落仓库。其余 54 个账号保持不可登录（见
 /// <see cref="WorldBibleWorkerSeedService"/>）。
 ///
-/// 幂等：角色权限集与成员资格按期望值收敛；口令仅在与演示口令不一致时覆写
+/// 幂等：仅为新角色/成员写入基线授权；已存在授权保持不变。旧 seed 基线中仍为空的
+/// scope 由一次性、可识别的 backfill 补齐；口令仅在与演示口令不一致时覆写
 /// （覆写同时清除 PasswordChangeRequired，保证 PDA 直接可登录）。
 /// </summary>
 public sealed class WorldBiblePdaDemoAccountSeedService(
@@ -100,7 +102,11 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var organizationId = new OrganizationId(seed.OrganizationId);
         var environmentId = new IamEnvironmentId(seed.EnvironmentId);
+        var principalScopeBackfillManifestId = new SeedManifestId("iam-pda-principal-scope-backfill:v1");
+        var principalScopeBackfillApplied = await dbContext.SeedManifests
+            .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
+        var rolesById = new Dictionary<string, Role>(StringComparer.Ordinal);
 
         foreach (var (roleId, roleName, permissionCodes) in Roles)
         {
@@ -110,12 +116,11 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
                 .SingleOrDefaultAsync(x => x.Id == typedRoleId, cancellationToken);
             if (role is null)
             {
-                dbContext.Roles.Add(new Role(typedRoleId, roleName, permissionCodes));
+                role = new Role(typedRoleId, roleName, permissionCodes);
+                dbContext.Roles.Add(role);
             }
-            else if (!SetEquals(role.Permissions.Select(x => x.PermissionCode), permissionCodes))
-            {
-                role.ReplacePermissions(permissionCodes);
-            }
+
+            rolesById.Add(roleId, role);
         }
 
         foreach (var (userId, roleId) in Accounts)
@@ -142,22 +147,46 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             var typedRoleId = new RoleId(roleId);
             var membership = await dbContext.Memberships
                 .Include(x => x.Roles)
+                .Include(x => x.DataScopes)
                 .SingleOrDefaultAsync(x => x.Id == membershipId, cancellationToken);
             if (membership is null)
             {
-                dbContext.Memberships.Add(new Membership(membershipId, typedUserId, organizationId, environmentId, [typedRoleId]));
+                membership = new Membership(membershipId, typedUserId, organizationId, environmentId, [typedRoleId]);
+                membership.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Self, userId)]);
+                dbContext.Memberships.Add(membership);
             }
-            else if (!SetEquals(membership.Roles.Select(x => x.RoleId.Id), [typedRoleId.Id]))
+            else if (!principalScopeBackfillApplied
+                && membership.DataScopes.Count == 0
+                && HasExactRole(membership, typedRoleId)
+                && IsLegacyBaselineRole(rolesById[roleId], roleId))
             {
-                membership.ReplaceRoles([typedRoleId]);
+                membership.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Self, userId)]);
             }
+        }
+
+        if (!principalScopeBackfillApplied)
+        {
+            dbContext.SeedManifests.Add(new SeedManifest(
+                principalScopeBackfillManifestId,
+                "iam-pda-principal-scope-backfill",
+                "v1",
+                "iam",
+                now));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static bool SetEquals(IEnumerable<string> current, IEnumerable<string> desired)
+    private static bool HasExactRole(Membership membership, RoleId roleId) =>
+        membership.Roles.Count == 1 && membership.Roles.Single().RoleId == roleId;
+
+    private static bool IsLegacyBaselineRole(Role role, string roleId)
     {
-        return current.ToHashSet(StringComparer.Ordinal).SetEquals(desired);
+        var baseline = Roles.Single(x => x.RoleId == roleId);
+        return role.RoleName == baseline.RoleName
+            && role.Permissions
+                .Select(x => x.PermissionCode)
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(baseline.PermissionCodes);
     }
 }

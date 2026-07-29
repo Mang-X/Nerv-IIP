@@ -292,7 +292,11 @@ public sealed class BusinessGatewayProxyTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var detail = await client.GetAsync("/api/business-console/v1/master-data/resources/reference-data/powder?organizationId=org-001&environmentId=env-dev&codeSet=material-type");
-        var update = await client.PatchAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001", new
+        using var updateMessage = new HttpRequestMessage(HttpMethod.Patch, "/api/business-console/v1/master-data/resources/sku/SKU-001");
+        updateMessage.Headers.Add("X-Correlation-Id", "corr-master-update");
+        updateMessage.Headers.Add("X-Causation-Id", "cause-master-update");
+        updateMessage.Headers.Add("Idempotency-Key", "idem-master-update");
+        updateMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -302,6 +306,7 @@ public sealed class BusinessGatewayProxyTests
             category = "raw-material",
             materialType = "powder",
         });
+        var update = await client.SendAsync(updateMessage);
         using var disableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable");
         disableMessage.Headers.Add("X-Correlation-Id", "corr-master-disable");
         disableMessage.Content = JsonContent.Create(new
@@ -334,6 +339,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", masterData.LastInternalToken);
         Assert.Equal(new BusinessConsoleMasterDataResourceRequest("org-001", "env-dev", "reference-data", "powder", "material-type"), masterData.LastDetailRequest);
         Assert.Equal(new BusinessConsoleUpdateMasterDataResourceRequest("org-001", "env-dev", "sku", "SKU-001", Name: "Updated SKU", Category: "raw-material", MaterialType: "powder"), masterData.LastUpdateRequest);
+        Assert.Equal(
+            new BusinessServiceAuditContext("user:user-admin", "corr-master-update", "cause-master-update", "idem-master-update"),
+            masterData.LastAuditContext);
         Assert.Contains(false, masterData.SetResourceEnabledCalls);
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
@@ -377,7 +385,13 @@ public sealed class BusinessGatewayProxyTests
             effectiveFrom = "2026-01-01",
         });
         var listMembers = await client.GetAsync("/api/business-console/v1/master-data/teams/T-001/members?organizationId=org-001&environmentId=env-dev&includeDisabled=true");
-        var removeMember = await client.DeleteAsync("/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=transferred");
+        using var removeMemberMessage = new HttpRequestMessage(
+            HttpMethod.Delete,
+            "/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=transferred");
+        removeMemberMessage.Headers.Add("X-Correlation-Id", "corr-remove-member");
+        removeMemberMessage.Headers.Add("X-Causation-Id", "cause-remove-member");
+        removeMemberMessage.Headers.Add("Idempotency-Key", "idem-remove-member");
+        var removeMember = await client.SendAsync(removeMemberMessage);
 
         Assert.Equal(HttpStatusCode.OK, listWorkshops.StatusCode);
         Assert.Equal(HttpStatusCode.OK, createWorkshop.StatusCode);
@@ -390,6 +404,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleAddTeamMemberRequest("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null), masterData.LastAddTeamMemberRequest);
         Assert.Equal(new BusinessConsoleListTeamMembersRequest("org-001", "env-dev", "T-001", true), masterData.LastListTeamMembersRequest);
         Assert.Equal(new BusinessConsoleRemoveTeamMemberRequest("org-001", "env-dev", "T-001", "user-001", "transferred"), masterData.LastRemoveTeamMemberRequest);
+        Assert.Equal(
+            new BusinessServiceAuditContext("user:user-admin", "corr-remove-member", "cause-remove-member", "idem-remove-member"),
+            masterData.LastAuditContext);
     }
 
     [Fact]
@@ -1149,6 +1166,65 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
         Assert.Null(mes.LastWorkOrderListRequest.DeviceAssetIds);
         Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_honors_explicit_work_center_data_scope()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
+            ],
+        };
+        var dataScope = new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]);
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(dataScope), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
+    }
+
+    [Fact]
+    public async Task Legacy_consumers_fail_closed_without_resolving_self_or_team_scope()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient();
+        var dataScope = new AuthorizationDataScope([], [], [], SelfIds: ["user-001"], TeamCodes: ["TEAM-A"]);
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(dataScope), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("__iam_scope_no_match__", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Equal(0, masterData.ListResourcesCallCount);
     }
 
     [Fact]
@@ -5266,6 +5342,7 @@ public sealed class BusinessGatewayProxyTests
         await client.UpdateResourceAsync(
             "internal-token-001",
             new BusinessConsoleUpdateMasterDataResourceRequest("org-001", "env-dev", "sku", "SKU-001", Name: "Updated SKU"),
+            new BusinessServiceAuditContext("user:trusted", "corr-update", "cause-update", "idem-update"),
             CancellationToken.None);
         await client.SetResourceEnabledAsync(
             "internal-token-001",
@@ -5278,6 +5355,10 @@ public sealed class BusinessGatewayProxyTests
 
         AssertRequest(handler.Requests[0], HttpMethod.Get, "/api/business/v1/master-data/resources/reference-data/powder?organizationId=org-001&environmentId=env-dev&codeSet=material-type");
         AssertRequest(handler.Requests[1], HttpMethod.Patch, "/api/business/v1/master-data/resources/sku/SKU-001");
+        Assert.Equal("user:trusted", handler.Requests[1].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("corr-update", handler.Requests[1].Headers.GetValues("X-Correlation-Id").Single());
+        Assert.Equal("cause-update", handler.Requests[1].Headers.GetValues("X-Causation-Id").Single());
+        Assert.Equal("idem-update", handler.Requests[1].Headers.GetValues("X-Idempotency-Key").Single());
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/resources/sku/SKU-001/disable");
         Assert.Equal("user:trusted", handler.Requests[2].Headers.GetValues("X-Authenticated-Actor").Single());
         Assert.Equal("corr-master-http", handler.Requests[2].Headers.GetValues("X-Correlation-Id").Single());
@@ -8512,11 +8593,17 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleListResourcesRequest? LastListResourcesRequest { get; private set; }
 
+    public BusinessMasterDataPrincipalWorkContextRequest? LastPrincipalWorkContextRequest { get; private set; }
+
+    public BusinessMasterDataPrincipalWorkContextResponse? PrincipalWorkContext { get; init; }
+
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
     public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
 
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
+
+    public BusinessServiceAuditContext? LastAuditContext { get; private set; }
 
     public BusinessConsoleSetMasterDataResourceEnabledRequest? LastSetEnabledRequest { get; private set; }
 
@@ -8582,6 +8669,26 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public Exception? DetailFailure { get; init; }
 
+    public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
+        string internalBearerToken,
+        BusinessMasterDataPrincipalWorkContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPrincipalWorkContextRequest = request;
+        return Task.FromResult(PrincipalWorkContext ?? new BusinessMasterDataPrincipalWorkContextResponse(
+            "worker-not-mapped",
+            null,
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            ["worker-not-mapped"]));
+    }
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -8628,10 +8735,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
         BusinessConsoleUpdateMasterDataResourceRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastUpdateRequest = request;
+        LastAuditContext = auditContext;
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true, request.Name));
     }
 
@@ -8794,9 +8903,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateWorkshopAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkshopRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         LastCreateWorkshopRequest = request;
+        LastAuditContext = auditContext;
         return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", "workshop", request.Code, request.Name);
     }
 
@@ -8824,9 +8935,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkerRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         LastCreateWorkerRequest = request;
+        LastAuditContext = auditContext;
         return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workers", "worker", request.Code, request.Name);
     }
 
@@ -8849,20 +8962,23 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
         BusinessConsoleCreateSiteRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", "site", request.Code, request.Name);
+        CreateAuditedResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", "site", request.Code, request.Name, auditContext);
 
     public Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
         string internalBearerToken,
         BusinessConsoleCreateProductionLineRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", "production-line", request.Code, request.Name);
+        CreateAuditedResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", "production-line", request.Code, request.Name, auditContext);
 
     public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkCenterRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", "work-center", request.Code, request.Name);
+        CreateAuditedResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", "work-center", request.Code, request.Name, auditContext);
 
     public Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
         string internalBearerToken,
@@ -8885,15 +9001,18 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateTeamAsync(
         string internalBearerToken,
         BusinessConsoleCreateTeamRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", "team", request.Code, request.Name);
+        CreateAuditedResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", "team", request.Code, request.Name, auditContext);
 
     public Task<BusinessConsoleResourceItem> AddTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleAddTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         LastAddTeamMemberRequest = request;
+        LastAuditContext = auditContext;
         return CreateResourceAsync(internalBearerToken, $"/api/business/v1/master-data/teams/{request.TeamCode}/members", "team-member", $"{request.TeamCode}:{request.UserId}", request.UserId);
     }
 
@@ -8912,9 +9031,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
         string internalBearerToken,
         BusinessConsoleRemoveTeamMemberRequest request,
+        BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken)
     {
         LastRemoveTeamMemberRequest = request;
+        LastAuditContext = auditContext;
         return CreateResourceAsync(internalBearerToken, $"/api/business/v1/master-data/teams/{request.TeamCode}/members/{request.UserId}", "team-member", $"{request.TeamCode}:{request.UserId}", request.UserId);
     }
 
@@ -9016,6 +9137,18 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CreateResourceCallCount++;
         LastCreateResourcePath = downstreamPath;
         return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code ?? $"{resourceType}-generated", displayName, true, "v1"));
+    }
+
+    private Task<BusinessConsoleResourceItem> CreateAuditedResourceAsync(
+        string internalBearerToken,
+        string downstreamPath,
+        string resourceType,
+        string? code,
+        string displayName,
+        BusinessServiceAuditContext auditContext)
+    {
+        LastAuditContext = auditContext;
+        return CreateResourceAsync(internalBearerToken, downstreamPath, resourceType, code, displayName);
     }
 
     private static BusinessConsoleCodeRuleItem CodeRuleItem() =>

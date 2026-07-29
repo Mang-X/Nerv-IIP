@@ -15,6 +15,9 @@ public sealed record PatchRolePermissionsRequest(IReadOnlyList<string> Permissio
 public interface IIamRoleApplicationService
 {
     Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken);
+    Task<IReadOnlyList<RoleResponse>> ResolveRolesAsync(
+        IReadOnlyCollection<string> roleIds,
+        CancellationToken cancellationToken);
 
     Task<RoleResponse> CreateRoleAsync(
         string? roleName,
@@ -30,6 +33,20 @@ public interface IIamRoleApplicationService
 
 public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : IIamRoleApplicationService
 {
+    public Task<IReadOnlyList<RoleResponse>> ResolveRolesAsync(
+        IReadOnlyCollection<string> roleIds,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var requested = roleIds.ToHashSet(StringComparer.Ordinal);
+        IReadOnlyList<RoleResponse> roles = store.Roles
+            .Where(x => requested.Contains(x.RoleId))
+            .OrderBy(x => x.RoleId, StringComparer.Ordinal)
+            .Select(ToResponse)
+            .ToArray();
+        return Task.FromResult(roles);
+    }
+
     public Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
         var roles = store.Roles
@@ -90,6 +107,20 @@ public sealed class PostgreSqlIamRoleApplicationService(
     IRoleRepository repository,
     ISecurityAuditRecorder securityAudit) : IIamRoleApplicationService
 {
+    public async Task<IReadOnlyList<RoleResponse>> ResolveRolesAsync(
+        IReadOnlyCollection<string> roleIds,
+        CancellationToken cancellationToken)
+    {
+        var requested = roleIds
+            .Distinct(StringComparer.Ordinal)
+            .Select(x => new RoleId(x))
+            .ToArray();
+        return (await repository.ListByIdsAsync(requested, cancellationToken))
+            .OrderBy(x => x.Id.Id, StringComparer.Ordinal)
+            .Select(ToResponse)
+            .ToArray();
+    }
+
     public async Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
         var roles = await repository.ListNotDeletedAsync(cancellationToken);
