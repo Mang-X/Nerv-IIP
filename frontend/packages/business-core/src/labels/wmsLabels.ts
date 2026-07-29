@@ -11,8 +11,11 @@ function resolve(map: Record<string, string>, code: string | null | undefined): 
 
 const WAREHOUSE_TASK_STATUS: Record<string, string> = {
   pending: '待执行',
+  open: '待执行',
   inprogress: '执行中',
+  exception: '异常待处理',
   completed: '已完成',
+  completedwithdifference: '差异完成',
   cancelled: '已取消',
   canceled: '已取消',
 }

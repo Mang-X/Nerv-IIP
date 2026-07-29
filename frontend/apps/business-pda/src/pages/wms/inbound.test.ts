@@ -2,7 +2,7 @@ import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NvBottomSheet } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 
 const push = vi.fn(() => Promise.resolve())
 const routeGuardState = vi.hoisted(() => ({
@@ -98,6 +98,8 @@ const wmsState = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
+    scopeKey: ref('self:emp049'),
+    scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
     orders: computed(() => wmsState.orders),
     total: computed(() => wmsState.orders.length),
     organizationId: computed(() => 'org-001'),
@@ -257,6 +259,8 @@ describe('WMS 收货入库', () => {
     const putaway = document.querySelector<HTMLButtonElement>('[data-testid="go-putaway"]')!
     expect(putaway).toBeTruthy()
     expect(document.querySelector('[data-quality-gate-notice]')).toBeNull()
+    expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(document.body.textContent).toContain('该单已结束，仅可查看明细或进入后续上架')
     putaway.click()
     expect(push).toHaveBeenCalledWith('/wms/putaway')
   })

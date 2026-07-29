@@ -9,8 +9,11 @@ import {
 describe('WMS status labels (Chinese, no engineering codes leak to UI)', () => {
   it('maps warehouse task statuses', () => {
     expect(warehouseTaskStatusLabel('pending')).toBe('待执行')
+    expect(warehouseTaskStatusLabel('open')).toBe('待执行')
     expect(warehouseTaskStatusLabel('inProgress')).toBe('执行中')
+    expect(warehouseTaskStatusLabel('exception')).toBe('异常待处理')
     expect(warehouseTaskStatusLabel('completed')).toBe('已完成')
+    expect(warehouseTaskStatusLabel('completedWithDifference')).toBe('差异完成')
     expect(warehouseTaskStatusLabel('cancelled')).toBe('已取消')
   })
 

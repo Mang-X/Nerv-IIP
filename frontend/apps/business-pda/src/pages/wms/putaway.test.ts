@@ -1,190 +1,90 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 
-const push = vi.fn()
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push }),
-  RouterView: { template: '<div />' },
-}))
-
-// 真实组合式用真实的 ref/computed，贴合运行时解包行为。
-const wmsState = vi.hoisted(() => ({
-  filters: {
-    skip: 0,
-    take: 100,
-    status: undefined as string | undefined,
-    locationCode: undefined as string | undefined,
-  },
-  tasks: [
-    {
-      warehouseTaskId: '33333333-3333-3333-3333-333333333333',
-      taskType: 'putaway',
-      taskNo: 'PA-2026-0001',
-      sourceOrderNo: 'IB-2026-0001',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-A',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'IN-01',
-      toLocationCode: 'B-01',
-      plannedQuantity: 10,
-      executedQuantity: 0,
-      status: 'pending',
-      createdAtUtc: '2026-06-11T08:00:00Z',
-    },
-    {
-      warehouseTaskId: '44444444-4444-4444-4444-444444444444',
-      taskType: 'putaway',
-      taskNo: 'PA-2026-0002',
-      sourceOrderNo: 'IB-2026-0002',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-B',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'IN-01',
-      toLocationCode: 'B-02',
-      plannedQuantity: 5,
-      executedQuantity: 0,
-      status: 'inProgress',
-      createdAtUtc: '2026-06-11T09:00:00Z',
-    },
-  ],
-  error: null as unknown,
-  pending: false,
-  refresh: vi.fn(),
-}))
+const executeTask = vi.fn()
+const refresh = vi.fn()
+const loadMore = vi.fn()
+const scopeKey = shallowRef('self:emp049')
+const filters = reactive({
+  status: 'Open' as string | undefined,
+  keyword: undefined as string | undefined,
+  locationCode: undefined as string | undefined,
+})
+const task = {
+  warehouseTaskId: 'task-1',
+  taskNo: 'PA-2026-0001',
+  status: 'Open',
+  version: 1,
+  allowedActions: ['start'],
+}
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsPutaway: () => ({
-    filters: wmsState.filters,
-    tasks: computed(() => wmsState.tasks),
-    total: computed(() => wmsState.tasks.length),
-    organizationId: computed(() => 'org-001'),
-    environmentId: computed(() => 'env-dev'),
-    scopeReady: computed(() => true),
-    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
-    hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
-    hasFailedResponse: computed(() => false),
-    pending: computed(() => wmsState.pending),
-    error: computed(() => wmsState.error),
-    refresh: wmsState.refresh,
+    filters,
+    scopeKey,
+    scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+    tasks: computed(() => [task]),
+    total: computed(() => 1),
+    pending: shallowRef(false),
+    error: shallowRef(),
+    refreshing: shallowRef(false),
+    loadingMore: shallowRef(false),
+    actionPending: shallowRef(false),
+    refresh,
+    loadMore,
+    executeTask,
   }),
 }))
 
 import PutawayPage from './putaway.vue'
 
-function freshTasks() {
-  return [
-    {
-      warehouseTaskId: '33333333-3333-3333-3333-333333333333',
-      taskType: 'putaway',
-      taskNo: 'PA-2026-0001',
-      sourceOrderNo: 'IB-2026-0001',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-A',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'IN-01',
-      toLocationCode: 'B-01',
-      plannedQuantity: 10,
-      executedQuantity: 0,
-      status: 'pending',
-      createdAtUtc: '2026-06-11T08:00:00Z',
-    },
-    {
-      warehouseTaskId: '44444444-4444-4444-4444-444444444444',
-      taskType: 'putaway',
-      taskNo: 'PA-2026-0002',
-      sourceOrderNo: 'IB-2026-0002',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-B',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'IN-01',
-      toLocationCode: 'B-02',
-      plannedQuantity: 5,
-      executedQuantity: 0,
-      status: 'inProgress',
-      createdAtUtc: '2026-06-11T09:00:00Z',
-    },
-  ]
-}
-
-function resetState() {
-  wmsState.filters.status = undefined
-  wmsState.filters.locationCode = undefined
-  wmsState.tasks = freshTasks()
-  wmsState.error = null
-  wmsState.pending = false
-  wmsState.refresh.mockClear()
-  push.mockClear()
-}
-
-describe('WMS 上架（只读）', () => {
-  beforeEach(() => resetState())
-
-  it('渲染上架任务行与中文状态（不出现原始状态码或 GUID）', () => {
-    const wrapper = mount(PutawayPage)
-    const text = wrapper.text()
-    expect(text).toContain('PA-2026-0001')
-    expect(text).toContain('PA-2026-0002')
-    expect(text).toContain('SKU-A')
-    expect(text).toContain('IN-01')
-    expect(text).toContain('B-01')
-    // 中文状态
-    expect(text).toContain('待执行')
-    expect(text).toContain('执行中')
-    // 不暴露工程语言：原始状态码 / GUID
-    expect(text).not.toContain('pending')
-    expect(text).not.toContain('inProgress')
-    expect(text).not.toContain('33333333-3333-3333-3333-333333333333')
-    expect(text).not.toContain('44444444-4444-4444-4444-444444444444')
+describe('WMS 上架作业页', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    filters.status = 'Open'
+    filters.keyword = undefined
+    filters.locationCode = undefined
+    scopeKey.value = 'self:emp049'
   })
 
-  it('扫库位写入 filters.locationCode', async () => {
-    const wrapper = mount(PutawayPage)
-    const input = wrapper.get('input[placeholder*="库位"]')
-    await input.setValue('B-02')
-    await input.trigger('keydown.enter')
-    expect(wmsState.filters.locationCode).toBe('B-02')
+  it('使用同一移动作业视图并锁定上架任务类型', () => {
+    const wrapper = mount(PutawayPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            props: ['title', 'taskType', 'tasks', 'total', 'scopeKey', 'status'],
+            template:
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}</div>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
+      '上架|putaway|1|self:emp049|Open|PA-2026-0001',
+    )
   })
 
-  it('清除筛选可重置 filters.locationCode', async () => {
-    wmsState.filters.locationCode = 'B-02'
-    const wrapper = mount(PutawayPage)
-    await wrapper.get('[data-testid="clear-filter"]').trigger('click')
-    expect(wmsState.filters.locationCode).toBeUndefined()
-  })
+  it('把真实上架动作交给 composable，不保留只读说明或伪完成按钮', async () => {
+    const wrapper = mount(PutawayPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['execute'],
+            template:
+              '<button data-testid="execute" @click="$emit(\'execute\', { action: \'start\', task: task })" />',
+            setup() {
+              return { task }
+            },
+          },
+        },
+      },
+    })
 
-  it('错误时显示错误横幅而非空态', () => {
-    wmsState.error = new Error('boom')
-    wmsState.tasks = []
-    const wrapper = mount(PutawayPage)
-    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('暂无上架任务')
-  })
+    await wrapper.get('[data-testid="execute"]').trigger('click')
 
-  it('刷新失败但已有任务时：错误横幅与任务列表共存（列表不被隐藏）', () => {
-    wmsState.error = new Error('boom')
-    wmsState.tasks = freshTasks()
-    const wrapper = mount(PutawayPage)
-    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
-    const text = wrapper.text()
-    expect(text).toContain('PA-2026-0001')
-    expect(text).toContain('PA-2026-0002')
-    expect(text).not.toContain('暂无上架任务')
-  })
-
-  it('无任务且无错误时显示空态', () => {
-    wmsState.tasks = []
-    const wrapper = mount(PutawayPage)
-    expect(wrapper.text()).toContain('暂无上架任务')
-  })
-
-  it('页面只读：无写操作按钮（无确认完成）', () => {
-    const wrapper = mount(PutawayPage)
-    expect(wrapper.find('[data-testid="confirm-complete"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('确认完成')
+    expect(executeTask).toHaveBeenCalledWith({ action: 'start', task })
+    expect(wrapper.text()).not.toContain('上架完成经收货入库过账')
   })
 })

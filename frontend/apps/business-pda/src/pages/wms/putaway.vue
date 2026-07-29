@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import RetryableListError from '@/components/RetryableListError.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import WarehouseTaskExecutionView, {
+  type WarehouseTaskExecutionIntent,
+} from '@/components/wms/WarehouseTaskExecutionView.vue'
 import { useWmsPutaway } from '@/composables/useBusinessWms'
-import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed } from 'vue'
+import { NvAppShellMobile } from '@nerv-iip/ui-mobile'
 
 definePage({
   meta: {
@@ -13,66 +12,32 @@ definePage({
   },
 })
 
-// 只读任务清单：上架无逐任务 complete 端点，写闭环经父单收货入库过账。
 const {
   filters,
+  scopeKey,
+  scopeOptions,
   tasks,
   total,
   pending,
   error,
+  refreshing,
+  loadingMore,
+  actionPending,
   refresh,
-  organizationId,
-  environmentId,
-  scopeReady,
-  lastUpdatedAt,
-  hasSuccessfulResponse,
-  hasFailedResponse,
-} = useWmsPutaway()
-const putawayScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
-const putawayTotal = computed(() => total.value)
+  loadMore,
+  executeTask,
+} = useWmsPutaway({ status: 'Open' })
 
-// 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(
-  () =>
-    !pending.value &&
-    !error.value &&
-    !hasFailedResponse.value &&
-    hasSuccessfulResponse.value &&
-    tasks.value.length === 0,
-)
-
-// 当前有库位筛选时才显示「清除」入口。
-const hasFilter = computed(() => Boolean(filters.locationCode))
-
-function onScan(value: string) {
-  filters.locationCode = value
+function scanLocation(value: string) {
+  filters.locationCode = value.trim() || undefined
 }
 
-function clearFilter() {
-  filters.locationCode = undefined
-}
-
-// 行标题优先任务号，退回源单号；副标题汇总 SKU/库位流向/数量/中文状态。
-function rowTitle(taskNo?: string, sourceOrderNo?: string) {
-  return `任务 ${taskNo || sourceOrderNo || ''}`.trim()
-}
-
-function rowSubtitle(task: {
-  skuCode?: string
-  fromLocationCode?: string
-  toLocationCode?: string
-  plannedQuantity?: number
-  status?: string
-}) {
-  const parts = [
-    `SKU ${task.skuCode ?? ''}`,
-    `${task.fromLocationCode ?? ''}→${task.toLocationCode ?? ''}`,
-    `数量 ${task.plannedQuantity ?? 0}`,
-    warehouseTaskStatusLabel(task.status),
-  ]
-  return parts.join(' · ')
+async function execute(intent: WarehouseTaskExecutionIntent) {
+  try {
+    await executeTask(intent)
+  } catch {
+    // Mutation error is exposed by the composable and rendered by the shared retry banner.
+  }
 }
 </script>
 
@@ -84,66 +49,28 @@ function rowSubtitle(task: {
       </div>
     </template>
 
-    <div class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描库位" @scan="onScan" />
-      <ListScopeMeta
-        :scope="putawayScope"
-        source="上架任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
-        :loaded="tasks.length"
-        :total="putawayTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="上架任务服务未成功返回，请刷新重试。"
-        :empty="!scopeReady || showEmpty"
-        :empty-explanation="
-          scopeReady
-            ? '当前组织/环境范围没有上架任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
-            : '缺少组织或环境范围，未发起查询。'
-        "
-      />
-
-      <div
-        v-if="hasFilter"
-        class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
-      >
-        <span class="truncate text-muted-foreground">库位 {{ filters.locationCode }}</span>
-        <button
-          type="button"
-          data-testid="clear-filter"
-          class="shrink-0 text-brand"
-          @click="clearFilter"
-        >
-          清除
-        </button>
-      </div>
-
-      <p class="text-xs text-muted-foreground">上架完成经收货入库过账</p>
-
-      <RetryableListError
-        v-if="error || hasFailedResponse"
-        :error="error ?? '上架任务服务未成功返回'"
+    <div class="flex h-full min-h-0 flex-col">
+      <WarehouseTaskExecutionView
+        v-model:status="filters.status"
+        v-model:scope-key="scopeKey"
+        v-model:keyword="filters.keyword"
+        title="上架"
+        task-type="putaway"
+        :tasks="tasks"
+        :total="total"
         :pending="pending"
-        fallback="任务加载失败，请下拉重试或检查网络。"
-        test-id="error-banner"
-        @retry="() => refresh()"
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :scope-options="scopeOptions"
+        :location-code="filters.locationCode"
+        :error="error"
+        :action-pending="actionPending"
+        @scan-location="scanLocation"
+        @refresh="refresh"
+        @retry="refresh"
+        @load-more="loadMore"
+        @execute="execute"
       />
-
-      <div
-        v-if="showEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-      >
-        当前组织/环境范围暂无上架任务；暂不支持按操作员归属筛选
-      </div>
-
-      <div v-else-if="tasks.length > 0" class="overflow-hidden rounded-lg border border-border">
-        <NvListRow
-          v-for="task in tasks"
-          :key="task.warehouseTaskId"
-          :interactive="false"
-          :title="rowTitle(task.taskNo, task.sourceOrderNo)"
-          :subtitle="rowSubtitle(task)"
-        />
-      </div>
     </div>
   </NvAppShellMobile>
 </template>
