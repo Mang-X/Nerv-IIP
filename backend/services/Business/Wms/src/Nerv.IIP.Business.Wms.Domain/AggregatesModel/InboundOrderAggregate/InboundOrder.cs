@@ -54,7 +54,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lineDrafts)
+        IEnumerable<InboundOrderLineDraft> lineDrafts,
+        string? assignedOperatorUserId,
+        string? assignedTeamId)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -62,6 +64,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         SourceDocumentType = WmsText.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedTeamId = WmsText.Optional(assignedTeamId);
         Status = InboundOrderStatus.Open;
         CreatedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
@@ -81,6 +85,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedTeamId { get; private set; }
     public InboundOrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
@@ -95,9 +101,20 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lines)
+        IEnumerable<InboundOrderLineDraft> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
-        return new InboundOrder(organizationId, environmentId, inboundOrderNo, sourceDocumentType, sourceDocumentId, siteCode, lines);
+        return new InboundOrder(
+            organizationId,
+            environmentId,
+            inboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines,
+            assignedOperatorUserId,
+            assignedTeamId);
     }
 
     public void Cancel(string reason)
@@ -113,7 +130,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string lineNo,
         string fromLocationCode,
         string toLocationCode,
-        decimal quantity)
+        decimal quantity,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
         var line = FindLine(lineNo);
         EnsureCanCreatePutawayTask(line);
@@ -133,7 +152,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             SiteCode,
             fromLocationCode,
             toLocationCode,
-            quantity);
+            quantity,
+            line.LotNo,
+            line.SerialNo,
+            assignedOperatorUserId,
+            assignedTeamId);
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> Complete(

@@ -24,7 +24,9 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string uomCode,
         string siteCode,
         string locationCode,
-        decimal expectedQuantity)
+        decimal expectedQuantity,
+        string? assignedOperatorUserId,
+        string? assignedTeamId)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -33,6 +35,8 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         UomCode = WmsText.Required(uomCode, nameof(uomCode));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         LocationCode = WmsText.Required(locationCode, nameof(locationCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedTeamId = WmsText.Optional(assignedTeamId);
         ExpectedQuantity = expectedQuantity;
         Status = CountExecutionStatus.Open;
         CreatedAtUtc = DateTime.UtcNow;
@@ -45,6 +49,8 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public string UomCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public string LocationCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedTeamId { get; private set; }
     public decimal ExpectedQuantity { get; private set; }
     public decimal? CountedQuantity { get; private set; }
     public decimal? VarianceQuantity { get; private set; }
@@ -61,9 +67,21 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string uomCode,
         string siteCode,
         string locationCode,
-        decimal expectedQuantity)
+        decimal expectedQuantity,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
-        return new CountExecution(organizationId, environmentId, countNo, skuCode, uomCode, siteCode, locationCode, expectedQuantity);
+        return new CountExecution(
+            organizationId,
+            environmentId,
+            countNo,
+            skuCode,
+            uomCode,
+            siteCode,
+            locationCode,
+            expectedQuantity,
+            assignedOperatorUserId,
+            assignedTeamId);
     }
 
     public void MarkInventoryCountTaskCreated(string inventoryCountTaskId)

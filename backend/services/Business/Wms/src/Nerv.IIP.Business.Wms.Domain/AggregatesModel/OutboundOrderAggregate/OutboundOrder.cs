@@ -44,7 +44,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<OutboundOrderLineDraft> lineDrafts)
+        IEnumerable<OutboundOrderLineDraft> lineDrafts,
+        string? assignedOperatorUserId,
+        string? assignedTeamId)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -52,6 +54,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         SourceDocumentType = WmsText.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedTeamId = WmsText.Optional(assignedTeamId);
         Status = OutboundOrderStatus.Open;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
@@ -72,6 +76,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedTeamId { get; private set; }
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
@@ -89,9 +95,20 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<OutboundOrderLineDraft> lines)
+        IEnumerable<OutboundOrderLineDraft> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
-        return new OutboundOrder(organizationId, environmentId, outboundOrderNo, sourceDocumentType, sourceDocumentId, siteCode, lines);
+        return new OutboundOrder(
+            organizationId,
+            environmentId,
+            outboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines,
+            assignedOperatorUserId,
+            assignedTeamId);
     }
 
     public WarehouseTask CreatePickingTask(
@@ -103,7 +120,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string? inventoryReservationId = null,
         string? reservedLocationCode = null,
         string? reservedLotNo = null,
-        string? reservedSerialNo = null)
+        string? reservedSerialNo = null,
+        string? assignedOperatorUserId = null,
+        string? assignedTeamId = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
@@ -124,7 +143,11 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             SiteCode,
             taskFromLocationCode,
             toLocationCode,
-            quantity);
+            quantity,
+            line.LotNo,
+            line.SerialNo,
+            assignedOperatorUserId,
+            assignedTeamId);
     }
 
     public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
