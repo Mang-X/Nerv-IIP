@@ -16,6 +16,8 @@ type DetailEnvelope = {
     skuId: string
     quantity: number
     status: string
+    readinessStatus: string
+    blockingReasons: string[]
     operationTasks: Task[]
   }
 }
@@ -26,6 +28,7 @@ type Task = {
   status: 'Ready'
   operationSequence: number
   workCenterId: string
+  qualityStatus: string
 }
 
 const sdkState = vi.hoisted(() => ({
@@ -99,6 +102,7 @@ function task(workOrderId: string, sequence: number): Task {
     status: 'Ready',
     operationSequence: sequence,
     workCenterId: 'WC-1',
+    qualityStatus: 'Pending',
   }
 }
 
@@ -110,6 +114,8 @@ function detail(workOrderId: string, tasks: Task[]): DetailEnvelope {
       skuId: `SKU-${workOrderId}`,
       quantity: 1,
       status: 'Released',
+      readinessStatus: 'ready',
+      blockingReasons: [],
       operationTasks: tasks,
     },
   }

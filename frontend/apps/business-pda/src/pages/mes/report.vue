@@ -72,6 +72,9 @@ const {
   error: workOrderDetailError,
   refresh: refreshWorkOrderDetail,
   lastUpdatedAt: workOrderDetailLastUpdatedAt,
+  hasSuccessfulResponse: workOrderDetailHasSuccessfulResponse,
+  hasFailedResponse: workOrderDetailHasFailedResponse,
+  refresh: refreshWorkOrderDetail,
 } = useMesWorkOrderDetail(routeWorkOrderId)
 const routeOperationTaskId = computed(() => {
   const value = route.query.operationTaskId
@@ -486,6 +489,31 @@ function onScanWorkOrder(value: string) {
         {{ routeIssue }}
       </p>
       <section
+        v-if="
+          currentStep === 'selectWorkOrder' &&
+          routeWorkOrderId &&
+          (workOrderDetailError || workOrderDetailHasFailedResponse)
+        "
+        class="space-y-2"
+      >
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工单详情服务（当前工单与组织/环境范围）"
+          :loaded="0"
+          :total="0"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          failed
+          failure-explanation="工单详情服务未成功返回，请重试。"
+        />
+        <RetryableListError
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
+      </section>
+      <section
         v-if="telemetryQueue.candidates.value.length"
         class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3"
       >
@@ -603,19 +631,35 @@ function onScanWorkOrder(value: string) {
           :loaded="visibleOperationTasks.length"
           :total="visibleOperationTasks.length"
           :updated-at="workOrderDetailLastUpdatedAt"
+          :failed="workOrderDetailHasFailedResponse || Boolean(workOrderDetailError)"
+          failure-explanation="工单详情服务未成功返回，请重试。"
           :empty="
             !workOrderDetailPending &&
             !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
             selectedWorkOrder !== null &&
             visibleOperationTasks.length === 0
           "
           :empty-explanation="operationTaskEmptyExplanation"
         />
+        <RetryableListError
+          v-if="workOrderDetailError || workOrderDetailHasFailedResponse"
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
         <p class="text-sm text-muted-foreground">
           选择要报工的工序（共 {{ visibleOperationTasks.length }} 道）
         </p>
         <div
-          v-if="!workOrderDetailPending && visibleOperationTasks.length === 0"
+          v-if="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
+            visibleOperationTasks.length === 0
+          "
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           该工单暂无工序

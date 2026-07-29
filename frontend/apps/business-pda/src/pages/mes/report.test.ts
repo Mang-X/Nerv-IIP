@@ -99,6 +99,9 @@ const workOrderDetailRef = ref<Record<string, unknown> | null>({
 const workOrderDetailPendingRef = ref(false)
 const workOrderDetailErrorRef = ref<unknown>(null)
 const workOrderDetailLastUpdatedAtRef = ref<string | null>('2026-07-28T10:20:31Z')
+const workOrderDetailHasSuccessfulResponseRef = ref(true)
+const workOrderDetailHasFailedResponseRef = ref(false)
+const refreshWorkOrderDetail = vi.fn(async () => {})
 const exactTaskRef = ref<Record<string, unknown> | null | undefined>(undefined)
 const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
@@ -153,6 +156,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: workOrderDetailErrorRef,
     refresh: refreshWorkOrderDetail,
     lastUpdatedAt: workOrderDetailLastUpdatedAtRef,
+    hasSuccessfulResponse: workOrderDetailHasSuccessfulResponseRef,
+    hasFailedResponse: workOrderDetailHasFailedResponseRef,
+    refresh: refreshWorkOrderDetail,
   }),
   useMesExactOperationTask: (
     workOrderId: { value: string },
@@ -243,6 +249,9 @@ describe('PDA MES production reporting page', () => {
     }
     workOrderDetailPendingRef.value = false
     workOrderDetailErrorRef.value = null
+    workOrderDetailHasSuccessfulResponseRef.value = true
+    workOrderDetailHasFailedResponseRef.value = false
+    refreshWorkOrderDetail.mockClear()
     exactTaskRef.value = undefined
     exactTaskPendingRef.value = false
     exactTaskErrorRef.value = null
@@ -308,6 +317,30 @@ describe('PDA MES production reporting page', () => {
     await selectWorkOrder(wrapper, 0)
 
     expect(wrapper.text()).toContain('接口未提供工序总数，不代表个人任务')
+  })
+
+  it('detail failure blocks route identity and shows failed metadata plus a retry action', async () => {
+    route.query = { workOrderId: 'WO-2026-0001' }
+    workOrderDetailRef.value = null
+    workOrderDetailErrorRef.value = new Error('工单详情查询失败')
+    workOrderDetailHasSuccessfulResponseRef.value = false
+    workOrderDetailHasFailedResponseRef.value = true
+
+    const wrapper = mount(ReportPage)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('详情加载失败')
+    expect(wrapper.get('[data-testid="list-failure-explanation"]').text()).toContain(
+      '工单详情服务未成功返回',
+    )
+    expect(wrapper.get('[data-testid="work-order-detail-error"]').text()).toContain(
+      '工单详情查询失败',
+    )
+    expect(wrapper.text()).not.toContain('未找到工单 WO-2026-0001')
+    expect(wrapper.text()).not.toContain('该工单暂无工序')
+
+    await wrapper.get('[data-testid="work-order-detail-error"] button').trigger('click')
+    expect(refreshWorkOrderDetail).toHaveBeenCalledTimes(1)
   })
 
   it('scanning sets the work-order keyword filter', async () => {

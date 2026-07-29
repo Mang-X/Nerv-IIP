@@ -138,9 +138,11 @@ export function useBusinessQualityInspectionTasks() {
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  let paginationEpoch = 0
   watch(
-    scopeKey,
+    [scopeKey, () => filters.status],
     () => {
+      paginationEpoch += 1
       extraTasks.value = []
     },
     { flush: 'sync' },
@@ -150,6 +152,7 @@ export function useBusinessQualityInspectionTasks() {
     ...createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
     onSuccess() {
       // 基础页失效重取；聚合补充页会 stale，一并丢弃（需要时再按页重聚合）。
+      paginationEpoch += 1
       extraTasks.value = []
       void queryCache
         .invalidateQueries({ predicate: isInspectionTasksQuery })
@@ -169,17 +172,41 @@ export function useBusinessQualityInspectionTasks() {
   const loaded = computed(() => tasks.value.length)
   const hasMore = computed(() => loaded.value < total.value)
 
+  function capturePaginationScope() {
+    return {
+      epoch: paginationEpoch,
+      key: scopeKey.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      status: filters.status,
+    }
+  }
+
+  function isCurrentPaginationScope(execution: ReturnType<typeof capturePaginationScope>) {
+    return (
+      scopeReady.value &&
+      paginationEpoch === execution.epoch &&
+      scopeKey.value === execution.key &&
+      filters.status === execution.status
+    )
+  }
+
   /** 受限拉取一页（take 不超上限），返回该页 items；失败抛错由调用方处理。 */
-  async function fetchPage(skip: number, take: number) {
+  async function fetchPage(
+    skip: number,
+    take: number,
+    execution: ReturnType<typeof capturePaginationScope>,
+  ) {
     const { data } = await listBusinessConsoleQualityInspectionTasks({
       query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-        status: filters.status,
+        organizationId: execution.organizationId,
+        environmentId: execution.environmentId,
+        status: execution.status,
         skip,
         take: Math.min(Math.max(take, 1), MAX_TAKE),
       },
     })
+    if (!isCurrentPaginationScope(execution)) return null
     if (data?.success !== true) {
       throw new Error(data?.message?.trim() || '待检任务分页查询失败，请刷新重试。')
     }
@@ -196,7 +223,9 @@ export function useBusinessQualityInspectionTasks() {
       filters.take = Math.min(filters.take + DEFAULT_TAKE, MAX_TAKE)
       return
     }
-    const page = await fetchPage(loaded.value, MAX_TAKE)
+    const execution = capturePaginationScope()
+    const page = await fetchPage(loaded.value, MAX_TAKE, execution)
+    if (!page || !isCurrentPaginationScope(execution)) return
     if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
   }
 
@@ -207,9 +236,15 @@ export function useBusinessQualityInspectionTasks() {
    */
   async function ensureAllLoaded() {
     if (!scopeReady.value) return tasks.value
+    const execution = capturePaginationScope()
     // 防御：空页即止（total 与实际漂移时不空转）。
-    while (hasMore.value) {
-      const page = await fetchPage(loaded.value, Math.min(MAX_TAKE, total.value - loaded.value))
+    while (hasMore.value && isCurrentPaginationScope(execution)) {
+      const page = await fetchPage(
+        loaded.value,
+        Math.min(MAX_TAKE, total.value - loaded.value),
+        execution,
+      )
+      if (!page || !isCurrentPaginationScope(execution)) break
       if (page.length === 0) break
       extraTasks.value = [...extraTasks.value, ...page]
     }

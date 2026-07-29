@@ -623,6 +623,154 @@ describe('pda useBusinessMes composables', () => {
     )
   })
 
+  it('exposes success:false and malformed work-order detail responses as retryable failures', async () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesWorkOrderDetail', {
+      success: false,
+      message: '工单详情查询失败',
+    })
+    const result = useMesWorkOrderDetail(shallowRef('WO-501'))
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.error.value).toBeInstanceOf(Error)
+    expect((result.error.value as Error).message).toBe('工单详情查询失败')
+    expect(result.lastUpdatedAt.value).toBeNull()
+
+    coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
+      success: true,
+      data: null,
+    }
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
+    expect(result.lastUpdatedAt.value).toBeNull()
+
+    coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = [
+      { workOrderId: 'WO-501' },
+    ]
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
+
+  it.each([
+    ['missing required fields', { workOrderId: 'WO-501' }],
+    [
+      'non-array operation tasks',
+      {
+        workOrderId: 'WO-501',
+        skuId: 'SKU-501',
+        quantity: 1,
+        status: 'Released',
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: {},
+      },
+    ],
+    [
+      'non-canonical work-order identity',
+      {
+        workOrderId: ' WO-501 ',
+        skuId: 'SKU-501',
+        quantity: 1,
+        status: 'Released',
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: [],
+      },
+    ],
+  ])('rejects a success:true detail payload with %s', (_name, data) => {
+    coladaState.queryDataById.set('getBusinessConsoleMesWorkOrderDetail', {
+      success: true,
+      data,
+    })
+
+    const result = useMesWorkOrderDetail(shallowRef('WO-501'))
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
+
+  it('unbinds work-order detail and freshness when the work-order or org/env identity changes', async () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesWorkOrderDetail', {
+      success: true,
+      data: {
+        workOrderId: 'WO-A',
+        skuId: 'SKU-A',
+        quantity: 1,
+        status: 'Released',
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: [],
+      },
+    })
+    const workOrderId = shallowRef('WO-A')
+    const result = useMesWorkOrderDetail(workOrderId)
+
+    expect(result.workOrder.value?.workOrderId).toBe('WO-A')
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.lastUpdatedAt.value).not.toBeNull()
+
+    workOrderId.value = 'WO-B'
+    await nextTick()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+    expect(result.lastUpdatedAt.value).toBeNull()
+
+    coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
+      success: true,
+      data: {
+        workOrderId: 'WO-A',
+        skuId: 'SKU-A',
+        quantity: 1,
+        status: 'Released',
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: [],
+      },
+    }
+    await nextTick()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+    expect(result.lastUpdatedAt.value).toBeNull()
+
+    coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
+      success: true,
+      data: {
+        workOrderId: 'WO-B',
+        skuId: 'SKU-B',
+        quantity: 2,
+        status: 'Released',
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: [],
+      },
+    }
+    await nextTick()
+    expect(result.workOrder.value?.workOrderId).toBe('WO-B')
+    expect(result.lastUpdatedAt.value).not.toBeNull()
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
+
   it('continues exact task pagination across a full page when total is omitted', async () => {
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockResolvedValueOnce({

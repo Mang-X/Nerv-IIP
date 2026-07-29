@@ -41,7 +41,6 @@ import {
   type BusinessConsoleMesReceiptRequestListEnvelope,
   type BusinessConsoleMesReceiptRequestRow,
   type BusinessConsoleMesWorkOrderItem,
-  type BusinessConsoleMesWorkOrderDetailEnvelope,
   type BusinessConsoleMesWorkOrderDetailResponse,
   type BusinessConsoleMesWorkOrderListEnvelope,
   type BusinessConsoleRecordProductionReportRequest,
@@ -231,6 +230,59 @@ function exactItem<TItem>(
   return matchesById.length === 1 ? matchesById[0] : undefined
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() === value && value.length > 0
+}
+
+function isWorkOrderOperationTask(value: unknown, requestedWorkOrderId: string) {
+  if (!isRecord(value)) return false
+  return (
+    isNonBlankString(value.operationTaskId) &&
+    value.workOrderId === requestedWorkOrderId &&
+    isNonBlankString(value.status) &&
+    typeof value.operationSequence === 'number' &&
+    Number.isInteger(value.operationSequence) &&
+    isNonBlankString(value.workCenterId) &&
+    isNonBlankString(value.qualityStatus)
+  )
+}
+
+function isWorkOrderDetail(value: unknown, requestedWorkOrderId: string) {
+  if (!isRecord(value)) return false
+  return (
+    value.workOrderId === requestedWorkOrderId &&
+    isNonBlankString(value.skuId) &&
+    typeof value.quantity === 'number' &&
+    Number.isFinite(value.quantity) &&
+    isNonBlankString(value.status) &&
+    isNonBlankString(value.readinessStatus) &&
+    Array.isArray(value.blockingReasons) &&
+    value.blockingReasons.every((reason) => typeof reason === 'string') &&
+    Array.isArray(value.operationTasks) &&
+    value.operationTasks.every((task) => isWorkOrderOperationTask(task, requestedWorkOrderId))
+  )
+}
+
+function bindWorkOrderDetailResponse(value: unknown, requestedWorkOrderId: string) {
+  if (value === undefined) return undefined
+  if (isRecord(value) && value.success === true && isRecord(value.data)) {
+    const responseWorkOrderId = value.data.workOrderId
+    if (isNonBlankString(responseWorkOrderId) && responseWorkOrderId !== requestedWorkOrderId) {
+      return undefined
+    }
+    if (isWorkOrderDetail(value.data, requestedWorkOrderId)) return value
+  }
+  const message =
+    isRecord(value) && typeof value.message === 'string' && value.message.trim()
+      ? value.message.trim()
+      : '工单详情响应无效，请重试。'
+  return { success: false, message }
+}
+
 function isBusinessQuery(id: string) {
   return (entry: UseQueryEntry) => {
     const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -295,6 +347,7 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
   const queryCache = useQueryCache()
   const detailEnabled = computed(() => hasScope(scope) && workOrderId.value.trim() !== '')
+  const detailIdentityKey = computed(() => `${scopeKey(scope)}:${workOrderId.value.trim()}`)
   watch(
     () => [workOrderId.value.trim(), scope.organizationId, scope.environmentId] as const,
     (_current, previous) => {
@@ -320,19 +373,44 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
       enabled: detailEnabled.value,
     }
   })
-  const lastUpdatedAt = useListFreshness(() => detailQuery.data.value, detailEnabled)
+  const currentResponse = useScopeBoundListResponse(
+    () => detailQuery.data.value,
+    detailIdentityKey,
+    detailEnabled,
+  )
+  const boundDetailResponse = computed(() =>
+    bindWorkOrderDetailResponse(currentResponse.value, workOrderId.value.trim()),
+  )
+  const lastUpdatedAt = useListFreshness(boundDetailResponse, detailEnabled)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    boundDetailResponse,
+    detailEnabled,
+    detailQuery.isLoading,
+  )
+  const error = computed(() => {
+    if (detailQuery.error.value) return detailQuery.error.value
+    if (!hasFailedResponse.value) return undefined
+    const response = boundDetailResponse.value
+    const message =
+      isRecord(response) && typeof response.message === 'string' && response.message.trim()
+        ? response.message.trim()
+        : '工单详情响应无效，请重试。'
+    return new Error(message)
+  })
 
   return {
-    workOrder: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
-      envelopeData<
-        BusinessConsoleMesWorkOrderDetailResponse,
-        BusinessConsoleMesWorkOrderDetailEnvelope
-      >(detailQuery.data.value),
-    ),
+    workOrder: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() => {
+      const response = boundDetailResponse.value
+      return isRecord(response) && response.success === true && isRecord(response.data)
+        ? (response.data as BusinessConsoleMesWorkOrderDetailResponse)
+        : undefined
+    }),
     pending: detailQuery.isLoading,
-    error: detailQuery.error,
+    error,
     lastUpdatedAt,
-    refresh: detailQuery.refetch,
+    hasSuccessfulResponse,
+    hasFailedResponse,
+    refresh: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
   }
 }
 
