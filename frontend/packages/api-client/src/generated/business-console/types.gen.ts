@@ -1807,7 +1807,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
-    idempotencyKey?: string | null;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3828,7 +3828,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest = {
     reasonCode?: string | null;
-    idempotencyKey?: string | null;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWipSummaryResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3951,7 +3951,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     scrapQuantity?: number;
     completesOperation?: boolean;
     reportedAtUtc?: string;
-    idempotencyKey?: string | null;
+    idempotencyKey: string;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput> | null;
     reworkQuantity?: number;
     scrapReasonCode?: string | null;
@@ -5169,7 +5169,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     priority: string;
     sourceAlarmId?: string | null;
     openedBy?: string;
-    idempotencyKey?: string | null;
+    idempotencyKey: string;
     assetUnavailableReason?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
@@ -5191,7 +5191,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     downtimeReasonCode: string;
     downtimeMinutes?: number;
     spareParts?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput>;
-    idempotencyKey?: string | null;
+    idempotencyKey: string;
     actualLaborMinutes?: number | null;
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;

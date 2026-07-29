@@ -36,7 +36,7 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string Priority,
     string? SourceAlarmId,
     string OpenedBy,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     string? AssetUnavailableReason = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null);
@@ -52,7 +52,7 @@ public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     string DowntimeReasonCode,
     int DowntimeMinutes,
     IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,

@@ -1595,7 +1595,7 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds,
-    string? IdempotencyKey = null);
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
     string InspectionRecordId,
@@ -3934,7 +3934,7 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
@@ -4326,7 +4326,7 @@ public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
-    string? IdempotencyKey = null);
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,

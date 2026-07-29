@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
@@ -372,7 +371,7 @@ async function submitCreate() {
     createError.value = '预估工时需为非负整数。'
     return
   }
-  const body: BusinessConsoleCreateMaintenanceWorkOrderRequest = {
+  const body = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     deviceAssetId: createForm.deviceAssetId.trim(),

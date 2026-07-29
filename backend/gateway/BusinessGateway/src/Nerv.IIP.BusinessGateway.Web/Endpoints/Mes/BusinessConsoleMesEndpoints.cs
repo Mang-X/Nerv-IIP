@@ -1077,14 +1077,14 @@ public sealed class BusinessConsoleRecordProductionReportRequestValidator
     : Validator<BusinessConsoleRecordProductionReportRequest>
 {
     public BusinessConsoleRecordProductionReportRequestValidator() =>
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
 }
 
 public sealed class BusinessConsoleMesOperationTaskActionRequestValidator
     : Validator<BusinessConsoleMesOperationTaskActionRequest>
 {
     public BusinessConsoleMesOperationTaskActionRequestValidator() =>
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
 }
 
 [Tags("Business Console MES")]

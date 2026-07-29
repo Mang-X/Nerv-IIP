@@ -611,7 +611,7 @@ public sealed class BusinessConsoleCreateMaintenanceWorkOrderRequestValidator : 
         RuleFor(x => x.Priority).NotEmpty().MaximumLength(40);
         RuleFor(x => x.SourceAlarmId).MaximumLength(100);
         RuleFor(x => x.OpenedBy).MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(200);
         RuleFor(x => x.AssignedTechnicianUserId).MaximumLength(150);
         RuleFor(x => x.EstimatedLaborMinutes).GreaterThan(0).When(x => x.EstimatedLaborMinutes is not null);
@@ -627,7 +627,7 @@ public sealed class BusinessConsoleCompleteMaintenanceWorkOrderRequestValidator 
         RuleFor(x => x.Result).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DowntimeMinutes).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ActualLaborMinutes).GreaterThan(0).When(x => x.ActualLaborMinutes is not null);
         RuleFor(x => x.SparePartCostAmount).GreaterThanOrEqualTo(0).When(x => x.SparePartCostAmount is not null);
         RuleFor(x => x.ExternalServiceCostAmount).GreaterThanOrEqualTo(0).When(x => x.ExternalServiceCostAmount is not null);

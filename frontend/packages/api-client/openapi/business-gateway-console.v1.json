@@ -32476,7 +32476,8 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "inspectorUserId"
+          "inspectorUserId",
+          "idempotencyKey"
         ],
         "properties": {
           "inspectorUserId": {
@@ -32507,7 +32508,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": true
+            "nullable": false
           }
         }
       },
@@ -39755,6 +39756,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "reasonCode": {
             "type": "string",
@@ -39764,7 +39768,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": true
+            "nullable": false
           }
         }
       },
@@ -40188,6 +40192,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "organizationId": {
             "type": "string"
@@ -40220,7 +40227,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": true
+            "nullable": false
           },
           "consumedMaterialLots": {
             "type": "array",
@@ -45126,7 +45133,8 @@
           "organizationId",
           "environmentId",
           "deviceAssetId",
-          "priority"
+          "priority",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -45168,7 +45176,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": true
+            "nullable": false
           },
           "assetUnavailableReason": {
             "type": "string",
@@ -45236,7 +45244,8 @@
           "organizationId",
           "environmentId",
           "result",
-          "downtimeReasonCode"
+          "downtimeReasonCode",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -45278,7 +45287,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": true
+            "nullable": false
           },
           "actualLaborMinutes": {
             "type": "integer",

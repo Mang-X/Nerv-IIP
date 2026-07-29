@@ -27,7 +27,7 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     IReadOnlyCollection<InspectionResultLineCommandInput>? ResultLines,
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     string? OrganizationId = null,
     string? EnvironmentId = null);
 
@@ -38,7 +38,7 @@ public sealed class CreateInspectionRecordFromTaskRequestValidator
     {
         RuleFor(x => x.OrganizationId).MaximumLength(100);
         RuleFor(x => x.EnvironmentId).MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 

@@ -91,6 +91,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", "post", "openBusinessConsoleQualityNcrFromInspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks", "get", "listBusinessConsoleQualityInspectionTasks");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");
         AssertOperationId(paths, "/api/business-console/v1/quality/calibration-records", "get", "listBusinessConsoleQualityCalibrationRecords");
@@ -254,8 +255,10 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-hours", "get", "queryBusinessConsoleTelemetryRuntimeHours");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}", "get", "getBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "completeBusinessConsoleMaintenanceWorkOrder");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "get", "listBusinessConsoleMaintenancePlans");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "post", "createBusinessConsoleMaintenancePlan");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans/{planId}", "put", "updateBusinessConsoleMaintenancePlan");
@@ -511,6 +514,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "startBusinessConsoleMesOperationTask");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause", "post", "pauseBusinessConsoleMesOperationTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume", "post", "resumeBusinessConsoleMesOperationTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete", "post", "completeBusinessConsoleMesOperationTask");
@@ -520,6 +524,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");

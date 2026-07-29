@@ -69,9 +69,9 @@ public sealed record CreateMaintenanceWorkOrderRequest(
     string? SourceAlarmId,
     string OpenedBy,
     string? AssetUnavailableReason,
+    string IdempotencyKey,
     string? AssignedTechnicianUserId = null,
-    int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null);
+    int? EstimatedLaborMinutes = null);
 
 public sealed record CreateMaintenanceWorkOrderResponse(
     MaintenanceWorkOrderId WorkOrderId,
@@ -84,19 +84,19 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     string DowntimeReasonCode,
     int DowntimeMinutes,
     IReadOnlyCollection<MaintenanceSparePartInput> SpareParts,
+    string IdempotencyKey,
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
     string? CostCurrencyCode = null,
     string? ActualTechnicianUserId = null,
-    string? IdempotencyKey = null,
     string? OrganizationId = null,
     string? EnvironmentId = null);
 
 public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<CreateMaintenanceWorkOrderRequest>
 {
     public CreateMaintenanceWorkOrderRequestValidator() =>
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
 }
 
 public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>
@@ -105,7 +105,7 @@ public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<Com
     {
         RuleFor(x => x.OrganizationId).MaximumLength(100);
         RuleFor(x => x.EnvironmentId).MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 

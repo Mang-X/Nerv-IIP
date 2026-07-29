@@ -86,7 +86,7 @@ public sealed record RecordProductionReportRequest(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
@@ -340,18 +340,18 @@ public sealed record OperationTaskActionRequest(
     string EnvironmentId,
     [property: RouteParam] string OperationTaskId,
     DateTimeOffset? ChangedAtUtc,
-    string? IdempotencyKey = null);
+    string IdempotencyKey);
 
 public sealed class OperationTaskActionRequestValidator : Validator<OperationTaskActionRequest>
 {
     public OperationTaskActionRequestValidator() =>
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
 }
 
 public sealed class RecordProductionReportRequestValidator : Validator<RecordProductionReportRequest>
 {
     public RecordProductionReportRequestValidator() =>
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
 }
 
 public sealed record RecordDefectRequest(

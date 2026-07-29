@@ -217,7 +217,7 @@ public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidato
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 
