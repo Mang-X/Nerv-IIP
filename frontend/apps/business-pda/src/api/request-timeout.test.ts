@@ -162,7 +162,7 @@ describe('describeRequestError', () => {
     })
   })
 
-  it('treats a gateway business error as DETERMINATE and surfaces the server message', () => {
+  it('treats a standalone gateway business error as determinate', () => {
     expect(describeRequestError({ success: false, message: '工序状态非法' })).toMatchObject({
       kind: 'business',
       indeterminate: false,
@@ -211,7 +211,7 @@ describe('describeRequestError', () => {
   it('isIndeterminateError is true only for a dispatched-but-unanswered request', () => {
     // Dispatched, outcome unknown → unsafe to blindly retry a non-idempotent write.
     expect(isIndeterminateError(new RequestTimeoutError())).toBe(true)
-    // Offline pre-check (never dispatched) + business errors (server responded) → safe.
+    // Offline pre-check and explicit application failures are determinate.
     expect(isIndeterminateError(new OfflineError())).toBe(false)
     expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
   })

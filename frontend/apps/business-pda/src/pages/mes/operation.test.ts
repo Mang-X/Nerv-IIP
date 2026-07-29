@@ -86,6 +86,7 @@ describe('PDA MES operation execution page', () => {
     operationTasksRef.value = defaultTasks
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
+    push.mockClear()
     filters.keyword = undefined
   })
 
@@ -236,6 +237,30 @@ describe('PDA MES operation execution page', () => {
     const pauseKey = pauseTask.mock.calls[0][1].idempotencyKey
     expect(pauseKey).toBeTruthy()
     expect(pauseKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  it('locks an indeterminate lifecycle result to the original action and same idempotency key', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
+    const back = wrapper.get('[data-testid="back-to-list"]')
+    expect(back.attributes('disabled')).toBeDefined()
+    await back.trigger('click')
+    await wrapper.get('[aria-label="返回"]').trigger('click')
+    expect(push).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][1].idempotencyKey).toBe(firstKey)
     wrapper.unmount()
   })
 

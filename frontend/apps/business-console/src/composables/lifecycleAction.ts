@@ -1,4 +1,5 @@
 import { statusActionGate, type LifecycleActionRequest } from '@nerv-iip/business-core'
+import { computed, shallowRef } from 'vue'
 
 export const LIFECYCLE_STATE_CHANGED_MESSAGE = '状态已被其他操作更新'
 
@@ -52,6 +53,44 @@ export function isIndeterminateLifecycleWriteError(error: unknown) {
   return /failed to fetch|network\s?error|network interrupted|timeout|timed out|econn|connection reset/i.test(
     error.message,
   )
+}
+
+export function useLifecycleWriteIntent<TAction extends string>(
+  makeKey: (taskId: string, action: TAction) => string,
+) {
+  type Intent = { taskId: string; action: TAction; key: string; unknown: boolean }
+  const current = shallowRef<Intent | null>(null)
+  const locked = computed(() => current.value?.unknown === true)
+
+  function acquire(taskId: string, action: TAction) {
+    const existing = current.value
+    if (existing) {
+      return existing.taskId === taskId && existing.action === action ? existing : undefined
+    }
+    const next: Intent = { taskId, action, key: makeKey(taskId, action), unknown: false }
+    current.value = next
+    return next
+  }
+
+  function clear() {
+    current.value = null
+  }
+
+  function recordFailure(error: unknown) {
+    if (!isIndeterminateLifecycleWriteError(error)) {
+      clear()
+      return false
+    }
+    if (current.value) current.value = { ...current.value, unknown: true }
+    return true
+  }
+
+  function permits(taskId: string, action: TAction) {
+    const existing = current.value
+    return !existing || (existing.taskId === taskId && existing.action === action)
+  }
+
+  return { acquire, clear, current, locked, permits, recordFailure }
 }
 
 type CommandResult<TData> = Readonly<{

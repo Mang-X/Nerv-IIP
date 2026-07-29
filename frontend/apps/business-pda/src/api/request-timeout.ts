@@ -322,8 +322,7 @@ export function describeRequestError(
   if (error instanceof Error) {
     return { kind: 'unknown', message: error.message || fallback, indeterminate: false }
   }
-  // Remaining non-Error values are business error bodies without a usable HTTP status.
-  // They are determinate because the gateway returned an application-level failure.
+  // Remaining non-Error values are application-level failures without transport metadata.
   return {
     kind: 'business',
     message: extractServerMessage(error) ?? fallback,

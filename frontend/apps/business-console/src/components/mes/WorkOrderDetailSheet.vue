@@ -3,7 +3,8 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
@@ -57,6 +58,11 @@ import { RouterLink } from 'vue-router'
  */
 
 const workOrderId = defineModel<string | null>('workOrderId', { default: null })
+const lifecycleIntent = useLifecycleWriteIntent<MesLifecycleActionKey>(
+  (taskId, action) =>
+    `op-${action}-${taskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+)
+usePendingWriteLeaveGuard(lifecycleIntent.locked)
 
 const emit = defineEmits<{ report: [operationTaskId: string] }>()
 
@@ -85,7 +91,7 @@ watch(
 const open = computed({
   get: () => Boolean(workOrderId.value),
   set: (value) => {
-    if (!value) workOrderId.value = null
+    if (!value && !lifecycleIntent.locked.value) workOrderId.value = null
   },
 })
 
@@ -164,6 +170,7 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   complete: '该工序已完工。',
 }
 function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKey) {
+  if (task.operationTaskId && !lifecycleIntent.permits(task.operationTaskId, action)) return false
   return statusActionGate({
     domain: 'mes-operation-task',
     action,
@@ -174,6 +181,8 @@ function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKe
 async function runLifecycleAction(task: OperationRow, action: MesLifecycleActionKey) {
   const operationTaskId = task.operationTaskId
   if (!operationTaskId) return
+  const intent = lifecycleIntent.acquire(operationTaskId, action)
+  if (!intent) return
   lifecyclePending.value = operationTaskId
   try {
     await LIFECYCLE_RUNNERS[action](
@@ -184,16 +193,18 @@ async function runLifecycleAction(task: OperationRow, action: MesLifecycleAction
         workOrderId: task.workOrderId ?? workOrderId.value ?? undefined,
       },
       {
-        idempotencyKey: `op-${action}-${operationTaskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        idempotencyKey: intent.key,
       },
     )
     notifySuccess(LIFECYCLE_DONE_MESSAGES[action])
+    lifecycleIntent.clear()
     void refreshDetail()
   } catch (error) {
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
           lifecyclePending.value = null
+          lifecycleIntent.clear()
         },
         refresh: refreshDetail,
         notify: (message) => notifyError(message),
@@ -201,6 +212,7 @@ async function runLifecycleAction(task: OperationRow, action: MesLifecycleAction
     ) {
       return
     }
+    lifecycleIntent.recordFailure(error)
     notifyError(error)
   } finally {
     lifecyclePending.value = null
@@ -221,6 +233,10 @@ function requestReport(task: OperationRow) {
 }
 function canReport(task: OperationRow) {
   return ['ready', 'running'].includes(resolveExecutionState(task.status).key)
+}
+
+function closeSheet() {
+  if (!lifecycleIntent.locked.value) workOrderId.value = null
 }
 
 function formatQuantity(value?: number | null) {
@@ -401,7 +417,12 @@ function formatQuantity(value?: number | null) {
             打开完整详情
           </RouterLink>
         </NvButton>
-        <NvButton size="sm" type="button" variant="ghost" @click="workOrderId = null"
+        <NvButton
+          size="sm"
+          type="button"
+          variant="ghost"
+          :disabled="lifecycleIntent.locked.value"
+          @click="closeSheet"
           >关闭</NvButton
         >
       </NvSheetFooter>

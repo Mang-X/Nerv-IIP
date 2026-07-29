@@ -5,7 +5,7 @@ import {
   operationTaskStatusLabel,
   statusActionGate,
 } from '@nerv-iip/business-core'
-import { createTimeoutFetch, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
+import { createTimeoutFetch, isIndeterminateError, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -103,6 +103,7 @@ const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Pro
 // 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
 // 换动作或重新打开面板 → 新键。
 const operationKey = ref('')
+const operationResultUnknown = ref(false)
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
@@ -146,11 +147,12 @@ function rowSubtitle(task: Task) {
 }
 
 function openSheet(task: Task) {
+  if (operationResultUnknown.value) return
   result.value = null
   sopFileError.value = ''
   confirmingComplete.value = false
   // 重新打开面板 → 新一轮操作，作废上一个幂等键
-  operationKey.value = ''
+  if (!operationResultUnknown.value) operationKey.value = ''
   selected.value = task
   sopFilters.operationCode = task.operationCode?.trim() ?? ''
   sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
@@ -167,6 +169,7 @@ async function recoverLifecycleUpdate() {
   closeSheet()
   result.value = null
   operationKey.value = ''
+  operationResultUnknown.value = false
   try {
     await refresh()
   } catch {
@@ -200,24 +203,26 @@ async function runAction(action: ActionKind) {
   // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
   if (action === 'complete' && !confirmingComplete.value) {
     confirmingComplete.value = true
-    operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
     return
   }
   // 非完成动作点击即发起；完成动作此处为确认（沿用进入确认时铸造的键）
   if (action !== 'complete') {
-    operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
   }
   const id = task.operationTaskId
   const key = operationKey.value
   closeSheet()
   try {
     await ACTION_FNS[action](id, key)
+    operationResultUnknown.value = false
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return
     }
+    operationResultUnknown.value = isIndeterminateError(e)
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -237,12 +242,14 @@ async function retry() {
   result.value = null
   try {
     await ACTION_FNS[action](taskId, key)
+    operationResultUnknown.value = false
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return
     }
+    operationResultUnknown.value = isIndeterminateError(e)
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -254,11 +261,13 @@ async function retry() {
 }
 
 function continueWork() {
+  if (operationResultUnknown.value) return
   result.value = null
   // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
   operationKey.value = ''
 }
 function backToList() {
+  if (operationResultUnknown.value) return
   result.value = null
   operationKey.value = ''
   router.push('/').catch(() => {})
@@ -281,8 +290,9 @@ function formatDate(value?: string | null) {
         <button
           type="button"
           aria-label="返回"
+          :disabled="operationResultUnknown"
           class="text-sm text-muted-foreground"
-          @click="router.push('/').catch(() => {})"
+          @click="backToList"
         >
           返回
         </button>
@@ -317,6 +327,8 @@ function formatDate(value?: string | null) {
         </button>
         <button
           type="button"
+          data-testid="back-to-list"
+          :disabled="operationResultUnknown"
           class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
           @click="backToList"
         >

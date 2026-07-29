@@ -6,7 +6,11 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
@@ -112,6 +116,8 @@ const completeOpen = shallowRef(false)
 const pendingOrder = shallowRef<InboundRow>()
 const completeIntentKey = shallowRef('')
 const completeIntentAttempted = shallowRef(false)
+const completeIntentLocked = shallowRef(false)
+usePendingWriteLeaveGuard(completeIntentLocked)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
 const QUALITY_OPTIONS = [
@@ -235,10 +241,16 @@ function canComplete(row: InboundRow) {
   }).executable
 }
 function openComplete(row: InboundRow) {
+  if (completeIntentLocked.value) return
   pendingOrder.value = row
   completeIntentKey.value = createWmsIdempotencyKey()
   completeIntentAttempted.value = false
+  completeIntentLocked.value = false
   completeOpen.value = true
+}
+function onCompleteOpenChange(open: boolean) {
+  if (!open && completeIntentLocked.value) return
+  completeOpen.value = open
 }
 async function confirmComplete() {
   const id = pendingOrder.value?.inboundOrderId
@@ -253,6 +265,7 @@ async function confirmComplete() {
     completeOpen.value = false
     completeIntentKey.value = ''
     completeIntentAttempted.value = false
+    completeIntentLocked.value = false
     notifySuccess('入库单已完成')
   } catch (error) {
     if (
@@ -262,6 +275,7 @@ async function confirmComplete() {
           pendingOrder.value = undefined
           completeIntentKey.value = ''
           completeIntentAttempted.value = false
+          completeIntentLocked.value = false
         },
         refresh: refreshInboundOrders,
         notify: (message) => notifyError(message),
@@ -269,6 +283,8 @@ async function confirmComplete() {
     ) {
       return
     }
+    completeIntentLocked.value =
+      completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
     notifyError(error, '完成入库失败，请稍后重试。')
   }
 }
@@ -552,7 +568,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvAlertDialog v-model:open="completeOpen">
+    <NvAlertDialog :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>完成入库</NvAlertDialogTitle>
@@ -562,7 +578,9 @@ function formatError(error: unknown) {
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
-          <NvAlertDialogCancel :disabled="completeInboundPending">取消</NvAlertDialogCancel>
+          <NvAlertDialogCancel :disabled="completeInboundPending || completeIntentLocked"
+            >取消</NvAlertDialogCancel
+          >
           <NvButton type="button" :disabled="completeInboundPending" @click="confirmComplete"
             >完成入库</NvButton
           >

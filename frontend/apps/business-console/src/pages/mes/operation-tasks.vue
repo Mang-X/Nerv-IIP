@@ -6,7 +6,7 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -33,6 +33,7 @@ import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
 import { useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import { usePagedList } from '@/composables/usePagedList'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -314,6 +315,11 @@ function isReportableStatus(status?: string | null) {
 
 // ── 工序生命周期动作（开工 / 暂停 / 恢复 / 完工）──────────────────
 const lifecyclePending = ref<string | null>(null)
+const lifecycleIntent = useLifecycleWriteIntent<MesLifecycleActionKey>(
+  (taskId, action) =>
+    `op-${action}-${taskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+)
+usePendingWriteLeaveGuard(lifecycleIntent.locked)
 const LIFECYCLE_RUNNERS: Record<
   MesLifecycleActionKey,
   (
@@ -334,6 +340,7 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   complete: '该工序已完工。',
 }
 function lifecycleActionEnabled(task: Row, action: MesLifecycleActionKey) {
+  if (task.operationTaskId && !lifecycleIntent.permits(task.operationTaskId, action)) return false
   return statusActionGate({
     domain: 'mes-operation-task',
     action,
@@ -344,6 +351,8 @@ function lifecycleActionEnabled(task: Row, action: MesLifecycleActionKey) {
 async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
   const operationTaskId = task.operationTaskId
   if (!operationTaskId) return
+  const intent = lifecycleIntent.acquire(operationTaskId, action)
+  if (!intent) return
   lifecyclePending.value = operationTaskId
   try {
     await LIFECYCLE_RUNNERS[action](
@@ -354,16 +363,18 @@ async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
         workOrderId: task.workOrderId ?? undefined,
       },
       {
-        idempotencyKey: `op-${action}-${operationTaskId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        idempotencyKey: intent.key,
       },
     )
     notifySuccess(LIFECYCLE_DONE_MESSAGES[action])
+    lifecycleIntent.clear()
     void refreshOperationTasks()
   } catch (error) {
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
           lifecyclePending.value = null
+          lifecycleIntent.clear()
         },
         refresh: refreshOperationTasks,
         notify: (message) => notifyError(message),
@@ -371,6 +382,7 @@ async function runLifecycleAction(task: Row, action: MesLifecycleActionKey) {
     ) {
       return
     }
+    lifecycleIntent.recordFailure(error)
     notifyError(error)
   } finally {
     lifecyclePending.value = null

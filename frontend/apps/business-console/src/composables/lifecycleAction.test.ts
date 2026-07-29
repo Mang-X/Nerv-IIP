@@ -5,6 +5,7 @@ import {
   executeLifecycleAction,
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
+  useLifecycleWriteIntent,
 } from './lifecycleAction'
 
 describe('executeLifecycleAction', () => {
@@ -178,5 +179,24 @@ describe('recoverLifecycleAction', () => {
     expect(reset).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
     expect(notify).not.toHaveBeenCalled()
+  })
+})
+
+describe('useLifecycleWriteIntent', () => {
+  it('locks an indeterminate result to the original task, action, and idempotency key', () => {
+    const intent = useLifecycleWriteIntent((taskId, action) => `${taskId}-${action}-stable`)
+
+    const first = intent.acquire('OP-1', 'complete')
+    expect(first?.key).toBe('OP-1-complete-stable')
+
+    expect(intent.recordFailure({ statusCode: 503 })).toBe(true)
+    expect(intent.locked.value).toBe(true)
+    expect(intent.acquire('OP-2', 'complete')).toBeUndefined()
+    expect(intent.acquire('OP-1', 'pause')).toBeUndefined()
+    expect(intent.acquire('OP-1', 'complete')?.key).toBe(first?.key)
+
+    expect(intent.recordFailure({ statusCode: 422 })).toBe(false)
+    expect(intent.locked.value).toBe(false)
+    expect(intent.current.value).toBeNull()
   })
 })

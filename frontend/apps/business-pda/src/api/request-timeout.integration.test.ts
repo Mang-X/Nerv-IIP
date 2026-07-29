@@ -3,7 +3,7 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
 } from '@nerv-iip/api-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTimeoutFetch, RequestTimeoutError } from './request-timeout'
+import { createTimeoutFetch, describeRequestError, RequestTimeoutError } from './request-timeout'
 
 /**
  * End-to-end wiring proof: the fetch handed to `configureApiClient` (as done in
@@ -109,5 +109,44 @@ describe('PDA api-client global timeout wiring', () => {
     const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError)
     await vi.advanceTimersByTimeAsync(1_000)
     await assertion
+  })
+
+  it('retains the real 503 status on a generated mutation error body', async () => {
+    configureApiClient({
+      baseUrl: 'http://gateway.test',
+      fetch: createTimeoutFetch({
+        baseFetch: vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(JSON.stringify({ success: false, message: '服务暂不可用' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+        isOffline: () => false,
+      }),
+    })
+
+    const options = recordBusinessConsoleMesProductionReportMutationOptions()
+    const pending = options.mutation!(
+      {
+        body: {
+          organizationId: 'org-1',
+          environmentId: 'env-1',
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 1,
+          scrapQuantity: 0,
+          reportedAtUtc: '2026-07-10T00:00:00.000Z',
+          idempotencyKey: 'idem-fixed-key',
+        },
+      } as Parameters<NonNullable<typeof options.mutation>>[0],
+      {} as never,
+    )
+
+    const error = await pending.catch((value: unknown) => value)
+    expect(describeRequestError(error)).toMatchObject({
+      message: '服务暂不可用',
+      indeterminate: true,
+    })
+    expect((error as { response?: Response }).response?.status).toBe(503)
   })
 })

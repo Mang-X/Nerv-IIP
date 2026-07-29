@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
-import { NvDialog } from '@nerv-iip/ui'
+import { NvAlertDialog, NvDialog } from '@nerv-iip/ui'
 
 import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
 import CountsPage from './counts.vue'
@@ -397,6 +397,43 @@ describe('WMS operate actions', () => {
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      2,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('keeps an indeterminate inbound completion dialog locked to its frozen intent', async () => {
+    wms.completeInbound.mockImplementationOnce(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ response: { status: 503 }, message: 'service unavailable' })
+      },
+    )
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const submit = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === '完成入库',
+      )
+    submit()?.click()
+    await flushPromises()
+
+    const completeDialog = wrapper
+      .findAllComponents(NvAlertDialog)
+      .find((dialog) => dialog.props('open'))
+    expect(completeDialog).toBeTruthy()
+    completeDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(completeDialog!.props('open')).toBe(true)
+
+    submit()?.click()
+    await flushPromises()
     expect(wms.completeInbound).toHaveBeenNthCalledWith(
       2,
       'ib-1',

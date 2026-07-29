@@ -29,6 +29,7 @@ const mesSpies = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
   RouterLink: {
     props: ['to'],
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
