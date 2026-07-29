@@ -2524,3 +2524,40 @@ export type {
 
 export type BusinessConsolePrincipalWorkContextRequest =
   import('./generated/business-console').GetBusinessConsolePrincipalWorkContextData['query']
+
+// MAN-629 / #1166: WMS 上架/拣货人工任务生命周期与持久幂等动作。
+export {
+  startBusinessConsoleWmsPutawayTask,
+  startBusinessConsoleWmsPutawayTaskMutationOptions,
+  recordBusinessConsoleWmsPutawayTaskProgress,
+  recordBusinessConsoleWmsPutawayTaskProgressMutationOptions,
+  reportBusinessConsoleWmsPutawayTaskException,
+  reportBusinessConsoleWmsPutawayTaskExceptionMutationOptions,
+  completeBusinessConsoleWmsPutawayTask,
+  completeBusinessConsoleWmsPutawayTaskMutationOptions,
+  startBusinessConsoleWmsPickingTask,
+  startBusinessConsoleWmsPickingTaskMutationOptions,
+  recordBusinessConsoleWmsPickingTaskProgress,
+  recordBusinessConsoleWmsPickingTaskProgressMutationOptions,
+  reportBusinessConsoleWmsPickingTaskException,
+  reportBusinessConsoleWmsPickingTaskExceptionMutationOptions,
+  completeBusinessConsoleWmsPickingTask,
+  completeBusinessConsoleWmsPickingTaskMutationOptions,
+} from './generated/business-console'
+
+export type {
+  StartBusinessConsoleWmsPutawayTaskData,
+  RecordBusinessConsoleWmsPutawayTaskProgressData,
+  ReportBusinessConsoleWmsPutawayTaskExceptionData,
+  CompleteBusinessConsoleWmsPutawayTaskData,
+  StartBusinessConsoleWmsPickingTaskData,
+  RecordBusinessConsoleWmsPickingTaskProgressData,
+  ReportBusinessConsoleWmsPickingTaskExceptionData,
+  CompleteBusinessConsoleWmsPickingTaskData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStartWmsWarehouseTaskRequest as BusinessConsoleStartWmsWarehouseTaskRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordWmsWarehouseTaskProgressRequest as BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReportWmsWarehouseTaskExceptionRequest as BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest as BusinessConsoleCompleteWmsWarehouseTaskRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskActionResult as BusinessConsoleWmsWarehouseTaskActionResult,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult as BusinessConsoleWmsWarehouseTaskActionEnvelope,
+} from './generated/business-console'

@@ -244,10 +244,57 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     status?: string;
     createdAtUtc?: string;
     completedAtUtc?: string | null;
+    assignedOperatorUserId?: string | null;
+    assignedTeamId?: string | null;
+    lotNo?: string | null;
+    serialNo?: string | null;
+    version?: number;
+    allowedActions?: Array<string> | null;
+    blockReasons?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskActionResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskActionResult = {
+    warehouseTaskId?: string;
+    taskType?: string;
+    status?: string;
+    version?: number;
+    executedQuantity?: number;
+    differenceQuantity?: number;
+    allowedActions?: Array<string>;
+    blockReasons?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStartWmsWarehouseTaskRequest = {
+    idempotencyKey: string;
+    expectedVersion?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordWmsWarehouseTaskProgressRequest = {
+    idempotencyKey: string;
+    expectedVersion?: number;
+    executedQuantity?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReportWmsWarehouseTaskExceptionRequest = {
+    idempotencyKey: string;
+    expectedVersion?: number;
+    exceptionCode: string;
+    reason: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest = {
+    idempotencyKey: string;
+    expectedVersion?: number;
+    executedQuantity?: number;
+    differenceReason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7535,6 +7582,8 @@ export type ListBusinessConsoleWmsInboundOrdersData = {
         status?: string | null;
         keyword?: string | null;
         inboundOrderId?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/inbound-orders';
 };
@@ -7643,14 +7692,13 @@ export type ListBusinessConsoleWmsPutawayTasksData = {
         organizationId: string;
         environmentId: string;
         locationCode?: string | null;
-        /**
-         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
-         */
-        operatorUserId?: string | null;
+        lotNo?: string | null;
         skip?: number;
         take?: number;
         status?: string | null;
         keyword?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/putaway-tasks';
 };
@@ -7680,6 +7728,170 @@ export type ListBusinessConsoleWmsPutawayTasksResponses = {
 };
 
 export type ListBusinessConsoleWmsPutawayTasksResponse = ListBusinessConsoleWmsPutawayTasksResponses[keyof ListBusinessConsoleWmsPutawayTasksResponses];
+
+export type StartBusinessConsoleWmsPutawayTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStartWmsWarehouseTaskRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/start';
+};
+
+export type StartBusinessConsoleWmsPutawayTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type StartBusinessConsoleWmsPutawayTaskError = StartBusinessConsoleWmsPutawayTaskErrors[keyof StartBusinessConsoleWmsPutawayTaskErrors];
+
+export type StartBusinessConsoleWmsPutawayTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type StartBusinessConsoleWmsPutawayTaskResponse = StartBusinessConsoleWmsPutawayTaskResponses[keyof StartBusinessConsoleWmsPutawayTaskResponses];
+
+export type RecordBusinessConsoleWmsPutawayTaskProgressData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordWmsWarehouseTaskProgressRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/progress';
+};
+
+export type RecordBusinessConsoleWmsPutawayTaskProgressErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RecordBusinessConsoleWmsPutawayTaskProgressError = RecordBusinessConsoleWmsPutawayTaskProgressErrors[keyof RecordBusinessConsoleWmsPutawayTaskProgressErrors];
+
+export type RecordBusinessConsoleWmsPutawayTaskProgressResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type RecordBusinessConsoleWmsPutawayTaskProgressResponse = RecordBusinessConsoleWmsPutawayTaskProgressResponses[keyof RecordBusinessConsoleWmsPutawayTaskProgressResponses];
+
+export type ReportBusinessConsoleWmsPutawayTaskExceptionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReportWmsWarehouseTaskExceptionRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/exception';
+};
+
+export type ReportBusinessConsoleWmsPutawayTaskExceptionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReportBusinessConsoleWmsPutawayTaskExceptionError = ReportBusinessConsoleWmsPutawayTaskExceptionErrors[keyof ReportBusinessConsoleWmsPutawayTaskExceptionErrors];
+
+export type ReportBusinessConsoleWmsPutawayTaskExceptionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type ReportBusinessConsoleWmsPutawayTaskExceptionResponse = ReportBusinessConsoleWmsPutawayTaskExceptionResponses[keyof ReportBusinessConsoleWmsPutawayTaskExceptionResponses];
+
+export type CompleteBusinessConsoleWmsPutawayTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/complete';
+};
+
+export type CompleteBusinessConsoleWmsPutawayTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CompleteBusinessConsoleWmsPutawayTaskError = CompleteBusinessConsoleWmsPutawayTaskErrors[keyof CompleteBusinessConsoleWmsPutawayTaskErrors];
+
+export type CompleteBusinessConsoleWmsPutawayTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type CompleteBusinessConsoleWmsPutawayTaskResponse = CompleteBusinessConsoleWmsPutawayTaskResponses[keyof CompleteBusinessConsoleWmsPutawayTaskResponses];
 
 export type CompleteBusinessConsoleWmsInboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest;
@@ -7737,6 +7949,8 @@ export type ListBusinessConsoleWmsOutboundOrdersData = {
         status?: string | null;
         keyword?: string | null;
         outboundOrderId?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/outbound-orders';
 };
@@ -7845,14 +8059,13 @@ export type ListBusinessConsoleWmsPickingTasksData = {
         organizationId: string;
         environmentId: string;
         locationCode?: string | null;
-        /**
-         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
-         */
-        operatorUserId?: string | null;
+        lotNo?: string | null;
         skip?: number;
         take?: number;
         status?: string | null;
         keyword?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/picking-tasks';
 };
@@ -7882,6 +8095,170 @@ export type ListBusinessConsoleWmsPickingTasksResponses = {
 };
 
 export type ListBusinessConsoleWmsPickingTasksResponse = ListBusinessConsoleWmsPickingTasksResponses[keyof ListBusinessConsoleWmsPickingTasksResponses];
+
+export type StartBusinessConsoleWmsPickingTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStartWmsWarehouseTaskRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/start';
+};
+
+export type StartBusinessConsoleWmsPickingTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type StartBusinessConsoleWmsPickingTaskError = StartBusinessConsoleWmsPickingTaskErrors[keyof StartBusinessConsoleWmsPickingTaskErrors];
+
+export type StartBusinessConsoleWmsPickingTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type StartBusinessConsoleWmsPickingTaskResponse = StartBusinessConsoleWmsPickingTaskResponses[keyof StartBusinessConsoleWmsPickingTaskResponses];
+
+export type RecordBusinessConsoleWmsPickingTaskProgressData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordWmsWarehouseTaskProgressRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/progress';
+};
+
+export type RecordBusinessConsoleWmsPickingTaskProgressErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RecordBusinessConsoleWmsPickingTaskProgressError = RecordBusinessConsoleWmsPickingTaskProgressErrors[keyof RecordBusinessConsoleWmsPickingTaskProgressErrors];
+
+export type RecordBusinessConsoleWmsPickingTaskProgressResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type RecordBusinessConsoleWmsPickingTaskProgressResponse = RecordBusinessConsoleWmsPickingTaskProgressResponses[keyof RecordBusinessConsoleWmsPickingTaskProgressResponses];
+
+export type ReportBusinessConsoleWmsPickingTaskExceptionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReportWmsWarehouseTaskExceptionRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/exception';
+};
+
+export type ReportBusinessConsoleWmsPickingTaskExceptionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReportBusinessConsoleWmsPickingTaskExceptionError = ReportBusinessConsoleWmsPickingTaskExceptionErrors[keyof ReportBusinessConsoleWmsPickingTaskExceptionErrors];
+
+export type ReportBusinessConsoleWmsPickingTaskExceptionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type ReportBusinessConsoleWmsPickingTaskExceptionResponse = ReportBusinessConsoleWmsPickingTaskExceptionResponses[keyof ReportBusinessConsoleWmsPickingTaskExceptionResponses];
+
+export type CompleteBusinessConsoleWmsPickingTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsWarehouseTaskRequest;
+    path: {
+        warehouseTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/complete';
+};
+
+export type CompleteBusinessConsoleWmsPickingTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CompleteBusinessConsoleWmsPickingTaskError = CompleteBusinessConsoleWmsPickingTaskErrors[keyof CompleteBusinessConsoleWmsPickingTaskErrors];
+
+export type CompleteBusinessConsoleWmsPickingTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskActionResult;
+};
+
+export type CompleteBusinessConsoleWmsPickingTaskResponse = CompleteBusinessConsoleWmsPickingTaskResponses[keyof CompleteBusinessConsoleWmsPickingTaskResponses];
 
 export type CompleteBusinessConsoleWmsOutboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsOutboundOrderRequest;
@@ -7972,6 +8349,8 @@ export type ListBusinessConsoleWmsCountExecutionsData = {
         status?: string | null;
         keyword?: string | null;
         countExecutionId?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/count-executions';
 };

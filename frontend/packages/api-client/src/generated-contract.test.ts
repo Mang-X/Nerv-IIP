@@ -58,6 +58,10 @@ import type {
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMesOperationTaskActionRequest,
   BusinessConsoleRecordProductionReportRequest,
+  BusinessConsoleCompleteWmsWarehouseTaskRequest,
+  BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
+  BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
+  BusinessConsoleStartWmsWarehouseTaskRequest,
   BusinessConsoleWmsInboundLineCaptureInput,
   BusinessConsoleWmsInboundLineInput,
   BusinessConsoleWmsReceivingQualityGateItem,
@@ -408,6 +412,14 @@ describe('generated API client contract', () => {
       'completeBusinessConsoleWmsInboundOrder',
       'completeBusinessConsoleWmsOutboundOrder',
       'completeBusinessConsoleWmsCountExecution',
+      'startBusinessConsoleWmsPutawayTask',
+      'recordBusinessConsoleWmsPutawayTaskProgress',
+      'reportBusinessConsoleWmsPutawayTaskException',
+      'completeBusinessConsoleWmsPutawayTask',
+      'startBusinessConsoleWmsPickingTask',
+      'recordBusinessConsoleWmsPickingTaskProgress',
+      'reportBusinessConsoleWmsPickingTaskException',
+      'completeBusinessConsoleWmsPickingTask',
       'createBusinessConsoleQualityInspectionRecordFromTask',
       'submitBusinessConsoleQualityNcrDisposition',
       'closeBusinessConsoleQualityNcr',
@@ -426,6 +438,47 @@ describe('generated API client contract', () => {
         `${operation}MutationOptions`,
       ).toBeTypeOf('function')
     }
+  })
+
+  it('exports the MAN-629 WMS action request contracts through the stable boundary', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleStartWmsWarehouseTaskRequest, 'idempotencyKey' | 'expectedVersion'>
+    >().toEqualTypeOf<{
+      idempotencyKey?: string | null
+      expectedVersion?: number
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
+        'idempotencyKey' | 'expectedVersion' | 'executedQuantity'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey?: string | null
+      expectedVersion?: number
+      executedQuantity?: number
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
+        'idempotencyKey' | 'expectedVersion' | 'exceptionCode' | 'reason'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey?: string | null
+      expectedVersion?: number
+      exceptionCode?: string | null
+      reason?: string | null
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleCompleteWmsWarehouseTaskRequest,
+        'idempotencyKey' | 'expectedVersion' | 'executedQuantity' | 'differenceReason'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey?: string | null
+      expectedVersion?: number
+      executedQuantity?: number
+      differenceReason?: string | null
+    }>()
   })
 
   it('exposes the MAN-528 exact MES to Inventory link through the stable boundary', () => {
