@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
@@ -57,9 +58,7 @@ public sealed record CreateInboundOrderCommand(
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsInboundLineInput> Lines,
-    string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null) : ICommand<InboundOrderId>;
+    IReadOnlyCollection<WmsInboundLineInput> Lines) : ICommand<InboundOrderId>;
 
 public sealed class CreateInboundOrderCommandValidator : AbstractValidator<CreateInboundOrderCommand>
 {
@@ -72,8 +71,6 @@ public sealed class CreateInboundOrderCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Lines).NotEmpty();
-        RuleFor(x => x.AssignedOperatorUserId).MaximumLength(150);
-        RuleFor(x => x.AssignedPoolCode).MaximumLength(100);
     }
 }
 
@@ -89,9 +86,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)),
-            request.AssignedOperatorUserId,
-            request.AssignedPoolCode);
+            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
         var existingOrder = await dbContext.InboundOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(
@@ -118,8 +113,6 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
         if (existing.SourceDocumentType != proposed.SourceDocumentType
             || existing.SourceDocumentId != proposed.SourceDocumentId
             || existing.SiteCode != proposed.SiteCode
-            || existing.AssignedOperatorUserId != proposed.AssignedOperatorUserId
-            || existing.AssignedPoolCode != proposed.AssignedPoolCode
             || existing.Lines.Count != proposed.Lines.Count)
         {
             return false;
@@ -148,9 +141,7 @@ public sealed record CreatePutawayTaskCommand(
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity,
-    string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null) : ICommand<WarehouseTaskId>;
+    decimal Quantity) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreatePutawayTaskCommand, WarehouseTaskId>
@@ -172,8 +163,8 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
                 || existingTask.FromLocationCode != request.FromLocationCode
                 || existingTask.ToLocationCode != request.ToLocationCode
                 || existingTask.PlannedQuantity != request.Quantity
-                || existingTask.AssignedOperatorUserId != request.AssignedOperatorUserId
-                || existingTask.AssignedPoolCode != request.AssignedPoolCode)
+                || existingTask.AssignedOperatorUserId != inbound.AssignedOperatorUserId
+                || existingTask.AssignedPoolCode != inbound.AssignedPoolCode)
             {
                 throw new KnownException($"Warehouse task '{request.TaskNo}' already exists with different putaway facts.");
             }
@@ -187,8 +178,8 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
             request.FromLocationCode,
             request.ToLocationCode,
             request.Quantity,
-            request.AssignedOperatorUserId,
-            request.AssignedPoolCode);
+            inbound.AssignedOperatorUserId,
+            inbound.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -382,9 +373,7 @@ public sealed record CreateOutboundOrderCommand(
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsOutboundLineInput> Lines,
-    string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null) : ICommand<OutboundOrderId>;
+    IReadOnlyCollection<WmsOutboundLineInput> Lines) : ICommand<OutboundOrderId>;
 
 public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreateOutboundOrderCommand, OutboundOrderId>
@@ -408,9 +397,7 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new OutboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.RequestedQuantity, x.PickLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)),
-            request.AssignedOperatorUserId,
-            request.AssignedPoolCode);
+            request.Lines.Select(x => new OutboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.RequestedQuantity, x.PickLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)));
         dbContext.OutboundOrders.Add(order);
         await Task.CompletedTask;
         return order.Id;
@@ -423,9 +410,7 @@ public sealed record CreatePickingTaskCommand(
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity,
-    string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null) : ICommand<WarehouseTaskId>;
+    decimal Quantity) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePickingTaskCommandHandler(
     ApplicationDbContext dbContext,
@@ -463,8 +448,8 @@ public sealed class CreatePickingTaskCommandHandler(
             reservation?.LocationCode,
             reservation?.LotNo,
             reservation?.SerialNo,
-            request.AssignedOperatorUserId,
-            request.AssignedPoolCode);
+            outbound.AssignedOperatorUserId,
+            outbound.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -1103,7 +1088,11 @@ public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
             await next(context);
         }
         catch (DbUpdateConcurrencyException exception) when (
-            exception.Entries.Any(entry => entry.Entity is WarehouseTask))
+            exception.Entries.Any(entry =>
+                entry.Entity is WarehouseTask
+                    or InboundOrder
+                    or OutboundOrder
+                    or CountExecution))
         {
             logger.LogInformation(
                 "WMS warehouse-task optimistic concurrency conflict. Path={Path}",
@@ -1114,7 +1103,9 @@ public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
                 context.RequestAborted);
         }
         catch (DbUpdateException exception) when (
-            exception.Entries.Any(entry => entry.Entity is WarehouseTaskActionReceipt)
+            exception.Entries.Any(entry =>
+                entry.Entity is WarehouseTaskActionReceipt
+                    or WarehouseAssignmentReceipt)
             && HasPostgreSqlUniqueViolation(exception))
         {
             logger.LogInformation(
@@ -1571,9 +1562,7 @@ public sealed record CreateCountExecutionCommand(
     string UomCode,
     string SiteCode,
     string LocationCode,
-    decimal ExpectedQuantity,
-    string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null) : ICommand<CountExecutionId>;
+    decimal ExpectedQuantity) : ICommand<CountExecutionId>;
 
 public sealed class CreateCountExecutionCommandHandler(
     ApplicationDbContext dbContext,
@@ -1590,9 +1579,7 @@ public sealed class CreateCountExecutionCommandHandler(
             request.UomCode,
             request.SiteCode,
             request.LocationCode,
-            request.ExpectedQuantity,
-            request.AssignedOperatorUserId,
-            request.AssignedPoolCode);
+            request.ExpectedQuantity);
         if (inventoryReservationClient is not null)
         {
             var countTask = await inventoryReservationClient.CreateCountTaskAsync(ToInventoryCountTaskRequest(count), cancellationToken);

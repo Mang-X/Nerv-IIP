@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
@@ -69,6 +70,7 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
+    builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,
@@ -122,6 +124,21 @@ try
     builder.Services.AddScoped<
         ICommandLock<CompleteWarehouseTaskActionCommand>,
         WarehouseTaskActionCommandLock<CompleteWarehouseTaskActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignInboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignInboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPutawayTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPutawayTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignOutboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignOutboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPickingTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPickingTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignCountExecutionCommand>,
+        WarehouseAssignmentCommandLock<AssignCountExecutionCommand>>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = WmsFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();

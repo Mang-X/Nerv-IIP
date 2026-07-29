@@ -786,8 +786,7 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                4m,
-                AssignedPoolCode: "POOL-PICKING"),
+                4m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
@@ -866,11 +865,11 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                10m,
-                AssignedPoolCode: "POOL-PICKING"),
+                10m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = dbContext.WarehouseTasks.Single();
+        warehouseTask.Assign("POOL-PICKING", null, warehouseTask.Version);
         warehouseTask.Start("picker-001", warehouseTask.Version, claimPoolAssignment: true);
         warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -912,11 +911,11 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                10m,
-                AssignedPoolCode: "POOL-PICKING"),
+                10m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = dbContext.WarehouseTasks.Single();
+        warehouseTask.Assign("POOL-PICKING", null, warehouseTask.Version);
         warehouseTask.Start("picker-001", warehouseTask.Version, claimPoolAssignment: true);
         warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1002,11 +1001,11 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                4m,
-                AssignedPoolCode: "POOL-PICKING"),
+                4m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = Assert.Single(dbContext.WarehouseTasks.Local);
+        warehouseTask.Assign("POOL-PICKING", null, warehouseTask.Version);
         await new DispatchWcsTaskCommandHandler(dbContext).Handle(
             new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-OUT-001", """{"step":1}"""),
             CancellationToken.None);
@@ -1050,8 +1049,7 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                4m,
-                AssignedPoolCode: "POOL-PICKING"),
+                4m),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1120,8 +1118,7 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                4m,
-                AssignedPoolCode: "POOL-PICKING"),
+                4m),
             CancellationToken.None);
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
             new CreatePickingTaskCommand(
@@ -1130,8 +1127,7 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-002",
                 "LOC-A-02",
                 "PACK-01",
-                2m,
-                AssignedPoolCode: "POOL-PICKING"),
+                2m),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1213,8 +1209,7 @@ public sealed class WmsInventoryBoundaryTests
                 "LINE-001",
                 "LOC-A-01",
                 "PACK-01",
-                4m,
-                AssignedPoolCode: "POOL-PICKING"),
+                4m),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1820,6 +1815,11 @@ public sealed class WmsInventoryBoundaryTests
         {
             if (task.Status == WarehouseTaskStatus.Open)
             {
+                if (task.AssignedPoolCode is null)
+                {
+                    task.Assign("POOL-PICKING", null, task.Version);
+                }
+
                 task.Start("test-picker", task.Version, claimPoolAssignment: true);
             }
 

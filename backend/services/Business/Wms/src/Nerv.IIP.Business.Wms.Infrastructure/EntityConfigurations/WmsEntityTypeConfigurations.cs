@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
@@ -51,6 +52,7 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the inbound order is created.");
         builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Inbound execution status.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the open inbound expectation was cancelled.");
@@ -255,6 +257,41 @@ public sealed class WarehouseTaskActionReceiptEntityTypeConfiguration : IEntityT
     }
 }
 
+public sealed class WarehouseAssignmentReceiptEntityTypeConfiguration
+    : IEntityTypeConfiguration<WarehouseAssignmentReceipt>
+{
+    public void Configure(EntityTypeBuilder<WarehouseAssignmentReceipt> builder)
+    {
+        builder.ToTable(
+            "warehouse_assignment_receipts",
+            table => table.HasComment(
+                "Durable idempotency receipts for controlled WMS assignment and reassignment."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Assignment receipt id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.ResourceCategory).HasColumnName("resource_category").IsRequired().HasMaxLength(50).HasComment("Controlled assignment category.");
+        builder.Property(x => x.ResourceId).HasColumnName("resource_id").IsRequired().HasMaxLength(150).HasComment("Assigned aggregate id.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Stable assignment intent key.");
+        builder.Property(x => x.PayloadFingerprint).HasColumnName("payload_fingerprint").IsRequired().HasMaxLength(128).HasComment("Canonical assignment payload fingerprint.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Authorized exact site snapshot.");
+        builder.Property(x => x.PoolCode).HasColumnName("pool_code").IsRequired().HasMaxLength(150).HasComment("Assigned WMS work-pool snapshot.");
+        builder.Property(x => x.OperatorPrincipalId).HasColumnName("operator_principal_id").HasMaxLength(150).HasComment("Optional assigned operator principal snapshot.");
+        builder.Property(x => x.AssignedByPrincipalId).HasColumnName("assigned_by_principal_id").IsRequired().HasMaxLength(150).HasComment("Trusted assigning principal snapshot.");
+        builder.Property(x => x.ResultVersion).HasColumnName("result_version").IsRequired().HasComment("Authoritative aggregate version after assignment.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC receipt creation time.");
+        builder.HasIndex(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.ResourceCategory,
+                x.ResourceId,
+                x.IdempotencyKey,
+            })
+            .IsUnique()
+            .HasDatabaseName("ux_warehouse_assignment_receipts_key");
+    }
+}
+
 public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfiguration<CountExecution>
 {
     public void Configure(EntityTypeBuilder<CountExecution> builder)
@@ -275,6 +312,7 @@ public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.VarianceQuantity).HasColumnName("variance_quantity").HasPrecision(18, 6).HasComment("Counted quantity minus expected quantity.");
         builder.Property(x => x.InventoryCountTaskId).HasColumnName("inventory_count_task_id").HasMaxLength(150).HasComment("Public Inventory count task id used to freeze and confirm the counted ledger.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Count execution status.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedOperatorUserId, x.CreatedAtUtc })

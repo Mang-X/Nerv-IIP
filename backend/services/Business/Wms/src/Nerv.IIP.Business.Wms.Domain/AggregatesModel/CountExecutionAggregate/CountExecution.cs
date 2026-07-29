@@ -39,6 +39,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         ExpectedQuantity = expectedQuantity;
         Status = CountExecutionStatus.Open;
+        Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
     }
 
@@ -56,6 +57,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public decimal? VarianceQuantity { get; private set; }
     public string? InventoryCountTaskId { get; private set; }
     public CountExecutionStatus Status { get; private set; }
+    public long Version { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
 
@@ -84,8 +86,12 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
             assignedPoolCode);
     }
 
-    public void AssignWorkPool(string assignedPoolCode, string? assignedOperatorUserId = null)
+    public void AssignWorkPool(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
     {
+        EnsureExpectedVersion(expectedVersion);
         if (Status != CountExecutionStatus.Open)
         {
             throw new InvalidOperationException("Completed count executions cannot be reassigned.");
@@ -93,6 +99,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
 
         AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
     }
 
     public void MarkInventoryCountTaskCreated(string inventoryCountTaskId)
@@ -117,6 +124,21 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         VarianceQuantity = countedQuantity - ExpectedQuantity;
         Status = CountExecutionStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
+    }
+
+    private void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new InvalidOperationException(
+                $"Count execution version conflict: expected {expectedVersion}, actual {Version}.");
+        }
+    }
+
+    private void AdvanceVersion()
+    {
+        Version = checked(Version + 1);
     }
 }
