@@ -957,7 +957,7 @@ public sealed class UpdateBusinessConsoleMasterDataResourceEndpoint(
         BusinessConsoleUpdateMasterDataResourceRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.UpdateResourceAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.UpdateResourceAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1148,7 +1148,7 @@ public sealed class CreateBusinessConsoleWorkshopEndpoint(
         BusinessConsoleCreateWorkshopRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateWorkshopAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateWorkshopAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1192,7 +1192,7 @@ public sealed class CreateBusinessConsoleWorkerEndpoint(
         BusinessConsoleCreateWorkerRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateWorkerAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateWorkerAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1214,7 +1214,7 @@ public sealed class CreateBusinessConsoleSiteEndpoint(
         BusinessConsoleCreateSiteRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateSiteAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateSiteAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1236,7 +1236,7 @@ public sealed class CreateBusinessConsoleProductionLineEndpoint(
         BusinessConsoleCreateProductionLineRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateProductionLineAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateProductionLineAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1258,7 +1258,7 @@ public sealed class CreateBusinessConsoleWorkCenterEndpoint(
         BusinessConsoleCreateWorkCenterRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateWorkCenterAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateWorkCenterAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1346,7 +1346,7 @@ public sealed class CreateBusinessConsoleTeamEndpoint(
         BusinessConsoleCreateTeamRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateTeamAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateTeamAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1390,7 +1390,7 @@ public sealed class AddBusinessConsoleTeamMemberEndpoint(
         BusinessConsoleAddTeamMemberRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.AddTeamMemberAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.AddTeamMemberAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1412,7 +1412,7 @@ public sealed class RemoveBusinessConsoleTeamMemberEndpoint(
         BusinessConsoleRemoveTeamMemberRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RemoveTeamMemberAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.RemoveTeamMemberAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

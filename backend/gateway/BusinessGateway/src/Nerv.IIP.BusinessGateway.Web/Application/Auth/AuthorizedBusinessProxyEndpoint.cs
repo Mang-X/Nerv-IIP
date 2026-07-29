@@ -93,6 +93,23 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
     }
 
+    protected BusinessServiceAuditContext RequireAuditContext(object? request)
+    {
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.CreateVersion7().ToString("N")
+            : correlationId.Trim();
+        var causationId = HttpContext.Request.Headers["X-Causation-Id"].FirstOrDefault();
+        causationId = string.IsNullOrWhiteSpace(causationId)
+            ? correlationId
+            : causationId.Trim();
+        return new BusinessServiceAuditContext(
+            RequireAuthorizedPrincipalActorReference(),
+            correlationId,
+            causationId,
+            BusinessGatewayIdempotencyKey.ResolveForAudit(HttpContext, request));
+    }
+
     protected abstract string OrganizationId(TRequest request);
 
     protected abstract string EnvironmentId(TRequest request);
