@@ -535,6 +535,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -977,6 +986,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -1303,6 +1321,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
             }
           }
         ],
@@ -5005,6 +5032,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
             }
           }
         ],
@@ -13372,6 +13408,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -13388,16 +13433,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -13408,11 +13443,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -13453,6 +13508,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -13469,16 +13533,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -13489,11 +13543,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -13534,6 +13608,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -13550,16 +13633,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -13570,11 +13643,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -13615,6 +13708,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -13631,16 +13733,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -13651,11 +13743,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -13921,6 +14033,17 @@
           "Api"
         ],
         "operationId": "recordBusinessConsoleMesProductionReport",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleRecordProductionReportRequest",
           "description": "",
@@ -13935,16 +14058,6 @@
           "x-position": 1
         },
         "responses": {
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-                }
-              }
-            }
-          },
           "200": {
             "description": "Success",
             "content": {
@@ -13955,11 +14068,31 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -18889,6 +19022,17 @@
           "Api"
         ],
         "operationId": "createBusinessConsoleMaintenanceWorkOrder",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleCreateMaintenanceWorkOrderRequest",
           "description": "",
@@ -19037,6 +19181,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
             }
           }
         ],
@@ -24066,6 +24219,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -24141,6 +24303,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
+            }
           }
         ],
         "requestBody": {
@@ -24215,6 +24386,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.",
+            "schema": {
+              "type": "string",
+              "maxLength": 150
             }
           }
         ],
@@ -26672,8 +26852,35 @@
           "inventoryMovementId": {
             "type": "string",
             "nullable": true
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt": {
+        "type": "object",
+        "discriminator": {
+          "propertyName": "outcome",
+          "mapping": {
+            "confirmed": "#/components/schemas/BusinessConsoleConfirmedOperationReceipt",
+            "accepted": "#/components/schemas/BusinessConsoleAcceptedOperationReceipt"
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BusinessConsoleConfirmedOperationReceipt"
+          },
+          {
+            "$ref": "#/components/schemas/BusinessConsoleAcceptedOperationReceipt"
+          }
+        ]
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest": {
         "type": "object",
@@ -27252,6 +27459,22 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "inventoryPostingStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryMovementId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -27376,6 +27599,14 @@
           "downstreamDocumentId": {
             "type": "string",
             "nullable": true
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
@@ -32230,6 +32461,14 @@
           "nonconformanceReportCode": {
             "type": "string",
             "nullable": true
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
@@ -32237,7 +32476,8 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "inspectorUserId"
+          "inspectorUserId",
+          "idempotencyKey"
         ],
         "properties": {
           "inspectorUserId": {
@@ -32263,6 +32503,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -39496,19 +39742,33 @@
           "changedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "reasonCode": {
             "type": "string",
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -39918,12 +40178,23 @@
           },
           "reportNo": {
             "type": "string"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "organizationId": {
             "type": "string"
@@ -39954,7 +40225,9 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "nullable": true
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           },
           "consumedMaterialLots": {
             "type": "array",
@@ -44842,6 +45115,14 @@
         "properties": {
           "workOrderId": {
             "type": "string"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
@@ -44853,7 +45134,7 @@
           "environmentId",
           "deviceAssetId",
           "priority",
-          "openedBy"
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -44889,6 +45170,11 @@
           "openedBy": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": false
           },
@@ -44940,6 +45226,14 @@
         "properties": {
           "accepted": {
             "type": "boolean"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
@@ -44950,7 +45244,8 @@
           "organizationId",
           "environmentId",
           "result",
-          "downtimeReasonCode"
+          "downtimeReasonCode",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -44987,6 +45282,12 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           },
           "actualLaborMinutes": {
             "type": "integer",
@@ -50604,6 +50905,14 @@
         "properties": {
           "alarmEventId": {
             "type": "string"
+          },
+          "operationReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt"
+              }
+            ]
           }
         }
       },
@@ -50635,6 +50944,10 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -50679,6 +50992,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -50706,6 +51021,10 @@
           "unshelvedAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
             "nullable": true
           }
         }
@@ -52307,6 +52626,131 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": false
+          }
+        }
+      },
+      "BusinessConsoleConfirmedOperationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationType",
+          "authority",
+          "resourceType",
+          "resourceId",
+          "outcome",
+          "stateConfirmed",
+          "readbackRequired",
+          "idempotencyKey",
+          "changedAtUtc",
+          "resourceStatus"
+        ],
+        "properties": {
+          "operationType": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "confirmed"
+            ]
+          },
+          "stateConfirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "readbackRequired": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resourceStatus": {
+            "type": "string"
+          }
+        }
+      },
+      "BusinessConsoleAcceptedOperationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationType",
+          "authority",
+          "resourceType",
+          "resourceId",
+          "outcome",
+          "stateConfirmed",
+          "readbackRequired",
+          "idempotencyKey",
+          "readbackMethod",
+          "readbackPath"
+        ],
+        "properties": {
+          "operationType": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          "stateConfirmed": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "readbackRequired": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "readbackMethod": {
+            "type": "string",
+            "enum": [
+              "GET"
+            ]
+          },
+          "readbackPath": {
+            "type": "string"
+          },
+          "changedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       }

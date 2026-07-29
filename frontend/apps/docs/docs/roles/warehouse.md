@@ -15,6 +15,10 @@
 | 6   | 在 `/barcode/print-batches` 打印标签，在 `/barcode/scans` 核对扫码记录 | 物料带标签且扫码事实留档         | 🟡 部分可用：打印通道对接与重印/作废生命周期未交付（[#709](https://github.com/Mang-X/Nerv-IIP/issues/709)）                                                                                                                                                |
 | 7   | 在 `/wms/wcs` 跟踪自动化任务状态                                       | 自动化任务的派发/失败/完成可解释 | 🟡 部分可用：任务重试退避与熔断未交付，页面不代表设备已在线（[#708](https://github.com/Mang-X/Nerv-IIP/issues/708)）                                                                                                                                       |
 
+## 完成操作的回读
+
+入库完成、出库复核和盘点完成都使用意图键防重。同一次网络超时后重试必须保持原键；盘点调整即使已由 Inventory 完成，也会回放同一 movement 结果，不再次调整库存。Gateway 返回“已受理”时仍须按回执中的 GET 路径回读订单或盘点状态，核对库存过账状态、失败原因和 movement ID；HTTP 200 不能单独作为业务完成证据。
+
 ## 从哪里学
 
 - 教程：[仓储收发与库存闭环](/getting-started/wms-inventory-cycle)

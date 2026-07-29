@@ -2,6 +2,7 @@ import {
   completeBusinessConsoleWmsCountExecution,
   completeBusinessConsoleWmsInboundOrder,
   completeBusinessConsoleWmsOutboundOrder,
+  confirmBusinessConsoleOperation,
   completeBusinessConsoleWmsWcsTaskMutationOptions,
   createBusinessConsoleWmsCountExecutionMutationOptions,
   createBusinessConsoleWmsInboundOrderMutationOptions,
@@ -44,6 +45,12 @@ import {
   type BusinessConsoleWmsWcsTaskItem,
   type BusinessConsoleWmsWcsTaskListEnvelope,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
 import {
@@ -56,6 +63,13 @@ import { executeLifecycleAction } from './lifecycleAction'
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
 const RECEIVING_QUALITY_PAGE_SIZE = 500
+
+function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+  }
+  return snapshot as T
+}
 
 type WmsListEnvelope<TItem> = {
   success?: boolean
@@ -217,6 +231,7 @@ function requireSuccessfulList<TItem>(
 }
 
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
+  const auth = useAuthStore()
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
   const inboundOrdersQuery = useQuery(() => ({
     ...withBusinessContextEnabled(
@@ -303,44 +318,66 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     idempotencyKey = createWmsIdempotencyKey(),
     options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'wms.inbound-order.complete',
+      payloadFingerprint: inboundOrderId,
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, {})
+    requirePendingPayloadSnapshot<Record<string, never>>(pending.payloadSnapshot, '入库完成')
     completeInboundPending.value = true
     completeInboundError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: async () => {
-          const response = await listBusinessConsoleWmsInboundOrders({
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-              inboundOrderId,
-              skip: 0,
-              take: 1,
-            },
-            throwOnError: false,
-          })
-          const item = requireSuccessfulList<BusinessConsoleWmsInboundOrderItem>(response).find(
-            (candidate) => candidate.inboundOrderId === inboundOrderId,
-          )
-          return item
-            ? {
-                domain: 'wms-inbound' as const,
-                action: 'complete' as const,
-                facts: {
-                  status: item.status,
-                  idempotentReplay: options.attempt === 'retry',
-                },
-              }
-            : undefined
-        },
-        command: () => {
-          options.onCommandAttempt?.()
-          return completeBusinessConsoleWmsInboundOrder({
-            path: { inboundOrderId },
-            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-            body: { idempotencyKey },
-            throwOnError: false,
-          })
-        },
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: async () => {
+            const response = await listBusinessConsoleWmsInboundOrders({
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+                inboundOrderId,
+                skip: 0,
+                take: 1,
+              },
+              throwOnError: false,
+            })
+            const item = requireSuccessfulList<BusinessConsoleWmsInboundOrderItem>(response).find(
+              (candidate) => candidate.inboundOrderId === inboundOrderId,
+            )
+            return item
+              ? {
+                  domain: 'wms-inbound' as const,
+                  action: 'complete' as const,
+                  facts: {
+                    status: item.status,
+                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                  },
+                }
+              : undefined
+          },
+          command: () => {
+            options.onCommandAttempt?.()
+            return completeBusinessConsoleWmsInboundOrder({
+              path: { inboundOrderId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: { idempotencyKey: pending.idempotencyKey },
+              throwOnError: false,
+            })
+          },
+        })
+        if (!envelope) throw new Error('入库完成未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'wms.inbound-order.complete',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: inboundOrderId,
+        })
+        return envelope
       })
       refreshAll()
       return result
@@ -405,6 +442,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
 }
 
 export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {}) {
+  const auth = useAuthStore()
   const filters = defaultFilters<WmsListFilters>(initialFilters)
   const outboundOrdersQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -430,44 +468,69 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
     idempotencyKey = createWmsIdempotencyKey(),
     options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'wms.outbound-order.complete',
+      payloadFingerprint: `${outboundOrderId}:${JSON.stringify(payload)}`,
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, payload)
+    const stablePayload = requirePendingPayloadSnapshot<typeof payload>(
+      pending.payloadSnapshot,
+      '出库完成',
+    )
     completeOutboundPending.value = true
     completeOutboundError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: async () => {
-          const response = await listBusinessConsoleWmsOutboundOrders({
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-              outboundOrderId,
-              skip: 0,
-              take: 1,
-            },
-            throwOnError: false,
-          })
-          const item = requireSuccessfulList<BusinessConsoleWmsOutboundOrderItem>(response).find(
-            (candidate) => candidate.outboundOrderId === outboundOrderId,
-          )
-          return item
-            ? {
-                domain: 'wms-outbound' as const,
-                action: 'complete' as const,
-                facts: {
-                  status: item.status,
-                  idempotentReplay: options.attempt === 'retry',
-                },
-              }
-            : undefined
-        },
-        command: () => {
-          options.onCommandAttempt?.()
-          return completeBusinessConsoleWmsOutboundOrder({
-            path: { outboundOrderId },
-            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-            body: { ...payload, idempotencyKey },
-            throwOnError: false,
-          })
-        },
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: async () => {
+            const response = await listBusinessConsoleWmsOutboundOrders({
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+                outboundOrderId,
+                skip: 0,
+                take: 1,
+              },
+              throwOnError: false,
+            })
+            const item = requireSuccessfulList<BusinessConsoleWmsOutboundOrderItem>(response).find(
+              (candidate) => candidate.outboundOrderId === outboundOrderId,
+            )
+            return item
+              ? {
+                  domain: 'wms-outbound' as const,
+                  action: 'complete' as const,
+                  facts: {
+                    status: item.status,
+                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                  },
+                }
+              : undefined
+          },
+          command: () => {
+            options.onCommandAttempt?.()
+            return completeBusinessConsoleWmsOutboundOrder({
+              path: { outboundOrderId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: { ...stablePayload, idempotencyKey: pending.idempotencyKey },
+              throwOnError: false,
+            })
+          },
+        })
+        if (!envelope) throw new Error('出库完成未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'wms.outbound-order.complete',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: outboundOrderId,
+        })
+        return envelope
       })
       await refetchWithBusinessContext(filters, outboundOrdersQuery)
       return result
@@ -541,7 +604,6 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
       void refetchWithBusinessContext(filters, wcsTasksQuery)
     },
   })
-
   return {
     filters,
     wcsTasks: computed<BusinessConsoleWmsWcsTaskItem[]>(() =>
@@ -676,6 +738,7 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
 
 // 盘点执行（库位 × SKU 的账面 vs 实盘）。完成盘点按差额触发库存调整移动。
 export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
+  const auth = useAuthStore()
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const countExecutionsQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -704,44 +767,72 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     idempotencyKey = createWmsIdempotencyKey(),
     options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'wms.count-execution.complete',
+      payloadFingerprint: `${countExecutionId}:${countedQuantity}`,
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, { countedQuantity })
+    const stablePayload = requirePendingPayloadSnapshot<{ countedQuantity: number }>(
+      pending.payloadSnapshot,
+      '盘点完成',
+    )
     completeCountExecutionPending.value = true
     completeCountExecutionError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: async () => {
-          const response = await listBusinessConsoleWmsCountExecutions({
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-              countExecutionId,
-              skip: 0,
-              take: 1,
-            },
-            throwOnError: false,
-          })
-          const item = requireSuccessfulList<BusinessConsoleWmsCountExecutionItem>(response).find(
-            (candidate) => candidate.countExecutionId === countExecutionId,
-          )
-          return item
-            ? {
-                domain: 'wms-count' as const,
-                action: 'complete' as const,
-                facts: {
-                  status: item.status,
-                  idempotentReplay: options.attempt === 'retry',
-                },
-              }
-            : undefined
-        },
-        command: () => {
-          options.onCommandAttempt?.()
-          return completeBusinessConsoleWmsCountExecution({
-            path: { countExecutionId },
-            query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-            body: { countedQuantity, idempotencyKey },
-            throwOnError: false,
-          })
-        },
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: async () => {
+            const response = await listBusinessConsoleWmsCountExecutions({
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+                countExecutionId,
+                skip: 0,
+                take: 1,
+              },
+              throwOnError: false,
+            })
+            const item = requireSuccessfulList<BusinessConsoleWmsCountExecutionItem>(response).find(
+              (candidate) => candidate.countExecutionId === countExecutionId,
+            )
+            return item
+              ? {
+                  domain: 'wms-count' as const,
+                  action: 'complete' as const,
+                  facts: {
+                    status: item.status,
+                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                  },
+                }
+              : undefined
+          },
+          command: () => {
+            options.onCommandAttempt?.()
+            return completeBusinessConsoleWmsCountExecution({
+              path: { countExecutionId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: {
+                countedQuantity: stablePayload.countedQuantity,
+                idempotencyKey: pending.idempotencyKey,
+              },
+              throwOnError: false,
+            })
+          },
+        })
+        if (!envelope) throw new Error('盘点完成未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'wms.count-execution.complete',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: countExecutionId,
+        })
+        return envelope
       })
       await refetchWithBusinessContext(filters, countExecutionsQuery)
       return result

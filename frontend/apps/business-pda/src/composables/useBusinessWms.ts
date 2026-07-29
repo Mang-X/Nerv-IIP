@@ -2,6 +2,7 @@ import {
   completeBusinessConsoleWmsCountExecutionMutationOptions,
   completeBusinessConsoleWmsInboundOrderMutationOptions,
   completeBusinessConsoleWmsOutboundOrderMutationOptions,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleWmsCountExecutions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrders,
@@ -26,6 +27,12 @@ import {
   type BusinessConsoleWmsWarehouseTaskItem,
   type BusinessConsoleWmsWarehouseTaskListEnvelope,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -89,6 +96,9 @@ function useWmsScope() {
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const hasScope = computed(() => Boolean(organizationId.value && environmentId.value))
+  const principalId = computed(
+    () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+  )
   const scopeQuery = () => ({
     organizationId: organizationId.value,
     environmentId: environmentId.value,
@@ -100,7 +110,7 @@ function useWmsScope() {
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
   })
-  return { organizationId, environmentId, hasScope, scopeQuery, scopeQueryWithPaging }
+  return { organizationId, environmentId, principalId, hasScope, scopeQuery, scopeQueryWithPaging }
 }
 
 export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
@@ -140,35 +150,67 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       lines?: BusinessConsoleWmsInboundLineCaptureInput[],
       options: WmsCompletionAttemptOptions = { attempt: 'initial' },
     ) => {
-      const { data } = await listBusinessConsoleWmsInboundOrders({
-        query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
-        throwOnError: true,
-      })
-      const authoritative = exactItem(
-        data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
-        (item: BusinessConsoleWmsInboundOrderItem) => item.inboundOrderId === inboundOrderId,
-      )
-      assertLifecycleActionExecutable({
-        domain: 'wms-inbound',
-        action: 'complete',
-        facts: {
-          status: authoritative?.status,
-          idempotentReplay: options.attempt === 'retry',
-        },
-      })
       // 幂等键由页面在用户发起操作时生成一次并跨重试复用（防丢响应重复入库）；
       // org/env 取登录主体注入 query，调用方无法影响。lines 为收货现场采集的
       // 批号/效期（#935 闭环），随 complete 一并落库；无采集则不带 lines。
+      const payloadFingerprint = `${inboundOrderId}:${JSON.stringify(lines ?? [])}`
+      const intentScope = {
+        principalId: scope.principalId.value,
+        organizationId: scope.organizationId.value,
+        environmentId: scope.environmentId.value,
+        operationType: 'wms.inbound-order.complete',
+        payloadFingerprint,
+      }
+      const restoredPending = peekPendingBusinessIntent(intentScope)
+      const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, {
+        lines: lines ?? [],
+      })
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
+      try {
+        const { data } = await listBusinessConsoleWmsInboundOrders({
+          query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
+          throwOnError: true,
+        })
+        const authoritative = exactItem(
+          data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+          (item: BusinessConsoleWmsInboundOrderItem) => item.inboundOrderId === inboundOrderId,
+        )
+        assertLifecycleActionExecutable({
+          domain: 'wms-inbound',
+          action: 'complete',
+          facts: {
+            status: authoritative?.status,
+            idempotentReplay: isReplay,
+          },
+        })
+      } catch (error) {
+        if (!isReplay) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
+      const frozenLines =
+        (pending.payloadSnapshot as { lines?: InboundLineCapture[] } | undefined)?.lines ??
+        lines ??
+        []
       const body = {
-        idempotencyKey,
-        ...(lines && lines.length ? { lines } : {}),
+        idempotencyKey: pending.idempotencyKey,
+        ...(frozenLines.length ? { lines: frozenLines } : {}),
       } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
       options.onCommandAttempt?.()
-      return completeMutation.mutateAsync({
-        path: { inboundOrderId },
-        query: scope.scopeQuery(),
-        body,
-      })
+      return completePendingBusinessIntent(intentScope, async () =>
+        confirmBusinessConsoleOperation(
+          await completeMutation.mutateAsync({
+            path: { inboundOrderId },
+            query: scope.scopeQuery(),
+            body,
+          }),
+          {
+            expectedOperationType: 'wms.inbound-order.complete',
+            expectedIdempotencyKey: pending.idempotencyKey,
+            expectedResourceId: inboundOrderId,
+          },
+        ),
+      )
     },
     completePending: completeMutation.isLoading,
   }
@@ -210,31 +252,60 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       input: CompleteOutboundInput,
       options: WmsCompletionAttemptOptions = { attempt: 'initial' },
     ) => {
-      const { data } = await listBusinessConsoleWmsOutboundOrders({
-        query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
-        throwOnError: true,
-      })
-      const authoritative = exactItem(
-        data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
-        (item: BusinessConsoleWmsOutboundOrderItem) => item.outboundOrderId === outboundOrderId,
-      )
-      assertLifecycleActionExecutable({
-        domain: 'wms-outbound',
-        action: 'complete',
-        facts: {
-          status: authoritative?.status,
-          idempotentReplay: options.attempt === 'retry',
-        },
-      })
       // 页面提供 packReviewNo/passed/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
-      const body = { ...input } satisfies BusinessConsoleCompleteWmsOutboundOrderRequest
+      const { idempotencyKey: suppliedKey, ...payload } = input
+      const intentScope = {
+        principalId: scope.principalId.value,
+        organizationId: scope.organizationId.value,
+        environmentId: scope.environmentId.value,
+        operationType: 'wms.outbound-order.complete',
+        payloadFingerprint: `${outboundOrderId}:${JSON.stringify(payload)}`,
+      }
+      const restoredPending = peekPendingBusinessIntent(intentScope)
+      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
+      try {
+        const { data } = await listBusinessConsoleWmsOutboundOrders({
+          query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
+          throwOnError: true,
+        })
+        const authoritative = exactItem(
+          data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+          (item: BusinessConsoleWmsOutboundOrderItem) => item.outboundOrderId === outboundOrderId,
+        )
+        assertLifecycleActionExecutable({
+          domain: 'wms-outbound',
+          action: 'complete',
+          facts: {
+            status: authoritative?.status,
+            idempotentReplay: isReplay,
+          },
+        })
+      } catch (error) {
+        if (!isReplay) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
+      const body = {
+        ...((pending.payloadSnapshot ?? payload) as Omit<CompleteOutboundInput, 'idempotencyKey'>),
+        idempotencyKey: pending.idempotencyKey,
+      } satisfies BusinessConsoleCompleteWmsOutboundOrderRequest
       options.onCommandAttempt?.()
-      return completeMutation.mutateAsync({
-        path: { outboundOrderId },
-        query: scope.scopeQuery(),
-        body,
-      })
+      return completePendingBusinessIntent(intentScope, async () =>
+        confirmBusinessConsoleOperation(
+          await completeMutation.mutateAsync({
+            path: { outboundOrderId },
+            query: scope.scopeQuery(),
+            body,
+          }),
+          {
+            expectedOperationType: 'wms.outbound-order.complete',
+            expectedIdempotencyKey: pending.idempotencyKey,
+            expectedResourceId: outboundOrderId,
+          },
+        ),
+      )
     },
     completePending: completeMutation.isLoading,
   }
@@ -376,31 +447,61 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       input: CompleteCountInput,
       options: WmsCompletionAttemptOptions = { attempt: 'initial' },
     ) => {
-      const { data } = await listBusinessConsoleWmsCountExecutions({
-        query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
-        throwOnError: true,
-      })
-      const authoritative = exactItem(
-        data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
-        (item: BusinessConsoleWmsCountExecutionItem) => item.countExecutionId === countExecutionId,
-      )
-      assertLifecycleActionExecutable({
-        domain: 'wms-count',
-        action: 'complete',
-        facts: {
-          status: authoritative?.status,
-          idempotentReplay: options.attempt === 'retry',
-        },
-      })
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
-      const body = { ...input } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
+      const { idempotencyKey: suppliedKey, ...payload } = input
+      const intentScope = {
+        principalId: scope.principalId.value,
+        organizationId: scope.organizationId.value,
+        environmentId: scope.environmentId.value,
+        operationType: 'wms.count-execution.complete',
+        payloadFingerprint: `${countExecutionId}:${JSON.stringify(payload)}`,
+      }
+      const restoredPending = peekPendingBusinessIntent(intentScope)
+      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
+      try {
+        const { data } = await listBusinessConsoleWmsCountExecutions({
+          query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
+          throwOnError: true,
+        })
+        const authoritative = exactItem(
+          data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+          (item: BusinessConsoleWmsCountExecutionItem) =>
+            item.countExecutionId === countExecutionId,
+        )
+        assertLifecycleActionExecutable({
+          domain: 'wms-count',
+          action: 'complete',
+          facts: {
+            status: authoritative?.status,
+            idempotentReplay: isReplay,
+          },
+        })
+      } catch (error) {
+        if (!isReplay) clearPendingBusinessIntent(intentScope)
+        throw error
+      }
+      const body = {
+        ...((pending.payloadSnapshot ?? payload) as Omit<CompleteCountInput, 'idempotencyKey'>),
+        idempotencyKey: pending.idempotencyKey,
+      } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
       options.onCommandAttempt?.()
-      return completeMutation.mutateAsync({
-        path: { countExecutionId },
-        query: scope.scopeQuery(),
-        body,
-      })
+      return completePendingBusinessIntent(intentScope, async () =>
+        confirmBusinessConsoleOperation(
+          await completeMutation.mutateAsync({
+            path: { countExecutionId },
+            query: scope.scopeQuery(),
+            body,
+          }),
+          {
+            expectedOperationType: 'wms.count-execution.complete',
+            expectedIdempotencyKey: pending.idempotencyKey,
+            expectedResourceId: countExecutionId,
+          },
+        ),
+      )
     },
     completePending: completeMutation.isLoading,
   }

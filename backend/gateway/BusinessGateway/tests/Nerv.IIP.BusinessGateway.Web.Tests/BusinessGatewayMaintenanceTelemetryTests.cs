@@ -110,6 +110,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 "equipment-failure",
                 10,
                 [],
+                "maintenance-complete-001",
                 ActualTechnicianUserId: new string('x', 151)));
 
         Assert.Contains(result.Errors, x =>
@@ -462,6 +463,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             sourceAlarmId = "alarm-001",
             openedBy = "operator-001",
             assetUnavailableReason = "alarm-raised",
+            idempotencyKey = "maintenance-create-test",
         });
         var completeResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", new
         {
@@ -474,6 +476,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             {
                 new { skuCode = "SPARE-001", quantity = 2m, uomCode = "EA" },
             },
+            idempotencyKey = "maintenance-complete-test",
         });
 
         Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
@@ -481,6 +484,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
         Assert.Equal("DEV-PRESS-01", maintenance.LastCreateWorkOrderRequest.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("user-admin", maintenance.LastCreateWorkOrderRequest.GetProperty("openedBy").GetString());
         Assert.Equal("wo-maint-001", maintenance.LastCompleteWorkOrderId);
         Assert.Equal("restored", maintenance.LastCompleteWorkOrderRequest.GetProperty("result").GetString());
         Assert.Equal("SPARE-001", maintenance.LastCompleteWorkOrderRequest.GetProperty("spareParts")[0].GetProperty("skuCode").GetString());
@@ -514,6 +518,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 result = "restored",
                 downtimeReasonCode = "mechanical",
                 downtimeMinutes = 35,
+                idempotencyKey = "maintenance-conflict-test",
             });
 
         await AssertLifecycleConflictAsync(response);
@@ -879,6 +884,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             acknowledgedAtUtc = "2026-07-06T08:05:00Z",
             acknowledgedBy = "operator-001",
         });
+        var acknowledgeRequest = Assert.IsType<BusinessConsoleAcknowledgeAlarmRequest>(
+            telemetry.LastAlarmLifecycleRequest);
+        Assert.Equal("user-admin", acknowledgeRequest.AcknowledgedBy);
         var shelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/shelve", new
         {
             organizationId = "org-001",
@@ -887,7 +895,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             durationMinutes = 30,
             shelvedBy = "operator-001",
             reason = "maintenance check",
+            idempotencyKey = "alarm-shelve-test",
         });
+        var shelveRequest = Assert.IsType<BusinessConsoleShelveAlarmRequest>(
+            telemetry.LastAlarmLifecycleRequest);
+        Assert.Equal("user-admin", shelveRequest.ShelvedBy);
         var unshelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/unshelve", new
         {
             organizationId = "org-001",

@@ -132,7 +132,7 @@ async function confirmComplete() {
       passed: passed.value,
       idempotencyKey,
     }))
-    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    // 重试复用同一幂等键（不重新生成），#188 客户端去重可识别为同一操作。
     await completeOutbound(selectedOrderId.value, payload, {
       attempt: intent.attempt.value,
       onCommandAttempt: intent.markCommandAttempt,

@@ -49,7 +49,12 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
+  BusinessConsoleCreateInspectionRecordFromTaskRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  BusinessConsoleMesOperationTaskActionRequest,
+  BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleWmsInboundLineCaptureInput,
   BusinessConsoleWmsInboundLineInput,
   BusinessConsoleWmsReceivingQualityGateItem,
@@ -157,6 +162,24 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('requires caller idempotency keys on all governed MAN-625 public write DTOs', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleMesOperationTaskActionRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleRecordProductionReportRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCreateInspectionRecordFromTaskRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCreateMaintenanceWorkOrderRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCompleteMaintenanceWorkOrderRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+  })
+
   it('requires the governed ERP work-center cost-rate effective start', () => {
     expectTypeOf<
       {} extends Pick<BusinessConsoleConfigureErpWorkCenterCostRateRequest, 'effectiveFromUtc'>

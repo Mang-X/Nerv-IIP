@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { BusinessOperationUnconfirmedError } from '@nerv-iip/api-client'
 
 // ---- vue-router mock（捕获 push）---------------------------------------------
 const push = vi.fn()
@@ -259,6 +260,30 @@ describe('PDA equipment alarms page', () => {
     expect(document.body.textContent).toContain('状态已被其他操作更新')
     expect(document.body.textContent).not.toContain('操作失败')
     expect(document.body.querySelector('.nv-m-md-confirm')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('refreshes for an accepted readback failure and offers only the frozen-content retry', async () => {
+    acknowledge.mockRejectedValue(
+      new BusinessOperationUnconfirmedError(
+        '请求已受理，但权威状态尚未确认（downstream-invalid-response）',
+      ),
+    )
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click()
+    await flushPromises()
+
+    const dialogText = document.body.textContent ?? ''
+    expect(dialogText).toContain('提交结果未知')
+    expect(dialogText).toContain('结果尚未核实')
+    expect(dialogText).not.toContain('downstream')
+    expect(document.body.querySelector<HTMLElement>('.nv-m-md-confirm')?.textContent).toContain(
+      '按原内容重试',
+    )
+    expect(refresh).toHaveBeenCalled()
+    expect(acknowledge).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

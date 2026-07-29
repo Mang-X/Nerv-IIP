@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Inventory;
@@ -1758,6 +1759,12 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        var idempotencyKey = BusinessGatewayIdempotencyKey.FromBody(body);
+        if (idempotencyKey is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+        }
+
         configureRequest?.Invoke(request);
         if (body is not null)
         {
@@ -2956,13 +2963,34 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.InspectorUserId,
                 request.ResultLines?.Select(ToDownstreamLine).ToArray(),
                 request.DispositionReason,
-                request.DispositionAttachmentFileIds),
+                request.DispositionAttachmentFileIds,
+                request.IdempotencyKey),
             cancellationToken);
+        if (!Guid.TryParse(response.InspectionRecordId, out var inspectionRecordId)
+            || inspectionRecordId == Guid.Empty
+            || response.Result is not ("passed" or "rejected" or "conditional-release")
+            || response.ChangedAtUtc == default)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
         return new BusinessConsoleCreateInspectionRecordFromTaskResponse(
             response.InspectionRecordId,
             response.Result,
             response.NonconformanceReportId,
-            response.NonconformanceReportCode);
+            response.NonconformanceReportCode,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Confirmed(
+                    "quality.inspection-task.submit",
+                    "quality",
+                    "inspection-record",
+                    response.InspectionRecordId,
+                    response.ChangedAtUtc,
+                    response.Result,
+                    request.IdempotencyKey));
     }
 
     public async Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
@@ -3456,7 +3484,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string InspectionRecordId,
         string Result,
         string? NonconformanceReportId,
-        string? NonconformanceReportCode);
+        string? NonconformanceReportCode,
+        DateTimeOffset ChangedAtUtc);
 
     private sealed record DownstreamInspectionTaskItem(
         string InspectionTaskId,
@@ -3480,7 +3509,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string InspectorUserId,
         IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
         string? DispositionReason,
-        IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+        IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+        string? IdempotencyKey = null);
 
     private static DownstreamCreateInspectionRecordRequest ToDownstreamRequest(
         BusinessConsoleCreateInspectionRecordRequest request) =>
@@ -5652,7 +5682,19 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/acknowledge",
             request,
             cancellationToken);
-        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+        var resourceId = FormatJsonScalar(response.AlarmEventId);
+        EnsureRouteResource(resourceId, alarmEventId);
+        return new BusinessConsoleAlarmLifecycleResponse(
+            resourceId,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Accepted(
+                    "iiot.alarm.acknowledge",
+                    "industrial-telemetry",
+                    "alarm-event",
+                    resourceId,
+                    AlarmReadbackPath(request.OrganizationId, request.EnvironmentId, resourceId),
+                    request.IdempotencyKey));
     }
 
     public async Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
@@ -5667,7 +5709,19 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/shelve",
             request,
             cancellationToken);
-        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+        var resourceId = FormatJsonScalar(response.AlarmEventId);
+        EnsureRouteResource(resourceId, alarmEventId);
+        return new BusinessConsoleAlarmLifecycleResponse(
+            resourceId,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Accepted(
+                    "iiot.alarm.shelve",
+                    "industrial-telemetry",
+                    "alarm-event",
+                    resourceId,
+                    AlarmReadbackPath(request.OrganizationId, request.EnvironmentId, resourceId),
+                    request.IdempotencyKey));
     }
 
     public async Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
@@ -5682,7 +5736,33 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/unshelve",
             request,
             cancellationToken);
-        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+        var resourceId = FormatJsonScalar(response.AlarmEventId);
+        EnsureRouteResource(resourceId, alarmEventId);
+        return new BusinessConsoleAlarmLifecycleResponse(
+            resourceId,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Accepted(
+                    "iiot.alarm.unshelve",
+                    "industrial-telemetry",
+                    "alarm-event",
+                    resourceId,
+                    AlarmReadbackPath(request.OrganizationId, request.EnvironmentId, resourceId),
+                    request.IdempotencyKey));
+    }
+
+    private static string AlarmReadbackPath(string organizationId, string environmentId, string alarmEventId) =>
+        $"/api/business-console/v1/equipment/alarms?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}&alarmEventId={Uri.EscapeDataString(alarmEventId)}";
+
+    private static void EnsureRouteResource(string downstreamResourceId, string routeResourceId)
+    {
+        if (string.IsNullOrWhiteSpace(downstreamResourceId)
+            || !string.Equals(downstreamResourceId, routeResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
     }
 
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
@@ -5832,7 +5912,29 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             "/api/business/v1/maintenance/work-orders",
             request,
             cancellationToken);
-        return new BusinessConsoleCreateMaintenanceWorkOrderResponse(FormatJsonScalar(response.WorkOrderId));
+        var resourceId = FormatJsonScalar(response.WorkOrderId);
+        if (!Guid.TryParse(resourceId, out var parsedWorkOrderId)
+            || parsedWorkOrderId == Guid.Empty
+            || !string.Equals(response.Status, "Open", StringComparison.Ordinal)
+            || response.ChangedAtUtc == default)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleCreateMaintenanceWorkOrderResponse(
+            resourceId,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Confirmed(
+                    "maintenance.work-order.create",
+                    "maintenance",
+                    "maintenance-work-order",
+                    resourceId,
+                    response.ChangedAtUtc,
+                    response.Status,
+                    request.IdempotencyKey));
     }
 
     public async Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
@@ -5841,12 +5943,14 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleCompleteMaintenanceWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
-        await SendAsync<JsonElement>(
+        var response = await SendAsync<DownstreamCompleteMaintenanceWorkOrderResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}/complete",
             new DownstreamCompleteMaintenanceWorkOrderRequest(
                 workOrderId,
+                request.OrganizationId,
+                request.EnvironmentId,
                 request.Result,
                 request.DowntimeReasonCode,
                 request.DowntimeMinutes,
@@ -5855,9 +5959,34 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.SparePartCostAmount,
                 request.ExternalServiceCostAmount,
                 request.CostCurrencyCode,
-                request.ActualTechnicianUserId),
+                request.ActualTechnicianUserId,
+                request.IdempotencyKey),
             cancellationToken);
-        return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true);
+        var responseWorkOrderId = FormatJsonScalar(response.WorkOrderId);
+        if (!Guid.TryParse(responseWorkOrderId, out var parsedWorkOrderId)
+            || parsedWorkOrderId == Guid.Empty
+            || !Guid.TryParse(workOrderId, out var requestedWorkOrderId)
+            || requestedWorkOrderId != parsedWorkOrderId
+            || !string.Equals(response.Status, "Completed", StringComparison.Ordinal)
+            || response.ChangedAtUtc == default)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(
+            true,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Confirmed(
+                    "maintenance.work-order.complete",
+                    "maintenance",
+                    "maintenance-work-order",
+                    responseWorkOrderId,
+                    response.ChangedAtUtc,
+                    response.Status,
+                    request.IdempotencyKey));
     }
 
     public async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
@@ -6258,10 +6387,15 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         decimal Quantity,
         string? UomCode);
 
-    private sealed record DownstreamCreateMaintenanceWorkOrderResponse(JsonElement WorkOrderId);
+    private sealed record DownstreamCreateMaintenanceWorkOrderResponse(
+        JsonElement WorkOrderId,
+        string Status,
+        DateTimeOffset ChangedAtUtc);
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderRequest(
         string WorkOrderId,
+        string OrganizationId,
+        string EnvironmentId,
         string Result,
         string DowntimeReasonCode,
         int DowntimeMinutes,
@@ -6270,7 +6404,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
         string? CostCurrencyCode = null,
-        string? ActualTechnicianUserId = null);
+        string? ActualTechnicianUserId = null,
+        string? IdempotencyKey = null);
+
+    private sealed record DownstreamCompleteMaintenanceWorkOrderResponse(
+        JsonElement WorkOrderId,
+        string Status,
+        DateTimeOffset ChangedAtUtc);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
 
@@ -7459,7 +7599,16 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
         return new BusinessConsoleRecordProductionReportResponse(
             response.ProductionReportId.Id.ToString(),
-            response.ReportNo);
+            response.ReportNo,
+            string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Accepted(
+                    "mes.production-report.record",
+                    "mes",
+                    "production-report",
+                    response.ProductionReportId.Id.ToString(),
+                    $"/api/business-console/v1/mes/production-reports/{Uri.EscapeDataString(response.ReportNo)}?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}",
+                    request.IdempotencyKey));
     }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
@@ -7670,18 +7819,50 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             response.AffectedWorkOrderIds);
     }
 
-    private Task<BusinessConsoleMesOperationTaskActionResponse> OperationTaskActionAsync(
+    private async Task<BusinessConsoleMesOperationTaskActionResponse> OperationTaskActionAsync(
         string internalBearerToken,
         string operationTaskId,
         string action,
         BusinessConsoleMesOperationTaskActionRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleMesOperationTaskActionResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<BusinessConsoleMesOperationTaskActionResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/{action}",
             request,
             cancellationToken);
+        var expectedStatus = action switch
+        {
+            "start" or "resume" => "InProgress",
+            "pause" => "Paused",
+            "complete" => "Completed",
+            _ => null,
+        };
+        if (!string.Equals(response.OperationTaskId, operationTaskId, StringComparison.Ordinal)
+            || expectedStatus is null
+            || !string.Equals(response.Status, expectedStatus, StringComparison.Ordinal)
+            || response.ChangedAtUtc == default)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return response with
+        {
+            OperationReceipt = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : BusinessConsoleOperationReceipts.Confirmed(
+                    $"mes.operation-task.{action}",
+                    "mes",
+                    "operation-task",
+                    response.OperationTaskId,
+                    response.ChangedAtUtc,
+                    response.Status,
+                    request.IdempotencyKey),
+        };
+    }
 
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));

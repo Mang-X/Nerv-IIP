@@ -1,5 +1,6 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTask,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   type BusinessConsoleCreateInspectionRecordFromTaskRequest,
@@ -7,6 +8,12 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -16,6 +23,13 @@ import {
 import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 200
+
+function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+  }
+  return snapshot as T
+}
 
 export type InspectionTaskSourceType = 'receiving' | 'operation' | 'final' | 'all'
 
@@ -42,6 +56,13 @@ interface InspectionTaskLocator {
   inspectionTaskId?: string
 }
 
+type QualityInspectionSubmitIntent = Omit<
+  BusinessConsoleCreateInspectionRecordFromTaskRequest,
+  'idempotencyKey'
+> & {
+  idempotencyKey?: string
+}
+
 type InspectionTaskPageLoader = (skip: number, take: number) => Promise<InspectionTaskPage>
 
 function isBusinessQuery(id: string) {
@@ -54,6 +75,15 @@ function isBusinessQuery(id: string) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
+
+function newQualitySubmitIntentKey() {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  const uniquePart =
+    cryptoApi && typeof cryptoApi.randomUUID === 'function'
+      ? cryptoApi.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `quality-submit-${uniquePart}`
+}
 
 export function isInspectionTaskOverdue(
   task: BusinessConsoleQualityInspectionTaskItem,
@@ -206,6 +236,7 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
 }
 
 export function useQualityInspectionTaskActions(filters: BusinessContextFields) {
+  const auth = useAuthStore()
   const queryCache = useQueryCache()
   const startInspectionPending = shallowRef(false)
   const startInspectionError = shallowRef<unknown>()
@@ -216,51 +247,75 @@ export function useQualityInspectionTaskActions(filters: BusinessContextFields) 
       })
       .catch(ignoreBackgroundError)
 
-  async function startInspection(
-    inspectionTaskId: string,
-    body: BusinessConsoleCreateInspectionRecordFromTaskRequest,
-  ) {
+  async function startInspection(inspectionTaskId: string, body: QualityInspectionSubmitIntent) {
+    const { idempotencyKey: suppliedKey, ...intent } = body
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: 'quality.inspection-task.submit',
+      payloadFingerprint: `${inspectionTaskId}:${JSON.stringify(intent)}`,
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => suppliedKey ?? newQualitySubmitIntentKey(),
+      intent,
+    )
+    const stableIntent = requirePendingPayloadSnapshot<
+      Omit<QualityInspectionSubmitIntent, 'idempotencyKey'>
+    >(pending.payloadSnapshot, '创建检验记录')
     startInspectionPending.value = true
     startInspectionError.value = undefined
     try {
-      const result = await executeLifecycleAction({
-        readLatest: async () => {
-          const response = await listBusinessConsoleQualityInspectionTasks({
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-              inspectionTaskId,
-              skip: 0,
-              take: 1,
-            },
-            throwOnError: false,
-          })
-          if (response.error !== undefined) throw response.error
-          if (!response.data?.success) throw response.data ?? new Error('读取待检任务失败')
-          const item = response.data.data?.items?.find(
-            (candidate) => candidate.inspectionTaskId === inspectionTaskId,
-          )
-          return item
-            ? {
-                domain: 'quality-inspection-task' as const,
-                action: 'create-record' as const,
-                facts: {
-                  status: item.status,
-                  inspectionRecordId: item.inspectionRecordId,
-                },
-              }
-            : undefined
-        },
-        command: () =>
-          createBusinessConsoleQualityInspectionRecordFromTask({
-            path: { inspectionTaskId },
-            query: {
-              organizationId: filters.organizationId,
-              environmentId: filters.environmentId,
-            },
-            body,
-            throwOnError: false,
-          }),
+      const result = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await executeLifecycleAction({
+          readLatest: async () => {
+            const response = await listBusinessConsoleQualityInspectionTasks({
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+                inspectionTaskId,
+                skip: 0,
+                take: 1,
+              },
+              throwOnError: false,
+            })
+            if (response.error !== undefined) throw response.error
+            if (!response.data?.success) throw response.data ?? new Error('读取待检任务失败')
+            const item = response.data.data?.items?.find(
+              (candidate) => candidate.inspectionTaskId === inspectionTaskId,
+            )
+            return item
+              ? {
+                  domain: 'quality-inspection-task' as const,
+                  action: 'create-record' as const,
+                  facts: {
+                    status: item.status,
+                    inspectionRecordId: item.inspectionRecordId,
+                    idempotentReplay: Boolean(restored),
+                  },
+                }
+              : undefined
+          },
+          command: () =>
+            createBusinessConsoleQualityInspectionRecordFromTask({
+              path: { inspectionTaskId },
+              query: {
+                organizationId: filters.organizationId,
+                environmentId: filters.environmentId,
+              },
+              body: { ...stableIntent, idempotencyKey: pending.idempotencyKey },
+              throwOnError: false,
+            }),
+        })
+        if (!envelope) throw new Error('创建检验记录未返回业务信封')
+        await confirmBusinessConsoleOperation(envelope, {
+          expectedOperationType: 'quality.inspection-task.submit',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceIdSelector: (candidate) => candidate.data?.inspectionRecordId,
+        })
+        return envelope
       })
       await refreshInspectionTasks()
       return result

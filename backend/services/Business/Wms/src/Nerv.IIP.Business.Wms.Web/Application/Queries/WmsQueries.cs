@@ -493,7 +493,11 @@ public sealed record CountExecutionFact(
     decimal? VarianceQuantity,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    string? InventoryPostingStatus = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    string? InventoryMovementId = null);
 
 public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
@@ -553,7 +557,31 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 x.CreatedAtUtc,
                 x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
-        return new ListCountExecutionsResponse(items, total);
+        var countNumbers = items.Select(x => x.CountNo).ToArray();
+        var movementRequests = await dbContext.InventoryMovementRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.MovementType == "count-adjustment"
+                && countNumbers.Contains(x.SourceDocumentId)
+                && x.SourceDocumentLineId == null)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        var movementByCountNumber = movementRequests
+            .GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var projectedItems = items
+            .Select(item => movementByCountNumber.TryGetValue(item.CountNo, out var movement)
+                ? item with
+                {
+                    InventoryPostingStatus = movement.Status.ToString(),
+                    InventoryPostingFailureCode = movement.FailureCode,
+                    InventoryPostingFailureMessage = movement.FailureMessage,
+                    InventoryMovementId = movement.InventoryMovementId,
+                }
+                : item)
+            .ToArray();
+        return new ListCountExecutionsResponse(projectedItems, total);
     }
 }
 

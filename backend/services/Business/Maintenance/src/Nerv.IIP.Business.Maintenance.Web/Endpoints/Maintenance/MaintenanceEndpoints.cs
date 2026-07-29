@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -7,6 +8,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 
@@ -67,10 +69,14 @@ public sealed record CreateMaintenanceWorkOrderRequest(
     string? SourceAlarmId,
     string OpenedBy,
     string? AssetUnavailableReason,
+    string IdempotencyKey,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null);
 
-public sealed record CreateMaintenanceWorkOrderResponse(MaintenanceWorkOrderId WorkOrderId);
+public sealed record CreateMaintenanceWorkOrderResponse(
+    MaintenanceWorkOrderId WorkOrderId,
+    string Status,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed record CompleteMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -78,11 +84,35 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     string DowntimeReasonCode,
     int DowntimeMinutes,
     IReadOnlyCollection<MaintenanceSparePartInput> SpareParts,
+    string IdempotencyKey,
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
     string? CostCurrencyCode = null,
-    string? ActualTechnicianUserId = null);
+    string? ActualTechnicianUserId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<CreateMaintenanceWorkOrderRequest>
+{
+    public CreateMaintenanceWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+}
+
+public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>
+{
+    public CompleteMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed record CompleteMaintenanceWorkOrderResponse(
+    MaintenanceWorkOrderId WorkOrderId,
+    string Status,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed record StartMaintenanceRepairRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -224,13 +254,18 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes), ct);
-        await Send.OkAsync(new CreateMaintenanceWorkOrderResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
+        await Send.OkAsync(
+            new CreateMaintenanceWorkOrderResponse(
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
+            cancellation: ct);
     }
 }
 
 public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
-    : MaintenanceEndpoint<CompleteMaintenanceWorkOrderRequest, ResponseData<object>>
+    : MaintenanceEndpoint<CompleteMaintenanceWorkOrderRequest, ResponseData<CompleteMaintenanceWorkOrderResponse>>
 {
     public override void Configure() => ConfigureMaintenanceContract(
         MaintenanceEndpointContracts.Get<CompleteMaintenanceWorkOrderEndpoint>(),
@@ -238,8 +273,28 @@ public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts, req.ActualLaborMinutes, req.SparePartCostAmount, req.ExternalServiceCostAmount, req.CostCurrencyCode, req.ActualTechnicianUserId), ct);
-        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(
+            new CompleteMaintenanceWorkOrderCommand(
+                req.WorkOrderId,
+                req.Result,
+                req.DowntimeReasonCode,
+                req.DowntimeMinutes,
+                req.SpareParts,
+                req.ActualLaborMinutes,
+                req.SparePartCostAmount,
+                req.ExternalServiceCostAmount,
+                req.CostCurrencyCode,
+                req.ActualTechnicianUserId,
+                req.IdempotencyKey,
+                req.OrganizationId,
+                req.EnvironmentId),
+            ct);
+        await Send.OkAsync(
+            new CompleteMaintenanceWorkOrderResponse(
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
+            cancellation: ct);
     }
 }
 

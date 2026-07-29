@@ -27,6 +27,8 @@ public sealed class BusinessGatewayOpenApiTests
         using var document = JsonDocument.Parse(json);
         var paths = document.RootElement.GetProperty("paths");
         AssertOperationIdsAreUnique(document);
+        AssertOperationReceiptUnion(document);
+        AssertGovernedWriteIdempotencyHeaders(paths);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}", "get", "getBusinessConsoleMasterDataResourceDetail");
@@ -89,6 +91,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", "post", "openBusinessConsoleQualityNcrFromInspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks", "get", "listBusinessConsoleQualityInspectionTasks");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");
         AssertOperationId(paths, "/api/business-console/v1/quality/calibration-records", "get", "listBusinessConsoleQualityCalibrationRecords");
@@ -252,8 +255,10 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-hours", "get", "queryBusinessConsoleTelemetryRuntimeHours");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}", "get", "getBusinessConsoleMaintenanceWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "completeBusinessConsoleMaintenanceWorkOrder");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/complete", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "get", "listBusinessConsoleMaintenancePlans");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "post", "createBusinessConsoleMaintenancePlan");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans/{planId}", "put", "updateBusinessConsoleMaintenancePlan");
@@ -509,6 +514,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "startBusinessConsoleMesOperationTask");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause", "post", "pauseBusinessConsoleMesOperationTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume", "post", "resumeBusinessConsoleMesOperationTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete", "post", "completeBusinessConsoleMesOperationTask");
@@ -518,6 +524,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules", "get", "listBusinessConsoleMesScheduleResults");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/production-reports", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/mes/defects", "post", "recordBusinessConsoleMesDefect");
         AssertOperationId(paths, "/api/business-console/v1/mes/related-quality-items", "get", "listBusinessConsoleMesRelatedQualityItems");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests", "get", "listBusinessConsoleMesFinishedGoodsReceiptRequests");
@@ -1074,6 +1081,90 @@ public sealed class BusinessGatewayOpenApiTests
             Assert.True(
                 properties.TryGetProperty(propertyName, out _),
                 $"{schemaNameSuffix} must expose {propertyName} so the frontend does not render raw internal ids.");
+        }
+    }
+
+    private static void AssertOperationReceiptUnion(JsonDocument document)
+    {
+        var receipt = FindSchemaBySuffix(document, "BusinessConsoleOperationReceipt");
+        Assert.Equal(2, receipt.GetProperty("oneOf").GetArrayLength());
+        Assert.Equal("outcome", receipt.GetProperty("discriminator").GetProperty("propertyName").GetString());
+
+        var confirmed = FindSchemaBySuffix(document, "BusinessConsoleConfirmedOperationReceipt");
+        AssertRequiredVariant(
+            confirmed,
+            ("outcome", "confirmed"),
+            ("stateConfirmed", true),
+            ("readbackRequired", false));
+        AssertRequiredProperty(confirmed, "changedAtUtc");
+        AssertRequiredProperty(confirmed, "resourceStatus");
+
+        var accepted = FindSchemaBySuffix(document, "BusinessConsoleAcceptedOperationReceipt");
+        AssertRequiredVariant(
+            accepted,
+            ("outcome", "accepted"),
+            ("stateConfirmed", false),
+            ("readbackRequired", true));
+        AssertRequiredProperty(accepted, "readbackMethod");
+        AssertRequiredProperty(accepted, "readbackPath");
+        Assert.Equal(
+            "GET",
+            accepted.GetProperty("properties").GetProperty("readbackMethod").GetProperty("enum")[0].GetString());
+    }
+
+    private static void AssertRequiredVariant(
+        JsonElement schema,
+        (string Name, string Value) stringLiteral,
+        (string Name, bool Value) firstBoolean,
+        (string Name, bool Value) secondBoolean)
+    {
+        AssertRequiredProperty(schema, stringLiteral.Name);
+        AssertRequiredProperty(schema, firstBoolean.Name);
+        AssertRequiredProperty(schema, secondBoolean.Name);
+        var properties = schema.GetProperty("properties");
+        Assert.Equal(stringLiteral.Value, properties.GetProperty(stringLiteral.Name).GetProperty("enum")[0].GetString());
+        Assert.Equal(firstBoolean.Value, properties.GetProperty(firstBoolean.Name).GetProperty("enum")[0].GetBoolean());
+        Assert.Equal(secondBoolean.Value, properties.GetProperty(secondBoolean.Name).GetProperty("enum")[0].GetBoolean());
+    }
+
+    private static void AssertRequiredProperty(JsonElement schema, string propertyName) =>
+        Assert.Contains(schema.GetProperty("required").EnumerateArray(), value => value.GetString() == propertyName);
+
+    private static void AssertGovernedWriteIdempotencyHeaders(JsonElement paths)
+    {
+        var governedOperationIds = new[]
+        {
+            "acknowledgeBusinessConsoleEquipmentAlarm",
+            "shelveBusinessConsoleEquipmentAlarm",
+            "unshelveBusinessConsoleEquipmentAlarm",
+            "createBusinessConsoleMaintenanceWorkOrder",
+            "completeBusinessConsoleMaintenanceWorkOrder",
+            "createBusinessConsoleQualityInspectionRecordFromTask",
+            "startBusinessConsoleMesOperationTask",
+            "pauseBusinessConsoleMesOperationTask",
+            "resumeBusinessConsoleMesOperationTask",
+            "completeBusinessConsoleMesOperationTask",
+            "recordBusinessConsoleMesProductionReport",
+            "completeBusinessConsoleWmsInboundOrder",
+            "completeBusinessConsoleWmsOutboundOrder",
+            "completeBusinessConsoleWmsCountExecution",
+        };
+
+        var operations = paths.EnumerateObject()
+            .SelectMany(path => path.Value.EnumerateObject())
+            .Where(operation => IsHttpMethod(operation.Name))
+            .Select(operation => operation.Value)
+            .ToArray();
+        foreach (var operationId in governedOperationIds)
+        {
+            var operation = Assert.Single(operations, operation =>
+                operation.GetProperty("operationId").GetString() == operationId);
+            var header = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
+                parameter.GetProperty("name").GetString() == "Idempotency-Key"
+                && parameter.GetProperty("in").GetString() == "header");
+            Assert.True(
+                !header.TryGetProperty("required", out var required)
+                || !required.GetBoolean());
         }
     }
 

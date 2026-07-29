@@ -30,6 +30,30 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesEndpointContractTests
 {
     [Fact]
+    public void Production_report_internal_compatibility_constructor_cannot_mint_a_caller_intent_receipt()
+    {
+        var internalCommand = new RecordProductionReportCommand(
+            "org-001", "env-dev", "WO-001", "OP-10", 1m, 0m, false, DateTimeOffset.UnixEpoch);
+        var httpCommand = new RecordProductionReportCommand(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            1m,
+            0m,
+            false,
+            DateTimeOffset.UnixEpoch,
+            "caller-intent-001");
+        var property = typeof(RecordProductionReportCommand).GetProperty(
+            "PersistsCallerIntentReceipt",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(property);
+        Assert.False(Assert.IsType<bool>(property.GetValue(internalCommand)));
+        Assert.True(Assert.IsType<bool>(property.GetValue(httpCommand)));
+    }
+
+    [Fact]
     public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -53,6 +77,7 @@ public sealed class MesEndpointContractTests
                 organizationId = "org-001",
                 environmentId = "env-dev",
                 changedAtUtc = "2026-07-27T10:00:00Z",
+                idempotencyKey = "pause-lifecycle-conflict",
             });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -60,6 +85,77 @@ public sealed class MesEndpointContractTests
         Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Queued", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Operation_action_endpoint_replays_same_key_across_server_generated_timestamps()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-HTTP-REPLAY",
+            "SKU-FG",
+            "PV-001",
+            10m,
+            1,
+            DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
+            "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-HTTP-REPLAY",
+            "OP-HTTP-REPLAY",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            DateTimeOffset.Parse("2026-07-28T08:00:00Z"),
+            TimeSpan.FromHours(1),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var sender = new RealOperationActionSender(
+            new ChangeOperationTaskStateCommandHandler(dbContext, NoRequirementSnapshotProvider.Instance));
+
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        var body = new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            idempotencyKey = "mes-http-replay-001",
+        };
+
+        var first = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-HTTP-REPLAY/start",
+            body);
+        await Task.Delay(5);
+        var replay = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-HTTP-REPLAY/start",
+            body);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(
+            await first.Content.ReadAsStringAsync(),
+            await replay.Content.ReadAsStringAsync());
+        Assert.Equal(2, sender.CallCount);
     }
 
     [Fact]
@@ -1951,6 +2047,38 @@ public sealed class MesEndpointContractTests
             throw new NotSupportedException();
 
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class RealOperationActionSender(ChangeOperationTaskStateCommandHandler handler) : ISender
+    {
+        public int CallCount { get; private set; }
+
+        public async Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            var command = Assert.IsType<ChangeOperationTaskStateCommand>(request);
+            var response = await handler.Handle(command, cancellationToken);
+            return (TResponse)(object)response;
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 

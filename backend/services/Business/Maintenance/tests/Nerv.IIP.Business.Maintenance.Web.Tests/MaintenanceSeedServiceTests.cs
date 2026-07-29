@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -100,24 +101,26 @@ public sealed class MaintenanceSeedServiceTests
     }
 
     [Fact]
-    public async Task Leader_demo_alarm_raise_and_clear_reuse_the_seeded_work_order_lifecycle()
+    public async Task Leader_demo_rejects_a_different_create_intent_and_clear_reuses_the_seeded_work_order_lifecycle()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
         var seeded = await db.MaintenanceWorkOrders.SingleAsync();
 
-        var raisedWorkOrderId = await new CreateMaintenanceWorkOrderCommandHandler(db).Handle(
-            new CreateMaintenanceWorkOrderCommand(
-                "org-001",
-                "env-dev",
-                LeaderDemoSeedService.DeviceAssetId,
-                "critical",
-                "ALARM-DEMO-001",
-                "industrialTelemetry",
-                null),
-            CancellationToken.None);
+        var createException = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateMaintenanceWorkOrderCommandHandler(db).Handle(
+                new CreateMaintenanceWorkOrderCommand(
+                    "org-001",
+                    "env-dev",
+                    LeaderDemoSeedService.DeviceAssetId,
+                    "critical",
+                    "ALARM-DEMO-001",
+                    "industrialTelemetry",
+                    null,
+                    IdempotencyKey: "leader-demo-alarm-raise"),
+                CancellationToken.None));
 
-        Assert.Equal(seeded.Id, raisedWorkOrderId);
+        Assert.Equal("source-alarm-already-bound-to-a-different-create-intent", createException.Message);
         Assert.Single(await db.MaintenanceWorkOrders.ToArrayAsync());
 
         var clearedAtUtc = seeded.OpenedAtUtc.AddMinutes(1);

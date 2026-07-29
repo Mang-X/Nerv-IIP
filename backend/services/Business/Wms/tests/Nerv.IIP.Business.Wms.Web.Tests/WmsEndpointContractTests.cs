@@ -27,6 +27,7 @@ using InboundOrderStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundO
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
 using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
+using InventoryMovementRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate.InventoryMovementRequest;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
@@ -113,12 +114,26 @@ public sealed class WmsEndpointContractTests
     public void Complete_inbound_contract_accepts_optional_line_captures_without_changing_the_operation_id()
     {
         var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
-        var legacyRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-legacy-001");
+        var legacyRequest = new CompleteInboundOrderRequest(
+            inboundOrderId,
+            "idem-legacy-001");
         var capture = new InboundOrderLineCapture("LINE-001", "LOT-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
-        var captureRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-capture-001", [capture]);
-        var command = new CompleteInboundOrderCommand(captureRequest.InboundOrderId, captureRequest.IdempotencyKey, captureRequest.Lines);
+        var captureRequest = new CompleteInboundOrderRequest(
+            inboundOrderId,
+            "idem-capture-001",
+            [capture],
+            "org-001",
+            "env-dev");
+        var command = new CompleteInboundOrderCommand(
+            captureRequest.InboundOrderId,
+            captureRequest.IdempotencyKey,
+            captureRequest.Lines,
+            captureRequest.OrganizationId,
+            captureRequest.EnvironmentId);
 
         Assert.Null(legacyRequest.Lines);
+        Assert.Null(legacyRequest.OrganizationId);
+        Assert.Null(legacyRequest.EnvironmentId);
         Assert.Equal([capture], captureRequest.Lines);
         Assert.Equal([capture], command.Lines);
         Assert.Equal(
@@ -320,6 +335,96 @@ public sealed class WmsEndpointContractTests
         Assert.Null(persistedCaptured.Lines.Single().LotNo);
         Assert.Equal(new DateOnly(2026, 7, 15), persistedCaptured.Lines.Single().ProductionDate);
         Assert.Null(persistedCaptured.Lines.Single().ExpiryDate);
+    }
+
+    [Fact]
+    public async Task Completion_http_retries_replay_authoritative_v1_raw_and_line_receipts_after_key_upgrade()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var lineKey = new string('k', 129);
+        var rawKey = new string('r', 150);
+        InboundOrder inbound;
+        OutboundOrder outbound;
+        CountExecution count;
+        InventoryMovementRequest inboundAuthority;
+        InventoryMovementRequest outboundAuthority;
+        InventoryMovementRequest countAuthority;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            inbound = InboundOrder.Create(
+                "org-http", "env-http", "IN-V1-REPLAY", "purchase-receipt", "PO-V1-REPLAY", "SITE-01",
+                [
+                    new InboundOrderLineDraft("10", "SKU-IN-1", "pcs", 1m, "STAGE-01", null, null, "qualified", "company", null),
+                    new InboundOrderLineDraft("20", "SKU-IN-2", "pcs", 2m, "STAGE-02", null, null, "qualified", "company", null),
+                ]);
+            var inboundReceipts = inbound.Complete(lineKey).OrderBy(x => x.SourceDocumentLineId).ToArray();
+            inboundAuthority = inboundReceipts[0];
+            inboundAuthority.MarkPosted("inventory-movement-in-v1");
+
+            outbound = OutboundOrder.Create(
+                "org-http", "env-http", "OUT-V1-REPLAY", "sales-delivery", "SO-V1-REPLAY", "SITE-01",
+                [new OutboundOrderLineDraft("10", "SKU-OUT-1", "pcs", 3m, "PICK-01", null, null, "qualified", "company", null)]);
+            outboundAuthority = Assert.Single(outbound.CompletePackReview("PACK-V1", true, rawKey));
+            outboundAuthority.MarkPosted("inventory-movement-out-v1");
+
+            count = CountExecution.Create("org-http", "env-http", "COUNT-V1-REPLAY", "SKU-COUNT-1", "pcs", "SITE-01", "COUNT-01", 10m);
+            count.Complete(8m);
+            countAuthority = InventoryMovementRequest.RecordPosted(
+                "org-http",
+                "env-http",
+                "count-adjustment",
+                count.CountNo,
+                rawKey,
+                count.SkuCode,
+                count.UomCode,
+                count.SiteCode,
+                count.LocationCode,
+                "qualified",
+                "company",
+                -2m,
+                "inventory-movement-count-v1");
+
+            dbContext.InboundOrders.Add(inbound);
+            dbContext.OutboundOrders.Add(outbound);
+            dbContext.CountExecutions.Add(count);
+            dbContext.InventoryMovementRequests.AddRange(inboundReceipts);
+            dbContext.InventoryMovementRequests.AddRange(outboundAuthority, countAuthority);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var inboundResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{inbound.Id}/complete",
+            new { inboundOrderId = inbound.Id.ToString(), idempotencyKey = lineKey, organizationId = "org-http", environmentId = "env-http" });
+        var outboundResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/outbound-orders/{outbound.Id}/complete",
+            new { outboundOrderId = outbound.Id.ToString(), packReviewNo = "PACK-V1", passed = true, idempotencyKey = rawKey, organizationId = "org-http", environmentId = "env-http" });
+        var countResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/count-executions/{count.Id}/complete",
+            new { countExecutionId = count.Id.ToString(), countedQuantity = 8m, idempotencyKey = rawKey, organizationId = "org-http", environmentId = "env-http" });
+
+        var inboundBody = await inboundResponse.Content.ReadAsStringAsync();
+        var outboundBody = await outboundResponse.Content.ReadAsStringAsync();
+        var countBody = await countResponse.Content.ReadAsStringAsync();
+        Assert.True(inboundResponse.IsSuccessStatusCode, inboundBody);
+        Assert.True(outboundResponse.IsSuccessStatusCode, outboundBody);
+        Assert.True(countResponse.IsSuccessStatusCode, countBody);
+        Assert.Contains(inboundAuthority.Id.ToString(), inboundBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-in-v1", inboundBody, StringComparison.Ordinal);
+        Assert.Contains(outboundAuthority.Id.ToString(), outboundBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-out-v1", outboundBody, StringComparison.Ordinal);
+        Assert.Contains(countAuthority.Id.ToString(), countBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-count-v1", countBody, StringComparison.Ordinal);
+
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(4, await verifyDbContext.InventoryMovementRequests.CountAsync(CancellationToken.None));
+        Assert.Contains(
+            await verifyDbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(CancellationToken.None),
+            key => key.StartsWith("wms-line:", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -798,6 +903,62 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(target.Id, Assert.Single(exact.Items).CountExecutionId);
         Assert.Empty(crossTenant.Items);
         Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
+    public async Task Count_execution_query_exposes_authoritative_inventory_posting_failure()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var count = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-POSTING-FAILED",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m);
+        count.Complete(2m);
+        var movement = InventoryMovementRequest.Create(
+            "org-001",
+            "env-dev",
+            "count-adjustment",
+            count.CountNo,
+            null,
+            "legacy-count-posting",
+            count.SkuCode,
+            count.UomCode,
+            count.SiteCode,
+            count.LocationCode,
+            null,
+            null,
+            "qualified",
+            "company",
+            null,
+            -1m);
+        movement.MarkFailed(
+            "NEGATIVE_ON_HAND",
+            "Stock movement would make on-hand quantity negative.");
+        dbContext.CountExecutions.Add(count);
+        dbContext.InventoryMovementRequests.Add(movement);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                CountExecutionId: count.Id),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("Failed", item.InventoryPostingStatus);
+        Assert.Equal("NEGATIVE_ON_HAND", item.InventoryPostingFailureCode);
+        Assert.Equal(
+            "Stock movement would make on-hand quantity negative.",
+            item.InventoryPostingFailureMessage);
+        Assert.Null(item.InventoryMovementId);
     }
 
     [Fact]

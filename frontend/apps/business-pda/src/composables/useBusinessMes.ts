@@ -1,5 +1,6 @@
 import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
+  confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
@@ -44,6 +45,12 @@ import {
   type BusinessConsoleMesWorkOrderListEnvelope,
   type BusinessConsoleRecordProductionReportRequest,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
@@ -394,6 +401,7 @@ async function readExactOperationTask(
 }
 
 export function useMesOperationTasks() {
+  const auth = useAuthStore()
   const filters = defaultFilters()
   const queryCache = useQueryCache()
 
@@ -438,22 +446,44 @@ export function useMesOperationTasks() {
     }
   }
 
-  async function runAction(
+  async function performAction(
     action: OperationAction,
+    mutation: typeof startMutation,
     operationTaskId: string,
     options: OperationActionOptions,
   ) {
-    const authoritative = await readExactOperationTask(filters, operationTaskId)
-    assertLifecycleActionExecutable({
-      domain: 'mes-operation-task',
-      action,
-      facts: { status: authoritative?.status },
-    })
-    const payload = actionPayload(operationTaskId, options)
-    if (action === 'start') return startMutation.mutateAsync(payload)
-    if (action === 'pause') return pauseMutation.mutateAsync(payload)
-    if (action === 'resume') return resumeMutation.mutateAsync(payload)
-    return completeMutation.mutateAsync(payload)
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      operationType: `mes.operation-task.${action}`,
+      payloadFingerprint: `${operationTaskId}:${options.reasonCode ?? ''}`,
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(scope))
+    const pending = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
+    try {
+      const authoritative = await readExactOperationTask(filters, operationTaskId)
+      assertLifecycleActionExecutable({
+        domain: 'mes-operation-task',
+        action,
+        facts: { status: authoritative?.status, idempotentReplay: isReplay },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(scope)
+      throw error
+    }
+    return completePendingBusinessIntent(scope, async () =>
+      confirmBusinessConsoleOperation(
+        await mutation.mutateAsync(
+          actionPayload(operationTaskId, { ...options, idempotencyKey: pending.idempotencyKey }),
+        ),
+        {
+          expectedOperationType: `mes.operation-task.${action}`,
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: operationTaskId,
+        },
+      ),
+    )
   }
 
   return {
@@ -473,13 +503,13 @@ export function useMesOperationTasks() {
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
       }),
     startTask: (operationTaskId: string, options: OperationActionOptions) =>
-      runAction('start', operationTaskId, options),
+      performAction('start', startMutation, operationTaskId, options),
     pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
-      runAction('pause', operationTaskId, options),
+      performAction('pause', pauseMutation, operationTaskId, options),
     resumeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      runAction('resume', operationTaskId, options),
+      performAction('resume', resumeMutation, operationTaskId, options),
     completeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      runAction('complete', operationTaskId, options),
+      performAction('complete', completeMutation, operationTaskId, options),
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||
@@ -571,6 +601,7 @@ export type RecordReportInput = Omit<
 >
 
 export function useMesProductionReports() {
+  const auth = useAuthStore()
   const filters = defaultFilters()
   const queryCache = useQueryCache()
 
@@ -590,8 +621,6 @@ export function useMesProductionReports() {
       ]).catch(ignoreBackgroundError)
     },
   })
-  const issuedReportCompleteIntents = new Set<string>()
-
   return {
     filters,
     productionReports: computed<BusinessConsoleMesProductionReportRow[]>(() =>
@@ -605,37 +634,69 @@ export function useMesProductionReports() {
     error: reportsQuery.error,
     refresh: reportsQuery.refetch,
     recordReport: async (input: RecordReportInput) => {
-      const workOrderId = input.workOrderId?.trim()
-      const operationTaskId = input.operationTaskId?.trim()
-      const idempotencyKey = input.idempotencyKey?.trim()
-      const reportCompleteIntent =
-        input.completesOperation && workOrderId && operationTaskId && idempotencyKey
-          ? `${workOrderId}\u0000${operationTaskId}\u0000${idempotencyKey}`
-          : undefined
-      const isIssuedReplay =
-        reportCompleteIntent !== undefined && issuedReportCompleteIntents.has(reportCompleteIntent)
-      if (input.completesOperation && !isIssuedReplay) {
-        const authoritative = operationTaskId
-          ? await readExactOperationTask(filters, operationTaskId, workOrderId)
-          : undefined
-        assertLifecycleActionExecutable({
-          domain: 'mes-operation-task',
-          action: 'report-complete',
-          facts: {
-            status: authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
-          },
-        })
+      const { idempotencyKey: suppliedKey, ...payload } = input
+      const scope = {
+        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationType: 'mes.production-report.record',
+        payloadFingerprint: JSON.stringify(payload),
       }
-      if (reportCompleteIntent) issuedReportCompleteIntents.add(reportCompleteIntent)
-      return recordMutation.mutateAsync({
-        body: {
-          ...input,
-          // org/env + timestamp injected LAST from principal scope — never the caller.
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          reportedAtUtc: new Date().toISOString(),
-        } satisfies BusinessConsoleRecordProductionReportRequest,
-      })
+      const isReplay = Boolean(peekPendingBusinessIntent(scope))
+      const currentPayload = {
+        ...input,
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        reportedAtUtc: new Date().toISOString(),
+      } satisfies BusinessConsoleRecordProductionReportRequest
+      const pending = acquirePendingBusinessIntent(
+        scope,
+        () =>
+          suppliedKey?.trim() ||
+          globalThis.crypto?.randomUUID?.() ||
+          `mes-report-${Date.now()}-${Math.random()}`,
+        currentPayload,
+      )
+      if (input.completesOperation) {
+        try {
+          const workOrderId = input.workOrderId?.trim()
+          const operationTaskId = input.operationTaskId?.trim()
+          const authoritative = operationTaskId
+            ? await readExactOperationTask(filters, operationTaskId, workOrderId)
+            : undefined
+          assertLifecycleActionExecutable({
+            domain: 'mes-operation-task',
+            action: 'report-complete',
+            facts: {
+              status:
+                authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
+              idempotentReplay: isReplay,
+            },
+          })
+        } catch (error) {
+          if (!isReplay) clearPendingBusinessIntent(scope)
+          throw error
+        }
+      }
+      const frozenPayload =
+        pending.payloadSnapshot !== undefined
+          ? (pending.payloadSnapshot as BusinessConsoleRecordProductionReportRequest)
+          : currentPayload
+      return completePendingBusinessIntent(scope, async () =>
+        confirmBusinessConsoleOperation(
+          await recordMutation.mutateAsync({
+            body: {
+              ...frozenPayload,
+              idempotencyKey: pending.idempotencyKey,
+            },
+          }),
+          {
+            expectedOperationType: 'mes.production-report.record',
+            expectedIdempotencyKey: pending.idempotencyKey,
+            expectedResourceIdSelector: (envelope) => envelope.data?.productionReportId,
+          },
+        ),
+      )
     },
   }
 }

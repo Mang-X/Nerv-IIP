@@ -2,12 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
 import {
+  confirmBusinessConsoleOperation,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import {
   useWmsCount,
   useWmsInbound,
@@ -21,6 +27,8 @@ const coladaState = vi.hoisted(() => ({
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   lastMutationVars: new Map<string, unknown>(),
   mutationResultById: new Map<string, unknown>(),
+  mutationFailureById: new Map<string, unknown>(),
+  confirmationFailure: undefined as unknown,
   listInbound: vi.fn(),
   listOutbound: vi.fn(),
   listCount: vi.fn(),
@@ -40,6 +48,12 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: vi.fn(async (value) => {
+    if (coladaState.confirmationFailure !== undefined) {
+      throw coladaState.confirmationFailure
+    }
+    return value
+  }),
   listBusinessConsoleWmsInboundOrders: coladaState.listInbound,
   listBusinessConsoleWmsOutboundOrders: coladaState.listOutbound,
   listBusinessConsoleWmsCountExecutions: coladaState.listCount,
@@ -92,6 +106,9 @@ vi.mock('@pinia/colada', () => ({
     mutateAsync: vi.fn((vars: unknown) => {
       const mutationId = mutationOptions._mutationId ?? ''
       coladaState.lastMutationVars.set(mutationId, vars)
+      if (coladaState.mutationFailureById.has(mutationId)) {
+        return Promise.reject(coladaState.mutationFailureById.get(mutationId))
+      }
       return Promise.resolve(coladaState.mutationResultById.get(mutationId))
     }),
     isLoading: shallowRef(false),
@@ -104,10 +121,13 @@ const SCOPE = { organizationId: 'org-001', environmentId: 'env-dev' }
 describe('PDA WMS composables', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.lastMutationVars.clear()
     coladaState.mutationResultById.clear()
+    coladaState.mutationFailureById.clear()
+    coladaState.confirmationFailure = undefined
     authState.principal = { ...SCOPE }
     coladaState.listInbound.mockResolvedValue({
       data: {
@@ -205,7 +225,114 @@ describe('PDA WMS composables', () => {
     expect(vars.query).toEqual(SCOPE)
   })
 
-  it('allows only an explicit same-key inbound retry after completion', async () => {
+  it.each([
+    {
+      name: 'inbound',
+      operationType: 'wms.inbound-order.complete',
+      resourceId: 'inbound-1',
+      payloadFingerprint: 'inbound-1:[]',
+      payloadSnapshot: { lines: [] },
+      mutationId: 'completeInbound',
+      expectedBody: { idempotencyKey: 'KEY-OLD' },
+      arrangeTerminal: () =>
+        coladaState.listInbound.mockResolvedValue({
+          data: {
+            success: true,
+            data: { items: [{ inboundOrderId: 'inbound-1', status: 'Completed' }], total: 1 },
+          },
+        }),
+      execute: () =>
+        useWmsInbound().completeInbound('inbound-1', 'KEY-NEW', undefined, { attempt: 'retry' }),
+    },
+    {
+      name: 'outbound',
+      operationType: 'wms.outbound-order.complete',
+      resourceId: 'outbound-1',
+      payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
+      payloadSnapshot: { packReviewNo: 'PR', passed: true },
+      mutationId: 'completeOutbound',
+      expectedBody: { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-OLD' },
+      arrangeTerminal: () =>
+        coladaState.listOutbound.mockResolvedValue({
+          data: {
+            success: true,
+            data: { items: [{ outboundOrderId: 'outbound-1', status: 'Completed' }], total: 1 },
+          },
+        }),
+      execute: () =>
+        useWmsOutbound().completeOutbound(
+          'outbound-1',
+          { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-NEW' },
+          { attempt: 'retry' },
+        ),
+    },
+    {
+      name: 'count',
+      operationType: 'wms.count-execution.complete',
+      resourceId: 'count-1',
+      payloadFingerprint: 'count-1:{"countedQuantity":5}',
+      payloadSnapshot: { countedQuantity: 5 },
+      mutationId: 'completeCount',
+      expectedBody: { countedQuantity: 5, idempotencyKey: 'KEY-OLD' },
+      arrangeTerminal: () =>
+        coladaState.listCount.mockResolvedValue({
+          data: {
+            success: true,
+            data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+          },
+        }),
+      execute: () =>
+        useWmsCount().completeCount(
+          'count-1',
+          { countedQuantity: 5, idempotencyKey: 'KEY-NEW' },
+          { attempt: 'retry' },
+        ),
+    },
+  ])(
+    'replays the restored OLD key after a refresh supplies a NEW key for $name',
+    async ({
+      operationType,
+      resourceId,
+      payloadFingerprint,
+      payloadSnapshot,
+      mutationId,
+      expectedBody,
+      arrangeTerminal,
+      execute,
+    }) => {
+      arrangeTerminal()
+      const intentScope = {
+        principalId: 'unrestored-session',
+        ...SCOPE,
+        operationType,
+        payloadFingerprint,
+      }
+      acquirePendingBusinessIntent(intentScope, () => 'KEY-OLD', payloadSnapshot)
+      const receipt = { operationType, resourceId }
+      const unconfirmed = Object.assign(new Error('unconfirmed'), {
+        code: 'business-operation-unconfirmed',
+      })
+      coladaState.mutationResultById.set(mutationId, receipt)
+      coladaState.confirmationFailure = unconfirmed
+
+      try {
+        await expect(execute()).rejects.toBe(unconfirmed)
+        expect(coladaState.lastMutationVars.get(mutationId)).toMatchObject({
+          body: expectedBody,
+        })
+        expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(receipt, {
+          expectedOperationType: operationType,
+          expectedIdempotencyKey: 'KEY-OLD',
+          expectedResourceId: resourceId,
+        })
+        expect(peekPendingBusinessIntent(intentScope)?.idempotencyKey).toBe('KEY-OLD')
+      } finally {
+        clearPendingBusinessIntent(intentScope)
+      }
+    },
+  )
+
+  it('allows only a persisted same-key inbound retry after completion', async () => {
     coladaState.listInbound.mockResolvedValue({
       data: {
         success: true,
@@ -221,11 +348,26 @@ describe('PDA WMS composables', () => {
 
     await expect(
       completeInbound('inbound-1', 'KEY-1', undefined, { attempt: 'retry' }),
+    ).rejects.toThrow('状态已被其他操作更新')
+    expect(coladaState.lastMutationVars.has('completeInbound')).toBe(false)
+
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        ...SCOPE,
+        operationType: 'wms.inbound-order.complete',
+        payloadFingerprint: 'inbound-1:[]',
+      },
+      () => 'KEY-1',
+      { lines: [] },
+    )
+    await expect(
+      completeInbound('inbound-1', 'KEY-1', undefined, { attempt: 'retry' }),
     ).resolves.toBeUndefined()
     expect(coladaState.lastMutationVars.has('completeInbound')).toBe(true)
   })
 
-  it('allows only an explicit same-key outbound retry while inventory posting is pending', async () => {
+  it('allows only a persisted same-key outbound retry while inventory posting is pending', async () => {
     coladaState.listOutbound.mockResolvedValue({
       data: {
         success: true,
@@ -243,6 +385,21 @@ describe('PDA WMS composables', () => {
     )
     expect(coladaState.lastMutationVars.has('completeOutbound')).toBe(false)
 
+    await expect(completeOutbound('outbound-1', input, { attempt: 'retry' })).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+    expect(coladaState.lastMutationVars.has('completeOutbound')).toBe(false)
+
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        ...SCOPE,
+        operationType: 'wms.outbound-order.complete',
+        payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
+      },
+      () => 'KEY-OUT',
+      { packReviewNo: 'PR', passed: true },
+    )
     await expect(
       completeOutbound('outbound-1', input, { attempt: 'retry' }),
     ).resolves.toBeUndefined()
@@ -300,6 +457,16 @@ describe('PDA WMS composables', () => {
     })
     coladaState.mutationResultById.set('completeCount', receipt)
     const { completeCount } = useWmsCount()
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        ...SCOPE,
+        operationType: 'wms.count-execution.complete',
+        payloadFingerprint: 'count-1:{"countedQuantity":5}',
+      },
+      () => 'KEY-CNT-FROZEN',
+      { countedQuantity: 5 },
+    )
 
     await expect(
       completeCount(
@@ -313,6 +480,47 @@ describe('PDA WMS composables', () => {
       path: { countExecutionId: 'count-1' },
       body: { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
     })
+  })
+
+  it('clears a determinate count failure but retains an unconfirmed count for exact replay', async () => {
+    const input = { countedQuantity: 5, idempotencyKey: 'KEY-CNT-SETTLEMENT' }
+    const { completeCount } = useWmsCount()
+
+    coladaState.mutationFailureById.set('completeCount', { statusCode: 422 })
+    await expect(completeCount('count-1', input)).rejects.toEqual({ statusCode: 422 })
+    coladaState.mutationFailureById.delete('completeCount')
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+      },
+    })
+    await expect(completeCount('count-1', input, { attempt: 'retry' })).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-2', status: 'Open' }], total: 1 },
+      },
+    })
+    coladaState.mutationFailureById.set(
+      'completeCount',
+      Object.assign(new Error('unconfirmed'), { code: 'business-operation-unconfirmed' }),
+    )
+    const unconfirmedInput = { countedQuantity: 6, idempotencyKey: 'KEY-CNT-UNCONFIRMED' }
+    await expect(completeCount('count-2', unconfirmedInput)).rejects.toThrow('unconfirmed')
+    coladaState.mutationFailureById.delete('completeCount')
+    coladaState.listCount.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ countExecutionId: 'count-2', status: 'Completed' }], total: 1 },
+      },
+    })
+    await expect(
+      completeCount('count-2', unconfirmedInput, { attempt: 'retry' }),
+    ).resolves.toBeUndefined()
   })
 
   it('enables picking/putaway read-only lists without a non-empty operatorUserId', () => {

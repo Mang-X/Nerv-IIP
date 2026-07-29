@@ -139,7 +139,20 @@ function operationTaskGate(
     'scheduleinvalidated',
   ])
   if (!isKnown(status, known)) return unknown()
-  if (new Set(['completed', 'cancelled', 'scheduleinvalidated']).has(status)) return terminal()
+  if (new Set(['cancelled', 'scheduleinvalidated']).has(status)) return terminal()
+
+  const replayStatus =
+    action === 'start'
+      ? 'inprogress'
+      : action === 'pause'
+        ? 'paused'
+        : action === 'resume'
+          ? 'inprogress'
+          : 'completed'
+  if (facts.idempotentReplay && status === replayStatus) {
+    return noop(status === 'completed')
+  }
+  if (status === 'completed') return terminal()
 
   const requiredStatus =
     action === 'start' ? 'queued' : action === 'resume' ? 'paused' : 'inprogress'
@@ -162,7 +175,9 @@ function workOrderGate(
     'scrapped',
   ])
   if (!isKnown(status, known)) return unknown()
-  if (action === 'cancel' && status === 'cancelled') return noop(true)
+  if (action === 'cancel' && status === 'cancelled') {
+    return facts.idempotentReplay ? noop(true) : terminal()
+  }
 
   const terminalStatuses = new Set(['completed', 'closed', 'cancelled', 'scrapped'])
   if (terminalStatuses.has(status)) return terminal()
@@ -224,7 +239,7 @@ function inspectionTaskGate(facts: LifecycleFacts): StatusActionGate {
   const hasRecord = Boolean(facts.inspectionRecordId?.trim())
   if (status === 'pending') return allowed()
   if (status === 'in-progress') return incompatible()
-  return hasRecord ? noop(true) : terminal()
+  return hasRecord && facts.idempotentReplay ? noop(true) : terminal()
 }
 
 function ncrGate(
@@ -243,7 +258,8 @@ function ncrGate(
 function maintenanceGate(facts: LifecycleFacts): StatusActionGate {
   const status = normalizedStatus(facts)
   if (!isKnown(status, new Set(['open', 'completed']))) return unknown()
-  return status === 'open' ? allowed() : terminal()
+  if (status === 'open') return allowed()
+  return facts.idempotentReplay ? noop(true) : terminal()
 }
 
 function alarmGate(
@@ -253,12 +269,18 @@ function alarmGate(
   const status = normalizedStatus(facts)
   if (!isKnown(status, new Set(['raised', 'acknowledged', 'shelved', 'cleared']))) return unknown()
 
-  if (action === 'unshelve') return status === 'shelved' ? allowed() : noop(status === 'cleared')
+  if (action === 'unshelve') {
+    if (status === 'shelved') return allowed()
+    if (facts.idempotentReplay) return noop(status === 'cleared')
+    return status === 'cleared' ? terminal() : incompatible()
+  }
   if (status === 'cleared') return terminal()
 
   if (action === 'acknowledge') {
     return status === 'acknowledged' || Boolean(facts.acknowledgedAtUtc?.trim())
-      ? noop()
+      ? facts.idempotentReplay
+        ? noop()
+        : incompatible()
       : allowed()
   }
 
@@ -269,7 +291,7 @@ function alarmGate(
   if (!Number.isFinite(shelvedAt) || !Number.isFinite(until) || !Number.isFinite(evaluatedAt))
     return incompatible()
   if (evaluatedAt < shelvedAt) return incompatible()
-  return evaluatedAt < until ? noop() : allowed()
+  return evaluatedAt < until ? (facts.idempotentReplay ? noop() : incompatible()) : allowed()
 }
 
 export function statusActionGate(request: LifecycleActionRequest): StatusActionGate {

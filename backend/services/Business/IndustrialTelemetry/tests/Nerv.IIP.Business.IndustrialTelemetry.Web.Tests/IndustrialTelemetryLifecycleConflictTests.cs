@@ -6,18 +6,44 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.DistributedLocks;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
 public sealed class IndustrialTelemetryLifecycleConflictTests
 {
+    [Fact]
+    public void Persistence_backstop_only_classifies_the_alarm_shelve_idempotency_constraint()
+    {
+        using var dbContext = CreateDbContext();
+        var constraintName = dbContext.Model.FindEntityType(typeof(AlarmShelveIdempotency))!
+            .GetIndexes()
+            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(
+                [
+                    nameof(AlarmShelveIdempotency.OrganizationId),
+                    nameof(AlarmShelveIdempotency.EnvironmentId),
+                    nameof(AlarmShelveIdempotency.AlarmEventId),
+                    nameof(AlarmShelveIdempotency.IdempotencyKey),
+                ]))
+            .GetDatabaseName()!;
+
+        Assert.True(IndustrialTelemetryIdempotencyPersistenceConflicts.IsTargetConflict(
+            UniqueConflict(constraintName),
+            dbContext));
+        Assert.False(IndustrialTelemetryIdempotencyPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_unrelated_industrial_telemetry_constraint"),
+            dbContext));
+    }
+
     [Theory]
     [InlineData("acknowledge")]
     [InlineData("shelve")]
@@ -68,33 +94,72 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
     }
 
     [Fact]
-    public async Task Cleared_alarm_rejects_a_no_key_shelve_as_a_lifecycle_conflict()
+    public void Shelve_preserves_v1_compatibility_when_idempotency_key_is_omitted()
     {
-        await using var dbContext = CreateDbContext();
         var raisedAtUtc = new DateTimeOffset(2026, 7, 27, 1, 0, 0, TimeSpan.Zero);
-        var alarm = CreateRaisedAlarm(raisedAtUtc, "no-key-shelve-cleared");
-        alarm.Clear(raisedAtUtc.AddMinutes(5), "operator-001", "recovered");
-        dbContext.AlarmEvents.Add(alarm);
-        await dbContext.SaveChangesAsync();
+        var command = new ShelveAlarmCommand(
+            new AlarmEventId(Guid.CreateVersion7()),
+            "org-001",
+            "env-dev",
+            raisedAtUtc,
+            30,
+            "operator-002",
+            "maintenance",
+            string.Empty);
 
-        var exception = await Assert.ThrowsAsync<IndustrialTelemetryLifecycleConflictException>(() =>
-            new ShelveAlarmCommandHandler(dbContext).Handle(
-                new ShelveAlarmCommand(
-                    alarm.Id,
-                    "org-001",
-                    "env-dev",
-                    raisedAtUtc.AddMinutes(6),
-                    30,
-                    "operator-002",
-                    "maintenance",
-                    null),
-                CancellationToken.None));
+        var result = new ShelveAlarmCommandValidator().Validate(command);
 
-        Assert.Equal("shelve", exception.Action);
-        Assert.Equal("cleared", exception.CurrentStatus);
-        Assert.Equal("cleared", alarm.Status);
-        Assert.Null(alarm.ShelvedAtUtc);
-        Assert.Empty(dbContext.AlarmShelveIdempotencies.Local);
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task Alarm_lifecycle_actions_and_escalation_share_one_scope_distributed_lock()
+    {
+        var alarmId = new AlarmEventId(Guid.CreateVersion7());
+        var changedAtUtc = new DateTimeOffset(2026, 7, 27, 1, 2, 0, TimeSpan.Zero);
+        var acknowledge = await new AcknowledgeAlarmCommandLock().GetLockKeysAsync(
+            new AcknowledgeAlarmCommand(
+                alarmId,
+                "org-001",
+                "env-dev",
+                changedAtUtc,
+                "operator-001"),
+            CancellationToken.None);
+        var shelve = await new ShelveAlarmCommandLock().GetLockKeysAsync(
+            new ShelveAlarmCommand(
+                alarmId,
+                "org-001",
+                "env-dev",
+                changedAtUtc,
+                30,
+                "operator-001",
+                null,
+                "shelve-lock"),
+            CancellationToken.None);
+        var unshelve = await new UnshelveAlarmCommandLock().GetLockKeysAsync(
+            new UnshelveAlarmCommand(
+                alarmId,
+                "org-001",
+                "env-dev",
+                changedAtUtc),
+            CancellationToken.None);
+        var escalation = await new RunAlarmEscalationsCommandLock().GetLockKeysAsync(
+            new RunAlarmEscalationsCommand(
+                "org-001",
+                "env-dev",
+                changedAtUtc,
+                30,
+                ["critical"],
+                ["maintenance"]),
+            CancellationToken.None);
+
+        Assert.Equal(acknowledge.LockKey, shelve.LockKey);
+        Assert.Equal(acknowledge.LockKey, unshelve.LockKey);
+        Assert.Equal(acknowledge.LockKey, escalation.LockKey);
+        Assert.Equal(
+            "business-industrial-telemetry:alarm-lifecycle:org-001:env-dev",
+            acknowledge.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), acknowledge.AcquireTimeout);
     }
 
     [Fact]
@@ -127,6 +192,46 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
         Assert.Equal(raisedAtUtc.AddMinutes(2), alarm.AcknowledgedAtUtc);
         Assert.Equal("operator-first", alarm.AcknowledgedBy);
         Assert.Equal("acknowledged", alarm.Status);
+    }
+
+    [Fact]
+    public async Task Concurrent_acknowledge_requests_are_serialized_and_preserve_one_complete_first_write()
+    {
+        await using var factory = new ConcurrentAckFactory();
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 27, 1, 0, 0, TimeSpan.Zero);
+        var alarmId = await factory.SeedAlarmAsync(raisedAtUtc);
+        using var firstClient = CreateAuthorizedClient(factory);
+        using var secondClient = CreateAuthorizedClient(factory);
+        var firstAt = raisedAtUtc.AddMinutes(2);
+        var secondAt = raisedAtUtc.AddMinutes(3);
+
+        var responses = await Task.WhenAll(
+            firstClient.PostAsJsonAsync(
+                $"/api/business/v1/iiot/alarms/{alarmId.Id:D}/acknowledge",
+                new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    acknowledgedAtUtc = firstAt,
+                    acknowledgedBy = "operator-first",
+                }),
+            secondClient.PostAsJsonAsync(
+                $"/api/business/v1/iiot/alarms/{alarmId.Id:D}/acknowledge",
+                new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    acknowledgedAtUtc = secondAt,
+                    acknowledgedBy = "operator-second",
+                }));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        var stored = await factory.ReadAlarmAsync(alarmId);
+        Assert.Contains(stored.AcknowledgedBy, new[] { "operator-first", "operator-second" });
+        Assert.Equal(
+            stored.AcknowledgedBy == "operator-first" ? firstAt : secondAt,
+            stored.AcknowledgedAtUtc);
+        Assert.Equal("acknowledged", stored.Status);
     }
 
     [Fact]
@@ -187,7 +292,7 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
                 30,
                 "operator-first",
                 "first",
-                null),
+                "active-shelf-first"),
             CancellationToken.None);
         var firstShelvedUntilUtc = alarm.ShelvedUntilUtc;
         await handler.Handle(
@@ -199,7 +304,7 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
                 60,
                 "operator-second",
                 "second",
-                null),
+                "active-shelf-second"),
             CancellationToken.None);
 
         Assert.Equal(raisedAtUtc.AddMinutes(2), alarm.ShelvedAtUtc);
@@ -210,7 +315,7 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
     }
 
     [Fact]
-    public async Task Shelve_keeps_same_key_different_payload_as_a_known_400_error()
+    public async Task Shelve_keeps_same_key_different_payload_as_a_stable_idempotency_conflict()
     {
         await using var dbContext = CreateDbContext();
         var raisedAtUtc = new DateTimeOffset(2026, 7, 27, 1, 0, 0, TimeSpan.Zero);
@@ -231,7 +336,7 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<IndustrialTelemetryIdempotencyConflictException>(() =>
             handler.Handle(
                 new ShelveAlarmCommand(
                     alarm.Id,
@@ -243,8 +348,6 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
                     "maintenance",
                     "same-key"),
                 CancellationToken.None));
-
-        Assert.IsNotType<IndustrialTelemetryLifecycleConflictException>(exception);
         Assert.Equal(raisedAtUtc.AddMinutes(32), alarm.ShelvedUntilUtc);
     }
 
@@ -391,6 +494,16 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
+    private static DbUpdateException UniqueConflict(string constraintName) =>
+        new("unique conflict", new FakePostgresException("23505", constraintName));
+
+    private sealed class FakePostgresException(string sqlState, string constraintName) : Exception
+    {
+        public string SqlState { get; } = sqlState;
+
+        public string ConstraintName { get; } = constraintName;
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(Exception exception)
     {
         return new WebApplicationFactory<Program>()
@@ -412,6 +525,60 @@ public sealed class IndustrialTelemetryLifecycleConflictTests
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
         return client;
+    }
+
+    private sealed class ConcurrentAckFactory : WebApplicationFactory<Program>
+    {
+        private readonly string databaseName = $"industrial-telemetry-ack-{Guid.CreateVersion7():N}";
+        private readonly ServiceProvider efServices = new ServiceCollection()
+            .AddEntityFrameworkInMemoryDatabase()
+            .BuildServiceProvider();
+
+        public async Task<AlarmEventId> SeedAlarmAsync(DateTimeOffset raisedAtUtc)
+        {
+            using var scope = Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var alarm = CreateRaisedAlarm(raisedAtUtc, $"concurrent-ack-{Guid.CreateVersion7():N}");
+            db.AlarmEvents.Add(alarm);
+            await db.SaveChangesAsync();
+            return alarm.Id;
+        }
+
+        public async Task<AlarmEvent> ReadAlarmAsync(AlarmEventId alarmId)
+        {
+            using var scope = Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            return await db.AlarmEvents.AsNoTracking().SingleAsync(x => x.Id == alarmId);
+        }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDistributedLock>();
+                services.AddInMemoryDistributedLock();
+                services.AddDbContext<ApplicationDbContext>(options =>
+                    options
+                        .UseInMemoryDatabase(databaseName)
+                        .UseInternalServiceProvider(efServices)
+                        .ConfigureWarnings(warnings =>
+                            warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                efServices.Dispose();
+            }
+        }
     }
 
     private sealed class ThrowingSender(Exception exception) : ISender

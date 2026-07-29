@@ -42,8 +42,8 @@ public sealed class FastEndpointsArchitectureTests
         "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
     };
 
-    public static TheoryData<string> CommandLockWebProjects => new()
-    {
+    private static readonly string[] CommandLockWebProjectDirectories =
+    [
         "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
         "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
         "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
@@ -52,11 +52,26 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
         "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
         "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
         "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
         "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
-    };
+    ];
+
+    public static TheoryData<string> CommandLockWebProjects
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            foreach (var projectDirectory in CommandLockWebProjectDirectories)
+            {
+                data.Add(projectDirectory);
+            }
+
+            return data;
+        }
+    }
 
     public static TheoryData<string> CapUnitOfWorkWebProjects => new()
     {
@@ -134,13 +149,55 @@ public sealed class FastEndpointsArchitectureTests
     public void Command_lock_services_register_distributed_lock(string projectDirectory)
     {
         var root = FindRepositoryRoot();
-        var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var projectText = File.ReadAllText(Directory.GetFiles(fullProjectDirectory, "*.csproj").Single());
+        var usesSharedRegistration = programText.Contains("AddNervIipCommandLocking", StringComparison.Ordinal);
+        var usesSharedBehavior = programText.Contains(
+            "AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))",
+            StringComparison.Ordinal);
+
+        if (usesSharedRegistration || usesSharedBehavior)
+        {
+            Assert.True(
+                usesSharedRegistration && usesSharedBehavior,
+                "Shared command-lock services must register AddNervIipCommandLocking and NervIipCommandLockBehavior together.");
+            Assert.Contains(
+                @"common\DistributedLocking\Nerv.IIP.DistributedLocking\Nerv.IIP.DistributedLocking.csproj",
+                projectText);
+        }
+        else
+        {
+            Assert.True(
+                programText.Contains("AddCommandLockBehavior", StringComparison.Ordinal)
+                    || programText.Contains("AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))", StringComparison.Ordinal),
+                "Command-lock services must register the built-in command-lock behavior or the Maintenance lock-loss-aware behavior.");
+            Assert.Contains("AddInMemoryDistributedLock", programText);
+        }
+    }
+
+    [Fact]
+    public void Shared_command_lock_web_projects_are_registered_for_governance()
+    {
+        var root = FindRepositoryRoot();
+        var sharedCommandLockProjects = Directory
+            .GetFiles(Path.Combine(root, "backend"), "Program.cs", SearchOption.AllDirectories)
+            .Where(file =>
+            {
+                var programText = File.ReadAllText(file);
+                return programText.Contains("AddNervIipCommandLocking", StringComparison.Ordinal)
+                    || programText.Contains("AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))", StringComparison.Ordinal);
+            })
+            .Select(file => Path.GetRelativePath(root, Path.GetDirectoryName(file)!).Replace('\\', '/'))
+            .OrderBy(projectDirectory => projectDirectory, StringComparer.Ordinal)
+            .ToArray();
+        var unregisteredProjects = sharedCommandLockProjects
+            .Except(CommandLockWebProjectDirectories, StringComparer.Ordinal)
+            .ToArray();
 
         Assert.True(
-            programText.Contains("AddCommandLockBehavior", StringComparison.Ordinal)
-                || programText.Contains("AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))", StringComparison.Ordinal),
-            "Command-lock services must register the built-in command-lock behavior or the Maintenance lock-loss-aware behavior.");
-        Assert.Contains("AddInMemoryDistributedLock", programText);
+            unregisteredProjects.Length == 0,
+            $"Shared command-lock Web projects must be registered in {nameof(CommandLockWebProjects)}: {string.Join(", ", unregisteredProjects)}");
     }
 
     [Theory]

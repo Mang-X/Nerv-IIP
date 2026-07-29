@@ -174,7 +174,7 @@ describe('WMS 复核发货', () => {
     wmsState.completeOutbound.mockImplementationOnce(
       (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
         options?.onCommandAttempt?.()
-        return Promise.reject(new Error('lost response'))
+        return Promise.reject(new RequestTimeoutError())
       },
     )
     const wrapper = mount(ReviewPage, { attachTo: document.body })
@@ -186,7 +186,10 @@ describe('WMS 复核发货', () => {
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-    // 重试：不重新点单，直接再次确认。
+    reviewInput.value = 'PR-CHANGED'
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('[data-testid="toggle-passed"]')!.click()
+    await wrapper.vm.$nextTick()
     confirm.click()
     await flushPromises()
     expect(wmsState.completeOutbound).toHaveBeenCalledTimes(2)
@@ -234,7 +237,6 @@ describe('WMS 复核发货', () => {
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-
     const firstKey = (wmsState.completeOutbound.mock.calls[0][1] as { idempotencyKey: string })
       .idempotencyKey
     reviewInput.value = 'PR-2'

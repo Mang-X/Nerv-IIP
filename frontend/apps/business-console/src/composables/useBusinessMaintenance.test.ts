@@ -18,10 +18,14 @@ import {
   useMaintenancePlans,
   useMaintenanceReliability,
   useMaintenanceSpareParts,
+  useMaintenanceWorkOrders,
 } from './useBusinessMaintenance'
 
 const coladaState = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
+  maintenanceWorkOrderStatus: 'Open',
   mutationCallsById: new Map<string, unknown[]>(),
+  mutationFailuresById: new Map<string, Error[]>(),
   queryDataById: new Map<string, unknown>(),
   queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
@@ -29,8 +33,9 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: (...args: unknown[]) => coladaState.confirmOperation(...args),
   completeBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
-    key: [],
+    key: [{ _id: 'completeBusinessConsoleMaintenanceWorkOrder' }],
     mutation: vi.fn(),
   })),
   createBusinessConsoleMaintenancePlanMutationOptions: vi.fn(() => ({
@@ -42,12 +47,18 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(),
   })),
   createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
-    key: [],
+    key: [{ _id: 'createBusinessConsoleMaintenanceWorkOrder' }],
     mutation: vi.fn(),
   })),
   generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions: vi.fn(() => ({
     key: [],
     mutation: vi.fn(),
+  })),
+  getBusinessConsoleMaintenanceWorkOrderQueryOptions: vi.fn(() => ({
+    query: vi.fn(async () => ({
+      success: true,
+      data: { status: coladaState.maintenanceWorkOrderStatus },
+    })),
   })),
   listBusinessConsoleMaintenanceInspectionsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceInspections' }],
@@ -92,6 +103,9 @@ vi.mock('@pinia/colada', () => ({
         const calls = coladaState.mutationCallsById.get(id) ?? []
         calls.push(payload)
         coladaState.mutationCallsById.set(id, calls)
+        const failures = coladaState.mutationFailuresById.get(id)
+        const failure = failures?.shift()
+        if (failure) throw failure
         options.onSuccess?.()
         return { success: true, data: {} }
       }),
@@ -120,11 +134,186 @@ describe('business maintenance composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    coladaState.confirmOperation.mockReset()
+    coladaState.confirmOperation.mockImplementation(async (value) => value)
+    coladaState.maintenanceWorkOrderStatus = 'Open'
     coladaState.mutationCallsById.clear()
+    coladaState.mutationFailuresById.clear()
     coladaState.queryDataById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.queryRefetchById.clear()
+  })
+
+  it('reuses one completion intent key after timeout and rotates it after success', async () => {
+    const workOrders = useMaintenanceWorkOrders({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    coladaState.mutationFailuresById.set('completeBusinessConsoleMaintenanceWorkOrder', [
+      Object.assign(new Error('timeout'), { name: 'RequestTimeoutError' }),
+    ])
+    const body = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      result: 'repaired',
+      downtimeReasonCode: 'breakdown',
+      downtimeMinutes: 20,
+      spareParts: [{ skuCode: 'SP-1', quantity: 1, uomCode: 'EA' }],
+    }
+
+    await expect(workOrders.completeWorkOrder('wo-001', body)).rejects.toThrow('timeout')
+    await workOrders.completeWorkOrder('wo-001', body)
+    await workOrders.completeWorkOrder('wo-001', body)
+
+    const calls = coladaState.mutationCallsById.get(
+      'completeBusinessConsoleMaintenanceWorkOrder',
+    ) as Array<{ body: { idempotencyKey?: string } }>
+    expect(calls).toHaveLength(3)
+    expect(calls[0]?.body.idempotencyKey).toBeTruthy()
+    expect(calls[1]?.body.idempotencyKey).toBe(calls[0]?.body.idempotencyKey)
+    expect(calls[2]?.body.idempotencyKey).not.toBe(calls[1]?.body.idempotencyKey)
+  })
+
+  it('blocks a terminal maintenance completion when there is no matching pending replay', async () => {
+    coladaState.maintenanceWorkOrderStatus = 'Completed'
+    const workOrders = useMaintenanceWorkOrders({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+
+    await expect(
+      workOrders.completeWorkOrder('wo-terminal', {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        result: 'repaired',
+        downtimeReasonCode: 'breakdown',
+        idempotencyKey: 'caller-new-without-pending',
+      }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(
+      coladaState.mutationCallsById.get('completeBusinessConsoleMaintenanceWorkOrder') ?? [],
+    ).toHaveLength(0)
+  })
+
+  it('replays a terminal completion with the durable key after the caller key changes', async () => {
+    const workOrders = useMaintenanceWorkOrders({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    const intent = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      result: 'repaired',
+      downtimeReasonCode: 'breakdown',
+      downtimeMinutes: 20,
+      spareParts: [{ skuCode: 'SP-1', quantity: 1, uomCode: 'EA' }],
+    }
+    coladaState.mutationFailuresById.set('completeBusinessConsoleMaintenanceWorkOrder', [
+      Object.assign(new Error('timeout'), { name: 'RequestTimeoutError' }),
+    ])
+
+    await expect(
+      workOrders.completeWorkOrder('wo-replay', {
+        ...intent,
+        idempotencyKey: 'durable-old-key',
+      }),
+    ).rejects.toThrow('timeout')
+
+    coladaState.maintenanceWorkOrderStatus = 'Completed'
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(
+        Object.assign(new Error('receipt unconfirmed'), {
+          code: 'business-operation-unconfirmed',
+          indeterminate: true,
+        }),
+      )
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      workOrders.completeWorkOrder('wo-replay', {
+        ...intent,
+        idempotencyKey: 'caller-new-key',
+      }),
+    ).rejects.toThrow('receipt unconfirmed')
+    await workOrders.completeWorkOrder('wo-replay', {
+      ...intent,
+      idempotencyKey: 'caller-newer-key',
+    })
+
+    const calls = coladaState.mutationCallsById.get(
+      'completeBusinessConsoleMaintenanceWorkOrder',
+    ) as Array<{ body: { idempotencyKey?: string } }>
+    expect(calls.map((call) => call.body.idempotencyKey)).toEqual([
+      'durable-old-key',
+      'durable-old-key',
+      'durable-old-key',
+    ])
+    expect(coladaState.confirmOperation).toHaveBeenCalledTimes(2)
+    expect(coladaState.confirmOperation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ expectedIdempotencyKey: 'durable-old-key' }),
+    )
+    expect(coladaState.confirmOperation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ expectedIdempotencyKey: 'durable-old-key' }),
+    )
+  })
+
+  it('rotates a maintenance create key after an explicit 422 rejection', async () => {
+    const workOrders = useMaintenanceWorkOrders({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    const intent = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      deviceAssetId: 'DEV-1',
+      priority: 'high',
+      openedBy: 'operator-1',
+    }
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      workOrders.createWorkOrder({ ...intent, idempotencyKey: 'maintenance-key-1' }),
+    ).rejects.toThrow('validation failed')
+    await workOrders.createWorkOrder({ ...intent, idempotencyKey: 'maintenance-key-2' })
+
+    const calls = coladaState.mutationCallsById.get(
+      'createBusinessConsoleMaintenanceWorkOrder',
+    ) as Array<{ body: { idempotencyKey?: string } }>
+    expect(calls.map((call) => call.body.idempotencyKey)).toEqual([
+      'maintenance-key-1',
+      'maintenance-key-2',
+    ])
+  })
+
+  it('injects a fresh create key without requiring page-level idempotency state', async () => {
+    const workOrders = useMaintenanceWorkOrders({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    const body = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      deviceAssetId: 'DEV-1',
+      priority: 'high',
+      openedBy: 'operator-1',
+    }
+
+    await workOrders.createWorkOrder(body)
+    await workOrders.createWorkOrder(body)
+
+    const calls = coladaState.mutationCallsById.get(
+      'createBusinessConsoleMaintenanceWorkOrder',
+    ) as Array<{ body: { idempotencyKey?: string } }>
+    expect(calls[0]?.body.idempotencyKey).toMatch(/^maintenance-create-/)
+    expect(calls[1]?.body.idempotencyKey).not.toBe(calls[0]?.body.idempotencyKey)
   })
 
   it('loads inspection rows and records a real inspection through the facade', async () => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
@@ -41,17 +42,30 @@ const {
   createPending,
 } = useBusinessMaintenance()
 
-// 报修端点无服务端幂等键 → 写结果状态机由共享 composable 统一：结果不确定（超时/网络中断）
-// 不给盲目重试、引导核实；离线（未发出）与确定业务失败可安全重试。
-const { phase, errorTitle, errorDescription, canRetry, run, retry, verify, reset } =
-  useNonIdempotentWriteResult({
-    failureTitle: '报修提交失败',
-    verifyListLabel: '近期维修工单',
-    verifyVerb: '创建',
-    onVerify: () => {
-      void refreshWorkOrders()
-    },
-  })
+// 报修端点持久化逐操作幂等键；超时后仍复用同一键重试，服务端返回原工单而不重复创建。
+const {
+  phase,
+  errorTitle,
+  errorDescription,
+  canRetry,
+  isOutcomeIndeterminate,
+  run,
+  retry,
+  verify,
+  reset,
+} = useNonIdempotentWriteResult({
+  failureTitle: '报修提交失败',
+  verifyListLabel: '近期维修工单',
+  verifyVerb: '创建',
+  idempotent: true,
+  onVerify: () => {
+    void refreshWorkOrders()
+  },
+})
+const operationKey = ref('')
+const operationFingerprint = ref('')
+const submittedIntent = ref<RepairIntent | null>(null)
+const intentLocked = ref(false)
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 目录选择 -----------------------
 const queryDeviceAssetId = computed(() => {
@@ -71,6 +85,12 @@ const form = reactive<RepairCtx & { assetUnavailableReason: string }>({
 })
 
 type DeviceSource = 'route' | 'scan' | 'directory'
+type RepairIntent = {
+  deviceAssetId: string
+  priority: string
+  assetUnavailableReason: string
+  sourceAlarmId?: string
+}
 type SelectedDevice = BusinessConsoleResourceItem & {
   deviceAssetId: string
   source: DeviceSource
@@ -102,12 +122,14 @@ const valid = computed(() => repairOrderFlow.progress(form).completed >= 2)
 const scanActive = computed(
   () =>
     phase.value === 'form' &&
+    !intentLocked.value &&
     !devicePickerOpen.value &&
     !prioritySheetOpen.value &&
     !reasonFocused.value,
 )
 
 function onScan(value: string) {
+  if (intentLocked.value) return
   const deviceAssetId = value.trim()
   if (!deviceAssetId) return
   form.deviceAssetId = deviceAssetId
@@ -119,11 +141,13 @@ function onScan(value: string) {
 }
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
+  if (intentLocked.value) return
   form.deviceAssetId = device.deviceAssetId
   selectedDevice.value = { ...device, source: 'directory' }
 }
 
 function onPrioritySelected(priority: string) {
+  if (intentLocked.value) return
   if (priority in maintenancePriorityLabels) {
     form.priority = priority
   }
@@ -158,18 +182,43 @@ const selectedDeviceSubtitle = computed(() => {
 
 async function submit() {
   if (!valid.value || createPending.value) return
+  const draftIntent: RepairIntent = {
+    deviceAssetId: form.deviceAssetId as string,
+    priority: form.priority as string,
+    assetUnavailableReason: form.assetUnavailableReason,
+    ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
+  }
+  const intent = intentLocked.value && submittedIntent.value ? submittedIntent.value : draftIntent
+  const fingerprint = JSON.stringify(intent)
+  if (
+    !operationKey.value ||
+    (!intentLocked.value &&
+      operationFingerprint.value.length > 0 &&
+      operationFingerprint.value !== fingerprint)
+  ) {
+    operationKey.value = makeIdempotencyKey()
+  }
+  operationFingerprint.value = fingerprint
+  submittedIntent.value = intent
   await run(() =>
     createWorkOrder({
-      deviceAssetId: form.deviceAssetId as string,
-      priority: form.priority as string,
-      assetUnavailableReason: form.assetUnavailableReason,
-      ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
+      ...intent,
+      idempotencyKey: operationKey.value,
     }),
   )
 }
 
+function retrySubmission() {
+  intentLocked.value = isOutcomeIndeterminate.value
+  retry()
+}
+
 function resetForm() {
-  // 成功后清空，避免重复提交相同工单（端点无服务端幂等）。
+  // 成功后开启一个新的操作意图；失败重试不会经过这里，因此继续复用原键。
+  operationKey.value = ''
+  operationFingerprint.value = ''
+  submittedIntent.value = null
+  intentLocked.value = false
   form.deviceAssetId = queryDeviceAssetId.value
   form.priority = ''
   form.assetUnavailableReason = ''
@@ -236,7 +285,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           variant="primary"
           size="lg"
           block
-          @click="retry"
+          @click="retrySubmission"
         >
           重试
         </NvMobileButton>
@@ -266,8 +315,9 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
             data-testid="device-trigger"
             :title="selectedDeviceTitle"
             :subtitle="selectedDeviceSubtitle"
+            :interactive="!intentLocked"
             class="border-b-0"
-            @select="devicePickerOpen = true"
+            @select="intentLocked ? undefined : (devicePickerOpen = true)"
           />
         </div>
 
@@ -276,8 +326,9 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
             data-testid="priority-trigger"
             title="优先级"
             :subtitle="form.priority ? maintenancePriorityLabel(form.priority) : '请选择优先级'"
+            :interactive="!intentLocked"
             class="border-b-0"
-            @select="prioritySheetOpen = true"
+            @select="intentLocked ? undefined : (prioritySheetOpen = true)"
           />
         </div>
 
@@ -286,6 +337,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           <textarea
             data-testid="reason-input"
             v-model="form.assetUnavailableReason"
+            :disabled="intentLocked"
             rows="3"
             placeholder="描述故障现象，便于维修人员处理"
             class="min-h-24 w-full scroll-mb-24 rounded-lg border border-border bg-card px-4 py-3 text-base text-foreground outline-none focus:border-brand"

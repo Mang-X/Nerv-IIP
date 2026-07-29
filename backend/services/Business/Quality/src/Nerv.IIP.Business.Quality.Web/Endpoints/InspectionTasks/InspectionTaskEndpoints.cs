@@ -1,3 +1,4 @@
+using FluentValidation;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
@@ -25,14 +26,29 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string InspectorUserId,
     IReadOnlyCollection<InspectionResultLineCommandInput>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string IdempotencyKey,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed class CreateInspectionRecordFromTaskRequestValidator
+    : FastEndpoints.Validator<CreateInspectionRecordFromTaskRequest>
+{
+    public CreateInspectionRecordFromTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
 
 /// <summary>权威检验结论：记录 id、后端计算的 result，以及不合格时自动开出并回链的 NCR id 与业务编号。</summary>
 public sealed record CreateInspectionRecordFromTaskEndpointResponse(
     InspectionRecordId InspectionRecordId,
     string Result,
     string? NonconformanceReportId,
-    string? NonconformanceReportCode);
+    string? NonconformanceReportCode,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed class ListInspectionTasksEndpoint(ISender sender)
     : QualityEndpoint<ListInspectionTasksRequest, ResponseData<ListInspectionTasksEndpointResponse>>
@@ -73,13 +89,17 @@ public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
             req.InspectorUserId,
             req.ResultLines ?? [],
             req.DispositionReason,
-            req.DispositionAttachmentFileIds ?? []), ct);
+            req.DispositionAttachmentFileIds ?? [],
+            req.IdempotencyKey,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(
             new CreateInspectionRecordFromTaskEndpointResponse(
                 result.InspectionRecordId,
                 result.Result,
                 result.NonconformanceReportId,
-                result.NonconformanceReportCode).AsResponseData(),
+                result.NonconformanceReportCode,
+                result.ChangedAtUtc).AsResponseData(),
             cancellation: ct);
     }
 }

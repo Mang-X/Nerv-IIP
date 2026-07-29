@@ -1,18 +1,90 @@
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using Nerv.IIP.DistributedLocking;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
+using RedisMaintenanceDistributedLock = Nerv.IIP.DistributedLocking.RedisCommandDistributedLock;
+using StackExchange.Redis;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
 public sealed class MaintenanceCommandLockTests
 {
+    [Fact]
+    public void Production_configuration_fails_fast_when_redis_is_missing()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddNervIipCommandLocking(
+                configuration,
+                new TestHostEnvironment(Environments.Production),
+                isTesting: false,
+                serviceName: "business-maintenance"));
+
+        Assert.Contains("require a Redis connection string", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Testing_configuration_uses_an_in_memory_lock_without_redis()
+    {
+        var services = new ServiceCollection();
+        services.AddNervIipCommandLocking(
+            new ConfigurationBuilder().Build(),
+            new TestHostEnvironment("Testing"),
+            isTesting: true,
+            serviceName: "business-maintenance");
+        using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredService<IDistributedLock>());
+        Assert.Null(provider.GetService<IConnectionMultiplexer>());
+    }
+
+    [Fact]
+    public void Existing_redis_connection_registration_is_reused()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+            throw new InvalidOperationException("The registration should not be resolved by this test."));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Redis"] = "redis.invalid:6379",
+            })
+            .Build();
+
+        services.AddNervIipCommandLocking(
+            configuration,
+            new TestHostEnvironment(Environments.Production),
+            isTesting: false,
+            serviceName: "business-maintenance");
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
+    }
+
+    [Fact]
+    public void Redis_key_prefix_isolated_by_service_name()
+    {
+        var maintenance = new StackExchangeRedisCommandLockStore(null!, "business-maintenance");
+        var quality = new StackExchangeRedisCommandLockStore(null!, "business-quality");
+
+        Assert.Equal(
+            "nerv-iip:business-maintenance:locks:tenant-action",
+            maintenance.ToRedisKeyForTesting("tenant-action"));
+        Assert.Equal(
+            "nerv-iip:business-quality:locks:tenant-action",
+            quality.ToRedisKeyForTesting("tenant-action"));
+    }
+
     [Fact]
     public async Task Device_state_plan_creation_plan_update_and_pm_generation_share_org_environment_lock_key()
     {
@@ -178,7 +250,7 @@ public sealed class MaintenanceCommandLockTests
         services.AddScoped<IRequestHandler<CancellableLockedCommand>, CancellableLockedCommandHandler>();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssemblyContaining<MaintenanceCommandLockTests>()
-            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>)));
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>)));
         await using var provider = services.BuildServiceProvider();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -275,6 +347,17 @@ public sealed class MaintenanceCommandLockTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+
+        public string ApplicationName { get; set; } = "Nerv.IIP.DistributedLocking.Tests";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class TestLogger<T> : ILogger<T>

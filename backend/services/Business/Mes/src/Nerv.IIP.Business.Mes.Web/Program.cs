@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
@@ -74,11 +75,20 @@ builder.Services.AddScoped<WorldHistoryScheduleResultSeedService>();
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+builder.Services.AddNervIipCommandLocking(
+    builder.Configuration,
+    builder.Environment,
+    isTesting,
+    "business-mes");
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
+    .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
     .AddKnownExceptionValidationBehavior()
     .AddOpenBehavior(typeof(ManualDispatchConcurrencyRetryBehavior<,>))
     .AddUnitOfWorkBehaviors());
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
+    ChangeOperationTaskStateCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
 // material has no returnable lot) as the standard success=false envelope instead of an unhandled
 // HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns

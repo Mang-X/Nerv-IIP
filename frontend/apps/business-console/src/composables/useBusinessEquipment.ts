@@ -1,5 +1,6 @@
 import {
   acknowledgeBusinessConsoleEquipmentAlarm,
+  confirmBusinessConsoleOperation,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
@@ -17,6 +18,12 @@ import {
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
@@ -25,6 +32,13 @@ import { hasBusinessContext, refetchWithBusinessContext } from './businessContex
 import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
+
+function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+  }
+  return snapshot as T
+}
 
 // 看板默认范围 = 全部设备。后端 overview/availability 要求 deviceAssetIds 非空（最多 50 个），
 // 故未手动指定范围时，自动取设备资源列表（device-asset）的全部编号带入。
@@ -392,6 +406,7 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
 }
 
 export function useBusinessEquipmentAlarms() {
+  const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
   const alarmsQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
@@ -403,6 +418,7 @@ export function useBusinessEquipmentAlarms() {
     alarmEventId: string,
     action: 'acknowledge' | 'shelve' | 'unshelve',
     evaluatedAtUtc?: string,
+    idempotentReplay = false,
   ) {
     const response = await listBusinessConsoleEquipmentAlarms({
       query: {
@@ -428,24 +444,52 @@ export function useBusinessEquipmentAlarms() {
             shelvedAtUtc: item.shelvedAtUtc,
             shelvedUntilUtc: item.shelvedUntilUtc,
             evaluatedAtUtc,
+            idempotentReplay,
           },
         }
       : undefined
   }
 
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
-    const result = await executeLifecycleAction({
-      readLatest: () => readAlarm(alarmEventId, 'acknowledge'),
-      command: () =>
-        acknowledgeBusinessConsoleEquipmentAlarm({
-          path: { alarmEventId },
-          body: {
-            ...toContextQuery(businessContext),
-            acknowledgedAtUtc: new Date().toISOString(),
-            acknowledgedBy,
-          },
-          throwOnError: false,
-        }),
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
+      operationType: 'iiot.alarm.acknowledge',
+      payloadFingerprint: JSON.stringify({ alarmEventId, acknowledgedBy }),
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => globalThis.crypto?.randomUUID?.() ?? `alarm-acknowledge-${Date.now()}-${Math.random()}`,
+      { acknowledgedAtUtc: new Date().toISOString() },
+    )
+    const stablePayload = requirePendingPayloadSnapshot<{ acknowledgedAtUtc: string }>(
+      pending.payloadSnapshot,
+      '报警确认',
+    )
+    const result = await completePendingBusinessIntent(scope, async () => {
+      const envelope = await executeLifecycleAction({
+        readLatest: () => readAlarm(alarmEventId, 'acknowledge', undefined, Boolean(restored)),
+        command: () =>
+          acknowledgeBusinessConsoleEquipmentAlarm({
+            path: { alarmEventId },
+            body: {
+              ...toContextQuery(businessContext),
+              acknowledgedAtUtc: stablePayload.acknowledgedAtUtc,
+              acknowledgedBy,
+              idempotencyKey: pending.idempotencyKey,
+            },
+            throwOnError: false,
+          }),
+      })
+      if (!envelope) throw new Error('报警确认未返回业务信封')
+      await confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'iiot.alarm.acknowledge',
+        expectedIdempotencyKey: pending.idempotencyKey,
+        expectedResourceId: alarmEventId,
+      })
+      return envelope
     })
     await refetchWithBusinessContext(businessContext, alarmsQuery)
     return result
@@ -465,43 +509,105 @@ export function useBusinessEquipmentAlarms() {
     // Freeze the shelve instant so a retried batch reuses the same window; the backend
     // derives the shelve window from shelvedAtUtc + idempotencyKey (first-write-wins),
     // so a stable key makes re-submitting the same batch a no-op instead of extending it.
-    const result = await executeLifecycleAction({
-      readLatest: () =>
-        readAlarm(
-          alarmEventId,
-          'shelve',
-          options?.attempt === 'retry' && options.idempotencyKey ? options.shelvedAtUtc : undefined,
-        ),
-      command: () =>
-        shelveBusinessConsoleEquipmentAlarm({
-          path: { alarmEventId },
-          body: {
-            ...toContextQuery(businessContext),
-            durationMinutes,
-            idempotencyKey: options?.idempotencyKey,
-            reason,
-            shelvedAtUtc: options?.shelvedAtUtc ?? new Date().toISOString(),
-            shelvedBy,
-          },
-          throwOnError: false,
-        }),
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
+      operationType: 'iiot.alarm.shelve',
+      payloadFingerprint: JSON.stringify({
+        alarmEventId,
+        shelvedBy,
+        durationMinutes,
+        reason: reason?.trim() ?? '',
+      }),
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () =>
+        options?.idempotencyKey ??
+        globalThis.crypto?.randomUUID?.() ??
+        `alarm-shelve-${Date.now()}-${Math.random()}`,
+      { shelvedAtUtc: options?.shelvedAtUtc ?? new Date().toISOString() },
+    )
+    const stablePayload = requirePendingPayloadSnapshot<{ shelvedAtUtc: string }>(
+      pending.payloadSnapshot,
+      '报警搁置',
+    )
+    const result = await completePendingBusinessIntent(scope, async () => {
+      const envelope = await executeLifecycleAction({
+        readLatest: () =>
+          readAlarm(
+            alarmEventId,
+            'shelve',
+            restored ? stablePayload.shelvedAtUtc : undefined,
+            Boolean(restored),
+          ),
+        command: () =>
+          shelveBusinessConsoleEquipmentAlarm({
+            path: { alarmEventId },
+            body: {
+              ...toContextQuery(businessContext),
+              durationMinutes,
+              idempotencyKey: pending.idempotencyKey,
+              reason,
+              shelvedAtUtc: stablePayload.shelvedAtUtc,
+              shelvedBy,
+            },
+            throwOnError: false,
+          }),
+      })
+      if (!envelope) throw new Error('报警搁置未返回业务信封')
+      await confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'iiot.alarm.shelve',
+        expectedIdempotencyKey: pending.idempotencyKey,
+        expectedResourceId: alarmEventId,
+      })
+      return envelope
     })
     await refetchWithBusinessContext(businessContext, alarmsQuery)
     return result
   }
 
   async function unshelveAlarm(alarmEventId: string) {
-    const result = await executeLifecycleAction({
-      readLatest: () => readAlarm(alarmEventId, 'unshelve'),
-      command: () =>
-        unshelveBusinessConsoleEquipmentAlarm({
-          path: { alarmEventId },
-          body: {
-            ...toContextQuery(businessContext),
-            unshelvedAtUtc: new Date().toISOString(),
-          },
-          throwOnError: false,
-        }),
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
+      operationType: 'iiot.alarm.unshelve',
+      payloadFingerprint: JSON.stringify({ alarmEventId }),
+    }
+    const restored = peekPendingBusinessIntent(scope)
+    const pending = acquirePendingBusinessIntent(
+      scope,
+      () => globalThis.crypto?.randomUUID?.() ?? `alarm-unshelve-${Date.now()}-${Math.random()}`,
+      { unshelvedAtUtc: new Date().toISOString() },
+    )
+    const stablePayload = requirePendingPayloadSnapshot<{ unshelvedAtUtc: string }>(
+      pending.payloadSnapshot,
+      '报警取消搁置',
+    )
+    const result = await completePendingBusinessIntent(scope, async () => {
+      const envelope = await executeLifecycleAction({
+        readLatest: () => readAlarm(alarmEventId, 'unshelve', undefined, Boolean(restored)),
+        command: () =>
+          unshelveBusinessConsoleEquipmentAlarm({
+            path: { alarmEventId },
+            body: {
+              ...toContextQuery(businessContext),
+              idempotencyKey: pending.idempotencyKey,
+              unshelvedAtUtc: stablePayload.unshelvedAtUtc,
+            },
+            throwOnError: false,
+          }),
+      })
+      if (!envelope) throw new Error('报警取消搁置未返回业务信封')
+      await confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'iiot.alarm.unshelve',
+        expectedIdempotencyKey: pending.idempotencyKey,
+        expectedResourceId: alarmEventId,
+      })
+      return envelope
     })
     await refetchWithBusinessContext(businessContext, alarmsQuery)
     return result

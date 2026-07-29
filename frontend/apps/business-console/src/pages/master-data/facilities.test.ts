@@ -361,7 +361,9 @@ describe('master-data facilities tree page', () => {
     await flushPromises()
 
     expect(stub.createSite).toHaveBeenCalledTimes(1)
-    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 对话框仍开、输入保留。
     expect((wrapper.find('#create-name').element as HTMLInputElement).value).toBe('广州工厂')

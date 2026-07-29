@@ -1,4 +1,9 @@
-import { statusActionGate, type LifecycleActionRequest } from '@nerv-iip/business-core'
+import {
+  getBusinessWriteErrorStatus,
+  preserveBusinessWriteErrorStatus,
+  statusActionGate,
+  type LifecycleActionRequest,
+} from '@nerv-iip/business-core'
 import { computed, shallowRef } from 'vue'
 
 export const LIFECYCLE_STATE_CHANGED_MESSAGE = '状态已被其他操作更新'
@@ -15,35 +20,8 @@ export class LifecycleStateChangedError extends Error {
   }
 }
 
-const lifecycleWriteResponseStatuses = new WeakMap<object, number>()
-
-function getLifecycleWriteErrorStatus(error: unknown) {
-  if (!error || (typeof error !== 'object' && typeof error !== 'function')) return undefined
-
-  const candidate = error as {
-    status?: unknown
-    statusCode?: unknown
-    response?: { status?: unknown }
-  }
-  const status = candidate.statusCode ?? candidate.status ?? candidate.response?.status
-  if (typeof status === 'number' && Number.isFinite(status)) return status
-  return lifecycleWriteResponseStatuses.get(error)
-}
-
-function preserveLifecycleWriteResponseStatus(error: unknown, status?: number) {
-  if (
-    status === undefined ||
-    !Number.isFinite(status) ||
-    !error ||
-    (typeof error !== 'object' && typeof error !== 'function')
-  ) {
-    return
-  }
-  lifecycleWriteResponseStatuses.set(error, status)
-}
-
 export function isIndeterminateLifecycleWriteError(error: unknown) {
-  const status = getLifecycleWriteErrorStatus(error)
+  const status = getBusinessWriteErrorStatus(error)
   if (status !== undefined) return status >= 500
   if (error instanceof TypeError) return true
   if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
@@ -114,7 +92,15 @@ export async function executeLifecycleAction<TData>({
     throw new LifecycleStateChangedError('preflight')
   }
 
-  const result = await command()
+  let result: CommandResult<TData>
+  try {
+    result = await command()
+  } catch (error) {
+    if (getBusinessWriteErrorStatus(error) === 409) {
+      throw new LifecycleStateChangedError('conflict')
+    }
+    throw error
+  }
   if (result.response?.status === 409) {
     throw new LifecycleStateChangedError('conflict')
   }
@@ -127,7 +113,7 @@ export async function executeLifecycleAction<TData>({
       : undefined
   if (result.error !== undefined || envelopeError !== undefined) {
     const error = result.error ?? envelopeError
-    preserveLifecycleWriteResponseStatus(error, result.response?.status)
+    preserveBusinessWriteErrorStatus(error, result.response?.status)
     throw error
   }
 

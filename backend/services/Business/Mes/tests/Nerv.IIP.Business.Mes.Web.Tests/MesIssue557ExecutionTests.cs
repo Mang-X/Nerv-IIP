@@ -16,6 +16,146 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesIssue557ExecutionTests
 {
     [Fact]
+    public async Task Operation_action_lock_is_scoped_to_tenant_and_operation_task()
+    {
+        var settings = await new ChangeOperationTaskStateCommandLock().GetLockKeysAsync(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "start",
+                Utc("2026-06-29T08:30:00Z"),
+                "operation-lock-intent"),
+            CancellationToken.None);
+
+        Assert.Equal("business-mes:operation-task-action:org-001:env-dev:OP-10", settings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Operation_action_replay_with_the_same_intent_returns_the_authoritative_state()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_replay_with_the_same_intent_returns_the_authoritative_state));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var command = new ChangeOperationTaskStateCommand(
+            "org-001",
+            "env-dev",
+            "OP-10",
+            "start",
+            Utc("2026-06-29T08:30:00Z"),
+            "operation-intent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, (await dbContext.OperationTasks.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Operation_action_rejects_reusing_the_same_key_for_a_different_payload()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_rejects_reusing_the_same_key_for_a_different_payload));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+
+        await handler.Handle(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "start",
+                Utc("2026-06-29T08:30:00Z"),
+                "operation-intent-conflict"),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "pause",
+                Utc("2026-06-29T09:00:00Z"),
+                "operation-intent-conflict"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Operation_action_replay_ignores_server_generated_changed_at()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_replay_ignores_server_generated_changed_at));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var first = new ChangeOperationTaskStateCommand(
+            "org-001",
+            "env-dev",
+            "OP-10",
+            "start",
+            DateTimeOffset.Parse("2026-06-29T08:30:00Z"),
+            "operation-time-intent");
+
+        var result = await handler.Handle(first, CancellationToken.None);
+        var equivalentOffsetReplay = await handler.Handle(
+            first with { ChangedAtUtc = DateTimeOffset.Parse("2026-06-29T16:30:00+08:00") },
+            CancellationToken.None);
+        var laterServerTimestampReplay = await handler.Handle(
+            first with { ChangedAtUtc = DateTimeOffset.Parse("2026-06-29T08:31:00Z") },
+            CancellationToken.None);
+
+        Assert.Equal(result, equivalentOffsetReplay);
+        Assert.Equal(result, laterServerTimestampReplay);
+    }
+
+    [Fact]
     public async Task Operation_start_rejects_later_sequence_before_previous_operations_complete()
     {
         await using var dbContext = CreateDbContext(nameof(Operation_start_rejects_later_sequence_before_previous_operations_complete));

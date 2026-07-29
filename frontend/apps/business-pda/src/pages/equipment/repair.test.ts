@@ -99,6 +99,7 @@ describe('PDA equipment repair page', () => {
       deviceAssetId: 'DEV-ROUTE-1',
       priority,
       assetUnavailableReason: '',
+      idempotencyKey: expect.any(String),
     })
   })
 
@@ -141,6 +142,7 @@ describe('PDA equipment repair page', () => {
       priority: 'high',
       assetUnavailableReason: '',
       sourceAlarmId: 'ALM-9',
+      idempotencyKey: expect.any(String),
     })
   })
 
@@ -218,7 +220,7 @@ describe('PDA equipment repair page', () => {
     expect(wrapper.find('[data-testid="work-orders-error"]').exists()).toBe(true)
   })
 
-  it('submits a new repair via createWorkOrder WITHOUT org/env/openedBy', async () => {
+  it('submits a new repair with an operation key but WITHOUT org/env/openedBy', async () => {
     route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
     await selectPriority(wrapper, '高')
@@ -228,11 +230,12 @@ describe('PDA equipment repair page', () => {
 
     expect(createWorkOrder).toHaveBeenCalledTimes(1)
     const body = createWorkOrder.mock.calls[0][0]
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       deviceAssetId: 'DEV-9',
       priority: 'high',
       assetUnavailableReason: '主轴异响',
     })
+    expect(body.idempotencyKey).toBeTruthy()
     expect(body).not.toHaveProperty('organizationId')
     expect(body).not.toHaveProperty('environmentId')
     expect(body).not.toHaveProperty('openedBy')
@@ -289,32 +292,40 @@ describe('PDA equipment repair page', () => {
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
   })
 
-  // P1-2：报修端点无服务端幂等键。超时/离线后结果不确定，服务端可能已创建工单，
-  // 盲目重试会重复报修 → 不给"重试"，改引导去列表核实。
-  it('超时（结果不确定）时不给危险重试，改引导核实且绝不自动重提', async () => {
+  it('结果未知时锁定原 payload 并用相同 idempotencyKey 安全重试', async () => {
     createWorkOrder.mockRejectedValueOnce(new RequestTimeoutError())
     route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
     await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="reason-input"]').setValue('主轴异响')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
-    expect(wrapper.text()).toContain('请勿重复提交')
-    // 无"重试"，只有"查看维修工单"核实入口。
-    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="verify-list"]').trigger('click')
-    expect(refreshWorkOrders).toHaveBeenCalled()
-    // 关键：核实动作不会重提 → createWorkOrder 仍只调用一次。
-    expect(createWorkOrder).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('相同操作编号')
+    expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
+    const firstPayload = createWorkOrder.mock.calls[0][0]
+
+    await wrapper.get('[data-testid="retry"]').trigger('click')
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('DEV-CHANGED')
+    await scanInput.trigger('keydown.enter')
+    await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="reason-input"]').setValue('篡改后的原因')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createWorkOrder).toHaveBeenCalledTimes(2)
+    expect(createWorkOrder.mock.calls[1][0]).toEqual(firstPayload)
   })
 
-  it('确定业务失败（服务端已响应、无副作用）时仍可安全重试', async () => {
+  it('确定业务失败后编辑设备、优先级、原因会形成新意图并旋转 idempotencyKey', async () => {
     createWorkOrder.mockRejectedValueOnce({ success: false, message: '设备不存在' })
     route.query = { deviceAssetId: 'DEV-9' }
     const wrapper = mount(RepairPage)
     await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="reason-input"]').setValue('旧原因')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
@@ -323,6 +334,24 @@ describe('PDA equipment repair page', () => {
     // 服务端已明确失败、无副作用 → 给"重试"，不给"核实"入口。
     expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="retry"]').exists()).toBe(true)
+    const firstKey = createWorkOrder.mock.calls[0][0].idempotencyKey
+
+    await wrapper.get('[data-testid="retry"]').trigger('click')
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('DEV-10')
+    await scanInput.trigger('keydown.enter')
+    await selectPriority(wrapper, '中')
+    await wrapper.get('[data-testid="reason-input"]').setValue('新原因')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createWorkOrder).toHaveBeenCalledTimes(2)
+    expect(createWorkOrder.mock.calls[1][0]).toMatchObject({
+      deviceAssetId: 'DEV-10',
+      priority: 'medium',
+      assetUnavailableReason: '新原因',
+    })
+    expect(createWorkOrder.mock.calls[1][0].idempotencyKey).not.toBe(firstKey)
   })
 
   // 离线预检在请求发出前抛出 → 服务端从未收到 → 安全重试（不逼用户绕路核实，#814 离线可操作）。
@@ -349,11 +378,14 @@ describe('PDA equipment repair page', () => {
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
-    expect(createWorkOrder).toHaveBeenCalledWith({
-      deviceAssetId: 'DEV-1',
-      priority: 'high',
-      assetUnavailableReason: '',
-      sourceAlarmId: 'ALM-9',
-    })
+    expect(createWorkOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        assetUnavailableReason: '',
+        sourceAlarmId: 'ALM-9',
+        idempotencyKey: expect.any(String),
+      }),
+    )
   })
 })

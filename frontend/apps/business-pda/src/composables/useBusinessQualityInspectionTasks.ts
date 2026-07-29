@@ -1,5 +1,6 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
@@ -9,11 +10,18 @@ import {
   type BusinessConsoleQualityInspectionTaskItem,
   type BusinessConsoleQualityReasonItem,
 } from '@nerv-iip/api-client'
-import type { QualityCharacteristicResultLine as ResultLine } from '@nerv-iip/business-core'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+  type QualityCharacteristicResultLine as ResultLine,
+} from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import { makeIdempotencyKey } from './makeIdempotencyKey'
 
 const DEFAULT_TAKE = 100
 /** facade / Quality 查询验证器的 take 上限——超页数据靠受限分页迭代聚合，不把 take 扩过上限。 */
@@ -63,9 +71,8 @@ function ignoreBackgroundError(_error: unknown) {}
  * - 列表默认按 `status=pending` 服务端过滤；来源类型筛选、超期置顶排序、扫码直达均为
  *   **客户端**逻辑（facade 仅支持 org/env/status/skuCode/skip/take，无 sourceType/超期/关键字参数），
  *   因此当扫码/来源筛选命中第一页之外时以 `total` 判断是否可 `loadMore`，不把"页内未命中"当"不存在"。
- * - 提交端点 `CreateInspectionRecordFromTask` **按任务生命周期天然幂等**：任务已 completed 则
- *   返回同一 inspectionRecordId（first-write-wins keyed on task），故重试安全；权威 pass/fail 由
- *   后端按检验计划规格计算并在不合格时自动发起 NCR。请求体无幂等键字段，无需携带。
+ * - 提交端点按显式 `idempotencyKey` 绑定请求指纹与权威 inspectionRecordId；超时后同一意图
+ *   复用原键，成功后清除，下一次新意图换键。权威 pass/fail 仍由后端按检验计划规格计算。
  */
 export function useBusinessQualityInspectionTasks() {
   const auth = useAuthStore()
@@ -197,42 +204,76 @@ export function useBusinessQualityInspectionTasks() {
     if (!scopeReady.value || !inspectorUserId.value) {
       throw new Error('登录态未就绪，请稍后重试')
     }
-    const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
-      query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-        inspectionTaskId,
-        skip: 0,
-        take: 2,
-      },
-      throwOnError: true,
-    })
-    const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
-      authoritativeEnvelope,
-    ).filter((task) => task.inspectionTaskId === inspectionTaskId)
-    const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
-    assertLifecycleActionExecutable({
-      domain: 'quality-inspection-task',
-      action: 'create-record',
-      facts: {
-        status: authoritative?.status,
-        inspectionRecordId: authoritative?.inspectionRecordId,
-      },
-    })
     const reason = (dispositionReason ?? '').trim()
-    return submitMutation.mutateAsync({
-      path: { inspectionTaskId },
-      query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-      },
-      body: {
-        inspectorUserId: inspectorUserId.value,
-        // business-core 的行结构与 api-client `InspectionCharacteristicResult` 同形，直接透传。
-        resultLines: resultLines as BusinessConsoleInspectionCharacteristicResult[],
-        ...(reason ? { dispositionReason: reason } : {}),
-      },
+    const fingerprint = JSON.stringify({
+      inspectionTaskId,
+      inspectorUserId: inspectorUserId.value,
+      resultLines,
+      dispositionReason: reason,
     })
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'quality.inspection-task.submit',
+      payloadFingerprint: fingerprint,
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(scope))
+    const { idempotencyKey } = acquirePendingBusinessIntent(
+      scope,
+      () => `quality-submit-${makeIdempotencyKey()}`,
+    )
+    try {
+      const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
+        query: {
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
+          inspectionTaskId,
+          skip: 0,
+          take: 2,
+        },
+        throwOnError: true,
+      })
+      const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
+        authoritativeEnvelope,
+      ).filter((task) => task.inspectionTaskId === inspectionTaskId)
+      const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+      assertLifecycleActionExecutable({
+        domain: 'quality-inspection-task',
+        action: 'create-record',
+        facts: {
+          status: authoritative?.status,
+          inspectionRecordId: authoritative?.inspectionRecordId,
+          idempotentReplay: isReplay,
+        },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(scope)
+      throw error
+    }
+    return completePendingBusinessIntent(scope, async () =>
+      confirmBusinessConsoleOperation(
+        await submitMutation.mutateAsync({
+          path: { inspectionTaskId },
+          query: {
+            organizationId: organizationId.value,
+            environmentId: environmentId.value,
+          },
+          body: {
+            inspectorUserId: inspectorUserId.value,
+            // business-core 的行结构与 api-client `InspectionCharacteristicResult` 同形，直接透传。
+            resultLines: resultLines as BusinessConsoleInspectionCharacteristicResult[],
+            ...(reason ? { dispositionReason: reason } : {}),
+            idempotencyKey,
+          },
+        }),
+        {
+          expectedOperationType: 'quality.inspection-task.submit',
+          expectedIdempotencyKey: idempotencyKey,
+          expectedResourceIdSelector: (envelope) => envelope.data?.inspectionRecordId,
+        },
+      ),
+    )
   }
 
   return {

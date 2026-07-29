@@ -5,7 +5,12 @@ import {
   operationTaskStatusLabel,
   statusActionGate,
 } from '@nerv-iip/business-core'
-import { createTimeoutFetch, isIndeterminateError, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
+import {
+  createTimeoutFetch,
+  describeRequestError,
+  isIndeterminateError,
+  REQUEST_TIMEOUT_MS,
+} from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -228,7 +233,7 @@ async function runAction(action: ActionKind) {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      description: describeRequestError(e, '请检查网络后重试。').message,
       action,
       taskId: id,
     }
@@ -255,7 +260,7 @@ async function retry() {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      description: describeRequestError(e, '请检查网络后重试。').message,
       action,
       taskId,
     }

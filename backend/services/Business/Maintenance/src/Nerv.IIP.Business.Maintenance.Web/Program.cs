@@ -14,9 +14,9 @@ using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Application.Scheduling;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -25,7 +25,6 @@ using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
-using StackExchange.Redis;
 
 
 var isTesting = false;
@@ -71,6 +70,8 @@ try
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteMaintenanceWorkOrderCommand>, CompleteMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<ApplyMaintenanceDeviceStateCommand>, ApplyMaintenanceDeviceStateCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenancePlanCommand>, CreateMaintenancePlanCommandLock>();
     builder.Services.AddScoped<ICommandLock<UpdateMaintenancePlanCommand>, UpdateMaintenancePlanCommandLock>();
@@ -95,7 +96,11 @@ try
         builder.Services.AddScoped<IAssetRuntimeHoursProvider, HttpIndustrialTelemetryAssetRuntimeHoursProvider>();
     }
 
-    AddMaintenanceDistributedLock(builder.Services, builder.Configuration, builder.Environment, isTesting);
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        MaintenanceFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
     builder.Services.AddScoped<MaintenanceSeedService>();
@@ -128,7 +133,7 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddUnitOfWorkBehaviors());
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = MaintenanceFacts.ServiceName)
@@ -264,47 +269,6 @@ static Uri ResolveServiceBaseAddress(IConfiguration configuration, string config
     return Uri.TryCreate(value, UriKind.Absolute, out var configured)
         ? configured
         : new Uri(fallback, UriKind.Absolute);
-}
-
-static void AddMaintenanceDistributedLock(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment, bool isTesting)
-{
-    if (isTesting)
-    {
-        services.AddInMemoryDistributedLock();
-        return;
-    }
-
-    var redisConnectionString = ResolveRedisConnectionString(configuration);
-    if (string.IsNullOrWhiteSpace(redisConnectionString))
-    {
-        if (environment.IsDevelopment())
-        {
-            services.AddInMemoryDistributedLock();
-            return;
-        }
-
-        throw new InvalidOperationException("BusinessMaintenance distributed command locks require a Redis connection string outside Development. Set ConnectionStrings:Redis, Messaging:Redis:ConnectionString, or Caching:Redis.");
-    }
-
-    services.AddSingleton<IConnectionMultiplexer>(_ =>
-    {
-        var options = ConfigurationOptions.Parse(redisConnectionString);
-        options.AbortOnConnectFail = false;
-        return ConnectionMultiplexer.Connect(options);
-    });
-    services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
-    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(
-        sp.GetRequiredService<IRedisCommandLockStore>(),
-        sp.GetRequiredService<TimeProvider>(),
-        logger: sp.GetRequiredService<ILogger<RedisMaintenanceDistributedLock>>()));
-}
-
-static string? ResolveRedisConnectionString(IConfiguration configuration)
-{
-    return configuration.GetConnectionString("Redis")
-        ?? configuration["Messaging:Redis:ConnectionString"]
-        ?? configuration["ConnectionStrings:Redis"]
-        ?? configuration["Caching:Redis"];
 }
 
 #pragma warning disable S1118

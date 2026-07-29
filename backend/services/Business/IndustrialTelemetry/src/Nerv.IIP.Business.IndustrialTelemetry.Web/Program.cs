@@ -14,6 +14,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -87,7 +88,11 @@ try
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        IndustrialTelemetryFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
@@ -118,11 +123,15 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             // Must wrap unit-of-work save so save-time ingestion unique conflicts can retry through idempotent lookups.
             .AddOpenBehavior(typeof(IndustrialTelemetryIdempotentIngestionBehavior<,>))
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<ICommandLock<AcknowledgeAlarmCommand>, AcknowledgeAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<ShelveAlarmCommand>, ShelveAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<UnshelveAlarmCommand>, UnshelveAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<RunAlarmEscalationsCommand>, RunAlarmEscalationsCommandLock>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = IndustrialTelemetryFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();

@@ -33,6 +33,7 @@ builder.Services
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new WmsWarehouseTaskOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>

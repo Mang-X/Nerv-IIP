@@ -325,4 +325,78 @@ describe('configureApiClient', () => {
 
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
+
+  it.each([
+    [503, 'proxy unavailable'],
+    [422, 'validation rejected'],
+  ] as const)(
+    'wraps a generated text/plain HTTP %s rejection with its response status',
+    async (status, body) => {
+      const fetch = vi.fn(async () => {
+        return new Response(body, {
+          headers: { 'content-type': 'text/plain' },
+          status,
+        })
+      })
+
+      configureApiClient({
+        baseUrl: 'https://business-gateway.example.test',
+        fetch,
+      })
+
+      const error = await businessConsoleClient
+        .post({
+          body: {},
+          throwOnError: true,
+          url: '/api/business-console/v1/generated-write',
+        })
+        .catch((value: unknown) => value)
+
+      expect(error).toBeInstanceOf(Error)
+      expect(error).toMatchObject({
+        cause: body,
+        message: body,
+        response: expect.objectContaining({ status }),
+        status,
+      })
+    },
+  )
+
+  it('preserves generated object error identity while attaching the response', async () => {
+    let originalError: unknown
+    const observerId = businessConsoleClient.interceptors.error.use((error) => {
+      originalError = error
+      return error
+    })
+    const fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ success: false, message: '库存不足' }), {
+        headers: { 'content-type': 'application/json' },
+        status: 422,
+      })
+    })
+
+    try {
+      configureApiClient({
+        baseUrl: 'https://business-gateway.example.test',
+        fetch,
+      })
+
+      const error = await businessConsoleClient
+        .post({
+          body: {},
+          throwOnError: true,
+          url: '/api/business-console/v1/generated-write',
+        })
+        .catch((value: unknown) => value)
+
+      expect(error).toBe(originalError)
+      expect(error).toMatchObject({
+        message: '库存不足',
+        response: expect.objectContaining({ status: 422 }),
+        success: false,
+      })
+    } finally {
+      businessConsoleClient.interceptors.error.eject(observerId)
+    }
+  })
 })

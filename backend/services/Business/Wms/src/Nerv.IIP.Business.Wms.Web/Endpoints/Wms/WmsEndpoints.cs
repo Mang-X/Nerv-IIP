@@ -81,7 +81,9 @@ public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskI
 public sealed record CompleteInboundOrderRequest(
     InboundOrderId InboundOrderId,
     string IdempotencyKey,
-    IReadOnlyCollection<InboundOrderLineCapture>? Lines = null);
+    IReadOnlyCollection<InboundOrderLineCapture>? Lines = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
@@ -99,7 +101,13 @@ public sealed record ListOutboundOrdersRequest(
 public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
 public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
-public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
+public sealed record CompleteOutboundOrderRequest(
+    OutboundOrderId OutboundOrderId,
+    string PackReviewNo,
+    bool Passed,
+    string IdempotencyKey,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
 public sealed record CancelOutboundOrderResponse(OutboundOrderId OutboundOrderId, string Status);
 public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
@@ -114,7 +122,39 @@ public sealed record ListCountExecutionsRequest(
     string? LocationCode = null,
     string? Keyword = null,
     CountExecutionId? CountExecutionId = null);
-public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey);
+public sealed record CompleteCountExecutionRequest(
+    CountExecutionId CountExecutionId,
+    decimal CountedQuantity,
+    string IdempotencyKey,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed class CompleteInboundOrderRequestValidator : Validator<CompleteInboundOrderRequest>
+{
+    public CompleteInboundOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+    }
+}
+
+public sealed class CompleteOutboundOrderRequestValidator : Validator<CompleteOutboundOrderRequest>
+{
+    public CompleteOutboundOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+    }
+}
+
+public sealed class CompleteCountExecutionRequestValidator : Validator<CompleteCountExecutionRequest>
+{
+    public CompleteCountExecutionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+    }
+}
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson);
@@ -188,7 +228,12 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
         StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteInboundOrderRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CompleteInboundOrderCommand(req.InboundOrderId, req.IdempotencyKey, req.Lines), ct);
+        var result = await sender.Send(new CompleteInboundOrderCommand(
+            req.InboundOrderId,
+            req.IdempotencyKey,
+            req.Lines,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -300,7 +345,13 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
         StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteOutboundOrderRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CompleteOutboundOrderCommand(req.OutboundOrderId, req.PackReviewNo, req.Passed, req.IdempotencyKey), ct);
+        var result = await sender.Send(new CompleteOutboundOrderCommand(
+            req.OutboundOrderId,
+            req.PackReviewNo,
+            req.Passed,
+            req.IdempotencyKey,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -380,7 +431,12 @@ public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint
         StatusCodes.Status409Conflict);
     public override async Task HandleAsync(CompleteCountExecutionRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CompleteCountExecutionCommand(req.CountExecutionId, req.CountedQuantity, req.IdempotencyKey), ct);
+        var result = await sender.Send(new CompleteCountExecutionCommand(
+            req.CountExecutionId,
+            req.CountedQuantity,
+            req.IdempotencyKey,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }

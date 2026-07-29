@@ -1005,6 +1005,12 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             completionPayloadJson = "{}",
         },
+        "/api/business-console/v1/equipment/alarms/alarm-001/shelve" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            idempotencyKey = "alarm-shelve-authz",
+        },
         "/api/business-console/v1/maintenance/work-orders" => new
         {
             organizationId = "org-001",
@@ -1014,6 +1020,7 @@ public sealed class BusinessGatewayAuthorizationTests
             sourceAlarmId = "alarm-001",
             openedBy = "operator-001",
             assetUnavailableReason = "bearing temperature high",
+            idempotencyKey = "maintenance-create-authz",
         },
         "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete" => new
         {
@@ -1023,6 +1030,13 @@ public sealed class BusinessGatewayAuthorizationTests
             downtimeReasonCode = "planned-maintenance",
             downtimeMinutes = 30,
             spareParts = new[] { new { skuCode = "SPARE-001", quantity = 1, uomCode = "EA" } },
+            idempotencyKey = "maintenance-complete-authz",
+        },
+        "/api/business-console/v1/mes/production-reports" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            idempotencyKey = "mes-production-report-authz",
         },
         "/api/business-console/v1/maintenance/plans" => new
         {

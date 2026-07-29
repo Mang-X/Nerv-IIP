@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import {
   LIFECYCLE_STATE_CHANGED_MESSAGE,
   LifecycleStateChangedError,
   executeLifecycleAction,
@@ -37,7 +43,7 @@ describe('executeLifecycleAction', () => {
         readLatest: async () => ({
           domain: 'mes-work-order',
           action: 'cancel',
-          facts: { status: 'Cancelled' },
+          facts: { status: 'Cancelled', idempotentReplay: true },
         }),
         command,
       }),
@@ -60,6 +66,89 @@ describe('executeLifecycleAction', () => {
         }),
       }),
     ).rejects.toMatchObject({ source: 'conflict' })
+  })
+
+  it('classifies a generated rejected HTTP 409 as a conflict and recovers', async () => {
+    const generatedConflict = Object.assign(new Error('generated conflict'), {
+      response: { status: 409 },
+    })
+    const error = await executeLifecycleAction({
+      readLatest: async () => ({
+        domain: 'maintenance-work-order',
+        action: 'complete',
+        facts: { status: 'Open' },
+      }),
+      command: async () => {
+        throw generatedConflict
+      },
+    }).catch((reason: unknown) => reason)
+
+    expect(error).toBeInstanceOf(LifecycleStateChangedError)
+    expect(error).toMatchObject({ source: 'conflict' })
+
+    const reset = vi.fn()
+    const refresh = vi.fn(async () => undefined)
+    const notify = vi.fn()
+    await expect(recoverLifecycleAction(error, { reset, refresh, notify })).resolves.toBe(true)
+    expect(reset).toHaveBeenCalledOnce()
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(notify).toHaveBeenCalledWith(LIFECYCLE_STATE_CHANGED_MESSAGE)
+  })
+
+  it.each([400, 422])('preserves a generated rejected HTTP %s error identity', async (status) => {
+    const generatedValidation = Object.assign(new Error('generated validation'), {
+      response: { status },
+    })
+
+    await expect(
+      executeLifecycleAction({
+        readLatest: async () => ({
+          domain: 'maintenance-work-order',
+          action: 'complete',
+          facts: { status: 'Open' },
+        }),
+        command: async () => {
+          throw generatedValidation
+        },
+      }),
+    ).rejects.toBe(generatedValidation)
+  })
+
+  it('keeps a generated rejected HTTP 503 indeterminate and retains the pending intent', async () => {
+    const pendingScope = {
+      principalId: 'principal-generated-503',
+      organizationId: 'org-generated-503',
+      environmentId: 'env-generated-503',
+      operationType: 'maintenance.work-order.complete',
+      payloadFingerprint: 'generated-503',
+    }
+    const generatedUnavailable = Object.assign(new Error('generated unavailable'), {
+      response: { status: 503 },
+    })
+    clearPendingBusinessIntent(pendingScope)
+    acquirePendingBusinessIntent(pendingScope, () => 'generated-503-old')
+
+    try {
+      await expect(
+        completePendingBusinessIntent(pendingScope, () =>
+          executeLifecycleAction({
+            readLatest: async () => ({
+              domain: 'maintenance-work-order',
+              action: 'complete',
+              facts: { status: 'Open' },
+            }),
+            command: async () => {
+              throw generatedUnavailable
+            },
+          }),
+        ),
+      ).rejects.toBe(generatedUnavailable)
+
+      expect(isIndeterminateLifecycleWriteError(generatedUnavailable)).toBe(true)
+      expect(peekPendingBusinessIntent(pendingScope)?.idempotencyKey).toBe('generated-503-old')
+    } finally {
+      clearPendingBusinessIntent(pendingScope)
+    }
   })
 
   it('preserves an ordinary validation error instead of treating it as a conflict', async () => {
@@ -106,6 +195,47 @@ describe('executeLifecycleAction', () => {
     expect(caught).toBe(serviceError)
     expect(isIndeterminateLifecycleWriteError(caught)).toBe(true)
   })
+
+  it.each([
+    [503, true],
+    [422, false],
+  ] as const)(
+    'keeps generated envelope HTTP %s visible to pending-intent cleanup',
+    async (status, shouldRetain) => {
+      const pendingScope = {
+        principalId: 'principal-lifecycle-status',
+        organizationId: 'org-lifecycle-status',
+        environmentId: 'env-lifecycle-status',
+        operationType: 'wms.count-execution.complete',
+        payloadFingerprint: `count-lifecycle-status-${status}`,
+      }
+      const envelopeError = { success: false, message: `generated envelope ${status}` }
+      clearPendingBusinessIntent(pendingScope)
+      acquirePendingBusinessIntent(pendingScope, () => `lifecycle-status-${status}`)
+
+      try {
+        await expect(
+          completePendingBusinessIntent(pendingScope, () =>
+            executeLifecycleAction({
+              readLatest: async () => ({
+                domain: 'wms-count',
+                action: 'complete',
+                facts: { status: 'Open' },
+              }),
+              command: async () => ({
+                data: envelopeError,
+                response: { status },
+              }),
+            }),
+          ),
+        ).rejects.toBe(envelopeError)
+
+        expect(Boolean(peekPendingBusinessIntent(pendingScope))).toBe(shouldRetain)
+      } finally {
+        clearPendingBusinessIntent(pendingScope)
+      }
+    },
+  )
 
   it('returns successful command data without replaying the command', async () => {
     const command = vi.fn(async () => ({

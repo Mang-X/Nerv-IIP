@@ -16,6 +16,7 @@ const coladaState = vi.hoisted(() => ({
 // `@nerv-iip/api-client` barrel; mock it here. Auth-API functions are stubbed
 // because `@/stores/auth` lazily references them (never called — we only $patch).
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleQualityInspectionTasks: coladaState.listPlain,
   listBusinessConsoleQualityInspectionTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
@@ -141,6 +142,38 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(arg.query).toEqual({ organizationId: 'org-001', environmentId: 'env-dev' })
     expect(arg.body.inspectorUserId).toBe('user-admin')
     expect(arg.body.resultLines).toEqual(LINES)
+    expect(arg.body.idempotencyKey).toMatch(/^quality-submit-/)
+  })
+
+  it('reuses the same submit key after timeout and rotates it after a confirmed success', async () => {
+    seedPrincipal()
+    coladaState.submit
+      .mockRejectedValueOnce(new TypeError('network failed'))
+      .mockResolvedValueOnce({ success: true, data: {} })
+      .mockResolvedValueOnce({ success: true, data: {} })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-1', LINES)).rejects.toThrow('network failed')
+    await submitInspection('TASK-1', LINES)
+    await submitInspection('TASK-1', LINES)
+
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
+    expect(coladaState.submit.mock.calls[2][0].body.idempotencyKey).not.toBe(firstKey)
+  })
+
+  it('clears the submit intent after a determinate 422 so the next attempt uses a new key', async () => {
+    seedPrincipal()
+    coladaState.submit
+      .mockRejectedValueOnce({ status: 422, message: 'invalid inspection result' })
+      .mockResolvedValueOnce({ success: true, data: {} })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-DETERMINATE', LINES)).rejects.toMatchObject({ status: 422 })
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    await submitInspection('TASK-DETERMINATE', LINES)
+
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).not.toBe(firstKey)
   })
 
   it('refuses to submit when the principal lacks org/env scope (no mutation, throws)', async () => {

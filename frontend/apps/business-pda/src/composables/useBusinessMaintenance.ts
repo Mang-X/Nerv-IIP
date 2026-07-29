@@ -1,5 +1,6 @@
 import {
   createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
@@ -9,6 +10,10 @@ import {
   type BusinessConsoleMaintenanceWorkOrderItem as MaintenanceWorkOrderItem,
   type BusinessConsoleRecordMaintenanceInspectionRequest as RecordMaintenanceInspectionRequest,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
@@ -37,21 +42,25 @@ export type RecordInspectionInput = Omit<
   'organizationId' | 'environmentId' | 'inspector' | 'inspectedAtUtc'
 >
 
-function listItems<TItem>(envelope: { success?: boolean, data?: { items?: TItem[] } | null } | undefined) {
+function listItems<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+) {
   if (!envelope?.success) {
     return []
   }
   return envelope.data?.items ?? []
 }
 
-function listTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
+function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
   if (!envelope?.success) {
     return 0
   }
   return envelope.data?.total ?? 0
 }
 
-type ListEnvelope<TItem> = { success?: boolean, data?: { items?: TItem[], total?: number } | null } | undefined
+type ListEnvelope<TItem> =
+  | { success?: boolean; data?: { items?: TItem[]; total?: number } | null }
+  | undefined
 
 /**
  * 设备运维（CMMS）数据封装：报修工单 create/list + 点检 record/list + 保养计划 list。
@@ -59,7 +68,8 @@ type ListEnvelope<TItem> = { success?: boolean, data?: { items?: TItem[], total?
  * - org/env 取登录主体 `useAuthStore().principal`（PDA 无 business-context store）；
  *   scope 空（未登录 / 缺 org/env）时所有 list 不发请求（`enabled:false`）。
  * - `openedBy`/`inspector` = `principal.loginName`；`inspectedAtUtc` = 提交时刻。
- * - Maintenance 端点**无服务端幂等**，故不携带 idempotencyKey；防重交由 UI 层（pending 禁用）。
+ * - 报修建单由页面铸造意图级 `idempotencyKey`，超时重试复用；只有服务端 confirmed
+ *   receipt 才算成功，HTTP 200 本身不会结束该意图。
  * - 注入字段（org/env/openedBy/inspector/inspectedAtUtc）后置展开 + `Omit` 收窄入参，
  *   调用方无法覆盖（见各 create body）。
  */
@@ -83,12 +93,16 @@ export function useBusinessMaintenance() {
   })
 
   const workOrdersQuery = useQuery(() => ({
-    ...listBusinessConsoleMaintenanceWorkOrdersQueryOptions({ query: scopedQuery(workOrderFilters) }),
+    ...listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
+      query: scopedQuery(workOrderFilters),
+    }),
     enabled: scopeReady.value,
   }))
 
   const inspectionsQuery = useQuery(() => ({
-    ...listBusinessConsoleMaintenanceInspectionsQueryOptions({ query: scopedQuery(inspectionFilters) }),
+    ...listBusinessConsoleMaintenanceInspectionsQueryOptions({
+      query: scopedQuery(inspectionFilters),
+    }),
     enabled: scopeReady.value,
   }))
 
@@ -120,13 +134,35 @@ export function useBusinessMaintenance() {
       throw new Error('登录态未就绪，请稍后重试')
     }
     // 注入后置：即使调用方（`as never`）混入 org/env/openedBy，也被这里覆盖。
+    const { idempotencyKey: suppliedKey, ...intent } = input
+    const scope = {
+      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'maintenance.work-order.create',
+      payloadFingerprint: JSON.stringify(intent),
+    }
+    const { idempotencyKey } = acquirePendingBusinessIntent(
+      scope,
+      () =>
+        suppliedKey?.trim() ||
+        globalThis.crypto?.randomUUID?.() ||
+        `maintenance-create-${Date.now()}-${Math.random()}`,
+    )
     const body = {
       ...input,
+      idempotencyKey,
       organizationId: organizationId.value,
       environmentId: environmentId.value,
       openedBy: loginName.value,
     } satisfies CreateMaintenanceWorkOrderRequest
-    return createMutation.mutateAsync({ body })
+    return completePendingBusinessIntent(scope, async () =>
+      confirmBusinessConsoleOperation(await createMutation.mutateAsync({ body }), {
+        expectedOperationType: 'maintenance.work-order.create',
+        expectedIdempotencyKey: idempotencyKey,
+        expectedResourceIdSelector: (envelope) => envelope.data?.workOrderId,
+      }),
+    )
   }
 
   async function recordInspection(input: RecordInspectionInput) {
@@ -153,9 +189,13 @@ export function useBusinessMaintenance() {
 
   return {
     workOrders: computed<MaintenanceWorkOrderItem[]>(() =>
-      listItems<MaintenanceWorkOrderItem>(workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>),
+      listItems<MaintenanceWorkOrderItem>(
+        workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>,
+      ),
     ),
-    workOrdersTotal: computed(() => listTotal(workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>)),
+    workOrdersTotal: computed(() =>
+      listTotal(workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>),
+    ),
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
     refreshWorkOrders: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
@@ -164,9 +204,13 @@ export function useBusinessMaintenance() {
     createPending: createMutation.isLoading,
 
     inspections: computed<MaintenanceInspectionItem[]>(() =>
-      listItems<MaintenanceInspectionItem>(inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>),
+      listItems<MaintenanceInspectionItem>(
+        inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>,
+      ),
     ),
-    inspectionsTotal: computed(() => listTotal(inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>)),
+    inspectionsTotal: computed(() =>
+      listTotal(inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>),
+    ),
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsError: inspectionsQuery.error,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),

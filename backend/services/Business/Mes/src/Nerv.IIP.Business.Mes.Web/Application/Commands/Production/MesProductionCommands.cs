@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -35,14 +37,74 @@ public sealed record RecordProductionReportCommand(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
+    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+{
+    internal bool PersistsCallerIntentReceipt { get; private init; } = true;
+
+    // Controlled internal compatibility path: callers that do not cross the
+    // frontline HTTP boundary receive a deterministic payload-derived validation
+    // key, but do not mint a caller-intent receipt. HTTP DTOs cannot select this
+    // constructor; their endpoint always calls the primary constructor.
+    public RecordProductionReportCommand(
+        string OrganizationId,
+        string EnvironmentId,
+        string WorkOrderId,
+        string OperationTaskId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        bool CompletesOperation,
+        DateTimeOffset ReportedAtUtc,
+        IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+        decimal ReworkQuantity = 0m,
+        string? ScrapReasonCode = null,
+        string? DefectRecordNo = null,
+        string? ProducedLotNo = null,
+        string? SerialNo = null,
+        string Source = "manual")
+        : this(
+            OrganizationId,
+            EnvironmentId,
+            WorkOrderId,
+            OperationTaskId,
+            GoodQuantity,
+            ScrapQuantity,
+            CompletesOperation,
+            ReportedAtUtc,
+            InternalIdempotencyKey(
+                OrganizationId,
+                EnvironmentId,
+                WorkOrderId,
+                OperationTaskId,
+                GoodQuantity,
+                ScrapQuantity,
+                ReworkQuantity,
+                CompletesOperation,
+                ReportedAtUtc,
+                Source),
+            ConsumedMaterialLots,
+            ReworkQuantity,
+            ScrapReasonCode,
+            DefectRecordNo,
+            ProducedLotNo,
+            SerialNo,
+            Source)
+    {
+        PersistsCallerIntentReceipt = false;
+    }
+
+    private static string InternalIdempotencyKey(params object?[] facts)
+    {
+        var canonical = string.Join('|', facts.Select(x => x?.ToString() ?? string.Empty));
+        return $"internal:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))}";
+    }
+}
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -59,6 +121,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
             .WithMessage("At least one reported quantity must be positive.");
         RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
             .WithMessage("Production report source must be manual or telemetry.");
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -80,7 +143,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.OrganizationId,
             request.EnvironmentId, "production-report",
             null,
-            request.IdempotencyKey,
+            request.PersistsCallerIntentReceipt ? request.IdempotencyKey : null,
             MesCodingService.Fingerprint(
                 request.WorkOrderId,
                 request.OperationTaskId,

@@ -36,6 +36,28 @@ let responseInterceptorIds: Array<number | undefined> = []
 let errorInterceptorIds: Array<number | undefined> = []
 let managedHeaderNames = new Set<string>()
 
+function wrapPrimitiveResponseError(error: unknown, response: Response) {
+  const wrapped = new Error(typeof error === 'string' ? error : String(error))
+  Object.defineProperties(wrapped, {
+    cause: {
+      configurable: true,
+      enumerable: false,
+      value: error,
+    },
+    response: {
+      configurable: true,
+      enumerable: false,
+      value: response,
+    },
+    status: {
+      configurable: true,
+      enumerable: false,
+      value: response.status,
+    },
+  })
+  return wrapped
+}
+
 export function configureApiClient(options: ConfigureApiClientOptions = {}): void {
   clients.forEach((client, index) => {
     const requestInterceptorId = requestInterceptorIds[index]
@@ -105,12 +127,9 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
 
   errorInterceptorIds = clients.map((client) =>
     client.interceptors.error.use((error, response) => {
-      if (
-        !response ||
-        (typeof error !== 'object' && typeof error !== 'function') ||
-        error === null
-      ) {
-        return error
+      if (!response) return error
+      if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+        return wrapPrimitiveResponseError(error, response)
       }
 
       const candidate = error as { response?: unknown }

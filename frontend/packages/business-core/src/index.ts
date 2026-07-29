@@ -121,3 +121,14 @@ export type {
   LifecycleFacts,
   StatusActionGate,
 } from './actions/statusActionGate'
+export {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  getBusinessWriteErrorStatus,
+  peekPendingBusinessIntent,
+  preserveBusinessWriteErrorStatus,
+  shouldRetainPendingBusinessIntent,
+  type PendingBusinessIntent,
+  type PendingBusinessIntentScope,
+} from './actions/pendingBusinessIntent'

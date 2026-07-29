@@ -78,7 +78,13 @@ public sealed class BusinessGatewayWmsTests
         ],
         handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.AbsolutePath}").ToArray());
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+        Assert.Equal("complete-in-001", handler.Requests[2].Headers.GetValues("Idempotency-Key").Single());
+        Assert.Equal("complete-out-001", handler.Requests[5].Headers.GetValues("Idempotency-Key").Single());
+        Assert.Equal("complete-count-001", handler.Requests[8].Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("request-in-http", completedInbound.RequestId);
+        Assert.Equal("complete-in-001", completedInbound.OperationReceipt?.IdempotencyKey);
+        Assert.True(completedInbound.OperationReceipt?.ReadbackRequired);
+        Assert.False(completedInbound.OperationReceipt?.StateConfirmed);
 
         using var createInboundBody = JsonDocument.Parse(handler.RequestBodies[0]!);
         var createInboundLine = createInboundBody.RootElement.GetProperty("lines")[0];
@@ -705,6 +711,12 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("PUT-001", putawayDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("taskNo").GetString());
         Assert.Equal("PICK-001", pickingDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("taskNo").GetString());
         Assert.Equal("COUNT-001", countDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("countNo").GetString());
+        var countItem = countDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("Failed", countItem.GetProperty("inventoryPostingStatus").GetString());
+        Assert.Equal("NEGATIVE_ON_HAND", countItem.GetProperty("inventoryPostingFailureCode").GetString());
+        Assert.Equal(
+            "Stock movement would make on-hand quantity negative.",
+            countItem.GetProperty("inventoryPostingFailureMessage").GetString());
     }
 
     [Fact]
@@ -1255,6 +1267,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 null,
                 "Open",
                 DateTime.Parse("2026-06-01T09:50:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
+                null,
+                "Failed",
+                "NEGATIVE_ON_HAND",
+                "Stock movement would make on-hand quantity negative.",
                 null),
         ],
         17));

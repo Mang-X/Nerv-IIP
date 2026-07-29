@@ -98,6 +98,7 @@ interface LineCapture {
 }
 const capturedByLine = ref<Record<string, LineCapture>>({})
 function captureLine(lineId: string, patch: LineCapture) {
+  if (intentLocked.value) return
   capturedByLine.value = {
     ...capturedByLine.value,
     [lineId]: { ...capturedByLine.value[lineId], ...patch },
@@ -308,7 +309,7 @@ async function confirmComplete() {
       idempotencyKey,
       lines: buildCaptureLines(),
     }))
-    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    // 重试复用同一幂等键（不重新生成），#188 客户端去重可识别为同一操作。
     await completeInbound(selectedOrderId.value, payload.idempotencyKey, payload.lines, {
       attempt: intent.attempt.value,
       onCommandAttempt: intent.markCommandAttempt,
@@ -511,9 +512,9 @@ function goPutaway() {
               <NvMobileInput
                 :model-value="lineBatch(line)"
                 placeholder="批号"
-                :disabled="intentLocked"
                 class="flex-1"
                 data-batch-input
+                :disabled="intentLocked"
                 @update:model-value="(v) => onBatchInput(line, v)"
               />
               <NvMobileButton

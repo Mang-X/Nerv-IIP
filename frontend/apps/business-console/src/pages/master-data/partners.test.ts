@@ -345,7 +345,9 @@ describe('master-data partners page', () => {
     await flushPromises()
 
     expect(stub.createPartner).toHaveBeenCalledTimes(1)
-    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置：名称保留。
     expect((wrapper.find('#partner-name').element as HTMLInputElement).value).toBe('新伙伴公司')

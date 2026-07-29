@@ -2,6 +2,11 @@ using System.Net;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 
+public sealed class MaintenanceIdempotencyConflictException : Exception
+{
+    public const string SafeCode = "idempotency-conflict";
+}
+
 public sealed class MaintenanceLifecycleConflictException(string action, string currentStatus)
     : Exception($"Maintenance lifecycle conflict for action '{action}' at status '{currentStatus}'.")
 {
@@ -23,6 +28,13 @@ public sealed class MaintenanceLifecycleConflictMiddleware(
         try
         {
             await next(context);
+        }
+        catch (MaintenanceIdempotencyConflictException)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new MaintenanceLifecycleConflictResponse(false, MaintenanceIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
         }
         catch (MaintenanceLifecycleConflictException exception)
         {
