@@ -11,7 +11,10 @@ import {
   useBusinessSkus,
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
-import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
+import {
+  SUGGESTION_REJECT_REASON_MAX_LENGTH,
+  useBusinessPlanning,
+} from '@/composables/useBusinessPlanning'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -20,6 +23,8 @@ import {
 } from '@/composables/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
+import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
+import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -58,6 +63,7 @@ import {
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
+  XIcon,
 } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
@@ -92,6 +98,9 @@ const {
   pegging,
   peggingPending,
   refreshPlanning,
+  rejectSuggestion,
+  rejectSuggestionError,
+  rejectSuggestionPending,
   runMrp,
   runMrpError,
   runMrpPending,
@@ -194,6 +203,7 @@ const errorMessage = computed(
       releaseMpsBucketError,
       runMrpError,
       acceptSuggestionError,
+      rejectSuggestionError,
     ]
       .map((ref) => formatError(ref.value))
       .find(Boolean) ?? '',
@@ -202,10 +212,45 @@ function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 
+// 时段视图只关心三份读数据的加载/失败态（不掺入各写操作的错误）。
+const planningDataPending = computed(
+  () => demandsPending.value || mpsBucketsPending.value || suggestionsPending.value,
+)
+const planningDataError = computed(
+  () =>
+    [demandsError, mpsBucketsError, suggestionsError]
+      .map((ref) => formatError(ref.value))
+      .find(Boolean) ?? '',
+)
+
 const demandOpen = shallowRef(false)
 const mpsOpen = shallowRef(false)
 const mrpOpen = shallowRef(false)
 const acceptingSuggestionId = shallowRef<string | null>(null)
+
+// 拒绝建议：弹框要求填写原因（必填、≤128 字），确认后走网关两跳。
+const rejectTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
+const rejectReason = shallowRef('')
+const canSubmitReject = computed(() => {
+  const reason = rejectReason.value.trim()
+  return reason.length > 0 && reason.length <= SUGGESTION_REJECT_REASON_MAX_LENGTH
+})
+function openRejectDialog(row: BusinessConsolePlanningSuggestionItem) {
+  rejectTarget.value = row
+  rejectReason.value = ''
+}
+async function submitRejectSuggestion() {
+  const target = rejectTarget.value
+  if (!target?.suggestionId || !canSubmitReject.value) return
+  try {
+    await rejectSuggestion({ suggestionId: target.suggestionId, reason: rejectReason.value })
+    notifySuccess('计划建议已拒绝。')
+    rejectTarget.value = null
+  } catch (error) {
+    // 诚实失败：透传服务端 message（composable 已把软失败转成异常）。
+    notifyError(error, '计划建议拒绝失败，请稍后重试。')
+  }
+}
 
 const demandTypeOptions = [
   { label: '预测', value: 'forecast' },
@@ -239,11 +284,15 @@ const reviewKpiHint = computed(
 const demandSkuCodes = computed(
   () => new Set(demands.value.map((d) => d.skuCode).filter((c): c is string => !!c)),
 )
+// 覆盖口径＝仅供给型建议（生产/采购）。调整/取消类只是对既有收货的修正，
+// 不代表该物料有了补充方案，算进覆盖会虚高——与时段视图的覆盖图同一口径。
 const coveredSkuCodes = computed(() => {
   const covered = new Set<string>()
   const demandSet = demandSkuCodes.value
   for (const s of suggestions.value) {
-    if (s.skuCode && demandSet.has(s.skuCode)) covered.add(s.skuCode)
+    if (isAcceptableSuggestion(s.suggestionType) && s.skuCode && demandSet.has(s.skuCode)) {
+      covered.add(s.skuCode)
+    }
   }
   return covered
 })
@@ -303,6 +352,9 @@ function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
 const selectedRun = computed(
   () => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null,
 )
+// 时段视图建议序列的运行口径：用户在「MRP 运行」里选中的那次，否则最近一次。
+// 后端 RunMrp 不关闭历史 Open 建议，跨运行求和会重复计数，必须锁单次运行。
+const timePhasedRun = computed(() => selectedRun.value ?? latestRun.value)
 
 // 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
 function demandCoverage(skuCode?: string | null): { label: string; tone: StatusTone } {
@@ -391,7 +443,7 @@ const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem
   { key: 'reasonCode', header: '原因' },
   { key: 'downstream', header: '承接单据', width: 'w-40' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '', align: 'end', width: 'w-32' },
+  { key: 'actions', header: '', align: 'end', width: 'w-48' },
 ]
 
 async function submitDemand() {
@@ -986,6 +1038,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     <NvTabsList>
       <NvTabsTrigger value="demands">需求池 ({{ demands.length }})</NvTabsTrigger>
       <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
+      <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
       <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
       <NvTabsTrigger value="suggestions">计划建议 ({{ suggestions.length }})</NvTabsTrigger>
     </NvTabsList>
@@ -1136,6 +1189,19 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </NvDataTable>
     </NvTabsContent>
 
+    <NvTabsContent value="phasing" class="grid gap-3">
+      <PlanningTimePhasedPanel
+        :demands="demands"
+        :mps-buckets="mpsBuckets"
+        :suggestions="suggestions"
+        :suggestion-run-id="timePhasedRun?.runId ?? ''"
+        :suggestion-run-label="timePhasedRun ? runHorizonLabel(timePhasedRun) : ''"
+        :pending="planningDataPending"
+        :error-message="planningDataError"
+        :sku-label="skuLabel"
+      />
+    </NvTabsContent>
+
     <NvTabsContent value="runs" class="grid gap-4">
       <NvDataTable
         :columns="runColumns"
@@ -1196,6 +1262,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             :tone="planningStatus(selectedRun.status).tone"
           />
         </div>
+        <PlanningRunSuggestionChart
+          :run="selectedRun"
+          :suggestions="suggestions"
+          :pending="suggestionsPending"
+        />
         <NvDataTable
           :columns="peggingColumns"
           :rows="pegging"
@@ -1415,23 +1486,76 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             :tone="planningStatus(row.status).tone"
         /></template>
         <template #cell-actions="{ row }">
-          <NvButton
-            v-if="isOpen(row.status) && isAcceptableSuggestion(row.suggestionType)"
-            size="sm"
-            type="button"
-            variant="outline"
-            :disabled="acceptingSuggestionId === row.suggestionId"
-            @click="acceptPlanningSuggestion(row)"
-          >
-            <Spinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
-            <CheckIcon v-else aria-hidden="true" />
-            接受
-          </NvButton>
-          <span v-else-if="isOpen(row.status)" class="text-sm text-muted-foreground"
-            >异常待处理</span
-          >
+          <div v-if="isOpen(row.status)" class="flex items-center justify-end gap-2">
+            <NvButton
+              v-if="isAcceptableSuggestion(row.suggestionType)"
+              size="sm"
+              type="button"
+              variant="outline"
+              :disabled="acceptingSuggestionId === row.suggestionId"
+              @click="acceptPlanningSuggestion(row)"
+            >
+              <Spinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
+              <CheckIcon v-else aria-hidden="true" />
+              接受
+            </NvButton>
+            <span v-else class="text-sm text-muted-foreground">异常待处理</span>
+            <NvButton
+              size="sm"
+              type="button"
+              variant="ghost"
+              :aria-label="`拒绝计划建议 ${skuLabel(row.skuCode)}`"
+              :disabled="rejectSuggestionPending"
+              @click="openRejectDialog(row)"
+            >
+              <XIcon aria-hidden="true" />
+              拒绝
+            </NvButton>
+          </div>
         </template>
       </NvDataTable>
+
+      <NvDialog
+        :open="!!rejectTarget"
+        @update:open="
+          (open) => {
+            if (!open) rejectTarget = null
+          }
+        "
+      >
+        <NvDialogContent>
+          <NvDialogHeader>
+            <NvDialogTitle>拒绝计划建议</NvDialogTitle>
+            <NvDialogDescription>
+              {{ suggestionTypeLabel(rejectTarget?.suggestionType) }} ·
+              {{ skuLabel(rejectTarget?.skuCode) }} ·
+              {{ formatQuantity(rejectTarget?.quantity, rejectTarget?.uomCode) }}
+            </NvDialogDescription>
+          </NvDialogHeader>
+          <form class="grid gap-4" @submit.prevent="submitRejectSuggestion">
+            <NvField>
+              <NvFieldLabel for="reject-reason">拒绝原因</NvFieldLabel>
+              <NvInput
+                id="reject-reason"
+                v-model="rejectReason"
+                :maxlength="SUGGESTION_REJECT_REASON_MAX_LENGTH"
+                placeholder="说明为何不采纳该建议（如：库存已另行调拨）"
+              />
+              <p class="text-xs text-muted-foreground">
+                必填，{{ rejectReason.trim().length }}/{{ SUGGESTION_REJECT_REASON_MAX_LENGTH }}
+                字。
+              </p>
+            </NvField>
+            <NvDialogFooter>
+              <NvButton type="button" variant="outline" @click="rejectTarget = null">取消</NvButton>
+              <NvButton type="submit" :disabled="rejectSuggestionPending || !canSubmitReject">
+                <Spinner v-if="rejectSuggestionPending" aria-hidden="true" />
+                确认拒绝
+              </NvButton>
+            </NvDialogFooter>
+          </form>
+        </NvDialogContent>
+      </NvDialog>
     </NvTabsContent>
   </NvTabs>
 </template>

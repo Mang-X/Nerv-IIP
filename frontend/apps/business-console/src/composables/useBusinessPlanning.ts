@@ -1,5 +1,6 @@
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
@@ -84,6 +85,14 @@ export interface PlanningSuggestionAcceptInput {
   suggestionId: string
   suggestionType: string
 }
+
+export interface PlanningSuggestionRejectInput {
+  suggestionId: string
+  reason: string
+}
+
+/** 拒绝原因上限（与网关请求契约一致）。 */
+export const SUGGESTION_REJECT_REASON_MAX_LENGTH = 128
 
 const PLANNING_QUERY_IDS = [
   'listBusinessConsolePlanningDemands',
@@ -204,6 +213,17 @@ function isBusinessQuery(ids: string[]) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
+
+// 软失败诚实上抛：透传服务端 message（照 useBusinessScheduling 成例）。
+function assertEnvelopeSuccess<T extends { success?: boolean; message?: string | null }>(
+  envelope: T,
+  fallbackMessage: string,
+): T {
+  if (!envelope.success) {
+    throw new Error(envelope.message || fallbackMessage)
+  }
+  return envelope
+}
 
 export function useBusinessPlanning() {
   const auth = useAuthStore()
@@ -340,6 +360,12 @@ export function useBusinessPlanning() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
   })
+  const rejectSuggestionMutation = useMutation({
+    ...rejectBusinessConsolePlanningSuggestionMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
 
   function downstreamTargetForSuggestion(suggestionType: string) {
     if (suggestionType === 'planned-work-order') {
@@ -457,6 +483,27 @@ export function useBusinessPlanning() {
 
       await Promise.all(queries)
     },
+    rejectSuggestion: async (input: PlanningSuggestionRejectInput) => {
+      const reason = input.reason.trim()
+      if (!reason) {
+        throw new Error('请填写拒绝原因。')
+      }
+      if (reason.length > SUGGESTION_REJECT_REASON_MAX_LENGTH) {
+        throw new Error(`拒绝原因不能超过 ${SUGGESTION_REJECT_REASON_MAX_LENGTH} 字。`)
+      }
+      const envelope = await rejectSuggestionMutation.mutateAsync({
+        path: { suggestionId: input.suggestionId },
+        query: {
+          organizationId: suggestionFilters.organizationId,
+          environmentId: suggestionFilters.environmentId,
+        },
+        // actor 由网关按登录主体注入，前端不传。
+        body: { reason },
+      })
+      return assertEnvelopeSuccess(envelope, '计划建议拒绝失败，请稍后重试。')
+    },
+    rejectSuggestionError: rejectSuggestionMutation.error,
+    rejectSuggestionPending: rejectSuggestionMutation.isLoading,
     runMrp: () => runMrpMutation.mutateAsync({ body: { ...runRequest } }),
     runMrpError: runMrpMutation.error,
     runMrpPending: runMrpMutation.isLoading,

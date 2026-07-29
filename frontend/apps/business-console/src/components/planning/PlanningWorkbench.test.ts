@@ -6,6 +6,28 @@ import PlanningWorkbench from './PlanningWorkbench.vue'
 vi.mock('@/composables/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
+// 图表面板依赖真实 NvBarChart（unovis），工作台测试只关心装配，桩掉即可。
+vi.mock('@/components/planning/PlanningTimePhasedPanel.vue', () => ({
+  default: {
+    props: [
+      'demands',
+      'mpsBuckets',
+      'suggestions',
+      'suggestionRunId',
+      'suggestionRunLabel',
+      'pending',
+      'errorMessage',
+      'skuLabel',
+    ],
+    template: '<div data-testid="time-phased-panel" :data-run-id="suggestionRunId" />',
+  },
+}))
+vi.mock('@/components/planning/PlanningRunSuggestionChart.vue', () => ({
+  default: {
+    props: ['run', 'suggestions', 'pending'],
+    template: '<div data-testid="run-suggestion-chart" :data-run-id="run?.runId" />',
+  },
+}))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
   default: {
     props: ['orderReference', 'mode', 'urgency'],
@@ -19,6 +41,7 @@ const routerPush = vi.hoisted(() => vi.fn())
 vi.mock('@/composables/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
+    SUGGESTION_REJECT_REASON_MAX_LENGTH: 128,
     useBusinessPlanning: () => ({
       acceptSuggestion: vi.fn(),
       acceptSuggestionError: shallowRef(null),
@@ -109,6 +132,9 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       ]),
       peggingPending: shallowRef(false),
       refreshPlanning: vi.fn(),
+      rejectSuggestion: vi.fn(),
+      rejectSuggestionError: shallowRef(null),
+      rejectSuggestionPending: shallowRef(false),
       runMrp: vi.fn(),
       runMrpError: shallowRef(null),
       runMrpPending: shallowRef(false),
@@ -310,11 +336,25 @@ describe('PlanningWorkbench', () => {
     expect(badge.attributes('data-mode')).toBe('level')
   })
 
+  it('mounts the time-phased panel and run distribution chart scoped to a single run', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    // 时段视图建议序列锁定选中的运行（跨运行求和会重复计数）。
+    expect(wrapper.get('[data-testid="time-phased-panel"]').attributes('data-run-id')).toBe(
+      'run-001',
+    )
+    expect(wrapper.get('[data-testid="run-suggestion-chart"]').attributes('data-run-id')).toBe(
+      'run-001',
+    )
+  })
+
   it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
     const wrapper = mount(PlanningWorkbench)
 
     expect(wrapper.text()).toContain('延期调整')
     expect(wrapper.text()).toContain('异常待处理')
     expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
+    // 拒绝对所有 Open 建议可用（含异常类），3 条 Open 行各一个。
+    expect(wrapper.findAll('button').filter((button) => button.text() === '拒绝')).toHaveLength(3)
   })
 })
