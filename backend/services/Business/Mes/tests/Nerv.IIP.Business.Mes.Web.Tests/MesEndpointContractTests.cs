@@ -104,6 +104,9 @@ public sealed class MesEndpointContractTests
             DateTimeOffset.Parse("2026-07-29T08:00:00Z"),
             "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            DateTimeOffset.Parse("2026-07-28T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -120,7 +123,7 @@ public sealed class MesEndpointContractTests
             null));
         await dbContext.SaveChangesAsync();
         var sender = new RealOperationActionSender(
-            new ChangeOperationTaskStateCommandHandler(dbContext, NoRequirementSnapshotProvider.Instance));
+            new ChangeOperationTaskStateCommandHandler(dbContext));
 
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -345,7 +348,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(54, MesEndpointContracts.All.Count);
+        Assert.Equal(55, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -726,11 +729,14 @@ public sealed class MesEndpointContractTests
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-001", [], TimeSpan.FromMinutes(30)),
             ]);
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            now);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var response = await new ChangeOperationTaskStateCommandHandler(dbContext, NoRequirementSnapshotProvider.Instance).Handle(
+        var response = await new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", now.AddMinutes(5)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -766,6 +772,8 @@ public sealed class MesEndpointContractTests
                     TimeSpan.FromMinutes(30),
                     OperationCode: "OP-MIX"),
             ]);
+        workOrder.Start(dueUtc.AddMinutes(-30));
+        tasks.Single().Start(dueUtc.AddMinutes(-30));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
         var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-001", "OP-10", "MIR-WIP-SCRAP", dueUtc.AddMinutes(-20), 1m);
@@ -1071,7 +1079,7 @@ public sealed class MesEndpointContractTests
                     reportedAt),
                 CancellationToken.None));
 
-        Assert.Equal("report-complete", exception.Action);
+        Assert.Equal("report", exception.Action);
         Assert.Equal(nameof(OperationTaskLifecycleStatus.Queued), exception.CurrentStatus);
         Assert.Empty(dbContext.ProductionReports);
         Assert.Equal(0m, workOrder.CompletedQuantity);
@@ -2247,6 +2255,9 @@ public sealed class MesEndpointContractTests
                 shiftId,
                 deviceAssetId,
                 assignedUserId,
+                null,
+                null,
+                null,
             ]));
     }
 }

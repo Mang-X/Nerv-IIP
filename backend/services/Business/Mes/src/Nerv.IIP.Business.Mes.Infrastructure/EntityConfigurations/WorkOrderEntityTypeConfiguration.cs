@@ -31,6 +31,17 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the completed work order was closed.");
         builder.Property(x => x.HoldReason).HasColumnName("hold_reason").HasMaxLength(200).HasComment("Reason code or text for holding the work order.");
         builder.Property(x => x.CancelReason).HasColumnName("cancel_reason").HasMaxLength(200).HasComment("Reason code or text for cancelling the work order.");
+        builder.Property(x => x.MaterialRequirementSnapshotStatus)
+            .HasColumnName("material_requirement_snapshot_status")
+            .HasMaxLength(30)
+            .HasComment("Latest durable material requirement snapshot outcome: captured or no-requirements; null means readiness is not proven.");
+        builder.Property(x => x.MaterialRequirementSnapshotEvaluatedAtUtc)
+            .HasColumnName("material_requirement_snapshot_evaluated_at_utc")
+            .HasComment("UTC time when MES last proved the material requirement snapshot outcome.");
+        builder.Property(x => x.MaterialRequirementSnapshotProductionVersionId)
+            .HasColumnName("material_requirement_snapshot_production_version_id")
+            .HasMaxLength(100)
+            .HasComment("Production version id whose material requirement snapshot outcome was proved; it must match the current work order version.");
         builder.OwnsOne(x => x.SourcePlanReference, source =>
         {
             source.Property(x => x.SourceSystem)

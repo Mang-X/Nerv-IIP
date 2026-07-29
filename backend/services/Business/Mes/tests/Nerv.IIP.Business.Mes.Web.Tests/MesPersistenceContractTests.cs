@@ -595,7 +595,7 @@ public sealed class MesPersistenceContractTests
         Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", releaseException.Message);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
-            new ChangeOperationTaskStateCommandHandler(dbContext, FakeMesMaterialRequirementSnapshotProvider.Missing).Handle(
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-MISSING-MAT-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
         Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message);
@@ -1757,7 +1757,19 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-LIFE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-LIFE-001",
+            "FG-FSA",
+            "PV-FSA-1",
+            10m,
+            20,
+            now.AddHours(8));
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+            now);
+        dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",

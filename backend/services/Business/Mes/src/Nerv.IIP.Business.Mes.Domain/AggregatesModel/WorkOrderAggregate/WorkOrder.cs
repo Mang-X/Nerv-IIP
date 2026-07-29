@@ -48,6 +48,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string ClosedStatus = "closed";
     public const string CancelledStatus = "cancelled";
     public const string ScrappedStatus = "scrapped";
+    public const string MaterialRequirementSnapshotCapturedStatus = "captured";
+    public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
 
     private WorkOrder()
     {
@@ -102,6 +104,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
     public string? CancelReason { get; private set; }
+    public string? MaterialRequirementSnapshotStatus { get; private set; }
+    public DateTimeOffset? MaterialRequirementSnapshotEvaluatedAtUtc { get; private set; }
+    public string? MaterialRequirementSnapshotProductionVersionId { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
 
@@ -194,6 +199,29 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ProductionVersionId = normalizedProductionVersionId;
     }
 
+    public void RecordMaterialRequirementSnapshot(string status, DateTimeOffset evaluatedAtUtc)
+    {
+        var normalizedStatus = DomainGuard.Required(status, nameof(status)).ToLowerInvariant();
+        if (normalizedStatus is not MaterialRequirementSnapshotCapturedStatus
+            and not MaterialRequirementSnapshotNoRequirementsStatus)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(status),
+                status,
+                "Unsupported material requirement snapshot status.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ProductionVersionId))
+        {
+            throw new InvalidOperationException(
+                "A production version is required before material readiness can be proven.");
+        }
+
+        MaterialRequirementSnapshotStatus = normalizedStatus;
+        MaterialRequirementSnapshotEvaluatedAtUtc = evaluatedAtUtc;
+        MaterialRequirementSnapshotProductionVersionId = ProductionVersionId;
+    }
+
     public void RebindProductionVersionForEngineeringChange(string productionVersionId)
     {
         var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
@@ -203,6 +231,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         ProductionVersionId = normalizedProductionVersionId;
+        MaterialRequirementSnapshotStatus = null;
+        MaterialRequirementSnapshotEvaluatedAtUtc = null;
+        MaterialRequirementSnapshotProductionVersionId = null;
     }
 
     private void ThrowIfCannotRelease()

@@ -1220,9 +1220,7 @@ public sealed class ChangeOperationTaskStateCommandLock
     }
 }
 
-public sealed class ChangeOperationTaskStateCommandHandler(
-    ApplicationDbContext dbContext,
-    IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<ChangeOperationTaskStateCommand, MesOperationActionResponse>
 {
     private const string OperationActionRuleKey = "operation-task-action";
@@ -1256,31 +1254,13 @@ public sealed class ChangeOperationTaskStateCommandHandler(
 
         if (request.Action == "start")
         {
-            await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
-
-            var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
-                dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
-                task.WorkOrderId,
-                task.OperationTaskIdValue,
-                cancellationToken);
-            if (qualityIssues.Count > 0)
+            var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext).EvaluateAsync(
+                    task,
+                    request.ChangedAtUtc,
+                    cancellationToken);
+            if (!readiness.AllowedActions.Contains("start", StringComparer.Ordinal))
             {
-                throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
-            }
-
-            var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
-                dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
-                task.WorkCenterId,
-                task.WorkOrderId,
-                request.ChangedAtUtc,
-                cancellationToken);
-            if (equipmentIssues.Count > 0)
-            {
-                throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+                throw new KnownException(string.Join("; ", readiness.BlockReasons));
             }
 
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -1289,26 +1269,6 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                     x.WorkOrderIdValue == task.WorkOrderId,
                 cancellationToken)
                 ?? throw new KnownException($"未找到生产工单，WorkOrderId = {task.WorkOrderId}");
-            var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
-                dbContext,
-                materialSnapshotProvider,
-                workOrder,
-                request.ChangedAtUtc,
-                cancellationToken);
-            if (!materialCapture.NoRequirements)
-            {
-                var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
-                    dbContext,
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    task.WorkOrderId,
-                    task.OperationTaskIdValue,
-                    cancellationToken);
-                if (shortages.Count > 0)
-                {
-                    throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
-                }
-            }
 
             MesDomainRuleGuard.Enforce(() =>
             {
@@ -1457,7 +1417,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(
 
 internal static class MaterialReadinessGuards
 {
-    private const string MissingRequirementSnapshotReason =
+    internal const string MissingRequirementSnapshotReason =
         "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
 
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
@@ -1475,6 +1435,9 @@ internal static class MaterialReadinessGuards
             cancellationToken);
         if (hasRequirements)
         {
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+                capturedAtUtc);
             return MaterialRequirementCaptureOutcome.Existing;
         }
 
@@ -1500,6 +1463,9 @@ internal static class MaterialReadinessGuards
 
         if (result.Lines.Count == 0)
         {
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                capturedAtUtc);
             return MaterialRequirementCaptureOutcome.NoRequirementsFound;
         }
 
@@ -1520,6 +1486,9 @@ internal static class MaterialReadinessGuards
                 capturedAtUtc));
         }
 
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+            capturedAtUtc);
         return MaterialRequirementCaptureOutcome.Captured;
     }
 
