@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
@@ -548,8 +549,32 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
+        var wcsTask = await dbContext.WcsTasks
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.WarehouseTaskId == request.WarehouseTaskId
+                    && x.Status == WcsTaskStatus.Dispatched,
+                cancellationToken)
+            ?? throw new WmsLifecycleConflictException(
+                "record-warehouse-task-progress",
+                "missing-active-wcs-task");
         var previouslyExecutedQuantity = task.ExecutedQuantity;
-        task.RecordProgress(request.ExecutedQuantity);
+        try
+        {
+            task.RecordWcsProgress(
+                request.ExecutedQuantity,
+                wcsTask.Id.Id.ToString("D"));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsLifecycleConflictException(
+                "record-warehouse-task-progress",
+                exception.Message);
+        }
         await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
             dbContext,
             inventoryReservationClient,
@@ -622,7 +647,27 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
-        task.RecordProgress(task.PlannedQuantity);
+        var wcsTask = await dbContext.WcsTasks
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.WarehouseTaskId == request.WarehouseTaskId
+                    && x.Status == WcsTaskStatus.Dispatched,
+                cancellationToken)
+            ?? throw new WmsLifecycleConflictException(
+                "complete-warehouse-task",
+                "missing-active-wcs-task");
+        try
+        {
+            task.RecordWcsProgress(
+                task.PlannedQuantity,
+                wcsTask.Id.Id.ToString("D"));
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsLifecycleConflictException(
+                "complete-warehouse-task",
+                exception.Message);
+        }
     }
 }
 
@@ -644,7 +689,7 @@ public interface IWarehouseTaskActionCommand
 
     string EnvironmentId { get; }
 
-    string ActorUserId { get; }
+    string ActorPrincipalId { get; }
 
     string IdempotencyKey { get; }
 
@@ -652,68 +697,68 @@ public interface IWarehouseTaskActionCommand
 
     WarehouseTaskType ExpectedTaskType { get; }
 
-    IReadOnlyCollection<string>? AuthorizedPoolCodes { get; }
+    IReadOnlyCollection<string> AuthorizedSiteCodes { get; }
 
-    IReadOnlyCollection<string>? AuthorizedSiteCodes { get; }
+    string ScopeKind { get; }
 
-    bool OrganizationWideScope { get; }
+    string ScopeId { get; }
 }
 
 public sealed record StartWarehouseTaskCommand(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false)
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
 
 public sealed record RecordWarehouseTaskProgressActionCommand(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     decimal ExecutedQuantity,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false)
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
 
 public sealed record ReportWarehouseTaskExceptionCommand(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     string ExceptionCode,
     string Reason,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false)
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
 
 public sealed record CompleteWarehouseTaskActionCommand(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     decimal ExecutedQuantity,
     string? DifferenceReason,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false)
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
 
 public sealed class StartWarehouseTaskCommandValidator : AbstractValidator<StartWarehouseTaskCommand>
@@ -761,15 +806,18 @@ internal static class WarehouseTaskActionValidation
         validator.RuleFor(x => x.WarehouseTaskId).NotEmpty();
         validator.RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         validator.RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        validator.RuleFor(x => x.ActorUserId).NotEmpty().MaximumLength(150);
+        validator.RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
         validator.RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         validator.RuleFor(x => x.ExpectedVersion).GreaterThan(0);
-        validator.RuleForEach(x => x.AuthorizedPoolCodes).NotEmpty().MaximumLength(100);
         validator.RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        validator.RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        validator.RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(150);
     }
 }
 
-public sealed class StartWarehouseTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class StartWarehouseTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    WarehouseWorkScopeAuthorizer authorizer)
     : ICommandHandler<StartWarehouseTaskCommand, WarehouseTaskActionResult>
 {
     public Task<WarehouseTaskActionResult> Handle(
@@ -777,16 +825,17 @@ public sealed class StartWarehouseTaskCommandHandler(ApplicationDbContext dbCont
         CancellationToken cancellationToken) =>
         WarehouseTaskActionExecution.ExecuteAsync(
             dbContext,
+            authorizer,
             request,
             "start",
             new
             {
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion,
                 request.ExpectedTaskType,
             },
             task => task.Start(
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion,
                 claimPoolAssignment: task.AssignedOperatorUserId is null),
             cancellationToken);
@@ -794,6 +843,7 @@ public sealed class StartWarehouseTaskCommandHandler(ApplicationDbContext dbCont
 
 public sealed class RecordWarehouseTaskProgressActionCommandHandler(
     ApplicationDbContext dbContext,
+    WarehouseWorkScopeAuthorizer authorizer,
     IWmsInventoryReservationClient? inventoryReservationClient = null,
     ILogger<RecordWarehouseTaskProgressActionCommandHandler>? logger = null)
     : ICommandHandler<RecordWarehouseTaskProgressActionCommand, WarehouseTaskActionResult>
@@ -810,18 +860,19 @@ public sealed class RecordWarehouseTaskProgressActionCommandHandler(
         var previouslyExecutedQuantity = task?.ExecutedQuantity ?? 0m;
         var result = await WarehouseTaskActionExecution.ExecuteAsync(
             dbContext,
+            authorizer,
             request,
             "progress",
             new
             {
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion,
                 request.ExpectedTaskType,
                 request.ExecutedQuantity,
             },
             task => task.RecordProgress(
                 request.ExecutedQuantity,
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion),
             cancellationToken);
         await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
@@ -835,7 +886,9 @@ public sealed class RecordWarehouseTaskProgressActionCommandHandler(
     }
 }
 
-public sealed class ReportWarehouseTaskExceptionCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReportWarehouseTaskExceptionCommandHandler(
+    ApplicationDbContext dbContext,
+    WarehouseWorkScopeAuthorizer authorizer)
     : ICommandHandler<ReportWarehouseTaskExceptionCommand, WarehouseTaskActionResult>
 {
     public Task<WarehouseTaskActionResult> Handle(
@@ -843,11 +896,12 @@ public sealed class ReportWarehouseTaskExceptionCommandHandler(ApplicationDbCont
         CancellationToken cancellationToken) =>
         WarehouseTaskActionExecution.ExecuteAsync(
             dbContext,
+            authorizer,
             request,
             "exception",
             new
             {
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion,
                 request.ExpectedTaskType,
                 request.ExceptionCode,
@@ -856,12 +910,14 @@ public sealed class ReportWarehouseTaskExceptionCommandHandler(ApplicationDbCont
             task => task.ReportException(
                 request.ExceptionCode,
                 request.Reason,
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion),
             cancellationToken);
 }
 
-public sealed class CompleteWarehouseTaskActionCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteWarehouseTaskActionCommandHandler(
+    ApplicationDbContext dbContext,
+    WarehouseWorkScopeAuthorizer authorizer)
     : ICommandHandler<CompleteWarehouseTaskActionCommand, WarehouseTaskActionResult>
 {
     public Task<WarehouseTaskActionResult> Handle(
@@ -869,11 +925,12 @@ public sealed class CompleteWarehouseTaskActionCommandHandler(ApplicationDbConte
         CancellationToken cancellationToken) =>
         WarehouseTaskActionExecution.ExecuteAsync(
             dbContext,
+            authorizer,
             request,
             "complete",
             new
             {
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.ExpectedVersion,
                 request.ExpectedTaskType,
                 request.ExecutedQuantity,
@@ -881,7 +938,7 @@ public sealed class CompleteWarehouseTaskActionCommandHandler(ApplicationDbConte
             },
             task => task.Complete(
                 request.ExecutedQuantity,
-                request.ActorUserId,
+                request.ActorPrincipalId,
                 request.DifferenceReason,
                 request.ExpectedVersion),
             cancellationToken);
@@ -905,6 +962,7 @@ internal static class WarehouseTaskActionExecution
 {
     public static async Task<WarehouseTaskActionResult> ExecuteAsync<TCommand>(
         ApplicationDbContext dbContext,
+        WarehouseWorkScopeAuthorizer authorizer,
         TCommand command,
         string action,
         object payload,
@@ -913,13 +971,21 @@ internal static class WarehouseTaskActionExecution
         where TCommand : IWarehouseTaskActionCommand
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
-            x => x.Id == command.WarehouseTaskId
-                && x.OrganizationId == command.OrganizationId
-                && x.EnvironmentId == command.EnvironmentId,
+            x => x.Id == command.WarehouseTaskId,
             cancellationToken)
-            ?? throw new WmsLifecycleConflictException(action, "task-not-found-or-scope-mismatch");
+            ?? throw new WmsLifecycleConflictException(action, "task-not-found");
+        if (!string.Equals(task.OrganizationId, command.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(task.EnvironmentId, command.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw WmsAuthorizationException.Forbidden("task-tenant-mismatch");
+        }
+
         EnsureTaskType(task, command.ExpectedTaskType, action);
-        EnsureActorCanExecute(task, command, action);
+        await EnsureActorCanExecuteAsync(
+            task,
+            command,
+            authorizer,
+            cancellationToken);
 
         var normalizedIdempotencyKey = WmsText.IdempotencyKey(command.IdempotencyKey);
         var fingerprint = Fingerprint(payload);
@@ -946,8 +1012,11 @@ internal static class WarehouseTaskActionExecution
         {
             mutate(task);
         }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or ArgumentException)
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException)
         {
             throw new WmsLifecycleConflictException(action, task.Status.ToString());
         }
@@ -978,52 +1047,55 @@ internal static class WarehouseTaskActionExecution
         }
     }
 
-    private static void EnsureActorCanExecute<TCommand>(
+    private static async Task EnsureActorCanExecuteAsync<TCommand>(
         WarehouseTask task,
         TCommand command,
-        string action)
+        WarehouseWorkScopeAuthorizer authorizer,
+        CancellationToken cancellationToken)
         where TCommand : IWarehouseTaskActionCommand
     {
-        var actorUserId = WmsText.Required(command.ActorUserId, nameof(command.ActorUserId));
-        if (!string.IsNullOrWhiteSpace(task.AssignedOperatorUserId))
+        var actorPrincipalId = WmsText.Required(
+            command.ActorPrincipalId,
+            nameof(command.ActorPrincipalId));
+        if (string.IsNullOrWhiteSpace(task.AssignedPoolCode))
         {
-            if (!string.Equals(task.AssignedOperatorUserId, actorUserId, StringComparison.Ordinal))
-            {
-                throw new WmsLifecycleConflictException(action, "assignment-mismatch");
-            }
-
-            return;
+            throw WmsAuthorizationException.Forbidden("missing-work-pool-assignment");
         }
 
-        var authorizedPoolCodes = NormalizeScopes(command.AuthorizedPoolCodes);
-        if (!string.IsNullOrWhiteSpace(task.AssignedPoolCode))
+        var selection = await authorizer.ResolveAsync(
+            new WarehouseWorkScopeRequest(
+                command.OrganizationId,
+                command.EnvironmentId,
+                actorPrincipalId,
+                command.AuthorizedSiteCodes,
+                command.ScopeKind,
+                command.ScopeId,
+                task.SiteCode),
+            cancellationToken);
+        if (!selection.PoolCodes.Contains(task.AssignedPoolCode, StringComparer.Ordinal)
+            || !selection.SiteCodes.Contains(task.SiteCode, StringComparer.Ordinal))
         {
-            if (!authorizedPoolCodes.Contains(task.AssignedPoolCode))
-            {
-                throw new WmsLifecycleConflictException(action, "pool-scope-mismatch");
-            }
-
-            return;
+            throw WmsAuthorizationException.Forbidden("task-outside-selected-work-scope");
         }
 
-        if (command.OrganizationWideScope)
+        if (!string.IsNullOrWhiteSpace(task.AssignedOperatorUserId)
+            && !string.Equals(
+                task.AssignedOperatorUserId,
+                actorPrincipalId,
+                StringComparison.Ordinal))
         {
-            return;
+            throw WmsAuthorizationException.Forbidden("assignment-principal-mismatch");
         }
 
-        var authorizedSiteCodes = NormalizeScopes(command.AuthorizedSiteCodes);
-        if (!authorizedSiteCodes.Contains(task.SiteCode))
+        if (string.Equals(selection.ScopeKind, "self", StringComparison.Ordinal)
+            && !string.Equals(
+                task.AssignedOperatorUserId,
+                actorPrincipalId,
+                StringComparison.Ordinal))
         {
-            throw new WmsLifecycleConflictException(action, "site-scope-mismatch");
+            throw WmsAuthorizationException.Forbidden("task-not-assigned-to-self");
         }
     }
-
-    private static HashSet<string> NormalizeScopes(IEnumerable<string>? values) =>
-        values?
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .ToHashSet(StringComparer.Ordinal)
-        ?? new HashSet<string>(StringComparer.Ordinal);
 
     private static string Fingerprint(object payload)
     {
@@ -1917,17 +1989,73 @@ internal static class WmsInventoryReservationIdempotencyKeys
     }
 }
 
-public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson, string? DeviceId = null) : ICommand<WcsTaskId>;
+public sealed record DispatchWcsTaskCommand(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DispatcherPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    long ExpectedVersion,
+    string AdapterType,
+    string ExternalTaskId,
+    string PayloadJson,
+    string? DeviceId = null) : ICommand<WcsTaskId>;
 
-public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
+public sealed class DispatchWcsTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    WarehouseWorkScopeAuthorizer authorizer,
+    TimeProvider? timeProvider = null)
     : ICommandHandler<DispatchWcsTaskCommand, WcsTaskId>
 {
     public async Task<WcsTaskId> Handle(DispatchWcsTaskCommand request, CancellationToken cancellationToken)
     {
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
-            ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
-        var adapterType = request.AdapterType.ToLowerInvariant();
-        var deviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? adapterType : request.DeviceId.Trim();
+            ?? throw new WmsLifecycleConflictException("dispatch-wcs-task", "task-not-found");
+        if (!string.Equals(
+                warehouseTask.OrganizationId,
+                request.OrganizationId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                warehouseTask.EnvironmentId,
+                request.EnvironmentId,
+                StringComparison.Ordinal))
+        {
+            throw WmsAuthorizationException.Forbidden("task-tenant-mismatch");
+        }
+
+        if (string.IsNullOrWhiteSpace(warehouseTask.AssignedPoolCode))
+        {
+            throw WmsAuthorizationException.Forbidden("missing-work-pool-assignment");
+        }
+
+        await authorizer.AuthorizeAssignmentAsync(
+            new WarehouseAssignmentAuthorizationRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DispatcherPrincipalId,
+                request.AuthorizedSiteCodes,
+                warehouseTask.SiteCode,
+                warehouseTask.AssignedPoolCode,
+                warehouseTask.AssignedOperatorUserId),
+            cancellationToken);
+        string adapterType;
+        string deviceId;
+        try
+        {
+            adapterType = WmsText.Required(
+                request.AdapterType,
+                nameof(request.AdapterType)).ToLowerInvariant();
+            deviceId = string.IsNullOrWhiteSpace(request.DeviceId)
+                ? adapterType
+                : WmsText.Required(request.DeviceId, nameof(request.DeviceId));
+            _ = WmsText.Required(request.ExternalTaskId, nameof(request.ExternalTaskId));
+            _ = WmsText.Required(request.PayloadJson, nameof(request.PayloadJson));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
             x => x.OrganizationId == warehouseTask.OrganizationId
                 && x.EnvironmentId == warehouseTask.EnvironmentId
@@ -1936,30 +2064,97 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
             cancellationToken);
         if (circuit?.IsOpen is true)
         {
-            throw new KnownException(circuit.RejectionReason!);
+            throw new WmsLifecycleConflictException(
+                "dispatch-wcs-task",
+                circuit.RejectionReason!);
         }
 
-        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == adapterType, cancellationToken);
+        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
+            x => x.WarehouseTaskId == request.WarehouseTaskId,
+            cancellationToken);
         if (existing is not null)
         {
+            var claimReference = existing.Id.Id.ToString("D");
+            if (existing.MatchesDispatch(
+                    adapterType,
+                    request.ExternalTaskId,
+                    request.PayloadJson,
+                    deviceId))
+            {
+                warehouseTask.ValidateWcsExecution(claimReference);
+                return existing.Id;
+            }
+
             if (existing.Status == WcsTaskStatus.Failed)
             {
+                warehouseTask.ValidateWcsExecution(
+                    claimReference,
+                    request.ExpectedVersion);
                 try
                 {
                     existing.Retry(request.ExternalTaskId, request.PayloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
                 }
                 catch (InvalidOperationException exception)
                 {
-                    throw new KnownException(exception.Message);
+                    throw new WmsLifecycleConflictException(
+                        "dispatch-wcs-task",
+                        exception.Message);
                 }
+
+                return existing.Id;
             }
 
-            return existing.Id;
+            throw new WmsLifecycleConflictException(
+                "dispatch-wcs-task",
+                $"warehouse-task-already-has-{existing.Status.ToString().ToLowerInvariant()}-wcs-task");
         }
 
-        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson, deviceId);
+        WcsTask task;
+        try
+        {
+            task = WcsTask.Dispatch(
+                warehouseTask.OrganizationId,
+                warehouseTask.EnvironmentId,
+                request.WarehouseTaskId,
+                adapterType,
+                request.ExternalTaskId,
+                request.PayloadJson,
+                deviceId);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+
         dbContext.WcsTasks.Add(task);
+        try
+        {
+            warehouseTask.ClaimWcsExecution(
+                task.Id.Id.ToString("D"),
+                request.ExpectedVersion);
+        }
+        catch (InvalidOperationException exception)
+        {
+            dbContext.Entry(task).State = EntityState.Detached;
+            throw new WmsLifecycleConflictException(
+                "dispatch-wcs-task",
+                exception.Message);
+        }
+
         return task.Id;
+    }
+}
+
+public sealed class DispatchWcsTaskCommandLock : ICommandLock<DispatchWcsTaskCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        DispatchWcsTaskCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-wms:warehouse-task-action:{command.WarehouseTaskId}",
+            30));
     }
 }
 
@@ -1984,7 +2179,52 @@ public sealed class CompleteWcsTaskCommandHandler(
         }
 
         var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
-        task.Complete(request.CompletionPayloadJson);
+        var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
+            ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
+        var claimReference = task.Id.Id.ToString("D");
+        try
+        {
+            warehouseTask.ValidateWcsExecution(claimReference);
+            if (executedQuantity is null)
+            {
+                logger?.LogWarning(
+                    "WCS completion callback for external task {ExternalTaskId} did not update warehouse task progress: {DiagnosticMessage}",
+                    request.ExternalTaskId,
+                    diagnosticMessage);
+            }
+            else
+            {
+                warehouseTask.RecordWcsProgress(
+                    executedQuantity.Value,
+                    claimReference);
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsLifecycleConflictException(
+                "complete-wcs-task",
+                exception.Message);
+        }
+
+        try
+        {
+            task.Complete(request.CompletionPayloadJson);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsLifecycleConflictException(
+                "complete-wcs-task",
+                exception.Message);
+        }
+
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
             x => x.OrganizationId == task.OrganizationId
                 && x.EnvironmentId == task.EnvironmentId
@@ -1992,23 +2232,6 @@ public sealed class CompleteWcsTaskCommandHandler(
                 && x.DeviceId == task.DeviceId,
             cancellationToken);
         circuit?.RecordSuccess();
-        var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
-            ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
-        if (executedQuantity is null)
-        {
-            logger?.LogWarning(
-                "WCS completion callback for external task {ExternalTaskId} did not update warehouse task progress: {DiagnosticMessage}",
-                request.ExternalTaskId,
-                diagnosticMessage);
-            return;
-        }
-
-        if (warehouseTask.Status == WarehouseTaskStatus.Completed)
-        {
-            return;
-        }
-
-        warehouseTask.RecordProgress(executedQuantity.Value);
     }
 
     private static decimal? ExtractExecutedQuantity(string completionPayloadJson, out string diagnosticMessage)
@@ -2051,8 +2274,22 @@ public sealed class FailWcsTaskCommandHandler(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.ExternalTaskId == request.ExternalTaskId,
-                cancellationToken)
+            cancellationToken)
             ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
+        var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+            x => x.Id == task.WarehouseTaskId,
+            cancellationToken)
+            ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
+        try
+        {
+            warehouseTask.ValidateWcsExecution(task.Id.Id.ToString("D"));
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsLifecycleConflictException(
+                "fail-wcs-task",
+                exception.Message);
+        }
         var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
         var options = retryOptions?.Value ?? new WcsRetryOptions();
         if (!task.Fail(request.FailureCode, request.FailureMessage, now, options.MaxRetryAttempts, options.InitialRetryBackoff))

@@ -92,6 +92,12 @@ public sealed class WmsSchemaConventionTests
                 nameof(WarehouseTask.SiteCode),
                 nameof(WarehouseTask.AssignedPoolCode),
                 nameof(WarehouseTask.CreatedAtUtc)));
+        var wcsTask = Assert.IsAssignableFrom<IEntityType>(
+            model.FindEntityType(typeof(WcsTask)));
+        Assert.Contains(
+            wcsTask.GetIndexes(),
+            index => index.IsUnique
+                && IndexMatches(index, nameof(WcsTask.WarehouseTaskId)));
 
         foreach (var aggregateType in new[] { typeof(InboundOrder), typeof(OutboundOrder), typeof(CountExecution) })
         {

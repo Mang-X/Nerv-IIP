@@ -16,6 +16,8 @@ using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -789,8 +791,14 @@ public sealed class WmsInventoryBoundaryTests
                 4m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var pickingTask = dbContext.WarehouseTasks.Single();
+        await DispatchWcsAsync(
+            dbContext,
+            pickingTask,
+            "WCS-PICK-OUT-001",
+            """{"step":1}""");
         await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
-            new CompleteWarehouseTaskCommand(dbContext.WarehouseTasks.Single().Id),
+            new CompleteWarehouseTaskCommand(pickingTask.Id),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
@@ -829,8 +837,14 @@ public sealed class WmsInventoryBoundaryTests
             new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-LOCATION-001", "LINE-001", "LOC-ACTUAL", "PACK-01", 4m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var pickingTask = dbContext.WarehouseTasks.Single();
+        await DispatchWcsAsync(
+            dbContext,
+            pickingTask,
+            "WCS-PICK-LOCATION-001",
+            """{"step":1}""");
         await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
-            new CompleteWarehouseTaskCommand(dbContext.WarehouseTasks.Single().Id),
+            new CompleteWarehouseTaskCommand(pickingTask.Id),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
@@ -1006,10 +1020,11 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = Assert.Single(dbContext.WarehouseTasks.Local);
         warehouseTask.Assign("POOL-PICKING", null, warehouseTask.Version);
-        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
-            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-OUT-001", """{"step":1}"""),
-            CancellationToken.None);
-        warehouseTask.Start("user-001", warehouseTask.Version, claimPoolAssignment: true);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-OUT-001",
+            """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CancelOutboundOrderCommandHandler(dbContext, inventory).Handle(
@@ -1496,12 +1511,15 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             "LOC-A-01",
             "PACK-01",
-            10m);
+            10m,
+            assignedPoolCode: "POOL-WCS");
         dbContext.WarehouseTasks.Add(warehouseTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
-            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-ACTUAL-001", """{"step":1}"""),
-            CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-ACTUAL-001",
+            """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteWcsTaskCommandHandler(dbContext).Handle(
@@ -1509,7 +1527,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
 
         Assert.Equal(8m, warehouseTask.ExecutedQuantity);
-        Assert.Equal(WarehouseTaskStatus.Open, warehouseTask.Status);
+        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
     }
 
     [Fact]
@@ -1527,12 +1545,15 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             "LOC-A-01",
             "PACK-01",
-            10m);
+            10m,
+            assignedPoolCode: "POOL-WCS");
         dbContext.WarehouseTasks.Add(warehouseTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
-            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-IDEM-001", """{"step":1}"""),
-            CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-IDEM-001",
+            """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CompleteWcsTaskCommandHandler(dbContext);
 
@@ -1563,12 +1584,15 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             "LOC-A-01",
             "PACK-01",
-            10m);
+            10m,
+            assignedPoolCode: "POOL-WCS");
         dbContext.WarehouseTasks.Add(warehouseTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
-            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-MISSING-QTY-001", """{"step":1}"""),
-            CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-MISSING-QTY-001",
+            """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteWcsTaskCommandHandler(dbContext).Handle(
@@ -1576,7 +1600,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
 
         Assert.Equal(0m, warehouseTask.ExecutedQuantity);
-        Assert.Equal(WarehouseTaskStatus.Open, warehouseTask.Status);
+        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
         Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
@@ -1607,7 +1631,11 @@ public sealed class WmsInventoryBoundaryTests
         pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new RecordWarehouseTaskProgressActionCommandHandler(dbContext, inventoryClient).Handle(
+        await GrantManualPoolAccessAsync(dbContext, pickingTask, "user-001");
+        await new RecordWarehouseTaskProgressActionCommandHandler(
+            dbContext,
+            CreateWorkScopeAuthorizer(dbContext),
+            inventoryClient).Handle(
             new RecordWarehouseTaskProgressActionCommand(
                 pickingTask.Id,
                 "org-001",
@@ -1617,7 +1645,9 @@ public sealed class WmsInventoryBoundaryTests
                 pickingTask.Version,
                 1m,
                 WarehouseTaskType.Picking,
-                OrganizationWideScope: true),
+                ["SITE-01"],
+                "self",
+                "user-001"),
             CancellationToken.None);
 
         var renewal = Assert.Single(inventoryClient.RenewalRequests);
@@ -1642,7 +1672,8 @@ public sealed class WmsInventoryBoundaryTests
             "LOC-A-01",
             "PACK-01",
             5m,
-            "reservation-renew-unavailable-001");
+            "reservation-renew-unavailable-001",
+            assignedPoolCode: "POOL-PICKING");
         dbContext.OutboundOrders.Add(outbound);
         dbContext.WarehouseTasks.Add(pickingTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1651,12 +1682,29 @@ public sealed class WmsInventoryBoundaryTests
             RenewalException = new HttpRequestException("Inventory is temporarily unavailable."),
         };
 
-        await new RecordWarehouseTaskProgressCommandHandler(dbContext, inventoryClient).Handle(
-            new RecordWarehouseTaskProgressCommand(pickingTask.Id, 1m),
+        await GrantManualPoolAccessAsync(dbContext, pickingTask, "user-001");
+        pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordWarehouseTaskProgressActionCommandHandler(
+            dbContext,
+            CreateWorkScopeAuthorizer(dbContext),
+            inventoryClient).Handle(
+            new RecordWarehouseTaskProgressActionCommand(
+                pickingTask.Id,
+                "org-001",
+                "env-dev",
+                "user-001",
+                "renew-unavailable-progress-001",
+                pickingTask.Version,
+                1m,
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "self",
+                "user-001"),
             CancellationToken.None);
 
         Assert.Equal(1m, pickingTask.ExecutedQuantity);
-        Assert.Equal(WarehouseTaskStatus.Open, pickingTask.Status);
+        Assert.Equal(WarehouseTaskStatus.InProgress, pickingTask.Status);
         Assert.Single(inventoryClient.RenewalRequests);
     }
 
@@ -1675,12 +1723,15 @@ public sealed class WmsInventoryBoundaryTests
             "SITE-01",
             "LOC-A-01",
             "PACK-01",
-            10m);
+            10m,
+            assignedPoolCode: "POOL-WCS");
         dbContext.WarehouseTasks.Add(warehouseTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
-            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-DIAG-001", """{"step":1}"""),
-            CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-DIAG-001",
+            """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var logger = new ListLogger<CompleteWcsTaskCommandHandler>();
 
@@ -1788,6 +1839,86 @@ public sealed class WmsInventoryBoundaryTests
             .UseInMemoryDatabase($"wms-boundary-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static WarehouseWorkScopeAuthorizer CreateWorkScopeAuthorizer(
+        ApplicationDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    private static async Task DispatchWcsAsync(
+        ApplicationDbContext dbContext,
+        WarehouseTask warehouseTask,
+        string externalTaskId,
+        string payloadJson)
+    {
+        if (warehouseTask.AssignedPoolCode is null)
+        {
+            warehouseTask.Assign("POOL-WCS", null, warehouseTask.Version);
+        }
+
+        var poolCode = warehouseTask.AssignedPoolCode!;
+        var poolExists = dbContext.WarehouseWorkPools.Local.Any(x =>
+            x.OrganizationId == warehouseTask.OrganizationId
+            && x.EnvironmentId == warehouseTask.EnvironmentId
+            && x.PoolCode == poolCode)
+            || await dbContext.WarehouseWorkPools.AnyAsync(x =>
+                x.OrganizationId == warehouseTask.OrganizationId
+                && x.EnvironmentId == warehouseTask.EnvironmentId
+                && x.PoolCode == poolCode);
+        if (!poolExists)
+        {
+            dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+                warehouseTask.OrganizationId,
+                warehouseTask.EnvironmentId,
+                poolCode,
+                "WCS 自动化池",
+                warehouseTask.SiteCode));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWorkScopeAuthorizer(dbContext)).Handle(
+            new DispatchWcsTaskCommand(
+                warehouseTask.Id,
+                warehouseTask.OrganizationId,
+                warehouseTask.EnvironmentId,
+                "user-wcs-manager",
+                [warehouseTask.SiteCode],
+                warehouseTask.Version,
+                "agv",
+                externalTaskId,
+                payloadJson),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static async Task GrantManualPoolAccessAsync(
+        ApplicationDbContext dbContext,
+        WarehouseTask warehouseTask,
+        string actorPrincipalId)
+    {
+        if (warehouseTask.AssignedPoolCode is null)
+        {
+            warehouseTask.Assign("POOL-PICKING", null, warehouseTask.Version);
+        }
+
+        var poolCode = warehouseTask.AssignedPoolCode!;
+        dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+            warehouseTask.OrganizationId,
+            warehouseTask.EnvironmentId,
+            poolCode,
+            "人工拣货池",
+            warehouseTask.SiteCode));
+        dbContext.WarehouseWorkPoolMemberships.Add(
+            WarehouseWorkPoolMembership.Create(
+                warehouseTask.OrganizationId,
+                warehouseTask.EnvironmentId,
+                poolCode,
+                actorPrincipalId,
+                DateTime.UtcNow.AddDays(-1),
+                DateTime.UtcNow.AddDays(1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 
     private static void CompletePickingTasks(ApplicationDbContext dbContext, OutboundOrder outbound)

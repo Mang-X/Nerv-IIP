@@ -6,11 +6,16 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class AddWmsAssignmentTaskLifecycleReceipts : Migration
+    public partial class CompleteWmsWorkPoolExecutionBoundary : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_wcs_tasks_warehouse_task_id_adapter_type",
+                schema: "wms",
+                table: "wcs_tasks");
+
             migrationBuilder.AddColumn<string>(
                 name: "assigned_operator_user_id",
                 schema: "wms",
@@ -21,13 +26,13 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 comment: "Optional operator assignment snapshot captured when the task is created.");
 
             migrationBuilder.AddColumn<string>(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "warehouse_tasks",
                 type: "character varying(150)",
                 maxLength: 150,
                 nullable: true,
-                comment: "Optional team assignment snapshot captured when the task is created.");
+                comment: "Optional WMS work-pool assignment snapshot captured when the task is created.");
 
             migrationBuilder.AddColumn<string>(
                 name: "completed_by",
@@ -83,6 +88,33 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 comment: "Operator-reported exception reason.");
 
             migrationBuilder.AddColumn<string>(
+                name: "execution_channel",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "character varying(50)",
+                maxLength: 50,
+                nullable: false,
+                defaultValue: "",
+                comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
+
+            migrationBuilder.AddColumn<DateTime>(
+                name: "execution_claimed_at_utc",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "timestamp with time zone",
+                nullable: true,
+                comment: "UTC time when the execution channel was atomically claimed.");
+
+            migrationBuilder.AddColumn<string>(
+                name: "execution_claimed_by",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "character varying(150)",
+                maxLength: 150,
+                nullable: true,
+                comment: "Trusted operator principal id or WCS task claim reference.");
+
+            migrationBuilder.AddColumn<string>(
                 name: "lot_no",
                 schema: "wms",
                 table: "warehouse_tasks",
@@ -114,7 +146,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks",
                 type: "bigint",
                 nullable: false,
-                defaultValue: 1L,
+                defaultValue: 0L,
                 comment: "Optimistic concurrency token advanced for every successful task mutation.");
 
             migrationBuilder.AddColumn<string>(
@@ -127,13 +159,13 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 comment: "Optional operator assignment snapshot captured when the outbound order is created.");
 
             migrationBuilder.AddColumn<string>(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "outbound_orders",
                 type: "character varying(150)",
                 maxLength: 150,
                 nullable: true,
-                comment: "Optional team assignment snapshot captured when the outbound order is created.");
+                comment: "Optional WMS work-pool assignment snapshot captured when the outbound order is created.");
 
             migrationBuilder.AddColumn<string>(
                 name: "assigned_operator_user_id",
@@ -145,13 +177,22 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 comment: "Optional operator assignment snapshot captured when the inbound order is created.");
 
             migrationBuilder.AddColumn<string>(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "inbound_orders",
                 type: "character varying(150)",
                 maxLength: 150,
                 nullable: true,
-                comment: "Optional team assignment snapshot captured when the inbound order is created.");
+                comment: "Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
+
+            migrationBuilder.AddColumn<long>(
+                name: "version",
+                schema: "wms",
+                table: "inbound_orders",
+                type: "bigint",
+                nullable: false,
+                defaultValue: 0L,
+                comment: "Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
 
             migrationBuilder.AddColumn<string>(
                 name: "assigned_operator_user_id",
@@ -163,13 +204,47 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 comment: "Optional operator assignment snapshot captured when the count execution is created.");
 
             migrationBuilder.AddColumn<string>(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "count_executions",
                 type: "character varying(150)",
                 maxLength: 150,
                 nullable: true,
-                comment: "Optional team assignment snapshot captured when the count execution is created.");
+                comment: "Optional WMS work-pool assignment snapshot captured when the count execution is created.");
+
+            migrationBuilder.AddColumn<long>(
+                name: "version",
+                schema: "wms",
+                table: "count_executions",
+                type: "bigint",
+                nullable: false,
+                defaultValue: 0L,
+                comment: "Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
+
+            migrationBuilder.CreateTable(
+                name: "warehouse_assignment_receipts",
+                schema: "wms",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Assignment receipt id."),
+                    organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id."),
+                    environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id."),
+                    resource_category = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false, comment: "Controlled assignment category."),
+                    resource_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Assigned aggregate id."),
+                    idempotency_key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Stable assignment intent key."),
+                    payload_fingerprint = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Canonical assignment payload fingerprint."),
+                    site_code = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Authorized exact site snapshot."),
+                    pool_code = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Assigned WMS work-pool snapshot."),
+                    operator_principal_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: true, comment: "Optional assigned operator principal snapshot."),
+                    assigned_by_principal_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Trusted assigning principal snapshot."),
+                    result_version = table.Column<long>(type: "bigint", nullable: false, comment: "Authoritative aggregate version after assignment."),
+                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC receipt creation time.")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_warehouse_assignment_receipts", x => x.id);
+                },
+                comment: "Durable idempotency receipts for controlled WMS assignment and reassignment.");
 
             migrationBuilder.CreateTable(
                 name: "warehouse_task_action_receipts",
@@ -195,6 +270,56 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 },
                 comment: "Durable idempotency receipts for manual warehouse task actions.");
 
+            migrationBuilder.CreateTable(
+                name: "warehouse_work_pool_memberships",
+                schema: "wms",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Warehouse work-pool membership id."),
+                    organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id."),
+                    environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id."),
+                    pool_code = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Owning WMS work-pool code."),
+                    principal_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Trusted IAM principal id qualified for the pool."),
+                    active = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether the qualification remains active."),
+                    effective_from_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "Inclusive UTC qualification start."),
+                    effective_to_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true, comment: "Exclusive UTC qualification end."),
+                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC creation time."),
+                    deactivated_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true, comment: "UTC deactivation time.")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_warehouse_work_pool_memberships", x => x.id);
+                },
+                comment: "Effective-dated WMS work-pool qualifications for trusted IAM principal ids; memberships grant no permission.");
+
+            migrationBuilder.CreateTable(
+                name: "warehouse_work_pools",
+                schema: "wms",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Warehouse work-pool id."),
+                    organization_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Organization tenant id."),
+                    environment_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Environment id."),
+                    pool_code = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Stable WMS work-pool code."),
+                    display_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false, comment: "Operator-facing work-pool name."),
+                    site_code = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "MasterData site code that owns the work pool."),
+                    active = table.Column<bool>(type: "boolean", nullable: false, comment: "Whether the work pool accepts current assignments."),
+                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC creation time."),
+                    deactivated_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true, comment: "UTC deactivation time.")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_warehouse_work_pools", x => x.id);
+                },
+                comment: "WMS-owned operational work pools; these are not MasterData teams and grant no IAM permission.");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_wcs_tasks_warehouse_task_id",
+                schema: "wms",
+                table: "wcs_tasks",
+                column: "warehouse_task_id",
+                unique: true);
+
             migrationBuilder.CreateIndex(
                 name: "ix_warehouse_tasks_operator_scope",
                 schema: "wms",
@@ -202,10 +327,10 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "task_type", "status", "site_code", "assigned_operator_user_id", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_warehouse_tasks_team_scope",
+                name: "ix_warehouse_tasks_pool_scope",
                 schema: "wms",
                 table: "warehouse_tasks",
-                columns: new[] { "organization_id", "environment_id", "task_type", "status", "site_code", "assigned_team_id", "created_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "task_type", "status", "site_code", "assigned_pool_code", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_outbound_orders_operator_scope",
@@ -214,10 +339,10 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_operator_user_id", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_outbound_orders_team_scope",
+                name: "ix_outbound_orders_pool_scope",
                 schema: "wms",
                 table: "outbound_orders",
-                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_team_id", "created_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_pool_code", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_inbound_orders_operator_scope",
@@ -226,10 +351,10 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_operator_user_id", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_inbound_orders_team_scope",
+                name: "ix_inbound_orders_pool_scope",
                 schema: "wms",
                 table: "inbound_orders",
-                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_team_id", "created_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_pool_code", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_count_executions_operator_scope",
@@ -238,10 +363,17 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_operator_user_id", "created_at_utc" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_count_executions_team_scope",
+                name: "ix_count_executions_pool_scope",
                 schema: "wms",
                 table: "count_executions",
-                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_team_id", "created_at_utc" });
+                columns: new[] { "organization_id", "environment_id", "status", "site_code", "assigned_pool_code", "created_at_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ux_warehouse_assignment_receipts_key",
+                schema: "wms",
+                table: "warehouse_assignment_receipts",
+                columns: new[] { "organization_id", "environment_id", "resource_category", "resource_id", "idempotency_key" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_warehouse_task_action_receipts_task",
@@ -255,14 +387,57 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_task_action_receipts",
                 columns: new[] { "organization_id", "environment_id", "warehouse_task_id", "action", "idempotency_key" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_warehouse_work_pool_memberships_principal_effective",
+                schema: "wms",
+                table: "warehouse_work_pool_memberships",
+                columns: new[] { "organization_id", "environment_id", "principal_id", "active", "effective_from_utc", "effective_to_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ux_warehouse_work_pool_memberships_window",
+                schema: "wms",
+                table: "warehouse_work_pool_memberships",
+                columns: new[] { "organization_id", "environment_id", "pool_code", "principal_id", "effective_from_utc" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_warehouse_work_pools_site_active",
+                schema: "wms",
+                table: "warehouse_work_pools",
+                columns: new[] { "organization_id", "environment_id", "site_code", "active" });
+
+            migrationBuilder.CreateIndex(
+                name: "ux_warehouse_work_pools_code",
+                schema: "wms",
+                table: "warehouse_work_pools",
+                columns: new[] { "organization_id", "environment_id", "pool_code" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "warehouse_assignment_receipts",
+                schema: "wms");
+
+            migrationBuilder.DropTable(
                 name: "warehouse_task_action_receipts",
                 schema: "wms");
+
+            migrationBuilder.DropTable(
+                name: "warehouse_work_pool_memberships",
+                schema: "wms");
+
+            migrationBuilder.DropTable(
+                name: "warehouse_work_pools",
+                schema: "wms");
+
+            migrationBuilder.DropIndex(
+                name: "IX_wcs_tasks_warehouse_task_id",
+                schema: "wms",
+                table: "wcs_tasks");
 
             migrationBuilder.DropIndex(
                 name: "ix_warehouse_tasks_operator_scope",
@@ -270,7 +445,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks");
 
             migrationBuilder.DropIndex(
-                name: "ix_warehouse_tasks_team_scope",
+                name: "ix_warehouse_tasks_pool_scope",
                 schema: "wms",
                 table: "warehouse_tasks");
 
@@ -280,7 +455,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "outbound_orders");
 
             migrationBuilder.DropIndex(
-                name: "ix_outbound_orders_team_scope",
+                name: "ix_outbound_orders_pool_scope",
                 schema: "wms",
                 table: "outbound_orders");
 
@@ -290,7 +465,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "inbound_orders");
 
             migrationBuilder.DropIndex(
-                name: "ix_inbound_orders_team_scope",
+                name: "ix_inbound_orders_pool_scope",
                 schema: "wms",
                 table: "inbound_orders");
 
@@ -300,7 +475,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "count_executions");
 
             migrationBuilder.DropIndex(
-                name: "ix_count_executions_team_scope",
+                name: "ix_count_executions_pool_scope",
                 schema: "wms",
                 table: "count_executions");
 
@@ -310,7 +485,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks");
 
             migrationBuilder.DropColumn(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "warehouse_tasks");
 
@@ -345,6 +520,21 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks");
 
             migrationBuilder.DropColumn(
+                name: "execution_channel",
+                schema: "wms",
+                table: "warehouse_tasks");
+
+            migrationBuilder.DropColumn(
+                name: "execution_claimed_at_utc",
+                schema: "wms",
+                table: "warehouse_tasks");
+
+            migrationBuilder.DropColumn(
+                name: "execution_claimed_by",
+                schema: "wms",
+                table: "warehouse_tasks");
+
+            migrationBuilder.DropColumn(
                 name: "lot_no",
                 schema: "wms",
                 table: "warehouse_tasks");
@@ -370,7 +560,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "outbound_orders");
 
             migrationBuilder.DropColumn(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "outbound_orders");
 
@@ -380,7 +570,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "inbound_orders");
 
             migrationBuilder.DropColumn(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
+                schema: "wms",
+                table: "inbound_orders");
+
+            migrationBuilder.DropColumn(
+                name: "version",
                 schema: "wms",
                 table: "inbound_orders");
 
@@ -390,9 +585,21 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "count_executions");
 
             migrationBuilder.DropColumn(
-                name: "assigned_team_id",
+                name: "assigned_pool_code",
                 schema: "wms",
                 table: "count_executions");
+
+            migrationBuilder.DropColumn(
+                name: "version",
+                schema: "wms",
+                table: "count_executions");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_wcs_tasks_warehouse_task_id_adapter_type",
+                schema: "wms",
+                table: "wcs_tasks",
+                columns: new[] { "warehouse_task_id", "adapter_type" },
+                unique: true);
         }
     }
 }

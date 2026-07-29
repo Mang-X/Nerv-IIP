@@ -267,7 +267,21 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         EnsureStatus(WarehouseTaskStatus.Open);
         EnsureHasPoolAssignment();
         ClaimExecution(WarehouseTaskExecutionChannel.Wcs, claimReference);
+        Status = WarehouseTaskStatus.InProgress;
+        StartedAtUtc = DateTime.UtcNow;
         AdvanceVersion();
+    }
+
+    public void ValidateWcsExecution(string claimReference, long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        ValidateWcsExecution(claimReference);
+    }
+
+    public void ValidateWcsExecution(string claimReference)
+    {
+        EnsureStatus(WarehouseTaskStatus.InProgress);
+        EnsureWcsClaim(claimReference);
     }
 
     public void Start(

@@ -137,47 +137,47 @@ public sealed record StartWarehouseTaskActionRequest(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false);
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId);
 public sealed record RecordWarehouseTaskProgressActionRequest(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     decimal ExecutedQuantity,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false);
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId);
 public sealed record ReportWarehouseTaskExceptionActionRequest(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     string ExceptionCode,
     string Reason,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false);
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId);
 public sealed record CompleteWarehouseTaskActionRequest(
     WarehouseTaskId WarehouseTaskId,
     string OrganizationId,
     string EnvironmentId,
-    string ActorUserId,
+    string ActorPrincipalId,
     string IdempotencyKey,
     long ExpectedVersion,
     decimal ExecutedQuantity,
-    string? DifferenceReason = null,
-    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
-    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
-    bool OrganizationWideScope = false);
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    string? DifferenceReason = null);
 public sealed record CompleteInboundOrderRequest(
     InboundOrderId InboundOrderId,
     string IdempotencyKey,
@@ -349,7 +349,17 @@ internal static class WmsAuthorizedListScopeResolver
     }
 }
 
-public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
+public sealed record DispatchWcsTaskRequest(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DispatcherPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    long ExpectedVersion,
+    string AdapterType,
+    string ExternalTaskId,
+    string PayloadJson,
+    string? DeviceId = null);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson);
 public sealed record FailWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string FailureCode, string FailureMessage);
@@ -793,7 +803,11 @@ public abstract class WarehouseTaskActionEndpoint<TRequest>(
     }
 
     protected void ConfigureActionContract(WmsEndpointContract contract) =>
-        ConfigureWmsContract(contract, StatusCodes.Status409Conflict);
+        ConfigureWmsContract(
+            contract,
+            StatusCodes.Status403Forbidden,
+            StatusCodes.Status409Conflict,
+            StatusCodes.Status422UnprocessableEntity);
 }
 
 public sealed class StartPutawayTaskEndpoint(ISender sender)
@@ -807,13 +821,13 @@ public sealed class StartPutawayTaskEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -829,14 +843,14 @@ public sealed class RecordPutawayTaskProgressEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExecutedQuantity,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -852,15 +866,15 @@ public sealed class ReportPutawayTaskExceptionEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExceptionCode,
             req.Reason,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -876,15 +890,15 @@ public sealed class CompletePutawayTaskEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExecutedQuantity,
             req.DifferenceReason,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -900,13 +914,13 @@ public sealed class StartPickingTaskEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -922,14 +936,14 @@ public sealed class RecordPickingTaskProgressEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExecutedQuantity,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -945,15 +959,15 @@ public sealed class ReportPickingTaskExceptionEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExceptionCode,
             req.Reason,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -969,15 +983,15 @@ public sealed class CompletePickingTaskEndpoint(ISender sender)
             ResolveWarehouseTaskId(req.WarehouseTaskId),
             req.OrganizationId,
             req.EnvironmentId,
-            req.ActorUserId,
+            req.ActorPrincipalId,
             req.IdempotencyKey,
             req.ExpectedVersion,
             req.ExecutedQuantity,
             req.DifferenceReason,
             ExpectedTaskType,
-            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
-            req.OrganizationWideScope), ct);
+            req.ScopeKind,
+            req.ScopeId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -1136,17 +1150,34 @@ public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint
 
 public sealed class DispatchWcsTaskEndpoint(ISender sender) : WmsEndpoint<DispatchWcsTaskRequest, ResponseData<DispatchWcsTaskResponse>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<DispatchWcsTaskEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<DispatchWcsTaskEndpoint>(),
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(DispatchWcsTaskRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new DispatchWcsTaskCommand(req.WarehouseTaskId, req.AdapterType, req.ExternalTaskId, req.PayloadJson), ct);
+        var id = await sender.Send(new DispatchWcsTaskCommand(
+            req.WarehouseTaskId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DispatcherPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ExpectedVersion,
+            req.AdapterType,
+            req.ExternalTaskId,
+            req.PayloadJson,
+            req.DeviceId), ct);
         await Send.OkAsync(new DispatchWcsTaskResponse(id).AsResponseData(), cancellation: ct);
     }
 }
 
 public sealed class CompleteWcsTaskEndpoint(ISender sender) : WmsEndpoint<CompleteWcsTaskRequest, ResponseData<object>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteWcsTaskEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<CompleteWcsTaskEndpoint>(),
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(CompleteWcsTaskRequest req, CancellationToken ct)
     {
         await sender.Send(new CompleteWcsTaskCommand(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.CompletionPayloadJson), ct);
@@ -1156,7 +1187,10 @@ public sealed class CompleteWcsTaskEndpoint(ISender sender) : WmsEndpoint<Comple
 
 public sealed class FailWcsTaskEndpoint(ISender sender) : WmsEndpoint<FailWcsTaskRequest, ResponseData<object>>
 {
-    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<FailWcsTaskEndpoint>());
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<FailWcsTaskEndpoint>(),
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(FailWcsTaskRequest req, CancellationToken ct)
     {
         await sender.Send(new FailWcsTaskCommand(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.FailureCode, req.FailureMessage), ct);

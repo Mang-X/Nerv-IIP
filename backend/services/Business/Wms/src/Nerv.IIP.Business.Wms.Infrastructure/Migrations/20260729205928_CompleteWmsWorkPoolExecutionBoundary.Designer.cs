@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260729053850_AddWmsAssignmentTaskLifecycleReceipts")]
-    partial class AddWmsAssignmentTaskLifecycleReceipts
+    [Migration("20260729205928_CompleteWmsWorkPoolExecutionBoundary")]
+    partial class CompleteWmsWorkPoolExecutionBoundary
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -152,11 +152,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("assigned_operator_user_id")
                         .HasComment("Optional operator assignment snapshot captured when the count execution is created.");
 
-                    b.Property<string>("AssignedTeamId")
+                    b.Property<string>("AssignedPoolCode")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
-                        .HasColumnName("assigned_team_id")
-                        .HasComment("Optional team assignment snapshot captured when the count execution is created.");
+                        .HasColumnName("assigned_pool_code")
+                        .HasComment("Optional WMS work-pool assignment snapshot captured when the count execution is created.");
 
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -248,13 +248,19 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("variance_quantity")
                         .HasComment("Counted quantity minus expected quantity.");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedOperatorUserId", "CreatedAtUtc")
                         .HasDatabaseName("ix_count_executions_operator_scope");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedTeamId", "CreatedAtUtc")
-                        .HasDatabaseName("ix_count_executions_team_scope");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedPoolCode", "CreatedAtUtc")
+                        .HasDatabaseName("ix_count_executions_pool_scope");
 
                     b.ToTable("count_executions", "wms", t =>
                         {
@@ -275,11 +281,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("assigned_operator_user_id")
                         .HasComment("Optional operator assignment snapshot captured when the inbound order is created.");
 
-                    b.Property<string>("AssignedTeamId")
+                    b.Property<string>("AssignedPoolCode")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
-                        .HasColumnName("assigned_team_id")
-                        .HasComment("Optional team assignment snapshot captured when the inbound order is created.");
+                        .HasColumnName("assigned_pool_code")
+                        .HasComment("Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
 
                     b.Property<string>("CancellationReason")
                         .HasMaxLength(1000)
@@ -351,6 +357,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Inbound execution status.");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "InboundOrderNo")
@@ -362,8 +374,8 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedOperatorUserId", "CreatedAtUtc")
                         .HasDatabaseName("ix_inbound_orders_operator_scope");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedTeamId", "CreatedAtUtc")
-                        .HasDatabaseName("ix_inbound_orders_team_scope");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedPoolCode", "CreatedAtUtc")
+                        .HasDatabaseName("ix_inbound_orders_pool_scope");
 
                     b.ToTable("inbound_orders", "wms", t =>
                         {
@@ -679,11 +691,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("assigned_operator_user_id")
                         .HasComment("Optional operator assignment snapshot captured when the outbound order is created.");
 
-                    b.Property<string>("AssignedTeamId")
+                    b.Property<string>("AssignedPoolCode")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
-                        .HasColumnName("assigned_team_id")
-                        .HasComment("Optional team assignment snapshot captured when the outbound order is created.");
+                        .HasColumnName("assigned_pool_code")
+                        .HasComment("Optional WMS work-pool assignment snapshot captured when the outbound order is created.");
 
                     b.Property<string>("CancellationReason")
                         .HasMaxLength(1000)
@@ -780,8 +792,8 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedOperatorUserId", "CreatedAtUtc")
                         .HasDatabaseName("ix_outbound_orders_operator_scope");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedTeamId", "CreatedAtUtc")
-                        .HasDatabaseName("ix_outbound_orders_team_scope");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "AssignedPoolCode", "CreatedAtUtc")
+                        .HasDatabaseName("ix_outbound_orders_pool_scope");
 
                     b.ToTable("outbound_orders", "wms", t =>
                         {
@@ -1047,6 +1059,104 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate.WarehouseAssignmentReceipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Assignment receipt id.");
+
+                    b.Property<string>("AssignedByPrincipalId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_by_principal_id")
+                        .HasComment("Trusted assigning principal snapshot.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC receipt creation time.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Stable assignment intent key.");
+
+                    b.Property<string>("OperatorPrincipalId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("operator_principal_id")
+                        .HasComment("Optional assigned operator principal snapshot.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("Canonical assignment payload fingerprint.");
+
+                    b.Property<string>("PoolCode")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("pool_code")
+                        .HasComment("Assigned WMS work-pool snapshot.");
+
+                    b.Property<string>("ResourceCategory")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("resource_category")
+                        .HasComment("Controlled assignment category.");
+
+                    b.Property<string>("ResourceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("resource_id")
+                        .HasComment("Assigned aggregate id.");
+
+                    b.Property<long>("ResultVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("result_version")
+                        .HasComment("Authoritative aggregate version after assignment.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Authorized exact site snapshot.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ResourceCategory", "ResourceId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warehouse_assignment_receipts_key");
+
+                    b.ToTable("warehouse_assignment_receipts", "wms", t =>
+                        {
+                            t.HasComment("Durable idempotency receipts for controlled WMS assignment and reassignment.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate.WarehouseTaskActionReceipt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1151,11 +1261,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("assigned_operator_user_id")
                         .HasComment("Optional operator assignment snapshot captured when the task is created.");
 
-                    b.Property<string>("AssignedTeamId")
+                    b.Property<string>("AssignedPoolCode")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
-                        .HasColumnName("assigned_team_id")
-                        .HasComment("Optional team assignment snapshot captured when the task is created.");
+                        .HasColumnName("assigned_pool_code")
+                        .HasComment("Optional WMS work-pool assignment snapshot captured when the task is created.");
 
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1214,6 +1324,24 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("executed_quantity")
                         .HasComment("Executed task quantity.");
+
+                    b.Property<string>("ExecutionChannel")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("execution_channel")
+                        .HasComment("Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
+
+                    b.Property<DateTime?>("ExecutionClaimedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("execution_claimed_at_utc")
+                        .HasComment("UTC time when the execution channel was atomically claimed.");
+
+                    b.Property<string>("ExecutionClaimedBy")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("execution_claimed_by")
+                        .HasComment("Trusted operator principal id or WCS task claim reference.");
 
                     b.Property<string>("FromLocationCode")
                         .IsRequired()
@@ -1329,12 +1457,159 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "TaskType", "Status", "SiteCode", "AssignedOperatorUserId", "CreatedAtUtc")
                         .HasDatabaseName("ix_warehouse_tasks_operator_scope");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "TaskType", "Status", "SiteCode", "AssignedTeamId", "CreatedAtUtc")
-                        .HasDatabaseName("ix_warehouse_tasks_team_scope");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "TaskType", "Status", "SiteCode", "AssignedPoolCode", "CreatedAtUtc")
+                        .HasDatabaseName("ix_warehouse_tasks_pool_scope");
 
                     b.ToTable("warehouse_tasks", "wms", t =>
                         {
                             t.HasComment("WMS putaway, picking and replenishment recommendation tasks.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate.WarehouseWorkPool", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Warehouse work-pool id.");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active")
+                        .HasComment("Whether the work pool accepts current assignments.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC creation time.");
+
+                    b.Property<DateTime?>("DeactivatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at_utc")
+                        .HasComment("UTC deactivation time.");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name")
+                        .HasComment("Operator-facing work-pool name.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PoolCode")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("pool_code")
+                        .HasComment("Stable WMS work-pool code.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("MasterData site code that owns the work pool.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PoolCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warehouse_work_pools_code");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SiteCode", "Active")
+                        .HasDatabaseName("ix_warehouse_work_pools_site_active");
+
+                    b.ToTable("warehouse_work_pools", "wms", t =>
+                        {
+                            t.HasComment("WMS-owned operational work pools; these are not MasterData teams and grant no IAM permission.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate.WarehouseWorkPoolMembership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Warehouse work-pool membership id.");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active")
+                        .HasComment("Whether the qualification remains active.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC creation time.");
+
+                    b.Property<DateTime?>("DeactivatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deactivated_at_utc")
+                        .HasComment("UTC deactivation time.");
+
+                    b.Property<DateTime>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc")
+                        .HasComment("Inclusive UTC qualification start.");
+
+                    b.Property<DateTime?>("EffectiveToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to_utc")
+                        .HasComment("Exclusive UTC qualification end.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PoolCode")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("pool_code")
+                        .HasComment("Owning WMS work-pool code.");
+
+                    b.Property<string>("PrincipalId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("principal_id")
+                        .HasComment("Trusted IAM principal id qualified for the pool.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PoolCode", "PrincipalId", "EffectiveFromUtc")
+                        .IsUnique()
+                        .HasDatabaseName("ux_warehouse_work_pool_memberships_window");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PrincipalId", "Active", "EffectiveFromUtc", "EffectiveToUtc")
+                        .HasDatabaseName("ix_warehouse_work_pool_memberships_principal_effective");
+
+                    b.ToTable("warehouse_work_pool_memberships", "wms", t =>
+                        {
+                            t.HasComment("Effective-dated WMS work-pool qualifications for trusted IAM principal ids; memberships grant no permission.");
                         });
                 });
 
@@ -1515,7 +1790,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WarehouseTaskId", "AdapterType")
+                    b.HasIndex("WarehouseTaskId")
                         .IsUnique();
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ExternalTaskId")

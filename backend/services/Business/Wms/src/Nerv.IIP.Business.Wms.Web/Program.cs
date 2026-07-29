@@ -125,6 +125,9 @@ try
         ICommandLock<CompleteWarehouseTaskActionCommand>,
         WarehouseTaskActionCommandLock<CompleteWarehouseTaskActionCommand>>();
     builder.Services.AddScoped<
+        ICommandLock<DispatchWcsTaskCommand>,
+        DispatchWcsTaskCommandLock>();
+    builder.Services.AddScoped<
         ICommandLock<AssignInboundOrderCommand>,
         WarehouseAssignmentCommandLock<AssignInboundOrderCommand>>();
     builder.Services.AddScoped<

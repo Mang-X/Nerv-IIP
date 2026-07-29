@@ -413,7 +413,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
         builder.Property(x => x.NextRetryAtUtc).HasColumnName("next_retry_at_utc").HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
         builder.Property(x => x.IsTerminalFailure).HasColumnName("is_terminal_failure").IsRequired().HasDefaultValue(false).HasComment("Whether bounded WCS retry attempts have been exhausted.");
-        builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
+        builder.HasIndex(x => x.WarehouseTaskId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId }).IsUnique();
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
@@ -83,9 +84,12 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             WarehouseTaskType.Picking,
             taskNo: "PICK-001",
             assignedOperatorUserId: "user-001");
+        GrantPoolAccess(dbContext, "user-001");
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var handler = new StartWarehouseTaskCommandHandler(dbContext);
+        var handler = new StartWarehouseTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext));
         var command = new StartWarehouseTaskCommand(
             task.Id,
             "org-001",
@@ -93,7 +97,10 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             "user-001",
             "start-pick-001",
             1,
-            WarehouseTaskType.Picking);
+            WarehouseTaskType.Picking,
+            ["SITE-01"],
+            "self",
+            "user-001");
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -115,9 +122,12 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             WarehouseTaskType.Picking,
             taskNo: "PICK-002",
             assignedOperatorUserId: "user-001");
+        GrantPoolAccess(dbContext, "user-001");
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var handler = new StartWarehouseTaskCommandHandler(dbContext);
+        var handler = new StartWarehouseTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext));
         await handler.Handle(
             new StartWarehouseTaskCommand(
                 task.Id,
@@ -126,7 +136,10 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "user-001",
                 "start-pick-002",
                 1,
-                WarehouseTaskType.Picking),
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "self",
+                "user-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -138,7 +151,10 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "user-001",
                 "start-pick-002",
                 2,
-                WarehouseTaskType.Picking),
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "self",
+                "user-001"),
             CancellationToken.None));
     }
 
@@ -152,11 +168,14 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             WarehouseTaskType.Putaway,
             taskNo: "PUT-001",
             assignedOperatorUserId: "user-owner");
+        GrantPoolAccess(dbContext, "user-other");
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new StartWarehouseTaskCommandHandler(dbContext).Handle(
+        var exception = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            new StartWarehouseTaskCommandHandler(
+                dbContext,
+                CreateAuthorizer(dbContext)).Handle(
                 new StartWarehouseTaskCommand(
                     task.Id,
                     "org-001",
@@ -165,10 +184,12 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                     "start-put-001",
                     1,
                     WarehouseTaskType.Putaway,
-                    OrganizationWideScope: true),
+                    ["SITE-01"],
+                    "work-pool",
+                    "POOL-A"),
                 CancellationToken.None));
 
-        Assert.Equal("assignment-mismatch", exception.CurrentStatus);
+        Assert.Equal("assignment-principal-mismatch", exception.Reason);
         Assert.Equal(WarehouseTaskStatus.Open, task.Status);
     }
 
@@ -182,9 +203,12 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             WarehouseTaskType.Picking,
             taskNo: "PICK-SHORT-001",
             assignedPoolCode: "POOL-A");
+        GrantPoolAccess(dbContext, "user-001");
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var start = await new StartWarehouseTaskCommandHandler(dbContext).Handle(
+        var start = await new StartWarehouseTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
             new StartWarehouseTaskCommand(
                 task.Id,
                 "org-001",
@@ -193,11 +217,15 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "start-short-001",
                 1,
                 WarehouseTaskType.Picking,
-                AuthorizedPoolCodes: ["POOL-A"]),
+                ["SITE-01"],
+                "work-pool",
+                "POOL-A"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var completed = await new CompleteWarehouseTaskActionCommandHandler(dbContext).Handle(
+        var completed = await new CompleteWarehouseTaskActionCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
             new CompleteWarehouseTaskActionCommand(
                 task.Id,
                 "org-001",
@@ -208,7 +236,9 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 8m,
                 "库位库存不足",
                 WarehouseTaskType.Picking,
-                AuthorizedPoolCodes: ["POOL-A"]),
+                ["SITE-01"],
+                "self",
+                "user-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -229,12 +259,15 @@ public sealed class WmsWarehouseTaskManualExecutionTests
             WarehouseTaskType.Putaway,
             taskNo: "PUT-PARTIAL-001",
             assignedOperatorUserId: "user-001");
+        GrantPoolAccess(dbContext, "user-001");
         task.Start("user-001", 1);
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
         await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new CompleteWarehouseTaskActionCommandHandler(dbContext).Handle(
+            new CompleteWarehouseTaskActionCommandHandler(
+                dbContext,
+                CreateAuthorizer(dbContext)).Handle(
                 new CompleteWarehouseTaskActionCommand(
                     task.Id,
                     "org-001",
@@ -244,7 +277,10 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                     2,
                     8m,
                     "少上架",
-                    WarehouseTaskType.Putaway),
+                    WarehouseTaskType.Putaway,
+                    ["SITE-01"],
+                    "self",
+                    "user-001"),
                 CancellationToken.None));
 
         Assert.Equal(WarehouseTaskStatus.InProgress, task.Status);
@@ -366,6 +402,34 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 effectivePoolCode),
             _ => throw new ArgumentOutOfRangeException(nameof(taskType)),
         };
+    }
+
+    private static WarehouseWorkScopeAuthorizer CreateAuthorizer(
+        ApplicationDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    private static void GrantPoolAccess(
+        ApplicationDbContext dbContext,
+        string principalId)
+    {
+        if (!dbContext.WarehouseWorkPools.Local.Any(x => x.PoolCode == "POOL-A"))
+        {
+            dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+                "org-001",
+                "env-dev",
+                "POOL-A",
+                "测试作业池",
+                "SITE-01"));
+        }
+
+        dbContext.WarehouseWorkPoolMemberships.Add(
+            WarehouseWorkPoolMembership.Create(
+                "org-001",
+                "env-dev",
+                "POOL-A",
+                principalId,
+                DateTime.UtcNow.AddDays(-1),
+                DateTime.UtcNow.AddDays(1)));
     }
 
     private sealed record ExpectedContract(

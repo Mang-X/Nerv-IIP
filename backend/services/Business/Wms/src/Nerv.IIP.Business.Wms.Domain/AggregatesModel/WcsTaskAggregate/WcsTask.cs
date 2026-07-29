@@ -65,6 +65,30 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         return WarehouseTaskId == other.WarehouseTaskId && AdapterType == other.AdapterType;
     }
 
+    public bool MatchesDispatch(
+        string adapterType,
+        string externalTaskId,
+        string payloadJson,
+        string? deviceId)
+    {
+        var normalizedAdapterType = WmsText.Required(
+            adapterType,
+            nameof(adapterType)).ToLowerInvariant();
+        var normalizedDeviceId = string.IsNullOrWhiteSpace(deviceId)
+            ? normalizedAdapterType
+            : WmsText.Required(deviceId, nameof(deviceId));
+        return string.Equals(AdapterType, normalizedAdapterType, StringComparison.Ordinal)
+            && string.Equals(DeviceId, normalizedDeviceId, StringComparison.Ordinal)
+            && string.Equals(
+                ExternalTaskId,
+                WmsText.Required(externalTaskId, nameof(externalTaskId)),
+                StringComparison.Ordinal)
+            && string.Equals(
+                PayloadJson,
+                WmsText.Required(payloadJson, nameof(payloadJson)),
+                StringComparison.Ordinal);
+    }
+
     public void Complete(string completionPayloadJson)
     {
         if (Status == WcsTaskStatus.Failed)

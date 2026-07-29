@@ -72,6 +72,8 @@ public sealed class WarehouseWorkPoolTests
 
         Assert.Equal(WarehouseTaskExecutionChannel.Wcs, wcsTask.ExecutionChannel);
         Assert.Equal("wcs-task-002", wcsTask.ExecutionClaimedBy);
+        Assert.Equal(WarehouseTaskStatus.InProgress, wcsTask.Status);
+        Assert.NotNull(wcsTask.StartedAtUtc);
         Assert.Throws<InvalidOperationException>(() =>
             wcsTask.ClaimManualExecution("user-emp-049", wcsTask.Version));
     }
