@@ -135,6 +135,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
@@ -342,6 +343,10 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
+      'function',
+    )
     expect(startBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(pauseBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(resumeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')

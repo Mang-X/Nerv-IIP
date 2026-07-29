@@ -3582,6 +3582,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskNo?: string | null;
     workCenterCode?: string | null;
     workCenterName?: string | null;
+    allowedActions?: Array<string> | null;
+    blockReasons?: Array<string> | null;
+    evaluatedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest = {
@@ -3629,6 +3632,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     scheduleInvalidationReasonCode?: string | null;
     teamId?: string | null;
     teamName?: string | null;
+    allowedActions?: Array<string> | null;
+    blockReasons?: Array<string> | null;
+    evaluatedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -3923,6 +3929,10 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTask
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow>;
     total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskActionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -12931,8 +12941,8 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
         statuses?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders';
@@ -13504,6 +13514,8 @@ export type ListBusinessConsoleMesOperationTasksData = {
         workOrderId?: string | null;
         skip?: number;
         take?: number;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks';
 };
@@ -13527,6 +13539,46 @@ export type ListBusinessConsoleMesOperationTasksResponses = {
 };
 
 export type ListBusinessConsoleMesOperationTasksResponse = ListBusinessConsoleMesOperationTasksResponses[keyof ListBusinessConsoleMesOperationTasksResponses];
+
+export type ListBusinessConsoleMesReportableOperationTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
+        workOrderId?: string | null;
+        skip?: number;
+        take?: number;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/reportable-operation-tasks';
+};
+
+export type ListBusinessConsoleMesReportableOperationTasksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesReportableOperationTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse;
+};
+
+export type ListBusinessConsoleMesReportableOperationTasksResponse = ListBusinessConsoleMesReportableOperationTasksResponses[keyof ListBusinessConsoleMesReportableOperationTasksResponses];
 
 export type GetBusinessConsoleMesCurrentOperationSopsData = {
     body?: never;

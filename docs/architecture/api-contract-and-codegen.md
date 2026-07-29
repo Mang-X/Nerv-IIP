@@ -206,7 +206,7 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `listBusinessConsoleMesProductionPlans` | `GET /api/business-console/v1/mes/production-plans` | 生产计划列表；目标来源是 DemandPlanning/source plan，计划工单建议 accept 后由后端 MES 桥创建真实工单并可通过 source reference 查询。 |
 | `getBusinessConsoleMesProductionPlanReadiness` | `GET /api/business-console/v1/mes/production-plans/{productionPlanId}/readiness` | 生产计划转工单前就绪检查。 |
 | `convertBusinessConsoleMesPlanToWorkOrder` | `POST /api/business-console/v1/mes/production-plans/{productionPlanId}/work-orders` | 生产计划转执行工单。 |
-| `listBusinessConsoleMesWorkOrders` | `GET /api/business-console/v1/mes/work-orders` | 工单列表。 |
+| `listBusinessConsoleMesWorkOrders` | `GET /api/business-console/v1/mes/work-orders` | 工单列表；`scopeKind/scopeId` 只能选择当前主体经实时授权确认的 Self/Team/WorkCenter/Workshop/Organization 范围，Gateway 将范围解析为内部任务归属过滤后再分页。 |
 | `getBusinessConsoleMesWorkOrderDetail` | `GET /api/business-console/v1/mes/work-orders/{workOrderId}` | 工单详情和工序任务。 |
 | `releaseBusinessConsoleMesWorkOrder` | `POST /api/business-console/v1/mes/work-orders/{workOrderId}/release` | 释放生产工单。 |
 | `createBusinessConsoleMesRushWorkOrder` | `POST /api/business-console/v1/mes/work-orders/rush` | 创建急单。 |
@@ -216,7 +216,8 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `confirmBusinessConsoleMesLineSideMaterialReceipt` | `POST /api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts` | 确认线边接收。 |
 | `listBusinessConsoleMesDispatchTasks` | `GET /api/business-console/v1/mes/dispatch-tasks` | 派工任务列表。 |
 | `assignBusinessConsoleMesDispatchTask` | `POST /api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign` | 分派工序任务。 |
-| `listBusinessConsoleMesOperationTasks` | `GET /api/business-console/v1/mes/operation-tasks` | 工序执行任务列表。 |
+| `listBusinessConsoleMesOperationTasks` | `GET /api/business-console/v1/mes/operation-tasks` | 工序执行任务列表；按当前主体授权范围在服务端筛选，返回 MES 权威 `allowedActions/blockReasons/evaluatedAtUtc`，终态和未知态不返回可执行动作。 |
+| `listBusinessConsoleMesReportableOperationTasks` | `GET /api/business-console/v1/mes/reportable-operation-tasks` | 可报工工序任务列表；复用同一主体范围与稳定分页口径，只返回 MES 判定当前允许 `report` 的任务。 |
 | `startBusinessConsoleMesOperationTask` | `POST /api/business-console/v1/mes/operation-tasks/{operationTaskId}/start` | 工序开工。 |
 | `pauseBusinessConsoleMesOperationTask` | `POST /api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause` | 工序暂停。 |
 | `resumeBusinessConsoleMesOperationTask` | `POST /api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume` | 工序恢复。 |
