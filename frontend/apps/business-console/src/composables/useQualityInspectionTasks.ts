@@ -1,18 +1,19 @@
 import {
-  createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  createBusinessConsoleQualityInspectionRecordFromTask,
   listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   type BusinessConsoleCreateInspectionRecordFromTaskRequest,
   type BusinessConsoleQualityInspectionTaskItem,
 } from '@nerv-iip/api-client'
-import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { computed, reactive, shallowRef } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
   refetchWithBusinessContext,
   type BusinessContextFields,
 } from './businessContextBinding'
+import { executeLifecycleAction } from './lifecycleAction'
 
 const DEFAULT_TAKE = 200
 
@@ -206,33 +207,75 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
 
 export function useQualityInspectionTaskActions(filters: BusinessContextFields) {
   const queryCache = useQueryCache()
-  const startMutation = useMutation(
-    createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
-  )
+  const startInspectionPending = shallowRef(false)
+  const startInspectionError = shallowRef<unknown>()
+  const refreshInspectionTasks = () =>
+    queryCache
+      .invalidateQueries({
+        predicate: isBusinessQuery('listBusinessConsoleQualityInspectionTasks'),
+      })
+      .catch(ignoreBackgroundError)
+
+  async function startInspection(
+    inspectionTaskId: string,
+    body: BusinessConsoleCreateInspectionRecordFromTaskRequest,
+  ) {
+    startInspectionPending.value = true
+    startInspectionError.value = undefined
+    try {
+      const result = await executeLifecycleAction({
+        readLatest: async () => {
+          const response = await listBusinessConsoleQualityInspectionTasks({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              inspectionTaskId,
+              skip: 0,
+              take: 1,
+            },
+            throwOnError: false,
+          })
+          if (response.error !== undefined) throw response.error
+          if (!response.data?.success) throw response.data ?? new Error('读取待检任务失败')
+          const item = response.data.data?.items?.find(
+            (candidate) => candidate.inspectionTaskId === inspectionTaskId,
+          )
+          return item
+            ? {
+                domain: 'quality-inspection-task' as const,
+                action: 'create-record' as const,
+                facts: {
+                  status: item.status,
+                  inspectionRecordId: item.inspectionRecordId,
+                },
+              }
+            : undefined
+        },
+        command: () =>
+          createBusinessConsoleQualityInspectionRecordFromTask({
+            path: { inspectionTaskId },
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+            },
+            body,
+            throwOnError: false,
+          }),
+      })
+      await refreshInspectionTasks()
+      return result
+    } catch (error) {
+      startInspectionError.value = error
+      throw error
+    } finally {
+      startInspectionPending.value = false
+    }
+  }
 
   return {
-    startInspection: (
-      inspectionTaskId: string,
-      body: BusinessConsoleCreateInspectionRecordFromTaskRequest,
-    ) =>
-      startMutation
-        .mutateAsync({
-          path: { inspectionTaskId },
-          query: {
-            organizationId: filters.organizationId,
-            environmentId: filters.environmentId,
-          },
-          body,
-        })
-        .then(async (result) => {
-          await queryCache
-            .invalidateQueries({
-              predicate: isBusinessQuery('listBusinessConsoleQualityInspectionTasks'),
-            })
-            .catch(ignoreBackgroundError)
-          return result
-        }),
-    startInspectionError: startMutation.error,
-    startInspectionPending: startMutation.isLoading,
+    startInspection,
+    startInspectionError,
+    startInspectionPending,
+    refreshInspectionTasks,
   }
 }

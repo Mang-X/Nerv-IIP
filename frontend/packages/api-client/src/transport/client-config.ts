@@ -21,6 +21,10 @@ interface GeneratedApiClient {
       eject: (id: number) => void
       use: (handler: (response: Response) => Response) => number
     }
+    error: {
+      eject: (id: number) => void
+      use: (handler: (error: unknown, response?: Response) => unknown) => number
+    }
   }
   setConfig: (config: { baseUrl?: string; fetch?: typeof fetch; headers?: HeadersInit }) => void
 }
@@ -29,6 +33,7 @@ const clients: GeneratedApiClient[] = [platformClient, businessConsoleClient]
 
 let requestInterceptorIds: Array<number | undefined> = []
 let responseInterceptorIds: Array<number | undefined> = []
+let errorInterceptorIds: Array<number | undefined> = []
 let managedHeaderNames = new Set<string>()
 
 export function configureApiClient(options: ConfigureApiClientOptions = {}): void {
@@ -43,6 +48,12 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
     if (responseInterceptorId !== undefined) {
       client.interceptors.response.eject(responseInterceptorId)
       responseInterceptorIds[index] = undefined
+    }
+
+    const errorInterceptorId = errorInterceptorIds[index]
+    if (errorInterceptorId !== undefined) {
+      client.interceptors.error.eject(errorInterceptorId)
+      errorInterceptorIds[index] = undefined
     }
   })
 
@@ -89,6 +100,31 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
       }
 
       return response
+    }),
+  )
+
+  errorInterceptorIds = clients.map((client) =>
+    client.interceptors.error.use((error, response) => {
+      if (
+        !response ||
+        (typeof error !== 'object' && typeof error !== 'function') ||
+        error === null
+      ) {
+        return error
+      }
+
+      const candidate = error as { response?: unknown }
+      if (candidate.response !== undefined) return error
+      try {
+        Object.defineProperty(candidate, 'response', {
+          configurable: true,
+          enumerable: false,
+          value: response,
+        })
+        return error
+      } catch {
+        return error
+      }
     }),
   )
 }

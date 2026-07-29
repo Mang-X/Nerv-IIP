@@ -3,7 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  createBusinessConsoleQualityInspectionRecordFromTask,
+  listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -20,12 +21,22 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  createBusinessConsoleQualityInspectionRecordFromTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (variables) => ({ success: true, data: variables })),
   })),
   listBusinessConsoleQualityInspectionTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
     query: vi.fn(),
+  })),
+  listBusinessConsoleQualityInspectionTasks: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: { items: [{ inspectionTaskId: 'TASK-1', status: 'pending' }], total: 1 },
+    },
   })),
 }))
 
@@ -217,14 +228,11 @@ describe('quality inspection task workbench', () => {
       resultLines: [],
     })
 
-    expect(createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions).mock.results[0]
-        ?.value.mutation,
-    ).toHaveBeenCalledWith({
+    expect(createBusinessConsoleQualityInspectionRecordFromTask).toHaveBeenCalledWith({
       path: { inspectionTaskId: 'TASK-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: { inspectorUserId: 'user-qa', resultLines: [] },
+      throwOnError: false,
     })
     expect(filters.organizationId).toBe('org-001')
   })

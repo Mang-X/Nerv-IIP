@@ -23,10 +23,12 @@ const coladaState = vi.hoisted(() => ({
   ),
   invalidateQueries: vi.fn(async () => {}),
   lastMutationConfig: undefined as { onSuccess?: () => void } | undefined,
+  listPlain: vi.fn(),
 }))
 
 // key 里带 _status，区分「全量」列表读与 useUnacknowledgedAlarmCount 的 status=raised 读。
 vi.mock('@nerv-iip/api-client', () => ({
+  listBusinessConsoleEquipmentAlarms: coladaState.listPlain,
   listBusinessConsoleEquipmentAlarmsQueryOptions: vi.fn(
     (opts: { query?: { status?: string } }) => ({
       key: [{ _id: 'listBusinessConsoleEquipmentAlarms', _status: opts?.query?.status ?? 'all' }],
@@ -83,6 +85,19 @@ describe('useBusinessEquipmentAlarms', () => {
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.listPlain.mockImplementation(
+      async ({ query }: { query: { alarmEventId?: string } }) => ({
+        data: {
+          success: true,
+          data: {
+            items: query.alarmEventId
+              ? [{ alarmEventId: query.alarmEventId, status: 'raised' }]
+              : [],
+            total: query.alarmEventId ? 1 : 0,
+          },
+        },
+      }),
+    )
   })
 
   it('keeps the alarms list query disabled when the principal carries no org/env scope', () => {
@@ -154,6 +169,33 @@ describe('useBusinessEquipmentAlarms', () => {
     })
     coladaState.lastMutationConfig?.onSuccess?.()
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('re-reads the exact alarm and does not acknowledge after it was cleared', async () => {
+    seedPrincipal()
+    coladaState.listPlain.mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ alarmEventId: 'alarm-9', status: 'cleared' }], total: 1 },
+      },
+    })
+    const { acknowledge } = useBusinessEquipmentAlarms()
+
+    await expect(acknowledge('alarm-9', '2026-06-10T08:30:00.000Z')).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    expect(coladaState.listPlain).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        alarmEventId: 'alarm-9',
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    expect(coladaState.mutateAsync).not.toHaveBeenCalled()
   })
 
   it('shelve posts durationMinutes + stable atUtc + the persistent idempotencyKey; reason only when provided', async () => {

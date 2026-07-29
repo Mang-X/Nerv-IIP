@@ -103,7 +103,7 @@ describe('PDA equipment alarms page', () => {
     expect(text).not.toContain('EXT-1')
   })
 
-  it('shows 确认/搁置 buttons only on unacknowledged rows; processed rows show a status tag + who/when', () => {
+  it('uses the alarm gate: acknowledged rows remain shelveable but cannot be acknowledged twice', () => {
     const wrapper = mount(AlarmsPage)
     expect(wrapper.find('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').exists()).toBe(
       true,
@@ -114,6 +114,9 @@ describe('PDA equipment alarms page', () => {
     expect(wrapper.find('[data-testid="ack-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists()).toBe(
       false,
     )
+    expect(
+      wrapper.find('[data-testid="shelve-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists(),
+    ).toBe(true)
     const tag = wrapper.find('[data-testid="status-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]')
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('已确认')
@@ -209,28 +212,53 @@ describe('PDA equipment alarms page', () => {
     wrapper.unmount()
   })
 
-  // P1 幂等：已发出但结果未知（超时）不盲目重试——刷新列表引导核对。
-  it('does NOT offer blind retry on an indeterminate failure; steers to verify + refreshes', async () => {
-    acknowledge.mockRejectedValue(new RequestTimeoutError())
+  // P1 幂等：已发出但结果未知（超时）保留冻结 payload/key，只允许原样重放。
+  it('replays an indeterminate shelve with the SAME frozen payload + persistent key', async () => {
+    shelve.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper
+      .get('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
+    await flushPromises()
+    document.body
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((button) => button.textContent?.includes('2 小时') && button.click())
+    await flushPromises()
+
+    expect(shelve).toHaveBeenCalledTimes(1)
+    const first = shelve.mock.calls[0]
+    const dialogText = document.body.textContent ?? ''
+    expect(dialogText).toContain('提交结果未知')
+    expect(dialogText).toContain('原内容')
+    expect(dialogText).not.toContain('幂等键')
+    expect(dialogText).not.toContain('重放')
+    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
+    expect(confirmBtn?.textContent).toContain('重试')
+    expect(refresh).toHaveBeenCalled()
+
+    confirmBtn!.click()
+    await flushPromises()
+    expect(shelve).toHaveBeenCalledTimes(2)
+    const second = shelve.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toBe(first[2])
+    expect(second[3]).toBe(first[3])
+    wrapper.unmount()
+  })
+
+  it('still clears stale alarm context and shows the fixed toast when conflict refresh fails', async () => {
+    acknowledge.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    refresh.mockRejectedValueOnce(new Error('refresh unavailable'))
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
     await flushPromises()
-    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click() // 确认弹层
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click()
     await flushPromises()
 
-    expect(acknowledge).toHaveBeenCalledTimes(1)
-    const dialogText = document.body.textContent ?? ''
-    expect(dialogText).toContain('提交结果未知')
-    expect(dialogText).toContain('核对')
-    // 无「重试」按钮，只有「我知道了」
-    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
-    expect(confirmBtn?.textContent).toContain('我知道了')
     expect(refresh).toHaveBeenCalled()
-
-    // 点「我知道了」不会再次发起确认
-    confirmBtn!.click()
-    await flushPromises()
-    expect(acknowledge).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.textContent).not.toContain('操作失败')
+    expect(document.body.querySelector('.nv-m-md-confirm')).toBeNull()
     wrapper.unmount()
   })
 

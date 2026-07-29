@@ -2,8 +2,11 @@ import {
   completeBusinessConsoleWmsCountExecutionMutationOptions,
   completeBusinessConsoleWmsInboundOrderMutationOptions,
   completeBusinessConsoleWmsOutboundOrderMutationOptions,
+  listBusinessConsoleWmsCountExecutions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
+  listBusinessConsoleWmsInboundOrders,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
@@ -26,6 +29,7 @@ import {
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
+import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 
 const DEFAULT_TAKE = 100
@@ -45,6 +49,10 @@ export interface WmsTaskFilters extends WmsScopeFilters {
 // 重试复用同一键以防丢响应导致重复入库；新操作才换新键）。org/env 不在 body，由本封装从主体注入。
 export type CompleteOutboundInput = BusinessConsoleCompleteWmsOutboundOrderRequest
 export type CompleteCountInput = BusinessConsoleCompleteWmsCountExecutionRequest
+export type WmsCompletionAttemptOptions = Readonly<{
+  attempt: 'initial' | 'retry'
+  onCommandAttempt?: () => void
+}>
 // 收货现场按行采集的批号/效期（#935 闭环）：随 completeInbound 落库。
 export type InboundLineCapture = BusinessConsoleWmsInboundLineCaptureInput
 
@@ -64,6 +72,14 @@ function listItems<TItem>(
 
 function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
   return envelope?.success ? (envelope.data?.total ?? 0) : 0
+}
+
+function exactItem<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+  matches: (item: TItem) => boolean,
+) {
+  const matchesById = listItems(envelope).filter(matches)
+  return matchesById.length === 1 ? matchesById[0] : undefined
 }
 
 // DRY scope binding：org/env 一律取登录主体；空 scope → 不发请求（enabled:false）。
@@ -118,11 +134,28 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     refresh: ordersQuery.refetch,
-    completeInbound: (
+    completeInbound: async (
       inboundOrderId: string,
       idempotencyKey: string,
       lines?: BusinessConsoleWmsInboundLineCaptureInput[],
+      options: WmsCompletionAttemptOptions = { attempt: 'initial' },
     ) => {
+      const { data } = await listBusinessConsoleWmsInboundOrders({
+        query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
+        throwOnError: true,
+      })
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+        (item: BusinessConsoleWmsInboundOrderItem) => item.inboundOrderId === inboundOrderId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-inbound',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: options.attempt === 'retry',
+        },
+      })
       // 幂等键由页面在用户发起操作时生成一次并跨重试复用（防丢响应重复入库）；
       // org/env 取登录主体注入 query，调用方无法影响。lines 为收货现场采集的
       // 批号/效期（#935 闭环），随 complete 一并落库；无采集则不带 lines。
@@ -130,6 +163,7 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         idempotencyKey,
         ...(lines && lines.length ? { lines } : {}),
       } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
+      options.onCommandAttempt?.()
       return completeMutation.mutateAsync({
         path: { inboundOrderId },
         query: scope.scopeQuery(),
@@ -171,10 +205,31 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     refresh: ordersQuery.refetch,
-    completeOutbound: (outboundOrderId: string, input: CompleteOutboundInput) => {
+    completeOutbound: async (
+      outboundOrderId: string,
+      input: CompleteOutboundInput,
+      options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+    ) => {
+      const { data } = await listBusinessConsoleWmsOutboundOrders({
+        query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
+        throwOnError: true,
+      })
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+        (item: BusinessConsoleWmsOutboundOrderItem) => item.outboundOrderId === outboundOrderId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-outbound',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: options.attempt === 'retry',
+        },
+      })
       // 页面提供 packReviewNo/passed/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const body = { ...input } satisfies BusinessConsoleCompleteWmsOutboundOrderRequest
+      options.onCommandAttempt?.()
       return completeMutation.mutateAsync({
         path: { outboundOrderId },
         query: scope.scopeQuery(),
@@ -316,10 +371,31 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
     refresh: executionsQuery.refetch,
-    completeCount: (countExecutionId: string, input: CompleteCountInput) => {
+    completeCount: async (
+      countExecutionId: string,
+      input: CompleteCountInput,
+      options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+    ) => {
+      const { data } = await listBusinessConsoleWmsCountExecutions({
+        query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
+        throwOnError: true,
+      })
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+        (item: BusinessConsoleWmsCountExecutionItem) => item.countExecutionId === countExecutionId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-count',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: options.attempt === 'retry',
+        },
+      })
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const body = { ...input } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
+      options.onCommandAttempt?.()
       return completeMutation.mutateAsync({
         path: { countExecutionId },
         query: scope.scopeQuery(),

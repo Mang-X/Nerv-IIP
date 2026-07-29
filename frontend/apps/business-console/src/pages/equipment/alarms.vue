@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { LifecycleStateChangedError, recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -353,24 +355,28 @@ function statusVariant(value?: string | null) {
 function isShelved(row: Alarm) {
   return (row.status ?? '').toLowerCase() === 'shelved'
 }
+function alarmActionAllowed(row: Alarm, action: 'acknowledge' | 'shelve' | 'unshelve') {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action,
+    facts: {
+      status: row.status,
+      acknowledgedAtUtc: row.acknowledgedAtUtc,
+      shelvedAtUtc: row.shelvedAtUtc,
+      shelvedUntilUtc: row.shelvedUntilUtc,
+    },
+  }).executable
+}
 function canAcknowledge(row: Alarm) {
   return (
-    canManageAlarms.value &&
-    Boolean(row.alarmEventId) &&
-    !row.acknowledgedAtUtc &&
-    (row.status ?? '').toLowerCase() !== 'cleared'
+    canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'acknowledge')
   )
 }
 function canShelve(row: Alarm) {
-  return (
-    canManageAlarms.value &&
-    Boolean(row.alarmEventId) &&
-    !isShelved(row) &&
-    (row.status ?? '').toLowerCase() !== 'cleared'
-  )
+  return canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'shelve')
 }
 function canUnshelve(row: Alarm) {
-  return canManageAlarms.value && Boolean(row.alarmEventId) && isShelved(row)
+  return canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'unshelve')
 }
 // Disposition only. 升级 is surfaced separately by the row icon/tooltip (orthogonal). An alarm
 // can be BOTH shelved and acknowledged (canAcknowledge does not exclude shelved), so show both
@@ -400,6 +406,11 @@ const selectedKeys = ref<(string | number)[]>([])
 const selectedAlarms = computed(() =>
   alarms.value.filter((a) => selectedKeys.value.includes(alarmKey(a))),
 )
+function isLifecycleConflictResult(
+  result: PromiseSettledResult<unknown>,
+): result is PromiseRejectedResult {
+  return result.status === 'rejected' && result.reason instanceof LifecycleStateChangedError
+}
 const ackTargets = computed(() => selectedAlarms.value.filter(canAcknowledge))
 const shelveTargets = computed(() => selectedAlarms.value.filter(canShelve))
 function clearSelection() {
@@ -413,6 +424,15 @@ async function handleAcknowledge(row: Alarm) {
     notifySuccess('报警已确认。')
     await refreshAlarms().catch(() => {})
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: clearSelection,
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '报警确认失败，请稍后重试。')
   }
 }
@@ -423,6 +443,15 @@ async function handleUnshelve(row: Alarm) {
     notifySuccess('报警搁置已解除。')
     await refreshAlarms().catch(() => {})
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: clearSelection,
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '解除搁置失败，请稍后重试。')
   }
 }
@@ -443,11 +472,25 @@ async function confirmBatchAck() {
     )
     // Commit the failed-row retention before the best-effort refresh so a refresh failure
     // cannot strand it (A1 §5.2); acknowledge is first-write-wins, so re-confirming is safe.
-    const failed = targets.filter((_, i) => results[i].status === 'rejected')
+    const stale = results.filter(isLifecycleConflictResult)
+    const failed = targets.filter(
+      (_, i) => results[i].status === 'rejected' && !isLifecycleConflictResult(results[i]),
+    )
     selectedKeys.value = failed.length ? failed.map(alarmKey) : []
     batchAck.open = false
-    summarizeBatch('确认', results)
-    await refreshAlarms().catch(() => {})
+    const ordinaryResults = results.filter((result) => !isLifecycleConflictResult(result))
+    if (ordinaryResults.length) summarizeBatch('确认', ordinaryResults)
+    if (stale.length) {
+      await recoverLifecycleAction(stale[0]!.reason, {
+        reset: () => {
+          batchAck.open = false
+        },
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    } else {
+      await refreshAlarms().catch(() => {})
+    }
   } finally {
     batchAck.submitting = false
   }
@@ -459,6 +502,7 @@ const MAX_SHELVE_MINUTES = 24 * 60
 const shelve = reactive({
   open: false,
   targets: [] as Alarm[],
+  editableFailures: [] as Alarm[],
   duration: '30' as string,
   customMinutes: 60,
   reason: '',
@@ -518,12 +562,40 @@ function openShelve(rows: Alarm[]) {
   shelve.customMinutes = 60
   shelve.reason = ''
   shelve.locked = false
+  shelve.editableFailures = []
   // Freeze the shelve instant for the whole batch intent: the backend derives the shelve
   // window from ShelvedAtUtc and de-dupes on the idempotency key (first-write-wins), so a
   // retry of the failed rows with the SAME frozen key is a no-op, not a re-shelve.
   shelve.batchAtUtc = new Date().toISOString()
   shelve.open = true
 }
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as {
+    code?: unknown
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  }
+  return [candidate.code, candidate.status, candidate.statusCode, candidate.response?.status].find(
+    (value): value is number => typeof value === 'number',
+  )
+}
+
+function isDefinitiveClientFailure(result: PromiseSettledResult<unknown>) {
+  if (result.status !== 'rejected') return false
+  const status = errorStatus(result.reason)
+  return status !== undefined && status >= 400 && status < 500 && status !== 409
+}
+
+function nextShelveIntentTimestamp(previous: string) {
+  const previousAt = Date.parse(previous)
+  return new Date(
+    Math.max(Date.now(), Number.isFinite(previousAt) ? previousAt + 1 : 0),
+  ).toISOString()
+}
+
 async function confirmShelve() {
   const targets = shelve.targets
   if (!targets.length || shelveInvalid.value) return
@@ -535,6 +607,7 @@ async function confirmShelve() {
     const results = await Promise.allSettled(
       targets.map((row) =>
         shelveAlarm(row.alarmEventId!, currentActor.value, minutes, reason, {
+          attempt: shelve.locked ? 'retry' : 'initial',
           shelvedAtUtc,
           idempotencyKey: `shelve:${row.alarmEventId}:${shelvedAtUtc}:${minutes}`,
         }),
@@ -545,18 +618,56 @@ async function confirmShelve() {
     // so a retry stays an idempotent no-op even if the first attempt actually succeeded on the
     // backend but the response was lost (A1 §5.2「失败行可定位」+ 稳定重试). Refresh is a
     // best-effort last step — its failure must never strand the retry state.
-    const failed = targets.filter((_, i) => results[i].status === 'rejected')
-    if (failed.length) {
-      shelve.targets = failed
-      selectedKeys.value = failed.map(alarmKey)
+    const stale = results.filter(isLifecycleConflictResult)
+    const uncertainFailures = targets.filter(
+      (_, i) =>
+        results[i].status === 'rejected' &&
+        !isLifecycleConflictResult(results[i]) &&
+        !isDefinitiveClientFailure(results[i]),
+    )
+    const definitiveFailures = targets.filter((_, i) => isDefinitiveClientFailure(results[i]))
+    const editableFailures = [...shelve.editableFailures, ...definitiveFailures].filter(
+      (row, index, rows) =>
+        rows.findIndex((candidate) => alarmKey(candidate) === alarmKey(row)) === index,
+    )
+    if (uncertainFailures.length) {
+      shelve.targets = uncertainFailures
+      shelve.editableFailures = editableFailures
+      selectedKeys.value = uncertainFailures.map(alarmKey)
       shelve.locked = true
+    } else if (editableFailures.length) {
+      // A definitive 4xx did not enter the ambiguous response-loss path. Keep the form
+      // editable, but rotate the frozen instant so a corrected payload is a new intent.
+      shelve.targets = editableFailures
+      shelve.editableFailures = []
+      selectedKeys.value = editableFailures.map(alarmKey)
+      shelve.locked = false
+      shelve.batchAtUtc = nextShelveIntentTimestamp(shelvedAtUtc)
     } else {
       clearSelection()
       shelve.locked = false
+      shelve.editableFailures = []
       shelve.open = false
     }
-    summarizeBatch('搁置', results)
-    await refreshAlarms().catch(() => {})
+    const ordinaryResults = results.filter((result) => !isLifecycleConflictResult(result))
+    if (ordinaryResults.length) summarizeBatch('搁置', ordinaryResults)
+    if (stale.length) {
+      await recoverLifecycleAction(stale[0]!.reason, {
+        reset: () => {
+          if (!uncertainFailures.length && !editableFailures.length) {
+            shelve.open = false
+            shelve.targets = []
+            shelve.locked = false
+            shelve.editableFailures = []
+            clearSelection()
+          }
+        },
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    } else {
+      await refreshAlarms().catch(() => {})
+    }
   } finally {
     shelve.submitting = false
   }
@@ -566,6 +677,7 @@ function abandonShelve() {
   shelve.locked = false
   shelve.batchAtUtc = ''
   shelve.targets = []
+  shelve.editableFailures = []
   clearSelection()
   shelve.open = false
 }

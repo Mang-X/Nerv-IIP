@@ -66,8 +66,14 @@ vi.mock('@/composables/usePromotedCatalogs', async () => {
   }
 })
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('@nerv-iip/business-core', () => ({ openDownloadGrantBlob: vi.fn() }))
+vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  useRouter: () => ({ push: vi.fn() }),
+}))
+vi.mock('@nerv-iip/business-core', () => ({
+  openDownloadGrantBlob: vi.fn(),
+  statusActionGate: () => ({ executable: true, legalNoop: false }),
+}))
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref('20') }),
 }))

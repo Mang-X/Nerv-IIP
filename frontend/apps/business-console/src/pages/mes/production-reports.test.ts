@@ -271,6 +271,28 @@ beforeEach(() => {
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
+  it('重新报工入口只带出报工记录中的真实工单与工序上下文，不伪造工序状态', () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    const vm = wrapper.vm as unknown as {
+      reReport: (row: (typeof rows)[number]) => void
+      reportOpen: boolean
+      reportContext: {
+        workOrderId: string
+        operationTaskId: string
+        operationStatus?: string
+      } | null
+    }
+
+    vm.reReport(rows[2])
+
+    expect(vm.reportOpen).toBe(true)
+    expect(vm.reportContext).toMatchObject({
+      workOrderId: 'WO-3',
+      operationTaskId: 'WO-3-OP-10',
+    })
+    expect(vm.reportContext?.operationStatus).toBeUndefined()
+  })
+
   it('shows every consumed material lot in the reversal dialog and preserves quantity summary', async () => {
     mesState.detail.value = {
       report: rows[0],

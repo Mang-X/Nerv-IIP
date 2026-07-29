@@ -162,7 +162,7 @@ describe('describeRequestError', () => {
     })
   })
 
-  it('treats a gateway business error as DETERMINATE and surfaces the server message', () => {
+  it('treats a standalone gateway business error as determinate', () => {
     expect(describeRequestError({ success: false, message: '工序状态非法' })).toMatchObject({
       kind: 'business',
       indeterminate: false,
@@ -171,6 +171,28 @@ describe('describeRequestError', () => {
     // problem-details fall back to detail/title when message is absent.
     expect(describeRequestError({ detail: '库存不足' }).message).toBe('库存不足')
     expect(describeRequestError({ title: '请求无效' }).message).toBe('请求无效')
+  })
+
+  it.each([
+    [{ statusCode: 503, message: '服务暂不可用' }],
+    [{ response: { status: 503 }, message: '服务暂不可用' }],
+  ])('treats a structured HTTP 5xx as indeterminate', (error) => {
+    expect(describeRequestError(error)).toMatchObject({
+      indeterminate: true,
+      message: '服务暂不可用',
+    })
+  })
+
+  it.each([{ statusCode: 400 }, { statusCode: 422 }, { response: { status: 422 } }])(
+    'keeps a structured HTTP 4xx determinate',
+    (error) => {
+      expect(describeRequestError(error).indeterminate).toBe(false)
+    },
+  )
+
+  it('classifies a Response 5xx as indeterminate and a Response 4xx as determinate', () => {
+    expect(isIndeterminateError(new Response(null, { status: 503 }))).toBe(true)
+    expect(isIndeterminateError(new Response(null, { status: 422 }))).toBe(false)
   })
 
   it('uses the caller fallback for a business error without a usable message', () => {
@@ -189,7 +211,7 @@ describe('describeRequestError', () => {
   it('isIndeterminateError is true only for a dispatched-but-unanswered request', () => {
     // Dispatched, outcome unknown → unsafe to blindly retry a non-idempotent write.
     expect(isIndeterminateError(new RequestTimeoutError())).toBe(true)
-    // Offline pre-check (never dispatched) + business errors (server responded) → safe.
+    // Offline pre-check and explicit application failures are determinate.
     expect(isIndeterminateError(new OfflineError())).toBe(false)
     expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
   })

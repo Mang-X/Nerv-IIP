@@ -10,6 +10,7 @@ import {
   type BusinessConsoleQualityReasonItem,
 } from '@nerv-iip/api-client'
 import type { QualityCharacteristicResultLine as ResultLine } from '@nerv-iip/business-core'
+import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
@@ -196,6 +197,28 @@ export function useBusinessQualityInspectionTasks() {
     if (!scopeReady.value || !inspectorUserId.value) {
       throw new Error('登录态未就绪，请稍后重试')
     }
+    const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        inspectionTaskId,
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
+      authoritativeEnvelope,
+    ).filter((task) => task.inspectionTaskId === inspectionTaskId)
+    const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+    assertLifecycleActionExecutable({
+      domain: 'quality-inspection-task',
+      action: 'create-record',
+      facts: {
+        status: authoritative?.status,
+        inspectionRecordId: authoritative?.inspectionRecordId,
+      },
+    })
     const reason = (dispositionReason ?? '').trim()
     return submitMutation.mutateAsync({
       path: { inspectionTaskId },

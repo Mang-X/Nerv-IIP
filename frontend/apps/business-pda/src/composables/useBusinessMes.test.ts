@@ -11,6 +11,7 @@ import {
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -86,6 +87,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       environmentId: query.environmentId,
     },
   ]),
+  listBusinessConsoleMesMaterialIssueRequests: vi.fn(),
   listBusinessConsoleMesOperationTasks: vi.fn(),
   listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions(
     'listBusinessConsoleMesOperationTasks',
@@ -184,6 +186,46 @@ describe('pda useBusinessMes composables', () => {
     coladaState.mutateById.clear()
     coladaState.cancelQueries.mockClear()
     authState.principal = { organizationId: 'org-001', environmentId: 'env-dev' }
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockReset()
+      .mockImplementation(
+        async ({ query }: { query: { keyword?: string | null; workOrderId?: string | null } }) =>
+          ({
+            data: {
+              success: true,
+              data: {
+                items: [
+                  {
+                    operationTaskId: query.keyword,
+                    workOrderId: query.workOrderId ?? 'wo-1',
+                    status: query.keyword === 'ot-3' ? 'Queued' : 'InProgress',
+                  },
+                ],
+                total: 1,
+              },
+            },
+          }) as never,
+      )
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests)
+      .mockReset()
+      .mockImplementation(
+        async ({ query }: { query: { workOrderId?: string | null } }) =>
+          ({
+            data: {
+              success: true,
+              data: {
+                items: [
+                  {
+                    requestId: 'req-2',
+                    workOrderId: query.workOrderId ?? 'wo-2',
+                    status: 'Requested',
+                  },
+                ],
+                total: 1,
+              },
+            },
+          }) as never,
+      )
   })
 
   it('keeps list queries disabled when the principal has no org/env scope', () => {
@@ -405,6 +447,27 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-complete-1')
   })
 
+  it('re-reads the exact operation task and blocks a completed task before mutation', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'ot-9', workOrderId: 'wo-1', status: 'Completed' }],
+          total: 1,
+        },
+      },
+    } as never)
+    const { completeTask } = useMesOperationTasks()
+
+    await expect(completeTask('ot-9', { idempotencyKey: 'op-complete-1' })).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    expect(
+      coladaState.mutateById.get('completeBusinessConsoleMesOperationTask'),
+    ).not.toHaveBeenCalled()
+  })
+
   it('starts an operation task forwarding an optional reason code with the caller-supplied key', async () => {
     const { startTask } = useMesOperationTasks()
 
@@ -435,9 +498,20 @@ describe('pda useBusinessMes composables', () => {
   it('forwards the caller-supplied key when confirming a line-side material receipt', async () => {
     const { confirmLineSideReceipt } = useMesMaterialIssue()
 
-    await confirmLineSideReceipt('req-2', { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' })
+    await confirmLineSideReceipt(
+      'req-2',
+      { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' },
+      { workOrderId: 'wo-2' },
+    )
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
+    expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledWith({
+      query: expect.objectContaining({ workOrderId: 'wo-2', skip: 0, take: 100 }),
+      throwOnError: true,
+    })
+    expect(
+      vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mock.calls[0]?.[0].query,
+    ).not.toHaveProperty('keyword')
     const mutateAsync = coladaState.mutateById.get(
       'confirmBusinessConsoleMesLineSideMaterialReceipt',
     )
@@ -500,6 +574,38 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.reportedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
     // the idempotency key is now the caller's responsibility — it passes through verbatim
     expect(payload.body.idempotencyKey).toBe('op-report-stable')
+  })
+
+  it('replays only the same issued report-complete key after the task became completed', async () => {
+    const { recordReport } = useMesProductionReports()
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')!
+    mutateAsync.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(undefined)
+    const originalIntent = {
+      workOrderId: 'wo-1',
+      operationTaskId: 'ot-1',
+      goodQuantity: 4,
+      scrapQuantity: 0,
+      completesOperation: true,
+      idempotencyKey: 'report-complete-replay',
+    }
+
+    await expect(recordReport(originalIntent)).rejects.toThrow('response lost')
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'ot-1', workOrderId: 'wo-1', status: 'Completed' }],
+          total: 1,
+        },
+      },
+    } as never)
+
+    await expect(recordReport(originalIntent)).resolves.toBeUndefined()
+    await expect(
+      recordReport({ ...originalIntent, idempotencyKey: 'report-complete-new-intent' }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(mutateAsync).toHaveBeenCalledTimes(2)
   })
 
   it('keeps injected scope/timestamp override-proof on createReceipt (hostile org/env lose; caller key wins)', async () => {

@@ -4,10 +4,12 @@ import type {
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
@@ -136,11 +138,35 @@ const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
     isNonEmpty(selectedNcrId.value) &&
-    isNonEmpty(dispositionForm.dispositionType),
+    isNonEmpty(dispositionForm.dispositionType) &&
+    statusActionGate({
+      domain: 'quality-ncr',
+      action: 'submit-disposition',
+      facts: {
+        status: selectedNcr.value?.status,
+        dispositionType:
+          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
+            ? 'recorded'
+            : undefined,
+      },
+    }).executable,
 )
 const canCloseNcr = computed(
   () =>
-    hasBusinessContext(filters) && isNonEmpty(selectedNcrId.value) && isNonEmpty(closeForm.reason),
+    hasBusinessContext(filters) &&
+    isNonEmpty(selectedNcrId.value) &&
+    isNonEmpty(closeForm.reason) &&
+    statusActionGate({
+      domain: 'quality-ncr',
+      action: 'close',
+      facts: {
+        status: selectedNcr.value?.status,
+        dispositionType:
+          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
+            ? 'recorded'
+            : undefined,
+      },
+    }).executable,
 )
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -188,6 +214,18 @@ async function submitNcrDisposition() {
   try {
     await submitDisposition(selectedNcrId.value, body)
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          detailOpen.value = false
+          selectedNcr.value = undefined
+        },
+        refresh: refreshNcrs,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '处置提交失败，请稍后重试。')
     return
   }
@@ -211,6 +249,18 @@ async function submitCloseNcr() {
   try {
     await closeNcr(selectedNcrId.value, body)
   } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          detailOpen.value = false
+          selectedNcr.value = undefined
+        },
+        refresh: refreshNcrs,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
     notifyError(error, '不合格品关闭失败，请稍后重试。')
     return
   }

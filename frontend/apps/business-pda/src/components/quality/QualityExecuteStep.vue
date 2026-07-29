@@ -30,7 +30,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   submitted: [result: AuthoritativeInspectionResult]
-  failed: [message: string]
+  failed: [message: string, error?: unknown]
   refreshCharacteristics: []
 }>()
 
@@ -125,7 +125,7 @@ async function submit() {
     const result = await execution.submit(props.task.inspectionTaskId)
     emit('submitted', result)
   } catch (e) {
-    emit('failed', e instanceof Error ? e.message : '提交失败，请检查网络后重试。')
+    emit('failed', e instanceof Error ? e.message : '提交失败，请检查网络后重试。', e)
   }
 }
 

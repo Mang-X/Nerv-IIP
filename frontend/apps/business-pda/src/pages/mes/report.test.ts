@@ -36,6 +36,8 @@ const recordReport = vi.fn(
 )
 const refreshWorkOrders = vi.fn(async () => {})
 const refreshTasks = vi.fn(async () => {})
+const refreshWorkOrderDetail = vi.fn(async () => {})
+const refreshExactTask = vi.fn(async () => {})
 const cancelPendingTasks = vi.fn()
 const workOrdersErrorRef = ref<unknown>(null)
 const tasksErrorRef = ref<unknown>(null)
@@ -62,14 +64,14 @@ const defaultOperationTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
-    status: 'Running',
+    status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
   },
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0001',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
@@ -139,6 +141,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     pending: workOrderDetailPendingRef,
     error: workOrderDetailErrorRef,
+    refresh: refreshWorkOrderDetail,
   }),
   useMesExactOperationTask: (
     workOrderId: { value: string },
@@ -160,6 +163,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     pending: exactTaskPendingRef,
     error: exactTaskErrorRef,
+    refresh: refreshExactTask,
   }),
   useMesProductionReports: () => ({
     filters: reactive({}),
@@ -205,6 +209,8 @@ describe('PDA MES production reporting page', () => {
     replace.mockClear()
     refreshWorkOrders.mockClear()
     refreshTasks.mockClear()
+    refreshWorkOrderDetail.mockClear()
+    refreshExactTask.mockClear()
     cancelPendingTasks.mockClear()
     workOrdersErrorRef.value = null
     tasksErrorRef.value = null
@@ -732,6 +738,47 @@ describe('PDA MES production reporting page', () => {
     // 成功后 Result 成功态
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('报工成功')
+    wrapper.unmount()
+  })
+
+  it('keeps ordinary reporting available for a completed task without allowing completion again', async () => {
+    operationTasksRef.value = [
+      {
+        operationTaskId: 'OP-DONE',
+        workOrderId: 'WO-2026-0001',
+        status: 'Completed',
+        operationSequence: 10,
+      },
+    ]
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: operationTasksRef.value,
+    }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+
+    const complete = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="completes-operation"]',
+    )!
+    expect(complete.disabled).toBe(true)
+
+    const goodInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="good-quantity"]',
+    )!
+    goodInput.value = '1'
+    goodInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    expect(recordReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationTaskId: 'OP-DONE',
+        completesOperation: false,
+      }),
+    )
     wrapper.unmount()
   })
 

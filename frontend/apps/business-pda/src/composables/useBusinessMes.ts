@@ -8,6 +8,7 @@ import {
   getBusinessConsoleMesWorkOrderDetailQueryKey,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
@@ -45,6 +46,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
+import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 
 const DEFAULT_TAKE = 100
@@ -145,6 +147,14 @@ function envelopeData<TData, TEnvelope extends { success?: boolean; data?: TData
   return envelope.data ?? undefined
 }
 
+function exactItem<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+  matches: (item: TItem) => boolean,
+) {
+  const matchesById = (envelope?.success ? (envelope.data?.items ?? []) : []).filter(matches)
+  return matchesById.length === 1 ? matchesById[0] : undefined
+}
+
 function isBusinessQuery(id: string) {
   return (entry: UseQueryEntry) => {
     const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -228,6 +238,7 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     ),
     pending: detailQuery.isLoading,
     error: detailQuery.error,
+    refresh: detailQuery.refetch,
   }
 }
 
@@ -343,6 +354,7 @@ export function useMesExactOperationTask(
     task: query.data,
     pending: query.isLoading,
     error: query.error,
+    refresh: query.refetch,
   }
 }
 
@@ -354,6 +366,31 @@ export function useMesExactOperationTask(
 export interface OperationActionOptions {
   reasonCode?: string
   idempotencyKey: string
+}
+
+type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+
+async function readExactOperationTask(
+  filters: MesScope,
+  operationTaskId: string,
+  workOrderId?: string,
+): Promise<BusinessConsoleMesOperationTaskRow | undefined> {
+  const { data } = await listBusinessConsoleMesOperationTasks({
+    query: {
+      ...scopeQuery(filters),
+      ...(workOrderId ? { workOrderId } : {}),
+      keyword: operationTaskId,
+      skip: 0,
+      take: 2,
+    },
+    throwOnError: true,
+  })
+  return exactItem(
+    data as BusinessConsoleMesOperationTaskListEnvelope | undefined,
+    (item: BusinessConsoleMesOperationTaskRow) =>
+      item.operationTaskId === operationTaskId &&
+      (!workOrderId || item.workOrderId === workOrderId),
+  )
 }
 
 export function useMesOperationTasks() {
@@ -401,6 +438,24 @@ export function useMesOperationTasks() {
     }
   }
 
+  async function runAction(
+    action: OperationAction,
+    operationTaskId: string,
+    options: OperationActionOptions,
+  ) {
+    const authoritative = await readExactOperationTask(filters, operationTaskId)
+    assertLifecycleActionExecutable({
+      domain: 'mes-operation-task',
+      action,
+      facts: { status: authoritative?.status },
+    })
+    const payload = actionPayload(operationTaskId, options)
+    if (action === 'start') return startMutation.mutateAsync(payload)
+    if (action === 'pause') return pauseMutation.mutateAsync(payload)
+    if (action === 'resume') return resumeMutation.mutateAsync(payload)
+    return completeMutation.mutateAsync(payload)
+  }
+
   return {
     filters,
     operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
@@ -418,13 +473,13 @@ export function useMesOperationTasks() {
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
       }),
     startTask: (operationTaskId: string, options: OperationActionOptions) =>
-      startMutation.mutateAsync(actionPayload(operationTaskId, options)),
+      runAction('start', operationTaskId, options),
     pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
-      pauseMutation.mutateAsync(actionPayload(operationTaskId, options)),
+      runAction('pause', operationTaskId, options),
     resumeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      resumeMutation.mutateAsync(actionPayload(operationTaskId, options)),
+      runAction('resume', operationTaskId, options),
     completeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      completeMutation.mutateAsync(actionPayload(operationTaskId, options)),
+      runAction('complete', operationTaskId, options),
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||
@@ -535,6 +590,7 @@ export function useMesProductionReports() {
       ]).catch(ignoreBackgroundError)
     },
   })
+  const issuedReportCompleteIntents = new Set<string>()
 
   return {
     filters,
@@ -548,8 +604,30 @@ export function useMesProductionReports() {
     pending: reportsQuery.isLoading,
     error: reportsQuery.error,
     refresh: reportsQuery.refetch,
-    recordReport: (input: RecordReportInput) =>
-      recordMutation.mutateAsync({
+    recordReport: async (input: RecordReportInput) => {
+      const workOrderId = input.workOrderId?.trim()
+      const operationTaskId = input.operationTaskId?.trim()
+      const idempotencyKey = input.idempotencyKey?.trim()
+      const reportCompleteIntent =
+        input.completesOperation && workOrderId && operationTaskId && idempotencyKey
+          ? `${workOrderId}\u0000${operationTaskId}\u0000${idempotencyKey}`
+          : undefined
+      const isIssuedReplay =
+        reportCompleteIntent !== undefined && issuedReportCompleteIntents.has(reportCompleteIntent)
+      if (input.completesOperation && !isIssuedReplay) {
+        const authoritative = operationTaskId
+          ? await readExactOperationTask(filters, operationTaskId, workOrderId)
+          : undefined
+        assertLifecycleActionExecutable({
+          domain: 'mes-operation-task',
+          action: 'report-complete',
+          facts: {
+            status: authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
+          },
+        })
+      }
+      if (reportCompleteIntent) issuedReportCompleteIntents.add(reportCompleteIntent)
+      return recordMutation.mutateAsync({
         body: {
           ...input,
           // org/env + timestamp injected LAST from principal scope — never the caller.
@@ -557,7 +635,8 @@ export function useMesProductionReports() {
           environmentId: filters.environmentId,
           reportedAtUtc: new Date().toISOString(),
         } satisfies BusinessConsoleRecordProductionReportRequest,
-      }),
+      })
+    },
   }
 }
 
@@ -671,12 +750,45 @@ export function useMesMaterialIssue() {
         query: scopeQuery(filters),
         body: { ...body } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
       }),
-    confirmLineSideReceipt: (requestId: string, body: ConfirmLineSideReceiptInput) =>
-      confirmMutation.mutateAsync({
+    confirmLineSideReceipt: async (
+      requestId: string,
+      body: ConfirmLineSideReceiptInput,
+      context: { workOrderId?: string } = {},
+    ) => {
+      let skip = 0
+      let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
+      while (!authoritative) {
+        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+          query: {
+            ...scopeQuery(filters),
+            ...(context.workOrderId?.trim() ? { workOrderId: context.workOrderId.trim() } : {}),
+            skip,
+            take: DEFAULT_TAKE,
+          },
+          throwOnError: true,
+        })
+        const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
+        authoritative = exactItem(
+          envelope,
+          (item: BusinessConsoleMesMaterialIssueRequestRow) => item.requestId === requestId,
+        )
+        if (authoritative) break
+        const items = envelope?.success ? (envelope.data?.items ?? []) : []
+        const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
+        if (items.length === 0 || skip + items.length >= total) break
+        skip += items.length
+      }
+      assertLifecycleActionExecutable({
+        domain: 'mes-material-issue',
+        action: 'confirm-receipt',
+        facts: { status: authoritative?.status },
+      })
+      return confirmMutation.mutateAsync({
         path: { requestId },
         query: scopeQuery(filters),
         body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
-      }),
+      })
+    },
   }
 }
 
