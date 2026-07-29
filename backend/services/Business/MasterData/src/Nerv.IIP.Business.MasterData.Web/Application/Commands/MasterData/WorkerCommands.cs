@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkerAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -18,9 +19,13 @@ public sealed record CreateWorkerCommand(
     string? JobTitle,
     string? EmploymentStatus,
     string? Phone,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateWorkerCommandHandler(IWorkerRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateWorkerCommandHandler(
+    IWorkerRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateWorkerCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkerCommand request, CancellationToken cancellationToken)
@@ -64,6 +69,20 @@ public sealed class CreateWorkerCommandHandler(IWorkerRepository repository, Mas
             employmentStatus,
             request.Phone);
         await repository.AddAsync(worker, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for worker creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "worker",
+            worker.Id.ToString(),
+            worker.Code,
+            new
+            {
+                userId = worker.UserId,
+                employmentStatus = worker.EmploymentStatus,
+                disabled = worker.Disabled,
+            });
         return new MasterDataResourceResult("worker", worker.Code, worker.Name);
     }
 }
