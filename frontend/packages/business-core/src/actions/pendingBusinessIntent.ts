@@ -131,9 +131,13 @@ export function getBusinessWriteErrorStatus(error: unknown) {
     statusCode?: unknown
     response?: { status?: unknown }
   }
-  const status = candidate.statusCode ?? candidate.status ?? candidate.response?.status
-  if (typeof status === 'number' && Number.isInteger(status)) return status
-  return businessWriteResponseStatuses.get(error)
+  const preservedStatus = businessWriteResponseStatuses.get(error)
+  if (preservedStatus !== undefined) return preservedStatus
+
+  for (const status of [candidate.statusCode, candidate.status, candidate.response?.status]) {
+    if (typeof status === 'number' && Number.isInteger(status)) return status
+  }
+  return undefined
 }
 
 export function preserveBusinessWriteErrorStatus(error: unknown, status?: number) {

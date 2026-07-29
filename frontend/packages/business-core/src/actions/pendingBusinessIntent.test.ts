@@ -4,6 +4,7 @@ import {
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  preserveBusinessWriteErrorStatus,
   shouldRetainPendingBusinessIntent,
 } from './pendingBusinessIntent'
 
@@ -132,6 +133,36 @@ describe('pending business intent session store', () => {
     { indeterminate: true },
   ])('retains an intent when the dispatched write outcome is indeterminate', (error) => {
     expect(shouldRetainPendingBusinessIntent(error)).toBe(true)
+  })
+
+  it.each([
+    { statusCode: 'invalid', response: { status: 503 } },
+    { status: 'invalid', response: { status: 503 } },
+  ])(
+    'retains an intent when an invalid top-level status precedes a response 5xx',
+    async (error) => {
+      acquirePendingBusinessIntent(scope, () => 'response-503-key')
+
+      await expect(
+        completePendingBusinessIntent(scope, async () => {
+          throw error
+        }),
+      ).rejects.toBe(error)
+      expect(peekPendingBusinessIntent(scope)?.idempotencyKey).toBe('response-503-key')
+    },
+  )
+
+  it('prefers a preserved HTTP status over status-like fields from the error payload', async () => {
+    const error = { statusCode: 422 }
+    preserveBusinessWriteErrorStatus(error, 503)
+    acquirePendingBusinessIntent(scope, () => 'preserved-503-key')
+
+    await expect(
+      completePendingBusinessIntent(scope, async () => {
+        throw error
+      }),
+    ).rejects.toBe(error)
+    expect(peekPendingBusinessIntent(scope)?.idempotencyKey).toBe('preserved-503-key')
   })
 
   it('clears after success or determinate failure and retains after an unconfirmed result', async () => {
