@@ -133,6 +133,7 @@ public sealed class MesEndpointContractTests
                 });
             });
         var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
         var body = new
         {
