@@ -51,6 +51,106 @@ public sealed record BusinessConsoleCreateWmsPutawayTaskRequest(
 
 public sealed record BusinessConsoleCreateWmsWarehouseTaskResponse(string WarehouseTaskId);
 
+public sealed record BusinessConsoleStartWmsWarehouseTaskRequest(
+    [property: RouteParam] string WarehouseTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleRecordWmsWarehouseTaskProgressRequest(
+    [property: RouteParam] string WarehouseTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleReportWmsWarehouseTaskExceptionRequest(
+    [property: RouteParam] string WarehouseTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    string ExceptionCode,
+    string Reason,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessConsoleCompleteWmsWarehouseTaskRequest(
+    [property: RouteParam] string WarehouseTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    string? DifferenceReason = null,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessWmsStartWarehouseTaskActionRequest(
+    string WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+
+public sealed record BusinessWmsRecordWarehouseTaskProgressActionRequest(
+    string WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+
+public sealed record BusinessWmsReportWarehouseTaskExceptionActionRequest(
+    string WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    string ExceptionCode,
+    string Reason,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+
+public sealed record BusinessWmsCompleteWarehouseTaskActionRequest(
+    string WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorUserId,
+    string IdempotencyKey,
+    long ExpectedVersion,
+    decimal ExecutedQuantity,
+    string? DifferenceReason = null,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    bool OrganizationWideScope = false);
+
+public sealed record BusinessConsoleWmsWarehouseTaskActionResult(
+    string WarehouseTaskId,
+    string TaskType,
+    string Status,
+    long Version,
+    decimal ExecutedQuantity,
+    decimal DifferenceQuantity,
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
+
 public sealed record BusinessConsoleCompleteWmsInboundOrderRequest(
     [property: RouteParam] string InboundOrderId,
     [property: QueryParam] string OrganizationId,
@@ -170,7 +270,9 @@ public sealed record BusinessConsoleWmsInboundOrderListRequest(
     int Take = 100,
     string? Status = null,
     string? Keyword = null,
-    string? InboundOrderId = null);
+    string? InboundOrderId = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
 
 public sealed record BusinessConsoleWmsInboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,
@@ -199,7 +301,9 @@ public sealed record BusinessConsoleWmsOutboundOrderListRequest(
     int Take = 100,
     string? Status = null,
     string? Keyword = null,
-    string? OutboundOrderId = null);
+    string? OutboundOrderId = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
 
 public sealed record BusinessConsoleWmsOutboundOrderItem(
     string OutboundOrderId,
@@ -233,11 +337,27 @@ public sealed record BusinessConsoleWmsWarehouseTaskListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? LocationCode,
-    string? OperatorUserId,
+    string? LotNo,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null);
+    string? Keyword = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessWmsWarehouseTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? LocationCode,
+    string? LotNo,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    string? AssignedOperatorUserIds = null,
+    string? AssignedTeamIds = null,
+    string? SiteCodes = null,
+    bool OrganizationWideScope = false);
 
 public sealed record BusinessConsoleWmsWarehouseTaskListResponse(
     IReadOnlyCollection<BusinessConsoleWmsWarehouseTaskItem> Items,
@@ -260,7 +380,14 @@ public sealed record BusinessConsoleWmsWarehouseTaskItem(
     decimal ExecutedQuantity,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    string? AssignedOperatorUserId = null,
+    string? AssignedTeamId = null,
+    string? LotNo = null,
+    string? SerialNo = null,
+    long Version = 0,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null);
 
 public sealed record BusinessConsoleWmsCountExecutionListRequest(
     string OrganizationId,
@@ -270,7 +397,35 @@ public sealed record BusinessConsoleWmsCountExecutionListRequest(
     int Take = 100,
     string? Status = null,
     string? Keyword = null,
-    string? CountExecutionId = null);
+    string? CountExecutionId = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessWmsScopedListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    string? AssignedOperatorUserIds = null,
+    string? AssignedTeamIds = null,
+    string? SiteCodes = null,
+    bool OrganizationWideScope = false);
+
+public sealed record BusinessWmsCountExecutionListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? LocationCode,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null,
+    string? CountExecutionId = null,
+    string? AssignedOperatorUserIds = null,
+    string? AssignedTeamIds = null,
+    string? SiteCodes = null,
+    bool OrganizationWideScope = false);
 
 public sealed record BusinessConsoleWmsCountExecutionListResponse(
     IReadOnlyCollection<BusinessConsoleWmsCountExecutionItem> Items,

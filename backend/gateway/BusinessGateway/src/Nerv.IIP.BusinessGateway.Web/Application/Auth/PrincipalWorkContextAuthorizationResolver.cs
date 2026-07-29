@@ -236,6 +236,7 @@ public static class PrincipalWorkContextAuthorizationResolver
             "team" when Exact(candidate, "team", grant.ScopeId) => "exact",
             "work-center" when Exact(candidate, "work-center", grant.ScopeId) => "exact",
             "workshop" when Exact(candidate, "workshop", grant.ScopeId) => "exact",
+            "site" when Exact(candidate, "site", grant.ScopeId) => "exact",
             "workshop" when candidate.Kind is "team" or "work-center"
                 && HasAncestor(candidate, "workshop", grant.ScopeId) => "workshop-descendant",
             "site" when candidate.Kind is "team" or "work-center" or "workshop"
@@ -287,5 +288,5 @@ public static class PrincipalWorkContextAuthorizationResolver
 
     private static bool IsKnownCandidateKind(string kind) =>
         kind.Trim().ToLowerInvariant() is
-            "self" or "team" or "work-center" or "workshop" or "organization";
+            "self" or "team" or "work-center" or "workshop" or "site" or "organization";
 }

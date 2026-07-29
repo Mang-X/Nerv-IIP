@@ -506,6 +506,24 @@ public sealed class BusinessGatewayAuthorizationTests
             return BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody(path);
         }
 
+        if ((path.Contains("/wms/putaway-tasks/", StringComparison.Ordinal)
+                || path.Contains("/wms/picking-tasks/", StringComparison.Ordinal))
+            && (path.EndsWith("/start", StringComparison.Ordinal)
+                || path.EndsWith("/progress", StringComparison.Ordinal)
+                || path.EndsWith("/exception", StringComparison.Ordinal)
+                || path.EndsWith("/complete", StringComparison.Ordinal)))
+        {
+            return new
+            {
+                idempotencyKey = "idem-wms-task-authz",
+                expectedVersion = 1,
+                executedQuantity = 1m,
+                exceptionCode = "LOCATION_BLOCKED",
+                reason = "Authorization test.",
+                differenceReason = "Authorization test.",
+            };
+        }
+
         return path switch
         {
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
@@ -1310,11 +1328,19 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/picking-tasks", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);

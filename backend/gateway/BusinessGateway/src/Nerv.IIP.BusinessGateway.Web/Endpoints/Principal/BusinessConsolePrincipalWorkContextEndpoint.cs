@@ -185,7 +185,7 @@ internal static class BusinessGatewayPermissionCatalog
 internal static class BusinessGatewayWorkScopeKinds
 {
     private static readonly HashSet<string> Values = new(
-        ["self", "team", "work-center", "workshop", "organization"],
+        ["self", "team", "work-center", "workshop", "site", "organization"],
         StringComparer.Ordinal);
 
     public static bool Contains(string? scopeKind) =>

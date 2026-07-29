@@ -9,7 +9,8 @@ public sealed record PrincipalWorkScopeSelection(
     string Id,
     IReadOnlyCollection<string> AssignedUserIds,
     IReadOnlyCollection<string> TeamIds,
-    IReadOnlyCollection<string> WorkCenterIds);
+    IReadOnlyCollection<string> WorkCenterIds,
+    IReadOnlyCollection<string> SiteCodes);
 
 public sealed class PrincipalWorkScopeResolver(
     IBusinessMasterDataClient masterData,
@@ -80,11 +81,12 @@ public sealed class PrincipalWorkScopeResolver(
         return selected.Kind switch
         {
             "self" when string.Equals(selected.Id, principalId, StringComparison.Ordinal) =>
-                new(selected.Kind, selected.Id, [principalId], [], []),
-            "team" => new(selected.Kind, selected.Id, [], [selected.Id], []),
-            "work-center" => new(selected.Kind, selected.Id, [], [], [selected.Id]),
+                new(selected.Kind, selected.Id, [principalId], [], [], []),
+            "team" => new(selected.Kind, selected.Id, [], [selected.Id], [], []),
+            "work-center" => new(selected.Kind, selected.Id, [], [], [selected.Id], []),
             "workshop" => WorkshopSelection(context, authorizedScopes, selected),
-            "organization" => new(selected.Kind, selected.Id, [], [], []),
+            "site" => new(selected.Kind, selected.Id, [], [], [], [selected.Id]),
+            "organization" => new(selected.Kind, selected.Id, [], [], [], []),
             _ => throw Forbidden(),
         };
     }
@@ -112,7 +114,7 @@ public sealed class PrincipalWorkScopeResolver(
             throw Forbidden();
         }
 
-        return new(selected.Kind, selected.Id, [], [], workCenterIds);
+        return new(selected.Kind, selected.Id, [], [], workCenterIds, []);
     }
 
     private static BusinessServiceProxyException Forbidden() =>
