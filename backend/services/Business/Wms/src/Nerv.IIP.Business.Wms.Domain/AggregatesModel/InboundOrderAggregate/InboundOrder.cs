@@ -56,7 +56,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string siteCode,
         IEnumerable<InboundOrderLineDraft> lineDrafts,
         string? assignedOperatorUserId,
-        string? assignedTeamId)
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -65,7 +65,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
-        AssignedTeamId = WmsText.Optional(assignedTeamId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         Status = InboundOrderStatus.Open;
         CreatedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
@@ -86,7 +86,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public string? AssignedOperatorUserId { get; private set; }
-    public string? AssignedTeamId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public InboundOrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
@@ -103,7 +103,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string siteCode,
         IEnumerable<InboundOrderLineDraft> lines,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new InboundOrder(
             organizationId,
@@ -114,7 +114,14 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             siteCode,
             lines,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(string assignedPoolCode, string? assignedOperatorUserId = null)
+    {
+        EnsureOpen();
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
     }
 
     public void Cancel(string reason)
@@ -132,7 +139,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string toLocationCode,
         decimal quantity,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         var line = FindLine(lineNo);
         EnsureCanCreatePutawayTask(line);
@@ -156,7 +163,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             line.LotNo,
             line.SerialNo,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> Complete(

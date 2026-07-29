@@ -59,7 +59,7 @@ public sealed record CreateInboundOrderCommand(
     string SiteCode,
     IReadOnlyCollection<WmsInboundLineInput> Lines,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null) : ICommand<InboundOrderId>;
+    string? AssignedPoolCode = null) : ICommand<InboundOrderId>;
 
 public sealed class CreateInboundOrderCommandValidator : AbstractValidator<CreateInboundOrderCommand>
 {
@@ -73,7 +73,7 @@ public sealed class CreateInboundOrderCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Lines).NotEmpty();
         RuleFor(x => x.AssignedOperatorUserId).MaximumLength(150);
-        RuleFor(x => x.AssignedTeamId).MaximumLength(100);
+        RuleFor(x => x.AssignedPoolCode).MaximumLength(100);
     }
 }
 
@@ -91,7 +91,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SiteCode,
             request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)),
             request.AssignedOperatorUserId,
-            request.AssignedTeamId);
+            request.AssignedPoolCode);
         var existingOrder = await dbContext.InboundOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(
@@ -119,7 +119,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             || existing.SourceDocumentId != proposed.SourceDocumentId
             || existing.SiteCode != proposed.SiteCode
             || existing.AssignedOperatorUserId != proposed.AssignedOperatorUserId
-            || existing.AssignedTeamId != proposed.AssignedTeamId
+            || existing.AssignedPoolCode != proposed.AssignedPoolCode
             || existing.Lines.Count != proposed.Lines.Count)
         {
             return false;
@@ -150,7 +150,7 @@ public sealed record CreatePutawayTaskCommand(
     string ToLocationCode,
     decimal Quantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null) : ICommand<WarehouseTaskId>;
+    string? AssignedPoolCode = null) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreatePutawayTaskCommand, WarehouseTaskId>
@@ -173,7 +173,7 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
                 || existingTask.ToLocationCode != request.ToLocationCode
                 || existingTask.PlannedQuantity != request.Quantity
                 || existingTask.AssignedOperatorUserId != request.AssignedOperatorUserId
-                || existingTask.AssignedTeamId != request.AssignedTeamId)
+                || existingTask.AssignedPoolCode != request.AssignedPoolCode)
             {
                 throw new KnownException($"Warehouse task '{request.TaskNo}' already exists with different putaway facts.");
             }
@@ -188,7 +188,7 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
             request.ToLocationCode,
             request.Quantity,
             request.AssignedOperatorUserId,
-            request.AssignedTeamId);
+            request.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -384,7 +384,7 @@ public sealed record CreateOutboundOrderCommand(
     string SiteCode,
     IReadOnlyCollection<WmsOutboundLineInput> Lines,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null) : ICommand<OutboundOrderId>;
+    string? AssignedPoolCode = null) : ICommand<OutboundOrderId>;
 
 public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CreateOutboundOrderCommand, OutboundOrderId>
@@ -410,7 +410,7 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
             request.SiteCode,
             request.Lines.Select(x => new OutboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.RequestedQuantity, x.PickLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)),
             request.AssignedOperatorUserId,
-            request.AssignedTeamId);
+            request.AssignedPoolCode);
         dbContext.OutboundOrders.Add(order);
         await Task.CompletedTask;
         return order.Id;
@@ -425,7 +425,7 @@ public sealed record CreatePickingTaskCommand(
     string ToLocationCode,
     decimal Quantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null) : ICommand<WarehouseTaskId>;
+    string? AssignedPoolCode = null) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePickingTaskCommandHandler(
     ApplicationDbContext dbContext,
@@ -464,7 +464,7 @@ public sealed class CreatePickingTaskCommandHandler(
             reservation?.LotNo,
             reservation?.SerialNo,
             request.AssignedOperatorUserId,
-            request.AssignedTeamId);
+            request.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -667,7 +667,7 @@ public interface IWarehouseTaskActionCommand
 
     WarehouseTaskType ExpectedTaskType { get; }
 
-    IReadOnlyCollection<string>? AuthorizedTeamIds { get; }
+    IReadOnlyCollection<string>? AuthorizedPoolCodes { get; }
 
     IReadOnlyCollection<string>? AuthorizedSiteCodes { get; }
 
@@ -682,7 +682,7 @@ public sealed record StartWarehouseTaskCommand(
     string IdempotencyKey,
     long ExpectedVersion,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
@@ -696,7 +696,7 @@ public sealed record RecordWarehouseTaskProgressActionCommand(
     long ExpectedVersion,
     decimal ExecutedQuantity,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
@@ -711,7 +711,7 @@ public sealed record ReportWarehouseTaskExceptionCommand(
     string ExceptionCode,
     string Reason,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
@@ -726,7 +726,7 @@ public sealed record CompleteWarehouseTaskActionCommand(
     decimal ExecutedQuantity,
     string? DifferenceReason,
     WarehouseTaskType ExpectedTaskType,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false)
     : ICommand<WarehouseTaskActionResult>, IWarehouseTaskActionCommand;
@@ -779,7 +779,7 @@ internal static class WarehouseTaskActionValidation
         validator.RuleFor(x => x.ActorUserId).NotEmpty().MaximumLength(150);
         validator.RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         validator.RuleFor(x => x.ExpectedVersion).GreaterThan(0);
-        validator.RuleForEach(x => x.AuthorizedTeamIds).NotEmpty().MaximumLength(100);
+        validator.RuleForEach(x => x.AuthorizedPoolCodes).NotEmpty().MaximumLength(100);
         validator.RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
     }
 }
@@ -800,7 +800,10 @@ public sealed class StartWarehouseTaskCommandHandler(ApplicationDbContext dbCont
                 request.ExpectedVersion,
                 request.ExpectedTaskType,
             },
-            task => task.Start(request.ActorUserId, request.ExpectedVersion),
+            task => task.Start(
+                request.ActorUserId,
+                request.ExpectedVersion,
+                claimPoolAssignment: task.AssignedOperatorUserId is null),
             cancellationToken);
 }
 
@@ -1007,12 +1010,12 @@ internal static class WarehouseTaskActionExecution
             return;
         }
 
-        var authorizedTeamIds = NormalizeScopes(command.AuthorizedTeamIds);
-        if (!string.IsNullOrWhiteSpace(task.AssignedTeamId))
+        var authorizedPoolCodes = NormalizeScopes(command.AuthorizedPoolCodes);
+        if (!string.IsNullOrWhiteSpace(task.AssignedPoolCode))
         {
-            if (!authorizedTeamIds.Contains(task.AssignedTeamId))
+            if (!authorizedPoolCodes.Contains(task.AssignedPoolCode))
             {
-                throw new WmsLifecycleConflictException(action, "team-scope-mismatch");
+                throw new WmsLifecycleConflictException(action, "pool-scope-mismatch");
             }
 
             return;
@@ -1570,7 +1573,7 @@ public sealed record CreateCountExecutionCommand(
     string LocationCode,
     decimal ExpectedQuantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null) : ICommand<CountExecutionId>;
+    string? AssignedPoolCode = null) : ICommand<CountExecutionId>;
 
 public sealed class CreateCountExecutionCommandHandler(
     ApplicationDbContext dbContext,
@@ -1589,7 +1592,7 @@ public sealed class CreateCountExecutionCommandHandler(
             request.LocationCode,
             request.ExpectedQuantity,
             request.AssignedOperatorUserId,
-            request.AssignedTeamId);
+            request.AssignedPoolCode);
         if (inventoryReservationClient is not null)
         {
             var countTask = await inventoryReservationClient.CreateCountTaskAsync(ToInventoryCountTaskRequest(count), cancellationToken);

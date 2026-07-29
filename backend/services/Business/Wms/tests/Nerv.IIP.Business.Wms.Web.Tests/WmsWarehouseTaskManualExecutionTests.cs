@@ -181,7 +181,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
         var task = CreateTask(
             WarehouseTaskType.Picking,
             taskNo: "PICK-SHORT-001",
-            assignedTeamId: "TEAM-A");
+            assignedPoolCode: "POOL-A");
         dbContext.WarehouseTasks.Add(task);
         await dbContext.SaveChangesAsync();
         var start = await new StartWarehouseTaskCommandHandler(dbContext).Handle(
@@ -193,7 +193,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "start-short-001",
                 1,
                 WarehouseTaskType.Picking,
-                AuthorizedTeamIds: ["TEAM-A"]),
+                AuthorizedPoolCodes: ["POOL-A"]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -208,7 +208,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 8m,
                 "库位库存不足",
                 WarehouseTaskType.Picking,
-                AuthorizedTeamIds: ["TEAM-A"]),
+                AuthorizedPoolCodes: ["POOL-A"]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -267,7 +267,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 WarehouseTaskType.Picking,
                 taskNo: "PICK-TEAM",
                 lotNo: "LOT-TEAM",
-                assignedTeamId: "TEAM-A"),
+                assignedPoolCode: "POOL-A"),
             CreateTask(
                 WarehouseTaskType.Picking,
                 taskNo: "PICK-SITE",
@@ -287,7 +287,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "env-dev",
                 WarehouseTaskType.Picking,
                 LotNo: "LOT-TEAM",
-                AssignedTeamIds: ["TEAM-A"]),
+                AssignedPoolCodes: ["POOL-A"]),
             CancellationToken.None);
         var organization = await handler.Handle(
             new ListWarehouseTasksQuery(
@@ -310,7 +310,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 "env-dev",
                 WarehouseTaskType.Picking,
                 AssignedOperatorUserIds: ["user-001"],
-                AssignedTeamIds: ["TEAM-A"]),
+                AssignedPoolCodes: ["POOL-A"]),
             CancellationToken.None);
 
         Assert.Empty(denied.Items);
@@ -325,9 +325,11 @@ public sealed class WmsWarehouseTaskManualExecutionTests
         string taskNo,
         string? lotNo = null,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         const decimal plannedQuantity = 10m;
+        var effectivePoolCode = assignedPoolCode
+            ?? (assignedOperatorUserId is null ? null : "POOL-A");
         return taskType switch
         {
             WarehouseTaskType.Putaway => WarehouseTask.CreatePutaway(
@@ -345,7 +347,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 lotNo,
                 null,
                 assignedOperatorUserId,
-                assignedTeamId),
+                effectivePoolCode),
             WarehouseTaskType.Picking => WarehouseTask.CreatePicking(
                 "org-001",
                 "env-dev",
@@ -361,7 +363,7 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 lotNo,
                 null,
                 assignedOperatorUserId,
-                assignedTeamId),
+                effectivePoolCode),
             _ => throw new ArgumentOutOfRangeException(nameof(taskType)),
         };
     }

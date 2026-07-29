@@ -166,8 +166,9 @@ public sealed class WmsEndpointContractTests
             "SITE-01",
             "STAGE-01",
             "BIN-01",
-            3m);
-        activePutaway.Start("user-001", activePutaway.Version);
+            3m,
+            assignedPoolCode: "POOL-PUTAWAY");
+        activePutaway.Start("user-001", activePutaway.Version, claimPoolAssignment: true);
         dbContext.WarehouseTasks.Add(activePutaway);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1116,22 +1117,22 @@ public sealed class WmsEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.InboundOrders.AddRange(
             CreateInboundOrder("IN-SELF", "user-001"),
-            CreateInboundOrder("IN-TEAM", assignedTeamId: "TEAM-A"),
+            CreateInboundOrder("IN-TEAM", assignedPoolCode: "POOL-A"),
             CreateInboundOrder("IN-UNASSIGNED"));
         dbContext.OutboundOrders.AddRange(
             CreateOutboundOrder("OUT-SELF", "user-001"),
-            CreateOutboundOrder("OUT-TEAM", assignedTeamId: "TEAM-A"),
+            CreateOutboundOrder("OUT-TEAM", assignedPoolCode: "POOL-A"),
             CreateOutboundOrder("OUT-UNASSIGNED"));
         dbContext.WarehouseTasks.AddRange(
             WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-SELF", "IN-SELF", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedOperatorUserId: "user-001"),
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-TEAM", "IN-TEAM", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedTeamId: "TEAM-A"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-TEAM", "IN-TEAM", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedPoolCode: "POOL-A"),
             WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-UNASSIGNED", "IN-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m),
             WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-SELF", "OUT-SELF", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedOperatorUserId: "user-001"),
-            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-TEAM", "OUT-TEAM", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedTeamId: "TEAM-A"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-TEAM", "OUT-TEAM", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedPoolCode: "POOL-A"),
             WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-UNASSIGNED", "OUT-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m));
         dbContext.CountExecutions.AddRange(
             CountExecution.Create("org-001", "env-dev", "COUNT-SELF", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, "user-001"),
-            CountExecution.Create("org-001", "env-dev", "COUNT-TEAM", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, assignedTeamId: "TEAM-A"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-TEAM", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, assignedPoolCode: "POOL-A"),
             CountExecution.Create("org-001", "env-dev", "COUNT-UNASSIGNED", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1260,7 +1261,7 @@ public sealed class WmsEndpointContractTests
     private static InboundOrder CreateInboundOrder(
         string orderNo,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         var order = InboundOrder.Create(
             "org-001",
@@ -1271,7 +1272,7 @@ public sealed class WmsEndpointContractTests
             "SITE-01",
             [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)],
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
             order.Complete($"idem-{orderNo}");
@@ -1319,7 +1320,7 @@ public sealed class WmsEndpointContractTests
     private static OutboundOrder CreateOutboundOrder(
         string orderNo,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         var order = OutboundOrder.Create(
             "org-001",
@@ -1330,7 +1331,7 @@ public sealed class WmsEndpointContractTests
             "SITE-01",
             [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)],
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
             order.CompletePackReview($"PACK-{orderNo}", true, $"idem-{orderNo}");

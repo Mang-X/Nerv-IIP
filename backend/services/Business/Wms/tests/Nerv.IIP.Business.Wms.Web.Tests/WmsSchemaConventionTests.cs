@@ -90,14 +90,14 @@ public sealed class WmsSchemaConventionTests
                 nameof(WarehouseTask.TaskType),
                 nameof(WarehouseTask.Status),
                 nameof(WarehouseTask.SiteCode),
-                nameof(WarehouseTask.AssignedTeamId),
+                nameof(WarehouseTask.AssignedPoolCode),
                 nameof(WarehouseTask.CreatedAtUtc)));
 
         foreach (var aggregateType in new[] { typeof(InboundOrder), typeof(OutboundOrder), typeof(CountExecution) })
         {
             var aggregate = Assert.IsAssignableFrom<IEntityType>(model.FindEntityType(aggregateType));
             Assert.True(aggregate.FindProperty("AssignedOperatorUserId")!.IsNullable);
-            Assert.True(aggregate.FindProperty("AssignedTeamId")!.IsNullable);
+            Assert.True(aggregate.FindProperty("AssignedPoolCode")!.IsNullable);
         }
 
         var receipt = Assert.IsAssignableFrom<IEntityType>(

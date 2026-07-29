@@ -780,7 +780,14 @@ public sealed class WmsInventoryBoundaryTests
         var inventory = new FakeWmsInventoryReservationClient("res-001");
 
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
@@ -853,11 +860,18 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventory = new FakeWmsInventoryReservationClient("res-short");
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-SHORT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-SHORT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                10m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = dbContext.WarehouseTasks.Single();
-        warehouseTask.Start("picker-001", warehouseTask.Version);
+        warehouseTask.Start("picker-001", warehouseTask.Version, claimPoolAssignment: true);
         warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -892,11 +906,18 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventory = new FakeWmsInventoryReservationClient("res-short-no-client");
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-SHORT-NO-CLIENT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-SHORT-NO-CLIENT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                10m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = dbContext.WarehouseTasks.Single();
-        warehouseTask.Start("picker-001", warehouseTask.Version);
+        warehouseTask.Start("picker-001", warehouseTask.Version, claimPoolAssignment: true);
         warehouseTask.Complete(8m, "picker-001", "缺货短拣", warehouseTask.Version);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -935,8 +956,9 @@ public sealed class WmsInventoryBoundaryTests
             "LINE-001",
             "LOC-A-01",
             "PACK-01",
-            4m);
-        activeTask.Start("picker-001", activeTask.Version);
+            4m,
+            assignedPoolCode: "POOL-PICKING");
+        activeTask.Start("picker-001", activeTask.Version, claimPoolAssignment: true);
         activeTask.RecordProgress(2m, "picker-001", activeTask.Version);
         dbContext.OutboundOrders.AddRange(withoutTask, withActiveTask);
         dbContext.WarehouseTasks.Add(activeTask);
@@ -974,14 +996,21 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventory = new FakeWmsInventoryReservationClient("res-001");
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var warehouseTask = Assert.Single(dbContext.WarehouseTasks.Local);
         await new DispatchWcsTaskCommandHandler(dbContext).Handle(
             new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-OUT-001", """{"step":1}"""),
             CancellationToken.None);
-        warehouseTask.Start("user-001", warehouseTask.Version);
+        warehouseTask.Start("user-001", warehouseTask.Version, claimPoolAssignment: true);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CancelOutboundOrderCommandHandler(dbContext, inventory).Handle(
@@ -1015,7 +1044,14 @@ public sealed class WmsInventoryBoundaryTests
         var inventory = new FakeWmsInventoryReservationClient("res-001", "res-002");
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1078,10 +1114,24 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventory = new FakeWmsInventoryReservationClient("res-line-1", "res-line-2", "res-line-2-retry");
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-002", "LINE-002", "LOC-A-02", "PACK-01", 2m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-002",
+                "LINE-002",
+                "LOC-A-02",
+                "PACK-01",
+                2m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1157,7 +1207,14 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventory = new FakeWmsInventoryReservationClient("res-001");
         await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
-            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            new CreatePickingTaskCommand(
+                outbound.Id,
+                "TASK-OUT-001",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                AssignedPoolCode: "POOL-PICKING"),
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1546,12 +1603,13 @@ public sealed class WmsInventoryBoundaryTests
             "LOC-A-01",
             "PACK-01",
             5m,
-            "reservation-renew-001");
+            "reservation-renew-001",
+            assignedPoolCode: "POOL-PICKING");
         dbContext.OutboundOrders.Add(outbound);
         dbContext.WarehouseTasks.Add(pickingTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var inventoryClient = new FakeWmsInventoryReservationClient("reservation-renew-001");
-        pickingTask.Start("user-001", pickingTask.Version);
+        pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new RecordWarehouseTaskProgressActionCommandHandler(dbContext, inventoryClient).Handle(
@@ -1752,7 +1810,8 @@ public sealed class WmsInventoryBoundaryTests
                 line.LineNo,
                 line.PickLocationCode,
                 "PACK-01",
-                line.RequestedQuantity);
+                line.RequestedQuantity,
+                assignedPoolCode: "POOL-PICKING");
             dbContext.WarehouseTasks.Add(task);
             tasks.Add(task);
         }
@@ -1761,7 +1820,7 @@ public sealed class WmsInventoryBoundaryTests
         {
             if (task.Status == WarehouseTaskStatus.Open)
             {
-                task.Start("test-picker", task.Version);
+                task.Start("test-picker", task.Version, claimPoolAssignment: true);
             }
 
             if (task.Status == WarehouseTaskStatus.InProgress)

@@ -26,7 +26,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string locationCode,
         decimal expectedQuantity,
         string? assignedOperatorUserId,
-        string? assignedTeamId)
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -36,7 +36,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         LocationCode = WmsText.Required(locationCode, nameof(locationCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
-        AssignedTeamId = WmsText.Optional(assignedTeamId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         ExpectedQuantity = expectedQuantity;
         Status = CountExecutionStatus.Open;
         CreatedAtUtc = DateTime.UtcNow;
@@ -50,7 +50,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public string SiteCode { get; private set; } = string.Empty;
     public string LocationCode { get; private set; } = string.Empty;
     public string? AssignedOperatorUserId { get; private set; }
-    public string? AssignedTeamId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public decimal ExpectedQuantity { get; private set; }
     public decimal? CountedQuantity { get; private set; }
     public decimal? VarianceQuantity { get; private set; }
@@ -69,7 +69,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string locationCode,
         decimal expectedQuantity,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new CountExecution(
             organizationId,
@@ -81,7 +81,18 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
             locationCode,
             expectedQuantity,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(string assignedPoolCode, string? assignedOperatorUserId = null)
+    {
+        if (Status != CountExecutionStatus.Open)
+        {
+            throw new InvalidOperationException("Completed count executions cannot be reassigned.");
+        }
+
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
     }
 
     public void MarkInventoryCountTaskCreated(string inventoryCountTaskId)

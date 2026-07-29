@@ -10,6 +10,30 @@ public sealed class WmsIdempotencyConflictException : Exception
     public const string SafeCode = "idempotency-conflict";
 }
 
+public sealed class WmsAuthorizationException : Exception
+{
+    public const string SafeCode = "forbidden";
+
+    private WmsAuthorizationException(string reason)
+        : base($"WMS authorization denied: {reason}.")
+    {
+        Reason = reason;
+    }
+
+    public string Reason { get; }
+
+    public static WmsAuthorizationException Forbidden(string reason) =>
+        new(reason);
+}
+
+public sealed class WmsUnprocessableException(string reason)
+    : Exception($"WMS request cannot be processed: {reason}.")
+{
+    public const string SafeCode = "unprocessable";
+
+    public string Reason { get; } = reason;
+}
+
 public sealed class WmsLifecycleConflictException(string action, string currentStatus)
     : Exception($"WMS lifecycle conflict for action '{action}' at status '{currentStatus}'.")
 {
@@ -45,6 +69,26 @@ public sealed class WmsLifecycleConflictMiddleware(
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
                 new WmsLifecycleConflictResponse(false, WmsIdempotencyConflictException.SafeCode),
+                context.RequestAborted);
+        }
+        catch (WmsAuthorizationException exception)
+        {
+            logger.LogInformation(
+                "WMS authorization denied. Reason={Reason}",
+                exception.Reason);
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(
+                new WmsLifecycleConflictResponse(false, WmsAuthorizationException.SafeCode),
+                context.RequestAborted);
+        }
+        catch (WmsUnprocessableException exception)
+        {
+            logger.LogInformation(
+                "WMS request is unprocessable. Reason={Reason}",
+                exception.Reason);
+            context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            await context.Response.WriteAsJsonAsync(
+                new WmsLifecycleConflictResponse(false, WmsUnprocessableException.SafeCode),
                 context.RequestAborted);
         }
         catch (WmsLifecycleConflictException exception)

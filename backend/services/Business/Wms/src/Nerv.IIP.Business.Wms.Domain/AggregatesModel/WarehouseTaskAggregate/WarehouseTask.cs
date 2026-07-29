@@ -19,6 +19,14 @@ public enum WarehouseTaskStatus
     Cancelled = 5,
 }
 
+public enum WarehouseTaskExecutionChannel
+{
+    LegacyUnclaimed = 0,
+    Unclaimed = 1,
+    Manual = 2,
+    Wcs = 3,
+}
+
 public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
 {
     private WarehouseTask()
@@ -41,7 +49,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         string? lotNo,
         string? serialNo,
         string? assignedOperatorUserId,
-        string? assignedTeamId)
+        string? assignedPoolCode)
     {
         TaskType = taskType;
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
@@ -57,9 +65,10 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         LotNo = WmsText.Optional(lotNo);
         SerialNo = WmsText.Optional(serialNo);
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
-        AssignedTeamId = WmsText.Optional(assignedTeamId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         PlannedQuantity = WmsText.Positive(plannedQuantity, nameof(plannedQuantity));
         Status = WarehouseTaskStatus.Open;
+        ExecutionChannel = WarehouseTaskExecutionChannel.Unclaimed;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
     }
@@ -78,7 +87,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     public string? LotNo { get; private set; }
     public string? SerialNo { get; private set; }
     public string? AssignedOperatorUserId { get; private set; }
-    public string? AssignedTeamId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public decimal PlannedQuantity { get; private set; }
     public decimal ExecutedQuantity { get; private set; }
     public WarehouseTaskStatus Status { get; private set; }
@@ -92,6 +101,9 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     public string? ExceptionBy { get; private set; }
     public string? CompletedBy { get; private set; }
     public string? CompletionReason { get; private set; }
+    public WarehouseTaskExecutionChannel ExecutionChannel { get; private set; }
+    public string? ExecutionClaimedBy { get; private set; }
+    public DateTime? ExecutionClaimedAtUtc { get; private set; }
 
     public static WarehouseTask CreatePutaway(
         string organizationId,
@@ -108,7 +120,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         string? lotNo = null,
         string? serialNo = null,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new WarehouseTask(
             WarehouseTaskType.Putaway,
@@ -126,7 +138,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
             lotNo,
             serialNo,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
     }
 
     public static WarehouseTask CreatePicking(
@@ -144,7 +156,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         string? lotNo = null,
         string? serialNo = null,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new WarehouseTask(
             WarehouseTaskType.Picking,
@@ -162,7 +174,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
             lotNo,
             serialNo,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
     }
 
     public static WarehouseTask CreateReplenishment(
@@ -179,7 +191,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         string? lotNo = null,
         string? serialNo = null,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new WarehouseTask(
             WarehouseTaskType.Replenishment,
@@ -197,14 +209,97 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
             lotNo,
             serialNo,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
     }
 
-    public void Start(string actorUserId, long expectedVersion)
+    public void Assign(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureStatus(WarehouseTaskStatus.Open);
-        _ = WmsText.Required(actorUserId, nameof(actorUserId));
+        EnsureUnclaimedExecution();
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
+    }
+
+    public void ClaimPoolAssignment(string actorUserId, long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureStatus(WarehouseTaskStatus.Open);
+        EnsureUnclaimedExecution();
+        if (string.IsNullOrWhiteSpace(AssignedPoolCode))
+        {
+            throw new InvalidOperationException("Warehouse task has no work-pool assignment to claim.");
+        }
+
+        var actor = WmsText.Required(actorUserId, nameof(actorUserId));
+        if (!string.IsNullOrWhiteSpace(AssignedOperatorUserId)
+            && !string.Equals(AssignedOperatorUserId, actor, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Warehouse task is assigned to another operator.");
+        }
+
+        AssignedOperatorUserId = actor;
+        AdvanceVersion();
+    }
+
+    public void ClaimManualExecution(string actorUserId, long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureStatus(WarehouseTaskStatus.Open);
+        EnsureHasPoolAssignment();
+        var actor = WmsText.Required(actorUserId, nameof(actorUserId));
+        if (!string.Equals(AssignedOperatorUserId, actor, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Warehouse task is not assigned to this operator.");
+        }
+
+        ClaimExecution(WarehouseTaskExecutionChannel.Manual, actor);
+        AdvanceVersion();
+    }
+
+    public void ClaimWcsExecution(string claimReference, long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureStatus(WarehouseTaskStatus.Open);
+        EnsureHasPoolAssignment();
+        ClaimExecution(WarehouseTaskExecutionChannel.Wcs, claimReference);
+        AdvanceVersion();
+    }
+
+    public void Start(
+        string actorUserId,
+        long expectedVersion,
+        bool claimPoolAssignment = false)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureStatus(WarehouseTaskStatus.Open);
+        EnsureHasPoolAssignment();
+        var actor = WmsText.Required(actorUserId, nameof(actorUserId));
+        if (claimPoolAssignment)
+        {
+            if (string.IsNullOrWhiteSpace(AssignedPoolCode))
+            {
+                throw new InvalidOperationException("Warehouse task has no work-pool assignment to claim.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(AssignedOperatorUserId)
+                && !string.Equals(AssignedOperatorUserId, actor, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Warehouse task is assigned to another operator.");
+            }
+
+            AssignedOperatorUserId = actor;
+        }
+        else if (!string.Equals(AssignedOperatorUserId, actor, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Warehouse task is not assigned to this operator.");
+        }
+
+        ClaimExecution(WarehouseTaskExecutionChannel.Manual, actor);
         Status = WarehouseTaskStatus.InProgress;
         StartedAtUtc = DateTime.UtcNow;
         AdvanceVersion();
@@ -214,7 +309,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureStatus(WarehouseTaskStatus.InProgress);
-        _ = WmsText.Required(actorUserId, nameof(actorUserId));
+        EnsureManualActor(actorUserId);
         EnsureProgress(executedQuantity);
         ExecutedQuantity = executedQuantity;
         AdvanceVersion();
@@ -228,6 +323,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureActive();
+        EnsureManualActor(actorUserId);
         ExceptionCode = WmsText.Required(exceptionCode, nameof(exceptionCode));
         ExceptionReason = WmsText.Required(reason, nameof(reason));
         ExceptionBy = WmsText.Required(actorUserId, nameof(actorUserId));
@@ -244,6 +340,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureStatus(WarehouseTaskStatus.InProgress);
+        EnsureManualActor(actorUserId);
         EnsureProgress(executedQuantity);
         var completedBy = WmsText.Required(actorUserId, nameof(actorUserId));
         var normalizedReason = WmsText.Optional(completionReason);
@@ -286,6 +383,22 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         AdvanceVersion();
     }
 
+    public void RecordWcsProgress(decimal executedQuantity, string claimReference)
+    {
+        EnsureActive();
+        EnsureWcsClaim(claimReference);
+        EnsureProgress(executedQuantity);
+        ExecutedQuantity = executedQuantity;
+        if (ExecutedQuantity == PlannedQuantity)
+        {
+            Status = WarehouseTaskStatus.Completed;
+            CompletedAtUtc = DateTime.UtcNow;
+            CompletedBy = $"system:wcs:{WmsText.Required(claimReference, nameof(claimReference))}";
+        }
+
+        AdvanceVersion();
+    }
+
     public void Cancel()
     {
         EnsureActive();
@@ -322,6 +435,61 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
                 IsTerminal(Status)
                     ? $"Warehouse task is terminal in status '{Status}'."
                     : $"Warehouse task must be '{expected}' but is '{Status}'.");
+        }
+    }
+
+    private void EnsureUnclaimedExecution()
+    {
+        if (ExecutionChannel is not (
+            WarehouseTaskExecutionChannel.LegacyUnclaimed
+            or WarehouseTaskExecutionChannel.Unclaimed))
+        {
+            throw new InvalidOperationException(
+                $"Warehouse task execution is already claimed by '{ExecutionChannel}'.");
+        }
+    }
+
+    private void ClaimExecution(WarehouseTaskExecutionChannel channel, string claimedBy)
+    {
+        var actor = WmsText.Required(claimedBy, nameof(claimedBy));
+        if (ExecutionChannel == channel
+            && string.Equals(ExecutionClaimedBy, actor, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        EnsureUnclaimedExecution();
+        ExecutionChannel = channel;
+        ExecutionClaimedBy = actor;
+        ExecutionClaimedAtUtc = DateTime.UtcNow;
+    }
+
+    private void EnsureManualActor(string actorUserId)
+    {
+        var actor = WmsText.Required(actorUserId, nameof(actorUserId));
+        if (ExecutionChannel != WarehouseTaskExecutionChannel.Manual
+            || !string.Equals(ExecutionClaimedBy, actor, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Warehouse task is not claimed for this manual operator.");
+        }
+    }
+
+    private void EnsureWcsClaim(string claimReference)
+    {
+        var claim = WmsText.Required(claimReference, nameof(claimReference));
+        if (ExecutionChannel != WarehouseTaskExecutionChannel.Wcs
+            || !string.Equals(ExecutionClaimedBy, claim, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Warehouse task is not claimed for this WCS task.");
+        }
+    }
+
+    private void EnsureHasPoolAssignment()
+    {
+        if (string.IsNullOrWhiteSpace(AssignedPoolCode))
+        {
+            throw new InvalidOperationException(
+                "Warehouse task has no persisted work-pool assignment.");
         }
     }
 

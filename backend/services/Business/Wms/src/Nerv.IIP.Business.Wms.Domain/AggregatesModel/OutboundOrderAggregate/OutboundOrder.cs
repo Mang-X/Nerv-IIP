@@ -46,7 +46,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string siteCode,
         IEnumerable<OutboundOrderLineDraft> lineDrafts,
         string? assignedOperatorUserId,
-        string? assignedTeamId)
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -55,7 +55,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
-        AssignedTeamId = WmsText.Optional(assignedTeamId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         Status = OutboundOrderStatus.Open;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
@@ -77,7 +77,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public string? AssignedOperatorUserId { get; private set; }
-    public string? AssignedTeamId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
@@ -97,7 +97,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string siteCode,
         IEnumerable<OutboundOrderLineDraft> lines,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         return new OutboundOrder(
             organizationId,
@@ -108,7 +108,19 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             siteCode,
             lines,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureOpen();
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
     }
 
     public WarehouseTask CreatePickingTask(
@@ -122,7 +134,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string? reservedLotNo = null,
         string? reservedSerialNo = null,
         string? assignedOperatorUserId = null,
-        string? assignedTeamId = null)
+        string? assignedPoolCode = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
@@ -147,7 +159,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             line.LotNo,
             line.SerialNo,
             assignedOperatorUserId,
-            assignedTeamId);
+            assignedPoolCode);
     }
 
     public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
@@ -387,6 +399,15 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     private void AdvanceVersion()
     {
         Version = checked(Version + 1);
+    }
+
+    private void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new InvalidOperationException(
+                $"Outbound order version conflict: expected {expectedVersion}, actual {Version}.");
+        }
     }
 
     private OutboundOrderLine FindLine(string lineNo)

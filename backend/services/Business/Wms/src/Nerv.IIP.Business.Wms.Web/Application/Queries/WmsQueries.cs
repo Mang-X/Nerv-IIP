@@ -84,7 +84,7 @@ public sealed record ListInboundOrdersQuery(
     string? LocationCode = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false) : IQuery<ListInboundOrdersResponse>;
 
@@ -101,7 +101,7 @@ public sealed record InboundOrderListItem(
     bool IsReleasedForPutaway,
     string SiteCode,
     string? AssignedOperatorUserId,
-    string? AssignedTeamId);
+    string? AssignedPoolCode);
 
 internal static class InboundOrderQualityAggregate
 {
@@ -141,7 +141,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             .Where(x => request.InboundOrderId == null || x.Id == request.InboundOrderId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
-                request.AssignedTeamIds,
+                request.AssignedPoolCodes,
                 request.SiteCodes,
                 request.OrganizationWideScope,
                 out var ownershipScope))
@@ -155,14 +155,14 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
             WmsOwnershipScopeKind.Team => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId != null
-                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+                && x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
             WmsOwnershipScopeKind.Site => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId == null
+                && x.AssignedPoolCode == null
                 && ownershipScope.Values.Contains(x.SiteCode)),
             WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
         if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
@@ -204,7 +204,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.CreatedAtUtc,
                 x.SiteCode,
                 x.AssignedOperatorUserId,
-                x.AssignedTeamId,
+                x.AssignedPoolCode,
                 HasAnyLine = x.Lines.Any(),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
@@ -222,7 +222,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending),
                 x.SiteCode,
                 x.AssignedOperatorUserId,
-                x.AssignedTeamId))
+                x.AssignedPoolCode))
             .ToArray();
         return new ListInboundOrdersResponse(items, total);
     }
@@ -239,7 +239,7 @@ public sealed record ListOutboundOrdersQuery(
     string? LocationCode = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false) : IQuery<ListOutboundOrdersResponse>;
 
@@ -257,7 +257,7 @@ public sealed record OutboundOrderListItem(
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
     string? AssignedOperatorUserId,
-    string? AssignedTeamId,
+    string? AssignedPoolCode,
     long Version);
 
 public sealed record OutboundOrderLineListItem(
@@ -296,7 +296,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             .Where(x => request.OutboundOrderId == null || x.Id == request.OutboundOrderId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
-                request.AssignedTeamIds,
+                request.AssignedPoolCodes,
                 request.SiteCodes,
                 request.OrganizationWideScope,
                 out var ownershipScope))
@@ -310,14 +310,14 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
             WmsOwnershipScopeKind.Team => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId != null
-                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+                && x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
             WmsOwnershipScopeKind.Site => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId == null
+                && x.AssignedPoolCode == null
                 && ownershipScope.Values.Contains(x.SiteCode)),
             WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
         if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
@@ -362,7 +362,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 x.CreatedAtUtc,
                 x.CompletedAtUtc,
                 x.AssignedOperatorUserId,
-                x.AssignedTeamId,
+                x.AssignedPoolCode,
                 x.Version,
                 Lines = x.Lines
                     .OrderBy(line => line.LineNo)
@@ -439,7 +439,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 row.CreatedAtUtc,
                 row.CompletedAtUtc,
                 row.AssignedOperatorUserId,
-                row.AssignedTeamId,
+                row.AssignedPoolCode,
                 row.Version);
         }).ToArray();
         return new ListOutboundOrdersResponse(items, total);
@@ -490,7 +490,7 @@ public sealed record ListWarehouseTasksQuery(
     string? Keyword = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false) : IQuery<ListWarehouseTasksResponse>;
 
@@ -510,7 +510,7 @@ public sealed record WarehouseTaskFact(
     string FromLocationCode,
     string ToLocationCode,
     string? AssignedOperatorUserId,
-    string? AssignedTeamId,
+    string? AssignedPoolCode,
     string? LotNo,
     string? SerialNo,
     decimal PlannedQuantity,
@@ -534,7 +534,7 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             .Where(x => x.TaskType == request.TaskType);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
-                request.AssignedTeamIds,
+                request.AssignedPoolCodes,
                 request.SiteCodes,
                 request.OrganizationWideScope,
                 out var ownershipScope))
@@ -548,14 +548,14 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
             WmsOwnershipScopeKind.Team => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId != null
-                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+                && x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
             WmsOwnershipScopeKind.Site => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId == null
+                && x.AssignedPoolCode == null
                 && ownershipScope.Values.Contains(x.SiteCode)),
             WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
 
@@ -611,7 +611,7 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
                 x.FromLocationCode,
                 x.ToLocationCode,
                 x.AssignedOperatorUserId,
-                x.AssignedTeamId,
+                x.AssignedPoolCode,
                 x.LotNo,
                 x.SerialNo,
                 x.PlannedQuantity,
@@ -705,7 +705,7 @@ public sealed record ListCountExecutionsQuery(
     string? Keyword = null,
     CountExecutionId? CountExecutionId = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false) : IQuery<ListCountExecutionsResponse>;
 
@@ -731,7 +731,7 @@ public sealed record CountExecutionFact(
     string? InventoryPostingFailureMessage = null,
     string? InventoryMovementId = null,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 
 public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
@@ -745,7 +745,7 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             .Where(x => request.CountExecutionId == null || x.Id == request.CountExecutionId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
-                request.AssignedTeamIds,
+                request.AssignedPoolCodes,
                 request.SiteCodes,
                 request.OrganizationWideScope,
                 out var ownershipScope))
@@ -759,14 +759,14 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
             WmsOwnershipScopeKind.Team => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId != null
-                && ownershipScope.Values.Contains(x.AssignedTeamId)),
+                && x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
             WmsOwnershipScopeKind.Site => query.Where(x =>
                 x.AssignedOperatorUserId == null
-                && x.AssignedTeamId == null
+                && x.AssignedPoolCode == null
                 && ownershipScope.Values.Contains(x.SiteCode)),
             WmsOwnershipScopeKind.Organization => query.Where(x =>
-                x.AssignedOperatorUserId == null && x.AssignedTeamId == null),
+                x.AssignedOperatorUserId == null && x.AssignedPoolCode == null),
             _ => query.Where(_ => false),
         };
 
@@ -821,7 +821,7 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 null,
                 null,
                 x.AssignedOperatorUserId,
-                x.AssignedTeamId))
+                x.AssignedPoolCode))
             .ToArrayAsync(cancellationToken);
         var countNumbers = items.Select(x => x.CountNo).ToArray();
         var movementRequests = await dbContext.InventoryMovementRequests

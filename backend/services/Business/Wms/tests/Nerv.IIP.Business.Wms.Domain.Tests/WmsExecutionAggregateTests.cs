@@ -274,7 +274,7 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             [new InboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "RECV-01", "LOT-001", "SER-001", "inspection-exempt", "company", null)],
             " user-emp-049 ",
-            " TEAM-WH-01 ");
+            " POOL-WH-01 ");
         var outbound = OutboundOrder.Create(
             "org-001",
             "env-dev",
@@ -284,7 +284,7 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "BIN-01", "LOT-001", "SER-001", "qualified", "company", null)],
             "user-emp-049",
-            "TEAM-WH-01");
+            "POOL-WH-01");
         var count = CountExecution.Create(
             "org-001",
             "env-dev",
@@ -295,14 +295,14 @@ public sealed class WmsExecutionAggregateTests
             "BIN-01",
             5m,
             "user-emp-049",
-            "TEAM-WH-01");
+            "POOL-WH-01");
 
         Assert.Equal("user-emp-049", inbound.AssignedOperatorUserId);
-        Assert.Equal("TEAM-WH-01", inbound.AssignedTeamId);
+        Assert.Equal("POOL-WH-01", inbound.AssignedPoolCode);
         Assert.Equal("user-emp-049", outbound.AssignedOperatorUserId);
-        Assert.Equal("TEAM-WH-01", outbound.AssignedTeamId);
+        Assert.Equal("POOL-WH-01", outbound.AssignedPoolCode);
         Assert.Equal("user-emp-049", count.AssignedOperatorUserId);
-        Assert.Equal("TEAM-WH-01", count.AssignedTeamId);
+        Assert.Equal("POOL-WH-01", count.AssignedPoolCode);
     }
 
     [Fact]
@@ -332,7 +332,7 @@ public sealed class WmsExecutionAggregateTests
             "BIN-01",
             5m,
             "user-emp-049",
-            "TEAM-WH-01");
+            "POOL-WH-01");
         var picking = outbound.CreatePickingTask(
             "PICK-TASK-001",
             "10",
@@ -340,14 +340,14 @@ public sealed class WmsExecutionAggregateTests
             "PACK-01",
             5m,
             assignedOperatorUserId: "user-emp-049",
-            assignedTeamId: "TEAM-WH-01");
+            assignedPoolCode: "POOL-WH-01");
 
         Assert.Equal("LOT-IN-001", putaway.LotNo);
         Assert.Equal("SER-IN-001", putaway.SerialNo);
         Assert.Equal("LOT-OUT-001", picking.LotNo);
         Assert.Equal("SER-OUT-001", picking.SerialNo);
         Assert.Equal("user-emp-049", putaway.AssignedOperatorUserId);
-        Assert.Equal("TEAM-WH-01", picking.AssignedTeamId);
+        Assert.Equal("POOL-WH-01", picking.AssignedPoolCode);
     }
 
     [Fact]
@@ -364,7 +364,9 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             "RECV-01",
             "BIN-01",
-            5m);
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-RECEIVING");
 
         task.Start("user-emp-049", 1);
         task.RecordProgress(3m, "user-emp-049", 2);
@@ -393,7 +395,9 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             "BIN-01",
             "PACK-01",
-            5m);
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
         task.Start("user-emp-049", 1);
         task.RecordProgress(3m, "user-emp-049", 2);
 
@@ -424,7 +428,9 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             "RECV-01",
             "BIN-01",
-            5m);
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-RECEIVING");
         task.Start("user-emp-049", 1);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -450,18 +456,21 @@ public sealed class WmsExecutionAggregateTests
             "SITE-01",
             "BIN-01",
             "PACK-01",
-            5m);
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
 
-        task.ReportException("BIN-BLOCKED", "source bin is blocked", "user-emp-049", 1);
+        task.Start("user-emp-049", 1);
+        task.ReportException("BIN-BLOCKED", "source bin is blocked", "user-emp-049", 2);
         var completion = Assert.Throws<InvalidOperationException>(() =>
-            task.Complete(5m, "user-emp-049", null, 2));
+            task.Complete(5m, "user-emp-049", null, 3));
 
         Assert.Equal(WarehouseTaskStatus.Exception, task.Status);
         Assert.Equal("BIN-BLOCKED", task.ExceptionCode);
         Assert.Equal("source bin is blocked", task.ExceptionReason);
         Assert.Equal("user-emp-049", task.ExceptionBy);
         Assert.NotNull(task.ExceptionAtUtc);
-        Assert.Equal(2, task.Version);
+        Assert.Equal(3, task.Version);
         Assert.Contains("terminal", completion.Message, StringComparison.OrdinalIgnoreCase);
     }
 

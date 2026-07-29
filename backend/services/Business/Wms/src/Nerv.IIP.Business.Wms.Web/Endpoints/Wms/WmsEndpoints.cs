@@ -64,7 +64,7 @@ public sealed record CreateInboundOrderRequest(
     string SiteCode,
     IReadOnlyCollection<WmsInboundLineInput> Lines,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 public sealed record CreateInboundOrderResponse(InboundOrderId InboundOrderId);
 public sealed record ListInboundOrdersRequest(
     string? OrganizationId,
@@ -77,7 +77,7 @@ public sealed record ListInboundOrdersRequest(
     string? LocationCode = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record CreatePutawayTaskRequest(
@@ -88,7 +88,7 @@ public sealed record CreatePutawayTaskRequest(
     string ToLocationCode,
     decimal Quantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 public sealed record ListWarehouseTasksRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -99,7 +99,7 @@ public sealed record ListWarehouseTasksRequest(
     string? Keyword = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
@@ -112,7 +112,7 @@ public sealed record StartWarehouseTaskActionRequest(
     string ActorUserId,
     string IdempotencyKey,
     long ExpectedVersion,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record RecordWarehouseTaskProgressActionRequest(
@@ -123,7 +123,7 @@ public sealed record RecordWarehouseTaskProgressActionRequest(
     string IdempotencyKey,
     long ExpectedVersion,
     decimal ExecutedQuantity,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record ReportWarehouseTaskExceptionActionRequest(
@@ -135,7 +135,7 @@ public sealed record ReportWarehouseTaskExceptionActionRequest(
     long ExpectedVersion,
     string ExceptionCode,
     string Reason,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record CompleteWarehouseTaskActionRequest(
@@ -147,7 +147,7 @@ public sealed record CompleteWarehouseTaskActionRequest(
     long ExpectedVersion,
     decimal ExecutedQuantity,
     string? DifferenceReason = null,
-    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    IReadOnlyCollection<string>? AuthorizedPoolCodes = null,
     IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record CompleteInboundOrderRequest(
@@ -169,7 +169,7 @@ public sealed record CreateOutboundOrderRequest(
     string SiteCode,
     IReadOnlyCollection<WmsOutboundLineInput> Lines,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(
     string? OrganizationId,
@@ -182,7 +182,7 @@ public sealed record ListOutboundOrdersRequest(
     string? LocationCode = null,
     string? LotNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
@@ -195,7 +195,7 @@ public sealed record CreatePickingTaskRequest(
     string ToLocationCode,
     decimal Quantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 public sealed record CompleteOutboundOrderRequest(
     OutboundOrderId OutboundOrderId,
     string PackReviewNo,
@@ -216,7 +216,7 @@ public sealed record CreateCountExecutionRequest(
     string LocationCode,
     decimal ExpectedQuantity,
     string? AssignedOperatorUserId = null,
-    string? AssignedTeamId = null);
+    string? AssignedPoolCode = null);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
 public sealed record ListCountExecutionsRequest(
     string OrganizationId,
@@ -228,7 +228,7 @@ public sealed record ListCountExecutionsRequest(
     string? Keyword = null,
     CountExecutionId? CountExecutionId = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
-    IReadOnlyCollection<string>? AssignedTeamIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false);
 public sealed record CompleteCountExecutionRequest(
@@ -297,7 +297,7 @@ public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<Cre
             req.SiteCode,
             req.Lines,
             req.AssignedOperatorUserId,
-            req.AssignedTeamId), ct);
+            req.AssignedPoolCode), ct);
         await Send.OkAsync(new CreateInboundOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -318,7 +318,7 @@ public sealed class ListInboundOrdersEndpoint(ISender sender) : WmsEndpoint<List
             req.LocationCode,
             req.LotNo,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -338,7 +338,7 @@ public sealed class CreatePutawayTaskEndpoint(ISender sender) : WmsEndpoint<Crea
             req.ToLocationCode,
             req.Quantity,
             req.AssignedOperatorUserId,
-            req.AssignedTeamId), ct);
+            req.AssignedPoolCode), ct);
         await Send.OkAsync(new CreateWarehouseTaskResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -359,7 +359,7 @@ public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListW
             req.Keyword,
             req.LotNo,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
@@ -420,7 +420,7 @@ public sealed class CreateOutboundOrderEndpoint(ISender sender) : WmsEndpoint<Cr
             req.SiteCode,
             req.Lines,
             req.AssignedOperatorUserId,
-            req.AssignedTeamId), ct);
+            req.AssignedPoolCode), ct);
         await Send.OkAsync(new CreateOutboundOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -441,7 +441,7 @@ public sealed class ListOutboundOrdersEndpoint(ISender sender) : WmsEndpoint<Lis
             req.LocationCode,
             req.LotNo,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -461,7 +461,7 @@ public sealed class CreatePickingTaskEndpoint(ISender sender) : WmsEndpoint<Crea
             req.ToLocationCode,
             req.Quantity,
             req.AssignedOperatorUserId,
-            req.AssignedTeamId), ct);
+            req.AssignedPoolCode), ct);
         await Send.OkAsync(new CreateWarehouseTaskResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -482,7 +482,7 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
             req.Keyword,
             req.LotNo,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
@@ -505,7 +505,7 @@ public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint
             req.Keyword,
             req.LotNo,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
@@ -569,7 +569,7 @@ public sealed class StartPutawayTaskEndpoint(ISender sender)
             req.IdempotencyKey,
             req.ExpectedVersion,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -592,7 +592,7 @@ public sealed class RecordPutawayTaskProgressEndpoint(ISender sender)
             req.ExpectedVersion,
             req.ExecutedQuantity,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -616,7 +616,7 @@ public sealed class ReportPutawayTaskExceptionEndpoint(ISender sender)
             req.ExceptionCode,
             req.Reason,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -640,7 +640,7 @@ public sealed class CompletePutawayTaskEndpoint(ISender sender)
             req.ExecutedQuantity,
             req.DifferenceReason,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -662,7 +662,7 @@ public sealed class StartPickingTaskEndpoint(ISender sender)
             req.IdempotencyKey,
             req.ExpectedVersion,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -685,7 +685,7 @@ public sealed class RecordPickingTaskProgressEndpoint(ISender sender)
             req.ExpectedVersion,
             req.ExecutedQuantity,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -709,7 +709,7 @@ public sealed class ReportPickingTaskExceptionEndpoint(ISender sender)
             req.ExceptionCode,
             req.Reason,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -733,7 +733,7 @@ public sealed class CompletePickingTaskEndpoint(ISender sender)
             req.ExecutedQuantity,
             req.DifferenceReason,
             ExpectedTaskType,
-            req.AuthorizedTeamIds,
+            req.AuthorizedPoolCodes,
             req.AuthorizedSiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
@@ -813,7 +813,7 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
             req.LocationCode,
             req.ExpectedQuantity,
             req.AssignedOperatorUserId,
-            req.AssignedTeamId), ct);
+            req.AssignedPoolCode), ct);
         await Send.OkAsync(new CreateCountExecutionResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -833,7 +833,7 @@ public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<Li
             req.Keyword,
             req.CountExecutionId,
             req.AssignedOperatorUserIds,
-            req.AssignedTeamIds,
+            req.AssignedPoolCodes,
             req.SiteCodes,
             req.OrganizationWideScope), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
