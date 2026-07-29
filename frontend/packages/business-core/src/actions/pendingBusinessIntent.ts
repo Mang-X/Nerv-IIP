@@ -16,6 +16,7 @@ const STORAGE_KEY = 'nerv-iip.pending-business-intents.v1'
 const memoryEntries = new Map<string, PendingBusinessIntent>()
 const clearedScopeKeys = new Set<string>()
 let storageLoaded = false
+const businessWriteResponseStatuses = new WeakMap<object, number>()
 
 function scopeKey(scope: PendingBusinessIntentScope) {
   return [
@@ -122,17 +123,29 @@ function errorRecord(error: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-function errorStatus(error: unknown): number | undefined {
-  const candidate = errorRecord(error)
-  if (!candidate) return undefined
-  for (const key of ['status', 'statusCode']) {
-    const value = candidate[key]
-    if (typeof value === 'number' && Number.isInteger(value)) return value
+export function getBusinessWriteErrorStatus(error: unknown) {
+  if (!error || (typeof error !== 'object' && typeof error !== 'function')) return undefined
+
+  const candidate = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
   }
-  const response = errorRecord(candidate.response)
-  return typeof response?.status === 'number' && Number.isInteger(response.status)
-    ? response.status
-    : undefined
+  const status = candidate.statusCode ?? candidate.status ?? candidate.response?.status
+  if (typeof status === 'number' && Number.isInteger(status)) return status
+  return businessWriteResponseStatuses.get(error)
+}
+
+export function preserveBusinessWriteErrorStatus(error: unknown, status?: number) {
+  if (
+    status === undefined ||
+    !Number.isInteger(status) ||
+    !error ||
+    (typeof error !== 'object' && typeof error !== 'function')
+  ) {
+    return
+  }
+  businessWriteResponseStatuses.set(error, status)
 }
 
 /**
@@ -151,7 +164,7 @@ export function shouldRetainPendingBusinessIntent(error: unknown) {
   if (name === 'OfflineError') return false
   if (error instanceof TypeError) return true
 
-  const status = errorStatus(error)
+  const status = getBusinessWriteErrorStatus(error)
   if (status === 0 || (status !== undefined && status >= 500)) return true
   if (status !== undefined && status >= 400 && status < 500) return false
   return false

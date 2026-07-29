@@ -42,6 +42,7 @@ import {
 import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
+  peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
@@ -236,11 +237,13 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
       operationType: 'maintenance.work-order.complete',
       payloadFingerprint: `${workOrderId}:${intentFingerprint(intent)}`,
     }
+    const restored = peekPendingBusinessIntent(scope)
     const pending = acquirePendingBusinessIntent(
       scope,
       () => suppliedKey ?? newMaintenanceIntentKey(`complete-${workOrderId}`),
       intent,
     )
+    const isReplay = restored?.idempotencyKey === pending.idempotencyKey
     const stableIntent = requirePendingPayloadSnapshot<
       Omit<MaintenanceCompleteIntent, 'idempotencyKey'>
     >(pending.payloadSnapshot, '维修工单完工')
@@ -265,7 +268,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
               ? {
                   domain: 'maintenance-work-order' as const,
                   action: 'complete' as const,
-                  facts: { status: item.status },
+                  facts: { status: item.status, idempotentReplay: isReplay },
                 }
               : undefined
           },

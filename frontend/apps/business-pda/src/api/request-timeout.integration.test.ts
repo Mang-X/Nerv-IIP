@@ -2,6 +2,12 @@ import {
   configureApiClient,
   recordBusinessConsoleMesProductionReportMutationOptions,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimeoutFetch, describeRequestError, RequestTimeoutError } from './request-timeout'
 
@@ -144,9 +150,77 @@ describe('PDA api-client global timeout wiring', () => {
 
     const error = await pending.catch((value: unknown) => value)
     expect(describeRequestError(error)).toMatchObject({
-      message: '服务暂不可用',
+      message: '服务暂时不可用，请稍后重试；写操作请先刷新核实结果',
+      status: 503,
       indeterminate: true,
     })
     expect((error as { response?: Response }).response?.status).toBe(503)
   })
+
+  it.each([
+    [503, true, 'proxy unavailable'],
+    [422, false, 'validation rejected'],
+  ] as const)(
+    'classifies a generated text/plain HTTP %s and settles the OLD pending intent',
+    async (status, shouldRetain, body) => {
+      configureApiClient({
+        baseUrl: 'http://gateway.test',
+        fetch: createTimeoutFetch({
+          baseFetch: vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(body, {
+              status,
+              headers: { 'Content-Type': 'text/plain' },
+            }),
+          ),
+          isOffline: () => false,
+        }),
+      })
+
+      const pendingScope = {
+        principalId: 'principal-text-error',
+        organizationId: 'org-text-error',
+        environmentId: 'env-text-error',
+        operationType: 'mes.production-report.record',
+        payloadFingerprint: `text-error-${status}`,
+      }
+      clearPendingBusinessIntent(pendingScope)
+      acquirePendingBusinessIntent(pendingScope, () => `idem-old-${status}`)
+      const options = recordBusinessConsoleMesProductionReportMutationOptions()
+
+      try {
+        const error = await completePendingBusinessIntent(pendingScope, () =>
+          options.mutation!(
+            {
+              body: {
+                organizationId: 'org-text-error',
+                environmentId: 'env-text-error',
+                workOrderId: 'WO-TEXT',
+                operationTaskId: 'OP-TEXT',
+                goodQuantity: 1,
+                scrapQuantity: 0,
+                reportedAtUtc: '2026-07-29T00:00:00.000Z',
+                idempotencyKey: `idem-old-${status}`,
+              },
+            } as Parameters<NonNullable<typeof options.mutation>>[0],
+            {} as never,
+          ),
+        ).catch((value: unknown) => value)
+
+        expect(error).toBeInstanceOf(Error)
+        expect(error).toMatchObject({
+          cause: body,
+          message: body,
+          response: expect.objectContaining({ status }),
+          status,
+        })
+        expect(describeRequestError(error)).toMatchObject({
+          status,
+          indeterminate: status >= 500,
+        })
+        expect(Boolean(peekPendingBusinessIntent(pendingScope))).toBe(shouldRetain)
+      } finally {
+        clearPendingBusinessIntent(pendingScope)
+      }
+    },
+  )
 })

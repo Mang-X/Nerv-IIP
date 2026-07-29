@@ -258,7 +258,8 @@ function ncrGate(
 function maintenanceGate(facts: LifecycleFacts): StatusActionGate {
   const status = normalizedStatus(facts)
   if (!isKnown(status, new Set(['open', 'completed']))) return unknown()
-  return status === 'open' ? allowed() : terminal()
+  if (status === 'open') return allowed()
+  return facts.idempotentReplay ? noop(true) : terminal()
 }
 
 function alarmGate(

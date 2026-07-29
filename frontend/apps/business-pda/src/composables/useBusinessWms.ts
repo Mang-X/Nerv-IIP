@@ -161,11 +161,12 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         operationType: 'wms.inbound-order.complete',
         payloadFingerprint,
       }
-      const existing = peekPendingBusinessIntent(intentScope)
-      const isReplay = existing?.idempotencyKey === idempotencyKey
+      const restoredPending = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, {
         lines: lines ?? [],
       })
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
       try {
         const { data } = await listBusinessConsoleWmsInboundOrders({
           query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
@@ -261,9 +262,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         operationType: 'wms.outbound-order.complete',
         payloadFingerprint: `${outboundOrderId}:${JSON.stringify(payload)}`,
       }
-      const existing = peekPendingBusinessIntent(intentScope)
-      const isReplay = existing?.idempotencyKey === suppliedKey
+      const restoredPending = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
       try {
         const { data } = await listBusinessConsoleWmsOutboundOrders({
           query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
@@ -455,9 +457,10 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
         operationType: 'wms.count-execution.complete',
         payloadFingerprint: `${countExecutionId}:${JSON.stringify(payload)}`,
       }
-      const existing = peekPendingBusinessIntent(intentScope)
-      const isReplay = existing?.idempotencyKey === suppliedKey
+      const restoredPending = peekPendingBusinessIntent(intentScope)
       const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
+      const isReplay =
+        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
       try {
         const { data } = await listBusinessConsoleWmsCountExecutions({
           query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },

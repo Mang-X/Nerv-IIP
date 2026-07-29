@@ -443,7 +443,7 @@ function showToast(message: string, type: 'success' | 'error') {
       @select="onShelveDuration"
     />
 
-    <!-- 失败对话框：确定性失败可重试（复用同键）；结果未知只提示核对 -->
+    <!-- 失败对话框：确定性失败可重试；结果未知仅允许按冻结内容安全重试 -->
     <NvMobileDialog
       :open="actionError !== null"
       :title="actionError?.indeterminate ? '提交结果未知' : '操作失败'"

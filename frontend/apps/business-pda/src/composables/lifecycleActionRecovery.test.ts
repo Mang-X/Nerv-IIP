@@ -38,12 +38,24 @@ describe('lifecycle action recovery', () => {
     ).toThrow(LIFECYCLE_ACTION_UPDATED_MESSAGE)
   })
 
-  it('allows an authoritative legal no-op to reach the idempotent backend command', () => {
+  it('allows an authoritative legal no-op only for an explicit idempotent replay', () => {
     expect(() =>
       assertLifecycleActionExecutable({
         domain: 'quality-inspection-task',
         action: 'create-record',
         facts: { status: 'completed', inspectionRecordId: 'IR-1' },
+      }),
+    ).toThrow(LIFECYCLE_ACTION_UPDATED_MESSAGE)
+
+    expect(() =>
+      assertLifecycleActionExecutable({
+        domain: 'quality-inspection-task',
+        action: 'create-record',
+        facts: {
+          status: 'completed',
+          inspectionRecordId: 'IR-1',
+          idempotentReplay: true,
+        },
       }),
     ).not.toThrow()
   })

@@ -263,7 +263,7 @@ describe('PDA equipment alarms page', () => {
     wrapper.unmount()
   })
 
-  it('refreshes for an accepted readback failure without showing technical details or retry', async () => {
+  it('refreshes for an accepted readback failure and offers only the frozen-content retry', async () => {
     acknowledge.mockRejectedValue(
       new BusinessOperationUnconfirmedError(
         '请求已受理，但权威状态尚未确认（downstream-invalid-response）',
@@ -280,7 +280,7 @@ describe('PDA equipment alarms page', () => {
     expect(dialogText).toContain('结果尚未核实')
     expect(dialogText).not.toContain('downstream')
     expect(document.body.querySelector<HTMLElement>('.nv-m-md-confirm')?.textContent).toContain(
-      '我知道了',
+      '按原内容重试',
     )
     expect(refresh).toHaveBeenCalled()
     expect(acknowledge).toHaveBeenCalledTimes(1)

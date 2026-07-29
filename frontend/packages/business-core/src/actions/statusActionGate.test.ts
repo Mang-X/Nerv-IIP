@@ -399,6 +399,18 @@ describe('statusActionGate', () => {
         facts: { status: 'Completed' },
       }),
     ).toMatchObject({ terminal: true, executable: false, reason: 'terminal-status' })
+    expect(
+      gate({
+        domain: 'maintenance-work-order',
+        action: 'complete',
+        facts: { status: 'Completed', idempotentReplay: true },
+      }),
+    ).toMatchObject({
+      terminal: true,
+      executable: false,
+      legalNoop: true,
+      reason: 'already-applied-noop',
+    })
   })
 
   it('allows first alarm acknowledgement and only no-ops the matching issued replay', () => {

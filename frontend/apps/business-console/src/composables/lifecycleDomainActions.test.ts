@@ -13,6 +13,11 @@ import {
   startBusinessConsoleMesOperationTask,
   submitBusinessConsoleQualityNcrDisposition,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessEquipmentAlarms } from './useBusinessEquipment'
 import { useMaintenanceWorkOrders } from './useBusinessMaintenance'
@@ -22,9 +27,11 @@ import { useWmsInboundOrders, useWmsOutboundOrders } from './useBusinessWms'
 import { LifecycleStateChangedError, recoverLifecycleAction } from './lifecycleAction'
 
 const api = vi.hoisted(() => ({
+  completeMaintenance: vi.fn(),
   getMaintenance: vi.fn(),
   getNcr: vi.fn(),
   listMes: vi.fn(),
+  startMes: vi.fn(),
 }))
 const queryRefetch = vi.hoisted(() => vi.fn(async () => undefined))
 
@@ -33,7 +40,10 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
   return {
     ...actual,
     acknowledgeBusinessConsoleEquipmentAlarm: vi.fn(),
-    completeBusinessConsoleMaintenanceWorkOrder: vi.fn(),
+    completeBusinessConsoleMaintenanceWorkOrder: api.completeMaintenance,
+    completeBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+      mutation: api.completeMaintenance,
+    })),
     completeBusinessConsoleWmsInboundOrder: vi.fn(),
     completeBusinessConsoleWmsOutboundOrder: vi.fn(),
     getBusinessConsoleMaintenanceWorkOrderQueryOptions: vi.fn(() => ({
@@ -48,7 +58,10 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
     listBusinessConsoleMesOperationTasks: api.listMes,
     listBusinessConsoleWmsInboundOrders: vi.fn(),
     listBusinessConsoleWmsOutboundOrders: vi.fn(),
-    startBusinessConsoleMesOperationTask: vi.fn(),
+    startBusinessConsoleMesOperationTask: api.startMes,
+    startBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
+      mutation: api.startMes,
+    })),
     submitBusinessConsoleQualityNcrDisposition: vi.fn(),
   }
 })
@@ -57,11 +70,17 @@ vi.mock('@pinia/colada', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@pinia/colada')>()
   return {
     ...actual,
-    useMutation: vi.fn(() => ({
-      error: shallowRef(),
-      isLoading: shallowRef(false),
-      mutateAsync: vi.fn(),
-    })),
+    useMutation: vi.fn(
+      (
+        options: {
+          mutation?: (variables: unknown, context: unknown) => unknown
+        } = {},
+      ) => ({
+        error: shallowRef(),
+        isLoading: shallowRef(false),
+        mutateAsync: vi.fn((variables: unknown) => options.mutation?.(variables, {})),
+      }),
+    ),
     useQuery: vi.fn((factory) => {
       factory()
       return {
@@ -92,6 +111,47 @@ function commandResult(status: number, error?: unknown) {
   return error
     ? { error, response: { status } }
     : { data: { success: true, data: {} }, response: { status } }
+}
+
+function confirmedCommandResult(operationType: string, resourceId: string, idempotencyKey: string) {
+  return {
+    data: {
+      success: true,
+      data: {
+        operationReceipt: {
+          operationType,
+          authority: 'business-gateway',
+          resourceType: 'test-resource',
+          resourceId,
+          idempotencyKey,
+          outcome: 'confirmed',
+          stateConfirmed: true,
+          readbackRequired: false,
+          changedAtUtc: '2026-07-29T00:00:00.000Z',
+          resourceStatus: 'Completed',
+          readbackMethod: null,
+          readbackPath: null,
+        },
+      },
+    },
+    response: { status: 200 },
+  }
+}
+
+const GENERATED_THROW_DOMAINS = new Set(['Maintenance', 'MES'])
+
+function arrangeCommandFailure(
+  harness: DomainHarness,
+  domain: string,
+  status: number,
+  error: object,
+) {
+  if (GENERATED_THROW_DOMAINS.has(domain)) {
+    ;(error as { response?: { status: number } }).response = { status }
+    harness.command.mockRejectedValue(error)
+    return
+  }
+  harness.command.mockResolvedValue(commandResult(status, error) as never)
 }
 
 function createHarnesses(): Record<string, DomainHarness> {
@@ -201,7 +261,7 @@ describe('Business Console lifecycle domain actions', () => {
     async (domain) => {
       const harness = createHarnesses()[domain]!
       harness.setStatus(allowedStatus[domain]!)
-      harness.command.mockResolvedValue(commandResult(409, { message: 'conflict' }) as never)
+      arrangeCommandFailure(harness, domain, 409, { message: 'conflict' })
 
       const error = await harness.invoke().catch((reason) => reason)
       expect(error).toBeInstanceOf(LifecycleStateChangedError)
@@ -222,7 +282,7 @@ describe('Business Console lifecycle domain actions', () => {
       const harness = createHarnesses()[domain]!
       harness.setStatus(allowedStatus[domain]!)
       const validation = { message: 'validation', code: domain === 'Quality' ? 422 : 400 }
-      harness.command.mockResolvedValue(commandResult(validation.code, validation) as never)
+      arrangeCommandFailure(harness, domain, validation.code, validation)
 
       const error = await harness.invoke().catch((reason) => reason)
       expect(error).toBe(validation)
@@ -238,42 +298,82 @@ describe('Business Console lifecycle domain actions', () => {
     },
   )
 
-  it('allows only an explicit same-key inbound retry to replay after the order became completed', async () => {
+  it('replays a completed inbound only from an exact restored intent and its OLD key', async () => {
     const wms = useWmsInboundOrders()
+    const pendingScope = {
+      principalId: 'unrestored-session',
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      operationType: 'wms.inbound-order.complete',
+      payloadFingerprint: 'IN-1',
+    }
+    clearPendingBusinessIntent(pendingScope)
     vi.mocked(listBusinessConsoleWmsInboundOrders).mockResolvedValue(
       envelope({ inboundOrderId: 'IN-1', status: 'Completed' }) as never,
     )
-    vi.mocked(completeBusinessConsoleWmsInboundOrder).mockResolvedValue(commandResult(200) as never)
+    vi.mocked(completeBusinessConsoleWmsInboundOrder).mockResolvedValue(
+      confirmedCommandResult('wms.inbound-order.complete', 'IN-1', 'wms-intent-old') as never,
+    )
 
     await expect(
-      wms.completeInbound('IN-1', 'wms-intent-1', { attempt: 'initial' }),
+      wms.completeInbound('IN-1', 'wms-intent-new', { attempt: 'initial' }),
+    ).rejects.toMatchObject({ source: 'preflight' })
+    expect(completeBusinessConsoleWmsInboundOrder).not.toHaveBeenCalled()
+    expect(peekPendingBusinessIntent(pendingScope)).toBeUndefined()
+
+    await expect(
+      wms.completeInbound('IN-1', 'wms-intent-new', { attempt: 'retry' }),
     ).rejects.toMatchObject({ source: 'preflight' })
     expect(completeBusinessConsoleWmsInboundOrder).not.toHaveBeenCalled()
 
+    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', {})
     await expect(
-      wms.completeInbound('IN-1', 'wms-intent-1', { attempt: 'retry' }),
+      wms.completeInbound('IN-1', 'wms-intent-new', { attempt: 'retry' }),
     ).resolves.toBeDefined()
-    expect(completeBusinessConsoleWmsInboundOrder).toHaveBeenCalledOnce()
+    expect(completeBusinessConsoleWmsInboundOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { idempotencyKey: 'wms-intent-old' },
+      }),
+    )
   })
 
-  it('allows only an explicit same-key outbound retry while inventory posting is pending', async () => {
+  it('replays a posting-pending outbound only from an exact restored intent and its OLD key', async () => {
     const wms = useWmsOutboundOrders()
+    const payload = { packReviewNo: 'PR-1', passed: true }
+    const pendingScope = {
+      principalId: 'unrestored-session',
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      operationType: 'wms.outbound-order.complete',
+      payloadFingerprint: 'OUT-1:{"packReviewNo":"PR-1","passed":true}',
+    }
+    clearPendingBusinessIntent(pendingScope)
     vi.mocked(listBusinessConsoleWmsOutboundOrders).mockResolvedValue(
       envelope({ outboundOrderId: 'OUT-1', status: 'InventoryPostingPending' }) as never,
     )
     vi.mocked(completeBusinessConsoleWmsOutboundOrder).mockResolvedValue(
-      commandResult(200) as never,
+      confirmedCommandResult('wms.outbound-order.complete', 'OUT-1', 'wms-intent-old') as never,
     )
-    const payload = { packReviewNo: 'PR-1', passed: true }
 
     await expect(
-      wms.completeOutbound('OUT-1', payload, 'wms-intent-1', { attempt: 'initial' }),
+      wms.completeOutbound('OUT-1', payload, 'wms-intent-new', { attempt: 'initial' }),
+    ).rejects.toMatchObject({ source: 'preflight' })
+    expect(completeBusinessConsoleWmsOutboundOrder).not.toHaveBeenCalled()
+    expect(peekPendingBusinessIntent(pendingScope)).toBeUndefined()
+
+    await expect(
+      wms.completeOutbound('OUT-1', payload, 'wms-intent-new', { attempt: 'retry' }),
     ).rejects.toMatchObject({ source: 'preflight' })
     expect(completeBusinessConsoleWmsOutboundOrder).not.toHaveBeenCalled()
 
+    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', payload)
     await expect(
-      wms.completeOutbound('OUT-1', payload, 'wms-intent-1', { attempt: 'retry' }),
+      wms.completeOutbound('OUT-1', payload, 'wms-intent-new', { attempt: 'retry' }),
     ).resolves.toBeDefined()
-    expect(completeBusinessConsoleWmsOutboundOrder).toHaveBeenCalledOnce()
+    expect(completeBusinessConsoleWmsOutboundOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { ...payload, idempotencyKey: 'wms-intent-old' },
+      }),
+    )
   })
 })
