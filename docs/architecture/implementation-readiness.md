@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## DeviceAsset 供应商与父设备引用闭环（MAN-424 / #772）
+
+BusinessMasterData 的 DeviceAsset 注册、更新和从 disabled 重新启用现在都对 `supplierPartnerCode` 与 `parentDeviceId` fail closed：供应商必须是同 organization/environment 内 active 且含大小写不敏感 `supplier` 角色的 BusinessPartner；父设备必须解析为同 scope active DeviceAsset 的公共 GUID，并拒绝自引用、直接/多级循环、缺失或停用祖先以及既存的畸形/循环祖先链。注册或显式更新父设备引用时，写入值规范化为 canonical GUID；重新启用只校验既存引用，不改写历史存储格式。更新未提交这两个字段时继续保留既有值，避免历史数据被无关字段修改追溯性阻断；显式空字符串仍表示清除引用。被 active DeviceAsset 引用的 BusinessPartner 不允许移除 supplier 角色；角色集合按聚合规则统一 trim、去重和空集合回退，保留 supplier 的多角色更新继续允许。
+
+DeviceAsset 注册/更新/重新启用、BusinessPartner 角色更新，以及 BusinessPartner 或父 DeviceAsset 停用前的被引用检查，按同一 organization/environment PostgreSQL transaction-scoped advisory lock 串行，并在锁释放前完成校验、聚合变更与保存。父设备停用门禁按 GUID 语义识别既有大写、花括号等可解析存量写法，不依赖字符串格式相等。真实 PostgreSQL 并发回归使用 caller-owned transaction 覆盖双向父子赋值、供应商/父设备赋值与停用、供应商/父设备停用与子设备重新启用、供应商赋值与 supplier 角色移除竞态，证明冲突路径不能同时提交并留下无效 active 引用；同时验证协调器不提交/回滚调用方事务、锁内保存、取消传播和调用方 rollback 后无残留变更。provider-light 测试只验证命令与校验逻辑，不作为串行化证据。本项未新增或修改 endpoint、schema、migration、公开契约或 facade declaration。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
