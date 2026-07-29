@@ -2525,8 +2525,24 @@ export type {
 export type BusinessConsolePrincipalWorkContextRequest =
   import('./generated/business-console').GetBusinessConsolePrincipalWorkContextData['query']
 
-// MAN-629 / #1166: WMS 上架/拣货人工任务生命周期与持久幂等动作。
+// MAN-629 / #1166: WMS 可信作业范围、受控派工与人工任务生命周期。
 export {
+  getBusinessConsoleWmsReceiptWorkScopes,
+  getBusinessConsoleWmsReceiptWorkScopesQueryOptions,
+  getBusinessConsoleWmsShipmentWorkScopes,
+  getBusinessConsoleWmsShipmentWorkScopesQueryOptions,
+  getBusinessConsoleWmsCountWorkScopes,
+  getBusinessConsoleWmsCountWorkScopesQueryOptions,
+  assignBusinessConsoleWmsInboundOrder,
+  assignBusinessConsoleWmsInboundOrderMutationOptions,
+  assignBusinessConsoleWmsPutawayTask,
+  assignBusinessConsoleWmsPutawayTaskMutationOptions,
+  assignBusinessConsoleWmsOutboundOrder,
+  assignBusinessConsoleWmsOutboundOrderMutationOptions,
+  assignBusinessConsoleWmsPickingTask,
+  assignBusinessConsoleWmsPickingTaskMutationOptions,
+  assignBusinessConsoleWmsCountExecution,
+  assignBusinessConsoleWmsCountExecutionMutationOptions,
   startBusinessConsoleWmsPutawayTask,
   startBusinessConsoleWmsPutawayTaskMutationOptions,
   recordBusinessConsoleWmsPutawayTaskProgress,
@@ -2546,6 +2562,14 @@ export {
 } from './generated/business-console'
 
 export type {
+  GetBusinessConsoleWmsReceiptWorkScopesData,
+  GetBusinessConsoleWmsShipmentWorkScopesData,
+  GetBusinessConsoleWmsCountWorkScopesData,
+  AssignBusinessConsoleWmsInboundOrderData,
+  AssignBusinessConsoleWmsPutawayTaskData,
+  AssignBusinessConsoleWmsOutboundOrderData,
+  AssignBusinessConsoleWmsPickingTaskData,
+  AssignBusinessConsoleWmsCountExecutionData,
   StartBusinessConsoleWmsPutawayTaskData,
   RecordBusinessConsoleWmsPutawayTaskProgressData,
   ReportBusinessConsoleWmsPutawayTaskExceptionData,
@@ -2554,6 +2578,12 @@ export type {
   RecordBusinessConsoleWmsPickingTaskProgressData,
   ReportBusinessConsoleWmsPickingTaskExceptionData,
   CompleteBusinessConsoleWmsPickingTaskData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkScopeCatalog as BusinessConsoleWmsWorkScopeCatalog,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkScopeCatalogItem as BusinessConsoleWmsWorkScopeCatalogItem,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkScopeCatalog as BusinessConsoleWmsWorkScopeCatalogEnvelope,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignWmsResourceRequest as BusinessConsoleAssignWmsResourceRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsAssignmentResult as BusinessConsoleWmsAssignmentResult,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsAssignmentResult as BusinessConsoleWmsAssignmentEnvelope,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStartWmsWarehouseTaskRequest as BusinessConsoleStartWmsWarehouseTaskRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordWmsWarehouseTaskProgressRequest as BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReportWmsWarehouseTaskExceptionRequest as BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
