@@ -13,6 +13,7 @@ import {
   isLifecycleActionUpdated,
   LIFECYCLE_ACTION_UPDATED_MESSAGE,
 } from '@/composables/lifecycleActionRecovery'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import {
   NvAppShellMobile,
   NvBottomSheet,
@@ -104,6 +105,7 @@ const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Pro
 // 换动作或重新打开面板 → 新键。
 const operationKey = ref('')
 const operationResultUnknown = ref(false)
+usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
