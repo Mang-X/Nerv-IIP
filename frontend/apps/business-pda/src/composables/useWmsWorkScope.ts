@@ -1,18 +1,18 @@
 import {
-  getBusinessConsolePrincipalWorkContextQueryOptions,
-  type BusinessConsolePrincipalWorkContextResponse,
+  getBusinessConsoleWmsCountWorkScopesQueryOptions,
+  getBusinessConsoleWmsReceiptWorkScopesQueryOptions,
+  getBusinessConsoleWmsShipmentWorkScopesQueryOptions,
+  type BusinessConsoleWmsWorkScopeCatalogEnvelope,
+  type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, shallowRef, watch } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
-const SUPPORTED_SCOPE_KINDS = new Set(['self', 'team', 'site', 'organization'])
+const SUPPORTED_SCOPE_KINDS = new Set(['self', 'work-pool', 'site'])
 
-interface PrincipalWorkContextEnvelope {
-  success?: boolean
-  data?: BusinessConsolePrincipalWorkContextResponse | null
-}
+export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
 
 export interface WmsWorkScopeOption {
   label: string
@@ -30,46 +30,67 @@ function parseScope(value: string | undefined) {
   return { kind: value.slice(0, separator), id: value.slice(separator + 1) }
 }
 
-export function useWmsWorkScope(permissionCode: string) {
+function normalizeScope(
+  item: BusinessConsoleWmsWorkScopeCatalogItem,
+): Required<Pick<BusinessConsoleWmsWorkScopeCatalogItem, 'scopeKind' | 'scopeId'>> &
+  BusinessConsoleWmsWorkScopeCatalogItem {
+  return {
+    ...item,
+    scopeKind: item.scopeKind?.trim() ?? '',
+    scopeId: item.scopeId?.trim() ?? '',
+  }
+}
+
+export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
   const auth = useAuthStore()
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
-  const principalId = computed(
-    () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-  )
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
   const selectedScopeKey = shallowRef<string>()
 
-  const contextQuery = useQuery(() => ({
-    ...getBusinessConsolePrincipalWorkContextQueryOptions({
+  const catalogQuery = useQuery(() => {
+    const options = {
       query: {
         organizationId: organizationId.value,
         environmentId: environmentId.value,
-        permissionCode,
       },
-    }),
-    enabled: hasTenant.value,
-  }))
+    }
+    const queryOptions =
+      catalog === 'receipts'
+        ? getBusinessConsoleWmsReceiptWorkScopesQueryOptions(options)
+        : catalog === 'shipments'
+          ? getBusinessConsoleWmsShipmentWorkScopesQueryOptions(options)
+          : getBusinessConsoleWmsCountWorkScopesQueryOptions(options)
+
+    return {
+      ...queryOptions,
+      enabled: hasTenant.value,
+    }
+  })
 
   const envelope = computed(
-    () => contextQuery.data.value as PrincipalWorkContextEnvelope | undefined,
+    () => catalogQuery.data.value as BusinessConsoleWmsWorkScopeCatalogEnvelope | undefined,
+  )
+  const catalogData = computed(() => (envelope.value?.success ? envelope.value.data : undefined))
+  const principalId = computed(
+    () =>
+      catalogData.value?.actorPrincipalId?.trim() ??
+      auth.principal?.principalId ??
+      auth.sessionId ??
+      'unrestored-session',
   )
   const authorizedScopes = computed(() =>
-    envelope.value?.success
-      ? (envelope.value.data?.authorizedScopes ?? []).filter(
-          (scope) => Boolean(scope.kind && scope.id) && SUPPORTED_SCOPE_KINDS.has(scope.kind ?? ''),
-        )
-      : [],
+    (catalogData.value?.items ?? [])
+      .map(normalizeScope)
+      .filter(
+        (scope) =>
+          Boolean(scope.scopeKind && scope.scopeId) && SUPPORTED_SCOPE_KINDS.has(scope.scopeKind),
+      ),
   )
   const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
     authorizedScopes.value.map((scope) => ({
-      label:
-        scope.kind === 'self'
-          ? '我的任务'
-          : scope.kind === 'organization'
-            ? '全组织'
-            : (scope.displayName ?? scope.id ?? ''),
-      value: scopeValue(scope.kind!, scope.id!),
+      label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
+      value: scopeValue(scope.scopeKind, scope.scopeId),
     })),
   )
 
@@ -77,9 +98,9 @@ export function useWmsWorkScope(permissionCode: string) {
     scopeOptions,
     (options) => {
       if (options.some((option) => option.value === selectedScopeKey.value)) return
-      const selfValue = scopeValue('self', principalId.value)
       selectedScopeKey.value =
-        options.find((option) => option.value === selfValue)?.value ?? options[0]?.value
+        options.find((option) => parseScope(option.value)?.kind === 'self')?.value ??
+        options[0]?.value
     },
     { immediate: true, flush: 'sync' },
   )
@@ -101,8 +122,12 @@ export function useWmsWorkScope(permissionCode: string) {
     scopeKind: computed(() => (hasSelection.value ? parsedSelection.value?.kind : undefined)),
     scopeId: computed(() => (hasSelection.value ? parsedSelection.value?.id : undefined)),
     scopeOptions,
-    pending: contextQuery.isLoading,
-    error: contextQuery.error,
-    refresh: contextQuery.refetch,
+    selectedScopeLabel: computed(
+      () =>
+        scopeOptions.value.find((option) => option.value === selectedScopeKey.value)?.label ?? '',
+    ),
+    pending: catalogQuery.isLoading,
+    error: catalogQuery.error,
+    refresh: () => (hasTenant.value ? catalogQuery.refetch() : Promise.resolve()),
   }
 }

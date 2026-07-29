@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
+import { computed, nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
   confirmBusinessConsoleOperation,
+  listBusinessConsoleWmsPickingTasks,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
+  startBusinessConsoleWmsPickingTask,
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
@@ -35,10 +37,22 @@ const coladaState = vi.hoisted(() => ({
   listInbound: vi.fn(),
   listOutbound: vi.fn(),
   listCount: vi.fn(),
+  listPicking: vi.fn(),
+  listPutaway: vi.fn(),
+  startPicking: vi.fn(),
+  progressPicking: vi.fn(),
+  exceptionPicking: vi.fn(),
+  completePicking: vi.fn(),
+  startPutaway: vi.fn(),
+  progressPutaway: vi.fn(),
+  exceptionPutaway: vi.fn(),
+  completePutaway: vi.fn(),
 }))
 
 const authState = vi.hoisted(() => ({
-  principal: undefined as { organizationId?: string; environmentId?: string } | undefined,
+  principal: undefined as
+    | { principalId?: string; organizationId?: string; environmentId?: string }
+    | undefined,
 }))
 const reactiveAuthState = reactive(authState)
 
@@ -48,6 +62,49 @@ vi.mock('@/stores/auth', () => ({
     get principal() {
       return reactiveAuthState.principal
     },
+  }),
+}))
+
+vi.mock('./makeIdempotencyKey', () => ({
+  makeIdempotencyKey: vi.fn(() => 'TASK-KEY'),
+}))
+
+vi.mock('./useWmsWorkScope', () => ({
+  useWmsWorkScope: vi.fn(() => {
+    const scopeKey = shallowRef<string | undefined>('self:emp049')
+    const parsedScope = computed(() => {
+      const [kind, id] = scopeKey.value?.split(':') ?? []
+      return { kind, id }
+    })
+    const hasTenant = computed(
+      () =>
+        Boolean(reactiveAuthState.principal?.organizationId) &&
+        Boolean(reactiveAuthState.principal?.environmentId),
+    )
+    return {
+      organizationId: computed(() => reactiveAuthState.principal?.organizationId ?? ''),
+      environmentId: computed(() => reactiveAuthState.principal?.environmentId ?? ''),
+      principalId: computed(() => reactiveAuthState.principal?.principalId ?? 'emp049'),
+      hasTenant,
+      hasSelection: computed(
+        () =>
+          hasTenant.value &&
+          ['self', 'work-pool', 'site'].includes(parsedScope.value.kind ?? '') &&
+          Boolean(parsedScope.value.id),
+      ),
+      scopeKey,
+      scopeKind: computed(() => parsedScope.value.kind),
+      scopeId: computed(() => parsedScope.value.id),
+      scopeOptions: computed(() => [
+        { label: '我的任务', value: 'self:emp049' },
+        { label: '一号仓作业池', value: 'work-pool:WMS-SITE-001' },
+        { label: '一号仓库', value: 'site:SITE-001' },
+      ]),
+      selectedScopeLabel: computed(() => '我的任务'),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: vi.fn(),
+    }
   }),
 }))
 
@@ -61,6 +118,16 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleWmsInboundOrders: coladaState.listInbound,
   listBusinessConsoleWmsOutboundOrders: coladaState.listOutbound,
   listBusinessConsoleWmsCountExecutions: coladaState.listCount,
+  listBusinessConsoleWmsPickingTasks: coladaState.listPicking,
+  listBusinessConsoleWmsPutawayTasks: coladaState.listPutaway,
+  startBusinessConsoleWmsPickingTask: coladaState.startPicking,
+  recordBusinessConsoleWmsPickingTaskProgress: coladaState.progressPicking,
+  reportBusinessConsoleWmsPickingTaskException: coladaState.exceptionPicking,
+  completeBusinessConsoleWmsPickingTask: coladaState.completePicking,
+  startBusinessConsoleWmsPutawayTask: coladaState.startPutaway,
+  recordBusinessConsoleWmsPutawayTaskProgress: coladaState.progressPutaway,
+  reportBusinessConsoleWmsPutawayTaskException: coladaState.exceptionPutaway,
+  completeBusinessConsoleWmsPutawayTask: coladaState.completePutaway,
   listBusinessConsoleWmsInboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
@@ -142,7 +209,7 @@ describe('PDA WMS composables', () => {
     coladaState.mutationResultById.clear()
     coladaState.mutationFailureById.clear()
     coladaState.confirmationFailure = undefined
-    reactiveAuthState.principal = { ...SCOPE }
+    reactiveAuthState.principal = { principalId: 'emp049', ...SCOPE }
     coladaState.listInbound.mockResolvedValue({
       data: {
         success: true,
@@ -161,6 +228,57 @@ describe('PDA WMS composables', () => {
         data: { items: [{ countExecutionId: 'count-1', status: 'Open' }], total: 1 },
       },
     })
+    coladaState.listPicking.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              warehouseTaskId: 'pick-1',
+              taskNo: 'PICK-001',
+              status: 'Open',
+              version: 2,
+              allowedActions: ['start', 'exception'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    coladaState.listPutaway.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              warehouseTaskId: 'putaway-1',
+              taskNo: 'PUT-001',
+              status: 'Open',
+              version: 3,
+              allowedActions: ['start', 'exception'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    for (const action of [
+      coladaState.startPicking,
+      coladaState.progressPicking,
+      coladaState.exceptionPicking,
+      coladaState.completePicking,
+      coladaState.startPutaway,
+      coladaState.progressPutaway,
+      coladaState.exceptionPutaway,
+      coladaState.completePutaway,
+    ]) {
+      action.mockResolvedValue({
+        data: {
+          success: true,
+          data: { warehouseTaskId: 'pick-1', status: 'InProgress', version: 3 },
+        },
+      })
+    }
   })
 
   it('disables every list query when the principal has no org/env scope', () => {
@@ -347,7 +465,7 @@ describe('PDA WMS composables', () => {
     }) => {
       arrangeTerminal()
       const intentScope = {
-        principalId: 'unrestored-session',
+        principalId: 'emp049',
         ...SCOPE,
         operationType,
         payloadFingerprint,
@@ -398,7 +516,7 @@ describe('PDA WMS composables', () => {
 
     acquirePendingBusinessIntent(
       {
-        principalId: 'unrestored-session',
+        principalId: 'emp049',
         ...SCOPE,
         operationType: 'wms.inbound-order.complete',
         payloadFingerprint: 'inbound-1:[]',
@@ -437,7 +555,7 @@ describe('PDA WMS composables', () => {
 
     acquirePendingBusinessIntent(
       {
-        principalId: 'unrestored-session',
+        principalId: 'emp049',
         ...SCOPE,
         operationType: 'wms.outbound-order.complete',
         payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
@@ -486,7 +604,14 @@ describe('PDA WMS composables', () => {
     ).rejects.toThrow('状态已被其他操作更新')
 
     expect(coladaState.listCount).toHaveBeenCalledWith({
-      query: { ...SCOPE, countExecutionId: 'count-1', skip: 0, take: 2 },
+      query: {
+        ...SCOPE,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        countExecutionId: 'count-1',
+        skip: 0,
+        take: 2,
+      },
       throwOnError: true,
     })
     expect(coladaState.lastMutationVars.has('completeCount')).toBe(false)
@@ -504,7 +629,7 @@ describe('PDA WMS composables', () => {
     const { completeCount } = useWmsCount()
     acquirePendingBusinessIntent(
       {
-        principalId: 'unrestored-session',
+        principalId: 'emp049',
         ...SCOPE,
         operationType: 'wms.count-execution.complete',
         payloadFingerprint: 'count-1:{"countedQuantity":5}',
@@ -568,28 +693,230 @@ describe('PDA WMS composables', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('enables picking/putaway read-only lists without a non-empty operatorUserId', () => {
+  it('threads the selected trusted WMS scope into all five list queries', () => {
+    useWmsInbound()
+    useWmsOutbound()
     useWmsPicking()
     useWmsPutaway()
-
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPickingTasks')?.enabled).toBe(
-      true,
-    )
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsPutawayTasks')?.enabled).toBe(
-      true,
-    )
+    useWmsCount()
 
     for (const fn of [
+      listBusinessConsoleWmsInboundOrdersQueryOptions,
+      listBusinessConsoleWmsOutboundOrdersQueryOptions,
       listBusinessConsoleWmsPickingTasksQueryOptions,
       listBusinessConsoleWmsPutawayTasksQueryOptions,
+      listBusinessConsoleWmsCountExecutionsQueryOptions,
     ]) {
       const call = vi.mocked(fn).mock.calls.at(-1)?.[0] as { query: Record<string, unknown> }
       expect(call.query).toEqual(
-        expect.objectContaining({ organizationId: 'org-001', environmentId: 'env-dev' }),
+        expect.objectContaining({
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          scopeKind: 'self',
+          scopeId: 'emp049',
+        }),
       )
-      // operatorUserId P1 未实装：传非空会返回空集，所以不能出现非空值。
-      expect(call.query.operatorUserId ?? '').toBe('')
     }
+  })
+
+  it('unbinds task rows immediately when the selected WMS scope changes', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            allowedActions: ['start'],
+            blockReasons: null,
+          },
+        ],
+        total: 1,
+      },
+    })
+    const result = useWmsPicking()
+
+    expect(result.tasks.value).toHaveLength(1)
+    result.scopeKey.value = 'work-pool:WMS-SITE-001'
+    await nextTick()
+
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.lastUpdatedAt.value).toBeNull()
+  })
+
+  it('normalizes task rows, loads the next page and refreshes the authorized query', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            allowedActions: null,
+            blockReasons: null,
+          },
+          { taskNo: '缺少可信标识' },
+        ],
+        total: 45,
+      },
+    })
+    const result = useWmsPicking()
+
+    expect(result.filters.take).toBe(20)
+    expect(result.tasks.value).toEqual([
+      expect.objectContaining({
+        warehouseTaskId: 'pick-1',
+        allowedActions: [],
+        blockReasons: [],
+      }),
+    ])
+
+    await result.loadMore()
+    expect(result.filters.take).toBe(40)
+    expect(coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')).toHaveBeenCalledTimes(
+      1,
+    )
+
+    await result.refresh()
+    expect(coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')).toHaveBeenCalledTimes(
+      2,
+    )
+  })
+
+  it('re-reads the exact picking task and starts it with trusted scope, version and stable key', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const result = useWmsPicking()
+
+    await result.executeTask({ action: 'start', task: result.tasks.value[0]! })
+
+    expect(listBusinessConsoleWmsPickingTasks).toHaveBeenCalledWith({
+      query: {
+        ...SCOPE,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        keyword: 'PICK-001',
+        skip: 0,
+        take: 20,
+      },
+      throwOnError: true,
+    })
+    expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledWith({
+      path: { warehouseTaskId: 'pick-1' },
+      query: {
+        ...SCOPE,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+      },
+      body: { idempotencyKey: 'TASK-KEY', expectedVersion: 2 },
+      throwOnError: true,
+    })
+  })
+
+  it('blocks a new task action when the authoritative row became terminal or stale', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    coladaState.listPicking.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              warehouseTaskId: 'pick-1',
+              taskNo: 'PICK-001',
+              status: 'Completed',
+              version: 3,
+              allowedActions: [],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    const result = useWmsPicking()
+
+    await expect(
+      result.executeTask({ action: 'start', task: result.tasks.value[0]! }),
+    ).rejects.toThrow('状态已被其他操作更新')
+    expect(startBusinessConsoleWmsPickingTask).not.toHaveBeenCalled()
+  })
+
+  it('replays an unconfirmed task action with the frozen key and original version', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const unconfirmed = Object.assign(new Error('unconfirmed'), {
+      code: 'business-operation-unconfirmed',
+    })
+    coladaState.startPicking.mockRejectedValueOnce(unconfirmed)
+    const result = useWmsPicking()
+    const intent = { action: 'start' as const, task: result.tasks.value[0]! }
+
+    await expect(result.executeTask(intent)).rejects.toBe(unconfirmed)
+    coladaState.listPicking.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              warehouseTaskId: 'pick-1',
+              taskNo: 'PICK-001',
+              status: 'Completed',
+              version: 3,
+              allowedActions: [],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+
+    await expect(result.executeTask(intent)).resolves.toEqual(
+      expect.objectContaining({ warehouseTaskId: 'pick-1' }),
+    )
+    expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(startBusinessConsoleWmsPickingTask).mock.calls[0]?.[0].body).toEqual(
+      vi.mocked(startBusinessConsoleWmsPickingTask).mock.calls[1]?.[0].body,
+    )
   })
 
   it('exposes success:false and malformed raw responses as failures for every WMS list', async () => {
@@ -656,9 +983,17 @@ describe('PDA WMS composables', () => {
       'listBusinessConsoleWmsCountExecutions',
     ]
     for (const id of ids) {
+      const item =
+        id === 'listBusinessConsoleWmsInboundOrders'
+          ? { inboundOrderId: 'old-inbound' }
+          : id === 'listBusinessConsoleWmsOutboundOrders'
+            ? { outboundOrderId: 'old-outbound' }
+            : id === 'listBusinessConsoleWmsCountExecutions'
+              ? { countExecutionId: 'old-count' }
+              : { warehouseTaskId: `old-${id}` }
       coladaState.queryDataById.set(id, {
         success: true,
-        data: { items: [{ id: `old-${id}` }], total: 7 },
+        data: { items: [item], total: 7 },
       })
     }
 
