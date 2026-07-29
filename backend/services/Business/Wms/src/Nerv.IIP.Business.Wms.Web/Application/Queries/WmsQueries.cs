@@ -123,7 +123,8 @@ public sealed record InboundOrderListItem(
     bool IsReleasedForPutaway,
     string SiteCode,
     string? AssignedOperatorUserId,
-    string? AssignedPoolCode);
+    string? AssignedPoolCode,
+    long Version);
 
 internal static class InboundOrderQualityAggregate
 {
@@ -225,6 +226,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.SiteCode,
                 x.AssignedOperatorUserId,
                 x.AssignedPoolCode,
+                x.Version,
                 HasAnyLine = x.Lines.Any(),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
@@ -242,7 +244,8 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending),
                 x.SiteCode,
                 x.AssignedOperatorUserId,
-                x.AssignedPoolCode))
+                x.AssignedPoolCode,
+                x.Version))
             .ToArray();
         return new ListInboundOrdersResponse(items, total);
     }
@@ -739,7 +742,8 @@ public sealed record CountExecutionFact(
     string? InventoryPostingFailureMessage = null,
     string? InventoryMovementId = null,
     string? AssignedOperatorUserId = null,
-    string? AssignedPoolCode = null);
+    string? AssignedPoolCode = null,
+    long Version = 0);
 
 public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
@@ -827,7 +831,8 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 null,
                 null,
                 x.AssignedOperatorUserId,
-                x.AssignedPoolCode))
+                x.AssignedPoolCode,
+                x.Version))
             .ToArrayAsync(cancellationToken);
         var countNumbers = items.Select(x => x.CountNo).ToArray();
         var movementRequests = await dbContext.InventoryMovementRequests

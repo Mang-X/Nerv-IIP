@@ -629,6 +629,7 @@ public sealed class WmsEndpointContractTests
         var item = Assert.Single(result.Items);
         Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
         Assert.Equal("Open", item.Status);
+        Assert.True(item.Version > 0);
     }
 
     [Fact]
@@ -1018,6 +1019,7 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Open", item.Status);
         Assert.Equal("BIN-A", item.LocationCode);
         Assert.Null(item.CountedQuantity);
+        Assert.True(item.Version > 0);
     }
 
     [Fact]
