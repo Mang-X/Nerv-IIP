@@ -19,9 +19,13 @@ import {
 } from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
-import { useListFreshness } from '@/composables/useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { makeIdempotencyKey } from './makeIdempotencyKey'
 
 const DEFAULT_TAKE = 100
@@ -81,6 +85,7 @@ export function useBusinessQualityInspectionTasks() {
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const inspectorUserId = computed(() => auth.principal?.principalId ?? '')
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
   const queryCache = useQueryCache()
   const filters = reactive<InspectionTaskFilters>({
@@ -101,7 +106,17 @@ export function useBusinessQualityInspectionTasks() {
     }),
     enabled: scopeReady.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => listQuery.data.value, scopeReady)
+  const currentResponse = useScopeBoundListResponse(
+    () => listQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    listQuery.isLoading,
+  )
 
   // 原因码目录（计数特性判不合格时的 Picker 数据源）：只取启用项，小目录一次拉全。
   const reasonCodesQuery = useQuery(() => ({
@@ -123,6 +138,13 @@ export function useBusinessQualityInspectionTasks() {
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  watch(
+    scopeKey,
+    () => {
+      extraTasks.value = []
+    },
+    { flush: 'sync' },
+  )
 
   const submitMutation = useMutation({
     ...createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
@@ -136,14 +158,14 @@ export function useBusinessQualityInspectionTasks() {
   })
 
   const baseTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
-    listItems<BusinessConsoleQualityInspectionTaskItem>(listQuery.data.value),
+    listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
   )
   const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
     if (extraTasks.value.length === 0) return baseTasks.value
     const seen = new Set(baseTasks.value.map((t) => t.inspectionTaskId))
     return [...baseTasks.value, ...extraTasks.value.filter((t) => !seen.has(t.inspectionTaskId))]
   })
-  const total = computed(() => listTotal(listQuery.data.value))
+  const total = computed(() => listTotal(currentResponse.value))
   const loaded = computed(() => tasks.value.length)
   const hasMore = computed(() => loaded.value < total.value)
 
@@ -158,6 +180,9 @@ export function useBusinessQualityInspectionTasks() {
         take: Math.min(Math.max(take, 1), MAX_TAKE),
       },
     })
+    if (data?.success !== true) {
+      throw new Error(data?.message?.trim() || '待检任务分页查询失败，请刷新重试。')
+    }
     return listItems<BusinessConsoleQualityInspectionTaskItem>(data)
   }
 
@@ -289,6 +314,8 @@ export function useBusinessQualityInspectionTasks() {
     pending: listQuery.isLoading,
     error: listQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
     reasonCodes,
     submitInspection,

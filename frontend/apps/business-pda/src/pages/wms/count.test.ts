@@ -74,6 +74,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
     lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
+    hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
+    hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,

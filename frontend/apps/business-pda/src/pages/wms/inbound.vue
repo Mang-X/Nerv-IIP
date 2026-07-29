@@ -62,6 +62,8 @@ const {
   environmentId,
   scopeReady,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useWmsInbound()
 const inboundScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
@@ -81,6 +83,8 @@ const {
   complete: linesComplete,
   pending: linesPending,
   error: linesError,
+  hasSuccessfulResponse: linesHasSuccessfulResponse,
+  hasFailedResponse: linesHasFailedResponse,
   refresh: refreshLines,
 } = useWmsReceivingLines(selectedOrderNo)
 
@@ -104,7 +108,14 @@ const submitError = ref('')
 const gs1Notice = ref('')
 
 // 空态仅在「无待收货单据且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(() => !pending.value && !error.value && orders.value.length === 0)
+const showEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    orders.value.length === 0,
+)
 
 // 收货现场按行采集的批号/效期（GS1 扫码、批号手输或日期滚轮），随 completeInbound 落库（#935 闭环）。
 // 采集值覆盖后端已有值；未采集则展示/提交后端投影的既有值。
@@ -184,6 +195,8 @@ const submitDisabled = computed(
     completePending.value ||
     linesPending.value ||
     Boolean(linesError.value) ||
+    linesHasFailedResponse.value ||
+    !linesHasSuccessfulResponse.value ||
     !linesComplete.value ||
     !selectedCanComplete.value,
 )
@@ -402,15 +415,17 @@ function goPutaway() {
         :loaded="orders.length"
         :total="inboundTotal"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && orders.length === 0"
+        :failed="hasFailedResponse"
+        failure-explanation="收货入库服务未成功返回，请刷新重试。"
+        :empty="!scopeReady || showEmpty"
         :empty-explanation="
           scopeReady ? '当前组织/环境范围没有待收货单据。' : '缺少组织或环境范围，未发起查询。'
         "
       />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '收货入库服务未成功返回'"
         :pending="pending"
         fallback="单据加载失败，请下拉重试或检查网络。"
         test-id="error-banner"
@@ -466,8 +481,8 @@ function goPutaway() {
           正在加载收货明细…
         </p>
         <RetryableListError
-          v-else-if="linesError"
-          :error="linesError"
+          v-else-if="linesError || linesHasFailedResponse"
+          :error="linesError ?? '收货明细服务未成功返回'"
           :pending="linesPending"
           fallback="收货明细加载失败，请重试。"
           test-id="lines-error"

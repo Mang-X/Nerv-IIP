@@ -25,6 +25,8 @@ const {
   environmentId,
   scopeReady,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useWmsPutaway()
 const putawayScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
@@ -32,7 +34,14 @@ const putawayScope = computed(() =>
 const putawayTotal = computed(() => total.value)
 
 // 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(() => !pending.value && !error.value && tasks.value.length === 0)
+const showEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    tasks.value.length === 0,
+)
 
 // 当前有库位筛选时才显示「清除」入口。
 const hasFilter = computed(() => Boolean(filters.locationCode))
@@ -83,7 +92,9 @@ function rowSubtitle(task: {
         :loaded="tasks.length"
         :total="putawayTotal"
         :updated-at="lastUpdatedAt"
-        :empty="showEmpty"
+        :failed="hasFailedResponse"
+        failure-explanation="上架任务服务未成功返回，请刷新重试。"
+        :empty="!scopeReady || showEmpty"
         :empty-explanation="
           scopeReady
             ? '当前组织/环境范围没有上架任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
@@ -109,8 +120,8 @@ function rowSubtitle(task: {
       <p class="text-xs text-muted-foreground">上架完成经收货入库过账</p>
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '上架任务服务未成功返回'"
         :pending="pending"
         fallback="任务加载失败，请下拉重试或检查网络。"
         test-id="error-banner"

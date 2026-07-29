@@ -15,7 +15,11 @@ import {
   completePendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
-import { useListFreshness } from '@/composables/useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
@@ -81,6 +85,7 @@ export function useBusinessMaintenance() {
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const loginName = computed(() => auth.principal?.loginName ?? '')
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
   const workOrderFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
   const inspectionFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
@@ -111,11 +116,34 @@ export function useBusinessMaintenance() {
     ...listBusinessConsoleMaintenancePlansQueryOptions({ query: scopedQuery(planFilters) }),
     enabled: scopeReady.value,
   }))
-  const workOrdersLastUpdatedAt = useListFreshness(() => workOrdersQuery.data.value, scopeReady)
-  const inspectionsLastUpdatedAt = useListFreshness(() => inspectionsQuery.data.value, scopeReady)
-  const plansLastUpdatedAt = useListFreshness(() => plansQuery.data.value, scopeReady)
+  const workOrdersResponse = useScopeBoundListResponse(
+    () => workOrdersQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const inspectionsResponse = useScopeBoundListResponse(
+    () => inspectionsQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const plansResponse = useScopeBoundListResponse(() => plansQuery.data.value, scopeKey, scopeReady)
+  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, scopeReady)
+  const inspectionsLastUpdatedAt = useListFreshness(inspectionsResponse, scopeReady)
+  const plansLastUpdatedAt = useListFreshness(plansResponse, scopeReady)
+  const {
+    hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
+    hasFailedResponse: workOrdersHasFailedResponse,
+  } = useListResponseState(workOrdersResponse, scopeReady, workOrdersQuery.isLoading)
+  const {
+    hasSuccessfulResponse: inspectionsHasSuccessfulResponse,
+    hasFailedResponse: inspectionsHasFailedResponse,
+  } = useListResponseState(inspectionsResponse, scopeReady, inspectionsQuery.isLoading)
+  const {
+    hasSuccessfulResponse: plansHasSuccessfulResponse,
+    hasFailedResponse: plansHasFailedResponse,
+  } = useListResponseState(plansResponse, scopeReady, plansQuery.isLoading)
 
-  const plansTotal = computed(() => listTotal(plansQuery.data.value as ListEnvelope<unknown>))
+  const plansTotal = computed(() => listTotal(plansResponse.value as ListEnvelope<unknown>))
 
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
@@ -197,15 +225,17 @@ export function useBusinessMaintenance() {
     scopeReady,
     workOrders: computed<MaintenanceWorkOrderItem[]>(() =>
       listItems<MaintenanceWorkOrderItem>(
-        workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>,
+        workOrdersResponse.value as ListEnvelope<MaintenanceWorkOrderItem>,
       ),
     ),
     workOrdersTotal: computed(() =>
-      listTotal(workOrdersQuery.data.value as ListEnvelope<MaintenanceWorkOrderItem>),
+      listTotal(workOrdersResponse.value as ListEnvelope<MaintenanceWorkOrderItem>),
     ),
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
     workOrdersLastUpdatedAt,
+    workOrdersHasSuccessfulResponse,
+    workOrdersHasFailedResponse,
     refreshWorkOrders: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
     workOrderFilters,
     createWorkOrder,
@@ -213,25 +243,29 @@ export function useBusinessMaintenance() {
 
     inspections: computed<MaintenanceInspectionItem[]>(() =>
       listItems<MaintenanceInspectionItem>(
-        inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>,
+        inspectionsResponse.value as ListEnvelope<MaintenanceInspectionItem>,
       ),
     ),
     inspectionsTotal: computed(() =>
-      listTotal(inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>),
+      listTotal(inspectionsResponse.value as ListEnvelope<MaintenanceInspectionItem>),
     ),
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsError: inspectionsQuery.error,
     inspectionsLastUpdatedAt,
+    inspectionsHasSuccessfulResponse,
+    inspectionsHasFailedResponse,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),
     inspectionFilters,
     recordInspection,
     recordPending: recordMutation.isLoading,
 
-    plans: computed(() => listItems(plansQuery.data.value as ListEnvelope<unknown>)),
+    plans: computed(() => listItems(plansResponse.value as ListEnvelope<unknown>)),
     plansTotal,
     plansPending: plansQuery.isLoading,
     plansError: plansQuery.error,
     plansLastUpdatedAt,
+    plansHasSuccessfulResponse,
+    plansHasFailedResponse,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),
     planFilters,
     loadMorePlans,

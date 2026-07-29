@@ -334,6 +334,8 @@ function onScanWorkOrder(value: string) {
         :loaded="scopedReceipts.length"
         :total="scopedTotal"
         :updated-at="lastUpdatedAt"
+        :failed="hasFailedResponse"
+        failure-explanation="生产完工入库申请服务未成功返回，请刷新重试。"
         :empty="
           !scopeReady ||
           (!pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0)

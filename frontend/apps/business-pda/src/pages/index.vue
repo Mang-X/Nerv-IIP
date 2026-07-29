@@ -298,6 +298,8 @@ function openRoute(route: string) {
           :loaded="scopedInspectionTasks.length"
           :total="scopedInspectionTotal"
           :updated-at="inspection.lastUpdatedAt.value"
+          :failed="inspection.hasFailedResponse.value"
+          failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
           :empty="
             !inspection.scopeReady.value ||
             (!inspection.pending.value &&

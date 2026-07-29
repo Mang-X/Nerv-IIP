@@ -12,18 +12,31 @@ import { computed, shallowRef } from 'vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
 
-const props = defineProps<{
-  tasks: Task[]
-  total: number
-  loaded: number
-  hasMore: boolean
-  pending: boolean
-  error: unknown
-  scope?: string
-  updatedAt?: string | null
-  /** 加载全部待检任务并返回最新集合（扫码跨页直达用）。 */
-  loadAll?: () => Promise<Task[]>
-}>()
+const props = withDefaults(
+  defineProps<{
+    tasks: Task[]
+    total: number
+    loaded: number
+    hasMore: boolean
+    pending: boolean
+    error: unknown
+    scope?: string
+    scopeReady?: boolean
+    updatedAt?: string | null
+    hasSuccessfulResponse?: boolean
+    hasFailedResponse?: boolean
+    /** 加载全部待检任务并返回最新集合（扫码跨页直达用）。 */
+    loadAll?: () => Promise<Task[]>
+  }>(),
+  {
+    scope: undefined,
+    scopeReady: true,
+    updatedAt: null,
+    hasSuccessfulResponse: false,
+    hasFailedResponse: false,
+    loadAll: undefined,
+  },
+)
 const emit = defineEmits<{ select: [task: Task]; loadMore: []; refresh: [] }>()
 
 // 受控响应式时钟：任务在页面停留期间跨过 dueAtUtc，超期标记与排序会随时钟自动重算。
@@ -31,6 +44,11 @@ const now = useNowClock()
 
 const scanKeyword = shallowRef('')
 const sourceTypeFilter = shallowRef<string | null>(null)
+const listError = computed(
+  () =>
+    props.error ??
+    (props.hasFailedResponse ? new Error('质检待检任务服务未成功返回，请刷新重试。') : null),
+)
 
 function isOverdue(task: Task) {
   if (!task.dueAtUtc) return false
@@ -54,6 +72,13 @@ const filteredTasks = computed(() =>
   scanFiltered.value.filter(
     (t) => sourceTypeFilter.value === null || t.sourceType === sourceTypeFilter.value,
   ),
+)
+const showEmpty = computed(
+  () =>
+    !props.pending &&
+    !listError.value &&
+    props.hasSuccessfulResponse &&
+    filteredTasks.value.length === 0,
 )
 
 // 超期置顶（按到期升序），其余按到期升序、无到期排最后。
@@ -115,7 +140,9 @@ async function onScan(value: string) {
       :loaded="props.loaded"
       :total="props.total"
       :updated-at="props.updatedAt"
-      :empty="!pending && !error && filteredTasks.length === 0"
+      :failed="props.hasFailedResponse"
+      failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
+      :empty="!props.scopeReady || showEmpty"
       empty-explanation="当前列表是组织范围待检，不是个人待检；缺少范围时不会发起查询。"
     />
 
@@ -126,7 +153,7 @@ async function onScan(value: string) {
       :loaded="loaded"
       :has-more="hasMore"
       :pending="pending"
-      :error="error"
+      :error="listError"
       :is-overdue="isOverdue"
       @select="(task) => emit('select', task)"
       @load-more="emit('loadMore')"

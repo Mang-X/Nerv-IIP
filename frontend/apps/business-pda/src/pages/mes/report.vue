@@ -62,6 +62,8 @@ const {
   error: workOrdersError,
   refresh: refreshWorkOrders,
   lastUpdatedAt: workOrdersLastUpdatedAt,
+  hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
+  hasFailedResponse: workOrdersHasFailedResponse,
 } = useMesWorkOrders()
 
 const {
@@ -257,6 +259,14 @@ const workOrderEmptyExplanation = computed(() =>
   !workOrderFilters.organizationId || !workOrderFilters.environmentId
     ? '缺少组织或环境范围，未发起查询。'
     : '当前列表按组织/环境范围查询，暂不支持按当前人员归属筛选；空态不代表个人工单。',
+)
+const showWorkOrdersEmpty = computed(
+  () =>
+    !workOrdersPending.value &&
+    !workOrdersError.value &&
+    !workOrdersHasFailedResponse.value &&
+    workOrdersHasSuccessfulResponse.value &&
+    workOrders.value.length === 0,
 )
 const operationTaskScope = computed(() =>
   workOrderFilters.organizationId && workOrderFilters.environmentId
@@ -533,19 +543,24 @@ function onScanWorkOrder(value: string) {
           :loaded="workOrders.length"
           :total="workOrderTotal"
           :updated-at="workOrdersLastUpdatedAt"
-          :empty="!workOrdersPending && !workOrdersError && workOrders.length === 0"
+          :failed="workOrdersHasFailedResponse"
+          failure-explanation="生产工单服务未成功返回，请刷新重试。"
+          :empty="
+            !(workOrderFilters.organizationId && workOrderFilters.environmentId) ||
+            showWorkOrdersEmpty
+          "
           :empty-explanation="workOrderEmptyExplanation"
         />
         <RetryableListError
-          v-if="workOrdersError"
-          :error="workOrdersError"
+          v-if="workOrdersError || workOrdersHasFailedResponse"
+          :error="workOrdersError ?? '生产工单服务未成功返回'"
           :pending="workOrdersPending"
           fallback="加载工单失败，请下拉刷新或重试。"
           test-id="work-orders-error"
           @retry="() => refreshWorkOrders()"
         />
         <div
-          v-else-if="!workOrdersPending && workOrders.length === 0"
+          v-else-if="showWorkOrdersEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           暂无可报工的工单

@@ -43,6 +43,8 @@ const {
   environmentId,
   scopeReady,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useWmsCount()
 const countScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
@@ -99,7 +101,14 @@ const scanActive = computed(() => !sheetOpen.value && !completed.value)
 const submitError = ref('')
 
 // 空态仅在「无盘点任务且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(() => !pending.value && !error.value && executions.value.length === 0)
+const showEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    executions.value.length === 0,
+)
 
 function displayCountStatus(status?: string) {
   if (status?.trim().toLowerCase() === 'open') return '待盘点'
@@ -239,7 +248,9 @@ function goHome() {
         :loaded="executions.length"
         :total="countTotal"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && executions.length === 0"
+        :failed="hasFailedResponse"
+        failure-explanation="盘点任务服务未成功返回，请刷新重试。"
+        :empty="!scopeReady || showEmpty"
         :empty-explanation="
           scopeReady
             ? '当前组织/环境范围没有盘点任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
@@ -248,8 +259,8 @@ function goHome() {
       />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '盘点任务服务未成功返回'"
         :pending="pending"
         fallback="盘点任务加载失败，请下拉重试或检查网络。"
         test-id="error-banner"

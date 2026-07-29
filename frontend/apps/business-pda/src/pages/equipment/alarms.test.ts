@@ -68,6 +68,8 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     environmentId,
     scopeReady,
     lastUpdatedAt,
+    hasSuccessfulResponse: computed(() => !pending.value && !error.value),
+    hasFailedResponse: computed(() => false),
     pending,
     error,
     refresh,

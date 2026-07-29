@@ -104,6 +104,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
     lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
+    hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
+    hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,
@@ -122,6 +124,10 @@ vi.mock('@/composables/useBusinessWms', () => ({
     }),
     pending: computed(() => wmsState.linesPending),
     error: computed(() => wmsState.linesError),
+    hasSuccessfulResponse: computed(
+      () => Boolean(toValue(orderNo)) && !wmsState.linesPending && !wmsState.linesError,
+    ),
+    hasFailedResponse: computed(() => false),
     refresh: wmsState.linesRefresh,
   }),
 }))

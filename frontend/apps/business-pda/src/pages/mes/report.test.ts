@@ -112,6 +112,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
     lastUpdatedAt: workOrdersLastUpdatedAtRef,
+    hasSuccessfulResponse: computed(() => !workOrdersPendingRef.value && !workOrdersErrorRef.value),
+    hasFailedResponse: computed(() => false),
   }),
   useMesOperationTasks: () => {
     operationTaskDiscoveryCalls += 1

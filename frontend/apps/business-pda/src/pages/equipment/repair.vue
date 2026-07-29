@@ -46,11 +46,21 @@ const {
   scopeReady,
   workOrdersTotal,
   workOrdersLastUpdatedAt,
+  workOrdersHasSuccessfulResponse,
+  workOrdersHasFailedResponse,
 } = useBusinessMaintenance()
 const maintenanceScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
 )
 const maintenanceTotal = computed(() => workOrdersTotal.value)
+const showWorkOrdersEmpty = computed(
+  () =>
+    !workOrdersPending.value &&
+    !workOrdersError.value &&
+    !workOrdersHasFailedResponse.value &&
+    workOrdersHasSuccessfulResponse.value &&
+    workOrders.value.length === 0,
+)
 
 // 报修端点持久化逐操作幂等键；超时后仍复用同一键重试，服务端返回原工单而不重复创建。
 const {
@@ -377,7 +387,9 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           :loaded="workOrders.length"
           :total="maintenanceTotal"
           :updated-at="workOrdersLastUpdatedAt"
-          :empty="!workOrdersPending && !workOrdersError && workOrders.length === 0"
+          :failed="workOrdersHasFailedResponse"
+          failure-explanation="维修工单服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showWorkOrdersEmpty"
           :empty-explanation="
             scopeReady
               ? '当前组织/环境范围暂无维修工单；暂不支持按维修人员归属筛选，空态不代表个人工单。'
@@ -386,8 +398,8 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
         />
 
         <RetryableListError
-          v-if="workOrdersError"
-          :error="workOrdersError"
+          v-if="workOrdersError || workOrdersHasFailedResponse"
+          :error="workOrdersError ?? '维修工单服务未成功返回'"
           :pending="workOrdersPending"
           fallback="维修工单加载失败，请稍后重试。"
           test-id="work-orders-error"
@@ -402,7 +414,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
         </div>
 
         <div
-          v-else-if="workOrders.length === 0"
+          v-else-if="showWorkOrdersEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           当前组织/环境范围暂无维修工单；暂不支持按维修人员归属筛选

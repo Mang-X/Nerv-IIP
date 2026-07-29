@@ -56,11 +56,21 @@ const {
   operationScopeReady,
   refresh,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useMesOperationTasks()
 const mesScope = computed(() =>
   filters.organizationId && filters.environmentId
     ? '当前登录组织 / 当前业务环境'
     : '组织/环境范围未就绪',
+)
+const showOperationTasksEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    operationTasks.value.length === 0,
 )
 const {
   filters: sopFilters,
@@ -381,13 +391,15 @@ function formatDate(value?: string | null) {
         :loaded="operationTasks.length"
         :total="total"
         :updated-at="lastUpdatedAt"
-        :empty="!pending && !error && operationTasks.length === 0"
+        :failed="hasFailedResponse"
+        failure-explanation="工序任务服务未成功返回，请刷新重试。"
+        :empty="!(filters.organizationId && filters.environmentId) || showOperationTasksEmpty"
         empty-explanation="当前列表是组织范围工序任务，暂不支持按当前人员归属筛选；空态不代表我的任务。"
       />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '工序任务服务未成功返回'"
         :pending="pending"
         fallback="加载工序任务失败，请下拉刷新或重试。"
         test-id="operation-tasks-error"
@@ -395,7 +407,7 @@ function formatDate(value?: string | null) {
       />
 
       <div
-        v-else-if="!pending && operationTasks.length === 0"
+        v-else-if="showOperationTasksEmpty"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
         当前组织/环境范围暂无工序任务；暂不支持按当前人员归属筛选

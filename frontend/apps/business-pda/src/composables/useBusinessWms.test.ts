@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
 import {
   confirmBusinessConsoleOperation,
@@ -20,10 +20,12 @@ import {
   useWmsOutbound,
   useWmsPicking,
   useWmsPutaway,
+  useWmsReceivingLines,
 } from './useBusinessWms'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   lastMutationVars: new Map<string, unknown>(),
@@ -38,12 +40,13 @@ const coladaState = vi.hoisted(() => ({
 const authState = vi.hoisted(() => ({
   principal: undefined as { organizationId?: string; environmentId?: string } | undefined,
 }))
+const reactiveAuthState = reactive(authState)
 
 // 真实 Pinia store 会解包 principal ref；mock 直接返回解包后的值以贴合运行时。
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     get principal() {
-      return authState.principal
+      return reactiveAuthState.principal
     },
   }),
 }))
@@ -78,6 +81,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsCountExecutions' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsReceivingQualityGates' }],
+    query: vi.fn(),
+  })),
   completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({
     _mutationId: 'completeInbound',
   })),
@@ -98,8 +105,10 @@ vi.mock('@pinia/colada', () => ({
 
     const refetch = vi.fn()
     coladaState.refetchById.set(id, refetch)
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    coladaState.queryDataRefById.set(id, data)
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch,
@@ -126,13 +135,14 @@ describe('PDA WMS composables', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.refetchById.clear()
     coladaState.lastMutationVars.clear()
     coladaState.mutationResultById.clear()
     coladaState.mutationFailureById.clear()
     coladaState.confirmationFailure = undefined
-    authState.principal = { ...SCOPE }
+    reactiveAuthState.principal = { ...SCOPE }
     coladaState.listInbound.mockResolvedValue({
       data: {
         success: true,
@@ -154,7 +164,7 @@ describe('PDA WMS composables', () => {
   })
 
   it('disables every list query when the principal has no org/env scope', () => {
-    authState.principal = undefined
+    reactiveAuthState.principal = undefined
 
     useWmsInbound()
     useWmsOutbound()
@@ -174,7 +184,7 @@ describe('PDA WMS composables', () => {
   })
 
   it('does not manually refresh any list when the principal has no org/env scope', async () => {
-    authState.principal = undefined
+    reactiveAuthState.principal = undefined
 
     const results = [
       useWmsInbound(),
@@ -580,5 +590,146 @@ describe('PDA WMS composables', () => {
       // operatorUserId P1 未实装：传非空会返回空集，所以不能出现非空值。
       expect(call.query.operatorUserId ?? '').toBe('')
     }
+  })
+
+  it('exposes success:false and malformed raw responses as failures for every WMS list', async () => {
+    const cases = [
+      {
+        id: 'listBusinessConsoleWmsInboundOrders',
+        create: () => {
+          const result = useWmsInbound()
+          return { rows: result.orders, ...result }
+        },
+      },
+      {
+        id: 'listBusinessConsoleWmsOutboundOrders',
+        create: () => {
+          const result = useWmsOutbound()
+          return { rows: result.orders, ...result }
+        },
+      },
+      {
+        id: 'listBusinessConsoleWmsPickingTasks',
+        create: () => {
+          const result = useWmsPicking()
+          return { rows: result.tasks, ...result }
+        },
+      },
+      {
+        id: 'listBusinessConsoleWmsPutawayTasks',
+        create: () => {
+          const result = useWmsPutaway()
+          return { rows: result.tasks, ...result }
+        },
+      },
+      {
+        id: 'listBusinessConsoleWmsCountExecutions',
+        create: () => {
+          const result = useWmsCount()
+          return { rows: result.executions, ...result }
+        },
+      },
+    ]
+
+    for (const candidate of cases) {
+      coladaState.queryDataById.set(candidate.id, { success: false, message: '查询失败' })
+      const result = candidate.create()
+
+      expect(result.rows.value, candidate.id).toEqual([])
+      expect(result.total.value, candidate.id).toBe(0)
+      expect(result.hasSuccessfulResponse.value, candidate.id).toBe(false)
+      expect(result.hasFailedResponse.value, candidate.id).toBe(true)
+
+      coladaState.queryDataRefById.get(candidate.id)!.value = { data: { items: [], total: 0 } }
+      await nextTick()
+      expect(result.hasSuccessfulResponse.value, `${candidate.id}:malformed`).toBe(false)
+      expect(result.hasFailedResponse.value, `${candidate.id}:malformed`).toBe(true)
+    }
+  })
+
+  it('unbinds all WMS list projections immediately when the principal scope changes', async () => {
+    const ids = [
+      'listBusinessConsoleWmsInboundOrders',
+      'listBusinessConsoleWmsOutboundOrders',
+      'listBusinessConsoleWmsPickingTasks',
+      'listBusinessConsoleWmsPutawayTasks',
+      'listBusinessConsoleWmsCountExecutions',
+    ]
+    for (const id of ids) {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: [{ id: `old-${id}` }], total: 7 },
+      })
+    }
+
+    const results = [
+      (() => {
+        const result = useWmsInbound()
+        return { rows: result.orders, ...result }
+      })(),
+      (() => {
+        const result = useWmsOutbound()
+        return { rows: result.orders, ...result }
+      })(),
+      (() => {
+        const result = useWmsPicking()
+        return { rows: result.tasks, ...result }
+      })(),
+      (() => {
+        const result = useWmsPutaway()
+        return { rows: result.tasks, ...result }
+      })(),
+      (() => {
+        const result = useWmsCount()
+        return { rows: result.executions, ...result }
+      })(),
+    ]
+    for (const result of results) {
+      expect(result.rows.value).toHaveLength(1)
+      expect(result.total.value).toBe(7)
+      expect(result.hasSuccessfulResponse.value).toBe(true)
+      expect(result.lastUpdatedAt.value).not.toBeNull()
+    }
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+
+    for (const result of results) {
+      expect(result.rows.value).toEqual([])
+      expect(result.total.value).toBe(0)
+      expect(result.hasSuccessfulResponse.value).toBe(false)
+      expect(result.hasFailedResponse.value).toBe(false)
+      expect(result.lastUpdatedAt.value).toBeNull()
+    }
+  })
+
+  it('binds receiving detail lines to both principal scope and selected inbound order', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsReceivingQualityGates', {
+      success: true,
+      data: {
+        items: [{ inboundOrderLineId: 'line-old', inboundOrderNo: 'IN-1' }],
+        total: 1,
+      },
+    })
+    const orderNo = shallowRef('IN-1')
+    const result = useWmsReceivingLines(orderNo)
+
+    expect(result.lines.value).toHaveLength(1)
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+
+    orderNo.value = 'IN-2'
+    await nextTick()
+    expect(result.lines.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
+
+    coladaState.queryDataRefById.get('listBusinessConsoleWmsReceivingQualityGates')!.value = {
+      success: false,
+      message: '收货明细查询失败',
+    }
+    await nextTick()
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(true)
   })
 })

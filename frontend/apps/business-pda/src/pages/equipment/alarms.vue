@@ -52,6 +52,8 @@ const {
   environmentId,
   scopeReady,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
   pending,
   error,
   refresh,
@@ -64,6 +66,14 @@ const alarmScope = computed(() =>
 )
 const alarmTotal = computed(() => total.value)
 const alarmScopeReady = computed(() => scopeReady.value)
+const showAlarmEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    alarms.value.length === 0,
+)
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -365,7 +375,9 @@ function showToast(message: string, type: 'success' | 'error') {
           :loaded="alarms.length"
           :total="alarmTotal"
           :updated-at="lastUpdatedAt"
-          :empty="!pending && !error && alarms.length === 0"
+          :failed="hasFailedResponse"
+          failure-explanation="设备报警服务未成功返回，请刷新重试。"
+          :empty="!alarmScopeReady || showAlarmEmpty"
           :empty-explanation="
             alarmScopeReady
               ? '当前组织/环境范围没有未解除设备报警。'
@@ -374,8 +386,8 @@ function showToast(message: string, type: 'success' | 'error') {
         />
 
         <RetryableListError
-          v-if="error"
-          :error="error"
+          v-if="error || hasFailedResponse"
+          :error="error ?? '设备报警服务未成功返回'"
           :pending="pending"
           fallback="报警加载失败，请稍后重试。"
           test-id="alarms-error"
@@ -387,7 +399,7 @@ function showToast(message: string, type: 'success' | 'error') {
         </div>
 
         <div
-          v-else-if="alarms.length === 0"
+          v-else-if="!alarmScopeReady || showAlarmEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           {{

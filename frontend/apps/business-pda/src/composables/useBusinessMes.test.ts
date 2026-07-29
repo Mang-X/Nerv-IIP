@@ -333,16 +333,20 @@ describe('pda useBusinessMes composables', () => {
     ).toBe(false)
   })
 
-  it('does not manually refresh work-order or operation lists without org/env scope', async () => {
+  it('does not manually refresh work-order, operation, or report lists without org/env scope', async () => {
     authState.principal = undefined
 
     const workOrders = useMesWorkOrders()
     const operationTasks = useMesOperationTasks()
-    await Promise.all([workOrders.refresh(), operationTasks.refresh()])
+    const reports = useMesProductionReports()
+    await Promise.all([workOrders.refresh(), operationTasks.refresh(), reports.refresh()])
 
     expect(coladaState.refetchById.get('listBusinessConsoleMesWorkOrders')).not.toHaveBeenCalled()
     expect(
       coladaState.refetchById.get('listBusinessConsoleMesOperationTasks'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleMesProductionReports'),
     ).not.toHaveBeenCalled()
   })
 
@@ -537,6 +541,73 @@ describe('pda useBusinessMes composables', () => {
       query: expect.objectContaining({ organizationId: 'org-001', environmentId: 'env-dev' }),
     })
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(true)
+  })
+
+  it('exposes failed or malformed work-order, operation, and report responses', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesWorkOrders', {
+      success: false,
+      message: '工单查询失败',
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', [])
+    coladaState.queryDataById.set('listBusinessConsoleMesProductionReports', {
+      data: { items: [], total: 0 },
+    })
+
+    const workOrders = useMesWorkOrders()
+    const operationTasks = useMesOperationTasks()
+    const reports = useMesProductionReports()
+
+    expect(workOrders.workOrders.value).toEqual([])
+    expect(workOrders.total.value).toBe(0)
+    expect(workOrders.hasSuccessfulResponse.value).toBe(false)
+    expect(workOrders.hasFailedResponse.value).toBe(true)
+    expect(operationTasks.operationTasks.value).toEqual([])
+    expect(operationTasks.total.value).toBe(0)
+    expect(operationTasks.hasSuccessfulResponse.value).toBe(false)
+    expect(operationTasks.hasFailedResponse.value).toBe(true)
+    expect(reports.productionReports.value).toEqual([])
+    expect(reports.total.value).toBe(0)
+    expect(reports.hasSuccessfulResponse.value).toBe(false)
+    expect(reports.hasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds work-order, operation, and report projections on an org/env scope switch', async () => {
+    for (const id of [
+      'listBusinessConsoleMesWorkOrders',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesProductionReports',
+    ]) {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: [{ id: `old-${id}` }], total: 4 },
+      })
+    }
+
+    const workOrders = useMesWorkOrders()
+    const operationTasks = useMesOperationTasks()
+    const reports = useMesProductionReports()
+    expect(workOrders.workOrders.value).toHaveLength(1)
+    expect(operationTasks.operationTasks.value).toHaveLength(1)
+    expect(reports.productionReports.value).toHaveLength(1)
+    expect(workOrders.lastUpdatedAt.value).not.toBeNull()
+    expect(operationTasks.lastUpdatedAt.value).not.toBeNull()
+    expect(reports.lastUpdatedAt.value).not.toBeNull()
+
+    reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
+    await nextTick()
+
+    expect(workOrders.workOrders.value).toEqual([])
+    expect(workOrders.total.value).toBe(0)
+    expect(workOrders.hasSuccessfulResponse.value).toBe(false)
+    expect(operationTasks.operationTasks.value).toEqual([])
+    expect(operationTasks.total.value).toBe(0)
+    expect(operationTasks.hasSuccessfulResponse.value).toBe(false)
+    expect(reports.productionReports.value).toEqual([])
+    expect(reports.total.value).toBe(0)
+    expect(reports.hasSuccessfulResponse.value).toBe(false)
+    expect(workOrders.lastUpdatedAt.value).toBeNull()
+    expect(operationTasks.lastUpdatedAt.value).toBeNull()
+    expect(reports.lastUpdatedAt.value).toBeNull()
   })
 
   it('uses the exact strong-ID work-order detail query for report route identity', () => {

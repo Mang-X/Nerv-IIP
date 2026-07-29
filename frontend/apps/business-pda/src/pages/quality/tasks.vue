@@ -44,6 +44,9 @@ const {
   submitInspection,
   submitPending,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+  scopeReady,
 } = useBusinessQualityInspectionTasks()
 const identity = usePdaIdentity()
 const qualityScope = computed(() =>
@@ -153,7 +156,10 @@ function openNcr() {
       :pending="pending"
       :error="error"
       :scope="qualityScope"
+      :scope-ready="scopeReady"
       :updated-at="lastUpdatedAt"
+      :has-successful-response="hasSuccessfulResponse"
+      :has-failed-response="hasFailedResponse"
       :load-all="ensureAllLoaded"
       @select="selectTask"
       @load-more="loadMore"

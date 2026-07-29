@@ -38,7 +38,11 @@ import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
-import { useListFreshness } from '@/composables/useListFreshness'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 
 const DEFAULT_TAKE = 100
 
@@ -100,6 +104,7 @@ function useWmsScope() {
   const principalId = computed(
     () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
   )
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
   const scopeQuery = () => ({
     organizationId: organizationId.value,
     environmentId: environmentId.value,
@@ -111,7 +116,15 @@ function useWmsScope() {
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
   })
-  return { organizationId, environmentId, principalId, hasScope, scopeQuery, scopeQueryWithPaging }
+  return {
+    organizationId,
+    environmentId,
+    principalId,
+    hasScope,
+    scopeKey,
+    scopeQuery,
+    scopeQueryWithPaging,
+  }
 }
 
 export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
@@ -124,7 +137,17 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => ordersQuery.data.value, scope.hasScope)
+  const currentResponse = useScopeBoundListResponse(
+    () => ordersQuery.data.value,
+    scope.scopeKey,
+    scope.hasScope,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scope.hasScope,
+    ordersQuery.isLoading,
+  )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
@@ -140,15 +163,17 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     filters,
     orders: computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsInboundOrderItem>(
-        ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+        currentResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
       ),
     ),
     total: computed(() =>
-      listTotal(ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
     ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scope.hasScope.value ? ordersQuery.refetch() : Promise.resolve()),
     completeInbound: async (
       inboundOrderId: string,
@@ -232,7 +257,17 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => ordersQuery.data.value, scope.hasScope)
+  const currentResponse = useScopeBoundListResponse(
+    () => ordersQuery.data.value,
+    scope.scopeKey,
+    scope.hasScope,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scope.hasScope,
+    ordersQuery.isLoading,
+  )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
@@ -248,15 +283,17 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     filters,
     orders: computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
       listItems<BusinessConsoleWmsOutboundOrderItem>(
-        ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+        currentResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
       ),
     ),
     total: computed(() =>
-      listTotal(ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
     ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scope.hasScope.value ? ordersQuery.refetch() : Promise.resolve()),
     completeOutbound: async (
       outboundOrderId: string,
@@ -341,7 +378,17 @@ function useWmsWarehouseTasks(
     }),
     enabled: scope.hasScope.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => tasksQuery.data.value, scope.hasScope)
+  const currentResponse = useScopeBoundListResponse(
+    () => tasksQuery.data.value,
+    scope.scopeKey,
+    scope.hasScope,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scope.hasScope,
+    tasksQuery.isLoading,
+  )
 
   return {
     organizationId: scope.organizationId,
@@ -350,15 +397,17 @@ function useWmsWarehouseTasks(
     filters,
     tasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
       listItems<BusinessConsoleWmsWarehouseTaskItem>(
-        tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+        currentResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
     total: computed(() =>
-      listTotal(tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
     ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scope.hasScope.value ? tasksQuery.refetch() : Promise.resolve()),
   }
 }
@@ -379,6 +428,8 @@ const RECEIVING_LINES_TAKE = 500
 export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
   const scope = useWmsScope()
   const orderNo = computed(() => toValue(inboundOrderNo).trim())
+  const enabled = computed(() => scope.hasScope.value && orderNo.value.length > 0)
+  const responseScopeKey = computed(() => `${scope.scopeKey.value}:${orderNo.value}`)
 
   const linesQuery = useQuery(() => ({
     ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
@@ -390,11 +441,21 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
         includeNotRequired: true,
       },
     }),
-    enabled: scope.hasScope.value && orderNo.value.length > 0,
+    enabled: enabled.value,
   }))
 
+  const currentResponse = useScopeBoundListResponse(
+    () => linesQuery.data.value,
+    responseScopeKey,
+    enabled,
+  )
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    enabled,
+    linesQuery.isLoading,
+  )
   const envelope = computed(
-    () => linesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
+    () => currentResponse.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
   )
   // 服务端已精确按单过滤；客户端再按精确单号防御性过滤（不改变结果，纯保险）。
   const lines = computed<ReceivingQualityGateLine[]>(() =>
@@ -412,6 +473,8 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
     lines,
     total,
     complete,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     pending: linesQuery.isLoading,
     error: linesQuery.error,
     refresh: () =>
@@ -436,7 +499,17 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     }),
     enabled: scope.hasScope.value,
   }))
-  const lastUpdatedAt = useListFreshness(() => executionsQuery.data.value, scope.hasScope)
+  const currentResponse = useScopeBoundListResponse(
+    () => executionsQuery.data.value,
+    scope.scopeKey,
+    scope.hasScope,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scope.hasScope,
+    executionsQuery.isLoading,
+  )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
@@ -452,17 +525,17 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     filters,
     executions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
       listItems<BusinessConsoleWmsCountExecutionItem>(
-        executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+        currentResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
       ),
     ),
     total: computed(() =>
-      listTotal(
-        executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
-      ),
+      listTotal(currentResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined),
     ),
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (scope.hasScope.value ? executionsQuery.refetch() : Promise.resolve()),
     completeCount: async (
       countExecutionId: string,

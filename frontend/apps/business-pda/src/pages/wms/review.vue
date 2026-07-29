@@ -43,6 +43,8 @@ const {
   environmentId,
   scopeReady,
   lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
 } = useWmsOutbound()
 const reviewScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
@@ -93,7 +95,14 @@ const scanActive = computed(() => !sheetOpen.value && !completed.value)
 const submitError = ref('')
 
 // 空态仅在「无待发货单据且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(() => !pending.value && !error.value && orders.value.length === 0)
+const showEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    orders.value.length === 0,
+)
 
 function onScan(value: string) {
   filters.keyword = value
@@ -228,7 +237,9 @@ function goHome() {
         :loaded="orders.length"
         :total="reviewTotal"
         :updated-at="lastUpdatedAt"
-        :empty="showEmpty"
+        :failed="hasFailedResponse"
+        failure-explanation="出库复核服务未成功返回，请刷新重试。"
+        :empty="!scopeReady || showEmpty"
         :empty-explanation="
           scopeReady
             ? '当前组织/环境范围没有待复核出库单；暂不支持按操作员归属筛选，空态不代表个人任务。'
@@ -237,8 +248,8 @@ function goHome() {
       />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="error || hasFailedResponse"
+        :error="error ?? '出库复核服务未成功返回'"
         :pending="pending"
         fallback="单据加载失败，请下拉重试或检查网络。"
         test-id="error-banner"

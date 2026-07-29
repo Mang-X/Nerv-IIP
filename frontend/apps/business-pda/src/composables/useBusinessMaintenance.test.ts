@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessMaintenance } from './useBusinessMaintenance'
 import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
+  queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   mutate: {
     createWorkOrder: vi.fn(),
@@ -51,8 +53,10 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    coladaState.queryDataRefById.set(id, data)
     return {
-      data: shallowRef(undefined),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch: vi.fn(),
@@ -75,15 +79,15 @@ vi.mock('@pinia/colada', () => ({
 
 function seedPrincipal(overrides: Record<string, unknown> = {}) {
   const auth = useAuthStore()
-  auth.$patch({
-    principal: {
+  auth.$patch((state) => {
+    state.principal = {
       principalId: 'user-admin',
       principalType: 'user',
       loginName: 'admin',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       ...overrides,
-    } as never,
+    } as never
   })
 }
 
@@ -92,6 +96,8 @@ describe('useBusinessMaintenance', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     sessionStorage.clear()
+    coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
   })
 
@@ -233,5 +239,70 @@ describe('useBusinessMaintenance', () => {
       '登录态未就绪',
     )
     expect(coladaState.mutate.recordInspection).not.toHaveBeenCalled()
+  })
+
+  it('marks every Maintenance list success:false or malformed raw response as failed', () => {
+    seedPrincipal()
+    coladaState.queryDataById.set('listBusinessConsoleMaintenanceWorkOrders', {
+      success: false,
+      message: '维修工单查询失败',
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMaintenanceInspections', [])
+    coladaState.queryDataById.set('listBusinessConsoleMaintenancePlans', {
+      data: { items: [], total: 0 },
+    })
+
+    const result = useBusinessMaintenance()
+
+    expect(result.workOrders.value).toHaveLength(0)
+    expect(result.workOrdersTotal.value).toBe(0)
+    expect(result.workOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrdersHasFailedResponse.value).toBe(true)
+    expect(result.inspections.value).toHaveLength(0)
+    expect(result.inspectionsTotal.value).toBe(0)
+    expect(result.inspectionsHasSuccessfulResponse.value).toBe(false)
+    expect(result.inspectionsHasFailedResponse.value).toBe(true)
+    expect(result.plans.value).toHaveLength(0)
+    expect(result.plansTotal.value).toBe(0)
+    expect(result.plansHasSuccessfulResponse.value).toBe(false)
+    expect(result.plansHasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds all Maintenance list projections on an org/env scope switch', async () => {
+    seedPrincipal()
+    for (const id of [
+      'listBusinessConsoleMaintenanceWorkOrders',
+      'listBusinessConsoleMaintenanceInspections',
+      'listBusinessConsoleMaintenancePlans',
+    ]) {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: [{ id: `old-${id}` }], total: 6 },
+      })
+    }
+
+    const result = useBusinessMaintenance()
+    expect(result.workOrders.value).toHaveLength(1)
+    expect(result.inspections.value).toHaveLength(1)
+    expect(result.plans.value).toHaveLength(1)
+    expect(result.workOrdersLastUpdatedAt.value).not.toBeNull()
+    expect(result.inspectionsLastUpdatedAt.value).not.toBeNull()
+    expect(result.plansLastUpdatedAt.value).not.toBeNull()
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+
+    expect(result.workOrders.value).toHaveLength(0)
+    expect(result.workOrdersTotal.value).toBe(0)
+    expect(result.workOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(result.inspections.value).toHaveLength(0)
+    expect(result.inspectionsTotal.value).toBe(0)
+    expect(result.inspectionsHasSuccessfulResponse.value).toBe(false)
+    expect(result.plans.value).toHaveLength(0)
+    expect(result.plansTotal.value).toBe(0)
+    expect(result.plansHasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrdersLastUpdatedAt.value).toBeNull()
+    expect(result.inspectionsLastUpdatedAt.value).toBeNull()
+    expect(result.plansLastUpdatedAt.value).toBeNull()
   })
 })

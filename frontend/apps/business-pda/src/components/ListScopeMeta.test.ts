@@ -36,4 +36,24 @@ describe('ListScopeMeta', () => {
     expect(wrapper.text()).toContain('空态说明：缺少组织或环境范围，未发起查询。')
     expect(wrapper.text()).not.toContain('个人待检')
   })
+
+  it('shows a failed-response explanation and suppresses the business empty explanation', () => {
+    const wrapper = mount(ListScopeMeta, {
+      props: {
+        scope: '当前登录组织 / 当前业务环境',
+        source: '维修工单服务（组织/环境范围）',
+        loaded: 0,
+        total: 0,
+        failed: true,
+        failureExplanation: '维修工单服务未成功返回，请刷新重试。',
+        empty: true,
+        emptyExplanation: '当前组织/环境范围暂无维修工单。',
+      },
+    })
+
+    expect(wrapper.get('[data-testid="list-failure-explanation"]').text()).toContain(
+      '查询失败：维修工单服务未成功返回，请刷新重试。',
+    )
+    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
+  })
 })

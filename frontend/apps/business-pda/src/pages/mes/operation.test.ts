@@ -24,7 +24,11 @@ const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
 const createSopFileDownloadGrant = vi.fn()
 
-const filters = reactive({ keyword: undefined as string | undefined })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  keyword: undefined as string | undefined,
+})
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
 const operationScopeMessageRef = ref('')
@@ -56,6 +60,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasks: computed(() => operationTasksRef.value),
     total: computed(() => operationTasksRef.value.length),
     lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
+    hasSuccessfulResponse: computed(() => !tasksErrorRef.value),
+    hasFailedResponse: computed(() => false),
     pending: ref(false),
     error: tasksErrorRef,
     refresh,

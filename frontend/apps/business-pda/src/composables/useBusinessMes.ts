@@ -191,6 +191,10 @@ function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
   }
 }
 
+function scopeKey(filters: MesScope) {
+  return `${filters.organizationId.trim()}:${filters.environmentId.trim()}`
+}
+
 function envelopeItems<
   TItem,
   TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null },
@@ -250,29 +254,39 @@ function invalidateMesQueries(queryCache: ReturnType<typeof useQueryCache>, ids:
 
 export function useMesWorkOrders() {
   const filters = defaultFilters()
+  const scopeReady = computed(() => hasScope(filters))
 
   const workOrdersQuery = useQuery(() => ({
     ...listBusinessConsoleMesWorkOrdersQueryOptions({
       query: toListQuery(filters),
     }),
-    enabled: hasScope(filters),
+    enabled: scopeReady.value,
   }))
-  const lastUpdatedAt = useListFreshness(
+  const currentResponse = useScopeBoundListResponse(
     () => workOrdersQuery.data.value,
-    () => hasScope(filters),
+    () => scopeKey(filters),
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    workOrdersQuery.isLoading,
   )
 
   return {
     filters,
     workOrders: computed<BusinessConsoleMesWorkOrderItem[]>(() =>
       envelopeItems<BusinessConsoleMesWorkOrderItem, BusinessConsoleMesWorkOrderListEnvelope>(
-        workOrdersQuery.data.value,
+        currentResponse.value,
       ),
     ),
-    total: computed(() => envelopeTotal(workOrdersQuery.data.value)),
+    total: computed(() => envelopeTotal(currentResponse.value)),
     pending: workOrdersQuery.isLoading,
     error: workOrdersQuery.error,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (hasScope(filters) ? workOrdersQuery.refetch() : Promise.resolve()),
   }
 }
@@ -478,16 +492,24 @@ export function useMesOperationTasks() {
   const filters = defaultFilters()
   const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
+  const scopeReady = computed(() => hasScope(filters))
 
   const operationTasksQuery = useQuery(() => ({
     ...listBusinessConsoleMesOperationTasksQueryOptions({
       query: toListQuery(filters),
     }),
-    enabled: hasScope(filters),
+    enabled: scopeReady.value,
   }))
-  const lastUpdatedAt = useListFreshness(
+  const currentResponse = useScopeBoundListResponse(
     () => operationTasksQuery.data.value,
-    () => hasScope(filters),
+    () => scopeKey(filters),
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    operationTasksQuery.isLoading,
   )
 
   const invalidate = () =>
@@ -582,15 +604,17 @@ export function useMesOperationTasks() {
       envelopeItems<
         BusinessConsoleMesOperationTaskRow,
         BusinessConsoleMesOperationTaskListEnvelope
-      >(operationTasksQuery.data.value),
+      >(currentResponse.value),
     ),
-    total: computed(() => envelopeTotal(operationTasksQuery.data.value)),
+    total: computed(() => envelopeTotal(currentResponse.value)),
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
     lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     refresh: () => (hasScope(filters) ? operationTasksQuery.refetch() : Promise.resolve()),
     cancelPendingTasks: () =>
       queryCache.cancelQueries({
@@ -699,13 +723,25 @@ export function useMesProductionReports() {
   const filters = defaultFilters()
   const reportScope = useMesPrincipalWorkScope(filters, MES_REPORTING_WRITE_PERMISSION)
   const queryCache = useQueryCache()
+  const scopeReady = computed(() => hasScope(filters))
 
   const reportsQuery = useQuery(() => ({
     ...listBusinessConsoleMesProductionReportsQueryOptions({
       query: toListQuery(filters),
     }),
-    enabled: hasScope(filters),
+    enabled: scopeReady.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => reportsQuery.data.value,
+    () => scopeKey(filters),
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    reportsQuery.isLoading,
+  )
 
   const recordMutation = useMutation({
     ...recordBusinessConsoleMesProductionReportMutationOptions(),
@@ -722,12 +758,15 @@ export function useMesProductionReports() {
       envelopeItems<
         BusinessConsoleMesProductionReportRow,
         BusinessConsoleMesProductionReportListEnvelope
-      >(reportsQuery.data.value),
+      >(currentResponse.value),
     ),
-    total: computed(() => envelopeTotal(reportsQuery.data.value)),
+    total: computed(() => envelopeTotal(currentResponse.value)),
     pending: reportsQuery.isLoading,
     error: reportsQuery.error,
-    refresh: reportsQuery.refetch,
+    lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
+    refresh: () => (scopeReady.value ? reportsQuery.refetch() : Promise.resolve()),
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,

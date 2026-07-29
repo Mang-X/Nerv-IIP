@@ -47,6 +47,10 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     environmentId,
     scopeReady,
     workOrdersLastUpdatedAt,
+    workOrdersHasSuccessfulResponse: computed(
+      () => !workOrdersPending.value && !workOrdersError.value,
+    ),
+    workOrdersHasFailedResponse: computed(() => false),
     workOrdersPending,
     workOrdersError,
     refreshWorkOrders,

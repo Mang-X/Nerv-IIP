@@ -48,6 +48,28 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
   })
 
+  it('renders a retryable response failure instead of a business empty state', () => {
+    const wrapper = mount(QualityTaskListStep, {
+      props: {
+        tasks: [],
+        total: 0,
+        loaded: 0,
+        hasMore: false,
+        pending: false,
+        error: null,
+        hasSuccessfulResponse: false,
+        hasFailedResponse: true,
+        scope: '当前登录组织 / 当前业务环境',
+      },
+    })
+
+    expect(wrapper.get('[data-testid="list-failure-explanation"]').text()).toContain(
+      '质检待检任务服务未成功返回，请刷新重试。',
+    )
+    expect(wrapper.find('[data-testid="tasks-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('暂无待检任务')
+  })
+
   it('scan direct: an exact/unique source-document or SKU hit auto-selects the task', async () => {
     const wrapper = mountList([
       task({
