@@ -12,21 +12,7 @@ import type {
   ScheduleTask,
   UnscheduledItem,
 } from './types'
-
-/** 契约 blockKind 码值 → 模型语义(未知码值不猜,按停机处理与后端 ClassifyBlockKind 同口径)。 */
-const BLOCK_KINDS = ['maintenance', 'downtime', 'lineChange', 'changeover'] as const
-type BlockKind = (typeof BLOCK_KINDS)[number]
-
-const BLOCK_LABELS: Record<BlockKind, string> = {
-  maintenance: '设备维护',
-  downtime: '计划停机',
-  lineChange: '换线',
-  changeover: '换型',
-}
-
-function toBlockKind(value: unknown): BlockKind {
-  return BLOCK_KINDS.includes(value as BlockKind) ? (value as BlockKind) : 'downtime'
-}
+import { BLOCK_LABELS, toBlockKind } from './blocks'
 
 const taskId = (a: ScheduleAssignmentContract): string =>
   a.assignmentId ?? `${a.orderId ?? 'order'}:${a.operationId ?? 'op'}`

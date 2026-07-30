@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -100,7 +101,7 @@ public sealed class SchedulePlanCalendarProjectionTests
             new DateTimeOffset(2026, 6, 1, 7, 0, 0, TimeSpan.Zero)));
         await dbContext.SaveChangesAsync();
 
-        var detail = await new GetSchedulePlanDetailQueryHandler(dbContext).Handle(
+        var detail = await new GetSchedulePlanDetailQueryHandler(dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance).Handle(
             new GetSchedulePlanDetailQuery("plan-calendar-002", "org-001", "prod"),
             CancellationToken.None);
 
@@ -125,7 +126,7 @@ public sealed class SchedulePlanCalendarProjectionTests
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         await dbContext.SaveChangesAsync();
 
-        var detail = await new GetSchedulePlanDetailQueryHandler(dbContext).Handle(
+        var detail = await new GetSchedulePlanDetailQueryHandler(dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance).Handle(
             new GetSchedulePlanDetailQuery("plan-calendar-003", "org-001", "prod"),
             CancellationToken.None);
 

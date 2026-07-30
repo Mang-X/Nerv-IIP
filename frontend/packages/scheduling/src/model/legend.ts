@@ -2,9 +2,8 @@
 // 每一项都由当前 ScheduleModel + 视图推导,而不是写死一张"全量色板"——
 // 后端没带日历就不谈班次,方案里没有换型窗口就不列换型图例。
 
+import { BLOCK_KINDS, type BlockKind } from './blocks'
 import type { ScheduleModel } from './types'
-
-export type BlockKind = 'maintenance' | 'downtime' | 'lineChange' | 'changeover'
 
 export interface SchedulingLegendSemantics {
   /** 甘特语义(工单甘特):计划基线 / 依赖箭头 / 里程碑。 */
@@ -28,14 +27,24 @@ export interface SchedulingLegendSemantics {
   calendar: { nonWorking: boolean; shift: boolean; now: boolean }
 }
 
-const BLOCK_ORDER: BlockKind[] = ['maintenance', 'downtime', 'lineChange', 'changeover']
-
 const EMPTY: SchedulingLegendSemantics = {
   gantt: { baseline: false, link: false, milestone: false },
   card: { priority: false, rush: false, kitting: false, changeover: false, bottleneck: false },
   status: { conflict: false, locked: false },
   blocks: [],
   calendar: { nonWorking: false, shift: false, now: false },
+}
+
+/**
+ * 「全部可能」的图例语义:只给没有模型可依据的场景用(组件库文档 / 演示挂载)。
+ * 有模型时一律走 deriveLegendSemantics——消费方不许自己手写一份形状。
+ */
+export const FULL_LEGEND_SEMANTICS: SchedulingLegendSemantics = {
+  gantt: { baseline: true, link: true, milestone: true },
+  card: { priority: true, rush: true, kitting: true, changeover: true, bottleneck: true },
+  status: { conflict: true, locked: true },
+  blocks: [...BLOCK_KINDS],
+  calendar: { nonWorking: true, shift: true, now: true },
 }
 
 export function deriveLegendSemantics(
@@ -72,7 +81,7 @@ export function deriveLegendSemantics(
       conflict: tasks.some((t) => t.hasConflict),
       locked: operations.some((t) => t.locked),
     },
-    blocks: BLOCK_ORDER.filter((kind) => blockKinds.has(kind)),
+    blocks: BLOCK_KINDS.filter((kind) => blockKinds.has(kind)),
     calendar: {
       // 时间线底纹恒在:有日历按日历判定,无日历也会画周末/夜间。
       nonWorking: true,

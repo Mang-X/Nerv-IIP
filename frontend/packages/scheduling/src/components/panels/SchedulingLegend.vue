@@ -6,7 +6,8 @@
 // 结构:按分类分组、每类一行(分类标题 + 该类图例项)。每类可折叠(本地 ref)、可显隐(emit + 自身淡化)。
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@lucide/vue'
 import { computed, reactive } from 'vue'
-import { deriveLegendSemantics, type BlockKind } from '../../model/legend'
+import { BLOCK_LABELS, BLOCK_TOKENS } from '../../model/blocks'
+import { deriveLegendSemantics, FULL_LEGEND_SEMANTICS } from '../../model/legend'
 import type { ScheduleModel } from '../../model/types'
 
 const props = withDefaults(
@@ -51,29 +52,10 @@ interface LegendItem {
   token?: string
 }
 
-const BLOCK_LABELS: Record<BlockKind, string> = {
-  maintenance: '设备维护',
-  downtime: '计划停机',
-  lineChange: '换线窗口',
-  changeover: '换型窗口',
-}
-const BLOCK_TOKENS: Record<BlockKind, string> = {
-  maintenance: '--nv-scheduling-block-maintenance',
-  downtime: '--nv-scheduling-block-downtime',
-  lineChange: '--nv-scheduling-block-linechange',
-  changeover: '--nv-scheduling-block-changeover',
-}
-
+// 有模型就照模型说话;没有模型(组件库文档 / 演示挂载)才用包内的「全部可能」常量,
+// 组件自己不再手写一份语义形状。
 const semantics = computed(() =>
-  props.model
-    ? deriveLegendSemantics(props.model)
-    : {
-        gantt: { baseline: true, link: true, milestone: true },
-        card: { priority: true, rush: true, kitting: true, changeover: true, bottleneck: true },
-        status: { conflict: true, locked: true },
-        blocks: ['maintenance', 'downtime', 'lineChange', 'changeover'] as BlockKind[],
-        calendar: { nonWorking: true, shift: true, now: true },
-      },
+  props.model ? deriveLegendSemantics(props.model) : FULL_LEGEND_SEMANTICS,
 )
 
 const groups = computed<{ key: GroupKey; label: string; items: LegendItem[] }[]>(() => {

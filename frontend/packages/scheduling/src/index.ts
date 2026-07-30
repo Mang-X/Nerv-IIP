@@ -12,8 +12,15 @@ export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useS
 
 export { toModel, toLockedAssignments } from './model/aps-mapper'
 export {
-  deriveLegendSemantics,
+  BLOCK_KINDS,
+  BLOCK_LABELS,
+  BLOCK_TOKENS,
+  toBlockKind,
   type BlockKind,
+} from './model/blocks'
+export {
+  deriveLegendSemantics,
+  FULL_LEGEND_SEMANTICS,
   type SchedulingLegendSemantics,
 } from './model/legend'
 export {
