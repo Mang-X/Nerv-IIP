@@ -6507,6 +6507,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseErpSalesOrderCreditHoldRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    startedBy?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpDeliveryOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderListResponse | null;
 };
@@ -18654,6 +18660,35 @@ export type ApproveBusinessConsoleErpQuotationResponses = {
 };
 
 export type ApproveBusinessConsoleErpQuotationResponse = ApproveBusinessConsoleErpQuotationResponses[keyof ApproveBusinessConsoleErpQuotationResponses];
+
+export type ReleaseBusinessConsoleErpSalesOrderCreditHoldData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseErpSalesOrderCreditHoldRequest;
+    path: {
+        salesOrderNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/sales/sales-orders/{salesOrderNo}/release-credit-hold';
+};
+
+export type ReleaseBusinessConsoleErpSalesOrderCreditHoldErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReleaseBusinessConsoleErpSalesOrderCreditHoldResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type ReleaseBusinessConsoleErpSalesOrderCreditHoldResponse = ReleaseBusinessConsoleErpSalesOrderCreditHoldResponses[keyof ReleaseBusinessConsoleErpSalesOrderCreditHoldResponses];
 
 export type ListBusinessConsoleErpDeliveryOrdersData = {
     body?: never;

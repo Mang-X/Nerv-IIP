@@ -169,25 +169,46 @@ public sealed class LeaderDemoScaleSeedService(ApplicationDbContext dbContext)
         }
     }
 
+    /// <summary>
+    /// #1290：规模块 4 家客户的信用额度档案（CNY）。规模块订单单价 180–280 元、单量 20–60 件、
+    /// 轮转摊到 4 家客户，各家在途敞口约两三百万元，额度取敞口的 2 倍左右保证转订单不因额度缺失 400。
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, decimal> CustomerCreditLimits =
+        new Dictionary<string, decimal>(StringComparer.Ordinal)
+        {
+            ["CUST-SCALE-001"] = 8_000_000m,
+            ["CUST-SCALE-002"] = 6_000_000m,
+            ["CUST-SCALE-003"] = 6_000_000m,
+            ["CUST-SCALE-004"] = 5_000_000m,
+        };
+
     private async Task SeedCustomerAsync(
         string organizationId,
         string environmentId,
         LeaderDemoScaleSku customer,
         CancellationToken cancellationToken)
     {
+        var creditLimit = CustomerCreditLimits.TryGetValue(customer.Code, out var limit) ? limit : (decimal?)null;
         var existing = await dbContext.BusinessPartners.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == customer.Code,
             cancellationToken);
         if (existing is null)
         {
             dbContext.BusinessPartners.Add(BusinessPartner.Create(
-                organizationId, environmentId, customer.Code, "customer", customer.Name));
+                organizationId, environmentId, customer.Code, "customer", customer.Name,
+                ["customer"], taxId: null, creditLimit: creditLimit, creditCurrencyCode: creditLimit is null ? null : "CNY"));
             return;
         }
 
         if (existing.Name != customer.Name || existing.PartnerType != "customer" || existing.Disabled)
         {
             throw Collision(customer.Code);
+        }
+
+        // 信用额度只补缺失：租户已维护的额度一律不动。
+        if (existing.CreditLimit is null && creditLimit is not null)
+        {
+            existing.UpdateCreditLimit(creditLimit, "CNY");
         }
     }
 

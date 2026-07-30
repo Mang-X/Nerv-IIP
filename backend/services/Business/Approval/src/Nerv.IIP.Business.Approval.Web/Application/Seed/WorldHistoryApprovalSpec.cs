@@ -27,6 +27,14 @@ public static class WorldHistoryApprovalSpec
     public const string NcrDocumentType = "ncr-disposition";
     public const string NcrSourceService = "quality";
 
+    /// <summary>
+    /// 销售订单「信用解冻」审批模板（#1290）。与两张历史模板不同，它不挂任何历史链，
+    /// 而是让 ERP <c>ReleaseSalesOrderCreditHoldCommand</c> 硬编码引用的当前流程模板开箱存在——
+    /// 编码必须与 ERP 侧字面量逐字一致，因此不落在 <c>APT-WB-</c> 号段。
+    /// </summary>
+    public const string SalesCreditReleaseTemplateCode = "erp-sales-credit-release";
+    public const string SalesCreditReleaseDocumentType = "sales-order-credit-release";
+
     /// <summary>本引擎产出/引用的全部号段前缀，供隔离性回归测试断言不与固定演示事实相交。</summary>
     public static readonly string[] NumberSegmentPrefixes = ["PO-2026-", "NCR-2026-", "APT-WB-"];
 

@@ -1004,9 +1004,15 @@ public sealed class ErpBusinessGapClosureTests
                 [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
             CancellationToken.None));
 
-        await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, new CapturingPurchaseOrderApprovalClient()).Handle(
-            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001"),
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        var releaseResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
             CancellationToken.None);
+        // 解冻语义：credit-held 订单不直接放行，而是发起「信用解冻」审批链，审批通过后才恢复 released。
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultApprovalStarted, releaseResult);
+        Assert.Equal("erp-sales-credit-release", approvalClient.LastRequest?.TemplateCode);
+        Assert.Equal("sales-order-credit-release", approvalClient.LastRequest?.DocumentType);
+        Assert.Equal("user:sales-001", approvalClient.LastRequest?.StartedBy);
         Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
         await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             new ApprovalCompletedIntegrationEvent(
@@ -1034,6 +1040,24 @@ public sealed class ErpBusinessGapClosureTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("released", dbContext.SalesOrders.Single().Status);
+
+        // 已下达（released）后履约恢复：交货放行不再被信用冻结拦截。
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand(
+                "org-001",
+                "env-dev",
+                "DO-UNBLOCKED",
+                "SO-001",
+                [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Single(dbContext.DeliveryOrders);
+
+        // 已 released 订单重复解冻是幂等回执，不再发起新审批链。
+        var idempotentResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
+            CancellationToken.None);
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultReleased, idempotentResult);
     }
 
     private static ApprovalCompletedIntegrationEvent ApprovedPurchaseOrderEvent(string purchaseOrderNo, string chainId)

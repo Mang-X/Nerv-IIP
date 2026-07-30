@@ -1156,6 +1156,19 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/release-credit-hold",
+      "operationId": "releaseErpSalesOrderCreditHold",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleErpSalesOrderCreditHold"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/supplier-invoices",
       "operationId": "recordErpSupplierInvoice",
       "classification": "deferred",

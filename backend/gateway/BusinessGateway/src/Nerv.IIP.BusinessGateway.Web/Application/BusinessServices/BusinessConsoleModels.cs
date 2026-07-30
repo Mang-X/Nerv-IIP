@@ -3236,6 +3236,15 @@ public sealed record BusinessConsoleCreateErpSalesOrderRequest(
 
 public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId);
 
+/// <summary>
+/// 信用冻结解冻请求。<c>StartedBy</c> 由 Gateway 从已认证 principal 注入，客户端不提供。
+/// </summary>
+public sealed record BusinessConsoleReleaseErpSalesOrderCreditHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string? StartedBy = null);
+
 public sealed record BusinessConsoleReleaseErpDeliveryOrderRequest(
     string OrganizationId,
     string EnvironmentId,

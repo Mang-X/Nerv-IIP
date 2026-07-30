@@ -235,11 +235,16 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
     }
 }
 
+/// <summary>
+/// 信用冻结解冻入口：credit-held 订单发起「信用解冻」审批链（模板 <c>erp-sales-credit-release</c>），
+/// 审批通过后由 <c>ApprovalCompleted</c> 消费者把订单恢复为 released；已 released 订单幂等返回。
+/// 返回 <c>credit-release-approval-started</c> 或 <c>released</c>，供 facade/前端明确语义。
+/// </summary>
 public sealed record ReleaseSalesOrderCreditHoldCommand(
     string OrganizationId,
     string EnvironmentId,
     string SalesOrderNo,
-    string StartedBy = "system:erp") : ICommand;
+    string StartedBy = "system:erp") : ICommand<string>;
 
 public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValidator<ReleaseSalesOrderCreditHoldCommand>
 {
@@ -255,9 +260,12 @@ public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValida
 public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
     ApplicationDbContext dbContext,
     IPurchaseOrderApprovalClient approvalClient)
-    : ICommandHandler<ReleaseSalesOrderCreditHoldCommand>
+    : ICommandHandler<ReleaseSalesOrderCreditHoldCommand, string>
 {
-    public async Task Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
+    public const string ResultReleased = "released";
+    public const string ResultApprovalStarted = "credit-release-approval-started";
+
+    public async Task<string> Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
     {
         var order = await dbContext.SalesOrders
             .SingleOrDefaultAsync(x =>
@@ -272,7 +280,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
             if (!string.Equals(order.Status, "credit-held", StringComparison.Ordinal))
             {
                 order.ReleaseCreditHold();
-                return;
+                return ResultReleased;
             }
 
             await approvalClient.StartApprovalAsync(new PurchaseOrderApprovalRequest(
@@ -286,6 +294,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 request.StartedBy,
                 $"sales-credit:{order.OrganizationId}:{order.EnvironmentId}:{order.SalesOrderNo}",
                 order.TotalAmount), cancellationToken);
+            return ResultApprovalStarted;
         }
         catch (InvalidOperationException exception)
         {

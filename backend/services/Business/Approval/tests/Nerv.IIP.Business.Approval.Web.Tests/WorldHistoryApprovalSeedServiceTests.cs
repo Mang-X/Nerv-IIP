@@ -149,7 +149,7 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
             output.WriteLine($"small-scale-sample: {line}");
         }
 
-        Assert.Equal(2, first.TemplatesWritten);
+        Assert.Equal(3, first.TemplatesWritten);
         Assert.Equal(facts.Count, first.ChainsWritten);
         Assert.Equal(
             facts.Count(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode),
@@ -236,7 +236,13 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
         Assert.All(documentIds, id => Assert.True(
             id.StartsWith("PO-2026-", StringComparison.Ordinal) || id.StartsWith("NCR-2026-", StringComparison.Ordinal),
             $"{id} 不在世界观号段内。"));
-        Assert.All(templateCodes, code => Assert.StartsWith("APT-WB-", code, StringComparison.Ordinal));
+        // #1290 信用解冻模板是「当前流程」模板（编码须与 ERP 侧字面量一致），不落 APT-WB- 历史号段。
+        Assert.All(
+            templateCodes,
+            code => Assert.True(
+                code.StartsWith("APT-WB-", StringComparison.Ordinal)
+                || code == WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
+                $"{code} 不在世界观模板号段内，也不是信用解冻当前流程模板。"));
     }
 
     [Fact]

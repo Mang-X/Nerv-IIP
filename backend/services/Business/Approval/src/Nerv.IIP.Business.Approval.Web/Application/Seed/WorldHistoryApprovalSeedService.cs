@@ -91,7 +91,12 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
         string environmentId,
         CancellationToken cancellationToken)
     {
-        var templateCodes = new[] { WorldHistoryApprovalSpec.PurchaseTemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode };
+        var templateCodes = new[]
+        {
+            WorldHistoryApprovalSpec.PurchaseTemplateCode,
+            WorldHistoryApprovalSpec.NcrTemplateCode,
+            WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
+        };
         var existing = (await dbContext.ApprovalTemplates
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
@@ -144,6 +149,32 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
                         ParallelGroupKey: null,
                         ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
                         ApproverRef: WorldHistoryApprovalSpec.QualitySupervisorUserId,
+                        DueInHours: StepDueInHours),
+                ]);
+            dbContext.ApprovalTemplates.Add(template);
+            Backdate(template, x => x.CreatedAtUtc, goLiveUtc);
+            Backdate(template, x => x.UpdatedAtUtc, goLiveUtc);
+            written++;
+        }
+
+        // #1290：销售订单「信用解冻」模板。不挂历史链，只保证 ERP 解冻命令引用的当前流程模板存在，
+        // 冻结单在审批中心（厂长/admin）复核通过后恢复为 released。已存在（租户自建）时一律不动。
+        if (!existing.Contains(WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode))
+        {
+            var template = ApprovalTemplate.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
+                WorldHistoryApprovalSpec.SalesCreditReleaseDocumentType,
+                version: 1,
+                isActive: true,
+                [
+                    new ApprovalTemplateStepDefinition(
+                        StepNo: 1,
+                        StepName: "信用解冻复核",
+                        ParallelGroupKey: null,
+                        ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
+                        ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
                         DueInHours: StepDueInHours),
                 ]);
             dbContext.ApprovalTemplates.Add(template);

@@ -303,15 +303,22 @@ public static class WorldBibleSpec
     /// </summary>
     public const string ExistingCustomerCode = "CUST-DEMO-001";
 
+    /// <summary>
+    /// 客户信用额度档案（#1290，CNY）。额度按世界史订单体量推导：L1 背景历史按权重
+    /// [8,10,8,5,6,3,4,2] 把 4413 张订单摊到 8 家客户，客单均值约 5 万元，任一时点约两成
+    /// （在制 + 已发货待收款 + 已下达）构成在途敞口——大客户额度取「峰值敞口 × 2~3 倍」留出headroom，
+    /// 保证任选客户转订单不再因额度缺失 400；路航售后连锁与华远国际贸易刻意压到敞口之下，
+    /// 作为演示「信用冻结 → 解冻复核」场景的低额度客户。
+    /// </summary>
     public static readonly WorldBiblePartner[] Customers =
     [
-        new("CUST-WB-001", "长三角整车一厂", "customer"),
-        new("CUST-WB-002", "长三角整车二厂", "customer"),
-        new("CUST-WB-003", "华中商用车配套", "customer"),
-        new("CUST-WB-004", "比德新能源", "customer"),
-        new("CUST-WB-005", "路航售后连锁", "customer"),
-        new("CUST-WB-006", "皖江 Tier1 汽车系统", "customer"),
-        new("CUST-WB-007", "华远国际贸易", "customer"),
+        new("CUST-WB-001", "长三角整车一厂", "customer", 30_000_000m, "CNY"),
+        new("CUST-WB-002", "长三角整车二厂", "customer", 22_000_000m, "CNY"),
+        new("CUST-WB-003", "华中商用车配套", "customer", 12_000_000m, "CNY"),
+        new("CUST-WB-004", "比德新能源", "customer", 15_000_000m, "CNY"),
+        new("CUST-WB-005", "路航售后连锁", "customer", 1_500_000m, "CNY"),
+        new("CUST-WB-006", "皖江 Tier1 汽车系统", "customer", 9_000_000m, "CNY"),
+        new("CUST-WB-007", "华远国际贸易", "customer", 800_000m, "CNY"),
     ];
 
     /// <summary>设定集 §6 的 10 家供应商（品类配比按设定集，企业名为本实现自拟）。</summary>
@@ -522,7 +529,12 @@ public sealed record WorldBiblePlatform(string Code, string Name);
 
 public sealed record WorldBibleSku(string Code, string Name, string Unit, string Category);
 
-public sealed record WorldBiblePartner(string Code, string Name, string PartnerType);
+public sealed record WorldBiblePartner(
+    string Code,
+    string Name,
+    string PartnerType,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record WorldBibleSkill(
     string Code,

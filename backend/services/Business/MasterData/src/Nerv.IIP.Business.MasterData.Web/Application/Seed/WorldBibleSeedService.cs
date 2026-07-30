@@ -258,13 +258,27 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
             if (existing is null)
             {
                 dbContext.BusinessPartners.Add(BusinessPartner.Create(
-                    organizationId, environmentId, partner.Code, partner.PartnerType, partner.Name));
+                    organizationId,
+                    environmentId,
+                    partner.Code,
+                    partner.PartnerType,
+                    partner.Name,
+                    [partner.PartnerType],
+                    taxId: null,
+                    creditLimit: partner.CreditLimit,
+                    creditCurrencyCode: partner.CreditCurrencyCode));
                 continue;
             }
 
             if (existing.Name != partner.Name || existing.PartnerType != partner.PartnerType || existing.Disabled)
             {
                 throw Collision(partner.Code);
+            }
+
+            // #1290 信用额度只补缺失：租户已维护的额度（含手工清空后重设）一律不动。
+            if (existing.CreditLimit is null && partner.CreditLimit is not null)
+            {
+                existing.UpdateCreditLimit(partner.CreditLimit, partner.CreditCurrencyCode);
             }
         }
     }
