@@ -60,6 +60,9 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
                 .HasColumnName("source_demand_reference")
                 .HasMaxLength(100)
                 .HasComment("Optional DemandPlanning demand source reference used to trace the work order back to demand.");
+            source.PrimitiveCollection(x => x.SourceDemandReferences)
+                .HasColumnName("source_demand_references")
+                .HasComment("All DemandPlanning demand source references pegged to the source suggestion (batched suggestions peg multiple demands); includes the primary reference. Null for legacy rows, which fall back to source_demand_reference.");
             source.HasIndex(x => new { x.SourceSystem, x.SourceDocumentId })
                 .HasDatabaseName("ix_work_orders_source_plan");
         });

@@ -179,6 +179,33 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             grossDemandQuantity));
     }
 
+    /// <summary>
+    /// 建议 pegging 中所有 demand 类型的需求源引用（按 pegging 顺序去重）。
+    /// 合批建议会 peg 到多个需求源；下游桥接/事件必须完整携带，履约追溯才能对每张订单点亮。
+    /// scheduled-receipt 类型的 pegging 引用（如 erp:purchase-order:PO-x）不是需求源，予以排除。
+    /// </summary>
+    public IReadOnlyList<string> GetDemandSourceReferences()
+    {
+        var references = new List<string>();
+        foreach (var link in peggingLinks)
+        {
+            if (!string.Equals(link.PeggingType, "demand", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var reference = link.DemandSourceReference?.Trim();
+            if (string.IsNullOrEmpty(reference) || references.Contains(reference, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            references.Add(reference);
+        }
+
+        return references;
+    }
+
     public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
     {
         if (Status == PlanningSuggestionStatus.Accepted)
