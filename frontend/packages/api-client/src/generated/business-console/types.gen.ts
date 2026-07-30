@@ -362,6 +362,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleO
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest = {
     idempotencyKey: string;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput> | null;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    expectedVersion: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput = {
@@ -460,6 +463,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     packReviewNo: string;
     passed?: boolean;
     idempotencyKey: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    expectedVersion: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest = {
@@ -525,6 +531,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsCountExecutionRequest = {
     countedQuantity?: number;
     idempotencyKey: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    expectedVersion: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDispatchWmsWcsTaskResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8289,8 +8298,9 @@ export type CompleteBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Forbidden
      */
-    403: unknown;
+    403: NetCorePalExtensionsDtoResponseData;
     409: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsInboundOrderError = CompleteBusinessConsoleWmsInboundOrderErrors[keyof CompleteBusinessConsoleWmsInboundOrderErrors];
@@ -8660,8 +8670,9 @@ export type CompleteBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Forbidden
      */
-    403: unknown;
+    403: NetCorePalExtensionsDtoResponseData;
     409: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderError = CompleteBusinessConsoleWmsOutboundOrderErrors[keyof CompleteBusinessConsoleWmsOutboundOrderErrors];
@@ -8814,8 +8825,9 @@ export type CompleteBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Forbidden
      */
-    403: unknown;
+    403: NetCorePalExtensionsDtoResponseData;
     409: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CompleteBusinessConsoleWmsCountExecutionError = CompleteBusinessConsoleWmsCountExecutionErrors[keyof CompleteBusinessConsoleWmsCountExecutionErrors];
