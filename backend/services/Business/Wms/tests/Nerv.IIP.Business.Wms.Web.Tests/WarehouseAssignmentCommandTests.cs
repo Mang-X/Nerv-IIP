@@ -122,9 +122,19 @@ public sealed class WarehouseAssignmentCommandTests
         Assert.Equal(
             WmsText.IdempotencyKey(command.IdempotencyKey),
             persistedReceipt.IdempotencyKey);
-        var replay = await handler.Handle(command, CancellationToken.None);
+        var replay = await handler.Handle(
+            command with
+            {
+                AuthorizedSiteCodes = ["SITE-002", "SITE-001"],
+            },
+            CancellationToken.None);
 
         Assert.Equal(first, replay);
+        var forbidden = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            handler.Handle(
+                command with { AuthorizedSiteCodes = ["SITE-002"] },
+                CancellationToken.None));
+        Assert.Equal("site-outside-exact-grant", forbidden.Reason);
         await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
             handler.Handle(
                 command with { OperatorPrincipalId = null },

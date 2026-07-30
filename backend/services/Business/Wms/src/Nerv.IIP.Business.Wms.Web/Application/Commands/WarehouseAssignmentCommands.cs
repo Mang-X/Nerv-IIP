@@ -434,9 +434,6 @@ internal static class WarehouseAssignmentExecution
         var payload = JsonSerializer.Serialize(new
         {
             command.AssignerPrincipalId,
-            AuthorizedSiteCodes = command.AuthorizedSiteCodes
-                .Order(StringComparer.Ordinal)
-                .ToArray(),
             command.PoolCode,
             command.OperatorPrincipalId,
             command.ExpectedVersion,
