@@ -1,5 +1,10 @@
+using System.Data.Common;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
@@ -339,6 +344,161 @@ public sealed class OrderUrgencyApplicationTests
         Assert.False(result.IsValid);
         var error = Assert.Single(result.Errors);
         Assert.Equal("Level must be P0, P1, P2, or P3.", error.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Refresh_context_issues_a_bounded_select_count_independent_of_order_count()
+    {
+        // 防 N+1 回归：真实 SQLite provider + DbCommandInterceptor 统计刷新一轮期间的 SELECT 命令数。
+        // 12 个工单刷新一轮，SELECT 恒为 4 条，构成与工单数 N 无关：
+        //   1. LoadLatestAsync（GroupBy+Join 取每单最新快照）
+        //   2. LoadPriorityFactsAsync（批量预取业务优先级）
+        //   3. LoadRelevantInvalidationsAsync（批量预取失效事件）
+        //   4. LoadBucketSnapshotIdentitiesAsync（批量预取当前 bucket 身份列）
+        // 若把任一预取改回逐单查询，计数将升为 4 + k*N（N=12），本断言必红。
+        const int orderCount = 12;
+        var counter = new SelectCountingInterceptor();
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options => options
+            .UseSqlite(connection)
+            .AddInterceptors(counter)
+            .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>());
+        await using var provider = services.BuildServiceProvider();
+        var clock = new MutableTimeProvider(Now);
+
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            for (var index = 0; index < orderCount; index++)
+            {
+                db.OrderUrgencySnapshots.Add(SeedSnapshot($"WO-N1-{index:000}", Now));
+            }
+
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        clock.UtcNow = Now.AddHours(3);
+        counter.Reset();
+        await using (var refreshScope = provider.CreateAsyncScope())
+        {
+            var db = refreshScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new OrderUrgencyService(db, clock).RefreshContextAsync("org-001", "prod", CancellationToken.None);
+        }
+
+        Assert.Equal(4, counter.SelectCommandCount);
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(orderCount * 2, await assertionDb.OrderUrgencySnapshots.CountAsync());
+
+        // 单快照刷新（RefreshFromSnapshotAsync）的失效谓词与批路径共用同一表达式，
+        // 这里在真实 SQLite 上跑一次强制刷新，守住该谓词的服务器端可翻译性。
+        var detail = await new OrderUrgencyService(assertionDb, clock).SetBusinessPriorityAsync(
+            "org-001", "prod", "WO-N1-000", BusinessPriorityLevel.P0,
+            "user:test", "Line-stop escalation", null, CancellationToken.None);
+        await assertionDb.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal("critical", detail.Current.Level);
+    }
+
+    private static OrderUrgencySnapshot SeedSnapshot(string orderId, DateTimeOffset calculatedAtUtc)
+    {
+        var result = OrderUrgencyCalculator.Calculate(new OrderUrgencyCalculationInput(
+            orderId,
+            orderId,
+            calculatedAtUtc,
+            calculatedAtUtc.AddDays(2),
+            TimeSpan.FromHours(8),
+            new BusinessPriorityFact(
+                BusinessPriorityLevel.P2, "authoritative-default", "No manual business-priority override.",
+                DateTimeOffset.UnixEpoch, null, 0),
+            [],
+            false,
+            false,
+            calculatedAtUtc,
+            $"fp-{orderId}"));
+        return new OrderUrgencySnapshot(
+            "org-001", "prod", result.OrderId, result.BusinessReference, result.Level,
+            result.ModelVersion, result.InputFingerprint, result.BusinessPriority.Revision,
+            Bucket(result.CalculatedAtUtc), result.CalculatedAtUtc,
+            OrderUrgencyContractMapper.Serialize(result));
+    }
+
+    private static DateTimeOffset Bucket(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        return new DateTimeOffset(utc.Year, utc.Month, utc.Day, utc.Hour, utc.Minute - utc.Minute % 15, 0, TimeSpan.Zero);
+    }
+
+    // SQLite provider 无法翻译 DateTimeOffset 的排序/聚合/比较（仓库已知坑：EF 测试 provider 翻译差异），
+    // 测试专用 ModelCustomizer 把所有 DateTimeOffset 列统一转成 long（值均为 UTC，ToBinary 排序与时间序一致）。
+    // 不能子类化 ApplicationDbContext：netcorepal source generator 会对派生类生成不兼容的 partial 覆写。
+    private sealed class SqliteDateTimeOffsetModelCustomizer(ModelCustomizerDependencies dependencies)
+        : RelationalModelCustomizer(dependencies)
+    {
+        private static readonly DateTimeOffsetToBinaryConverter Converter = new();
+
+        public override void Customize(ModelBuilder modelBuilder, DbContext context)
+        {
+            base.Customize(modelBuilder, context);
+            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
+            {
+                if (property.ClrType == typeof(DateTimeOffset) || property.ClrType == typeof(DateTimeOffset?))
+                {
+                    property.SetValueConverter(Converter);
+                }
+            }
+        }
+    }
+
+    private sealed class SelectCountingInterceptor : DbCommandInterceptor
+    {
+        private int _selectCommandCount;
+
+        public int SelectCommandCount => Volatile.Read(ref _selectCommandCount);
+
+        public void Reset() => Volatile.Write(ref _selectCommandCount, 0);
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Count(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Count(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override InterceptionResult<object> ScalarExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<object> result)
+        {
+            Count(command);
+            return base.ScalarExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<object> result,
+            CancellationToken cancellationToken = default)
+        {
+            Count(command);
+            return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Count(DbCommand command)
+        {
+            if (command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref _selectCommandCount);
+            }
+        }
     }
 
     private static ServiceProvider CreateProvider()

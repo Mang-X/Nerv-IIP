@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -221,20 +222,17 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         var earliestCalculatedAtUtc = latest.Values.Min(x => x.CalculatedAtUtc);
         var invalidations = await LoadRelevantInvalidationsAsync(
             organizationId, environmentId, orderIds, earliestCalculatedAtUtc, cancellationToken);
-        var bucketSnapshots = await LoadBucketSnapshotsAsync(
+        var bucketIdentities = await LoadBucketSnapshotIdentitiesAsync(
             organizationId, environmentId, orderIds, bucket, cancellationToken);
-        var calculatedOrderIds = bucketSnapshots
+        var calculatedOrderIds = bucketIdentities
             .Select(x => x.OrderId)
             .ToHashSet(StringComparer.Ordinal);
-        var existingIdentities = bucketSnapshots
-            .Select(ToIdentity)
-            .ToHashSet();
+        var existingIdentities = bucketIdentities.ToHashSet();
         var changed = false;
         foreach (var snapshot in latest.Values)
         {
             var latestInvalidation = invalidations
-                .Where(x => x.RecordedAtUtc > snapshot.CalculatedAtUtc &&
-                    (x.AffectedWorkOrderId is null || x.AffectedWorkOrderId == snapshot.OrderId))
+                .Where(InvalidatesSnapshot(snapshot.CalculatedAtUtc, snapshot.OrderId).Compile())
                 .OrderByDescending(x => x.RecordedAtUtc)
                 .FirstOrDefault();
             var priority = priorities.TryGetValue(snapshot.OrderId, out var current)
@@ -303,12 +301,9 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         bool force = false)
     {
         var bucket = Bucket(now);
-        var latestInvalidation = await dbContext.SchedulePlanInvalidations.AsNoTracking()
-            .Where(x => x.OrganizationId == snapshot.OrganizationId && x.EnvironmentId == snapshot.EnvironmentId &&
-                x.RecordedAtUtc > snapshot.CalculatedAtUtc &&
-                (x.AffectedWorkOrderId == null || x.AffectedWorkOrderId == snapshot.OrderId))
+        var latestInvalidation = await QueryInvalidationFacts(snapshot.OrganizationId, snapshot.EnvironmentId)
+            .Where(InvalidatesSnapshot(snapshot.CalculatedAtUtc, snapshot.OrderId))
             .OrderByDescending(x => x.RecordedAtUtc)
-            .Select(x => new InvalidationFact(x.SourceEventId, x.RecordedAtUtc, x.AffectedWorkOrderId))
             .FirstOrDefaultAsync(cancellationToken);
         var priority = priorityOverride ?? await LoadPriorityFactAsync(snapshot, now, cancellationToken);
         var result = CalculateRefreshResult(
@@ -371,14 +366,31 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         IReadOnlyCollection<string> orderIds,
         DateTimeOffset earliestCalculatedAtUtc,
         CancellationToken cancellationToken) =>
-        await dbContext.SchedulePlanInvalidations.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.RecordedAtUtc > earliestCalculatedAtUtc &&
+        await QueryInvalidationFacts(organizationId, environmentId)
+            .Where(x => x.RecordedAtUtc > earliestCalculatedAtUtc &&
                 (x.AffectedWorkOrderId == null || orderIds.Contains(x.AffectedWorkOrderId!)))
-            .Select(x => new InvalidationFact(x.SourceEventId, x.RecordedAtUtc, x.AffectedWorkOrderId))
             .ToArrayAsync(cancellationToken);
 
-    private async Task<OrderUrgencySnapshot[]> LoadBucketSnapshotsAsync(
+    // 失效判定的唯一实现：批路径（内存过滤）与单快照刷新（数据库过滤）都必须走这条表达式，
+    // 避免同一业务谓词在两处漂移。
+    private static Expression<Func<InvalidationFact, bool>> InvalidatesSnapshot(
+        DateTimeOffset calculatedAtUtc,
+        string orderId) =>
+        fact => fact.RecordedAtUtc > calculatedAtUtc &&
+            (fact.AffectedWorkOrderId == null || fact.AffectedWorkOrderId == orderId);
+
+    private IQueryable<InvalidationFact> QueryInvalidationFacts(string organizationId, string environmentId) =>
+        dbContext.SchedulePlanInvalidations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new InvalidationFact
+            {
+                SourceEventId = x.SourceEventId,
+                RecordedAtUtc = x.RecordedAtUtc,
+                AffectedWorkOrderId = x.AffectedWorkOrderId,
+            });
+
+    // 只取唯一索引对应的 5 个身份列；避免把含 result_json 大列的整行实体拉进内存。
+    private async Task<SnapshotIdentity[]> LoadBucketSnapshotIdentitiesAsync(
         string organizationId,
         string environmentId,
         IReadOnlyCollection<string> orderIds,
@@ -387,6 +399,8 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         await dbContext.OrderUrgencySnapshots.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                 orderIds.Contains(x.OrderId) && x.CalculationBucketUtc == bucket)
+            .Select(x => new SnapshotIdentity(
+                x.OrderId, x.ModelVersion, x.InputFingerprint, x.BusinessPriorityRevision, x.CalculationBucketUtc))
             .ToArrayAsync(cancellationToken);
 
     private static OrderUrgencySnapshot CreateSnapshot(
@@ -396,13 +410,6 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         organizationId, environmentId, result.OrderId, result.BusinessReference, result.Level,
         result.ModelVersion, result.InputFingerprint, result.BusinessPriority.Revision,
         Bucket(result.CalculatedAtUtc), result.CalculatedAtUtc, OrderUrgencyContractMapper.Serialize(result));
-
-    private static SnapshotIdentity ToIdentity(OrderUrgencySnapshot snapshot) => new(
-        snapshot.OrderId,
-        snapshot.ModelVersion,
-        snapshot.InputFingerprint,
-        snapshot.BusinessPriorityRevision,
-        snapshot.CalculationBucketUtc);
 
     private static SnapshotIdentity ToIdentity(
         OrderUrgencyCalculationResult result) => new(
@@ -419,10 +426,13 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         long BusinessPriorityRevision,
         DateTimeOffset CalculationBucketUtc);
 
-    private sealed record InvalidationFact(
-        string SourceEventId,
-        DateTimeOffset RecordedAtUtc,
-        string? AffectedWorkOrderId);
+    // 成员初始化（而非位置构造）投影：EF 才能在后续 Where/OrderBy 中继续翻译这些成员。
+    private sealed record InvalidationFact
+    {
+        public string SourceEventId { get; set; } = string.Empty;
+        public DateTimeOffset RecordedAtUtc { get; set; }
+        public string? AffectedWorkOrderId { get; set; }
+    }
 
     private async Task<BusinessPriorityFact> LoadPriorityFactAsync(OrderUrgencySnapshot snapshot, DateTimeOffset now, CancellationToken cancellationToken)
     {
