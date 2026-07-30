@@ -26,12 +26,15 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityLifecycleConflictTests
 {
     [Fact]
-    public void Persistence_backstop_only_classifies_the_quality_idempotency_constraint()
+    public void Persistence_backstop_only_classifies_quality_idempotency_constraints()
     {
         using var dbContext = CreateDbContext();
 
         Assert.True(QualityIdempotencyPersistenceConflicts.IsTargetConflict(
             UniqueConflict("ux_code_idempotency_keys_scope"),
+            dbContext));
+        Assert.True(QualityIdempotencyPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_inspection_task_assignment_receipts_key"),
             dbContext));
         Assert.False(QualityIdempotencyPersistenceConflicts.IsTargetConflict(
             UniqueConflict("ux_unrelated_quality_constraint"),
@@ -39,7 +42,7 @@ public sealed class QualityLifecycleConflictTests
     }
 
     [Fact]
-    public async Task Create_record_from_in_progress_task_without_source_record_is_a_lifecycle_conflict()
+    public async Task In_progress_task_without_plan_remains_a_known_validation_failure()
     {
         await using var dbContext = CreateDbContext();
         var task = NewPendingTask("DOC-CONFLICT");
@@ -47,27 +50,22 @@ public sealed class QualityLifecycleConflictTests
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
             CreateTaskHandler(dbContext).Handle(
                 new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1"),
                 CancellationToken.None));
 
-        Assert.Equal("create-inspection-record-from-task", exception.Action);
-        Assert.Equal(InspectionTaskStatuses.InProgress, exception.CurrentStatus);
+        Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsNotType<QualityLifecycleConflictException>(exception);
         Assert.Empty(dbContext.InspectionRecords);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Existing_source_record_is_a_legal_replay_for_pending_or_in_progress_task(bool startTask)
+    [Fact]
+    public async Task Existing_source_record_is_a_legal_replay_for_in_progress_task()
     {
         await using var dbContext = CreateDbContext();
-        var task = NewPendingTask(startTask ? "DOC-EXISTING-STARTED" : "DOC-EXISTING-PENDING");
-        if (startTask)
-        {
-            task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
-        }
+        var task = NewPendingTask("DOC-EXISTING-STARTED");
+        task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
 
         var record = NewInspectionRecord(task.SourceDocumentId);
         dbContext.InspectionTasks.Add(task);
@@ -106,12 +104,14 @@ public sealed class QualityLifecycleConflictTests
     }
 
     [Theory]
+    [InlineData(InspectionTaskStatuses.Pending)]
     [InlineData(InspectionTaskStatuses.Completed)]
     [InlineData("unexpected-status")]
     public async Task Invalid_task_phase_rejects_existing_source_record_without_mutating_either_entity(string status)
     {
         await using var dbContext = CreateDbContext();
         var task = NewPendingTask($"DOC-INVALID-{status}");
+        task.Assign("inspector-001", null, task.Version, DateTimeOffset.Parse("2026-07-27T07:30:00Z"));
         typeof(InspectionTask)
             .GetProperty(nameof(InspectionTask.Status))!
             .SetValue(task, status);
@@ -138,6 +138,7 @@ public sealed class QualityLifecycleConflictTests
     {
         await using var dbContext = CreateDbContext();
         var task = NewPendingTask("DOC-MISSING-PLAN");
+        task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 

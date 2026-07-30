@@ -123,12 +123,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         dbContext.InspectionPlans.Add(plan);
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var handler = new CreateInspectionRecordFromTaskCommandHandler(
-            new InspectionTaskRepository(dbContext),
-            new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
-            new NonconformanceReportCodeGenerator());
+        var handler = CreateTaskSubmissionHandler(dbContext);
 
         var result = await handler.Handle(
             new CreateInspectionRecordFromTaskCommand(
@@ -181,12 +176,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         dbContext.InspectionPlans.Add(plan);
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var handler = new CreateInspectionRecordFromTaskCommandHandler(
-            new InspectionTaskRepository(dbContext),
-            new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
-            new NonconformanceReportCodeGenerator());
+        var handler = CreateTaskSubmissionHandler(dbContext);
 
         var result = await handler.Handle(
             new CreateInspectionRecordFromTaskCommand(
@@ -267,12 +257,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var handler = new CreateInspectionRecordFromTaskCommandHandler(
-            new InspectionTaskRepository(dbContext),
-            new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
-            new NonconformanceReportCodeGenerator());
+        var handler = CreateTaskSubmissionHandler(dbContext);
         var result = await handler.Handle(
             new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001", [], null, [], "workflow-submit-3"),
             CancellationToken.None);
@@ -311,10 +296,9 @@ public sealed class QualityInspectionTaskWorkflowTests
             DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
             "wms:inbound-completed:org-001:env-dev:IN-960:LINE-001");
         dbContext.InspectionPlans.Add(plan);
-        dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        // 常规检验流程建 rejected 记录并顺带完成匹配任务（此路径不开 NCR）。
+        // 先由常规流程建 rejected 记录（此路径不开 NCR），再挂接一条历史已完成任务。
         var recordId = await new CreateInspectionRecordCommandHandler(
                 new InspectionRecordRepository(dbContext),
                 new InspectionPlanRepository(dbContext),
@@ -336,15 +320,14 @@ public sealed class QualityInspectionTaskWorkflowTests
                     []),
                 CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        Assert.Equal(InspectionTaskStatuses.Completed, (await dbContext.InspectionTasks.SingleAsync(x => x.Id == task.Id)).Status);
+        task.Assign("qa-user-001", null, task.Version, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        task.Claim("qa-user-001", [], task.Version, DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        task.Complete(recordId, DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
         Assert.Empty(await dbContext.NonconformanceReports.ToArrayAsync());
 
-        var handler = new CreateInspectionRecordFromTaskCommandHandler(
-            new InspectionTaskRepository(dbContext),
-            new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
-            new NonconformanceReportCodeGenerator());
+        var handler = CreateTaskSubmissionHandler(dbContext);
         var result = await handler.Handle(
             new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001", [], null, [], "workflow-submit-4"),
             CancellationToken.None);
@@ -508,6 +491,46 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Assignment_claim_and_submit_share_the_same_task_scoped_command_lock()
+    {
+        var taskId = new InspectionTaskId(Guid.CreateVersion7());
+        var assign = await new AssignInspectionTaskCommandLock().GetLockKeysAsync(
+            new AssignInspectionTaskCommand(
+                taskId,
+                "org-001",
+                "env-dev",
+                "supervisor-001",
+                "inspector-001",
+                null,
+                null,
+                "assign-001",
+                1),
+            CancellationToken.None);
+        var claim = await new ClaimInspectionTaskCommandLock().GetLockKeysAsync(
+            new ClaimInspectionTaskCommand(
+                taskId,
+                "org-001",
+                "env-dev",
+                "inspector-001",
+                [],
+                "claim-001",
+                2),
+            CancellationToken.None);
+        var submit = await new CreateInspectionRecordFromTaskCommandLock().GetLockKeysAsync(
+            new CreateInspectionRecordFromTaskCommand(
+                taskId,
+                "inspector-001",
+                [],
+                null,
+                [],
+                "submit-001"),
+            CancellationToken.None);
+
+        Assert.Equal(submit.LockKey, assign.LockKey);
+        Assert.Equal(submit.LockKey, claim.LockKey);
+    }
+
+    [Fact]
     public async Task Quality_seed_populates_reason_catalog_idempotently()
     {
         // 全新环境原因码目录为空会让检验执行的原因码 Picker 无码可选（MAN-457 真机走查发现）。
@@ -578,12 +601,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         dbContext.InspectionPlans.Add(plan);
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
-        var fromTask = new CreateInspectionRecordFromTaskCommandHandler(
-            new InspectionTaskRepository(dbContext),
-            new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
-            new NonconformanceReportCodeGenerator());
+        var fromTask = CreateTaskSubmissionHandler(dbContext);
         var created = await fromTask.Handle(
             new CreateInspectionRecordFromTaskCommand(
                 task.Id,
@@ -614,9 +632,9 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
-    public async Task Create_regular_record_completes_matching_open_inspection_task()
+    public async Task Create_regular_record_rejects_matching_open_inspection_task()
     {
-        await using var dbContext = CreateDbContext(nameof(Create_regular_record_completes_matching_open_inspection_task));
+        await using var dbContext = CreateDbContext(nameof(Create_regular_record_rejects_matching_open_inspection_task));
         var plan = ActivePlan("PLAN-RCV-1000", "receiving", "SKU-RM-1000");
         var task = InspectionTask.CreatePending(
             "org-001",
@@ -642,7 +660,7 @@ public sealed class QualityInspectionTaskWorkflowTests
             new InspectionPlanRepository(dbContext),
             new InspectionTaskRepository(dbContext));
 
-        var recordId = await handler.Handle(
+        await Assert.ThrowsAsync<QualityLifecycleConflictException>(() => handler.Handle(
             new CreateInspectionRecordCommand(
                 "org-001",
                 "env-dev",
@@ -657,12 +675,10 @@ public sealed class QualityInspectionTaskWorkflowTests
                 [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
                 null,
                 []),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync();
+            CancellationToken.None));
 
-        var completedTask = await dbContext.InspectionTasks.SingleAsync();
-        Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
-        Assert.Equal(recordId, completedTask.InspectionRecordId);
+        Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
+        Assert.Null(task.InspectionRecordId);
     }
 
     [Fact]
@@ -1007,14 +1023,359 @@ public sealed class QualityInspectionTaskWorkflowTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static CreateInspectionRecordFromTaskCommandHandler CreateTaskSubmissionHandler(ApplicationDbContext dbContext) =>
-        new(
+    [Fact]
+    public async Task Assignment_and_claim_persist_authoritative_receipts_and_replay()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Assignment_and_claim_persist_authoritative_receipts_and_replay));
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            new InspectionPlanId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b101")),
+            "operation",
+            "mes",
+            "WO-001",
+            "OP-10",
+            "SKU-FG-1000",
+            5m,
+            "pcs",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "mes:operation-completed:org-001:env-dev:WO-001:OP-10");
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var assignHandler = new AssignInspectionTaskCommandHandler(dbContext);
+        var assignment = await assignHandler.Handle(
+            new AssignInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "qa-manager-001",
+                null,
+                "TEAM-QA-01",
+                "initial dispatch",
+                "assign-task-001",
+                1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var replay = await assignHandler.Handle(
+            new AssignInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "qa-manager-001",
+                null,
+                "TEAM-QA-01",
+                "initial dispatch",
+                "assign-task-001",
+                1),
+            CancellationToken.None);
+
+        Assert.Equal(assignment, replay);
+        Assert.Equal(2, assignment.Version);
+
+        var claim = await new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+            new ClaimInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "qa-user-001",
+                ["TEAM-QA-01"],
+                "claim-task-001",
+                2),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(InspectionTaskStatuses.InProgress, claim.Status);
+        Assert.Equal("qa-user-001", claim.AssignedInspectorUserId);
+        Assert.Equal(3, claim.Version);
+        Assert.Equal(2, await dbContext.InspectionTaskAssignmentReceipts.CountAsync());
+    }
+
+    [Fact]
+    public async Task Claim_rejects_actor_outside_assigned_team()
+    {
+        await using var dbContext = CreateDbContext(nameof(Claim_rejects_actor_outside_assigned_team));
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            new InspectionPlanId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b101")),
+            "operation",
+            "mes",
+            "WO-002",
+            "OP-10",
+            "SKU-FG-1000",
+            5m,
+            "pcs",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "mes:operation-completed:org-001:env-dev:WO-002:OP-10");
+        task.Assign(null, "TEAM-QA-01", 1, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
+            new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+                new ClaimInspectionTaskCommand(
+                    task.Id,
+                    "org-001",
+                    "env-dev",
+                    "qa-user-001",
+                    ["TEAM-QA-02"],
+                    "claim-task-002",
+                    2),
+                CancellationToken.None));
+
+        Assert.Equal("task-outside-selected-work-scope", exception.Reason);
+    }
+
+    [Fact]
+    public async Task Claim_rejects_a_task_already_assigned_to_another_inspector_as_unprocessable()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Claim_rejects_a_task_already_assigned_to_another_inspector_as_unprocessable));
+        var task = NewTask(
+            "WO-CLAIMED",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
+        task.Assign("qa-user-002", null, 1, DateTimeOffset.Parse("2026-07-04T08:00:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityUnprocessableException>(() =>
+            new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+                new ClaimInspectionTaskCommand(
+                    task.Id,
+                    "org-001",
+                    "env-dev",
+                    "qa-user-001",
+                    [],
+                    "claim-other-001",
+                    task.Version),
+                CancellationToken.None));
+
+        Assert.Equal("task-already-claimed", exception.Reason);
+    }
+
+    [Fact]
+    public async Task Task_submission_rejects_cross_inspector_completion()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_submission_rejects_cross_inspector_completion));
+        var plan = ActivePlan("PLAN-OWNER-001", "operation", "SKU-FG-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "operation",
+            "mes",
+            "WO-OWNER-001",
+            "OP-10",
+            "SKU-FG-1000",
+            5m,
+            "pcs",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "mes:operation-completed:org-001:env-dev:WO-OWNER-001:OP-10");
+        task.Assign("qa-user-002", null, 1, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        task.Claim("qa-user-002", [], 2, DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
+            CreateTaskSubmissionHandler(dbContext).Handle(
+                new CreateInspectionRecordFromTaskCommand(
+                    task.Id,
+                    "qa-user-001",
+                    [new InspectionResultLineCommandInput(
+                        "appearance",
+                        "ok",
+                        null,
+                        InspectionLineResults.Passed,
+                        null,
+                        null,
+                        [])],
+                    null,
+                    [],
+                    "cross-inspector-submit"),
+                CancellationToken.None));
+
+        Assert.Equal("assignment-principal-mismatch", exception.Reason);
+        Assert.Equal(InspectionTaskStatuses.InProgress, task.Status);
+        Assert.Empty(dbContext.InspectionRecords);
+    }
+
+    [Fact]
+    public async Task Generic_record_creation_cannot_complete_an_assigned_task_as_system()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Generic_record_creation_cannot_complete_an_assigned_task_as_system));
+        var plan = ActivePlan("PLAN-NO-SYSTEM", "operation", "SKU-FG-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "operation",
+            "mes",
+            "WO-NO-SYSTEM",
+            "OP-10",
+            "SKU-FG-1000",
+            5m,
+            "pcs",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "mes:operation-completed:org-001:env-dev:WO-NO-SYSTEM:OP-10");
+        task.Assign("qa-user-001", null, 1, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
+            new CreateInspectionRecordCommandHandler(
+                new InspectionRecordRepository(dbContext),
+                new InspectionPlanRepository(dbContext),
+                new InspectionTaskRepository(dbContext))
+                .Handle(
+                    new CreateInspectionRecordCommand(
+                        "org-001",
+                        "env-dev",
+                        plan.Id,
+                        "operation",
+                        "mes",
+                        "WO-NO-SYSTEM",
+                        "SKU-FG-1000",
+                        5m,
+                        null,
+                        null,
+                        [new InspectionResultLineCommandInput(
+                            "appearance",
+                            "ok",
+                            null,
+                            InspectionLineResults.Passed,
+                            null,
+                            null,
+                            [])],
+                        null,
+                        []),
+                    CancellationToken.None));
+
+        Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+    }
+
+    [Fact]
+    public async Task Task_list_applies_self_source_keyword_overdue_and_stable_paging_on_server()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_list_applies_self_source_keyword_overdue_and_stable_paging_on_server));
+        var mine = NewTask(
+            "WO-MINE-001",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
+        mine.Assign("qa-user-001", null, 1, DateTimeOffset.Parse("2026-07-04T08:00:00Z"));
+        var other = NewTask(
+            "WO-OTHER-001",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
+        other.Assign("qa-user-002", null, 1, DateTimeOffset.Parse("2026-07-04T08:00:00Z"));
+        dbContext.InspectionTasks.AddRange(other, mine);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListInspectionTasksQueryHandler(dbContext).Handle(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                InspectionTaskStatuses.Pending,
+                null,
+                0,
+                20,
+                ScopeKind: "self",
+                PrincipalId: "qa-user-001",
+                SourceType: "receiving",
+                Keyword: "WO-MINE",
+                Overdue: true,
+                AsOfUtc: DateTimeOffset.Parse("2026-07-06T00:00:00Z")),
+            CancellationToken.None);
+
+        var row = Assert.Single(result.Items);
+        Assert.Equal(mine.Id, row.InspectionTaskId);
+        Assert.Equal("qa-user-001", row.AssignedInspectorUserId);
+        Assert.True(row.IsOverdue);
+        Assert.Equal(2, row.Version);
+        Assert.Contains("claim", row.AllowedActions);
+        Assert.Equal(1, result.Total);
+    }
+
+    [Fact]
+    public async Task Task_detail_rejects_a_task_outside_the_selected_self_scope()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_detail_rejects_a_task_outside_the_selected_self_scope));
+        var plan = ActivePlan("PLAN-DETAIL-SCOPE", "receiving", "SKU-RM-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-DETAIL-001",
+            "LINE-001",
+            "SKU-RM-1000",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T07:00:00Z"),
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            "wms:detail-scope:IN-DETAIL-001");
+        task.Assign("qa-user-002", null, 1, DateTimeOffset.Parse("2026-07-05T07:10:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
+            new GetInspectionTaskQueryHandler(dbContext).Handle(
+                new GetInspectionTaskQuery(
+                    task.Id,
+                    "org-001",
+                    "env-dev",
+                    "self",
+                    "qa-user-001",
+                    []),
+                CancellationToken.None));
+
+        Assert.Equal("task-outside-selected-work-scope", exception.Reason);
+    }
+
+    private static CreateInspectionRecordFromTaskCommandHandler CreateTaskSubmissionHandler(ApplicationDbContext dbContext)
+    {
+        foreach (var task in dbContext.InspectionTasks.Local.Where(task =>
+                     task.Status == InspectionTaskStatuses.Pending
+                     && task.AssignedUserId is null
+                     && task.AssignedTeamId is null))
+        {
+            task.Assign("qa-user-001", null, task.Version, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+            task.Claim("qa-user-001", [], task.Version, DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        }
+
+        return new(
             new InspectionTaskRepository(dbContext),
             new InspectionRecordRepository(dbContext),
             new InspectionPlanRepository(dbContext),
             new NonconformanceReportRepository(dbContext),
             new NonconformanceReportCodeGenerator(),
             dbContext);
+    }
 
     private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
     {

@@ -61,6 +61,112 @@ public sealed class InspectionTaskTests
             task.Complete(new InspectionRecordId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b202")), DateTimeOffset.Parse("2026-07-05T10:00:00Z")));
     }
 
+    [Fact]
+    public void AssignToInspector_ShouldPersistAssignmentAndAdvanceVersion()
+    {
+        var task = NewTask();
+
+        task.Assign(
+            "qa-user-001",
+            null,
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+        Assert.Null(task.AssignedTeamId);
+        Assert.Equal(2, task.Version);
+        Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
+    }
+
+    [Fact]
+    public void ClaimTeamTask_ShouldRequireAuthorizedTeamAndAssignActor()
+    {
+        var task = NewTask();
+        task.Assign(
+            null,
+            "TEAM-QA-01",
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+
+        Assert.Throws<UnauthorizedAccessException>(() =>
+            task.Claim(
+                "qa-user-001",
+                ["TEAM-QA-02"],
+                expectedVersion: 2,
+                DateTimeOffset.Parse("2026-07-05T08:30:00Z")));
+
+        task.Claim(
+            "qa-user-001",
+            ["TEAM-QA-01"],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+        Assert.Equal("TEAM-QA-01", task.AssignedTeamId);
+        Assert.Equal(InspectionTaskStatuses.InProgress, task.Status);
+        Assert.Equal(3, task.Version);
+    }
+
+    [Fact]
+    public void Claim_ShouldRejectAnotherInspectorStaleVersionAndCompletedTask()
+    {
+        var task = NewTask();
+        task.Assign(
+            "qa-user-002",
+            null,
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+
+        Assert.Throws<InspectionTaskAlreadyClaimedException>(() =>
+            task.Claim(
+                "qa-user-001",
+                [],
+                expectedVersion: 2,
+                DateTimeOffset.Parse("2026-07-05T08:30:00Z")));
+        Assert.Throws<InvalidOperationException>(() =>
+            task.Claim(
+                "qa-user-002",
+                [],
+                expectedVersion: 1,
+                DateTimeOffset.Parse("2026-07-05T08:30:00Z")));
+
+        task.Claim(
+            "qa-user-002",
+            [],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+        task.Complete(
+            new InspectionRecordId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b203")),
+            DateTimeOffset.Parse("2026-07-05T09:00:00Z"));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            task.Claim(
+                "qa-user-002",
+                [],
+                expectedVersion: 4,
+                DateTimeOffset.Parse("2026-07-05T09:30:00Z")));
+    }
+
+    [Fact]
+    public void EnsureAssignedInspector_ShouldRejectCrossInspectorCompletion()
+    {
+        var task = NewTask();
+        task.Assign(
+            "qa-user-002",
+            null,
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        task.Claim(
+            "qa-user-002",
+            [],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Throws<UnauthorizedAccessException>(() =>
+            task.EnsureAssignedInspector("qa-user-001"));
+        task.EnsureAssignedInspector("qa-user-002");
+    }
+
     private static InspectionTask NewTask()
     {
         return InspectionTask.CreatePending(

@@ -13,9 +13,105 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityInspectionTaskPostgresProfileTests
 {
     [QualityPostgresFact]
+    public async Task Postgres_persists_assignment_claim_and_audit_receipts()
+    {
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Postgres_persists_assignment_claim_and_audit_receipts));
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(database.ConnectionString)
+            .Options;
+        var taskId = default(InspectionTaskId);
+
+        await using (var db = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            await db.Database.MigrateAsync();
+            var task = NewTask(
+                ActivePlan().Id,
+                "RCV-ASSIGNMENT",
+                "LINE-001",
+                "SKU-RM-1000",
+                "wms:assignment:001");
+            task.Assign(null, "team-quality-a", task.Version, DateTimeOffset.Parse("2026-07-30T08:00:00Z"));
+            db.InspectionTasks.Add(task);
+            db.InspectionTaskAssignmentReceipts.Add(InspectionTaskAssignmentReceipt.Create(
+                task.OrganizationId,
+                task.EnvironmentId,
+                task.Id,
+                "assign",
+                "assign-pg-001",
+                "assign-fingerprint",
+                "manager-001",
+                null,
+                null,
+                null,
+                "team-quality-a",
+                "shift assignment",
+                task.Version,
+                DateTimeOffset.Parse("2026-07-30T08:00:00Z")));
+            await db.SaveChangesAsync();
+            taskId = task.Id;
+        }
+
+        await using (var db = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var task = await db.InspectionTasks.SingleAsync(x => x.Id == taskId);
+            task.Claim(
+                "inspector-001",
+                ["team-quality-a"],
+                task.Version,
+                DateTimeOffset.Parse("2026-07-30T08:05:00Z"));
+            db.InspectionTaskAssignmentReceipts.Add(InspectionTaskAssignmentReceipt.Create(
+                task.OrganizationId,
+                task.EnvironmentId,
+                task.Id,
+                "claim",
+                "claim-pg-001",
+                "claim-fingerprint",
+                "inspector-001",
+                null,
+                "team-quality-a",
+                "inspector-001",
+                "team-quality-a",
+                null,
+                task.Version,
+                DateTimeOffset.Parse("2026-07-30T08:05:00Z")));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = new ApplicationDbContext(options, new NoopMediator()))
+        {
+            var task = await db.InspectionTasks.AsNoTracking().SingleAsync(x => x.Id == taskId);
+            var receipts = await db.InspectionTaskAssignmentReceipts
+                .AsNoTracking()
+                .Where(x => x.InspectionTaskId == taskId)
+                .OrderBy(x => x.CreatedAtUtc)
+                .ToArrayAsync();
+
+            Assert.Equal(InspectionTaskStatuses.InProgress, task.Status);
+            Assert.Equal("inspector-001", task.AssignedUserId);
+            Assert.Equal("team-quality-a", task.AssignedTeamId);
+            Assert.Equal(3, task.Version);
+            Assert.Collection(
+                receipts,
+                assignment =>
+                {
+                    Assert.Equal("assign", assignment.Action);
+                    Assert.Equal(2, assignment.ResultVersion);
+                },
+                claim =>
+                {
+                    Assert.Equal("claim", claim.Action);
+                    Assert.Equal(3, claim.ResultVersion);
+                });
+        }
+    }
+
+    [QualityPostgresFact]
     public async Task Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict));
+        var connectionString = database.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddQualityPostgreSqlPersistence(connectionString);
@@ -109,5 +205,41 @@ public sealed class QualityInspectionTaskPostgresProfileTests
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"DROP SCHEMA IF EXISTS \"{QualityFacts.Schema}\" CASCADE";
         await command.ExecuteNonQueryAsync();
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task Publish<TNotification>(
+            TNotification notification,
+            CancellationToken cancellationToken = default)
+            where TNotification : INotification =>
+            Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

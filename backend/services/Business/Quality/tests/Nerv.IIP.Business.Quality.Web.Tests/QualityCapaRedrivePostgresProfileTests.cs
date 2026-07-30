@@ -20,7 +20,9 @@ public sealed class QualityCapaRedrivePostgresProfileTests
     [QualityPostgresFact]
     public async Task Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness));
+        var connectionString = database.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
@@ -77,7 +79,8 @@ public sealed class QualityCapaRedrivePostgresProfileTests
             Assert.Equal("SM-FULL-CAPA-PG-001", reloadedNcr.ScrapMovementId);
         }
 
-        Assert.IsType<NcrClosedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaEffectivenessVerifiedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
     }
 

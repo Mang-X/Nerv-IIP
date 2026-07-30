@@ -17,7 +17,14 @@ public sealed record ListInspectionTasksRequest(
     string? SkuCode,
     int Skip = 0,
     int Take = 100,
-    InspectionTaskId? InspectionTaskId = null);
+    InspectionTaskId? InspectionTaskId = null,
+    string? ScopeKind = null,
+    string? PrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null,
+    string? SourceType = null,
+    string? SourceService = null,
+    string? Keyword = null,
+    bool? Overdue = null);
 
 public sealed record ListInspectionTasksEndpointResponse(IReadOnlyCollection<InspectionTaskResponse> Items, int Total);
 
@@ -30,6 +37,34 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string IdempotencyKey,
     string? OrganizationId = null,
     string? EnvironmentId = null);
+
+public sealed record GetInspectionTaskRequest(
+    InspectionTaskId InspectionTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ScopeKind,
+    string PrincipalId,
+    IReadOnlyCollection<string>? AuthorizedTeamIds = null);
+
+public sealed record AssignInspectionTaskRequest(
+    InspectionTaskId InspectionTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    string? Reason,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record ClaimInspectionTaskRequest(
+    InspectionTaskId InspectionTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string>? AuthorizedTeamIds,
+    string IdempotencyKey,
+    long ExpectedVersion);
 
 public sealed class CreateInspectionRecordFromTaskRequestValidator
     : FastEndpoints.Validator<CreateInspectionRecordFromTaskRequest>
@@ -67,8 +102,90 @@ public sealed class ListInspectionTasksEndpoint(ISender sender)
             req.SkuCode,
             req.Skip,
             req.Take,
-            req.InspectionTaskId), ct);
+            req.InspectionTaskId,
+            req.ScopeKind,
+            req.PrincipalId,
+            req.AuthorizedTeamIds,
+            req.SourceType,
+            req.SourceService,
+            req.Keyword,
+            req.Overdue), ct);
         await Send.OkAsync(new ListInspectionTasksEndpointResponse(response.Items, response.Total).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetInspectionTaskEndpoint(ISender sender)
+    : QualityEndpoint<GetInspectionTaskRequest, ResponseData<InspectionTaskDetailResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<GetInspectionTaskEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetInspectionTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetInspectionTaskQuery(
+            req.InspectionTaskId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ScopeKind,
+            req.PrincipalId,
+            req.AuthorizedTeamIds ?? []), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AssignInspectionTaskEndpoint(ISender sender)
+    : QualityEndpoint<AssignInspectionTaskRequest, ResponseData<InspectionTaskAssignmentResult>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(
+            QualityInspectionEndpointContracts.Get<AssignInspectionTaskEndpoint>(),
+            StatusCodes.Status403Forbidden,
+            StatusCodes.Status409Conflict,
+            StatusCodes.Status422UnprocessableEntity);
+    }
+
+    public override async Task HandleAsync(AssignInspectionTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AssignInspectionTaskCommand(
+            req.InspectionTaskId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AssignedInspectorUserId,
+            req.AssignedTeamId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ClaimInspectionTaskEndpoint(ISender sender)
+    : QualityEndpoint<ClaimInspectionTaskRequest, ResponseData<InspectionTaskAssignmentResult>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(
+            QualityInspectionEndpointContracts.Get<ClaimInspectionTaskEndpoint>(),
+            StatusCodes.Status403Forbidden,
+            StatusCodes.Status409Conflict,
+            StatusCodes.Status422UnprocessableEntity);
+    }
+
+    public override async Task HandleAsync(ClaimInspectionTaskRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ClaimInspectionTaskCommand(
+            req.InspectionTaskId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedTeamIds ?? [],
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -79,6 +196,7 @@ public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
     {
         ConfigureQualityContract(
             QualityInspectionEndpointContracts.Get<CreateInspectionRecordFromTaskEndpoint>(),
+            StatusCodes.Status403Forbidden,
             StatusCodes.Status409Conflict);
     }
 

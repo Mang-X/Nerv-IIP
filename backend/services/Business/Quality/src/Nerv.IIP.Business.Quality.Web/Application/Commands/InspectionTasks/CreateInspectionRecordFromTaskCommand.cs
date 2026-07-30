@@ -44,9 +44,7 @@ public sealed class CreateInspectionRecordFromTaskCommandLock : ICommandLock<Cre
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-quality:inspection-task-submit:{command.InspectionTaskId}",
-            30));
+        return Task.FromResult(InspectionTaskCommandLocks.For(command.InspectionTaskId));
     }
 }
 
@@ -89,6 +87,16 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             return replay;
         }
 
+        try
+        {
+            task.EnsureAssignedInspector(request.InspectorUserId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw QualityAuthorizationException.Forbidden(
+                "assignment-principal-mismatch");
+        }
+
         // 幂等：任务已完成 → 回读既有记录的权威结论。仍走统一收尾（既有 rejected 记录若因常规
         // 检验流程未开 NCR，会在这里补开并回链，避免端点永久返回 NonconformanceReportId=null）。
         if (task.Status == InspectionTaskStatuses.Completed && task.InspectionRecordId is not null)
@@ -98,7 +106,7 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             return AddIdempotencyRecord(task, request, completedResult);
         }
 
-        if (task.Status is not InspectionTaskStatuses.Pending and not InspectionTaskStatuses.InProgress)
+        if (task.Status != InspectionTaskStatuses.InProgress)
         {
             throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
@@ -113,19 +121,9 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             cancellationToken);
         if (existing is not null)
         {
-            if (task.Status == InspectionTaskStatuses.Pending)
-            {
-                task.Start(request.InspectorUserId, DateTimeOffset.UtcNow);
-            }
-
             task.Complete(existing.Id, DateTimeOffset.UtcNow);
             var existingResult = await EnsureNcrAndBuildResultAsync(existing.Id, existing, cancellationToken);
             return AddIdempotencyRecord(task, request, existingResult);
-        }
-
-        if (task.Status == InspectionTaskStatuses.InProgress)
-        {
-            throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
         var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(
@@ -157,7 +155,6 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             request.DispositionReason,
             request.DispositionAttachmentFileIds);
 
-        task.Start(request.InspectorUserId, DateTimeOffset.UtcNow);
         task.Complete(record.Id, DateTimeOffset.UtcNow);
         await inspectionRecordRepository.AddAsync(record, cancellationToken);
 
