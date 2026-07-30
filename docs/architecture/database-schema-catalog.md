@@ -404,7 +404,7 @@ Source:
 7. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260706064412_AddWmsReceivingQualityGate.cs`
 8. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260711064952_AddBackorderReplenishment.cs`
 9. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260724015043_AddOutboundOrderConcurrencyToken.cs`
-10. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260729053850_AddWmsAssignmentTaskLifecycleReceipts.cs`
+10. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260729205928_CompleteWmsWorkPoolExecutionBoundary.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
