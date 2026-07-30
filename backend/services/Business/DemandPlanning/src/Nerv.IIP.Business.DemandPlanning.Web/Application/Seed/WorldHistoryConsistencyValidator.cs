@@ -74,7 +74,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         return new WorldHistoryPlanningValidationReport(
             DemandSourcesChecked: demands.Count,
             MpsBucketsChecked: facts.MpsBuckets.Count,
-            MrpRunsChecked: facts.MrpRuns.Count,
+            MrpRunsChecked: facts.MrpRuns.Count + facts.HistoricalMrpRuns.Count,
             PlanningSuggestionsChecked: suggestions.Count,
             AcceptedSuggestionsChecked: suggestions.Count(x => x.Status == PlanningSuggestionStatus.Accepted),
             Sample: sample);
@@ -170,7 +170,11 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .ToDictionary(group => group.Key, group => group.First());
         var suggestionsByRunId = suggestions.ToLookup(x => x.MrpRunId);
 
-        foreach (var fact in facts.MrpRuns)
+        var mrpFacts = facts.MrpRuns
+            .Concat(facts.HistoricalMrpRuns)
+            .ToArray();
+
+        foreach (var fact in mrpFacts)
         {
             if (!runsByHorizonStart.TryGetValue(fact.HorizonStart, out var run))
             {
@@ -224,7 +228,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
 
         // 已接受建议的下游工单号必须与共享公式一致：SO-2026-x 的建议 → WO-2026-x。
-        foreach (var fact in facts.MrpRuns.SelectMany(run => run.Suggestions).Where(x => x.IsAccepted))
+        foreach (var fact in mrpFacts.SelectMany(run => run.Suggestions).Where(x => x.IsAccepted))
         {
             var index = ParseOrderIndex(fact.DemandSourceReference);
             if (index is null || !string.Equals(WorldHistorySpec.WorkOrderNo(index.Value), fact.DownstreamDocumentId, StringComparison.Ordinal))

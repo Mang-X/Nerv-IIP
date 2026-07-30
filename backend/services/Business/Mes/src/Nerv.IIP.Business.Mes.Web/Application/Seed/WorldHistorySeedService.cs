@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
@@ -16,7 +17,8 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 ///
 /// 与 ERP 侧的一致性靠 <see cref="WorldHistorySpec.BuildOrderPlans"/> 与
 /// <see cref="WorldHistoryTimeline"/> 两个确定性纯函数达成：两侧不通信、不跨库查询、不建跨 schema 外键，
-/// 仅以业务编码 <c>SO-2026-#####</c> ↔ <c>WO-2026-#####</c> 相互引用。
+/// 订单工单同时以稳定的 DemandPlanning <c>PlanningSuggestion</c> ID 和
+/// <c>SO-2026-#####</c> pegging 引用计划域；返工工单仍只引用被补工单。
 ///
 /// 关键数量不变量：**好品产出 == 销售订单数量**。工单投料量按报废量放大
 /// （<see cref="WorldHistoryWorkOrderPlan.WorkOrderQuantity"/>），于是「报工 → 完工入库 → 发货」
@@ -92,8 +94,8 @@ public sealed class WorldHistorySeedService(
                     productionVersions.GetValueOrDefault(plan.SkuCode),
                     timeline,
                     ResolveExecution(plan.Stage),
-                    plan.SalesOrderNo,
-                    plan.RequiredDate);
+                    sourcePlanReference: CreatePlanningSuggestionSourceReference(plan),
+                    dueDate: plan.RequiredDate);
                 added++;
             }
 
@@ -171,7 +173,11 @@ public sealed class WorldHistorySeedService(
                     timeline,
                     WorldHistoryExecution.Closed,
                     // 补产工单的来源单据是被补的工单，不是销售订单。
-                    sourceDocumentId: source.WorkOrderNo,
+                    sourcePlanReference: new SourcePlanReference(
+                        sourceSystem: "mes",
+                        sourceDocumentType: "rework-work-order",
+                        sourceDocumentId: source.WorkOrderNo,
+                        sourceDemandReference: null),
                     dueDate: source.RequiredDate,
                     isRework: true);
                 added++;
@@ -212,7 +218,7 @@ public sealed class WorldHistorySeedService(
         string? productionVersionId,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
-        string sourceDocumentId,
+        SourcePlanReference sourcePlanReference,
         DateOnly dueDate,
         bool isRework = false)
     {
@@ -244,11 +250,7 @@ public sealed class WorldHistorySeedService(
             priority: isRework ? 90 : 10,
             dueUtc,
             WorldHistorySpec.UomCode,
-            new SourcePlanReference(
-                sourceSystem: isRework ? "mes" : "erp",
-                sourceDocumentType: isRework ? "rework-work-order" : "sales-order",
-                sourceDocumentId: sourceDocumentId,
-                sourceDemandReference: isRework ? null : $"{sourceDocumentId}:10"));
+            sourcePlanReference);
         workOrder.MarkReleased();
         dbContext.WorkOrders.Add(workOrder);
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
@@ -272,6 +274,17 @@ public sealed class WorldHistorySeedService(
         WriteFinishedGoodsReceipt(organizationId, environmentId, plan, timeline, completedAtUtc);
         workOrder.Close(completedAtUtc.AddMinutes(30));
     }
+
+    /// <summary>
+    /// 订单工单只引用跨服务事实流中确实会由 DemandPlanning 写入的销售订单建议。
+    /// 返工工单走独立的 rework 来源，不进入 MRP 建议链。
+    /// </summary>
+    private static SourcePlanReference CreatePlanningSuggestionSourceReference(WorldHistoryOrderPlan plan) =>
+        new(
+            sourceSystem: DemandPlanningSourceReferences.DemandPlanning,
+            sourceDocumentType: DemandPlanningSourceReferences.PlanningSuggestion,
+            sourceDocumentId: WorldHistorySpec.PlanningSuggestionIdForSalesOrder(plan.SalesOrderNo).ToString(),
+            sourceDemandReference: plan.SalesOrderNo);
 
     #region 工序任务
 
