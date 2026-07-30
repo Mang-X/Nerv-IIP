@@ -1,0 +1,231 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { computed, reactive, shallowRef } from 'vue'
+
+import SingleOrderSchedulingDialog from './SingleOrderSchedulingDialog.vue'
+
+const state = vi.hoisted(() => ({
+  permissionCodes: ['business.scheduling.plans.manage'] as string[],
+  requests: [] as Record<string, unknown>[],
+  pushed: [] as unknown[],
+  workOrders: [] as Record<string, unknown>[],
+  hasScope: true,
+  reject: null as Error | null,
+  /** `useMesWorkOrders` 被实例化的次数——一实例化就会发候选查询。 */
+  mesCalls: 0,
+  toasts: [] as { action: string; fallback: string }[],
+}))
+
+vi.mock('@/composables/useSingleOrderScheduling', async () => {
+  const actual = await vi.importActual<typeof import('@/composables/useSingleOrderScheduling')>(
+    '@/composables/useSingleOrderScheduling',
+  )
+  return {
+    ...actual,
+    useSingleOrderScheduling: () => ({
+      context: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+      hasScope: computed(() => state.hasScope),
+      pending: shallowRef(false),
+      scheduleSingleOrder: vi.fn(async (request: Record<string, unknown>) => {
+        state.requests.push(request)
+        if (state.reject) throw state.reject
+        return { planId: 'PLAN-SINGLE-1' }
+      }),
+    }),
+  }
+})
+
+vi.mock('@/composables/useBusinessMes', () => ({
+  useMesWorkOrders: () => {
+    state.mesCalls += 1
+    return {
+      filters: reactive({ keyword: undefined as string | undefined, statuses: '' }),
+      refreshWorkOrders: vi.fn(),
+      workOrders: computed(() => state.workOrders),
+      workOrdersError: computed(() => undefined),
+      workOrdersPending: computed(() => false),
+    }
+  },
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: vi.fn(async (to: unknown) => {
+      state.pushed.push(to)
+    }),
+  }),
+}))
+
+// 只桩住会弹 toast 的两个；serverErrorMessage / friendlyErrorMessage 用真实实现，
+// 否则「服务端说了什么才上屏」这条断言测的就是桩而不是产品逻辑。
+vi.mock('@/utils/notify', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
+  return {
+    ...actual,
+    notifyOperationFailure: vi.fn((action: string, _error: unknown, fallback: string) => {
+      state.toasts.push({ action, fallback })
+    }),
+    notifySuccess: vi.fn(),
+  }
+})
+
+vi.mock('@nerv-iip/ui', async () => {
+  const { defineComponent } = await vi.importActual<typeof import('vue')>('vue')
+  const Shell = defineComponent({ template: '<div><slot /></div>' })
+  const Button = defineComponent({
+    props: { disabled: Boolean, type: { type: String, default: 'button' } },
+    emits: ['click'],
+    template:
+      '<button :type="type" :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
+  })
+  const Input = defineComponent({
+    props: { modelValue: { type: [String, Number], default: '' } },
+    emits: ['update:modelValue'],
+    template:
+      '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  })
+  const Select = defineComponent({
+    props: { modelValue: { type: String, default: '' } },
+    emits: ['update:modelValue'],
+    template: '<div class="select-stub"><slot /></div>',
+  })
+  const Checkbox = defineComponent({
+    props: { modelValue: Boolean },
+    emits: ['update:modelValue'],
+    template:
+      '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+  })
+  return {
+    NvButton: Button,
+    NvCheckbox: Checkbox,
+    NvDialog: Shell,
+    NvDialogContent: Shell,
+    NvDialogDescription: Shell,
+    NvDialogFooter: Shell,
+    NvDialogHeader: Shell,
+    NvDialogTitle: Shell,
+    NvField: Shell,
+    NvFieldGroup: Shell,
+    NvFieldLabel: Shell,
+    NvInput: Input,
+    NvRadioGroup: Shell,
+    NvRadioGroupItem: Shell,
+    NvSelect: Select,
+    NvSelectContent: Shell,
+    NvSelectItem: Shell,
+    NvSelectTrigger: Shell,
+    NvSelectValue: Shell,
+    Spinner: Shell,
+    toast: { error: vi.fn(), success: vi.fn() },
+  }
+})
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
+}))
+
+function mountDialog(props: Record<string, unknown> = {}) {
+  return mount(SingleOrderSchedulingDialog, { props: { open: true, ...props } })
+}
+
+describe('单单排产弹窗（MAN-694 / #1262）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    state.requests = []
+    state.pushed = []
+    state.workOrders = []
+    state.hasScope = true
+    state.reject = null
+    state.permissionCodes = ['business.scheduling.plans.manage']
+    state.mesCalls = 0
+    state.toasts = []
+  })
+
+  it('已知目标工单时不查候选：候选查询只在需要挑单时才实例化', () => {
+    mountDialog({ workOrderId: 'WO-77' })
+    expect(state.mesCalls).toBe(0)
+
+    mountDialog({ initialKeyword: 'SO-2026-0001' })
+    expect(state.mesCalls).toBe(1)
+  })
+
+  it('界面上写明语义：新建只含该单的方案，插入现有方案尚不可用', () => {
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+    const semantics = wrapper.get('[data-testid="single-order-scheduling-semantics"]').text()
+
+    expect(semantics).toContain('新建一个只含该单的排程方案')
+    expect(semantics).toContain('现有方案保持不变')
+    expect(semantics).toContain('MAN-674')
+  })
+
+  it('提交时把用户指定的窗口与固定工单送进单单排产，并跳到该方案', async () => {
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.requests).toHaveLength(1)
+    const request = state.requests[0]!
+    expect(request.workOrderId).toBe('WO-77')
+    // 默认窗口仍是 7 天，但已是从窗口表单解析出来的值，而不是提交时现算的死数。
+    const span =
+      (new Date(String(request.horizonEndUtc)).getTime() -
+        new Date(String(request.horizonStartUtc)).getTime()) /
+      86_400_000
+    expect(span).toBe(7)
+    expect(state.pushed[0]).toEqual({
+      path: '/scheduling',
+      query: { planId: 'PLAN-SINGLE-1', orderReference: 'WO-77' },
+    })
+  })
+
+  it('没有固定工单又没选中候选时不提交，并说明还差什么', async () => {
+    const wrapper = mountDialog({ initialKeyword: 'SO-2026-0001' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.requests).toHaveLength(0)
+    expect(wrapper.text()).toContain('请先选择要排产的工单')
+    // 契约里没有 销售订单→工单 的关联键，这一点必须写在界面上，不能让人以为是自动带出的。
+    expect(wrapper.text()).toContain('稳定关联键')
+  })
+
+  it('只读（无排产管理权限）时不发请求，并说明缺哪个权限码', async () => {
+    state.permissionCodes = []
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.requests).toHaveLength(0)
+    expect(wrapper.text()).toContain('business.scheduling.plans.manage')
+  })
+
+  it('服务端的中文领域拒绝理由原样留在弹窗里，用户改完就能重试', async () => {
+    state.reject = new Error('工单没有生产版本')
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('工单没有生产版本')
+    // 与 #1278 的分层透传同源：toast 也带动作前缀，不再各写一套错误取值。
+    expect(state.toasts).toEqual([
+      { action: '排产失败', fallback: '排产失败，请检查工单生产版本与排程基础数据。' },
+    ])
+    expect(state.pushed).toHaveLength(0)
+  })
+
+  it('英文 5xx 原文不上屏：按反馈规范降级为领域兜底文案（#1278 口径）', async () => {
+    state.reject = Object.assign(new Error(''), { message: 'Internal Server Error' })
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Internal Server Error')
+    expect(wrapper.text()).toContain('排产失败，请检查工单生产版本与排程基础数据。')
+  })
+})

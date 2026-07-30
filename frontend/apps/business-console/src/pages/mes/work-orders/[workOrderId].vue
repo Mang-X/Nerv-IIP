@@ -4,6 +4,12 @@ import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import {
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
+  useCanScheduleSingleOrder,
+} from '@/composables/useSingleOrderScheduling'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
@@ -44,6 +50,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import {
+  CalendarCogIcon,
   ClipboardCheckIcon,
   LockIcon,
   PackageCheckIcon,
@@ -245,6 +252,21 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
+
+// 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
+// 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
+const scheduleOpen = ref(false)
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleDisabledReason = computed(() => {
+  if (!detail.value) return '工单信息加载中，请稍候。'
+  if (!isSchedulableWorkbenchCandidate(detail.value)) {
+    return detail.value.productionVersionId
+      ? '工单已处于终态，不能再排产。'
+      : '工单没有生产版本，排程无法展开工艺路线。'
+  }
+  if (!canScheduleSingleOrder.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
+  return ''
+})
 const canCancel = computed(
   () =>
     workOrderManageScopeReady.value &&
@@ -454,6 +476,31 @@ function formatError(error: unknown) {
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
+        <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
+        <NvButton
+          v-if="!scheduleDisabledReason"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="work-order-schedule-single"
+          @click="scheduleOpen = true"
+        >
+          <CalendarCogIcon aria-hidden="true" />
+          对该单排产
+        </NvButton>
+        <NvTooltipProvider v-else>
+          <NvTooltip>
+            <NvTooltipTrigger as-child>
+              <span tabindex="0">
+                <NvButton size="sm" type="button" variant="outline" disabled>
+                  <CalendarCogIcon aria-hidden="true" />
+                  对该单排产
+                </NvButton>
+              </span>
+            </NvTooltipTrigger>
+            <NvTooltipContent>{{ scheduleDisabledReason }}</NvTooltipContent>
+          </NvTooltip>
+        </NvTooltipProvider>
         <NvButton
           size="sm"
           type="button"
@@ -513,6 +560,14 @@ function formatError(error: unknown) {
         </NvTooltipProvider>
       </template>
     </NvPageHeader>
+
+    <!-- v-if 按需挂载：关闭时不持有候选工单查询，也不残留上一次的窗口输入。 -->
+    <SingleOrderSchedulingDialog
+      v-if="scheduleOpen"
+      v-model:open="scheduleOpen"
+      :work-order-id="detail?.workOrderId ?? filters.workOrderId"
+      :context-label="`MES 工单 ${detail?.workOrderId ?? filters.workOrderId}`"
+    />
 
     <p
       v-if="workOrderReadScopeMessage"
