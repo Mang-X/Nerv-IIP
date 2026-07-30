@@ -1973,7 +1973,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_operation_action_rejects_an_authorized_site_scope_without_calling_mes()
+    public async Task Mes_operation_action_rejects_an_unsupported_site_scope_without_calling_mes()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
             scopeGrants:
@@ -2028,7 +2028,7 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/operation-tasks/OP-SITE/start?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A",
             new { reasonCode = "start", idempotencyKey = "start-site-001" });
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Null(mes.LastOperationTaskListRequest);
         Assert.Equal(0, mes.StartOperationCallCount);
     }
