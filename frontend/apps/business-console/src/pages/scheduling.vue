@@ -290,7 +290,7 @@ async function publish(planId: string | undefined) {
   }
 }
 
-// TODO(scheduling): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
+// TODO(MAN-674 / #1241): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
 // （勿用 POST /scheduling/plans/preview——其契约要求前端提交完整 SchedulingProblemContract，
 // 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
