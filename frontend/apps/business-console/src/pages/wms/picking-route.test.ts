@@ -254,3 +254,20 @@ describe('WMS picking route context', () => {
     expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
 })
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      sourceKind: shallowRef(),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: vi.fn(),
+    }),
+  }
+})

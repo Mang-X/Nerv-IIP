@@ -176,6 +176,11 @@ export interface WmsWarehouseTaskListFilters extends WmsListFilters {
   lotNo?: string
 }
 
+export interface WmsOutboundListFilters extends WmsListFilters {
+  locationCode?: string
+  lotNo?: string
+}
+
 function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
   return bindBusinessContext(
     reactive({
@@ -591,13 +596,17 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
   }
 }
 
-export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {}) {
+export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilters> = {}) {
   const auth = useAuthStore()
-  const filters = defaultFilters<WmsListFilters>(initialFilters)
+  const filters = defaultFilters<WmsOutboundListFilters>(initialFilters)
   const outboundOrdersQuery = useQuery(() =>
     withWmsListScopeEnabled(
       listBusinessConsoleWmsOutboundOrdersQueryOptions({
-        query: baseQuery(filters),
+        query: {
+          ...baseQuery(filters),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
       }),
       filters,
     ),

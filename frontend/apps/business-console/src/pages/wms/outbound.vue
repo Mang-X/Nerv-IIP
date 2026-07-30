@@ -9,12 +9,14 @@ import {
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
@@ -94,10 +96,13 @@ const {
   error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
+const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.keyword,
     () => filters.status,
+    () => filters.locationCode,
+    () => filters.lotNo,
     () => filters.scopeKind,
     () => filters.scopeId,
   ],
@@ -495,6 +500,18 @@ function refreshAll() {
           :loading="workScopePending"
           placeholder="选择作业范围"
           aria-label="作业范围"
+        />
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="operationalCandidates.locationOptions.value"
+          :lot-options="operationalCandidates.lotOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :source-kind="operationalCandidates.sourceKind.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
         />
         <NvSearchSelect
           v-model="statusFilter"

@@ -3,6 +3,7 @@ import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
@@ -15,6 +16,7 @@ import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGua
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
@@ -110,6 +112,7 @@ const {
   error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'receipts')
+const operationalCandidates = useWmsOperationalCandidates('receipt', filters)
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
@@ -523,29 +526,17 @@ function formatError(error: unknown) {
           clearable
           aria-label="工厂"
         />
-        <NvEntityPicker
-          v-model="filters.locationCode"
-          class="w-36"
-          :options="locationOptions"
-          title="选择库位"
-          placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
-          clearable
-          aria-label="库位"
-        />
-        <NvEntityPicker
-          v-model="filters.lotNo"
-          class="w-36"
-          :options="lotOptions"
-          title="选择批次"
-          placeholder="批次"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
-          clearable
-          aria-label="批次"
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="operationalCandidates.locationOptions.value"
+          :lot-options="operationalCandidates.lotOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :source-kind="operationalCandidates.sourceKind.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
         />
         <NvSearchSelect
           v-model="statusFilter"

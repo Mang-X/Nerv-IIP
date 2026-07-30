@@ -4,12 +4,14 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
@@ -84,6 +86,7 @@ const {
   error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'receipts')
+const operationalCandidates = useWmsOperationalCandidates('receipt', filters)
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
 const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
@@ -99,6 +102,7 @@ const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.status,
     () => filters.locationCode,
+    () => filters.lotNo,
     () => filters.keyword,
     () => filters.scopeKind,
     () => filters.scopeId,
@@ -390,17 +394,17 @@ function firstQuery(value: unknown) {
           placeholder="任务号/来源单/物料"
           aria-label="关键字"
         />
-        <NvEntityPicker
-          v-model="filters.locationCode"
-          class="w-36"
-          :options="locationOptions"
-          title="选择库位"
-          placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
-          clearable
-          aria-label="库位"
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="operationalCandidates.locationOptions.value"
+          :lot-options="operationalCandidates.lotOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :source-kind="operationalCandidates.sourceKind.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
         />
         <NvSearchSelect
           v-model="statusFilter"

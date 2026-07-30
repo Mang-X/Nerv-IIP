@@ -8,6 +8,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
@@ -30,6 +31,7 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -96,6 +98,7 @@ const {
   error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'counts')
+const operationalCandidates = useWmsOperationalCandidates('count', filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.keyword,
@@ -506,17 +509,16 @@ function refreshAll() {
           placeholder="选择作业范围"
           aria-label="作业范围"
         />
-        <NvEntityPicker
-          v-model="filters.locationCode"
-          class="w-36"
-          :options="locationOptions"
-          title="选择库位"
-          placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
-          clearable
-          aria-label="库位"
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          :location-options="operationalCandidates.locationOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :show-lot="false"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :source-kind="operationalCandidates.sourceKind.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
         />
         <NvSearchSelect
           v-model="statusFilter"
