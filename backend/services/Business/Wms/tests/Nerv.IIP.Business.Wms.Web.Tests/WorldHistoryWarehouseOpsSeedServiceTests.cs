@@ -179,9 +179,35 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         await SeedDocumentChainAsync(db, asOfDate);
         await new WorldHistoryWarehouseOpsSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
 
-        var warehouseTaskIds = (await db.WarehouseTasks.Select(x => x.Id).ToArrayAsync()).ToHashSet();
+        var warehouseTasks = await db.WarehouseTasks.ToDictionaryAsync(x => x.Id);
         var wcsTasks = await db.WcsTasks.ToArrayAsync();
-        Assert.All(wcsTasks, task => Assert.Contains(task.WarehouseTaskId, warehouseTaskIds));
+        Assert.All(
+            wcsTasks,
+            task =>
+            {
+                Assert.True(warehouseTasks.TryGetValue(task.WarehouseTaskId, out var warehouseTask));
+                Assert.NotNull(warehouseTask);
+                Assert.False(string.IsNullOrWhiteSpace(warehouseTask.AssignedPoolCode));
+                Assert.Equal(WarehouseTaskExecutionChannel.Wcs, warehouseTask.ExecutionChannel);
+                Assert.Equal(task.Id.Id.ToString("D"), warehouseTask.ExecutionClaimedBy);
+                Assert.NotNull(warehouseTask.ExecutionClaimedAtUtc);
+                switch (task.Status)
+                {
+                    case WcsTaskStatus.Dispatched:
+                    case WcsTaskStatus.Failed:
+                        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+                        warehouseTask.ValidateWcsExecution(task.Id.Id.ToString("D"));
+                        break;
+                    case WcsTaskStatus.Completed:
+                        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+                        break;
+                    case WcsTaskStatus.Cancelled:
+                        Assert.Equal(WarehouseTaskStatus.Cancelled, warehouseTask.Status);
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Unexpected WCS task status: {task.Status}");
+                }
+            });
 
         var inboundOrderNumbers = (await db.InboundOrders.Select(x => x.InboundOrderNo).ToArrayAsync())
             .ToHashSet(StringComparer.Ordinal);
@@ -414,7 +440,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             order => order.AssignedPoolCode is not null || order.AssignedOperatorUserId is not null);
         Assert.DoesNotContain(
             await db.WarehouseTasks.AsNoTracking()
-                .Where(task => task.Status != WarehouseTaskStatus.Open)
+                .Where(task => task.Status != WarehouseTaskStatus.Open
+                    && task.ExecutionChannel != WarehouseTaskExecutionChannel.Wcs)
                 .ToArrayAsync(),
             task => task.AssignedPoolCode is not null || task.AssignedOperatorUserId is not null);
         Assert.DoesNotContain(

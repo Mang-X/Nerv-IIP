@@ -11,6 +11,34 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                DO $migration$
+                DECLARE
+                    conflicting_task_ids text;
+                BEGIN
+                    SELECT string_agg(
+                        conflict."warehouse_task_id"::text,
+                        ', ' ORDER BY conflict."warehouse_task_id"::text)
+                    INTO conflicting_task_ids
+                    FROM (
+                        SELECT "warehouse_task_id"
+                        FROM "wms"."wcs_tasks"
+                        GROUP BY "warehouse_task_id"
+                        HAVING COUNT(*) > 1
+                    ) AS conflict;
+
+                    IF conflicting_task_ids IS NOT NULL THEN
+                        RAISE EXCEPTION USING
+                            MESSAGE = format(
+                                'WMS work-assignment migration blocked: legacy wcs_tasks contains multiple adapter rows for warehouse_task_id(s): %s.',
+                                conflicting_task_ids),
+                            HINT = 'Resolve each conflict to one auditable WCS record before retrying the migration.';
+                    END IF;
+                END
+                $migration$;
+                """);
+
             migrationBuilder.DropIndex(
                 name: "IX_wcs_tasks_warehouse_task_id_adapter_type",
                 schema: "wms",
@@ -96,23 +124,6 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 nullable: true,
                 comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
 
-            migrationBuilder.Sql(
-                """UPDATE "wms"."warehouse_tasks" SET "execution_channel" = 'LegacyUnclaimed' WHERE "execution_channel" IS NULL;""");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "execution_channel",
-                schema: "wms",
-                table: "warehouse_tasks",
-                type: "character varying(50)",
-                maxLength: 50,
-                nullable: false,
-                comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.",
-                oldClrType: typeof(string),
-                oldType: "character varying(50)",
-                oldMaxLength: 50,
-                oldNullable: true,
-                oldComment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
-
             migrationBuilder.AddColumn<DateTime>(
                 name: "execution_claimed_at_utc",
                 schema: "wms",
@@ -129,6 +140,34 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 maxLength: 150,
                 nullable: true,
                 comment: "Trusted operator principal id or WCS task claim reference.");
+
+            migrationBuilder.Sql(
+                """
+                UPDATE "wms"."warehouse_tasks" AS task
+                SET "execution_channel" = 'Wcs',
+                    "execution_claimed_by" = wcs."id"::text,
+                    "execution_claimed_at_utc" = wcs."dispatched_at_utc"
+                FROM "wms"."wcs_tasks" AS wcs
+                WHERE wcs."warehouse_task_id" = task."id"
+                  AND task."execution_channel" IS NULL;
+                """);
+
+            migrationBuilder.Sql(
+                """UPDATE "wms"."warehouse_tasks" SET "execution_channel" = 'LegacyUnclaimed' WHERE "execution_channel" IS NULL;""");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "execution_channel",
+                schema: "wms",
+                table: "warehouse_tasks",
+                type: "character varying(50)",
+                maxLength: 50,
+                nullable: false,
+                comment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.",
+                oldClrType: typeof(string),
+                oldType: "character varying(50)",
+                oldMaxLength: 50,
+                oldNullable: true,
+                oldComment: "Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
 
             migrationBuilder.AddColumn<string>(
                 name: "lot_no",

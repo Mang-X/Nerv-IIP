@@ -413,6 +413,29 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         AdvanceVersion();
     }
 
+    public void PrepareLegacyWcsHistoryReplay(long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        if (Status != WarehouseTaskStatus.Completed
+            || ExecutionChannel is not (
+                WarehouseTaskExecutionChannel.LegacyUnclaimed
+                or WarehouseTaskExecutionChannel.Unclaimed)
+            || !string.Equals(CompletedBy, "system:wcs", StringComparison.Ordinal)
+            || ExecutedQuantity != PlannedQuantity)
+        {
+            throw new InvalidOperationException(
+                "Only an unclaimed legacy system WCS completion can be replayed.");
+        }
+
+        ExecutedQuantity = 0m;
+        Status = WarehouseTaskStatus.Open;
+        StartedAtUtc = null;
+        CompletedAtUtc = null;
+        CompletedBy = null;
+        CompletionReason = null;
+        AdvanceVersion();
+    }
+
     public void Cancel()
     {
         EnsureActive();

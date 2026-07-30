@@ -127,6 +127,36 @@ public sealed class WarehouseWorkPoolTests
         Assert.Equal(WarehouseTaskExecutionChannel.Unclaimed, task.ExecutionChannel);
     }
 
+    [Fact]
+    public void Legacy_system_wcs_completion_can_be_replayed_through_the_current_claim_invariant()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-HISTORY",
+            "OUT-001",
+            "LINE-001",
+            "SKU-001",
+            "pcs",
+            "SITE-001",
+            "BIN-001",
+            "PACK-001",
+            10m);
+        task.RecordProgress(10m);
+
+        task.PrepareLegacyWcsHistoryReplay(task.Version);
+        task.Assign("POOL-SHIPPING", assignedOperatorUserId: null, task.Version);
+        task.ClaimWcsExecution("wcs-task-history", task.Version);
+
+        Assert.Equal(WarehouseTaskStatus.InProgress, task.Status);
+        Assert.Equal(0m, task.ExecutedQuantity);
+        Assert.Null(task.CompletedAtUtc);
+        Assert.Null(task.CompletedBy);
+        Assert.Equal("POOL-SHIPPING", task.AssignedPoolCode);
+        Assert.Equal(WarehouseTaskExecutionChannel.Wcs, task.ExecutionChannel);
+        Assert.Equal("wcs-task-history", task.ExecutionClaimedBy);
+    }
+
     private static WarehouseTask CreatePickingTask(
         string taskNo,
         string? assignedOperatorUserId = "user-emp-049") =>

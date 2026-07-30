@@ -673,21 +673,12 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
         while (true)
         {
             var batch = await dbContext.WarehouseTasks
-                .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
                 // 按任务号（org+env 内唯一）排序：强类型 id 在 InMemory provider 下不可比较，
                 // 而分页必须有稳定序，否则批与批之间会漏行或重行。
                 .OrderBy(x => x.TaskNo)
                 .Skip(offset)
                 .Take(BatchSize)
-                .Select(x => new WarehouseTaskProjection(
-                    x.Id,
-                    x.TaskNo,
-                    x.FromLocationCode,
-                    x.ToLocationCode,
-                    x.PlannedQuantity,
-                    x.CreatedAtUtc,
-                    x.CompletedAtUtc))
                 .ToArrayAsync(cancellationToken);
             if (batch.Length == 0)
             {
@@ -744,11 +735,22 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
                     WorldHistoryWarehouseOpsSpec.DispatchPayload(
                         task.TaskNo, task.FromLocationCode, task.ToLocationCode, task.PlannedQuantity),
                     device.DeviceId);
+                task.PrepareLegacyWcsHistoryReplay(task.Version);
+                task.Assign(
+                    task.TaskType == WarehouseTaskType.Picking
+                        ? WorldHistoryWarehouseOpsSpec.ShippingPoolCode
+                        : WorldHistoryWarehouseOpsSpec.ReceivingPoolCode,
+                    assignedOperatorUserId: null,
+                    task.Version);
+                dbContext.WcsTasks.Add(wcsTask);
+                var claimReference = wcsTask.Id.Id.ToString("D");
+                task.ClaimWcsExecution(claimReference, task.Version);
 
                 switch (outcome)
                 {
                     case WorldHistoryWcsOutcome.Completed:
                         wcsTask.Complete(WorldHistoryWarehouseOpsSpec.CompletionPayload(task.TaskNo, task.PlannedQuantity));
+                        task.RecordWcsProgress(task.PlannedQuantity, claimReference);
                         break;
                     case WorldHistoryWcsOutcome.Failed:
                         var failure = WorldHistoryWarehouseOpsSpec.FailureFor(task.TaskNo);
@@ -756,6 +758,7 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
                         break;
                     case WorldHistoryWcsOutcome.Cancelled:
                         wcsTask.Cancel();
+                        task.Cancel();
                         break;
                     case WorldHistoryWcsOutcome.Dispatched:
                     default:
@@ -763,11 +766,14 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
                 }
 
                 wcsTask.ClearDomainEvents();
-                dbContext.WcsTasks.Add(wcsTask);
+                task.ClearDomainEvents();
                 Backdate(wcsTask, x => x.DispatchedAtUtc, dispatchedAtUtc);
+                Backdate(task, x => x.ExecutionClaimedAtUtc, (DateTime?)dispatchedAtUtc);
+                Backdate(task, x => x.StartedAtUtc, (DateTime?)dispatchedAtUtc);
                 if (outcome == WorldHistoryWcsOutcome.Completed)
                 {
                     Backdate(wcsTask, x => x.CompletedAtUtc, (DateTime?)settledAtUtc);
+                    Backdate(task, x => x.CompletedAtUtc, (DateTime?)settledAtUtc);
                 }
 
                 written++;
@@ -866,14 +872,6 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
         dbContext.Entry(entity).Property(property).CurrentValue = value;
     }
 
-    private sealed record WarehouseTaskProjection(
-        WarehouseTaskId Id,
-        string TaskNo,
-        string FromLocationCode,
-        string ToLocationCode,
-        decimal PlannedQuantity,
-        DateTime CreatedAtUtc,
-        DateTime? CompletedAtUtc);
 }
 
 /// <summary>一张历史来料退货申请的草稿。</summary>
@@ -1004,9 +1002,7 @@ public sealed class WorldHistoryWarehouseOpsValidator(ApplicationDbContext dbCon
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
             .ToArrayAsync(cancellationToken);
-        var warehouseTaskIds = warehouseTasks
-            .Select(task => task.Id)
-            .ToHashSet();
+        var warehouseTasksById = warehouseTasks.ToDictionary(task => task.Id);
         var wcsTasks = await dbContext.WcsTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
@@ -1014,9 +1010,43 @@ public sealed class WorldHistoryWarehouseOpsValidator(ApplicationDbContext dbCon
 
         foreach (var wcsTask in wcsTasks)
         {
-            if (!warehouseTaskIds.Contains(wcsTask.WarehouseTaskId))
+            if (!warehouseTasksById.TryGetValue(wcsTask.WarehouseTaskId, out var warehouseTask))
             {
                 failures.Add($"WCS 任务 {wcsTask.ExternalTaskId} 绑在一张不存在的仓储作业任务上。");
+            }
+            else
+            {
+                var expectedPool = warehouseTask.TaskType == WarehouseTaskType.Picking
+                    ? WorldHistoryWarehouseOpsSpec.ShippingPoolCode
+                    : WorldHistoryWarehouseOpsSpec.ReceivingPoolCode;
+                var expectedClaim = wcsTask.Id.Id.ToString("D");
+                if (!string.Equals(warehouseTask.AssignedPoolCode, expectedPool, StringComparison.Ordinal)
+                    || warehouseTask.ExecutionChannel != WarehouseTaskExecutionChannel.Wcs
+                    || !string.Equals(warehouseTask.ExecutionClaimedBy, expectedClaim, StringComparison.Ordinal))
+                {
+                    failures.Add(
+                        $"WCS 任务 {wcsTask.ExternalTaskId} 的父任务没有保持作业池与 WCS 执行归属。");
+                }
+
+                var expectedParentStatus = wcsTask.Status switch
+                {
+                    WcsTaskStatus.Completed => WarehouseTaskStatus.Completed,
+                    WcsTaskStatus.Cancelled => WarehouseTaskStatus.Cancelled,
+                    _ => WarehouseTaskStatus.InProgress,
+                };
+                if (warehouseTask.Status != expectedParentStatus)
+                {
+                    failures.Add(
+                        $"WCS 任务 {wcsTask.ExternalTaskId} 状态为 {wcsTask.Status}，" +
+                        $"父任务状态却为 {warehouseTask.Status}。");
+                }
+
+                if (wcsTask.Status == WcsTaskStatus.Completed
+                    && Math.Abs(warehouseTask.ExecutedQuantity - warehouseTask.PlannedQuantity)
+                    > QuantityTolerance)
+                {
+                    failures.Add($"WCS 任务 {wcsTask.ExternalTaskId} 已完成，但父任务执行量未闭合。");
+                }
             }
 
             if (!WorldHistoryWarehouseOpsSpec.Devices.Any(device =>
