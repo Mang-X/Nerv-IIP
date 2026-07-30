@@ -10,6 +10,7 @@ import { describeMesReadinessReason, useMesProductionPlans } from '@/composables
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { toIsoFromLocalInput, toLocalDateTimeInput } from '@/utils/datetime'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -188,7 +189,8 @@ const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
   convertForm.workCenterId = ''
-  convertForm.dueUtc = toLocalDateTimeInput(plan.plannedEndUtc ?? plan.plannedStartUtc)
+  const plannedDue = plan.plannedEndUtc ?? plan.plannedStartUtc
+  convertForm.dueUtc = toLocalDateTimeInput(plannedDue || new Date(Date.now() + 86_400_000))
   convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
   convertOpen.value = true
 }
@@ -255,16 +257,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed || undefined
-}
-function toIsoFromLocalInput(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString()
-}
-function toLocalDateTimeInput(value?: string | null) {
-  const date = value ? new Date(value) : new Date(Date.now() + 86_400_000)
-  if (Number.isNaN(date.getTime())) return ''
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '未指定'

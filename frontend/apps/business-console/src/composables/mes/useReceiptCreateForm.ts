@@ -6,6 +6,7 @@ import {
   useMesFinishedGoodsReceipts,
   useMesWorkOrderProducedLots,
 } from '@/composables/useBusinessMes'
+import { toIsoFromLocalInput, toLocalDateTimeInput } from '@/utils/datetime'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 /** 登记完工入库所需的工单上下文（由路由页编排后传入，表单本身只负责登记态）。 */
@@ -32,14 +33,6 @@ function toPositiveNumber(value: string) {
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed || undefined
-}
-function toLocalDateTimeInput(date: Date) {
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-function toIsoFromLocalInput(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString()
 }
 // 累计申请量超过工单完工数量：后端返回带 WorkOrderId 后缀的技术消息，收敛成 issue 指定的一线业务文案。
 // 命中时返回映射文案（作为「实际错误消息」传入 notifyError，绕过其 ≤60 字中文原文透传）；否则 undefined。

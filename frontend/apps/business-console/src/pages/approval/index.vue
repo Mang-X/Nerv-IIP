@@ -19,6 +19,7 @@ import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
+import { toIsoFromLocalInput } from '@/utils/datetime'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -668,11 +669,6 @@ async function submitTemplate() {
   } catch (error) {
     notifyError(error, '模板保存失败，请稍后重试。')
   }
-}
-
-function toIsoFromLocalInput(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString()
 }
 </script>
 
