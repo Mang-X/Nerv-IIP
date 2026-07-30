@@ -51,6 +51,12 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
     for (const w of workCenters.value) if (w.code) m.set(w.code, w.displayName ?? w.code)
     return m
   })
+  // 工作中心分类（工序族）：甘特分色以主数据为准，缺失时由调用方决定兜底。
+  const workCenterCategoryByCode = computed(() => {
+    const m = new Map<string, string>()
+    for (const w of workCenters.value) if (w.code && w.category) m.set(w.code, w.category)
+    return m
+  })
   const shiftByCode = computed(() => {
     const m = new Map<string, string>()
     for (const s of shiftSource?.resources.value ?? []) {
@@ -87,6 +93,11 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
     if (!code) return undefined
     return workCenterByCode.value.get(code) ?? code
   }
+  /** 工作中心主数据分类（工序族）；主数据没维护就返回 undefined，不编造分类。 */
+  function resolveWorkCenterCategory(code?: string | null): string | undefined {
+    if (!code) return undefined
+    return workCenterCategoryByCode.value.get(code)
+  }
   /** 班次展示串；GUID 一律不上屏（同 resolveSkuLabel 口径）。 */
   function resolveShiftLabel(value?: string | null): string {
     if (!value) return '未排班'
@@ -109,6 +120,7 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
     resolveSku,
     resolveSkuLabel,
     resolveWorkCenter,
+    resolveWorkCenterCategory,
     resolveWorker,
   }
 }

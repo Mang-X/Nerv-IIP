@@ -20,7 +20,14 @@ const itemRow = {
   updatedAtUtc: '2026-01-02T00:00:00Z',
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', itemCode: undefined as string | undefined, status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  itemCode: undefined as string | undefined,
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 
 vi.mock('@/composables/useProductEngineering', () => ({
   useEngineeringItems: () => ({
@@ -63,16 +70,18 @@ const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   NvCheckbox: {
-    props: ['checked'],
-    emits: ['update:checked'],
-    template: '<input type="checkbox" :checked="checked" @change="$emit(\'update:checked\', $event.target.checked)" />',
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
   },
 }
 

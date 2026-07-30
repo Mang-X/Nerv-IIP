@@ -69,7 +69,8 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.ProblemId == request.Problem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
-            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan);
+            // 命中既有方案时同样带出日历/不可用窗口:口径与落库的问题快照一致(即 normalizedProblem)。
+            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan, normalizedProblem);
             var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
             var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
             var currentProblem = MaterialReadinessSchedulingAdapter.Apply(

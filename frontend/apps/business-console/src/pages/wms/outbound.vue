@@ -545,7 +545,7 @@ function formatError(error: unknown) {
               <NvFieldLabel for="wms-pack-passed">复核通过</NvFieldLabel>
               <NvCheckbox
                 id="wms-pack-passed"
-                v-model:checked="form.passed"
+                v-model="form.passed"
                 :disabled="reviewIntentLocked"
               />
             </NvField>

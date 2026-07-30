@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -27,6 +28,12 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal(plans.Length, report.OrderWorkOrdersWritten);
         Assert.True(report.ReworkWorkOrdersWritten > 0);
         Assert.NotEmpty(report.Validation.Sample);
+
+        var rework = await dbContext.WorkOrders
+            .FirstAsync(workOrder => workOrder.WorkOrderIdValue.StartsWith("WO-2026-R", StringComparison.Ordinal));
+        Assert.Equal("mes", rework.SourcePlanReference?.SourceSystem);
+        Assert.Equal("rework-work-order", rework.SourcePlanReference?.SourceDocumentType);
+        Assert.Null(rework.SourcePlanReference?.SourceDemandReference);
 
         // 设定集 §7：约 3600 张工单 = 3200 订单工单 + 12.5% 内部补产。
         var expectedRework = (int)Math.Round(plans.Length * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
@@ -93,9 +100,55 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal(4, await dbContext.MaterialRequirements.CountAsync(x => x.WorkOrderId == settled.WorkOrderNo));
         Assert.True(await dbContext.MaterialIssueRequests.CountAsync(x => x.WorkOrderId == settled.WorkOrderNo) >= 4);
 
-        // 工单来源指回销售订单，跨服务只靠业务编码引用。
+        // 订单工单来源指回真实的 DemandPlanning 计划建议，跨服务只靠业务编码引用。
         Assert.NotNull(workOrder.SourcePlanReference);
-        Assert.Equal(settled.SalesOrderNo, workOrder.SourcePlanReference!.SourceDocumentId);
+        Assert.Equal("DemandPlanning", workOrder.SourcePlanReference!.SourceSystem);
+        Assert.Equal("PlanningSuggestion", workOrder.SourcePlanReference.SourceDocumentType);
+        Assert.Equal(WorldHistorySpec.PlanningSuggestionIdForSalesOrder(settled.SalesOrderNo).ToString(), workOrder.SourcePlanReference.SourceDocumentId);
+        Assert.Equal(settled.SalesOrderNo, workOrder.SourcePlanReference.SourceDemandReference);
+    }
+
+    [Fact]
+    public async Task MRP_backed_history_work_orders_trace_back_to_the_real_planning_suggestion()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        Assert.Equal(
+            "d1e230af-fe8c-a75b-aea2-02ed501caab6",
+            WorldHistorySpec.PlanningSuggestionIdForSalesOrder("SO-2026-00001").ToString());
+
+        var plan = WorldHistorySpec.BuildOrderPlans(AsOfDate, TestScale)
+            .First(candidate =>
+                candidate.HasWorkOrder &&
+                candidate.Stage != WorldHistoryOrderStage.Cancelled &&
+                candidate.OrderDate < new DateOnly(2026, 5, 25));
+        var suggestionId = WorldHistorySpec.PlanningSuggestionIdForSalesOrder(plan.SalesOrderNo).ToString();
+        var workOrder = await dbContext.WorkOrders
+            .SingleAsync(candidate => candidate.WorkOrderIdValue == plan.WorkOrderNo);
+
+        Assert.NotNull(workOrder.SourcePlanReference);
+        Assert.Equal("DemandPlanning", workOrder.SourcePlanReference!.SourceSystem);
+        Assert.Equal("PlanningSuggestion", workOrder.SourcePlanReference.SourceDocumentType);
+        Assert.Equal(suggestionId, workOrder.SourcePlanReference.SourceDocumentId);
+        Assert.Equal(plan.SalesOrderNo, workOrder.SourcePlanReference.SourceDemandReference);
+
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", plan.WorkOrderNo),
+            CancellationToken.None);
+
+        Assert.Contains(traceability.Nodes, node =>
+            node.NodeId == suggestionId && node.NodeType == "PlanningSuggestion");
+        Assert.Contains(traceability.Nodes, node =>
+            node.NodeId == plan.SalesOrderNo && node.NodeType == "DemandSource");
+        Assert.Contains(traceability.Edges, edge =>
+            edge.FromNodeId == plan.SalesOrderNo &&
+            edge.ToNodeId == suggestionId &&
+            edge.RelationType == "pegged-to-plan");
+        Assert.Contains(traceability.Edges, edge =>
+            edge.FromNodeId == suggestionId &&
+            edge.ToNodeId == plan.WorkOrderNo &&
+            edge.RelationType == "converted-to-work-order");
     }
 
     [Fact]

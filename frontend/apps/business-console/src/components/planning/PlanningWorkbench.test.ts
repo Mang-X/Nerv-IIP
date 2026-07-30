@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PlanningWorkbench from './PlanningWorkbench.vue'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/composables/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
@@ -219,6 +221,23 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           reasonCode: 'scheduled-receipt-early',
           netRequirementExplanation: null,
         },
+        {
+          // 已接受并承接成 MES 工单的生产建议：这一行才有可排的单（MAN-694 / #1262）。
+          suggestionId: 'suggestion-004',
+          runId: 'run-001',
+          suggestionType: 'planned-work-order',
+          skuCode: 'FG-SHOCK',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 4,
+          requiredDate: '2026-06-05',
+          status: 'Accepted',
+          reasonCode: 'net-requirement',
+          netRequirementExplanation: null,
+          downstreamService: 'BusinessMes',
+          downstreamDocumentType: 'WorkOrder',
+          downstreamDocumentId: 'WO-2026-0007',
+        },
       ]),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
@@ -305,6 +324,11 @@ vi.mock('@nerv-iip/ui', async () => {
 })
 
 describe('PlanningWorkbench', () => {
+  // 计划建议行的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
     const wrapper = mount(PlanningWorkbench)
 
@@ -356,5 +380,33 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
     // 拒绝对所有 Open 建议可用（含异常类），3 条 Open 行各一个。
     expect(wrapper.findAll('button').filter((button) => button.text() === '拒绝')).toHaveLength(3)
+  })
+
+  it('已承接成 MES 工单的建议行给出「对该单排产」入口（MAN-694 / #1262）', () => {
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.scheduling.plans.manage'] },
+    } as never)
+    const wrapper = mount(PlanningWorkbench)
+
+    const entries = wrapper.findAll('[data-testid="planning-suggestion-schedule-single"]')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.attributes('title')).toContain('WO-2026-0007')
+    expect(entries[0]!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('没有排产管理权限时入口禁用并说明原因，而不是直接消失', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    const entry = wrapper.get('[data-testid="planning-suggestion-schedule-single"]')
+    expect(entry.attributes('disabled')).toBeDefined()
+    expect(entry.attributes('title')).toContain('没有排产管理权限')
+  })
+
+  it('未承接工单的建议行不给排产入口，Open 行仍只是「接受 / 拒绝」', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    // 3 条 Open 行走接受/拒绝分支，不出现排产入口，也不出现「未承接工单」说明。
+    expect(wrapper.findAll('[data-testid="planning-suggestion-schedule-single"]')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('未承接工单，暂不能排产')
   })
 })

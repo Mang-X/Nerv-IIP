@@ -24,12 +24,19 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
+import {
+  createSchedulingHorizonInput,
+  describeSchedulingHorizon,
+  resolveSchedulingHorizon,
+} from '@/composables/schedulingHorizon'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
+import { notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -63,7 +70,7 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { EyeIcon, RefreshCwIcon, SendIcon, Undo2Icon } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
@@ -125,6 +132,15 @@ const targetedOrderReference = computed(() => {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
 })
 const routeLookupVisited = new Set<string>()
+// 单单排产（MAN-694 / #1262）落点：带 planId 直接定位到刚生成的方案，不必在列表里翻。
+const targetedPlanId = computed(() => {
+  const value = route.query.planId
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
+})
+// 排程窗口由用户指定（不再写死 7 天）；与单单排产弹窗共用同一份解析口径。
+const horizonInput = ref(createSchedulingHorizonInput())
+// 解析结果既进「生成首版」的禁用原因表，也是真正发给后端的窗口——只算一次，不会两处漂移。
+const resolvedWorkbenchHorizon = computed(() => resolveSchedulingHorizon(horizonInput.value))
 
 watch(workbench.schedulableCandidates, (candidates) => draft.setOrders(candidates), {
   immediate: true,
@@ -200,10 +216,21 @@ const targetedAssignmentFound = computed(() =>
 )
 
 watch(targetedOrderReference, () => routeLookupVisited.clear())
+// 已经点名了具体方案（单单排产刚生成的那份）就直接打开，不再走「逐个方案找订单」的兜底。
+watch(
+  targetedPlanId,
+  (planId) => {
+    if (!planId) return
+    detailSelection.planId = planId
+    detailOpen.value = true
+  },
+  { immediate: true },
+)
 watch(
   [targetedOrderReference, actionablePlans, planDetail, planDetailPending],
   ([target, availablePlans, detail, pending]) => {
     if (!target || availablePlans.length === 0 || pending) return
+    if (targetedPlanId.value) return
     if (!detailSelection.planId) {
       detailSelection.planId = availablePlans[0]?.planId ?? ''
       detailOpen.value = Boolean(detailSelection.planId)
@@ -282,29 +309,26 @@ async function publish(planId: string | undefined) {
     await releasePlan(planId)
     toast.success('排程方案已发布')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `发布失败：${error.message}`
-        : '发布失败，请稍后重试',
-    )
+    notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')
   }
 }
 
-// TODO(scheduling): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
+// TODO(MAN-674 / #1241): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
 // （勿用 POST /scheduling/plans/preview——其契约要求前端提交完整 SchedulingProblemContract，
 // 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
-  if (!canManage.value || draft.includedOrders.value.length === 0) return
-  const horizonStart = new Date()
-  horizonStart.setMinutes(0, 0, 0)
-  const horizonEnd = new Date(horizonStart)
-  horizonEnd.setDate(horizonEnd.getDate() + 7)
+  // 与按钮 disabled 同一处事实：命中任一禁用原因就不发请求。
+  // 「排程窗口非法」也是其中一条原因，所以这里不再单独 toast——按钮本身就是灰的。
+  if (generateBlockedReason.value) return
+  const resolvedHorizon = resolvedWorkbenchHorizon.value
+  // 类型收窄；能走到这里说明窗口原因没有命中。
+  if (!resolvedHorizon.ok) return
   try {
     const plan = await workbench.generatePlan({
       organizationId: schedulingFilters.organizationId,
       environmentId: schedulingFilters.environmentId,
-      horizonStartUtc: horizonStart.toISOString(),
-      horizonEndUtc: horizonEnd.toISOString(),
+      horizonStartUtc: resolvedHorizon.horizonStartUtc,
+      horizonEndUtc: resolvedHorizon.horizonEndUtc,
       orders: draft.includedOrders.value.map((order) => ({
         workOrderId: order.workOrderId,
         priority: order.priority,
@@ -315,18 +339,15 @@ async function generateWorkbenchPlan() {
     detailSelection.planId = plan.planId ?? ''
     revisionResult.value = undefined
     toast.success('首版排程方案已生成')
-  } catch {
-    toast.error('生成失败，请检查工单生产版本与排程基础数据')
+  } catch (error) {
+    notifyOperationFailure('生成失败', error, '生成失败，请检查工单生产版本与排程基础数据')
   }
 }
 
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
-  if (!canManage.value || !planId || draft.includedOrders.value.length === 0) return
-  if (draft.modifiedUnlockedTaskIds.value.length > 0) {
-    toast.error('有未锁定的人工修改；请先锁定全部修改再重预览')
-    return
-  }
+  // 未锁定的人工修改也是禁用原因之一（按钮灰 + title 说明 + 旁边就有「锁定全部修改」）。
+  if (repreviewBlockedReason.value || !planId || draft.includedOrders.value.length === 0) return
   try {
     const revision = await workbench.revisePlan(planId, {
       organizationId: schedulingFilters.organizationId,
@@ -340,8 +361,8 @@ async function repreviewLockedDraft() {
       detailSelection.planId = revision.candidate.planId ?? ''
     }
     toast.success('已生成锁定约束下的新版本')
-  } catch {
-    toast.error('重预览失败，请检查锁定资源与时间窗口')
+  } catch (error) {
+    notifyOperationFailure('重预览失败', error, '重预览失败，请检查锁定资源与时间窗口')
   }
 }
 
@@ -351,17 +372,13 @@ function onLockedDragAttempt() {
 
 async function publishCandidate() {
   const planId = draft.model.value?.meta.planId
-  if (!canPublish.value || !planId) return
+  if (publishCandidateBlockedReason.value || !planId) return
   detailSelection.planId = planId
   try {
     await releasePlan(planId)
     toast.success('新版排程已发布')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `发布失败：${error.message}`
-        : '发布失败；失效或终态方案不能发布',
-    )
+    notifyOperationFailure('发布失败', error, '发布失败；失效或终态方案不能发布')
   }
 }
 
@@ -389,11 +406,7 @@ async function confirmRevoke() {
     revokeConfirmOpen.value = false
     toast.success('排程方案已撤销发布，MES 侧将回流撤销对应工序排程')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `撤销失败：${error.message}`
-        : '撤销失败，请稍后重试',
-    )
+    notifyOperationFailure('撤销失败', error, '撤销失败，请稍后重试')
   }
 }
 
@@ -427,11 +440,7 @@ async function persistOperationOverride(taskId: string) {
     }
     toast.success('工序 override 已持久化，重排程自动继承')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `持久化失败：${error.message}`
-        : '持久化失败，请稍后重试',
-    )
+    notifyOperationFailure('持久化失败', error, '持久化失败，请稍后重试')
   }
 }
 
@@ -448,6 +457,70 @@ function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse
     return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
   return '发布该排程方案'
 }
+
+/**
+ * 草案工作区主操作的**禁用原因表**：按钮灰掉时必须能 hover 看到为什么灰（MAN-691 / #1259）。
+ *
+ * 写成「原因列表」而不是长布尔链，是为了 disabled 与 title 出自**同一处事实**
+ * （disabled = 有命中的原因），也方便后续往列表里并入新原因（如排程窗口非法），
+ * 不用再同时改两处判断。口径与历史方案表的 `releaseDisabledReason` 一致：
+ * 不可用时说明缺什么，可用时说明这一步会做什么。
+ */
+type ActionBlocker = { blocked: boolean; reason: string }
+
+function firstBlockingReason(blockers: ActionBlocker[]) {
+  return blockers.find((blocker) => blocker.blocked)?.reason
+}
+
+const generateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能生成排程方案' },
+    {
+      blocked: draft.includedOrders.value.length === 0,
+      reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
+    },
+    // 窗口非法（起止倒置 / 缺值 / 跨度超上限）按 #1278 的口径并进原因表：
+    // 按钮直接灰掉并说明改哪里，而不是点下去才弹一句 toast（MAN-694 / #1262）。
+    {
+      blocked: !resolvedWorkbenchHorizon.value.ok,
+      reason: resolvedWorkbenchHorizon.value.ok
+        ? ''
+        : `排程窗口不可用：${resolvedWorkbenchHorizon.value.message}`,
+    },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
+  ]),
+)
+const generateDisabledReason = computed(
+  () =>
+    generateBlockedReason.value ??
+    `按当前勾选的工单生成首版排程方案（${describeSchedulingHorizon(resolvedWorkbenchHorizon.value)}）`,
+)
+
+const repreviewBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能重预览' },
+    { blocked: !draft.model.value, reason: '还没有草案方案：先生成首版方案，再做锁定重预览' },
+    { blocked: workbench.revisionPending.value, reason: '正在按锁定约束重预览，请稍候' },
+    {
+      blocked: draft.modifiedUnlockedTaskIds.value.length > 0,
+      reason: '有未锁定的人工修改：先锁定全部修改再重预览，否则会被候选方案覆盖',
+    },
+  ]),
+)
+const repreviewDisabledReason = computed(
+  () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
+)
+
+const publishCandidateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
+    { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
+  ]),
+)
+const publishCandidateDisabledReason = computed(
+  () => publishCandidateBlockedReason.value ?? '把当前草案版本发布给车间执行',
+)
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
   const assigned = load.assignedMinutes ?? 0
@@ -535,64 +608,72 @@ function reasonLabel(reason?: string | null) {
       </NvTabsList>
 
       <NvTabsContent value="workbench" class="grid gap-4">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
-        >
-          <div>
-            <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
-            <p class="text-sm text-muted-foreground">
-              已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
-              {{ draft.lockedAssignments.value.length }} 道工序。
-            </p>
+        <div class="grid gap-4 rounded-lg border bg-card p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
+              <p class="text-sm text-muted-foreground">
+                已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
+                {{ draft.lockedAssignments.value.length }} 道工序。
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canUndo.value"
+                :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
+                @click="draft.undo"
+                >撤销</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canRedo.value"
+                :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
+                @click="draft.redo"
+                >重做</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(generateBlockedReason)"
+                :title="generateDisabledReason"
+                @click="generateWorkbenchPlan"
+              >
+                <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
+              </NvButton>
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(repreviewBlockedReason)"
+                :title="repreviewDisabledReason"
+                @click="repreviewLockedDraft"
+              >
+                <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+              </NvButton>
+              <NvButton
+                size="sm"
+                type="button"
+                :disabled="Boolean(publishCandidateBlockedReason)"
+                :title="publishCandidateDisabledReason"
+                @click="publishCandidate"
+              >
+                <SendIcon aria-hidden="true" />发布新版
+              </NvButton>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canUndo.value"
-              @click="draft.undo"
-              >撤销</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canRedo.value"
-              @click="draft.redo"
-              >重做</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="
-                !canManage ||
-                draft.includedOrders.value.length === 0 ||
-                workbench.generatePending.value
-              "
-              @click="generateWorkbenchPlan"
-            >
-              <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
-            </NvButton>
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="!canManage || !draft.model.value || workbench.revisionPending.value"
-              @click="repreviewLockedDraft"
-            >
-              <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
-            </NvButton>
-            <NvButton
-              size="sm"
-              type="button"
-              :disabled="!canPublish || !draft.model.value || releasePlanPending"
-              @click="publishCandidate"
-            >
-              <SendIcon aria-hidden="true" />发布新版
-            </NvButton>
-          </div>
+
+          <!-- 排程窗口由排产员指定（MAN-694 / #1262）；「生成首版」按这个窗口求解。 -->
+          <SchedulingHorizonFields
+            v-model="horizonInput"
+            id-prefix="workbench-horizon"
+            :disabled="!canManage"
+          />
         </div>
 
         <p
@@ -616,6 +697,11 @@ function reasonLabel(reason?: string | null) {
             variant="outline"
             type="button"
             :disabled="!canManage"
+            :title="
+              canManage
+                ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
+                : '当前账号没有排产管理权限，不能锁定修改'
+            "
             @click="draft.lockModifiedTasks"
             >锁定全部修改</NvButton
           >
@@ -648,6 +734,29 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
 
       <NvTabsContent value="table" class="grid gap-4">
+        <!-- 只读边界要自解释：历史方案是已生成结果的查阅面，改排程只能回草案工作区。
+             不写这句，用户会在表里反复点、以为"表格坏了"（MAN-691 / #1259）。 -->
+        <div
+          data-testid="plan-table-readonly-notice"
+          class="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+        >
+          <div class="grid gap-1">
+            <p class="text-sm font-medium text-foreground">历史方案：只读查阅</p>
+            <p class="max-w-2xl text-sm text-muted-foreground">
+              这里列的是已生成的排程方案，只能查看明细、发布或撤销发布；工序的资源与时间不能在这张表上改。
+              要调整排程，回草案工作区改完再重预览生成新版本。
+            </p>
+          </div>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            title="回到草案工作区调整工序资源与时间，再重预览生成新版本"
+            @click="activeView = 'workbench'"
+          >
+            去草案工作区修改
+          </NvButton>
+        </div>
         <NvDataTable
           :pagination="false"
           :columns="columns"
@@ -757,6 +866,7 @@ function reasonLabel(reason?: string | null) {
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
+          :work-orders="workbench.candidates.value"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"
@@ -797,7 +907,7 @@ function reasonLabel(reason?: string | null) {
         <NvSheetHeader>
           <NvSheetTitle>排程方案明细</NvSheetTitle>
           <NvSheetDescription>
-            {{ detailSelection.planId || '未选择方案' }}
+            {{ detailSelection.planId || '未选择方案' }} · 只读查阅，调整排程请回草案工作区
           </NvSheetDescription>
         </NvSheetHeader>
 

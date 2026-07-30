@@ -17,6 +17,7 @@ import {
   refetchWithBusinessContext,
   type BusinessContextFields,
 } from './businessContextBinding'
+import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 const SCHEDULING_QUERY_IDS = [
   'listBusinessConsoleSchedulingPlans',
@@ -85,17 +86,6 @@ function isBusinessQuery(ids: string[]) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
-
-// netcorepal 信封可能 200 + success:false；不吞掉这种"软失败"，否则界面显示假成功。
-function assertEnvelopeSuccess<T extends { success?: boolean; message?: string | null }>(
-  envelope: T,
-  fallbackMessage: string,
-): T {
-  if (!envelope.success) {
-    throw new Error(envelope.message || fallbackMessage)
-  }
-  return envelope
-}
 
 export function useBusinessScheduling() {
   const filters = defaultFilters()

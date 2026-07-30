@@ -1,7 +1,8 @@
 # 反馈与通知规范（Feedback & Notifications）
 
 > 业务前端**操作反馈的单一规则**。所有页面/表单必须遵守；新页面照此做，评审照此卡。
-> 配套实现：`apps/business-console/src/utils/notify.ts`（`notifySuccess` / `notifyError`）。
+> 配套实现：`apps/business-console/src/utils/notify.ts`
+> （`notifySuccess` / `notifyError` / `notifyOperationFailure`）。
 
 ## 规则
 
@@ -21,6 +22,18 @@
 1. **请求失败 → `notifyError(error)`**：在 submit/action 的 `try/catch` 里调用；它把
    `downstream-invalid-response`、`502`、`Failed to fetch` 等**开发术语映射成人话**
    （「服务暂时不可用，请稍后重试。」），绝不把原始技术串甩给用户。
+   1b. **服务端领域消息要透传，通用 HTTP 文案要映射**（分层透传，MAN-691 / #1259）：后端明确
+   拒绝这次操作时给的**领域理由**（中文、可行动，如「工单缺少生产版本，无法排程」「方案已被
+   后续方案取代」）是用户唯一能据以行动的信息，**必须原样上屏**，不许被兜底文案吞掉；而
+   `Internal Server Error` / `502` / 英文 problem title 这类**通用 HTTP 文案**仍按第 1 条
+   映射成人话，**原文只进 `console.error`**。写操作用
+   `notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')`：它先取服务端消息
+   （信封 `message` → RFC7807 `detail`/`title` → 字段校验 `errors`），中文领域消息拼成
+   「发布失败：<服务端消息>」，识别得出的技术串走 `friendlyErrorMessage` 映射，都取不到才用
+   调用方的领域兜底文案。
+   ⚠️ 别只判 `error instanceof Error`：generated client 在 `throwOnError` 下抛出的是**解析后的
+   响应体对象**，那样写会把所有 HTTP 失败（含 500）吞成猜测性文案。
+
 2. **请求成功 → `notifySuccess('xxx 已创建/已更新')`**。
 3. **弹窗内提交失败**：toast 报错 + **弹窗保持打开**让用户改正重试；**不在弹窗里堆常驻
    错误文字**（这是本规范要根除的「残留」反例）。
@@ -37,7 +50,10 @@
 - 「这条反馈说的是**请求结果**还是**字段问题**？」结果 → toast；字段 → 内联。混用即打回。
 - 「提交失败后，弹窗里有没有留下一段错误文字？」有 → 打回（应 toast + 弹窗保持打开）。
 - 「必填空着点提交，发请求了吗？弹 toast 了吗？」任一"是" → 打回。
-- 「toast 文案里有 `502` / operationId / 英文错误码吗？」有 → 打回（未走 `notifyError` 映射）。
+- 「toast 文案里有 `502` / operationId / 英文错误码吗？」有 → 打回（未走 `notifyError` /
+  `notifyOperationFailure` 映射）。
+- 「后端明确给了中文领域拒绝理由，界面显示的却是『操作失败，请稍后重试』吗？」是 → 打回
+  （领域消息被吞，用户不知道到底哪儿不满足）。
 
 ## 正例
 

@@ -25,6 +25,9 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
+import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -56,6 +59,7 @@ import {
   NvTabsTrigger,
 } from '@nerv-iip/ui'
 import {
+  CalendarCogIcon,
   CheckIcon,
   CornerDownRightIcon,
   ExternalLinkIcon,
@@ -284,18 +288,12 @@ const reviewKpiHint = computed(
 const demandSkuCodes = computed(
   () => new Set(demands.value.map((d) => d.skuCode).filter((c): c is string => !!c)),
 )
-// 覆盖口径＝仅供给型建议（生产/采购）。调整/取消类只是对既有收货的修正，
-// 不代表该物料有了补充方案，算进覆盖会虚高——与时段视图的覆盖图同一口径。
-const coveredSkuCodes = computed(() => {
-  const covered = new Set<string>()
-  const demandSet = demandSkuCodes.value
-  for (const s of suggestions.value) {
-    if (isAcceptableSuggestion(s.suggestionType) && s.skuCode && demandSet.has(s.skuCode)) {
-      covered.add(s.skuCode)
-    }
-  }
-  return covered
-})
+// 覆盖口径集中在 planningAggregation.countsTowardCoverage：供给型 + 状态仍算数（拒绝的不算）
+// + 锁定 timePhasedRun 那一次运行。KPI、需求池「覆盖」列、时段覆盖图共用同一判据，
+// 不会出现「刚拒绝的建议还占着覆盖」或「KPI 跨运行、图只算一次」这种自相矛盾。
+const coveredSkuCodes = computed(() =>
+  coveredDemandSkuCodes(suggestions.value, coverageRunId.value, demandSkuCodes.value),
+)
 /**
  * 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。
  * 需求池为空时分母为 0，覆盖率无从谈起——返回 null 走无样本态，
@@ -355,8 +353,10 @@ const selectedRun = computed(
 // 时段视图建议序列的运行口径：用户在「MRP 运行」里选中的那次，否则最近一次。
 // 后端 RunMrp 不关闭历史 Open 建议，跨运行求和会重复计数，必须锁单次运行。
 const timePhasedRun = computed(() => selectedRun.value ?? latestRun.value)
+// 覆盖统计锁定的运行 = 时段视图那一次；两图与 KPI 共用，口径不再分叉。
+const coverageRunId = computed(() => timePhasedRun.value?.runId ?? '')
 
-// 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
+// 需求覆盖状态：本次运行里出现未被拒绝的供给建议 → 已生成建议；否则未覆盖。
 function demandCoverage(skuCode?: string | null): { label: string; tone: StatusTone } {
   if (skuCode && coveredSkuCodes.value.has(skuCode)) return { label: '已生成建议', tone: 'success' }
   return { label: '未覆盖', tone: 'neutral' }
@@ -588,6 +588,21 @@ function downstreamLabel(service?: string | null, type?: string | null) {
   if (service === 'BusinessMes' && type === 'WorkOrder') return 'MES 工单'
   if (service === 'BusinessErp' && type === 'PurchaseRequisition') return 'ERP 采购申请'
   return '下游单据'
+}
+// —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
+// 排程的最小单位是 MES 工单。生产建议只有**被接受、承接成 MES 工单之后**才有可排的单，
+// 承接单据 id 就是工单 id（同一个值也被 downstreamRoute 拿去下钻 /mes/work-orders/{id}）。
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
+
+function suggestionWorkOrderId(row: BusinessConsolePlanningSuggestionItem) {
+  return row.downstreamService === 'BusinessMes' && row.downstreamDocumentType === 'WorkOrder'
+    ? (row.downstreamDocumentId ?? '')
+    : ''
+}
+function suggestionScheduleHint(row: BusinessConsolePlanningSuggestionItem) {
+  // 排产的最小单位是工单：没承接成工单就没有可排的单，说清楚而不是给个点不动的按钮。
+  return row.suggestionType === 'planned-work-order' ? '未承接工单，暂不能排产' : ''
 }
 function downstreamRoute(
   service: string | null | undefined,
@@ -988,7 +1003,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       :progress-tone="
         demandCoverageRate >= 100 ? 'success' : demandCoverageRate >= 80 ? 'warning' : 'danger'
       "
-      :foot-start="`${coveredSkuCodes.size} 个物料已生成建议`"
+      :foot-start="
+        coverageRunId ? `${coveredSkuCodes.size} 个物料已生成建议` : '尚未运行 MRP，暂无建议覆盖'
+      "
       :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
     />
     <NvMetricCard
@@ -1512,8 +1529,43 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               拒绝
             </NvButton>
           </div>
+          <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
+          <div v-else class="flex items-center justify-end gap-2">
+            <NvButton
+              v-if="suggestionWorkOrderId(row)"
+              size="sm"
+              type="button"
+              variant="outline"
+              data-testid="planning-suggestion-schedule-single"
+              :disabled="!canScheduleSingleOrder"
+              :title="
+                canScheduleSingleOrder
+                  ? `对工单 ${suggestionWorkOrderId(row)} 排产（新建只含该单的方案）`
+                  : '当前账号没有排产管理权限'
+              "
+              @click="scheduleTarget = row"
+            >
+              <CalendarCogIcon aria-hidden="true" />
+              对该单排产
+            </NvButton>
+            <span v-else-if="suggestionScheduleHint(row)" class="text-sm text-muted-foreground">
+              {{ suggestionScheduleHint(row) }}
+            </span>
+          </div>
         </template>
       </NvDataTable>
+
+      <SingleOrderSchedulingDialog
+        v-if="scheduleTarget"
+        :open="true"
+        :work-order-id="suggestionWorkOrderId(scheduleTarget)"
+        :context-label="`计划建议 · ${skuLabel(scheduleTarget.skuCode)}`"
+        @update:open="
+          (value: boolean) => {
+            if (!value) scheduleTarget = null
+          }
+        "
+      />
 
       <NvDialog
         :open="!!rejectTarget"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
-import { samplePlan } from '../../model/fixtures'
+import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
 import { DhtmlxEngine } from './DhtmlxEngine'
 
@@ -88,7 +88,9 @@ describe('DhtmlxEngine (fake factory)', () => {
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
     engine.mount(el(), { ...options(), view: 'resource' })
     engine.setData(toModel(samplePlan))
-    expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(0.25)
+    expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(
+      0.25,
+    )
   })
 
   it('aggregates underlying resource loads for a non-resource grouping dimension', () => {
@@ -104,7 +106,47 @@ describe('DhtmlxEngine (fake factory)', () => {
     engine.mount(el(), { ...options(), view: 'resource', groupBy: 'device' })
     engine.setData(model)
 
-    expect(fake.state.parsed.data.find((task) => task.id === 'lane:DEVICE-A')?.kpi?.utilization).toBe(0.25)
+    expect(
+      fake.state.parsed.data.find((task) => task.id === 'lane:DEVICE-A')?.kpi?.utilization,
+    ).toBe(0.25)
+  })
+
+  // 泳道播种:资源用于让空泳道常驻(拖走最后一个工序时该行不消失),但只在资源本身
+  // 属于当前分组维度时才播种。工序维度 id(WC-*)与资源 id(DEV-*)分属两个空间时,
+  // 全量播种会生出一批永远为空的泳道垫在最上方,把真正有工序的泳道挤出首屏。
+  it('seeds work-center lanes only from resources that belong to that dimension', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    // 资源空间里混入一台设备:它不是任何工序携带的 workCenter,不该长出泳道。
+    model.resources = [...model.resources, { id: 'DEVICE-A', text: '设备 A' }]
+
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(model)
+
+    const laneIds = fake.state.parsed.data
+      .map((task) => task.id)
+      .filter((id) => id.startsWith('lane:'))
+    expect(laneIds).toContain('lane:WC-001')
+    expect(laneIds).not.toContain('lane:DEVICE-A')
+  })
+
+  it('keeps every resource lane when no task carries the grouping dimension', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    // 没有任何工序携带 workCenter 维度 → 无从判断资源是否属于该维度,
+    // 此时必须保留全部资源泳道,否则整块时间轴会一行不剩。
+    for (const task of model.tasks) task.dimensions = undefined
+    model.resources = [...model.resources, { id: 'DEVICE-A', text: '设备 A' }]
+
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(model)
+
+    const laneIds = fake.state.parsed.data
+      .map((task) => task.id)
+      .filter((id) => id.startsWith('lane:'))
+    expect(laneIds).toContain('lane:DEVICE-A')
   })
 
   it('selectTask command selects in gantt and emits taskSelected', () => {
@@ -155,6 +197,76 @@ describe('DhtmlxEngine (fake factory)', () => {
     expect(payload?.taskId).toBe('a1')
     expect(payload?.startUtc).toBe('2026-06-10T09:00:00.000Z')
     expect(payload?.kind).toBe('move')
+  })
+})
+
+// 时间线底纹是「日历事实 → 图面」的最后一环:这里直接调 timeline_cell_class 验证它到底给了哪些 class。
+describe('DhtmlxEngine 时间线底纹(工作日历 / 班次 / 资源时间块)', () => {
+  function cellClass(
+    view: 'order' | 'resource',
+    rowId: string,
+    date: string,
+    plan = samplePlanWithCalendar,
+  ) {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), { ...options(), view })
+    engine.setData(toModel(plan))
+    const template = fake.state.templates.timeline_cell_class as (
+      task: { id: string },
+      date: Date,
+    ) => string
+    return template({ id: rowId }, new Date(date)).split(' ').filter(Boolean)
+  }
+
+  it('有日历时按日历判定工作/非工作,而不是猜周末夜班', () => {
+    // 6/10 08:00 在中班窗口内 → 工作时间,无底纹。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T08:00:00.000Z')).not.toContain(
+      'nerv-offwork',
+    )
+    // 6/10 16:00 之后不在任何班次窗口 → 非工作。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T18:00:00.000Z')).toContain(
+      'nerv-offwork',
+    )
+    // 6/11 中班没排(只有早班)→ 非工作。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-11T12:00:00.000Z')).toContain(
+      'nerv-offwork',
+    )
+  })
+
+  it('班次起点那一格带边界线', () => {
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T08:00:00.000Z')).toContain(
+      'nerv-shift-start',
+    )
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T09:00:00.000Z')).not.toContain(
+      'nerv-shift-start',
+    )
+  })
+
+  it('资源时间块给对应泳道的单元格上按类型着色的斜纹', () => {
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T10:00:00.000Z')).toEqual(
+      expect.arrayContaining(['nerv-cell-block', 'nerv-cell-block-changeover']),
+    )
+    expect(cellClass('resource', 'lane:WC-002', '2026-06-10T14:00:00.000Z')).toEqual(
+      expect.arrayContaining(['nerv-cell-block', 'nerv-cell-block-maintenance']),
+    )
+    // 窗口之外不上斜纹。
+    expect(cellClass('resource', 'lane:WC-002', '2026-06-10T09:00:00.000Z')).not.toContain(
+      'nerv-cell-block',
+    )
+  })
+
+  it('工单甘特按工序自身的资源找块:那道工序所在设备停机,它那一行也有底纹', () => {
+    expect(cellClass('order', 'a1', '2026-06-10T10:00:00.000Z')).toContain(
+      'nerv-cell-block-changeover',
+    )
+    expect(cellClass('order', 'a2', '2026-06-10T10:00:00.000Z')).not.toContain('nerv-cell-block')
+  })
+
+  it('后端没带日历时退回通用作息假设(周末 + 夜间),不空着也不假装有日历', () => {
+    const classes = cellClass('resource', 'lane:WC-001', '2026-06-10T22:00:00.000Z', samplePlan)
+    expect(classes).toContain('nerv-offwork')
+    expect(classes).not.toContain('nerv-shift-start')
   })
 })
 

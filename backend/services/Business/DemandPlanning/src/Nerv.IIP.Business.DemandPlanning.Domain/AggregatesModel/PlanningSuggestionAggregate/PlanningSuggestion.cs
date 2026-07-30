@@ -101,9 +101,27 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         decimal quantity,
         DateOnly requiredDate,
         DateOnly releaseDate,
-        string reasonCode)
+        string reasonCode,
+        PlanningSuggestionId? suggestionId = null)
     {
-        return new PlanningSuggestion(organizationId, environmentId, mrpRunId, suggestionType, skuCode, uomCode, siteCode, quantity, requiredDate, releaseDate, reasonCode);
+        var suggestion = new PlanningSuggestion(
+            organizationId,
+            environmentId,
+            mrpRunId,
+            suggestionType,
+            skuCode,
+            uomCode,
+            siteCode,
+            quantity,
+            requiredDate,
+            releaseDate,
+            reasonCode);
+        if (suggestionId is not null)
+        {
+            suggestion.Id = suggestionId;
+        }
+
+        return suggestion;
     }
 
     public void SetNetRequirementExplanation(

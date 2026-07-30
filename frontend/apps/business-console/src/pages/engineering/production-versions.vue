@@ -502,7 +502,7 @@ function formatError(error: unknown) {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>同一物料生效期内的默认版本</span>
-                    <NvCheckbox id="pv-default" v-model:checked="form.isDefault" />
+                    <NvCheckbox id="pv-default" v-model="form.isDefault" />
                   </label>
                 </NvField>
                 <NvField :data-invalid="showErrors && !mbomValid">

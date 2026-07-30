@@ -25,18 +25,26 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
 
         var accepted = facts.MrpRuns.SelectMany(x => x.Suggestions).Count(x => x.IsAccepted);
         var open = facts.MrpRuns.SelectMany(x => x.Suggestions).Count(x => !x.IsAccepted);
+        var historicalAccepted = facts.HistoricalMrpRuns.SelectMany(x => x.Suggestions).Count(x => x.IsAccepted);
         output.WriteLine($"planning-world-history-demands={facts.Demands.Count}");
         output.WriteLine($"planning-world-history-forecasts={facts.Forecasts.Count}");
         output.WriteLine($"planning-world-history-mps-buckets={facts.MpsBuckets.Count}");
         output.WriteLine($"planning-world-history-mrp-runs={facts.MrpRuns.Count}");
+        output.WriteLine($"planning-world-history-historical-mrp-runs={facts.HistoricalMrpRuns.Count}");
         output.WriteLine($"planning-world-history-suggestions-accepted={accepted}");
         output.WriteLine($"planning-world-history-suggestions-open={open}");
+        output.WriteLine($"planning-world-history-historical-suggestions-accepted={historicalAccepted}");
 
         // 设定集 §7：周均约 105 单 × 10 周窗口。
         Assert.InRange(facts.Demands.Count, 700, 1500);
         Assert.Equal(WorldHistoryPlanningSpec.DemandWindowWeeks, facts.MrpRuns.Count);
         Assert.InRange(open, 1, WorldHistoryPlanningSpec.ForecastSkus.Count);
         Assert.Equal(facts.Demands.Count(x => !x.IsCancelled), accepted);
+        Assert.Equal(
+            WorldHistorySpec.BuildOrderPlans(AsOfDate, 1.0d)
+                .Count(plan => plan.OrderDate < facts.WindowStart && plan.Stage != WorldHistoryOrderStage.Cancelled),
+            historicalAccepted);
+        Assert.NotEmpty(facts.HistoricalMrpRuns);
         Assert.NotEmpty(facts.MpsBuckets);
         Assert.NotEmpty(facts.Forecasts);
     }
@@ -51,10 +59,23 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         Assert.Equal(first.Forecasts, second.Forecasts);
         Assert.Equal(first.MpsBuckets, second.MpsBuckets);
         Assert.Equal(first.MrpRuns.Count, second.MrpRuns.Count);
+        Assert.Equal(first.HistoricalMrpRuns.Count, second.HistoricalMrpRuns.Count);
         for (var index = 0; index < first.MrpRuns.Count; index++)
         {
             var left = first.MrpRuns[index];
             var right = second.MrpRuns[index];
+            Assert.Equal(left.HorizonStart, right.HorizonStart);
+            Assert.Equal(left.HorizonEnd, right.HorizonEnd);
+            Assert.Equal(left.CreatedAtUtc, right.CreatedAtUtc);
+            Assert.Equal(left.CompletedAtUtc, right.CompletedAtUtc);
+            Assert.Equal(left.InputSources, right.InputSources);
+            Assert.Equal(left.Suggestions, right.Suggestions);
+        }
+
+        for (var index = 0; index < first.HistoricalMrpRuns.Count; index++)
+        {
+            var left = first.HistoricalMrpRuns[index];
+            var right = second.HistoricalMrpRuns[index];
             Assert.Equal(left.HorizonStart, right.HorizonStart);
             Assert.Equal(left.HorizonEnd, right.HorizonEnd);
             Assert.Equal(left.CreatedAtUtc, right.CreatedAtUtc);
@@ -69,13 +90,71 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
     {
         var facts = WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, 0.2d);
 
-        foreach (var fact in facts.MrpRuns.SelectMany(x => x.Suggestions).Where(x => x.IsAccepted))
+        foreach (var fact in facts.MrpRuns
+                     .Concat(facts.HistoricalMrpRuns)
+                     .SelectMany(x => x.Suggestions)
+                     .Where(x => x.IsAccepted))
         {
             // SO-2026-x 的需求 → MES 侧同一公式的 WO-2026-x。
             var index = int.Parse(fact.DemandSourceReference["SO-2026-".Length..], System.Globalization.CultureInfo.InvariantCulture);
             Assert.Equal(WorldHistorySpec.WorkOrderNo(index), fact.DownstreamDocumentId);
             Assert.Equal(WorldHistorySpec.SalesOrderNo(index), fact.DemandSourceReference);
         }
+    }
+
+    [Fact]
+    public async Task Seeded_sales_suggestions_use_stable_ids_and_keep_their_demand_pegging()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var fact = WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, SmallScale)
+            .MrpRuns
+            .SelectMany(run => run.Suggestions)
+            .First(suggestion => suggestion.IsAccepted);
+        var suggestion = await db.PlanningSuggestions
+            .Include(candidate => candidate.PeggingLinks)
+            .SingleAsync(candidate => candidate.AcceptedDownstreamDocumentId == fact.DownstreamDocumentId);
+
+        Assert.Equal(
+            "d1e230af-fe8c-a75b-aea2-02ed501caab6",
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForSalesOrder("SO-2026-00001").ToString());
+        Assert.Equal(
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForSalesOrder(fact.DemandSourceReference).ToString(),
+            suggestion.Id.ToString());
+        Assert.Contains(
+            suggestion.PeggingLinks,
+            link => link.PeggingType == "demand" &&
+                link.DemandSourceReference == fact.DemandSourceReference &&
+                link.SourceType == "sales");
+    }
+
+    [Fact]
+    public async Task Seed_backfills_historical_order_suggestions_without_expanding_the_active_demand_window()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var windowStart = WorldHistoryPlanningSpec.ResolveWindowStart(AsOfDate);
+        var historicalPlan = WorldHistorySpec.BuildOrderPlans(AsOfDate, SmallScale)
+            .First(plan => plan.HasWorkOrder &&
+                plan.Stage != WorldHistoryOrderStage.Cancelled &&
+                plan.OrderDate < windowStart);
+        var suggestion = await db.PlanningSuggestions
+            .Include(candidate => candidate.PeggingLinks)
+            .SingleOrDefaultAsync(candidate => candidate.AcceptedDownstreamDocumentId == historicalPlan.WorkOrderNo);
+
+        Assert.NotNull(suggestion);
+        Assert.Equal(
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForSalesOrder(historicalPlan.SalesOrderNo).ToString(),
+            suggestion!.Id.ToString());
+        Assert.Contains(
+            suggestion.PeggingLinks,
+            link => link.DemandSourceReference == historicalPlan.SalesOrderNo && link.SourceType == "sales");
+        Assert.Equal(
+            WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, SmallScale).Demands.Count,
+            await db.DemandSources.CountAsync());
+        Assert.True(await db.MrpRuns.CountAsync() > WorldHistoryPlanningSpec.DemandWindowWeeks);
     }
 
     [Fact]
@@ -110,14 +189,15 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
 
         var facts = WorldHistoryPlanningSpec.BuildPlanningFacts(asOfDate, SmallScale);
+        var allMrpRuns = facts.MrpRuns.Concat(facts.HistoricalMrpRuns).ToArray();
         output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-demands={first.DemandSourcesWritten}");
         output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-suggestions={first.PlanningSuggestionsWritten}");
 
         Assert.Equal(facts.Demands.Count, first.DemandSourcesWritten);
         Assert.Equal(facts.Forecasts.Count, first.ForecastInputsWritten);
         Assert.Equal(facts.MpsBuckets.Count, first.MpsBucketsWritten);
-        Assert.Equal(facts.MrpRuns.Count, first.MrpRunsWritten);
-        Assert.Equal(facts.MrpRuns.Sum(x => x.Suggestions.Count), first.PlanningSuggestionsWritten);
+        Assert.Equal(allMrpRuns.Length, first.MrpRunsWritten);
+        Assert.Equal(allMrpRuns.Sum(x => x.Suggestions.Count), first.PlanningSuggestionsWritten);
 
         Assert.Equal(0, second.DemandSourcesWritten);
         Assert.Equal(0, second.ForecastInputsWritten);
@@ -125,7 +205,7 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         Assert.Equal(0, second.MrpRunsWritten);
         Assert.Equal(0, second.PlanningSuggestionsWritten);
         Assert.Equal(facts.Demands.Count, await db.DemandSources.CountAsync());
-        Assert.Equal(facts.MrpRuns.Sum(x => x.Suggestions.Count), await db.PlanningSuggestions.CountAsync());
+        Assert.Equal(allMrpRuns.Sum(x => x.Suggestions.Count), await db.PlanningSuggestions.CountAsync());
     }
 
     [Fact]
