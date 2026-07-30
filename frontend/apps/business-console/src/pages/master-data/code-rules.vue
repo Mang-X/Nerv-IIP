@@ -960,7 +960,7 @@ async function submitForm() {
                   :for="`cr-required-${index}`"
                   class="flex cursor-pointer select-none items-center gap-2 text-sm"
                 >
-                  <NvCheckbox :id="`cr-required-${index}`" v-model:checked="segment.required" />
+                  <NvCheckbox :id="`cr-required-${index}`" v-model="segment.required" />
                   <span>必填</span>
                 </label>
                 <p

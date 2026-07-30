@@ -487,7 +487,7 @@ function formatCreditLimit(
                     :key="o.value"
                     class="flex items-center gap-2 text-sm"
                   >
-                    <NvCheckbox v-model:checked="extraRoleState[o.value]" :aria-label="o.label" />
+                    <NvCheckbox v-model="extraRoleState[o.value]" :aria-label="o.label" />
                     {{ o.label }}
                   </label>
                 </div>
