@@ -60,6 +60,7 @@ const props = withDefaults(
     pending: boolean
     refreshing: boolean
     loadingMore: boolean
+    currentPrincipalId?: string
     status?: string
     scopeKey?: string
     keyword?: string
@@ -69,6 +70,7 @@ const props = withDefaults(
     actionPending?: boolean
   }>(),
   {
+    currentPrincipalId: undefined,
     status: undefined,
     scopeKey: undefined,
     keyword: undefined,
@@ -168,6 +170,12 @@ function selectedReasonLabel() {
 
 function blockReasonLabel(reason: string) {
   return reason === 'TASK_TERMINAL' ? '任务已结束，不可继续操作' : '当前任务不可操作'
+}
+
+function assignmentLabel(task: WarehouseTaskExecutionItem) {
+  const assignee = task.assignedOperatorUserId?.trim()
+  if (!assignee) return undefined
+  return assignee === props.currentPrincipalId?.trim() ? '已派给我' : '已派给他人'
 }
 
 function selectTask(task: WarehouseTaskExecutionItem) {
@@ -291,8 +299,8 @@ function emitQuantityAction(action: 'progress' | 'complete') {
               <NvMobileTag size="sm">
                 {{ warehouseTaskStatusLabel(task.status) }}
               </NvMobileTag>
-              <NvMobileTag v-if="task.assignedOperatorUserId" size="sm" variant="brand">
-                已派给我
+              <NvMobileTag v-if="assignmentLabel(task)" size="sm" variant="brand">
+                {{ assignmentLabel(task) }}
               </NvMobileTag>
               <NvMobileTag
                 v-for="reason in task.blockReasons ?? []"

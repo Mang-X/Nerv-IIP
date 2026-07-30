@@ -76,6 +76,7 @@ function mountView(
       loadingMore: false,
       status: 'Open',
       scopeKey: 'self:emp049',
+      currentPrincipalId: 'emp049',
       scopeOptions: [
         { label: '我的任务', value: 'self:emp049' },
         { label: '仓储一组', value: 'team:TEAM-WMS-01' },
@@ -107,6 +108,19 @@ describe('WarehouseTaskExecutionView', () => {
     expect(text).toContain('已完成')
     expect(text).not.toContain('task-open')
     expect(text).not.toContain('InProgress')
+  })
+
+  it('站点或作业池中的他人派工不得误标为我的任务', () => {
+    const wrapper = mountView([
+      {
+        ...openTask,
+        assignedOperatorUserId: 'emp012',
+      },
+    ])
+    const text = wrapper.text()
+
+    expect(text).toContain('已派给他人')
+    expect(text).not.toContain('已派给我')
   })
 
   it('下拉刷新与滑到底部加载更多均通过事件交给页面编排', async () => {

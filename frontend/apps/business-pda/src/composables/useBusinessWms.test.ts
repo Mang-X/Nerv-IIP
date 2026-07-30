@@ -970,7 +970,7 @@ describe('PDA WMS composables', () => {
     expect(startBusinessConsoleWmsPickingTask).not.toHaveBeenCalled()
   })
 
-  it('replays an unconfirmed task action with the frozen key and original version', async () => {
+  it('replays an unconfirmed task action with the frozen key, version, and trusted scope', async () => {
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
       success: true,
       data: {
@@ -994,6 +994,23 @@ describe('PDA WMS composables', () => {
     const intent = { action: 'start' as const, task: result.tasks.value[0]! }
 
     await expect(result.executeTask(intent)).rejects.toBe(unconfirmed)
+    const frozenPayload = {
+      expectedVersion: 2,
+      scopeKind: 'self',
+      scopeId: 'emp049',
+    }
+    const selfIntentScope = {
+      principalId: 'emp049',
+      ...SCOPE,
+      operationType: 'wms.picking-task.start',
+      payloadFingerprint: `pick-1:${JSON.stringify(frozenPayload)}`,
+    }
+    expect(peekPendingBusinessIntent(selfIntentScope)).toMatchObject({
+      idempotencyKey: 'TASK-KEY',
+      payloadSnapshot: frozenPayload,
+    })
+
+    result.scopeKey.value = 'work-pool:WMS-SITE-001'
     coladaState.listPicking.mockResolvedValue({
       data: {
         success: true,
@@ -1019,6 +1036,31 @@ describe('PDA WMS composables', () => {
     expect(vi.mocked(startBusinessConsoleWmsPickingTask).mock.calls[0]?.[0].body).toEqual(
       vi.mocked(startBusinessConsoleWmsPickingTask).mock.calls[1]?.[0].body,
     )
+    expect(coladaState.listPicking).toHaveBeenCalledTimes(2)
+    expect(coladaState.listPicking.mock.calls.map(([options]) => options.query)).toEqual([
+      {
+        ...SCOPE,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        keyword: 'PICK-001',
+        skip: 0,
+        take: 20,
+      },
+      {
+        ...SCOPE,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        keyword: 'PICK-001',
+        skip: 0,
+        take: 20,
+      },
+    ])
+    expect(
+      vi.mocked(startBusinessConsoleWmsPickingTask).mock.calls.map(([options]) => options.query),
+    ).toEqual([
+      { ...SCOPE, scopeKind: 'self', scopeId: 'emp049' },
+      { ...SCOPE, scopeKind: 'self', scopeId: 'emp049' },
+    ])
   })
 
   it('exposes success:false and malformed raw responses as failures for every WMS list', async () => {

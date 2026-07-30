@@ -48,6 +48,7 @@ import {
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  type PendingBusinessIntentScope,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
@@ -695,6 +696,7 @@ function useWmsWarehouseTasks(
   const loadingMore = shallowRef(false)
   const actionPending = shallowRef(false)
   const actionError = shallowRef<unknown>()
+  const pendingTaskIntentScopes = new Map<string, PendingBusinessIntentScope>()
 
   const tasksQuery = useQuery(() => ({
     ...queryOptionsFactory({
@@ -776,7 +778,7 @@ function useWmsWarehouseTasks(
       throw taskLifecycleError(intent.task)
     }
 
-    const payloadSnapshot =
+    const actionPayload =
       intent.action === 'start'
         ? { expectedVersion: expectedVersion! }
         : intent.action === 'progress'
@@ -796,22 +798,52 @@ function useWmsWarehouseTasks(
     if (
       ((intent.action === 'progress' || intent.action === 'complete') &&
         !Number.isFinite(intent.executedQuantity)) ||
-      (intent.action === 'exception' && (!payloadSnapshot.exceptionCode || !payloadSnapshot.reason))
+      (intent.action === 'exception' && (!actionPayload.exceptionCode || !actionPayload.reason))
     ) {
       throw new Error('作业动作参数不完整，请重新输入')
     }
 
-    const intentScope = {
+    const liveCommandScope = scope.scopeQuery()
+    const payloadSnapshot = {
+      ...actionPayload,
+      scopeKind: liveCommandScope.scopeKind,
+      scopeId: liveCommandScope.scopeId,
+    }
+    const pendingLookupKey = [
+      scope.principalId.value,
+      liveCommandScope.organizationId,
+      liveCommandScope.environmentId,
+      warehouseTaskId,
+      intent.action,
+      JSON.stringify(actionPayload),
+    ].join(':')
+    let intentScope = pendingTaskIntentScopes.get(pendingLookupKey)
+    if (intentScope && !peekPendingBusinessIntent(intentScope)) {
+      pendingTaskIntentScopes.delete(pendingLookupKey)
+      intentScope = undefined
+    }
+    intentScope ??= {
       principalId: scope.principalId.value,
-      organizationId: scope.organizationId.value,
-      environmentId: scope.environmentId.value,
+      organizationId: liveCommandScope.organizationId,
+      environmentId: liveCommandScope.environmentId,
       operationType: `wms.${taskType}-task.${intent.action}`,
       payloadFingerprint: `${warehouseTaskId}:${JSON.stringify(payloadSnapshot)}`,
     }
     const restoredPending = peekPendingBusinessIntent(intentScope)
     const pending = acquirePendingBusinessIntent(intentScope, makeIdempotencyKey, payloadSnapshot)
+    pendingTaskIntentScopes.set(pendingLookupKey, intentScope)
     const isReplay =
       restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
+    if (!requireFrozenScope(pending.payloadSnapshot)) {
+      throw taskLifecycleError(intent.task)
+    }
+    const frozenSnapshot = pending.payloadSnapshot as typeof payloadSnapshot
+    const frozenCommandScope = {
+      organizationId: intentScope.organizationId,
+      environmentId: intentScope.environmentId,
+      scopeKind: frozenSnapshot.scopeKind,
+      scopeId: frozenSnapshot.scopeId,
+    }
 
     actionError.value = undefined
     actionPending.value = true
@@ -823,7 +855,7 @@ function useWmsWarehouseTasks(
           : listBusinessConsoleWmsPutawayTasks
       const { data } = await listOperation({
         query: {
-          ...scope.scopeQuery(),
+          ...frozenCommandScope,
           keyword: intent.task.taskNo?.trim() || warehouseTaskId,
           skip: 0,
           take: TASK_PAGE_SIZE,
@@ -837,14 +869,14 @@ function useWmsWarehouseTasks(
       if (
         !isReplay &&
         (!authoritative ||
-          authoritative.version !== expectedVersion ||
+          authoritative.version !== frozenSnapshot.expectedVersion ||
           !authoritative.allowedActions?.includes(intent.action))
       ) {
         clearPendingBusinessIntent(intentScope)
         throw taskLifecycleError(authoritative)
       }
 
-      const frozenPayload = (pending.payloadSnapshot ?? payloadSnapshot) as typeof payloadSnapshot
+      const { scopeKind: _scopeKind, scopeId: _scopeId, ...frozenPayload } = frozenSnapshot
       const body = {
         ...frozenPayload,
         idempotencyKey: pending.idempotencyKey,
@@ -859,7 +891,7 @@ function useWmsWarehouseTasks(
           taskType,
           intent.action,
           warehouseTaskId,
-          scope.scopeQuery(),
+          frozenCommandScope,
           body,
         ),
       )
@@ -872,6 +904,9 @@ function useWmsWarehouseTasks(
       actionError.value = error
       throw error
     } finally {
+      if (!peekPendingBusinessIntent(intentScope)) {
+        pendingTaskIntentScopes.delete(pendingLookupKey)
+      }
       actionPending.value = false
     }
   }
@@ -879,6 +914,7 @@ function useWmsWarehouseTasks(
   return {
     organizationId: scope.organizationId,
     environmentId: scope.environmentId,
+    principalId: scope.principalId,
     scopeKey: scope.selectedScopeKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,

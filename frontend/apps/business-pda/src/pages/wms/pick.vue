@@ -14,6 +14,7 @@ definePage({
 
 const {
   filters,
+  principalId,
   scopeKey,
   scopeOptions,
   tasks,
@@ -61,6 +62,7 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :pending="pending"
         :refreshing="refreshing"
         :loading-more="loadingMore"
+        :current-principal-id="principalId"
         :scope-options="scopeOptions"
         :location-code="filters.locationCode"
         :error="error"
