@@ -2,8 +2,9 @@
 #   Category: check
 #   SideEffects:
 #     - Parses the ERP sales-order to DemandPlanning cross-process verification script
+#     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
-#     - None
+#     - artifacts/script-logs/man703-fixture-governance/**
 #   Cleanup:
 #     - None
 #   Requires:
@@ -13,12 +14,15 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
+$governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
 $ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
+$fixtureContent = Get-Content -LiteralPath $fixtureScript -Raw
 $workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 $tokens = $null
 $parseErrors = $null
@@ -48,6 +52,7 @@ function Get-FunctionContractText {
 }
 
 Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before source contracts are evaluated.'
+Assert-Contract ($fixtureContent.Contains('scripts/lib/ScriptAutomation.ps1')) 'MAN-703 HTTP fixture must dot-source the governed ScriptAutomation helper from its own path.'
 Assert-Contract ($content.Contains('# Script-Governance:')) 'Verify script must declare script governance metadata.'
 Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1')) 'Verify script must use ScriptAutomation helpers.'
 Assert-Contract ($content.Contains('Start-ManagedBackgroundProcess')) 'Verify script must launch managed service processes.'
@@ -151,6 +156,11 @@ Assert-Contract ($workflowContent.Contains('if: always()')) 'CI must upload MAN-
 Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4')) 'CI must retain MAN-517 diagnostics as an artifact.'
 
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+Invoke-PwshScript `
+    -ScriptPath $governanceScript `
+    -Arguments @('-Path', $fixtureScript) `
+    -WorkingDirectory $repoRoot `
+    -Name 'man703-fixture-governance' | Out-Null
 $unsafeDiagnostic = 'pwd=pwd-value token=token-value secret=secret-value client_secret=client-value Authorization: Bearer bearer-value Password=password-value'
 $safeDiagnostic = Protect-ScriptAutomationText $unsafeDiagnostic
 foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'client-value', 'bearer-value', 'password-value')) {

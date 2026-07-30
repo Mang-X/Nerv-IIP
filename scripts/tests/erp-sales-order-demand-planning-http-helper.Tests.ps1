@@ -132,7 +132,7 @@ try {
             $counterFile,
             '-ConnectStallPort',
             "$connectStallPort") `
-        -WorkingDirectory $repoRoot `
+        -WorkingDirectory $testRoot `
         -Name 'man703-http-fixture' `
         -LogDirectory (Join-Path $testRoot 'fixture')
 

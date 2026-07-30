@@ -23,6 +23,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../../..')
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
 $connectStallListener = [System.Net.Sockets.TcpListener]::new(
     [System.Net.IPAddress]::Loopback,
