@@ -20,6 +20,12 @@ if (-not (Test-Path -LiteralPath $verifyScript)) {
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
 $workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
+$tokens = $null
+$parseErrors = $null
+$scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $verifyScript,
+    [ref] $tokens,
+    [ref] $parseErrors)
 
 function Assert-Contract {
     param([bool]$Condition, [string]$Message)
@@ -28,6 +34,20 @@ function Assert-Contract {
     }
 }
 
+function Get-FunctionContractText {
+    param([string]$Name)
+    $definition = $scriptAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq $Name
+    }, $true)
+    if ($null -eq $definition) {
+        return ''
+    }
+    return $definition.Extent.Text
+}
+
+Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before source contracts are evaluated.'
 Assert-Contract ($content.Contains('# Script-Governance:')) 'Verify script must declare script governance metadata.'
 Assert-Contract ($content.Contains('scripts/lib/ScriptAutomation.ps1')) 'Verify script must use ScriptAutomation helpers.'
 Assert-Contract ($content.Contains('Start-ManagedBackgroundProcess')) 'Verify script must launch managed service processes.'
@@ -48,6 +68,18 @@ Assert-Contract ($content.Contains('Nerv.IIP.Business.Erp.Web.csproj')) 'Verify 
 Assert-Contract ($content.Contains('Nerv.IIP.Business.DemandPlanning.Web.csproj')) 'Verify script must launch DemandPlanning in its own process.'
 Assert-Contract ($content.Contains("Messaging__Provider = 'Redis'")) 'Verify script must use the real Redis CAP provider.'
 Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'")) 'Verify script must prove the reusable SO-DEMO-001 seed publishes through the real cross-process bridge.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'))) 'Verify script must define one fail-closed JSON request path.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady'))) 'Verify script must poll the ERP sales-order query after health before mutation.'
+foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
+    $functionText = Get-FunctionContractText -Name $functionName
+    Assert-Contract ($functionText.Contains('Invoke-Man517JsonRequest')) "$functionName must use the shared fail-closed JSON request path."
+}
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SkipHttpErrorCheck')) 'The shared JSON request path must inspect non-success HTTP responses itself.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
+Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200')) 'ERP readiness must validate the seeded order amount, not only its identifier.'
+$erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)
+$firstMutationIndex = $content.IndexOf('Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10"', [StringComparison]::Ordinal)
+Assert-Contract ($erpReadyIndex -ge 0 -and $firstMutationIndex -gt $erpReadyIndex) 'ERP query-visible readiness must complete before the first sales-order mutation.'
 Assert-Contract (-not $content.Contains('NERV_IIP_TEST_SALES_ORDER_ID')) 'Fault injection must resolve the seeded order identity from DemandPlanning persistence instead of fragile shell output.'
 Assert-Contract ($content.Contains('out-of-order')) 'Verify script must assert stale/out-of-order convergence.'
 Assert-Contract ($content.Contains('$runningResult.Stdout')) 'Verify script must parse the compose service list from Invoke-NativeCommandOutput.Stdout before cleanup ownership is decided.'

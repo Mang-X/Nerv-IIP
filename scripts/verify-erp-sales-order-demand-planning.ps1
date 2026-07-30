@@ -109,9 +109,102 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Invoke-Man517JsonRequest {
+    param(
+        [ValidateSet('Get', 'Post')]
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [AllowNull()][hashtable]$Body
+    )
+
+    $safeMethod = Protect-Man517DiagnosticText -Text $Method.ToUpperInvariant()
+    $safeUri = Protect-Man517DiagnosticText -Text $Uri
+    $request = @{
+        Method = $Method
+        Uri = $Uri
+        Headers = $Headers
+        SkipHttpErrorCheck = $true
+    }
+    if ($PSBoundParameters.ContainsKey('Body')) {
+        $request.ContentType = 'application/json'
+        $request.Body = $Body | ConvertTo-Json -Depth 12
+    }
+
+    try {
+        $httpResponse = Invoke-WebRequest @request
+    }
+    catch {
+        $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
+        throw "MAN-517 request transport failed: method=$safeMethod uri=$safeUri error=$safeError"
+    }
+
+    $httpStatus = [int]$httpResponse.StatusCode
+    if ($httpStatus -lt 200 -or $httpStatus -ge 300) {
+        throw "MAN-517 request HTTP failure: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+    }
+
+    try {
+        $response = "$($httpResponse.Content)" | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "MAN-517 request did not return valid JSON: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+    }
+
+    $successProperty = $response.PSObject.Properties['success']
+    if ($null -eq $successProperty -or $successProperty.Value -isnot [bool]) {
+        throw "MAN-517 response is missing boolean 'success': method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+    }
+    if (-not $successProperty.Value) {
+        $codeProperty = $response.PSObject.Properties['code']
+        $messageProperty = $response.PSObject.Properties['message']
+        $safeCode = Protect-Man517DiagnosticText -Text $(if ($null -eq $codeProperty) { 'missing' } else { "$($codeProperty.Value)" })
+        $safeMessage = Protect-Man517DiagnosticText -Text $(if ($null -eq $messageProperty) { 'missing' } else { "$($messageProperty.Value)" })
+        throw "MAN-517 business request failed: method=$safeMethod uri=$safeUri code=$safeCode message=$safeMessage"
+    }
+
+    return $response
+}
+
 function Invoke-JsonPost {
     param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
+    Invoke-Man517JsonRequest -Method Post -Uri $Uri -Headers $Headers -Body $Body
+}
+
+function Wait-ErpSalesOrderReady {
+    param(
+        [string]$ErpUrl,
+        [hashtable]$Headers,
+        [int]$TimeoutSeconds = 90,
+        [int]$PollIntervalMilliseconds = 500
+    )
+
+    $keyword = [Uri]::EscapeDataString('SO-DEMO-001')
+    $uri = "$ErpUrl/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=$keyword&skip=0&take=10"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastObservedOrder = $null
+    do {
+        $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers
+        $rows = @($response.data.items | Where-Object { $_.salesOrderNo -ceq 'SO-DEMO-001' })
+        $lastObservedOrder = if ($rows.Count -eq 1) {
+            [ordered]@{
+                salesOrderNo = $rows[0].salesOrderNo
+                status = $rows[0].status
+                totalAmount = $rows[0].totalAmount
+            }
+        } else {
+            [ordered]@{ matchingRowCount = $rows.Count }
+        }
+        if ($rows.Count -eq 1 -and
+            "$($rows[0].status)" -ieq 'released' -and
+            [decimal]$rows[0].totalAmount -eq 200) {
+            return $rows[0]
+        }
+        Start-Sleep -Milliseconds $PollIntervalMilliseconds
+    } while ((Get-Date) -lt $deadline)
+
+    $safeObservation = Protect-Man517DiagnosticText -Text ($lastObservedOrder | ConvertTo-Json -Depth 4 -Compress)
+    throw "ERP sales order SO-DEMO-001 did not become query-visible as released with totalAmount=200. Last observation: $safeObservation"
 }
 
 function Wait-Demand {
@@ -124,25 +217,19 @@ function Wait-Demand {
     $lastRequestException = $null
     $lastObservedDemand = $null
     do {
-        try {
-            $httpResponse = Invoke-WebRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -SkipHttpErrorCheck
-            $lastHttpStatus = [int]$httpResponse.StatusCode
-            $fullResponseBody = "$($httpResponse.Content)"
-            $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
-            $lastRequestException = $null
-            $response = $fullResponseBody | ConvertFrom-Json
-            $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
-            $lastObservedDemand = if ($rows.Count -eq 1) {
-                [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
-            } else {
-                [ordered]@{ matchingRowCount = $rows.Count }
-            }
-            if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
-                return $rows[0]
-            }
+        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        $lastHttpStatus = 200
+        $fullResponseBody = $response | ConvertTo-Json -Depth 12 -Compress
+        $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
+        $lastRequestException = $null
+        $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
+        $lastObservedDemand = if ($rows.Count -eq 1) {
+            [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
+        } else {
+            [ordered]@{ matchingRowCount = $rows.Count }
         }
-        catch {
-            $lastRequestException = $_.Exception.Message
+        if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
+            return $rows[0]
         }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
@@ -160,7 +247,7 @@ function Assert-DemandStable {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
     $deadline = (Get-Date).AddSeconds($Seconds)
     do {
-        $response = Invoke-RestMethod -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
         $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
         if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
             throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."
@@ -385,6 +472,7 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
+    $erpSalesOrder = Wait-ErpSalesOrderReady -ErpUrl $erpUrl -Headers $headers
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
@@ -460,7 +548,7 @@ try {
         database = $databaseName
         capVersion = $capVersion
         processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
-        checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
+        checkpoints = @{ erpSalesOrder = $erpSalesOrder; released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
 }
