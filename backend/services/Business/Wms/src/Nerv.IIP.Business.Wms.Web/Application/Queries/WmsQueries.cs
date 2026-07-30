@@ -34,6 +34,358 @@ public sealed class GetWarehouseWorkScopeCatalogQueryHandler(
             cancellationToken);
 }
 
+public sealed record ListWarehouseOperationalCandidatesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string ScopeKind,
+    string ScopeId,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    string? Keyword = null,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    int Take = 50) : IQuery<WarehouseOperationalCandidatesResponse>;
+
+public sealed record WarehouseOperationalCandidatesResponse(
+    string SourceKind,
+    string ScopeKind,
+    string ScopeId,
+    DateTime AsOfUtc,
+    DateTime? FreshnessUtc,
+    bool Truncated,
+    IReadOnlyCollection<WarehouseLocationCandidate> Locations,
+    IReadOnlyCollection<WarehouseLotCandidate> Lots);
+
+public sealed record WarehouseLocationCandidate(
+    string SiteCode,
+    string LocationCode,
+    IReadOnlyCollection<string> SkuCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
+public sealed record WarehouseLotCandidate(
+    string SiteCode,
+    string SkuCode,
+    string LotNo,
+    IReadOnlyCollection<string> LocationCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
+public sealed class ListWarehouseOperationalCandidatesQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider)
+    : IQueryHandler<
+        ListWarehouseOperationalCandidatesQuery,
+        WarehouseOperationalCandidatesResponse>
+{
+    public const string SourceKind = "wms-operational-facts";
+    private const string ReplenishmentPendingLocation =
+        "REPLENISHMENT-SOURCE-PENDING";
+
+    public async Task<WarehouseOperationalCandidatesResponse> Handle(
+        ListWarehouseOperationalCandidatesQuery request,
+        CancellationToken cancellationToken)
+    {
+        var asOfUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var empty = Empty(request, asOfUtc);
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId)
+            || string.IsNullOrWhiteSpace(request.ScopeKind)
+            || string.IsNullOrWhiteSpace(request.ScopeId)
+            || !WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                organizationWideScope: false,
+                out var ownershipScope))
+        {
+            return empty;
+        }
+
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length == 0)
+        {
+            return empty;
+        }
+
+        var take = request.Take <= 0 ? 50 : Math.Clamp(request.Take, 1, 100);
+        var sourceTake = Math.Clamp(take * 20, 100, 1_000);
+        var inbound = ApplyScope(
+                dbContext.InboundOrders
+                    .AsNoTracking()
+                    .Include(order => order.Lines)
+                    .Where(order =>
+                        order.OrganizationId == request.OrganizationId
+                        && order.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(order.SiteCode)),
+                ownershipScope);
+        var outbound = ApplyScope(
+                dbContext.OutboundOrders
+                    .AsNoTracking()
+                    .Include(order => order.Lines)
+                    .Where(order =>
+                        order.OrganizationId == request.OrganizationId
+                        && order.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(order.SiteCode)),
+                ownershipScope);
+        var warehouseTasks = ApplyScope(
+                dbContext.WarehouseTasks
+                    .AsNoTracking()
+                    .Where(task =>
+                        task.OrganizationId == request.OrganizationId
+                        && task.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(task.SiteCode)),
+                ownershipScope);
+        var counts = ApplyScope(
+                dbContext.CountExecutions
+                    .AsNoTracking()
+                    .Where(execution =>
+                        execution.OrganizationId == request.OrganizationId
+                        && execution.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(execution.SiteCode)),
+                ownershipScope);
+
+        var inboundPage = await ReadRecentAsync(
+            inbound.OrderByDescending(order => order.CreatedAtUtc),
+            sourceTake,
+            cancellationToken);
+        var outboundPage = await ReadRecentAsync(
+            outbound.OrderByDescending(order => order.CreatedAtUtc),
+            sourceTake,
+            cancellationToken);
+        var taskPage = await ReadRecentAsync(
+            warehouseTasks.OrderByDescending(task => task.CreatedAtUtc),
+            sourceTake,
+            cancellationToken);
+        var countPage = await ReadRecentAsync(
+            counts.OrderByDescending(execution => execution.CreatedAtUtc),
+            sourceTake,
+            cancellationToken);
+        var observations = inboundPage.Items
+            .SelectMany(order => order.Lines.Select(line => new CandidateObservation(
+                order.SiteCode,
+                line.StagingLocationCode,
+                line.SkuCode,
+                line.LotNo,
+                order.CreatedAtUtc)))
+            .Concat(outboundPage.Items.SelectMany(order =>
+                order.Lines.Select(line => new CandidateObservation(
+                    order.SiteCode,
+                    line.PickLocationCode,
+                    line.SkuCode,
+                    line.LotNo,
+                    order.CreatedAtUtc))))
+            .Concat(countPage.Items.Select(execution => new CandidateObservation(
+                execution.SiteCode,
+                execution.LocationCode,
+                execution.SkuCode,
+                LotNo: null,
+                execution.CreatedAtUtc)))
+            .Concat(taskPage.Items.SelectMany(task => new[]
+            {
+                new CandidateObservation(
+                    task.SiteCode,
+                    task.FromLocationCode,
+                    task.SkuCode,
+                    task.LotNo,
+                    task.CreatedAtUtc),
+                new CandidateObservation(
+                    task.SiteCode,
+                    task.ToLocationCode,
+                    task.SkuCode,
+                    task.LotNo,
+                    task.CreatedAtUtc),
+            }))
+            .Where(observation =>
+                !string.IsNullOrWhiteSpace(observation.LocationCode)
+                && !string.Equals(
+                    observation.LocationCode,
+                    ReplenishmentPendingLocation,
+                    StringComparison.Ordinal))
+            .ToArray();
+
+        var skuCode = Optional(request.SkuCode);
+        var locationCode = Optional(request.LocationCode);
+        var keyword = Optional(request.Keyword)?.ToUpperInvariant();
+        var filtered = observations
+            .Where(observation =>
+                skuCode is null
+                || string.Equals(
+                    observation.SkuCode,
+                    skuCode,
+                    StringComparison.Ordinal))
+            .Where(observation =>
+                locationCode is null
+                || string.Equals(
+                    observation.LocationCode,
+                    locationCode,
+                    StringComparison.Ordinal))
+            .Where(observation =>
+                keyword is null
+                || observation.LocationCode.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal)
+                || observation.SkuCode.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal)
+                || observation.LotNo?.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal) == true)
+            .ToArray();
+
+        var locationCandidates = filtered
+            .GroupBy(
+                observation => (observation.SiteCode, observation.LocationCode))
+            .Select(group => new WarehouseLocationCandidate(
+                group.Key.SiteCode,
+                group.Key.LocationCode,
+                group.Select(observation => observation.SkuCode)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray(),
+                group.Count(),
+                group.Max(observation => observation.ObservedAtUtc)))
+            .OrderByDescending(candidate => candidate.LastObservedAtUtc)
+            .ThenBy(candidate => candidate.LocationCode, StringComparer.Ordinal)
+            .ToArray();
+        var lotCandidates = filtered
+            .Where(observation => !string.IsNullOrWhiteSpace(observation.LotNo))
+            .GroupBy(observation => (
+                observation.SiteCode,
+                observation.SkuCode,
+                LotNo: observation.LotNo!))
+            .Select(group => new WarehouseLotCandidate(
+                group.Key.SiteCode,
+                group.Key.SkuCode,
+                group.Key.LotNo,
+                group.Select(observation => observation.LocationCode)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray(),
+                group.Count(),
+                group.Max(observation => observation.ObservedAtUtc)))
+            .OrderByDescending(candidate => candidate.LastObservedAtUtc)
+            .ThenBy(candidate => candidate.LotNo, StringComparer.Ordinal)
+            .ToArray();
+        return new WarehouseOperationalCandidatesResponse(
+            SourceKind,
+            request.ScopeKind.Trim().ToLowerInvariant(),
+            request.ScopeId.Trim(),
+            asOfUtc,
+            observations.Length == 0
+                ? null
+                : observations.Max(observation => observation.ObservedAtUtc),
+            inboundPage.Truncated
+                || outboundPage.Truncated
+                || taskPage.Truncated
+                || countPage.Truncated
+                || locationCandidates.Length > take
+                || lotCandidates.Length > take,
+            locationCandidates.Take(take).ToArray(),
+            lotCandidates.Take(take).ToArray());
+    }
+
+    private static WarehouseOperationalCandidatesResponse Empty(
+        ListWarehouseOperationalCandidatesQuery request,
+        DateTime asOfUtc) =>
+        new(
+            SourceKind,
+            request.ScopeKind?.Trim().ToLowerInvariant() ?? string.Empty,
+            request.ScopeId?.Trim() ?? string.Empty,
+            asOfUtc,
+            FreshnessUtc: null,
+            Truncated: false,
+            Locations: [],
+            Lots: []);
+
+    private static IQueryable<InboundOrder> ApplyScope(
+        IQueryable<InboundOrder> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(order =>
+                order.AssignedOperatorUserId != null
+                && scope.Values.Contains(order.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(order =>
+                order.AssignedPoolCode != null
+                && scope.Values.Contains(order.AssignedPoolCode)),
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<OutboundOrder> ApplyScope(
+        IQueryable<OutboundOrder> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(order =>
+                order.AssignedOperatorUserId != null
+                && scope.Values.Contains(order.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(order =>
+                order.AssignedPoolCode != null
+                && scope.Values.Contains(order.AssignedPoolCode)),
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<WarehouseTask> ApplyScope(
+        IQueryable<WarehouseTask> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(task =>
+                task.AssignedOperatorUserId != null
+                && scope.Values.Contains(task.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(task =>
+                task.AssignedPoolCode != null
+                && scope.Values.Contains(task.AssignedPoolCode)),
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<CountExecution> ApplyScope(
+        IQueryable<CountExecution> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(execution =>
+                execution.AssignedOperatorUserId != null
+                && scope.Values.Contains(execution.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(execution =>
+                execution.AssignedPoolCode != null
+                && scope.Values.Contains(execution.AssignedPoolCode)),
+            _ => query.Where(_ => false),
+        };
+
+    private static async Task<CandidatePage<T>> ReadRecentAsync<T>(
+        IQueryable<T> query,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var rows = await query
+            .Take(take + 1)
+            .ToArrayAsync(cancellationToken);
+        return new CandidatePage<T>(
+            rows.Take(take).ToArray(),
+            rows.Length > take);
+    }
+
+    private static string? Optional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private sealed record CandidateObservation(
+        string SiteCode,
+        string LocationCode,
+        string SkuCode,
+        string? LotNo,
+        DateTime ObservedAtUtc);
+
+    private sealed record CandidatePage<T>(
+        IReadOnlyCollection<T> Items,
+        bool Truncated);
+}
+
 public sealed record ListBackorderOrdersQuery(
     string OrganizationId,
     string EnvironmentId,

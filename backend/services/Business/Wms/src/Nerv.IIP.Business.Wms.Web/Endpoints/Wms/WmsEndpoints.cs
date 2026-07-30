@@ -285,6 +285,18 @@ public sealed record ListCountExecutionsRequest(
     string? Keyword = null,
     CountExecutionId? CountExecutionId = null,
     string? SiteCode = null);
+public sealed record ListWarehouseOperationalCandidatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    string? Keyword = null,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    int Take = 50,
+    string? SiteCode = null);
 public sealed record CompleteCountExecutionRequest(
     CountExecutionId CountExecutionId,
     decimal CountedQuantity,
@@ -362,10 +374,32 @@ public sealed class ListReceivingQualityGatesRequestValidator
     }
 }
 
+public sealed class ListWarehouseOperationalCandidatesRequestValidator
+    : Validator<ListWarehouseOperationalCandidatesRequest>
+{
+    public ListWarehouseOperationalCandidatesRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.LocationCode).MaximumLength(100);
+        RuleFor(x => x.Take).InclusiveBetween(1, 100);
+        RuleFor(x => x.SiteCode).MaximumLength(100);
+    }
+}
+
 internal sealed record WmsAuthorizedListScope(
     IReadOnlyCollection<string>? OperatorPrincipalIds,
     IReadOnlyCollection<string>? PoolCodes,
-    IReadOnlyCollection<string> SiteCodes);
+    IReadOnlyCollection<string> SiteCodes,
+    string ScopeKind,
+    string ScopeId);
 
 internal static class WmsAuthorizedListScopeResolver
 {
@@ -394,11 +428,15 @@ internal static class WmsAuthorizedListScopeResolver
             ? new WmsAuthorizedListScope(
                 [selection.AssignedOperatorUserId],
                 PoolCodes: null,
-                selection.SiteCodes)
+                selection.SiteCodes,
+                selection.ScopeKind,
+                selection.ScopeId)
             : new WmsAuthorizedListScope(
                 OperatorPrincipalIds: null,
                 selection.PoolCodes,
-                selection.SiteCodes);
+                selection.SiteCodes,
+                selection.ScopeKind,
+                selection.ScopeId);
     }
 }
 
@@ -1358,6 +1396,49 @@ public sealed class ListSupplierReturnRequestsEndpoint(ISender sender) : WmsEndp
     }
 }
 
+public sealed class ListWarehouseOperationalCandidatesEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<
+        ListWarehouseOperationalCandidatesRequest,
+        ResponseData<WarehouseOperationalCandidatesResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(
+        WmsEndpointContracts.Get<ListWarehouseOperationalCandidatesEndpoint>(),
+        StatusCodes.Status403Forbidden);
+
+    public override async Task HandleAsync(
+        ListWarehouseOperationalCandidatesRequest req,
+        CancellationToken ct)
+    {
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.SiteCode,
+            ct);
+        var response = await sender.Send(
+            new ListWarehouseOperationalCandidatesQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                scope.ScopeKind,
+                scope.ScopeId,
+                scope.OperatorPrincipalIds,
+                scope.PoolCodes,
+                scope.SiteCodes,
+                req.Keyword,
+                req.SkuCode,
+                req.LocationCode,
+                req.Take),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public abstract class WarehouseWorkScopeCatalogEndpoint(
     ISender sender)
     : WmsEndpoint<WarehouseWorkScopeCatalogRequest, ResponseData<WarehouseWorkScopeCatalog>>
@@ -1466,6 +1547,7 @@ public static class WmsEndpointContracts
         new(typeof(ResetWcsDispatchCircuitEndpoint), "POST", "/api/business/v1/wms/wcs-dispatch-circuits/reset", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "resetWmsWcsDispatchCircuit"),
         new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
         new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
+        new(typeof(ListWarehouseOperationalCandidatesEndpoint), "GET", "/api/business/v1/wms/operational-candidates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOperationalCandidates"),
         new(typeof(GetReceiptWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/receipts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsReceiptWorkScopes"),
         new(typeof(GetShipmentWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/shipments", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "getWmsShipmentWorkScopes"),
         new(typeof(GetCountWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/counts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsCountWorkScopes"),

@@ -85,7 +85,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(46, contracts.Length);
+        Assert.Equal(47, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsInboundOrder");
@@ -124,7 +124,32 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/receipts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsReceiptWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/shipments" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "getWmsShipmentWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsCountWorkScopes");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/operational-candidates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsOperationalCandidates");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public void Operational_candidate_request_requires_trusted_scope_and_bounds_take()
+    {
+        var valid = new ListWarehouseOperationalCandidatesRequest(
+            "org-001",
+            "env-dev",
+            "worker-a",
+            ["SITE-A"],
+            "self",
+            "worker-a",
+            Take: 50);
+        var forgedEmptyContext = valid with
+        {
+            ActorPrincipalId = string.Empty,
+            AuthorizedSiteCodes = [],
+        };
+        var oversized = valid with { Take = 101 };
+        var validator = new ListWarehouseOperationalCandidatesRequestValidator();
+
+        Assert.True(validator.Validate(valid).IsValid);
+        Assert.False(validator.Validate(forgedEmptyContext).IsValid);
+        Assert.False(validator.Validate(oversized).IsValid);
     }
 
     [Fact]
