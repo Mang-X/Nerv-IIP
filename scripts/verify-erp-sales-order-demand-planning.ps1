@@ -109,9 +109,111 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Wait-ErpSalesOrderSource {
+    param([string]$ComposeFile, [string]$DatabaseName)
+    $deadline = (Get-Date).AddSeconds(90)
+    $attemptCount = 0
+    $lastSourceObservation = $null
+    $lastRequestException = $null
+    $sourceSql = @"
+SELECT so.sales_order_no, so.version, so.status, sol.line_no, sol.ordered_quantity
+FROM erp.sales_orders so
+JOIN erp.sales_order_lines sol ON sol.sales_order_id = so.id
+WHERE so.organization_id = 'org-001'
+  AND so.environment_id = 'env-dev'
+  AND so.sales_order_no = 'SO-DEMO-001'
+  AND so.version = 1
+  AND so.status = 'released'
+  AND sol.line_no = '10'
+  AND sol.ordered_quantity = 2;
+"@
+
+    do {
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -le 0) { break }
+        if ($remainingMilliseconds -lt 1000) { break }
+        $remainingTimeoutSeconds = [int][Math]::Floor($remainingMilliseconds / 1000.0)
+        try {
+            $attemptCount++
+            $sourceResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @(
+                'compose', '-f', $ComposeFile, 'exec', '-T', 'postgres',
+                'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', $DatabaseName,
+                '-X', '-tA', '-F', '|', '-v', 'ON_ERROR_STOP=1', '-c', $sourceSql
+            ) -WorkingDirectory $root -TimeoutSeconds $remainingTimeoutSeconds -Name 'man517-erp-source-readiness'
+            $sourceOutput = "$($sourceResult.Stdout)"
+            $boundedSourceOutput = if ($sourceOutput.Length -gt 8192) { $sourceOutput.Substring(0, 8192) } else { $sourceOutput }
+            $sourceRows = @($boundedSourceOutput -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $lastSourceObservation = [ordered]@{
+                matchingRowCount = $sourceRows.Count
+                rows = @($sourceRows | Select-Object -First 10)
+            }
+            $lastRequestException = $null
+            if ($sourceRows.Count -eq 1) {
+                return [pscustomobject][ordered]@{
+                    stage = 'erp-source-readiness'
+                    attemptCount = $attemptCount
+                    observedAtUtc = [DateTimeOffset]::UtcNow
+                    matchingRowCount = $sourceRows.Count
+                    matchingRow = $sourceRows[0]
+                }
+            }
+        }
+        catch {
+            $exceptionMessage = "$($_.Exception.Message)"
+            $lastRequestException = if ($exceptionMessage.Length -gt 8192) { $exceptionMessage.Substring(0, 8192) } else { $exceptionMessage }
+        }
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -le 0) { break }
+        Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+    } while ($true)
+
+    $lastObservation = [ordered]@{
+        sourceStage = 'erp-source-readiness'
+        expectedSource = [ordered]@{ salesOrderNo = 'SO-DEMO-001'; version = 1; lineNo = '10'; orderedQuantity = 2 }
+        lastSourceObservation = $lastSourceObservation
+        lastRequestException = $lastRequestException
+    } | ConvertTo-Json -Depth 8 -Compress
+    throw "ERP sales-order source did not become committed and ready. Last observation: $(Protect-Man517DiagnosticText -Text $lastObservation)"
+}
+
 function Invoke-JsonPost {
-    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
+    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers, [string]$ExpectedData)
+    $script:stateChangingPostInvocationCount++
+    $httpResponse = $null
+    $httpStatus = $null
+    $responseBody = $null
+    $responseEnvelope = $null
+    $parseError = $null
+    try {
+        $httpResponse = Invoke-WebRequest -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12) -SkipHttpErrorCheck -MaximumRedirection 0
+        $httpStatus = [int]$httpResponse.StatusCode
+        $fullResponseBody = "$($httpResponse.Content)"
+        $responseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
+        $responseEnvelope = $responseBody | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        $exceptionMessage = "$($_.Exception.Message)"
+        $parseError = if ($exceptionMessage.Length -gt 8192) { $exceptionMessage.Substring(0, 8192) } else { $exceptionMessage }
+    }
+
+    $hasSuccess = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['success']
+    $hasData = $null -ne $responseEnvelope -and $null -ne $responseEnvelope.PSObject.Properties['data']
+    $hasBooleanSuccess = $hasSuccess -and $responseEnvelope.success -is [bool]
+    $hasStringData = $hasData -and $responseEnvelope.data -is [string]
+    if ($httpStatus -lt 200 -or $httpStatus -ge 300 -or
+        $null -eq $responseEnvelope -or -not $hasBooleanSuccess -or $responseEnvelope.success -ne $true -or
+        -not $hasStringData -or [string]::IsNullOrWhiteSpace($responseEnvelope.data) -or
+        -not [string]::Equals($responseEnvelope.data, $ExpectedData, [StringComparison]::Ordinal)) {
+        $safeResponseBody = Protect-Man517DiagnosticText -Text $responseBody
+        $safeParseError = Protect-Man517DiagnosticText -Text $parseError
+        $failure = [ordered]@{
+            sourceStage = 'erp-state-changing-post'
+            expectedData = $ExpectedData
+            postResponse = [ordered]@{ uri = $Uri; httpStatus = $httpStatus; body = $safeResponseBody; parseError = $safeParseError }
+        } | ConvertTo-Json -Depth 8 -Compress
+        throw "ERP state-changing POST was rejected. Last response: $(Protect-Man517DiagnosticText -Text $failure)"
+    }
+    return $responseEnvelope
 }
 
 function Wait-Demand {
@@ -171,12 +273,54 @@ function Assert-DemandStable {
     return $row
 }
 
+function Write-Man517SuccessEvidence {
+    param(
+        [string]$EvidencePath,
+        [string]$DatabaseName,
+        [string]$CapVersion,
+        [object]$MasterDataProcess,
+        [object]$ErpProcess,
+        [object]$DemandPlanningProcess,
+        [object]$SourceReadiness,
+        [int]$StateChangingPostInvocationCount,
+        [object]$Released,
+        [object]$DuplicateReplay,
+        [object]$ChangedV2,
+        [object]$ChangedV3,
+        [object]$OutOfOrder,
+        [object]$Cancelled
+    )
+
+    if ($StateChangingPostInvocationCount -ne 3) {
+        throw "MAN-517 expected exactly three state-changing POST helper invocations, observed $StateChangingPostInvocationCount."
+    }
+
+    [ordered]@{
+        scenario = 'MAN-517 ERP SalesOrder to DemandPlanning DemandSource'
+        completedAtUtc = [DateTimeOffset]::UtcNow
+        database = $DatabaseName
+        capVersion = $CapVersion
+        processes = @{ masterData = $MasterDataProcess.ProcessId; erp = $ErpProcess.ProcessId; demandPlanning = $DemandPlanningProcess.ProcessId }
+        sourceReadiness = $SourceReadiness
+        stateChangingPostInvocationCount = $StateChangingPostInvocationCount
+        checkpoints = @{ released = $Released; duplicateReplay = $DuplicateReplay; changedV2 = $ChangedV2; changedV3 = $ChangedV3; outOfOrder = $OutOfOrder; cancelled = $Cancelled }
+    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
+}
+
 function Protect-Man517DiagnosticText {
     param([AllowNull()][string]$Text)
     if ($null -eq $Text) { return $null }
     $safe = Protect-ScriptAutomationText $Text
     if (-not [string]::IsNullOrWhiteSpace($internalToken)) {
         $safe = $safe.Replace($internalToken, '[REDACTED_TOKEN]', [StringComparison]::Ordinal)
+    }
+    foreach ($jsonPattern in @(
+        '(?i)("(?:password|pwd|token|secret|client_secret|authorization)"\s*:\s*")(?:(?:\\.)|[^"\\])*(")',
+        '(?i)("(?:password|pwd|token|secret|client_secret|authorization)"\s*:\s*")(?:(?:\\.)|[^"\\])*()',
+        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\s*:\s*')(?:(?:\\.)|[^'\\])*(')",
+        "(?i)('(?:password|pwd|token|secret|client_secret|authorization)'\s*:\s*')(?:(?:\\.)|[^'\\])*()"
+    )) {
+        $safe = [regex]::Replace($safe, $jsonPattern, '$1<redacted>$2')
     }
     return $safe
 }
@@ -322,6 +466,7 @@ $demandPlanningProcess = $null
 $databaseCreated = $false
 $acceptanceFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
+$script:stateChangingPostInvocationCount = 0
 
 $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj'
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
@@ -386,12 +531,13 @@ try {
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
+    $sourceReadiness = Wait-ErpSalesOrderSource -ComposeFile $composeFile -DatabaseName $databaseName
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -ExpectedData 'changed' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
     } | Out-Null
     $changedV2 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 2 -Quantity 4 -Status 'active'
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -ExpectedData 'changed' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 5; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v3'
     } | Out-Null
     $changedV3 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active'
@@ -446,7 +592,7 @@ try {
         }
     }
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -ExpectedData 'cancelled' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'
     } | Out-Null
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null
@@ -454,14 +600,21 @@ try {
 
     $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
-    @{
-        scenario = 'MAN-517 ERP SalesOrder to DemandPlanning DemandSource'
-        completedAtUtc = [DateTimeOffset]::UtcNow
-        database = $databaseName
-        capVersion = $capVersion
-        processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
-        checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
-    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+    Write-Man517SuccessEvidence `
+        -EvidencePath $evidencePath `
+        -DatabaseName $databaseName `
+        -CapVersion $capVersion `
+        -MasterDataProcess $masterDataProcess `
+        -ErpProcess $erpProcess `
+        -DemandPlanningProcess $demandPlanningProcess `
+        -SourceReadiness $sourceReadiness `
+        -StateChangingPostInvocationCount $stateChangingPostInvocationCount `
+        -Released $released `
+        -DuplicateReplay $duplicateReplay `
+        -ChangedV2 $changedV2 `
+        -ChangedV3 $changedV3 `
+        -OutOfOrder $outOfOrder `
+        -Cancelled $cancelled
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
 }
 catch {
