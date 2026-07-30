@@ -62,7 +62,14 @@ public sealed class WarehouseTaskActionConcurrencyPostgresTests
             CancellationToken.None);
 
         Assert.Equal(2, attempts);
-        Assert.Equal(staged, result);
+        Assert.Equal(staged.WarehouseTaskId, result.WarehouseTaskId);
+        Assert.Equal(staged.TaskType, result.TaskType);
+        Assert.Equal(staged.Status, result.Status);
+        Assert.Equal(staged.Version, result.Version);
+        Assert.Equal(staged.ExecutedQuantity, result.ExecutedQuantity);
+        Assert.Equal(staged.DifferenceQuantity, result.DifferenceQuantity);
+        Assert.Equal(staged.AllowedActions, result.AllowedActions);
+        Assert.Equal(staged.BlockReasons, result.BlockReasons);
         await using var assertionContext = CreateContext(database.ConnectionString);
         Assert.Single(await assertionContext.WarehouseTaskActionReceipts.ToListAsync());
         Assert.Equal(

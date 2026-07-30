@@ -121,6 +121,7 @@ public sealed class WcsDispatchConcurrencyPostgresTests
                 "PACK-01",
                 5m,
                 assignedPoolCode: "POOL-WAREHOUSE");
+            setup.WarehouseTasks.Add(warehouseTask);
             var wcsTask = WcsTask.Dispatch(
                 "org-001",
                 "env-dev",
@@ -128,11 +129,10 @@ public sealed class WcsDispatchConcurrencyPostgresTests
                 "wcs-a",
                 "EXT-WCS-CALLBACK-RACE",
                 """{"task":"callback-race"}""");
+            setup.WcsTasks.Add(wcsTask);
             warehouseTask.ClaimWcsExecution(
                 wcsTask.Id.Id.ToString("D"),
                 warehouseTask.Version);
-            setup.WarehouseTasks.Add(warehouseTask);
-            setup.WcsTasks.Add(wcsTask);
             await setup.SaveChangesAsync();
         }
 

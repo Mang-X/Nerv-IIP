@@ -29,7 +29,7 @@ public sealed class WarehouseAssignmentCommandTests
             (typeof(AssignPutawayTaskEndpoint), "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment", WmsPermissionCodes.ReceiptsManage),
             (typeof(AssignOutboundOrderEndpoint), "/api/business/v1/wms/outbound-orders/{outboundOrderId}/assignment", WmsPermissionCodes.ShipmentsManage),
             (typeof(AssignPickingTaskEndpoint), "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/assignment", WmsPermissionCodes.ShipmentsManage),
-            (typeof(AssignCountExecutionEndpoint), "/api/business/v1/wms/count-executions/{countExecutionId}/assignment", WmsPermissionCodes.ReceiptsManage),
+            (typeof(AssignCountExecutionEndpoint), "/api/business/v1/wms/count-executions/{countExecutionId}/assignment", WmsPermissionCodes.InventoryCountsManage),
         };
         foreach (var (endpointType, route, permission) in expected)
         {

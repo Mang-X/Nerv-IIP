@@ -121,8 +121,15 @@ public sealed class WmsShortPickBackorderTests
             var outbound = OutboundOrder.Create(
                 "org-postgres", "env-acceptance", "OUT-PG-001", "sales-delivery", "SO-PG-001", "SITE-01",
                 [new OutboundOrderLineDraft("LINE-001", "SKU-001", "pcs", 10m, "PICK-01", null, null, "qualified", "company", null)]);
-            var picking = outbound.CreatePickingTask("PICK-PG-001", "LINE-001", "PICK-01", "PACK-01", 10m);
-            picking.RecordProgress(7m);
+            var picking = outbound.CreatePickingTask(
+                "PICK-PG-001",
+                "LINE-001",
+                "PICK-01",
+                "PACK-01",
+                10m,
+                assignedPoolCode: "POOL-PICKING");
+            picking.Start("picker-001", picking.Version, claimPoolAssignment: true);
+            picking.Complete(7m, "picker-001", "缺货短拣", picking.Version);
             dbContext.AddRange(outbound, picking);
             await dbContext.SaveChangesAsync();
             var handler = new CompleteOutboundOrderCommandHandler(dbContext);
