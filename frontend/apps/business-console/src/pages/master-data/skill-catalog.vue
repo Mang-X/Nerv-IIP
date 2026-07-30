@@ -300,7 +300,7 @@ async function confirmArchive() {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>该技能需持证上岗</span>
-                    <NvCheckbox id="skill-cert" v-model:checked="form.requiresCertification" />
+                    <NvCheckbox id="skill-cert" v-model="form.requiresCertification" />
                   </label>
                 </NvField>
                 <NvField :data-invalid="showErrors && !validityValid">
