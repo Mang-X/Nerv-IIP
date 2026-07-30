@@ -1,5 +1,5 @@
 import { nextTick, reactive, shallowRef } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   listBusinessConsoleWmsCountOperationalCandidatesQueryOptions,
@@ -11,7 +11,12 @@ import { useWmsOperationalCandidates } from './useWmsOperationalCandidates'
 const queryState = vi.hoisted(() => ({
   response: undefined as unknown,
   options: undefined as undefined | { enabled?: boolean },
+  factory: undefined as undefined | (() => Record<string, unknown>),
 }))
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions: vi.fn((options) => ({
@@ -27,6 +32,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 
 vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((factory) => {
+    queryState.factory = factory
     queryState.options = factory()
     return {
       data: shallowRef(queryState.response),
@@ -39,6 +45,7 @@ vi.mock('@pinia/colada', () => ({
 
 describe('PDA WMS operational candidates', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.clearAllMocks()
     queryState.response = {
       success: true,
@@ -60,13 +67,14 @@ describe('PDA WMS operational candidates', () => {
     ['shipment', listBusinessConsoleWmsShipmentOperationalCandidatesQueryOptions],
     ['count', listBusinessConsoleWmsCountOperationalCandidatesQueryOptions],
   ] as const)('maps %s to trusted selected scope', (kind, factory) => {
-    const scopeKey = shallowRef<string | undefined>('self:worker-1')
     const filters = reactive({ status: 'Open', locationCode: 'A-01', skuCode: 'SKU-1' })
 
     const result = useWmsOperationalCandidates(kind, {
       organizationId: shallowRef('org-1'),
       environmentId: shallowRef('env-1'),
-      scopeKey,
+      scopeKind: shallowRef('self'),
+      scopeId: shallowRef('worker-1'),
+      scopeReady: shallowRef(true),
       filters,
     })
 
@@ -86,11 +94,13 @@ describe('PDA WMS operational candidates', () => {
     expect(result.lotOptions.value).toHaveLength(kind === 'count' ? 0 : 1)
   })
 
-  it('does not request candidates for an unresolved or untrusted scope key', () => {
+  it('does not request candidates until the authorized scope is ready', () => {
     useWmsOperationalCandidates('receipt', {
       organizationId: shallowRef('org-1'),
       environmentId: shallowRef('env-1'),
-      scopeKey: shallowRef('unknown:scope'),
+      scopeKind: shallowRef('self'),
+      scopeId: shallowRef('worker-1'),
+      scopeReady: shallowRef(false),
       filters: reactive({ status: 'Open' }),
     })
 
@@ -98,7 +108,8 @@ describe('PDA WMS operational candidates', () => {
   })
 
   it('clears picker values when scope or status changes', async () => {
-    const scopeKey = shallowRef<string | undefined>('self:worker-1')
+    const scopeKind = shallowRef<string | undefined>('self')
+    const scopeId = shallowRef<string | undefined>('worker-1')
     const filters = reactive({
       status: 'Open',
       locationCode: 'A-01' as string | undefined,
@@ -107,7 +118,9 @@ describe('PDA WMS operational candidates', () => {
     useWmsOperationalCandidates('shipment', {
       organizationId: shallowRef('org-1'),
       environmentId: shallowRef('env-1'),
-      scopeKey,
+      scopeKind,
+      scopeId,
+      scopeReady: shallowRef(true),
       filters,
     })
 
@@ -118,9 +131,37 @@ describe('PDA WMS operational candidates', () => {
 
     filters.locationCode = 'A-02'
     filters.lotNo = 'LOT-B'
-    scopeKey.value = 'work-pool:POOL-2'
+    scopeKind.value = 'work-pool'
+    scopeId.value = 'POOL-2'
     await nextTick()
     expect(filters.locationCode).toBeUndefined()
     expect(filters.lotNo).toBeUndefined()
+  })
+
+  it('debounces remote search and rejects a late response from the previous scope', async () => {
+    const scopeKind = shallowRef<string | undefined>('self')
+    const scopeId = shallowRef<string | undefined>('worker-1')
+    const result = useWmsOperationalCandidates('shipment', {
+      organizationId: shallowRef('org-1'),
+      environmentId: shallowRef('env-1'),
+      scopeKind,
+      scopeId,
+      scopeReady: shallowRef(true),
+      filters: reactive({ status: 'Open' }),
+    })
+
+    result.searchKeyword.value = ' remote-bin '
+    await vi.advanceTimersByTimeAsync(300)
+    queryState.factory?.()
+    expect(
+      listBusinessConsoleWmsShipmentOperationalCandidatesQueryOptions,
+    ).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ keyword: 'remote-bin', take: 100 }),
+    })
+
+    scopeId.value = 'worker-2'
+    await nextTick()
+    expect(result.locationOptions.value).toEqual([])
+    expect(result.lotOptions.value).toEqual([])
   })
 })

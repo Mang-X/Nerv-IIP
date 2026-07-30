@@ -5,6 +5,7 @@ import { computed, reactive, shallowRef } from 'vue'
 const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 const scopeKey = shallowRef('self:emp049')
 const filters = reactive({
   status: 'Open' as string | undefined,
@@ -42,12 +43,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
     }),
   }
 })
@@ -119,6 +123,7 @@ describe('WMS 拣货作业页', () => {
     await wrapper.get('[data-testid="execute"]').trigger('click')
 
     expect(refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
     expect(loadMore).toHaveBeenCalledTimes(1)
     expect(filters.locationCode).toBe('A-01')
     expect(filters.status).toBe('InProgress')

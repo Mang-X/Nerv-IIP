@@ -74,6 +74,7 @@ function mountView(
       pending: false,
       refreshing: false,
       loadingMore: false,
+      candidateReady: true,
       status: 'Open',
       scopeKey: 'self:emp049',
       currentPrincipalId: 'emp049',

@@ -5,6 +5,7 @@ import { computed, reactive, shallowRef } from 'vue'
 const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 const scopeKey = shallowRef('self:emp049')
 const filters = reactive({
   status: 'Open' as string | undefined,
@@ -42,12 +43,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
     }),
   }
 })
@@ -101,5 +105,23 @@ describe('WMS 上架作业页', () => {
 
     expect(executeTask).toHaveBeenCalledWith({ action: 'start', task })
     expect(wrapper.text()).not.toContain('上架完成经收货入库过账')
+  })
+
+  it('下拉刷新同时刷新任务与作业候选', async () => {
+    const wrapper = mount(PutawayPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['refresh'],
+            template: '<button data-testid="refresh" @click="$emit(\'refresh\')" />',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="refresh"]').trigger('click')
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
   })
 })

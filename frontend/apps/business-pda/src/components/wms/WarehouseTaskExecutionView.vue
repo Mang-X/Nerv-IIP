@@ -76,12 +76,14 @@ const props = withDefaults(
     lotNo?: string
     locationOptions?: WarehouseTaskCandidateOption[]
     lotOptions?: WarehouseTaskCandidateOption[]
+    candidateReady?: boolean
     candidateSourceLabel?: string
-    candidateSourceKind?: string
     candidateAsOfUtc?: string
     candidateFreshnessUtc?: string
     candidateTruncated?: boolean
     candidatePending?: boolean
+    candidateError?: unknown
+    candidateSearchKeyword?: string
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
     actionPending?: boolean
@@ -95,12 +97,14 @@ const props = withDefaults(
     lotNo: undefined,
     locationOptions: () => [],
     lotOptions: () => [],
+    candidateReady: false,
     candidateSourceLabel: '当前范围仓储作业记录候选',
-    candidateSourceKind: undefined,
     candidateAsOfUtc: undefined,
     candidateFreshnessUtc: undefined,
     candidateTruncated: false,
     candidatePending: false,
+    candidateError: undefined,
+    candidateSearchKeyword: '',
     scopeOptions: () => [],
     error: undefined,
     actionPending: false,
@@ -113,6 +117,8 @@ const emit = defineEmits<{
   'update:keyword': [value: string | undefined]
   'update:locationCode': [value: string | undefined]
   'update:lotNo': [value: string | undefined]
+  'update:candidateSearchKeyword': [value: string]
+  candidateRetry: []
   refresh: []
   loadMore: []
   retry: []
@@ -295,15 +301,19 @@ function emitQuantityAction(action: 'progress' | 'complete') {
         :lot-no="lotNo"
         :location-options="locationOptions"
         :lot-options="lotOptions"
+        :ready="candidateReady"
         :source-label="candidateSourceLabel"
-        :source-kind="candidateSourceKind"
         :as-of-utc="candidateAsOfUtc"
         :freshness-utc="candidateFreshnessUtc"
         :truncated="candidateTruncated"
         :pending="candidatePending"
+        :error="candidateError"
+        :search-keyword="candidateSearchKeyword"
         :active="scanActive"
         @update:location-code="emit('update:locationCode', $event)"
         @update:lot-no="emit('update:lotNo', $event)"
+        @update:search-keyword="emit('update:candidateSearchKeyword', $event)"
+        @retry="emit('candidateRetry')"
       />
       <NvMobileDropdownMenu>
         <NvMobileDropdownMenuItem

@@ -692,6 +692,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
   return {
     organizationId: scope.organizationId,
     environmentId: scope.environmentId,
+    scopeKind: scope.scopeKind,
+    scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,
@@ -1196,6 +1198,8 @@ function useWmsWarehouseTasks(
     organizationId: scope.organizationId,
     environmentId: scope.environmentId,
     principalId: scope.principalId,
+    scopeKind: scope.scopeKind,
+    scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,
@@ -1454,6 +1458,8 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   return {
     organizationId: scope.organizationId,
     environmentId: scope.environmentId,
+    scopeKind: scope.scopeKind,
+    scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,

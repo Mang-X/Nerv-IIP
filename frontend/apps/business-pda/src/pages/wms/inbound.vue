@@ -81,9 +81,14 @@ const {
 const candidates = useWmsOperationalCandidates('receipt', {
   organizationId,
   environmentId,
-  scopeKey,
+  scopeKind,
+  scopeId,
+  scopeReady,
   filters,
 })
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
 const inboundScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
@@ -439,15 +444,18 @@ function goPutaway() {
         <WmsOperationalCandidatePicker
           v-model:location-code="filters.locationCode"
           v-model:lot-no="filters.lotNo"
+          v-model:search-keyword="candidates.searchKeyword.value"
           :location-options="candidates.locationOptions.value"
           :lot-options="candidates.lotOptions.value"
+          :ready="candidates.ready.value"
           :source-label="candidates.sourceLabel.value"
-          :source-kind="candidates.sourceKind.value"
           :as-of-utc="candidates.asOfUtc.value"
           :freshness-utc="candidates.freshnessUtc.value"
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
+          :error="candidates.error.value"
           :show-scanner="false"
+          @retry="candidates.refresh"
         />
         <ListScopeMeta
           :scope="inboundScope"
@@ -471,7 +479,7 @@ function goPutaway() {
           :pending="pending"
           fallback="单据加载失败，请下拉重试或检查网络。"
           test-id="error-banner"
-          @retry="() => refresh()"
+          @retry="refreshAll"
         />
       </div>
 
@@ -481,7 +489,7 @@ function goPutaway() {
         :pending="pending"
         :loaded="orders.length"
         :total="inboundTotal"
-        @refresh="refresh"
+        @refresh="refreshAll"
         @load-more="loadMore"
       >
         <div class="space-y-4 px-4 py-3">

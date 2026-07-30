@@ -18,6 +18,9 @@ const {
   organizationId,
   environmentId,
   principalId,
+  scopeKind,
+  scopeId,
+  scopeReady,
   scopeKey,
   scopeOptions,
   tasks,
@@ -35,9 +38,15 @@ const {
 const candidates = useWmsOperationalCandidates('receipt', {
   organizationId,
   environmentId,
-  scopeKey,
+  scopeKind,
+  scopeId,
+  scopeReady,
   filters,
 })
+
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
 
 async function execute(intent: WarehouseTaskExecutionIntent) {
   try {
@@ -63,6 +72,7 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         v-model:keyword="filters.keyword"
         v-model:location-code="filters.locationCode"
         v-model:lot-no="filters.lotNo"
+        v-model:candidate-search-keyword="candidates.searchKeyword.value"
         title="上架"
         task-type="putaway"
         :tasks="tasks"
@@ -74,16 +84,18 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :scope-options="scopeOptions"
         :location-options="candidates.locationOptions.value"
         :lot-options="candidates.lotOptions.value"
+        :candidate-ready="candidates.ready.value"
         :candidate-source-label="candidates.sourceLabel.value"
-        :candidate-source-kind="candidates.sourceKind.value"
         :candidate-as-of-utc="candidates.asOfUtc.value"
         :candidate-freshness-utc="candidates.freshnessUtc.value"
         :candidate-truncated="candidates.truncated.value"
         :candidate-pending="candidates.pending.value"
+        :candidate-error="candidates.error.value"
         :error="error"
         :action-pending="actionPending"
-        @refresh="refresh"
-        @retry="refresh"
+        @refresh="refreshAll"
+        @retry="refreshAll"
+        @candidate-retry="candidates.refresh"
         @load-more="loadMore"
         @execute="execute"
       />

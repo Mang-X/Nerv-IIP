@@ -1,6 +1,6 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NvBottomSheet, NvMobileDropdownMenuItem } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvMobileDropdownMenuItem, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -8,6 +8,7 @@ const push = vi.fn(() => Promise.resolve())
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
@@ -21,12 +22,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
     }),
   }
 })
@@ -236,6 +240,7 @@ function resetState() {
   }
   wmsState.completeInbound.mockClear()
   wmsState.refresh.mockClear()
+  candidateState.refresh.mockClear()
   wmsState.loadMore.mockClear()
   wmsState.linesRefresh.mockClear()
   push.mockClear()
@@ -615,6 +620,16 @@ describe('WMS 收货入库', () => {
     )
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('下拉刷新同时刷新单据与作业候选', async () => {
+    const wrapper = mount(InboundPage)
+    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
+    await flushPromises()
+
+    expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
   })
 
   it('列表离线：显示"当前离线"文案（区分于业务错误）', () => {

@@ -1,5 +1,10 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { NvBottomSheet, NvMobileDropdownMenuItem, NvNumberKeyboard } from '@nerv-iip/ui-mobile'
+import {
+  NvBottomSheet,
+  NvMobileDropdownMenuItem,
+  NvNumberKeyboard,
+  NvPullRefresh,
+} from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
@@ -8,6 +13,7 @@ const push = vi.fn()
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
@@ -21,12 +27,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
     }),
   }
 })
@@ -148,6 +157,7 @@ function resetState() {
   wmsState.pending = false
   wmsState.completeCount.mockClear()
   wmsState.refresh.mockClear()
+  candidateState.refresh.mockClear()
   wmsState.loadMore.mockClear()
   push.mockClear()
 }
@@ -389,6 +399,15 @@ describe('WMS 盘点', () => {
     wmsState.error = new Error('boom')
     const wrapper = mount(CountPage)
     expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
+  })
+
+  it('下拉刷新同时刷新任务与作业候选', async () => {
+    const wrapper = mount(CountPage)
+    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
+    await flushPromises()
+
+    expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
   })
 
   it('无盘点任务且无错误时显示空态', () => {

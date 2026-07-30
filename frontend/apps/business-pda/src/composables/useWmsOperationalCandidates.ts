@@ -5,7 +5,8 @@ import {
   type BusinessConsoleWmsOperationalCandidatesEnvelope,
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
-import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { refDebounced } from '@vueuse/core'
+import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 export type WmsOperationalCandidateKind = 'receipt' | 'shipment' | 'count'
 
@@ -19,7 +20,9 @@ export interface WmsOperationalCandidateFilters {
 export interface UseWmsOperationalCandidatesOptions {
   organizationId: MaybeRefOrGetter<string>
   environmentId: MaybeRefOrGetter<string>
-  scopeKey: MaybeRefOrGetter<string | undefined>
+  scopeKind: MaybeRefOrGetter<string | undefined>
+  scopeId: MaybeRefOrGetter<string | undefined>
+  scopeReady: MaybeRefOrGetter<boolean>
   filters: WmsOperationalCandidateFilters
 }
 
@@ -27,25 +30,28 @@ export function useWmsOperationalCandidates(
   kind: WmsOperationalCandidateKind,
   options: UseWmsOperationalCandidatesOptions,
 ) {
-  const selectedScope = computed(() => {
-    const [scopeKind, ...scopeIdParts] = (toValue(options.scopeKey) ?? '').split(':')
-    const scopeId = scopeIdParts.join(':').trim()
-    if (!['self', 'work-pool', 'site'].includes(scopeKind) || !scopeId) return undefined
-    return { scopeKind, scopeId }
-  })
+  const searchKeyword = shallowRef('')
+  const debouncedKeyword = refDebounced(searchKeyword, 300)
+  const selectedScope = computed(() => ({
+    scopeKind: toValue(options.scopeKind)?.trim() ?? '',
+    scopeId: toValue(options.scopeId)?.trim() ?? '',
+  }))
   const ready = computed(
     () =>
+      toValue(options.scopeReady) === true &&
       Boolean(toValue(options.organizationId).trim()) &&
       Boolean(toValue(options.environmentId).trim()) &&
-      selectedScope.value !== undefined,
+      Boolean(selectedScope.value.scopeKind) &&
+      Boolean(selectedScope.value.scopeId),
   )
   const queryInput = () => ({
     query: {
       organizationId: toValue(options.organizationId),
       environmentId: toValue(options.environmentId),
-      scopeKind: selectedScope.value?.scopeKind ?? '',
-      scopeId: selectedScope.value?.scopeId ?? '',
+      scopeKind: selectedScope.value.scopeKind,
+      scopeId: selectedScope.value.scopeId,
       take: 100,
+      ...(debouncedKeyword.value.trim() ? { keyword: debouncedKeyword.value.trim() } : {}),
       ...(options.filters.skuCode?.trim() ? { skuCode: options.filters.skuCode.trim() } : {}),
       ...(options.filters.locationCode?.trim()
         ? { locationCode: options.filters.locationCode.trim() }
@@ -63,14 +69,37 @@ export function useWmsOperationalCandidates(
   const envelope = computed(
     () => candidatesQuery.data.value as BusinessConsoleWmsOperationalCandidatesEnvelope | undefined,
   )
-  const response = computed(() =>
-    envelope.value?.success === true ? envelope.value.data : undefined,
-  )
+  const response = computed(() => {
+    const data = envelope.value?.success === true ? envelope.value.data : undefined
+    if (
+      !ready.value ||
+      data?.scopeKind !== selectedScope.value.scopeKind ||
+      data?.scopeId !== selectedScope.value.scopeId
+    ) {
+      return undefined
+    }
+    return data
+  })
 
   watch(
-    [() => toValue(options.scopeKey), () => options.filters.status],
+    [
+      () => toValue(options.organizationId),
+      () => toValue(options.environmentId),
+      () => toValue(options.scopeReady),
+      () => toValue(options.scopeKind),
+      () => toValue(options.scopeId),
+      () => options.filters.status,
+    ],
     () => {
       options.filters.locationCode = undefined
+      options.filters.lotNo = undefined
+      searchKeyword.value = ''
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => options.filters.skuCode,
+    () => {
       options.filters.lotNo = undefined
     },
     { flush: 'sync' },
@@ -108,17 +137,40 @@ export function useWmsOperationalCandidates(
       ]
     })
   })
+  watch(
+    response,
+    (current) => {
+      if (!current || candidatesQuery.isLoading.value || candidatesQuery.error.value) return
+      if (
+        options.filters.locationCode &&
+        !locationOptions.value.some((option) => option.value === options.filters.locationCode)
+      ) {
+        options.filters.locationCode = undefined
+        options.filters.lotNo = undefined
+        return
+      }
+      if (
+        kind !== 'count' &&
+        options.filters.lotNo &&
+        !lotOptions.value.some((option) => option.value === options.filters.lotNo)
+      ) {
+        options.filters.lotNo = undefined
+      }
+    },
+    { flush: 'sync' },
+  )
 
   return {
+    ready,
+    searchKeyword,
     locationOptions,
     lotOptions,
     sourceLabel: computed(() => '当前范围仓储作业记录候选'),
-    sourceKind: computed(() => response.value?.sourceKind ?? undefined),
     asOfUtc: computed(() => response.value?.asOfUtc ?? undefined),
     freshnessUtc: computed(() => response.value?.freshnessUtc ?? undefined),
     truncated: computed(() => response.value?.truncated === true),
     pending: candidatesQuery.isLoading,
-    error: candidatesQuery.error,
+    error: computed(() => (ready.value ? candidatesQuery.error.value : undefined)),
     refresh: () => (ready.value ? candidatesQuery.refetch() : Promise.resolve()),
   }
 }

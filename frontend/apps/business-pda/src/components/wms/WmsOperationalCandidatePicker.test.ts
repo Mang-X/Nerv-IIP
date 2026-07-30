@@ -18,7 +18,8 @@ function mountPicker(showLot = true) {
       lotOptions,
       showLot,
       sourceLabel: '当前范围仓储作业记录候选',
-      sourceKind: 'warehouse-operational-records',
+      ready: true,
+      searchKeyword: '',
       asOfUtc: '2026-07-30T01:00:00Z',
       freshnessUtc: '2026-07-30T00:59:00Z',
       truncated: true,
@@ -33,8 +34,13 @@ describe('WMS operational candidate picker', () => {
     expect(wrapper.findAllComponents(NvPicker)).toHaveLength(2)
     expect(wrapper.findAllComponents(NvScanBar)).toHaveLength(1)
     expect(wrapper.text()).toContain('当前范围仓储作业记录候选')
-    expect(wrapper.text()).toContain('warehouse-operational-records')
+    expect(wrapper.text()).not.toContain('warehouse-operational-records')
+    expect(wrapper.text()).not.toContain('2026-07-30T01:00:00Z')
     expect(wrapper.text()).toContain('候选已截断')
+    expect(wrapper.findAllComponents(NvPicker)[0]!.props('options')[0]).toEqual({
+      label: '全部库位',
+      value: '',
+    })
   })
 
   it('uses candidates first and keeps an unmatched scan as an explicit unverified filter', async () => {
@@ -51,6 +57,13 @@ describe('WMS operational candidate picker', () => {
     expect(wrapper.text()).toContain('已作为扫码筛选值应用')
     expect(wrapper.text()).toContain('候选可能因范围或截断不完整')
     expect(wrapper.text()).toContain('未验证为主数据')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '批次候选')!
+      .trigger('click')
+    expect(wrapper.text()).toContain('UNKNOWN')
+    expect(wrapper.text()).toContain('清除扫码筛选')
 
     const clearButton = wrapper.findAll('button').find((button) => button.text() === '清除扫码筛选')
     expect(clearButton).toBeDefined()
@@ -81,5 +94,32 @@ describe('WMS operational candidate picker', () => {
     expect(source).not.toContain("from '@nerv-iip/ui'")
     expect(source).not.toContain('<select')
     expect(source).not.toContain('NvMobileInput')
+  })
+
+  it('fails closed before scope readiness and exposes retryable candidate errors', async () => {
+    const unready = mount(WmsOperationalCandidatePicker, {
+      props: {
+        locationOptions,
+        lotOptions,
+        sourceLabel: '当前范围仓储作业记录候选',
+        ready: false,
+      },
+    })
+    expect(unready.text()).toContain('请先选择可用作业范围')
+    expect(unready.findComponent(NvScanBar).exists()).toBe(false)
+
+    const failed = mount(WmsOperationalCandidatePicker, {
+      props: {
+        locationOptions: [],
+        lotOptions: [],
+        sourceLabel: '当前范围仓储作业记录候选',
+        ready: true,
+        error: new Error('network'),
+      },
+    })
+    expect(failed.text()).toContain('候选加载失败')
+    expect(failed.text()).not.toContain('暂无库位候选')
+    await failed.get('[data-testid="candidate-retry"]').trigger('click')
+    expect(failed.emitted('retry')).toHaveLength(1)
   })
 })

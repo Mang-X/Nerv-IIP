@@ -54,6 +54,8 @@ const {
   completePending,
   organizationId,
   environmentId,
+  scopeKind,
+  scopeId,
   scopeReady,
   lastUpdatedAt,
   hasSuccessfulResponse,
@@ -62,9 +64,14 @@ const {
 const candidates = useWmsOperationalCandidates('count', {
   organizationId,
   environmentId,
-  scopeKey,
+  scopeKind,
+  scopeId,
+  scopeReady,
   filters,
 })
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
 const countScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
@@ -266,16 +273,19 @@ function goHome() {
         />
         <WmsOperationalCandidatePicker
           v-model:location-code="filters.locationCode"
+          v-model:search-keyword="candidates.searchKeyword.value"
           :location-options="candidates.locationOptions.value"
           :lot-options="candidates.lotOptions.value"
+          :ready="candidates.ready.value"
           :source-label="candidates.sourceLabel.value"
-          :source-kind="candidates.sourceKind.value"
           :as-of-utc="candidates.asOfUtc.value"
           :freshness-utc="candidates.freshnessUtc.value"
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
+          :error="candidates.error.value"
           :active="scanActive"
           :show-lot="false"
+          @retry="candidates.refresh"
         />
         <ListScopeMeta
           :scope="countScope"
@@ -299,7 +309,7 @@ function goHome() {
           :pending="pending"
           fallback="盘点任务加载失败，请下拉重试或检查网络。"
           test-id="error-banner"
-          @retry="() => refresh()"
+          @retry="refreshAll"
         />
       </div>
 
@@ -309,7 +319,7 @@ function goHome() {
         :pending="pending"
         :loaded="executions.length"
         :total="countTotal"
-        @refresh="refresh"
+        @refresh="refreshAll"
         @load-more="loadMore"
       >
         <div class="space-y-4 px-4 py-3">
