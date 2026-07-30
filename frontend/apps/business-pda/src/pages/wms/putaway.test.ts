@@ -5,7 +5,17 @@ import { computed, reactive, shallowRef } from 'vue'
 const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
+const actionPending = shallowRef(false)
+const actionUnconfirmed = shallowRef(false)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
+vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
+}))
 const scopeKey = shallowRef('self:emp049')
 const filters = reactive({
   status: 'Open' as string | undefined,
@@ -31,7 +41,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     error: shallowRef(),
     refreshing: shallowRef(false),
     loadingMore: shallowRef(false),
-    actionPending: shallowRef(false),
+    actionPending,
+    actionUnconfirmed,
     refresh,
     loadMore,
     executeTask,
@@ -66,7 +77,16 @@ describe('WMS 上架作业页', () => {
     filters.keyword = undefined
     filters.locationCode = undefined
     scopeKey.value = 'self:emp049'
+    actionPending.value = false
+    actionUnconfirmed.value = false
+    routeGuardState.guard = undefined
   })
+
+  function dispatchBeforeUnload() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event
+  }
 
   it('使用同一移动作业视图并锁定上架任务类型', () => {
     const wrapper = mount(PutawayPage, {
@@ -167,5 +187,20 @@ describe('WMS 上架作业页', () => {
     await flushPromises()
 
     expect(filters.status).toBe('InProgress')
+  })
+
+  it.each([
+    ['动作请求发送中', actionPending],
+    ['动作结果待核实', actionUnconfirmed],
+  ])('%s时阻止路由离开与浏览器刷新', async (_state, locked) => {
+    mount(PutawayPage)
+    locked.value = true
+
+    expect(routeGuardState.guard?.()).toBe(false)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true)
+
+    locked.value = false
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
   })
 })

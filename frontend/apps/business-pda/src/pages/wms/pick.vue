@@ -2,9 +2,11 @@
 import WarehouseTaskExecutionView, {
   type WarehouseTaskExecutionIntent,
 } from '@/components/wms/WarehouseTaskExecutionView.vue'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsPicking } from '@/composables/useBusinessWms'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { NvAppShellMobile } from '@nerv-iip/ui-mobile'
+import { computed } from 'vue'
 
 definePage({
   meta: {
@@ -36,6 +38,8 @@ const {
   loadMore,
   executeTask,
 } = useWmsPicking({ status: 'Open' })
+const actionLeaveLocked = computed(() => actionPending.value || actionUnconfirmed.value)
+usePendingWriteLeaveGuard(actionLeaveLocked)
 
 const candidates = useWmsOperationalCandidates('shipment', {
   organizationId,
