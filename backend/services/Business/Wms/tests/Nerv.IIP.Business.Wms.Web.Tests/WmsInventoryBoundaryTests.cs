@@ -1864,6 +1864,63 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"10\"")]
+    public async Task Complete_wcs_task_with_non_object_json_rejects_without_losing_retryability(
+        string completionPayloadJson)
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-NON-OBJECT-001",
+            "OUT-WCS-NON-OBJECT-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m,
+            assignedPoolCode: "POOL-WCS");
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-NON-OBJECT-001",
+            """{"step":1}""");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            handler.Handle(
+                new CompleteWcsTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "WCS-NON-OBJECT-001",
+                    completionPayloadJson),
+                CancellationToken.None));
+
+        Assert.Contains("JSON object", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+
+        await handler.Handle(
+            new CompleteWcsTaskCommand(
+                "org-001",
+                "env-dev",
+                "WCS-NON-OBJECT-001",
+                """{"actualQuantity":10}"""),
+            CancellationToken.None);
+
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
+    }
+
     [Fact]
     public async Task Complete_inbound_rejects_an_order_owned_by_another_business_scope_without_mutation()
     {

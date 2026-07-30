@@ -2498,6 +2498,12 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
         {
             using var document = JsonDocument.Parse(completionPayloadJson);
             var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new WmsUnprocessableException(
+                    "WCS completion payload must be a JSON object.");
+            }
+
             foreach (var propertyName in new[] { "actualQuantity", "executedQuantity" })
             {
                 if (root.TryGetProperty(propertyName, out var property) && property.TryGetDecimal(out var quantity))
