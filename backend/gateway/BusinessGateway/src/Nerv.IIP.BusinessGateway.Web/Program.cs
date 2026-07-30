@@ -30,6 +30,10 @@ builder.Services
         {
             s.Title = "Nerv IIP Business Gateway";
             s.Version = "v1";
+            // OpenAPI 快照必须机器无关：禁止 NJsonSchema 运行时探测 NuGet 全局缓存/SDK 目录
+            // 读取依赖包 XML 文档（如 FastEndpoints.xml）。本机缓存是否解出过 XML
+            // （NUGET_XMLDOC_MODE）会导致导出快照与 CI 重生成结果漂移。
+            s.SchemaSettings.ResolveExternalXmlDocumentation = false;
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new WmsWarehouseTaskOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());

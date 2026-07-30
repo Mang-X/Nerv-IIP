@@ -427,6 +427,14 @@ BusinessGateway console API 引入后，生成链路增加 `business-gateway-con
 
 生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、api-client 生成、前端 typecheck/test/build；在脚本治理迁移中，该入口必须显式声明混合 `verify`/`generate` 副作用，或拆成受控 generate step 与纯验证 step。
 
+### 导出环境口径：NuGet package XML 文档漂移（已根治）
+
+历史坑（PR #1274 实证）：NSwag/NJsonSchema 生成 swagger 文档时，会在运行时探测 NuGet 全局缓存目录读取依赖 package 的 XML 文档（如 `~/.nuget/packages/fastendpoints/<ver>/lib/<tfm>/FastEndpoints.xml`），把注释注入 `FastEndpointsErrorResponse` 等 schema 的 `description`；且缺失当前 TFM 的 XML 时会回落读取同一 package 其他 TFM 目录，手工删除单个 XML 文件无效。GitHub Runner 默认 `NUGET_XMLDOC_MODE=skip`，缓存中从不解出这些 XML，因此本机（曾以非 skip 模式 restore 过）导出的快照会与 CI 重生成结果漂移。实测该探测路径不遵循 `NUGET_PACKAGES` 环境变量——运行网关进程时把 `NUGET_PACKAGES` 指向空目录并不能消除漂移，环境变量隔离方案不可行。
+
+根治方案：两个 Gateway 的 `SwaggerDocument` 配置统一设置 `s.SchemaSettings.ResolveExternalXmlDocumentation = false`，禁止 NJsonSchema 探测程序集旁路径之外的外部 XML（NuGet 缓存、SDK 目录），使导出结果机器无关；随构建输出的本仓库项目 XML（如 `Nerv.IIP.Contracts.*.xml`）仍正常参与 description 生成。已在“本机缓存已解出 package XML”的污染状态下实证：导出 + `pnpm -C frontend generate:api` 与已提交快照零漂移。辅助口径：`scripts/export-gateway-openapi.ps1` 的构建步骤固定 `NUGET_XMLDOC_MODE=skip`，与 CI restore 行为一致，避免导出流程继续向本机缓存解出 XML。
+
+另注意：corepack 按“就近 `package.json` 的 `packageManager` 字段”决定 pnpm 版本，仓库根目录没有 `package.json`，从根目录调用 `pnpm -C frontend ...` 会拉取最新 pnpm 并因与锁定版本不一致直接失败；脚本内的 pnpm 调用必须以 `frontend/` 为工作目录（`scripts/verify-openapi-client-drift.ps1` 已如此处理）。
+
 ## 使用规则
 
 1. 页面组件和 composables 不直接写 fetch 或 axios URL。

@@ -81,11 +81,14 @@ function Export-GatewayOpenApi {
   $buildOutputDirectory = Join-Path $root "artifacts/openapi-export/$Name"
   New-Item -ItemType Directory -Force -Path $buildOutputDirectory | Out-Null
 
-  Invoke-DotNet `
-    -Arguments @("build", $ProjectPath, "-o", $buildOutputDirectory, "/p:UseSharedCompilation=false") `
-    -WorkingDirectory $root `
-    -TimeoutSeconds 600 `
-    -Name "export-gateway-openapi-$Name-build" | Out-Null
+  # 与 GitHub Runner 默认口径一致（NUGET_XMLDOC_MODE=skip）：restore 阶段不向本机缓存解出 package XML 文档。
+  Invoke-WithScopedEnvironment -Variables @{ "NUGET_XMLDOC_MODE" = "skip" } -ScriptBlock {
+    Invoke-DotNet `
+      -Arguments @("build", $ProjectPath, "-o", $buildOutputDirectory, "/p:UseSharedCompilation=false") `
+      -WorkingDirectory $root `
+      -TimeoutSeconds 600 `
+      -Name "export-gateway-openapi-$Name-build" | Out-Null
+  }
 
   $assemblyPath = Join-Path $buildOutputDirectory "$assemblyName.dll"
   if (-not (Test-Path -LiteralPath $assemblyPath -PathType Leaf)) {
