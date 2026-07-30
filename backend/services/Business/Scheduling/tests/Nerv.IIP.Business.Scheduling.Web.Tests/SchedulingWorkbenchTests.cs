@@ -101,6 +101,28 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Source_provider_wraps_invalid_mes_work_order_json_as_known_exception()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        });
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            new StubProductEngineeringClient());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.ResolveOrdersAsync(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.UtcNow,
+            [new("WO-001", 10, false)],
+            CancellationToken.None));
+
+        Assert.Contains("MES", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("work-order", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Source_provider_fails_closed_for_a_terminal_work_order()
     {
         var handler = new StubHandler(_ => Json(new

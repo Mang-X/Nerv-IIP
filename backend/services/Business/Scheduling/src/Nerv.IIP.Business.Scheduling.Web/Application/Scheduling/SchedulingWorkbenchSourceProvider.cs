@@ -133,24 +133,42 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
 
         using var response = await mesClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw new InvalidOperationException("MES returned an empty work-order response.");
-        }
+        return await ReadMesWorkOrderListResponseAsync(response.Content, cancellationToken);
+    }
 
-        using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
-        var payload = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
-            ? data
-            : root;
-        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+    private static async Task<MesWorkOrderListResponse> ReadMesWorkOrderListResponseAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            throw new InvalidOperationException("MES returned an empty work-order response payload.");
-        }
+            var json = await content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                throw new KnownException("MES returned an empty work-order response.");
+            }
 
-        return payload.Deserialize<MesWorkOrderListResponse>(SchedulingJson.Options)
-            ?? throw new InvalidOperationException("MES returned an empty work-order response payload.");
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            var payload = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
+                ? data
+                : root;
+            if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                throw new KnownException("MES returned an empty work-order response payload.");
+            }
+
+            return payload.Deserialize<MesWorkOrderListResponse>(SchedulingJson.Options)
+                ?? throw new KnownException("MES returned an empty work-order response payload.");
+        }
+        catch (JsonException exception)
+        {
+            throw new KnownException($"MES returned an invalid work-order response: {exception.Message}");
+        }
+        catch (NotSupportedException exception)
+        {
+            throw new KnownException($"MES returned an unsupported work-order response: {exception.Message}");
+        }
     }
 
     // Service-side authority. The Business Console mirrors these values only to improve pool UX.
