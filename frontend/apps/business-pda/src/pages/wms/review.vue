@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
+import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -15,7 +17,10 @@ import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
+  NvMobileButton,
+  NvMobileInput,
   NvMobileResult,
+  NvMobileSwitch,
   NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
@@ -32,11 +37,17 @@ definePage({
 const router = useRouter()
 const {
   filters,
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
   orders,
   total,
   pending,
+  refreshing,
+  loadingMore,
   error,
   refresh,
+  loadMore,
   completeOutbound,
   completePending,
   organizationId,
@@ -45,11 +56,19 @@ const {
   lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
-} = useWmsOutbound()
+} = useWmsOutbound({ status: 'Open' })
 const reviewScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+  scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const reviewTotal = computed(() => total.value)
+const reviewStatusOptions = [
+  { label: '全部状态', value: '' },
+  { label: '待复核发货', value: 'Open' },
+  { label: '库存过账中', value: 'InventoryPostingPending' },
+  { label: '库存过账失败', value: 'InventoryPostingFailed' },
+  { label: '已完成', value: 'Completed' },
+  { label: '已取消', value: 'Cancelled' },
+]
 
 // 选中的出库单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')
@@ -106,6 +125,11 @@ const showEmpty = computed(
 
 function onScan(value: string) {
   filters.keyword = value
+}
+
+function onReviewNoScan(value: string) {
+  if (intentLocked.value) return
+  packReviewNo.value = value.trim()
 }
 
 function canComplete(status?: string) {
@@ -212,66 +236,77 @@ function goHome() {
       :description="selectedOrderNo ? `出库单 ${selectedOrderNo}` : undefined"
     >
       <template #actions>
-        <button
-          type="button"
-          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="backToList"
-        >
+        <NvMobileButton block size="lg" variant="primary" @click="backToList">
           继续
-        </button>
-        <button
-          type="button"
-          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
-          @click="goHome"
-        >
-          返回
-        </button>
+        </NvMobileButton>
+        <NvMobileButton block size="lg" variant="outline" @click="goHome"> 返回 </NvMobileButton>
       </template>
     </NvMobileResult>
 
-    <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描出库单号" :active="scanActive" @scan="onScan" />
-      <ListScopeMeta
-        :scope="reviewScope"
-        source="出库复核服务（组织/环境范围，暂不支持按操作员归属筛选）"
-        :loaded="orders.length"
-        :total="reviewTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="出库复核服务未成功返回，请刷新重试。"
-        :empty="!scopeReady || showEmpty"
-        :empty-explanation="
-          scopeReady
-            ? '当前组织/环境范围没有待复核出库单；暂不支持按操作员归属筛选，空态不代表个人任务。'
-            : '缺少组织或环境范围，未发起查询。'
-        "
-      />
+    <div v-else class="flex h-full min-h-0 flex-col">
+      <div class="space-y-3 border-b border-border bg-card px-4 py-3">
+        <NvScanBar placeholder="扫描出库单号" :active="scanActive" @scan="onScan" />
+        <WmsScopeStatusFilter
+          v-model:scope-key="scopeKey"
+          v-model:status="filters.status"
+          :scope-options="scopeOptions"
+          :status-options="reviewStatusOptions"
+        />
+        <ListScopeMeta
+          :scope="reviewScope"
+          source="WMS 发货作业范围目录"
+          :loaded="orders.length"
+          :total="reviewTotal"
+          :updated-at="lastUpdatedAt"
+          :failed="hasFailedResponse"
+          failure-explanation="出库复核服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showEmpty"
+          :empty-explanation="
+            scopeReady
+              ? `“${reviewScope}”在当前状态下没有待复核出库单。`
+              : 'WMS 未返回可用作业范围，未发起列表查询。'
+          "
+        />
 
-      <RetryableListError
-        v-if="error || hasFailedResponse"
-        :error="error ?? '出库复核服务未成功返回'"
-        :pending="pending"
-        fallback="单据加载失败，请下拉重试或检查网络。"
-        test-id="error-banner"
-        @retry="() => refresh()"
-      />
-
-      <div
-        v-if="showEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-      >
-        暂无待发货单据（当前组织/环境范围；暂不支持按操作员归属筛选）
-      </div>
-
-      <div v-else class="overflow-hidden rounded-lg border border-border">
-        <NvListRow
-          v-for="order in orders"
-          :key="order.outboundOrderId"
-          :title="order.outboundOrderNo ?? ''"
-          :subtitle="outboundOrderStatusLabel(order.status)"
-          @select="selectOrder(order.outboundOrderId, order.outboundOrderNo, order.status)"
+        <RetryableListError
+          v-if="error || hasFailedResponse"
+          :error="error ?? '出库复核服务未成功返回'"
+          :pending="pending"
+          fallback="单据加载失败，请下拉重试或检查网络。"
+          test-id="error-banner"
+          @retry="() => refresh()"
         />
       </div>
+
+      <WmsPagedListFrame
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :pending="pending"
+        :loaded="orders.length"
+        :total="reviewTotal"
+        @refresh="refresh"
+        @load-more="loadMore"
+      >
+        <div class="space-y-4 px-4 py-3">
+          <div
+            v-if="showEmpty"
+            class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            “{{ reviewScope }}”在当前状态下暂无待发货单据；数据来自 WMS 派工
+          </div>
+
+          <div v-else class="overflow-hidden rounded-lg border border-border">
+            <NvListRow
+              v-for="order in orders"
+              :key="order.outboundOrderId"
+              :title="order.outboundOrderNo ?? ''"
+              :subtitle="outboundOrderStatusLabel(order.status)"
+              :interactive="canComplete(order.status)"
+              @select="selectOrder(order.outboundOrderId, order.outboundOrderNo, order.status)"
+            />
+          </div>
+        </div>
+      </WmsPagedListFrame>
     </div>
 
     <!-- 复核完成确认抽屉 -->
@@ -282,57 +317,57 @@ function goHome() {
         </p>
         <p class="text-xs text-muted-foreground">{{ reviewStepHint }}</p>
 
+        <NvScanBar
+          placeholder="扫描复核单号"
+          :active="sheetOpen && !completed && !intentLocked"
+          @scan="onReviewNoScan"
+        />
         <label class="block space-y-2">
           <span class="text-sm font-medium text-foreground">复核单号</span>
-          <input
+          <NvMobileInput
             v-model="packReviewNo"
             data-testid="pack-review-no"
             type="text"
             :disabled="intentLocked"
             inputmode="text"
-            placeholder="请输入复核单号"
-            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
+            placeholder="扫描优先，也可手动补录"
           />
         </label>
 
         <div class="flex items-center justify-between">
-          <span class="text-sm font-medium text-foreground">复核结果</span>
-          <button
-            type="button"
+          <div>
+            <p class="text-sm font-medium text-foreground">复核结果</p>
+            <p class="text-xs text-muted-foreground">{{ passed ? '通过' : '不通过' }}</p>
+          </div>
+          <NvMobileSwitch
+            v-model:checked="passed"
             data-testid="toggle-passed"
             :disabled="intentLocked"
-            class="min-h-touch rounded-lg border px-4 text-base font-medium"
-            :class="
-              passed
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-destructive bg-destructive/10 text-destructive'
-            "
-            @click="passed = !passed"
-          >
-            {{ passed ? '通过' : '不通过' }}
-          </button>
+          />
         </div>
 
         <p v-if="submitError" class="text-sm text-destructive">{{ submitError }}</p>
 
         <div class="space-y-2 pt-2">
-          <button
-            type="button"
+          <NvMobileButton
+            block
+            size="lg"
+            variant="primary"
             data-testid="confirm-complete"
             :disabled="completePending || !validPackReviewNo"
-            class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="confirmComplete"
           >
             {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
-          </button>
-          <button
-            type="button"
+          </NvMobileButton>
+          <NvMobileButton
+            block
+            size="lg"
+            variant="outline"
             :disabled="intentLocked"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
             @click="closeSheet"
           >
             取消
-          </button>
+          </NvMobileButton>
         </div>
       </div>
     </NvBottomSheet>

@@ -12,7 +12,7 @@ describe('WmsScopeStatusFilter', () => {
         status: 'Open',
         scopeOptions: [
           { label: '我的任务', value: 'self:emp049' },
-          { label: '仓储一组', value: 'team:TEAM-WMS-01' },
+          { label: '一号仓作业池', value: 'work-pool:WMS-SITE-001' },
         ],
         statusOptions: [
           { label: '全部状态', value: '' },
@@ -22,10 +22,10 @@ describe('WmsScopeStatusFilter', () => {
     })
     const fields = wrapper.findAllComponents(NvMobileDropdownMenuItem)
 
-    fields[0]!.vm.$emit('update:modelValue', 'team:TEAM-WMS-01')
+    fields[0]!.vm.$emit('update:modelValue', 'work-pool:WMS-SITE-001')
     fields[1]!.vm.$emit('update:modelValue', '')
 
-    expect(wrapper.emitted('update:scopeKey')?.at(-1)).toEqual(['team:TEAM-WMS-01'])
+    expect(wrapper.emitted('update:scopeKey')?.at(-1)).toEqual(['work-pool:WMS-SITE-001'])
     expect(wrapper.emitted('update:status')?.at(-1)).toEqual([undefined])
   })
 })

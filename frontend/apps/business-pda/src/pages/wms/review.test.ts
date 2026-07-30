@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { NvBottomSheet } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvMobileDropdownMenuItem } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
@@ -52,11 +52,21 @@ const wmsState = vi.hoisted(() => ({
   error: null as unknown,
   pending: false,
   refresh: vi.fn(async () => {}),
+  loadMore: vi.fn(async () => {}),
 }))
+const scopeKey = ref<string | undefined>('self:emp049')
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsOutbound: () => ({
     filters: wmsState.filters,
+    scopeKey,
+    scopeOptions: computed(() => [
+      { label: '我的任务', value: 'self:emp049' },
+      { label: '一号仓发货作业池', value: 'work-pool:WMS-SITE-001-SHIPPING' },
+    ]),
+    selectedScopeLabel: computed(() =>
+      scopeKey.value === 'self:emp049' ? '我的任务' : '一号仓发货作业池',
+    ),
     orders: computed(() => wmsState.orders),
     total: computed(() => wmsState.orders.length),
     organizationId: computed(() => 'org-001'),
@@ -66,8 +76,11 @@ vi.mock('@/composables/useBusinessWms', () => ({
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
+    refreshing: computed(() => false),
+    loadingMore: computed(() => false),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,
+    loadMore: wmsState.loadMore,
     completeOutbound: wmsState.completeOutbound,
     completePending: computed(() => wmsState.completePending),
   }),
@@ -78,6 +91,7 @@ import ReviewPage from './review.vue'
 function resetState() {
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
+  scopeKey.value = 'self:emp049'
   wmsState.orders = [
     {
       outboundOrderId: '11111111-1111-1111-1111-111111111111',
@@ -97,6 +111,7 @@ function resetState() {
   wmsState.pending = false
   wmsState.completeOutbound.mockClear()
   wmsState.refresh.mockClear()
+  wmsState.loadMore.mockClear()
   push.mockClear()
 }
 
@@ -123,6 +138,20 @@ describe('WMS 复核发货', () => {
     await input.setValue('OB-2026-0002')
     await input.trigger('keydown.enter')
     expect(wmsState.filters.keyword).toBe('OB-2026-0002')
+  })
+
+  it('可从 WMS 可信目录切换作业范围和状态，不要求手输筛选值', async () => {
+    const wrapper = mount(ReviewPage)
+    const fields = wrapper.findAllComponents(NvMobileDropdownMenuItem)
+
+    expect(fields).toHaveLength(2)
+    fields[0]!.vm.$emit('update:modelValue', 'work-pool:WMS-SITE-001-SHIPPING')
+    fields[1]!.vm.$emit('update:modelValue', 'Completed')
+    await wrapper.vm.$nextTick()
+
+    expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-SHIPPING')
+    expect(wmsState.filters.status).toBe('Completed')
+    expect(wrapper.text()).toContain('WMS 发货作业范围目录')
   })
 
   it('点单 → 抽屉 → 复核单号未填时确认按钮禁用', async () => {

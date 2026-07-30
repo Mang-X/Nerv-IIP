@@ -1,6 +1,6 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NvBottomSheet } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvMobileDropdownMenuItem } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -60,6 +60,7 @@ const wmsState = vi.hoisted(() => ({
   error: null as unknown,
   pending: false,
   refresh: vi.fn(() => Promise.resolve()),
+  loadMore: vi.fn(() => Promise.resolve()),
   linesByOrderNo: {
     'IB-2026-0001': [
       {
@@ -94,12 +95,19 @@ const wmsState = vi.hoisted(() => ({
   linesTotal: null as number | null,
   linesRefresh: vi.fn(() => Promise.resolve()),
 }))
+const scopeKey = ref<string | undefined>('self:emp049')
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
-    scopeKey: ref('self:emp049'),
-    scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+    scopeKey,
+    scopeOptions: computed(() => [
+      { label: '我的任务', value: 'self:emp049' },
+      { label: '一号仓收货作业池', value: 'work-pool:WMS-SITE-001-RECEIVING' },
+    ]),
+    selectedScopeLabel: computed(() =>
+      scopeKey.value === 'self:emp049' ? '我的任务' : '一号仓收货作业池',
+    ),
     orders: computed(() => wmsState.orders),
     total: computed(() => wmsState.orders.length),
     organizationId: computed(() => 'org-001'),
@@ -109,8 +117,11 @@ vi.mock('@/composables/useBusinessWms', () => ({
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
+    refreshing: computed(() => false),
+    loadingMore: computed(() => false),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,
+    loadMore: wmsState.loadMore,
     completeInbound: wmsState.completeInbound,
     completePending: computed(() => wmsState.completePending),
   }),
@@ -139,6 +150,7 @@ import InboundPage from './inbound.vue'
 function resetState() {
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
+  scopeKey.value = 'self:emp049'
   wmsState.orders = [
     {
       inboundOrderId: '11111111-1111-1111-1111-111111111111',
@@ -194,6 +206,7 @@ function resetState() {
   }
   wmsState.completeInbound.mockClear()
   wmsState.refresh.mockClear()
+  wmsState.loadMore.mockClear()
   wmsState.linesRefresh.mockClear()
   push.mockClear()
 }
@@ -227,6 +240,20 @@ describe('WMS 收货入库', () => {
     await input.setValue('IB-2026-0002')
     await input.trigger('keydown.enter')
     expect(wmsState.filters.keyword).toBe('IB-2026-0002')
+  })
+
+  it('可从 WMS 可信目录切换作业范围和状态，不要求手输筛选值', async () => {
+    const wrapper = mount(InboundPage)
+    const fields = wrapper.findAllComponents(NvMobileDropdownMenuItem)
+
+    expect(fields).toHaveLength(2)
+    fields[0]!.vm.$emit('update:modelValue', 'work-pool:WMS-SITE-001-RECEIVING')
+    fields[1]!.vm.$emit('update:modelValue', 'Completed')
+    await wrapper.vm.$nextTick()
+
+    expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-RECEIVING')
+    expect(wmsState.filters.status).toBe('Completed')
+    expect(wrapper.text()).toContain('WMS 收货作业范围目录')
   })
 
   it('点单 → 抽屉展示行级批号+质检门禁明细 + 后端效期三色（无需扫码）', async () => {
@@ -571,7 +598,7 @@ describe('WMS 收货入库', () => {
   it('无单据且无错误时显示空态', () => {
     wmsState.orders = []
     const wrapper = mount(InboundPage)
-    expect(wrapper.text()).toContain('暂无待收货单据')
+    expect(wrapper.text()).toContain('暂无收货单据')
   })
 })
 
