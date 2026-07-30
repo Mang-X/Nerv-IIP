@@ -1342,7 +1342,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/counts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/counts", BusinessGatewayPermissions.WmsCountsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/counts", BusinessGatewayPermissions.WmsCountsRead);
@@ -1369,7 +1369,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsCountsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
