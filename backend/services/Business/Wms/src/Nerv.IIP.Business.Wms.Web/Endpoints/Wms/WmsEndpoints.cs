@@ -564,7 +564,8 @@ public sealed class ListPutawayTasksEndpoint(
             req.LotNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            ActorPrincipalId: req.ActorPrincipalId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -764,7 +765,8 @@ public sealed class ListPickingTasksEndpoint(
             req.LotNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            ActorPrincipalId: req.ActorPrincipalId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -799,7 +801,8 @@ public sealed class ListReplenishmentTasksEndpoint(
             req.LotNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            ActorPrincipalId: req.ActorPrincipalId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

@@ -288,6 +288,76 @@ public sealed class WmsWarehouseTaskManualExecutionTests
     }
 
     [Fact]
+    public async Task Warehouse_task_list_actions_respect_actor_assignment_and_execution_channel()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var manual = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-MANUAL",
+            assignedOperatorUserId: "user-001");
+        manual.Start("user-001", manual.Version);
+        var wcs = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-WCS",
+            assignedPoolCode: "POOL-A");
+        wcs.ClaimWcsExecution("wcs-task-001", wcs.Version);
+        var terminal = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-TERMINAL",
+            assignedOperatorUserId: "user-001");
+        terminal.Start("user-001", terminal.Version);
+        terminal.Complete(terminal.PlannedQuantity, "user-001", null, terminal.Version);
+        dbContext.WarehouseTasks.AddRange(
+            CreateTask(
+                WarehouseTaskType.Picking,
+                taskNo: "PICK-SELF",
+                assignedOperatorUserId: "user-001"),
+            CreateTask(
+                WarehouseTaskType.Picking,
+                taskNo: "PICK-POOL",
+                assignedPoolCode: "POOL-A"),
+            CreateTask(
+                WarehouseTaskType.Picking,
+                taskNo: "PICK-OTHER",
+                assignedOperatorUserId: "user-other"),
+            manual,
+            wcs,
+            terminal);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Picking,
+                AssignedPoolCodes: ["POOL-A"],
+                ActorPrincipalId: "user-001"),
+            CancellationToken.None);
+        var rows = result.Items.ToDictionary(x => x.TaskNo, StringComparer.Ordinal);
+
+        Assert.Equal(["start"], rows["PICK-SELF"].AllowedActions);
+        Assert.Empty(rows["PICK-SELF"].BlockReasons);
+        Assert.Equal(["start"], rows["PICK-POOL"].AllowedActions);
+        Assert.Empty(rows["PICK-POOL"].BlockReasons);
+        Assert.Empty(rows["PICK-OTHER"].AllowedActions);
+        Assert.Equal(
+            ["TASK_ASSIGNED_TO_ANOTHER_OPERATOR"],
+            rows["PICK-OTHER"].BlockReasons);
+        Assert.Equal(
+            ["progress", "exception", "complete"],
+            rows["PICK-MANUAL"].AllowedActions);
+        Assert.Empty(rows["PICK-MANUAL"].BlockReasons);
+        Assert.Empty(rows["PICK-WCS"].AllowedActions);
+        Assert.Equal(
+            ["TASK_EXECUTION_CLAIMED_BY_WCS"],
+            rows["PICK-WCS"].BlockReasons);
+        Assert.Empty(rows["PICK-TERMINAL"].AllowedActions);
+        Assert.Equal(["TASK_TERMINAL"], rows["PICK-TERMINAL"].BlockReasons);
+    }
+
+    [Fact]
     public async Task Warehouse_task_list_is_deny_all_without_internal_ownership_scope()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();

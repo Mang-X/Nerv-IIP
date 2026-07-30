@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 
@@ -1100,7 +1101,7 @@ internal static class WarehouseTaskActionExecution
                 throw new WmsIdempotencyConflictException();
             }
 
-            return FromReceipt(task.TaskType, existingReceipt);
+            return FromReceipt(task, command.ActorPrincipalId, existingReceipt);
         }
 
         try
@@ -1116,7 +1117,7 @@ internal static class WarehouseTaskActionExecution
             throw new WmsLifecycleConflictException(action, task.Status.ToString());
         }
 
-        var result = FromTask(task);
+        var result = FromTask(task, command.ActorPrincipalId);
         dbContext.WarehouseTaskActionReceipts.Add(WarehouseTaskActionReceipt.Create(
             command.OrganizationId,
             command.EnvironmentId,
@@ -1198,49 +1199,41 @@ internal static class WarehouseTaskActionExecution
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
     }
 
-    private static WarehouseTaskActionResult FromTask(WarehouseTask task)
+    private static WarehouseTaskActionResult FromTask(
+        WarehouseTask task,
+        string actorPrincipalId)
     {
-        var status = task.Status.ToString();
-        var allowedActions = status == WarehouseTaskStatus.Open.ToString()
-            ? new[] { "start" }
-            : status == WarehouseTaskStatus.InProgress.ToString()
-                ? new[] { "progress", "exception", "complete" }
-                : [];
-        var blockReasons = allowedActions.Length == 0
-            ? new[] { "TASK_TERMINAL" }
-            : [];
+        var presentation = WarehouseTaskQueryPresentation.Evaluate(
+            task,
+            actorPrincipalId);
         return new WarehouseTaskActionResult(
             task.Id,
             task.TaskType.ToString(),
-            status,
+            task.Status.ToString(),
             task.Version,
             task.ExecutedQuantity,
             Math.Max(0, task.PlannedQuantity - task.ExecutedQuantity),
-            allowedActions,
-            blockReasons);
+            presentation.AllowedActions,
+            presentation.BlockReasons);
     }
 
     private static WarehouseTaskActionResult FromReceipt(
-        WarehouseTaskType taskType,
+        WarehouseTask task,
+        string actorPrincipalId,
         WarehouseTaskActionReceipt receipt)
     {
-        var allowedActions = receipt.ResultStatus == WarehouseTaskStatus.Open.ToString()
-            ? new[] { "start" }
-            : receipt.ResultStatus == WarehouseTaskStatus.InProgress.ToString()
-                ? new[] { "progress", "exception", "complete" }
-                : [];
-        var blockReasons = allowedActions.Length == 0
-            ? new[] { "TASK_TERMINAL" }
-            : [];
+        var presentation = task.Version == receipt.ResultVersion
+            ? WarehouseTaskQueryPresentation.Evaluate(task, actorPrincipalId)
+            : WarehouseTaskQueryPresentation.StateChangedSinceReceipt();
         return new WarehouseTaskActionResult(
             receipt.WarehouseTaskId,
-            taskType.ToString(),
+            task.TaskType.ToString(),
             receipt.ResultStatus,
             receipt.ResultVersion,
             receipt.ResultExecutedQuantity,
             receipt.ResultDifferenceQuantity,
-            allowedActions,
-            blockReasons);
+            presentation.AllowedActions,
+            presentation.BlockReasons);
     }
 }
 

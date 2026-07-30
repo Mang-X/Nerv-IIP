@@ -513,7 +513,8 @@ public sealed record ListWarehouseTasksQuery(
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false) : IQuery<ListWarehouseTasksResponse>;
+    bool OrganizationWideScope = false,
+    string? ActorPrincipalId = null) : IQuery<ListWarehouseTasksResponse>;
 
 public sealed record ListWarehouseTasksResponse(IReadOnlyCollection<WarehouseTaskFact> Items, int Total);
 
@@ -616,48 +617,126 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             .Take(take)
             .ToArrayAsync(cancellationToken);
         var items = rows
-            .Select(x => new WarehouseTaskFact(
-                x.Id,
-                x.OrganizationId,
-                x.EnvironmentId,
-                x.TaskType.ToString(),
-                x.TaskNo,
-                x.SourceOrderNo,
-                x.SourceOrderLineNo,
-                x.SkuCode,
-                x.UomCode,
-                x.SiteCode,
-                x.FromLocationCode,
-                x.ToLocationCode,
-                x.AssignedOperatorUserId,
-                x.AssignedPoolCode,
-                x.LotNo,
-                x.SerialNo,
-                x.PlannedQuantity,
-                x.ExecutedQuantity,
-                x.Status.ToString(),
-                x.Version,
-                x.CreatedAtUtc,
-                x.CompletedAtUtc,
-                WarehouseTaskQueryPresentation.AllowedActions(x.Status),
-                WarehouseTaskQueryPresentation.BlockReasons(x.Status)))
+            .Select(x =>
+            {
+                var presentation = WarehouseTaskQueryPresentation.Evaluate(
+                    x,
+                    request.ActorPrincipalId);
+                return new WarehouseTaskFact(
+                    x.Id,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.TaskType.ToString(),
+                    x.TaskNo,
+                    x.SourceOrderNo,
+                    x.SourceOrderLineNo,
+                    x.SkuCode,
+                    x.UomCode,
+                    x.SiteCode,
+                    x.FromLocationCode,
+                    x.ToLocationCode,
+                    x.AssignedOperatorUserId,
+                    x.AssignedPoolCode,
+                    x.LotNo,
+                    x.SerialNo,
+                    x.PlannedQuantity,
+                    x.ExecutedQuantity,
+                    x.Status.ToString(),
+                    x.Version,
+                    x.CreatedAtUtc,
+                    x.CompletedAtUtc,
+                    presentation.AllowedActions,
+                    presentation.BlockReasons);
+            })
             .ToArray();
         return new ListWarehouseTasksResponse(items, total);
     }
 }
 
+internal sealed record WarehouseTaskActionPresentation(
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
+
 internal static class WarehouseTaskQueryPresentation
 {
-    public static IReadOnlyCollection<string> AllowedActions(WarehouseTaskStatus status) =>
-        status switch
+    public static WarehouseTaskActionPresentation Evaluate(
+        WarehouseTask task,
+        string? actorPrincipalId)
+    {
+        if (task.Status is not (
+            WarehouseTaskStatus.Open
+            or WarehouseTaskStatus.InProgress))
         {
-            WarehouseTaskStatus.Open => ["start"],
-            WarehouseTaskStatus.InProgress => ["progress", "exception", "complete"],
-            _ => [],
-        };
+            return Blocked("TASK_TERMINAL");
+        }
 
-    public static IReadOnlyCollection<string> BlockReasons(WarehouseTaskStatus status) =>
-        AllowedActions(status).Count == 0 ? ["TASK_TERMINAL"] : [];
+        if (task.TaskType is not (
+            WarehouseTaskType.Putaway
+            or WarehouseTaskType.Picking))
+        {
+            return Blocked("TASK_TYPE_NOT_MANUALLY_EXECUTABLE");
+        }
+
+        var actor = WmsText.Optional(actorPrincipalId);
+        if (actor is null)
+        {
+            return Blocked("ACTOR_CONTEXT_MISSING");
+        }
+
+        var blockReasons = new List<string>();
+        if (string.IsNullOrWhiteSpace(task.AssignedPoolCode))
+        {
+            blockReasons.Add("TASK_NOT_ASSIGNED_TO_WORK_POOL");
+        }
+
+        if (!string.IsNullOrWhiteSpace(task.AssignedOperatorUserId)
+            && !string.Equals(
+                task.AssignedOperatorUserId,
+                actor,
+                StringComparison.Ordinal))
+        {
+            blockReasons.Add("TASK_ASSIGNED_TO_ANOTHER_OPERATOR");
+        }
+
+        switch (task.ExecutionChannel)
+        {
+            case WarehouseTaskExecutionChannel.Wcs:
+                blockReasons.Add("TASK_EXECUTION_CLAIMED_BY_WCS");
+                break;
+            case WarehouseTaskExecutionChannel.Manual
+                when !string.Equals(
+                    task.ExecutionClaimedBy,
+                    actor,
+                    StringComparison.Ordinal):
+                blockReasons.Add("TASK_EXECUTION_CLAIMED_BY_ANOTHER_OPERATOR");
+                break;
+            case WarehouseTaskExecutionChannel.LegacyUnclaimed
+                or WarehouseTaskExecutionChannel.Unclaimed
+                when task.Status == WarehouseTaskStatus.InProgress:
+                blockReasons.Add("TASK_EXECUTION_NOT_CLAIMED");
+                break;
+        }
+
+        if (blockReasons.Count > 0)
+        {
+            return new WarehouseTaskActionPresentation([], blockReasons);
+        }
+
+        return new WarehouseTaskActionPresentation(
+            task.Status switch
+            {
+                WarehouseTaskStatus.Open => ["start"],
+                WarehouseTaskStatus.InProgress => ["progress", "exception", "complete"],
+                _ => [],
+            },
+            []);
+    }
+
+    public static WarehouseTaskActionPresentation StateChangedSinceReceipt() =>
+        Blocked("TASK_STATE_CHANGED_SINCE_RECEIPT");
+
+    private static WarehouseTaskActionPresentation Blocked(string reason) =>
+        new([], [reason]);
 }
 
 internal static class WmsOwnershipQueryFilters
