@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
@@ -10,9 +12,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 ///
 /// 与 ERP/MES 的一致性约定：
 /// - 需求来源的 <c>(SourceReference, SourceLineReference)</c> = <c>(SO-2026-#####, "10")</c>，
-///   与 MES 工单 <c>SourcePlanReference.SourceDemandReference = "SO-2026-#####:10"</c> 逐字对上；
+///   MRP pegging 与 MES 工单 <c>SourcePlanReference.SourceDemandReference = "SO-2026-#####"</c> 对上，
+///   行号仍由需求来源自己的 <c>SourceLineReference</c> 保留；
 /// - 已接受建议的下游单据号 = <see cref="WorldHistorySpec.WorkOrderNo"/> 同一公式，
 ///   即 MES 侧真实存在的 <c>WO-2026-#####</c>；
+/// - 销售订单建议 ID 由两侧重复声明的确定性算法计算；DemandPlanning 实际落库建议，MES
+///   仅引用同一 ID，不凭空制造没有计划建议的来源；
 /// - 两侧不通信、不跨库查询、不建跨 schema 外键。
 ///
 /// 计划部人物（4 人）按 MasterData <c>WorldBibleSpec.BuildEmployees()</c> 的同一公式复算：
@@ -79,6 +84,31 @@ public static class WorldHistoryPlanningSpec
     public static string ForecastReference(int year, int month, string skuCode) =>
         string.Create(CultureInfo.InvariantCulture, $"FC-{year}-{month:D2}-{skuCode}");
 
+    /// <summary>
+    /// 跨服务历史种子的销售订单计划建议公共 ID。
+    /// 两侧必须保持字面量、哈希输入与 GUID 字节处理完全一致。
+    /// </summary>
+    public static Guid PlanningSuggestionIdForSalesOrder(string salesOrderNo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(salesOrderNo);
+        return StablePlanningSuggestionId(salesOrderNo);
+    }
+
+    private static Guid PlanningSuggestionIdForForecast(string forecastReference)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(forecastReference);
+        return StablePlanningSuggestionId($"forecast:{forecastReference}");
+    }
+
+    private static Guid StablePlanningSuggestionId(string sourceReference)
+    {
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes($"nerv-iip:world-history:planning-suggestion:{sourceReference}"));
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes.AsSpan(0, 16));
+    }
+
     /// <summary>热销平台（P1/S1）的 8 款成品参与月度预测。</summary>
     public static readonly IReadOnlyList<string> ForecastSkus =
         [.. WorldHistorySpec.FinishedGoodSkus.Where(sku =>
@@ -94,16 +124,22 @@ public static class WorldHistoryPlanningSpec
         }
 
         var windowStart = ResolveWindowStart(asOfDate);
-        var plans = WorldHistorySpec.BuildOrderPlans(asOfDate, scale)
+        var allPlans = WorldHistorySpec.BuildOrderPlans(asOfDate, scale);
+        var plans = allPlans
             .Where(plan => plan.OrderDate >= windowStart)
+            .ToArray();
+        var historicalPlans = allPlans
+            .Where(plan => plan.OrderDate < windowStart)
             .ToArray();
 
         var demands = BuildDemandFacts(plans);
         var forecasts = BuildForecastFacts(windowStart, asOfDate, scale);
         var mpsBuckets = BuildMpsFacts(plans, asOfDate);
         var mrpRuns = BuildMrpRunFacts(plans, forecasts, asOfDate);
+        // 历史批次只补历史订单的 MRP 运行/建议，不把历史需求、MPS 混入当前 10 周活动窗口。
+        var historicalMrpRuns = BuildMrpRunFacts(historicalPlans, [], asOfDate);
 
-        return new WorldHistoryPlanningFacts(windowStart, demands, forecasts, mpsBuckets, mrpRuns);
+        return new WorldHistoryPlanningFacts(windowStart, demands, forecasts, mpsBuckets, mrpRuns, historicalMrpRuns);
     }
 
     /// <summary>窗口起点：包含 asOfDate 的那一周往回 <see cref="DemandWindowWeeks"/> 周，夹到上线日。</summary>
@@ -309,6 +345,7 @@ public static class WorldHistoryPlanningSpec
         var acceptedAtUtc = releaseMoment > runCompletedAtUtc ? releaseMoment : runCompletedAtUtc.AddMinutes(30);
 
         return new WorldHistorySuggestionFact(
+            SuggestionId: PlanningSuggestionIdForSalesOrder(plan.SalesOrderNo),
             DemandSourceReference: plan.SalesOrderNo,
             SourceType: "sales",
             SkuCode: plan.SkuCode,
@@ -345,6 +382,7 @@ public static class WorldHistoryPlanningSpec
             var random = new WorldHistoryRandom($"planning-open-suggestion:{forecast.ForecastReference}");
             var planned = Math.Max(20m, decimal.Round(forecast.Quantity * random.NextInt(20, 36) / 100m / 10m, 0, MidpointRounding.AwayFromZero) * 10m);
             yield return new WorldHistorySuggestionFact(
+                SuggestionId: PlanningSuggestionIdForForecast(forecast.ForecastReference),
                 DemandSourceReference: forecast.ForecastReference,
                 SourceType: "forecast",
                 SkuCode: skuCode,
@@ -393,7 +431,8 @@ public sealed record WorldHistoryPlanningFacts(
     IReadOnlyList<WorldHistoryDemandFact> Demands,
     IReadOnlyList<WorldHistoryForecastFact> Forecasts,
     IReadOnlyList<WorldHistoryMpsFact> MpsBuckets,
-    IReadOnlyList<WorldHistoryMrpRunFact> MrpRuns);
+    IReadOnlyList<WorldHistoryMrpRunFact> MrpRuns,
+    IReadOnlyList<WorldHistoryMrpRunFact> HistoricalMrpRuns);
 
 /// <summary>一条销售订单需求来源事实（与 ERP 订单同源）。</summary>
 public sealed record WorldHistoryDemandFact(
@@ -440,6 +479,7 @@ public sealed record WorldHistoryMrpRunFact(
 
 /// <summary>一条计划建议事实（planned-work-order）。</summary>
 public sealed record WorldHistorySuggestionFact(
+    Guid SuggestionId,
     string DemandSourceReference,
     string SourceType,
     string SkuCode,

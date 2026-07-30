@@ -198,13 +198,15 @@ IAM 侧同时补齐了工人档案：`iam.users` 新增可空列 `DisplayName` /
 
 本变更没有新增或修改业务 HTTP endpoint，也没有改变 Gateway 公开契约；facade coverage 登记、OpenAPI 快照与 generated client 均无需刷新。IAM 内部工人目录只补充了原有 DTO 字段的取值，wire shape 不变。
 
-### 工厂世界观设定集 L1 背景历史引擎 一期（ERP / MES）
+### 工厂世界观设定集 L1 背景历史引擎 一期（ERP / DemandPlanning / MES）
 
 在 L0 主数据之上交付《工厂世界观设定集》§7 的 **L1 背景历史**：2026-01-05 平台上线至今约 29 周的 ERP 销售/采购与 MES 工单执行痕迹。设定集 §0 的 MAN-519 基线修订条款允许 L1 号段由种子直写结果事实，前提是①历史时间戳 ②独立号段 ③一致性校验器 ④讲稿如实定位为「系统上线以来的历史数据」。
 
-开关：`LeaderDemo:History:Enabled`（AppHost 在 leader-demo profile 且 L0 已开启时默认 `true`，`NERV_IIP_LEADER_DEMO_HISTORY=false` 关闭）。缩放 `LeaderDemo:History:Scale`（`1.0` = 全量，`0.1` ≈ 十分之一快速验证，`NERV_IIP_LEADER_DEMO_HISTORY_SCALE` 覆盖）。历史截止日 `LeaderDemo:History:AsOfDate` 由 AppHost 统一下发给 ERP 与 MES。
+DemandPlanning 同时保留当前 10 周活动需求/MPS 窗口语义，并为窗口之前的历史订单补写历史 MRP 运行、真实计划建议及 demand pegging。销售订单建议 ID 由 DemandPlanning 与 MES 世界历史规格共享的确定性算法生成；MES 订单工单只引用该实际存在于计划种子事实流中的建议，补产/返工工单不挂 MRP 来源。这样履约追溯的历史订单可沿需求 → MRP → 建议 → 工单继续向下追踪，而不把历史需求伪装成当前活动窗口输入。
 
-#### 引擎脚手架（ERP / MES 两侧同字面量重复声明，各有黄金向量测试防漂移）
+开关：`LeaderDemo:History:Enabled`（AppHost 在 leader-demo profile 且 L0 已开启时默认 `true`，`NERV_IIP_LEADER_DEMO_HISTORY=false` 关闭）。缩放 `LeaderDemo:History:Scale`（`1.0` = 全量，`0.1` ≈ 十分之一快速验证，`NERV_IIP_LEADER_DEMO_HISTORY_SCALE` 覆盖）。历史截止日 `LeaderDemo:History:AsOfDate` 由 AppHost 统一下发给 ERP、DemandPlanning 与 MES。
+
+#### 引擎脚手架（ERP / DemandPlanning / MES 三侧同字面量重复声明，各有黄金向量测试防漂移）
 
 | 构件 | 职责 |
 | --- | --- |
