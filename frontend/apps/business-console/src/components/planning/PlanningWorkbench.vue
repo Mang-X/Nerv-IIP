@@ -25,6 +25,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
+import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -284,18 +285,12 @@ const reviewKpiHint = computed(
 const demandSkuCodes = computed(
   () => new Set(demands.value.map((d) => d.skuCode).filter((c): c is string => !!c)),
 )
-// 覆盖口径＝仅供给型建议（生产/采购）。调整/取消类只是对既有收货的修正，
-// 不代表该物料有了补充方案，算进覆盖会虚高——与时段视图的覆盖图同一口径。
-const coveredSkuCodes = computed(() => {
-  const covered = new Set<string>()
-  const demandSet = demandSkuCodes.value
-  for (const s of suggestions.value) {
-    if (isAcceptableSuggestion(s.suggestionType) && s.skuCode && demandSet.has(s.skuCode)) {
-      covered.add(s.skuCode)
-    }
-  }
-  return covered
-})
+// 覆盖口径集中在 planningAggregation.countsTowardCoverage：供给型 + 状态仍算数（拒绝的不算）
+// + 锁定 timePhasedRun 那一次运行。KPI、需求池「覆盖」列、时段覆盖图共用同一判据，
+// 不会出现「刚拒绝的建议还占着覆盖」或「KPI 跨运行、图只算一次」这种自相矛盾。
+const coveredSkuCodes = computed(() =>
+  coveredDemandSkuCodes(suggestions.value, coverageRunId.value, demandSkuCodes.value),
+)
 /**
  * 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。
  * 需求池为空时分母为 0，覆盖率无从谈起——返回 null 走无样本态，
@@ -355,8 +350,10 @@ const selectedRun = computed(
 // 时段视图建议序列的运行口径：用户在「MRP 运行」里选中的那次，否则最近一次。
 // 后端 RunMrp 不关闭历史 Open 建议，跨运行求和会重复计数，必须锁单次运行。
 const timePhasedRun = computed(() => selectedRun.value ?? latestRun.value)
+// 覆盖统计锁定的运行 = 时段视图那一次；两图与 KPI 共用，口径不再分叉。
+const coverageRunId = computed(() => timePhasedRun.value?.runId ?? '')
 
-// 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
+// 需求覆盖状态：本次运行里出现未被拒绝的供给建议 → 已生成建议；否则未覆盖。
 function demandCoverage(skuCode?: string | null): { label: string; tone: StatusTone } {
   if (skuCode && coveredSkuCodes.value.has(skuCode)) return { label: '已生成建议', tone: 'success' }
   return { label: '未覆盖', tone: 'neutral' }
@@ -988,7 +985,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       :progress-tone="
         demandCoverageRate >= 100 ? 'success' : demandCoverageRate >= 80 ? 'warning' : 'danger'
       "
-      :foot-start="`${coveredSkuCodes.size} 个物料已生成建议`"
+      :foot-start="
+        coverageRunId ? `${coveredSkuCodes.size} 个物料已生成建议` : '尚未运行 MRP，暂无建议覆盖'
+      "
       :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
     />
     <NvMetricCard

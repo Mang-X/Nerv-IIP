@@ -15,6 +15,19 @@ export type PlanningGranularity = 'week' | 'month'
 /** 供给型建议（会形成补充量的两类）；调整/取消类不计入“建议补充”数量。 */
 const SUPPLY_SUGGESTION_TYPES = new Set(['planned-work-order', 'planned-purchase'])
 
+/**
+ * 已经作废的建议状态：不再代表任何补充方案——刚点完「拒绝」，覆盖率就不该还把这条算进去。
+ *
+ * 刻意写成**黑名单**而非「open/accepted 白名单」：facade 若某天回一个新状态（或压根没回
+ * status），白名单会把全部建议静默判死、覆盖率一夜归零；黑名单最坏只是多算一条，
+ * 不会把整块读数变成谎话。
+ */
+const DEAD_SUGGESTION_STATUSES = new Set(['rejected', 'cancelled', 'canceled', 'superseded'])
+
+function isLiveSuggestion(suggestion: BusinessConsolePlanningSuggestionItem) {
+  return !DEAD_SUGGESTION_STATUSES.has((suggestion.status ?? '').toLowerCase())
+}
+
 export interface PlanningPeriod {
   /** 稳定排序键：周＝周一 ISO 日期，月＝YYYY-MM。 */
   key: string
@@ -47,8 +60,27 @@ function isActiveDemand(demand: BusinessConsoleDemandSourceItem) {
   return demand.sourceStatus?.toLowerCase() !== 'cancelled'
 }
 
+/** 供给型 + 状态仍然算数：三条序列（数量、单位、覆盖）共用同一条「这条建议还算数吗」。 */
 function isSupplySuggestion(suggestion: BusinessConsolePlanningSuggestionItem) {
-  return SUPPLY_SUGGESTION_TYPES.has(suggestion.suggestionType ?? '')
+  return (
+    SUPPLY_SUGGESTION_TYPES.has(suggestion.suggestionType ?? '') && isLiveSuggestion(suggestion)
+  )
+}
+
+/**
+ * 覆盖口径的**单一判据**：顶部覆盖率 KPI、需求池「覆盖」列、覆盖时段图共用一份，
+ * 三处口径不会再各说各话。两个条件缺一不可：
+ * 1. 仍然算数的供给型建议（调整/取消类只是修正既有收货，拒绝掉的也不构成补充方案）；
+ * 2. 属于指定的那一次 MRP 运行——后端 RunMrp 不关闭历史运行的 Open 建议，
+ *    跨运行统计会随运行次数虚高；这与时段对比图锁单次运行是同一条规矩。
+ *    `runId` 为空（尚未运行 MRP）时无任何建议算数。
+ */
+export function countsTowardCoverage(
+  suggestion: BusinessConsolePlanningSuggestionItem,
+  runId: string,
+): boolean {
+  if (!runId || suggestion.runId !== runId) return false
+  return isSupplySuggestion(suggestion)
 }
 
 function inScope(skuCode: string | null | undefined, scope: ReadonlySet<string> | null) {
@@ -164,18 +196,16 @@ export interface CoverageRow extends Record<string, number | string> {
 
 /**
  * 需求覆盖时段展开：每个期间「有需求的物料数」vs「其中已生成供给建议的物料数」。
- * 覆盖判定与 KPI 口径一致——物料级（该 SKU 在任意期间出现供给建议即视为已覆盖），
- * 计数无单位问题，可跨 SKU 汇总。
+ * 覆盖判定与顶部 KPI 完全同一判据（`countsTowardCoverage`）——物料级（该 SKU 在
+ * 任意期间出现有效供给建议即视为已覆盖），计数无单位问题，可跨 SKU 汇总。
  */
 export function buildCoverageRows(
   demands: readonly BusinessConsoleDemandSourceItem[],
   suggestions: readonly BusinessConsolePlanningSuggestionItem[],
   granularity: PlanningGranularity,
+  suggestionRunId: string,
 ): CoverageRow[] {
-  const coveredSkus = new Set<string>()
-  for (const suggestion of suggestions) {
-    if (isSupplySuggestion(suggestion) && suggestion.skuCode) coveredSkus.add(suggestion.skuCode)
-  }
+  const coveredSkus = coveredDemandSkuCodes(suggestions, suggestionRunId)
 
   const byKey = new Map<string, { key: string; period: string; skus: Set<string> }>()
   for (const demand of demands) {
@@ -197,6 +227,27 @@ export function buildCoverageRows(
       demandSkuCount: entry.skus.size,
       coveredSkuCount: [...entry.skus].filter((sku) => coveredSkus.has(sku)).length,
     }))
+}
+
+/**
+ * 指定运行下「已被有效供给建议覆盖」的物料集合。
+ * 顶部覆盖率 KPI / 需求池覆盖列 / 覆盖时段图都读这一份，避免三处各写一遍过滤。
+ * 可选 `demandSkuCodes`：只保留确实有需求的物料（KPI 分子不能超过分母）。
+ */
+export function coveredDemandSkuCodes(
+  suggestions: readonly BusinessConsolePlanningSuggestionItem[],
+  suggestionRunId: string,
+  demandSkuCodes?: ReadonlySet<string>,
+): Set<string> {
+  const covered = new Set<string>()
+  for (const suggestion of suggestions) {
+    if (!countsTowardCoverage(suggestion, suggestionRunId)) continue
+    const skuCode = suggestion.skuCode
+    if (!skuCode) continue
+    if (demandSkuCodes && !demandSkuCodes.has(skuCode)) continue
+    covered.add(skuCode)
+  }
+  return covered
 }
 
 export interface RunSuggestionRow extends Record<string, number | string> {
