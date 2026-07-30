@@ -6,7 +6,7 @@ public sealed class OrderUrgencyRefreshWorker(
     IServiceScopeFactory scopeFactory,
     ILogger<OrderUrgencyRefreshWorker> logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

@@ -195,15 +195,14 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 continue;
             }
 
-            var byReference = runSuggestions.ToLookup(
-                x => x.PeggingLinks.Select(link => link.DemandSourceReference).FirstOrDefault() ?? string.Empty,
-                StringComparer.Ordinal);
+            // 同一销售订单需求下可能同时挂生产建议与组件采购建议（pegging 引用同为裸 SO-…），
+            // 因此按共享确定性建议 ID 配对，而不是按首条 pegging 引用。
+            var byId = runSuggestions.ToDictionary(x => x.Id);
             foreach (var suggestionFact in fact.Suggestions)
             {
-                var suggestion = byReference[suggestionFact.DemandSourceReference].FirstOrDefault();
-                if (suggestion is null)
+                if (!byId.TryGetValue(new PlanningSuggestionId(suggestionFact.SuggestionId), out var suggestion))
                 {
-                    failures.Add($"建议缺失：{suggestionFact.DemandSourceReference}。");
+                    failures.Add($"建议缺失：{suggestionFact.DemandSourceReference}（{suggestionFact.SuggestionType}/{suggestionFact.SkuCode}）。");
                     continue;
                 }
 
@@ -222,7 +221,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 }
                 else if (suggestion.Status != PlanningSuggestionStatus.Open)
                 {
-                    failures.Add($"预测建议 {suggestionFact.DemandSourceReference} 应为待处理态。");
+                    failures.Add($"未接受建议 {suggestionFact.DemandSourceReference}（{suggestionFact.SuggestionType}）应为待处理态。");
                 }
             }
         }
