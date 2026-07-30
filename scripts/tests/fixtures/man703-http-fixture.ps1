@@ -24,6 +24,7 @@ Set-StrictMode -Version Latest
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
 $listener.Start()
 $salesOrderRequests = 0
+$demandRequests = 0
 [System.IO.File]::WriteAllText($ReadyFile, 'ready')
 
 try {
@@ -72,7 +73,30 @@ try {
             $reason = 'OK'
             $body = '{"success":true,"code":200,"message":"OK","data":{}}'
 
-            if ($target.StartsWith('/api/business/v1/erp/sales-orders?', [StringComparison]::Ordinal)) {
+            if ($target.StartsWith('/api/business/v1/planning/demands?', [StringComparison]::Ordinal)) {
+                $demandRequests++
+                if ($demandRequests -eq 1) {
+                    $body = '{"success":true,"code":200,"message":"OK","data":[{"sourceReference":"SO-DEMO-001","sourceVersion":4,"quantity":0,"sourceStatus":"cancelled"}]}'
+                }
+                else {
+                    $responseHeaders = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: 1048576`r`nConnection: close`r`n`r`n"
+                    $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($responseHeaders)
+                    $stream.Write($headerBytes, 0, $headerBytes.Length)
+                    $chunk = [byte[]](123)
+                    for ($index = 0; $index -lt 40; $index++) {
+                        try {
+                            $stream.Write($chunk, 0, $chunk.Length)
+                            $stream.Flush()
+                        }
+                        catch {
+                            break
+                        }
+                        Start-Sleep -Milliseconds 100
+                    }
+                    continue
+                }
+            }
+            elseif ($target.StartsWith('/api/business/v1/erp/sales-orders?', [StringComparison]::Ordinal)) {
                 $salesOrderRequests++
                 [System.IO.File]::WriteAllText($CounterFile, "$salesOrderRequests")
                 if ($salesOrderRequests -eq 1) {

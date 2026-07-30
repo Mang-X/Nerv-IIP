@@ -81,7 +81,11 @@ Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Con
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('CancellationTokenSource')) 'The shared JSON request path must enforce one absolute cancellation budget.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SendAsync')) 'The shared JSON request path must pass cancellation into the HTTP send.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ReadAsStringAsync')) 'The shared JSON request path must pass cancellation into complete response reading.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('System.TimeoutException')) 'Deadline expiry must use a typed TimeoutException.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
+foreach ($functionName in @('Wait-Demand', 'Wait-ErpSalesOrderReady', 'Assert-DemandStable')) {
+    Assert-Contract ((Get-FunctionContractText -Name $functionName).Contains('catch [System.TimeoutException]')) "$functionName must handle typed request deadline expiry explicitly."
+}
 Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200')) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)
 $firstMutationIndex = $content.IndexOf('Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10"', [StringComparison]::Ordinal)

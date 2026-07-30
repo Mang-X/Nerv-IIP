@@ -130,7 +130,8 @@ function Invoke-Man517JsonRequest {
     }
     $remaining = $effectiveDeadline - (Get-Date)
     if ($remaining -le [TimeSpan]::Zero) {
-        throw "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri"
+        throw [System.TimeoutException]::new(
+            "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri")
     }
 
     $handler = $null
@@ -170,7 +171,9 @@ function Invoke-Man517JsonRequest {
             $deadlineCancellation.Token).GetAwaiter().GetResult()
     }
     catch [System.OperationCanceledException] {
-        throw "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri"
+        throw [System.TimeoutException]::new(
+            "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri",
+            $_.Exception)
     }
     catch {
         $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
@@ -238,7 +241,12 @@ function Wait-ErpSalesOrderReady {
         if ((Get-Date) -ge $deadline) {
             break
         }
-        $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers -Deadline $deadline
+        try {
+            $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers -Deadline $deadline
+        }
+        catch [System.TimeoutException] {
+            break
+        }
         $rows = @($response.data.items | Where-Object { $_.salesOrderNo -ceq 'SO-DEMO-001' })
         $lastObservedOrder = if ($rows.Count -eq 1) {
             [ordered]@{
@@ -277,7 +285,12 @@ function Wait-Demand {
         if ((Get-Date) -ge $deadline) {
             break
         }
-        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
+        try {
+            $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
+        }
+        catch [System.TimeoutException] {
+            break
+        }
         $lastHttpStatus = 200
         $fullResponseBody = $response | ConvertTo-Json -Depth 12 -Compress
         $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
@@ -309,11 +322,20 @@ function Wait-Demand {
 function Assert-DemandStable {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
     $deadline = (Get-Date).AddSeconds($Seconds)
+    $row = $null
     do {
         if ((Get-Date) -ge $deadline) {
             break
         }
-        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
+        try {
+            $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
+        }
+        catch [System.TimeoutException] {
+            if ($null -ne $row -and (Get-Date) -ge $deadline) {
+                break
+            }
+            throw
+        }
         $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
         if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
             throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."

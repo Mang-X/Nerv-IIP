@@ -29,15 +29,18 @@ function Assert-RequestFailure {
         [scriptblock]$Request,
         [string[]]$ExpectedFragments,
         [string[]]$ForbiddenFragments = @(),
-        [double]$MaximumSeconds = 5
+        [double]$MaximumSeconds = 5,
+        [type]$ExpectedExceptionType
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $failure = $null
+    $caughtException = $null
     try {
         & $Request | Out-Null
     }
     catch {
+        $caughtException = $_.Exception
         $failure = $_.Exception.Message
     }
     finally {
@@ -45,6 +48,9 @@ function Assert-RequestFailure {
     }
 
     Assert-Helper (-not [string]::IsNullOrWhiteSpace($failure)) 'The request must fail.'
+    if ($null -ne $ExpectedExceptionType) {
+        Assert-Helper ($caughtException -is $ExpectedExceptionType) "Request failure must be $($ExpectedExceptionType.FullName). Actual: $($caughtException.GetType().FullName)"
+    }
     Assert-Helper ($stopwatch.Elapsed.TotalSeconds -lt $MaximumSeconds) "The request failure exceeded $MaximumSeconds seconds."
     foreach ($fragment in $ExpectedFragments) {
         Assert-Helper ($failure.Contains($fragment)) "Request failure must contain '$fragment'. Actual: $failure"
@@ -92,7 +98,8 @@ Assert-Helper ($parseErrors.Count -eq 0) 'Verify script must parse before helper
 foreach ($functionName in @(
         'Protect-Man517DiagnosticText',
         'Invoke-Man517JsonRequest',
-        'Wait-ErpSalesOrderReady'
+        'Wait-ErpSalesOrderReady',
+        'Assert-DemandStable'
     )) {
     Import-VerifyFunction -Ast $ast -Name $functionName
 }
@@ -168,6 +175,19 @@ try {
         Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/missing-success" -Headers @{}
     } -ExpectedFragments @("missing boolean 'success'")
 
+    $stableStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $stableDemand = Assert-DemandStable `
+        -DemandPlanningUrl $baseUrl `
+        -Headers @{} `
+        -Version 4 `
+        -Quantity 0 `
+        -Status 'cancelled' `
+        -Seconds 1
+    $stableStopwatch.Stop()
+    Assert-Helper ($stableDemand.sourceVersion -eq 4) 'Stable demand must retain the last successful observation when the final request reaches the window deadline.'
+    Assert-Helper ($stableStopwatch.Elapsed.TotalSeconds -ge 0.8) 'Stable demand must observe the requested stability window instead of returning early.'
+    Assert-Helper ($stableStopwatch.Elapsed.TotalSeconds -lt 3) 'Stable demand must finish near its deadline.'
+
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `
             -Method Get `
@@ -177,7 +197,8 @@ try {
     } `
         -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
         -ForbiddenFragments @('slow-trickle-uri-secret') `
-        -MaximumSeconds 3
+        -MaximumSeconds 3 `
+        -ExpectedExceptionType ([System.TimeoutException])
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `
@@ -188,7 +209,8 @@ try {
     } `
         -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
         -ForbiddenFragments @('half-open-uri-secret') `
-        -MaximumSeconds 3
+        -MaximumSeconds 3 `
+        -ExpectedExceptionType ([System.TimeoutException])
 }
 finally {
     if ($null -ne $fixtureProcess) {
