@@ -447,6 +447,44 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('工序待排池')
     expect(wrapper.text()).toContain('锁定重预览')
     expect(wrapper.text()).toContain('发布新版')
+    // 排程窗口不再写死「现在起 7 天」，工作台上必须有可改的窗口控件（MAN-694 / #1262）。
+    expect(wrapper.find('[data-testid="scheduling-horizon-fields"]').exists()).toBe(true)
+  })
+
+  it('按用户指定的窗口生成首版，而不是提交时现算的固定 7 天', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+
+    // 把窗口换成 1 天：生成请求必须跟着变。
+    const horizon = wrapper.findComponent({ name: 'SchedulingHorizonFields' })
+    horizon.vm.$emit('update:modelValue', {
+      ...(horizon.props('modelValue') as Record<string, unknown>),
+      mode: 'preset',
+      days: 1,
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    const body = stub.generatePlan.mock.calls.at(-1)?.[0] as {
+      horizonStartUtc: string
+      horizonEndUtc: string
+    }
+    const span =
+      (new Date(body.horizonEndUtc).getTime() - new Date(body.horizonStartUtc).getTime()) /
+      86_400_000
+    expect(span).toBe(1)
   })
 
   it('uses a single-page table while the facade does not return a total count', async () => {
