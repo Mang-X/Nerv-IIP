@@ -15,6 +15,21 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      sourceKind: shallowRef(),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+    }),
+  }
+})
 
 // 真实组合式用真实的 ref/computed，贴合运行时解包行为。
 const wmsState = vi.hoisted(() => ({
@@ -164,7 +179,7 @@ describe('WMS 盘点', () => {
 
   it('扫库位写入 filters.locationCode', async () => {
     const wrapper = mount(CountPage)
-    const input = wrapper.get('input[placeholder*="库位"]')
+    const input = wrapper.get('input[placeholder^="扫描当前范围库位"]')
     await input.setValue('A-02')
     await input.trigger('keydown.enter')
     expect(wmsState.filters.locationCode).toBe('A-02')
@@ -304,7 +319,7 @@ describe('WMS 盘点', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
-    const sheet = wrapper.findComponent(NvBottomSheet)
+    const sheet = wrapper.findAllComponents(NvBottomSheet).find((sheet) => sheet.props('open'))!
     sheet.vm.$emit('update:open', false)
     await wrapper.vm.$nextTick()
     expect(sheet.props('open')).toBe(true)

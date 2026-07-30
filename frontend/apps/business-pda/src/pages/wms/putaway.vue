@@ -3,6 +3,7 @@ import WarehouseTaskExecutionView, {
   type WarehouseTaskExecutionIntent,
 } from '@/components/wms/WarehouseTaskExecutionView.vue'
 import { useWmsPutaway } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { NvAppShellMobile } from '@nerv-iip/ui-mobile'
 
 definePage({
@@ -14,6 +15,8 @@ definePage({
 
 const {
   filters,
+  organizationId,
+  environmentId,
   principalId,
   scopeKey,
   scopeOptions,
@@ -29,9 +32,12 @@ const {
   executeTask,
 } = useWmsPutaway({ status: 'Open' })
 
-function scanLocation(value: string) {
-  filters.locationCode = value.trim() || undefined
-}
+const candidates = useWmsOperationalCandidates('receipt', {
+  organizationId,
+  environmentId,
+  scopeKey,
+  filters,
+})
 
 async function execute(intent: WarehouseTaskExecutionIntent) {
   try {
@@ -55,6 +61,8 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         v-model:status="filters.status"
         v-model:scope-key="scopeKey"
         v-model:keyword="filters.keyword"
+        v-model:location-code="filters.locationCode"
+        v-model:lot-no="filters.lotNo"
         title="上架"
         task-type="putaway"
         :tasks="tasks"
@@ -64,10 +72,16 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :loading-more="loadingMore"
         :current-principal-id="principalId"
         :scope-options="scopeOptions"
-        :location-code="filters.locationCode"
+        :location-options="candidates.locationOptions.value"
+        :lot-options="candidates.lotOptions.value"
+        :candidate-source-label="candidates.sourceLabel.value"
+        :candidate-source-kind="candidates.sourceKind.value"
+        :candidate-as-of-utc="candidates.asOfUtc.value"
+        :candidate-freshness-utc="candidates.freshnessUtc.value"
+        :candidate-truncated="candidates.truncated.value"
+        :candidate-pending="candidates.pending.value"
         :error="error"
         :action-pending="actionPending"
-        @scan-location="scanLocation"
         @refresh="refresh"
         @retry="refresh"
         @load-more="loadMore"

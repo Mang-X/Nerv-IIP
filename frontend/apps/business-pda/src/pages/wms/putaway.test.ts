@@ -36,6 +36,21 @@ vi.mock('@/composables/useBusinessWms', () => ({
     executeTask,
   }),
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      sourceKind: shallowRef(),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+    }),
+  }
+})
 
 import PutawayPage from './putaway.vue'
 

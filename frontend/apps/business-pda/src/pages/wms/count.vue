@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
@@ -8,6 +9,7 @@ import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { PDA_COUNT_EXECUTION_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   countExecutionFlow,
@@ -23,7 +25,6 @@ import {
   NvMobileResult,
   NvMobileToast,
   NvNumberKeyboard,
-  NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -58,6 +59,12 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useWmsCount({ status: 'Open' })
+const candidates = useWmsOperationalCandidates('count', {
+  organizationId,
+  environmentId,
+  scopeKey,
+  filters,
+})
 const countScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
@@ -127,10 +134,6 @@ const showEmpty = computed(
 function displayCountStatus(status?: string) {
   if (status?.trim().toLowerCase() === 'open') return '待盘点'
   return countExecutionStatusLabel(status)
-}
-
-function onScan(value: string) {
-  filters.locationCode = value
 }
 
 function canComplete(status?: string) {
@@ -255,12 +258,24 @@ function goHome() {
 
     <div v-else class="flex h-full min-h-0 flex-col">
       <div class="space-y-3 border-b border-border bg-card px-4 py-3">
-        <NvScanBar placeholder="扫描库位" :active="scanActive" @scan="onScan" />
         <WmsScopeStatusFilter
           v-model:scope-key="scopeKey"
           v-model:status="filters.status"
           :scope-options="scopeOptions"
           :status-options="countStatusOptions"
+        />
+        <WmsOperationalCandidatePicker
+          v-model:location-code="filters.locationCode"
+          :location-options="candidates.locationOptions.value"
+          :lot-options="candidates.lotOptions.value"
+          :source-label="candidates.sourceLabel.value"
+          :source-kind="candidates.sourceKind.value"
+          :as-of-utc="candidates.asOfUtc.value"
+          :freshness-utc="candidates.freshnessUtc.value"
+          :truncated="candidates.truncated.value"
+          :pending="candidates.pending.value"
+          :active="scanActive"
+          :show-lot="false"
         />
         <ListScopeMeta
           :scope="countScope"

@@ -36,6 +36,21 @@ vi.mock('@/composables/useBusinessWms', () => ({
     executeTask,
   }),
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      sourceKind: shallowRef(),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+    }),
+  }
+})
 
 import PickPage from './pick.vue'
 
@@ -74,7 +89,7 @@ describe('WMS 拣货作业页', () => {
             emits: [
               'refresh',
               'loadMore',
-              'scan-location',
+              'update:locationCode',
               'update:status',
               'update:scopeKey',
               'execute',
@@ -83,7 +98,7 @@ describe('WMS 拣货作业页', () => {
               <div>
                 <button data-testid="refresh" @click="$emit('refresh')" />
                 <button data-testid="load-more" @click="$emit('loadMore')" />
-                <button data-testid="scan" @click="$emit('scan-location', 'A-01')" />
+                <button data-testid="scan" @click="$emit('update:locationCode', 'A-01')" />
                 <button data-testid="status" @click="$emit('update:status', 'InProgress')" />
                 <button data-testid="scope" @click="$emit('update:scopeKey', 'team:TEAM-WMS-01')" />
                 <button data-testid="execute" @click="$emit('execute', { action: 'start', task })" />

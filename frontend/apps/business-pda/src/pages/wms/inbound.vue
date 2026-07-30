@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
@@ -14,6 +15,7 @@ import {
   type InboundLineCapture,
   type ReceivingQualityGateLine,
 } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import {
   expiryToneFromDate,
@@ -76,6 +78,12 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useWmsInbound({ status: 'Open' })
+const candidates = useWmsOperationalCandidates('receipt', {
+  organizationId,
+  environmentId,
+  scopeKey,
+  filters,
+})
 const inboundScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
@@ -427,6 +435,19 @@ function goPutaway() {
           v-model:status="filters.status"
           :scope-options="scopeOptions"
           :status-options="inboundStatusOptions"
+        />
+        <WmsOperationalCandidatePicker
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="candidates.locationOptions.value"
+          :lot-options="candidates.lotOptions.value"
+          :source-label="candidates.sourceLabel.value"
+          :source-kind="candidates.sourceKind.value"
+          :as-of-utc="candidates.asOfUtc.value"
+          :freshness-utc="candidates.freshnessUtc.value"
+          :truncated="candidates.truncated.value"
+          :pending="candidates.pending.value"
+          :show-scanner="false"
         />
         <ListScopeMeta
           :scope="inboundScope"

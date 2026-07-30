@@ -325,7 +325,6 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
         ...scope.scopeQueryWithPaging(filters),
         ...optionalQuery('locationCode', filters.locationCode),
         ...optionalQuery('lotNo', filters.lotNo),
-        ...optionalQuery('lotNo', filters.lotNo),
       },
     }),
     enabled: scope.hasScope.value,
@@ -556,9 +555,9 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
   }
 }
 
-export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
+export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
   const scope = useAuthorizedWmsScope('shipments')
-  const filters = defaultFilters<WmsScopeFilters>({
+  const filters = defaultFilters<WmsTaskFilters>({
     ...initialFilters,
     take: initialFilters.take ?? TASK_PAGE_SIZE,
   })
@@ -567,7 +566,11 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsOutboundOrdersQueryOptions({
-      query: scope.scopeQueryWithPaging(filters),
+      query: {
+        ...scope.scopeQueryWithPaging(filters),
+        ...optionalQuery('locationCode', filters.locationCode),
+        ...optionalQuery('lotNo', filters.lotNo),
+      },
     }),
     enabled: scope.hasScope.value,
   }))
@@ -599,9 +602,17 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     page.reset()
   }
 
-  watch([scope.selectedScopeKey, () => filters.status, () => filters.keyword], resetPaging, {
-    flush: 'sync',
-  })
+  watch(
+    [
+      scope.selectedScopeKey,
+      () => filters.status,
+      () => filters.keyword,
+      () => filters.locationCode,
+      () => filters.lotNo,
+    ],
+    resetPaging,
+    { flush: 'sync' },
+  )
 
   async function refresh() {
     if (!scope.hasScope.value) return
@@ -635,6 +646,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
           take: TASK_PAGE_SIZE,
           ...optionalQuery('status', filters.status),
           ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
         },
         throwOnError: true,
       })
@@ -921,6 +934,7 @@ function useWmsWarehouseTasks(
       query: {
         ...scope.scopeQueryWithPaging(filters),
         ...optionalQuery('locationCode', filters.locationCode),
+        ...optionalQuery('lotNo', filters.lotNo),
       },
     }),
     enabled: scope.hasScope.value,

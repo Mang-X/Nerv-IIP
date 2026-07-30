@@ -108,7 +108,7 @@ describe('WarehouseTaskExecutionView', () => {
     expect(text).toContain('已完成')
     expect(text).not.toContain('task-open')
     expect(text).not.toContain('InProgress')
-    expect(wrapper.findComponent(NvScanBar).props('placeholder')).toBe('扫描库位')
+    expect(wrapper.findComponent(NvScanBar).props('placeholder')).toBe('扫描当前范围库位候选')
   })
 
   it('完整翻译服务端阻塞原因，不把不同原因复用成同一句兜底', () => {

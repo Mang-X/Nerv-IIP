@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import { PDA_WAREHOUSE_TASK_STATUS_OPTIONS } from '@/data/wmsReference'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
 import {
@@ -13,7 +14,6 @@ import {
   NvMobileTag,
   NvNumberKeyboard,
   NvPullRefresh,
-  NvScanBar,
   NvSearchBar,
   type DropdownOption,
 } from '@nerv-iip/ui-mobile'
@@ -45,6 +45,12 @@ export interface WarehouseTaskScopeOption {
   value: string
 }
 
+export interface WarehouseTaskCandidateOption {
+  label: string
+  value: string
+  hint?: string
+}
+
 export interface WarehouseTaskExecutionIntent {
   action: 'start' | 'progress' | 'exception' | 'complete'
   task: WarehouseTaskExecutionItem
@@ -67,6 +73,15 @@ const props = withDefaults(
     scopeKey?: string
     keyword?: string
     locationCode?: string
+    lotNo?: string
+    locationOptions?: WarehouseTaskCandidateOption[]
+    lotOptions?: WarehouseTaskCandidateOption[]
+    candidateSourceLabel?: string
+    candidateSourceKind?: string
+    candidateAsOfUtc?: string
+    candidateFreshnessUtc?: string
+    candidateTruncated?: boolean
+    candidatePending?: boolean
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
     actionPending?: boolean
@@ -77,6 +92,15 @@ const props = withDefaults(
     scopeKey: undefined,
     keyword: undefined,
     locationCode: undefined,
+    lotNo: undefined,
+    locationOptions: () => [],
+    lotOptions: () => [],
+    candidateSourceLabel: '当前范围仓储作业记录候选',
+    candidateSourceKind: undefined,
+    candidateAsOfUtc: undefined,
+    candidateFreshnessUtc: undefined,
+    candidateTruncated: false,
+    candidatePending: false,
     scopeOptions: () => [],
     error: undefined,
     actionPending: false,
@@ -87,7 +111,8 @@ const emit = defineEmits<{
   'update:status': [value: string | undefined]
   'update:scopeKey': [value: string | undefined]
   'update:keyword': [value: string | undefined]
-  'scan-location': [value: string]
+  'update:locationCode': [value: string | undefined]
+  'update:lotNo': [value: string | undefined]
   refresh: []
   loadMore: []
   retry: []
@@ -203,7 +228,13 @@ function openQuantityKeyboard() {
 }
 
 watch(
-  [() => props.scopeKey, () => props.status, () => props.keyword, () => props.locationCode],
+  [
+    () => props.scopeKey,
+    () => props.status,
+    () => props.keyword,
+    () => props.locationCode,
+    () => props.lotNo,
+  ],
   closeSheet,
 )
 
@@ -259,10 +290,20 @@ function emitQuantityAction(action: 'progress' | 'complete') {
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="space-y-3 border-b border-border bg-card px-4 py-3">
       <NvSearchBar v-model="keywordModel" :placeholder="`搜索任务号、源单号或物料`" />
-      <NvScanBar
+      <WmsOperationalCandidatePicker
+        :location-code="locationCode"
+        :lot-no="lotNo"
+        :location-options="locationOptions"
+        :lot-options="lotOptions"
+        :source-label="candidateSourceLabel"
+        :source-kind="candidateSourceKind"
+        :as-of-utc="candidateAsOfUtc"
+        :freshness-utc="candidateFreshnessUtc"
+        :truncated="candidateTruncated"
+        :pending="candidatePending"
         :active="scanActive"
-        :placeholder="locationCode ? `当前库位 ${locationCode}` : '扫描库位'"
-        @scan="emit('scan-location', $event)"
+        @update:location-code="emit('update:locationCode', $event)"
+        @update:lot-no="emit('update:lotNo', $event)"
       />
       <NvMobileDropdownMenu>
         <NvMobileDropdownMenuItem

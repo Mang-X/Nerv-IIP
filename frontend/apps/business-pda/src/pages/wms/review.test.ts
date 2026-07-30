@@ -15,6 +15,21 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      sourceKind: shallowRef(),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+    }),
+  }
+})
 
 // 真实组合式用真实的 ref/computed，贴合运行时解包行为。
 const wmsState = vi.hoisted(() => ({
@@ -307,7 +322,7 @@ describe('WMS 复核发货', () => {
     const first = wmsState.completeOutbound.mock.calls[0]
     expect(reviewInput.disabled).toBe(true)
     expect(document.body.textContent).toContain('原内容重试')
-    const sheet = wrapper.findComponent(NvBottomSheet)
+    const sheet = wrapper.findAllComponents(NvBottomSheet).find((sheet) => sheet.props('open'))!
     sheet.vm.$emit('update:open', false)
     await wrapper.vm.$nextTick()
     expect(sheet.props('open')).toBe(true)
