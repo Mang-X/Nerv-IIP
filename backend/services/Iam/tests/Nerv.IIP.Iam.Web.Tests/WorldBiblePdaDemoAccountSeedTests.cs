@@ -269,7 +269,7 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
         Assert.Contains(warehouseRole.DataScopes, x =>
             x.ScopeType == DataScopeBinding.Workshop
             && x.ScopeCode == "WS-RETAINED");
-        Assert.Contains(warehouseRole.DataScopes, x =>
+        Assert.DoesNotContain(warehouseRole.DataScopes, x =>
             x.ScopeType == DataScopeBinding.Site
             && x.ScopeCode == "SITE-001");
         var nonWarehouseRoles = await dbContext.Roles

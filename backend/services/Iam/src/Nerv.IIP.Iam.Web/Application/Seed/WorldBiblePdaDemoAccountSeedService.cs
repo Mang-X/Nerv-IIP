@@ -130,11 +130,14 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         if (!warehouseSiteScopeApplied)
         {
             var warehouseRole = rolesById[WarehouseRoleId];
-            warehouseRole.ReplaceDataScopes([
-                .. warehouseRole.DataScopes.Select(
-                    scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)),
-                new DataScopeBinding(DataScopeBinding.Site, "SITE-001"),
-            ]);
+            if (warehouseRole.DataScopes.Count == 0
+                && IsLegacyBaselineRole(warehouseRole, WarehouseRoleId))
+            {
+                warehouseRole.ReplaceDataScopes([
+                    new DataScopeBinding(DataScopeBinding.Site, "SITE-001"),
+                ]);
+            }
+
             dbContext.SeedManifests.Add(new SeedManifest(
                 warehouseSiteScopeManifestId,
                 "iam-pda-warehouse-site-scope",
