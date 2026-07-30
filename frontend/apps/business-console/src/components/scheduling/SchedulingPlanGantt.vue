@@ -17,6 +17,7 @@ import {
 } from '@nerv-iip/scheduling'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { resolveWorkCenterFamily, WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
@@ -56,25 +57,16 @@ const emit = defineEmits<{
 
 const scale = shallowRef<TimeScale>('auto')
 
-// 工序分色按工作中心族归类（组件库 --nv-scheduling-category-* 六色板）。
-// 族→名称以主数据 work_centers 为准：ROD/TUB/GRD/CNC=机加、FA/RA/VA=装配、
-// CT=电泳涂装（不是切割！）、PK=包装、TS=检测、SCALE-WELD=焊接。辅助动力(AUX)不上色。
-const WC_FAMILIES: Array<{ pattern: RegExp; key: string; label: string }> = [
-  { pattern: /^WC-(ROD|TUB|GRD|CNC)/, key: 'mach', label: '机加' },
-  { pattern: /^WC-(FA|RA|VA)|^WC-SCALE-(SEAL|ROD)/, key: 'pack', label: '装配' },
-  { pattern: /^WC-CT/, key: 'paint', label: '表面处理' },
-  { pattern: /^WC-PK/, key: 'cut', label: '包装' },
-  { pattern: /^WC-TS|^WC-SCALE-TEST/, key: 'bend', label: '检测' },
-  { pattern: /^WC-SCALE-WELD/, key: 'weld', label: '焊接' },
-]
+// 工作中心显示名 + 分类（主数据名录，与派工看板同一份缓存）。
+const { resolveWorkCenter, resolveWorkCenterCategory } = useMesDisplayNames()
 
+// 工序分色按工作中心「工序族」归类，族解析以主数据 category 为准、编码前缀仅作兜底，
+// 映射与色槽语义集中在 data/workCenterFamilies.ts（不在页面里写死客户编码）。
 function wcFamily(workCenterId?: string | null) {
   if (!workCenterId) return undefined
-  return WC_FAMILIES.find((f) => f.pattern.test(workCenterId))
+  return resolveWorkCenterFamily(workCenterId, resolveWorkCenterCategory(workCenterId))
 }
 
-// 工作中心显示名（主数据名录，与派工看板同一份缓存）。
-const { resolveWorkCenter } = useMesDisplayNames()
 // 物料名（SKU 名录，同一份查询缓存）；查不到只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
 
@@ -144,7 +136,10 @@ const legendCategories = computed(() => {
       .map((t) => t.colorKey)
       .filter(Boolean),
   )
-  return WC_FAMILIES.filter((f) => used.has(f.key)).map((f) => ({ key: f.key, label: f.label }))
+  return WORK_CENTER_FAMILY_LIST.filter((f) => used.has(f.key)).map((f) => ({
+    key: f.key,
+    label: f.label,
+  }))
 })
 
 // 选中态：点甘特上的条 → 右侧并排展开该条的详情（甘特不被遮挡、仍可点）。

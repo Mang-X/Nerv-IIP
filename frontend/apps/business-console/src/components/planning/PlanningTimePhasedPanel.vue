@@ -73,7 +73,7 @@ const timePhasedRows = computed(() =>
   ),
 )
 const coverageRows = computed(() =>
-  buildCoverageRows(props.demands, props.suggestions, granularity.value),
+  buildCoverageRows(props.demands, props.suggestions, granularity.value, props.suggestionRunId),
 )
 
 // 混合计量单位提示：扫的是图上真正相加的三个来源（需求 + MPS + 该运行的供给建议），
@@ -198,6 +198,7 @@ const coverageSeries: BarSeries[] = [
           <h3 class="font-semibold">需求覆盖时段展开</h3>
           <span class="text-xs text-muted-foreground">物料计数（全部物料）</span>
         </div>
+        <!-- 覆盖口径与左图、与顶部 KPI 同源：同一次运行 + 有效供给建议（见 countsTowardCoverage）。 -->
         <NvBarChart
           v-if="coverageRows.length"
           :data="coverageRows"
@@ -210,7 +211,9 @@ const coverageSeries: BarSeries[] = [
           需求池还没有带需求日期的物料。
         </div>
         <p v-if="coverageRows.length" class="mt-2 text-xs text-muted-foreground">
-          覆盖口径与顶部覆盖率一致：物料在任意期间出现供给建议即视为已覆盖。
+          覆盖口径与顶部覆盖率一致：{{
+            suggestionRunId ? suggestionRunLabel : '尚未运行 MRP，覆盖为 0'
+          }}，物料在任意期间出现未被拒绝的供给建议即视为已覆盖。
         </p>
       </article>
     </div>

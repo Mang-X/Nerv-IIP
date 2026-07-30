@@ -243,6 +243,10 @@
     /* paint 原为 oklch(0.56 0.13 250),与 mach 同色相仅差 0.02 明度,肉眼不可分——改紫罗兰拉开 */
     --nv-scheduling-category-paint: oklch(0.58 0.13 305);
     --nv-scheduling-category-pack: oklch(0.6 0.12 165);
+    /* 装配 / 检测各自成槽:此前业务侧借用 cut(冲压) 画包装、bend(折弯) 画检测,
+       色槽名与工序语义对不上,读代码的人必然被误导。补两槽,不再借位。 */
+    --nv-scheduling-category-assy: oklch(0.62 0.13 155);
+    --nv-scheduling-category-insp: oklch(0.72 0.13 75);
   }
   .nerv-gantt-dhx .gantt_task_line.nerv-cat-cut {
     --bar: var(--nv-scheduling-category-cut);
@@ -261,6 +265,12 @@
   }
   .nerv-gantt-dhx .gantt_task_line.nerv-cat-pack {
     --bar: var(--nv-scheduling-category-pack);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-assy {
+    --bar: var(--nv-scheduling-category-assy);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-insp {
+    --bar: var(--nv-scheduling-category-insp);
   }
 
   /* 计划基线:半透明浅条,表示"计划";实际实色条叠在其上,偏移即见计划/实际差 */
