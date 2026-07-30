@@ -152,6 +152,42 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsOperationalCandidatesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOperationalCandidatesResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOperationalCandidatesResponse = {
+    sourceKind?: string;
+    scopeKind?: string;
+    scopeId?: string;
+    asOfUtc?: string;
+    freshnessUtc?: string | null;
+    truncated?: boolean;
+    locations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsLocationCandidate>;
+    lots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsLotCandidate>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsLocationCandidate = {
+    siteCode?: string;
+    locationCode?: string;
+    skuCodes?: Array<string>;
+    referenceCount?: number;
+    lastObservedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsLotCandidate = {
+    siteCode?: string;
+    skuCode?: string;
+    lotNo?: string;
+    locationCodes?: Array<string>;
+    referenceCount?: number;
+    lastObservedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOperationalCandidatesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsAssignmentResult = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsAssignmentResult | null;
 };
@@ -7817,6 +7853,123 @@ export type GetBusinessConsoleWmsCountWorkScopesResponses = {
 };
 
 export type GetBusinessConsoleWmsCountWorkScopesResponse = GetBusinessConsoleWmsCountWorkScopesResponses[keyof GetBusinessConsoleWmsCountWorkScopesResponses];
+
+export type ListBusinessConsoleWmsReceiptOperationalCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        skuCode?: string | null;
+        locationCode?: string | null;
+        take?: number;
+        siteCode?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/operational-candidates/receipts';
+};
+
+export type ListBusinessConsoleWmsReceiptOperationalCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleWmsReceiptOperationalCandidatesError = ListBusinessConsoleWmsReceiptOperationalCandidatesErrors[keyof ListBusinessConsoleWmsReceiptOperationalCandidatesErrors];
+
+export type ListBusinessConsoleWmsReceiptOperationalCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsOperationalCandidatesResponse;
+};
+
+export type ListBusinessConsoleWmsReceiptOperationalCandidatesResponse = ListBusinessConsoleWmsReceiptOperationalCandidatesResponses[keyof ListBusinessConsoleWmsReceiptOperationalCandidatesResponses];
+
+export type ListBusinessConsoleWmsShipmentOperationalCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        skuCode?: string | null;
+        locationCode?: string | null;
+        take?: number;
+        siteCode?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/operational-candidates/shipments';
+};
+
+export type ListBusinessConsoleWmsShipmentOperationalCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleWmsShipmentOperationalCandidatesError = ListBusinessConsoleWmsShipmentOperationalCandidatesErrors[keyof ListBusinessConsoleWmsShipmentOperationalCandidatesErrors];
+
+export type ListBusinessConsoleWmsShipmentOperationalCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsOperationalCandidatesResponse;
+};
+
+export type ListBusinessConsoleWmsShipmentOperationalCandidatesResponse = ListBusinessConsoleWmsShipmentOperationalCandidatesResponses[keyof ListBusinessConsoleWmsShipmentOperationalCandidatesResponses];
+
+export type ListBusinessConsoleWmsCountOperationalCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        skuCode?: string | null;
+        locationCode?: string | null;
+        take?: number;
+        siteCode?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/wms/operational-candidates/counts';
+};
+
+export type ListBusinessConsoleWmsCountOperationalCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleWmsCountOperationalCandidatesError = ListBusinessConsoleWmsCountOperationalCandidatesErrors[keyof ListBusinessConsoleWmsCountOperationalCandidatesErrors];
+
+export type ListBusinessConsoleWmsCountOperationalCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsOperationalCandidatesResponse;
+};
+
+export type ListBusinessConsoleWmsCountOperationalCandidatesResponse = ListBusinessConsoleWmsCountOperationalCandidatesResponses[keyof ListBusinessConsoleWmsCountOperationalCandidatesResponses];
 
 export type AssignBusinessConsoleWmsInboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignWmsResourceRequest;

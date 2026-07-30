@@ -4367,6 +4367,21 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/operational-candidates",
+      "operationId": "listWmsOperationalCandidates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsReceiptOperationalCandidates",
+        "listBusinessConsoleWmsShipmentOperationalCandidates",
+        "listBusinessConsoleWmsCountOperationalCandidates"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/count-executions",
       "operationId": "listWmsCountExecutions",
       "classification": "exposed",

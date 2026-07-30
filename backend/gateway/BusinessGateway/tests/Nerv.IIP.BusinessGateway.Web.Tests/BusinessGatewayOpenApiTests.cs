@@ -462,6 +462,21 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/receipts", "get", "getBusinessConsoleWmsReceiptWorkScopes");
         AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/shipments", "get", "getBusinessConsoleWmsShipmentWorkScopes");
         AssertOperationId(paths, "/api/business-console/v1/wms/work-scopes/counts", "get", "getBusinessConsoleWmsCountWorkScopes");
+        AssertOperationId(
+            paths,
+            "/api/business-console/v1/wms/operational-candidates/receipts",
+            "get",
+            "listBusinessConsoleWmsReceiptOperationalCandidates");
+        AssertOperationId(
+            paths,
+            "/api/business-console/v1/wms/operational-candidates/shipments",
+            "get",
+            "listBusinessConsoleWmsShipmentOperationalCandidates");
+        AssertOperationId(
+            paths,
+            "/api/business-console/v1/wms/operational-candidates/counts",
+            "get",
+            "listBusinessConsoleWmsCountOperationalCandidates");
         foreach (var path in new[]
                  {
                      "/api/business-console/v1/wms/work-scopes/receipts",
@@ -474,6 +489,41 @@ public sealed class BusinessGatewayOpenApiTests
             AssertNoQueryParameter(paths, path, "get", "authorizedSiteCodes");
             AssertResponseStatuses(paths, path, "get", "403");
         }
+        foreach (var path in new[]
+                 {
+                     "/api/business-console/v1/wms/operational-candidates/receipts",
+                     "/api/business-console/v1/wms/operational-candidates/shipments",
+                     "/api/business-console/v1/wms/operational-candidates/counts",
+                 })
+        {
+            AssertQueryParameters(
+                paths,
+                path,
+                "get",
+                "organizationId",
+                "environmentId",
+                "keyword",
+                "skuCode",
+                "locationCode",
+                "take",
+                "siteCode",
+                "scopeKind",
+                "scopeId");
+            AssertNoQueryParameter(paths, path, "get", "actorPrincipalId");
+            AssertNoQueryParameter(paths, path, "get", "authorizedSiteCodes");
+            AssertResponseStatuses(paths, path, "get", "403");
+        }
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleWmsOperationalCandidatesResponse",
+            "sourceKind",
+            "scopeKind",
+            "scopeId",
+            "asOfUtc",
+            "freshnessUtc",
+            "truncated",
+            "locations",
+            "lots");
         AssertSchemaProperties(
             document,
             "BusinessConsoleWmsWorkScopeCatalogItem",

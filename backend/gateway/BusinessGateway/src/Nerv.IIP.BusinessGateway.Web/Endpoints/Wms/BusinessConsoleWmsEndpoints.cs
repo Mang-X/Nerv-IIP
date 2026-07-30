@@ -193,6 +193,113 @@ public sealed class GetBusinessConsoleWmsCountWorkScopesEndpoint(
             cancellationToken);
 }
 
+public abstract class BusinessConsoleWmsOperationalCandidatesEndpoint
+    : BusinessConsoleWmsTrustedProxyEndpoint<
+        BusinessConsoleWmsOperationalCandidatesRequest,
+        BusinessConsoleWmsOperationalCandidatesResponse>
+{
+    private readonly IBusinessWmsClient _wms;
+    private readonly IInternalServiceTokenProvider _tokenProvider;
+
+    protected BusinessConsoleWmsOperationalCandidatesEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        IBusinessWmsClient wms,
+        IInternalServiceTokenProvider tokenProvider,
+        WmsTrustedRequestContextResolver trustedContextResolver,
+        string permissionCode)
+        : base(auth, trustedContextResolver, permissionCode)
+    {
+        _wms = wms;
+        _tokenProvider = tokenProvider;
+    }
+
+    protected override string OrganizationId(
+        BusinessConsoleWmsOperationalCandidatesRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(
+        BusinessConsoleWmsOperationalCandidatesRequest request) =>
+        request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleWmsOperationalCandidatesResponse> ForwardAsync(
+        BusinessConsoleWmsOperationalCandidatesRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
+        return await _wms.ListOperationalCandidatesAsync(
+            _tokenProvider.BearerToken,
+            new BusinessWmsOperationalCandidatesRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.Keyword,
+                request.SkuCode,
+                request.LocationCode,
+                request.Take,
+                request.SiteCode),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/operational-candidates/receipts")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsReceiptOperationalCandidates")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(
+    typeof(NetCorePal.Extensions.Dto.ResponseData),
+    StatusCodes.Status403Forbidden)]
+public sealed class ListBusinessConsoleWmsReceiptOperationalCandidatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsOperationalCandidatesEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        trustedContextResolver,
+        BusinessGatewayPermissions.WmsReceiptsRead);
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/operational-candidates/shipments")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsShipmentOperationalCandidates")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(
+    typeof(NetCorePal.Extensions.Dto.ResponseData),
+    StatusCodes.Status403Forbidden)]
+public sealed class ListBusinessConsoleWmsShipmentOperationalCandidatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsOperationalCandidatesEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        trustedContextResolver,
+        BusinessGatewayPermissions.WmsShipmentsRead);
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/operational-candidates/counts")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsCountOperationalCandidates")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(
+    typeof(NetCorePal.Extensions.Dto.ResponseData),
+    StatusCodes.Status403Forbidden)]
+public sealed class ListBusinessConsoleWmsCountOperationalCandidatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsOperationalCandidatesEndpoint(
+        auth,
+        wms,
+        tokenProvider,
+        trustedContextResolver,
+        BusinessGatewayPermissions.WmsCountsRead);
+
 public abstract class BusinessConsoleWmsAssignmentEndpoint
     : BusinessConsoleWmsTrustedProxyEndpoint<
         BusinessConsoleAssignWmsResourceRequest,

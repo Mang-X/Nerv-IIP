@@ -127,6 +127,7 @@ public static class BusinessGatewayPermissions
     public const string WmsReceiptsManage = "business.wms.receipts.manage";
     public const string WmsShipmentsRead = "business.wms.shipments.read";
     public const string WmsShipmentsManage = "business.wms.shipments.manage";
+    public const string WmsCountsRead = "business.wms.counts.read";
     public const string WmsAutomationManage = "business.wms.automation.manage";
     public const string ApprovalsRead = "business.approvals.read";
     public const string ApprovalsManage = "business.approvals.manage";

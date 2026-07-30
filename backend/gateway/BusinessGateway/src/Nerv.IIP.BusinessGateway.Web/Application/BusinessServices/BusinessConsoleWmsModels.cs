@@ -401,6 +401,55 @@ public sealed record BusinessConsoleWmsWorkScopeCatalog(
     string ActorPrincipalId,
     IReadOnlyCollection<BusinessConsoleWmsWorkScopeCatalogItem> Items);
 
+public sealed record BusinessConsoleWmsOperationalCandidatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    int Take = 50,
+    string? SiteCode = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessWmsOperationalCandidatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    string? Keyword = null,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    int Take = 50,
+    string? SiteCode = null);
+
+public sealed record BusinessConsoleWmsOperationalCandidatesResponse(
+    string SourceKind,
+    string ScopeKind,
+    string ScopeId,
+    DateTime AsOfUtc,
+    DateTime? FreshnessUtc,
+    bool Truncated,
+    IReadOnlyCollection<BusinessConsoleWmsLocationCandidate> Locations,
+    IReadOnlyCollection<BusinessConsoleWmsLotCandidate> Lots);
+
+public sealed record BusinessConsoleWmsLocationCandidate(
+    string SiteCode,
+    string LocationCode,
+    IReadOnlyCollection<string> SkuCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
+public sealed record BusinessConsoleWmsLotCandidate(
+    string SiteCode,
+    string SkuCode,
+    string LotNo,
+    IReadOnlyCollection<string> LocationCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
 public sealed record BusinessConsoleWmsListRequest(
     string OrganizationId,
     string EnvironmentId,

@@ -1343,6 +1343,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/counts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/counts", BusinessGatewayPermissions.WmsCountsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);

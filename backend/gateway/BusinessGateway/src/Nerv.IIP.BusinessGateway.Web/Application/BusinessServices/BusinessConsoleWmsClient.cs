@@ -17,6 +17,11 @@ public interface IBusinessWmsClient
         BusinessWmsWorkScopeCatalogRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsOperationalCandidatesResponse> ListOperationalCandidatesAsync(
+        string internalBearerToken,
+        BusinessWmsOperationalCandidatesRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateWmsInboundOrderRequest request,
@@ -226,6 +231,18 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         BusinessWmsWorkScopeCatalogRequest request,
         CancellationToken cancellationToken) =>
         GetWorkScopesAsync(internalBearerToken, "counts", request, cancellationToken);
+
+    public Task<BusinessConsoleWmsOperationalCandidatesResponse> ListOperationalCandidatesAsync(
+        string internalBearerToken,
+        BusinessWmsOperationalCandidatesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsOperationalCandidatesResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/wms/operational-candidates?"
+                + WmsOperationalCandidatesQuery(request),
+            null,
+            cancellationToken);
 
     public Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
         string internalBearerToken,
@@ -800,6 +817,22 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
                 ("status", request.Status),
                 ("keyword", request.Keyword),
                 ("countExecutionId", request.CountExecutionId)),
+            request.AuthorizedSiteCodes);
+
+    private static string WmsOperationalCandidatesQuery(
+        BusinessWmsOperationalCandidatesRequest request) =>
+        AppendAuthorizedSites(
+            Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("actorPrincipalId", request.ActorPrincipalId),
+                ("scopeKind", request.ScopeKind),
+                ("scopeId", request.ScopeId),
+                ("keyword", request.Keyword),
+                ("skuCode", request.SkuCode),
+                ("locationCode", request.LocationCode),
+                ("take", request.Take),
+                ("siteCode", request.SiteCode)),
             request.AuthorizedSiteCodes);
 
     private static string AppendAuthorizedSites(
