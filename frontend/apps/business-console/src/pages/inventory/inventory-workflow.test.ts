@@ -62,7 +62,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
       ownerType: 'owned',
       siteCode: 'S1',
       skuCode: inventoryState.initialSkuCode,
-      uomCode: 'EA',
+      uomCode: 'pcs',
     }
     inventoryState.availabilityFilters = filters
 
@@ -107,7 +107,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     expiryAlerts: computed(() => [
       {
         skuCode: 'SKU-001',
-        uomCode: 'EA',
+        uomCode: 'pcs',
         siteCode: 'S1',
         locationCode: 'A-01',
         lotNo: 'LOT-001',
@@ -214,19 +214,18 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 // 目录与默认值来自主数据 facade，这里给确定的目录，页面测试只关心「选择器有得选、单位自动带出」。
 vi.mock('@/composables/useInventoryScope', async () => {
   const { computed, ref, watch } = await import('vue')
-  const baseUomBySku: Record<string, string> = { 'SKU-001': 'EA', 'RM-BAR-45-01': 'kg' }
+  const baseUomBySku: Record<string, string> = { 'SKU-001': 'pcs', 'RM-BAR-45-01': 'kg' }
   const catalog = {
     siteOptions: computed(() => [{ value: 'S1', label: '上海工厂' }]),
     sitesPending: ref(false),
     skuOptions: computed(() => [
-      { value: 'SKU-001', label: '前减振器总成', hint: 'EA' },
+      { value: 'SKU-001', label: '前减振器总成', hint: 'pcs' },
       { value: 'RM-BAR-45-01', label: '45号钢棒料', hint: 'kg' },
     ]),
     skusPending: ref(false),
   }
   return {
     FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
-    FALLBACK_INVENTORY_UOM_CODE: 'pcs',
     useInventoryScopeCatalog: () => catalog,
     // 与真实实现同构：工厂缺省填默认工厂，单位始终跟随所选物料的基本单位。
     useInventoryScopeDefaults: (filters: {
@@ -239,7 +238,7 @@ vi.mock('@/composables/useInventoryScope', async () => {
         () => filters.skuCode,
         (skuCode) => {
           const trimmed = (skuCode ?? '').trim()
-          filters.uomCode = trimmed ? (baseUomBySku[trimmed] ?? 'pcs') : ''
+          filters.uomCode = trimmed ? (baseUomBySku[trimmed] ?? '') : ''
         },
         { immediate: true },
       )
@@ -265,7 +264,7 @@ vi.mock('@/composables/useInventorySiteStock', async () => {
     {
       skuCode: 'SKU-001',
       skuName: '前减振器总成',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       onHandQuantity: 10,
       reservedQuantity: 2,
       availableQuantity: 7,
@@ -291,7 +290,7 @@ vi.mock('@/composables/useInventorySiteStock', async () => {
     {
       skuCode: 'SKU-001',
       skuName: '前减振器总成',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       locationCode: 'A-01',
       lotNo: 'LOT-001',
       serialNo: 'SN-001',
@@ -482,7 +481,7 @@ function openCountTaskRow(countTaskId: string) {
     countTaskId,
     countTaskCode: 'CNT-2026-0001',
     skuCode: 'SKU-001',
-    uomCode: 'EA',
+    uomCode: 'pcs',
     siteCode: 'S1',
     locationCode: 'A-01',
     lotNo: 'LOT-OPENING-SKU-001',

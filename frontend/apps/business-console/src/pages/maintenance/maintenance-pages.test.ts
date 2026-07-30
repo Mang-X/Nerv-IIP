@@ -148,8 +148,8 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
     devicesPending: shallowRef(false),
   }),
   useEquipmentSkuCatalog: () => ({
-    baseUomBySku: computed(() => new Map([['BRG-6205', 'EA']])),
-    skuOptions: computed(() => [{ value: 'BRG-6205', label: '深沟球轴承 6205', hint: 'EA' }]),
+    baseUomBySku: computed(() => new Map([['BRG-6205', 'pcs']])),
+    skuOptions: computed(() => [{ value: 'BRG-6205', label: '深沟球轴承 6205', hint: 'pcs' }]),
     skusPending: shallowRef(false),
   }),
   useEquipmentTeamCatalog: () => ({
@@ -158,7 +158,7 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
   }),
   useEquipmentUomCatalog: () => ({
     uomOptions: computed(() => [
-      { value: 'EA', label: '个' },
+      { value: 'pcs', label: '个' },
       { value: 'CEL', label: '摄氏度' },
     ]),
     uomsPending: shallowRef(false),
@@ -380,9 +380,9 @@ describe('maintenance work orders page', () => {
     // 「实际执行技师」字段进入完工抽屉。
     expect(document.body.textContent).toContain('实际执行技师')
 
-    // 登记一条更换备件（完工前置：至少一条备件行）。
+    // 登记一条更换备件（完工前置：至少一条备件行）；物料取目录里的备件，单位随主档自动带出。
     const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
-    spareSku.value = '主控芯片MCU'
+    spareSku.value = 'BRG-6205'
     spareSku.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
@@ -395,6 +395,8 @@ describe('maintenance work orders page', () => {
     expect(id).toBe('wo-tech')
     // 实际技师默认沿用建单指派技师 user-1（未改选时）。
     expect(body.actualTechnicianUserId).toBe('user-1')
+    // 回归 #1285：备件单位来自物料主档的基本单位，不是页面写死的兜底单位。
+    expect(body).toMatchObject({ spareParts: [expect.objectContaining({ uomCode: 'pcs' })] })
   })
 })
 
