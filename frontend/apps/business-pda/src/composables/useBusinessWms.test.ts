@@ -198,6 +198,52 @@ vi.mock('@pinia/colada', () => ({
 
 const SCOPE = { organizationId: 'org-001', environmentId: 'env-dev' }
 
+const pagingErrorCases = [
+  {
+    name: 'inbound',
+    id: 'listBusinessConsoleWmsInboundOrders',
+    list: coladaState.listInbound,
+    create: () => useWmsInbound(),
+    makeItem: (index: number) => ({ inboundOrderId: `inbound-${index}`, status: 'Open' }),
+  },
+  {
+    name: 'outbound',
+    id: 'listBusinessConsoleWmsOutboundOrders',
+    list: coladaState.listOutbound,
+    create: () => useWmsOutbound(),
+    makeItem: (index: number) => ({ outboundOrderId: `outbound-${index}`, status: 'Open' }),
+  },
+  {
+    name: 'picking',
+    id: 'listBusinessConsoleWmsPickingTasks',
+    list: coladaState.listPicking,
+    create: () => useWmsPicking(),
+    makeItem: (index: number) => ({
+      warehouseTaskId: `picking-${index}`,
+      status: 'Open',
+      allowedActions: [],
+    }),
+  },
+  {
+    name: 'putaway',
+    id: 'listBusinessConsoleWmsPutawayTasks',
+    list: coladaState.listPutaway,
+    create: () => useWmsPutaway(),
+    makeItem: (index: number) => ({
+      warehouseTaskId: `putaway-${index}`,
+      status: 'Open',
+      allowedActions: [],
+    }),
+  },
+  {
+    name: 'count',
+    id: 'listBusinessConsoleWmsCountExecutions',
+    list: coladaState.listCount,
+    create: () => useWmsCount(),
+    makeItem: (index: number) => ({ countExecutionId: `count-${index}`, status: 'Open' }),
+  },
+] as const
+
 describe('PDA WMS composables', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -1105,6 +1151,57 @@ describe('PDA WMS composables', () => {
 
       await result.loadMore()
       expect(list).toHaveBeenCalledTimes(25)
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'does not expose a rejected stale $name page after scope and filter reset',
+    async ({ id, list, create, makeItem }) => {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => makeItem(index)),
+          total: 40,
+        },
+      })
+      let rejectPage!: (reason?: unknown) => void
+      list.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectPage = reject
+        }),
+      )
+      const result = create()
+      const staleFailure = new Error(`${id}: stale loadMore failure`)
+
+      const load = result.loadMore()
+      result.scopeKey.value = 'work-pool:WMS-SITE-001'
+      result.filters.keyword = 'NEW-FILTER'
+      await nextTick()
+      expect(result.error.value).toBeUndefined()
+
+      rejectPage(staleFailure)
+
+      await expect(load).rejects.toBe(staleFailure)
+      expect(result.error.value).toBeUndefined()
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'still exposes a rejected current-scope $name page',
+    async ({ id, list, create, makeItem }) => {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => makeItem(index)),
+          total: 40,
+        },
+      })
+      const currentFailure = new Error(`${id}: current loadMore failure`)
+      list.mockRejectedValueOnce(currentFailure)
+      const result = create()
+
+      await expect(result.loadMore()).rejects.toBe(currentFailure)
+      expect(result.error.value).toBe(currentFailure)
     },
   )
 

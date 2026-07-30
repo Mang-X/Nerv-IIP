@@ -190,6 +190,15 @@ function stableItemKey(item: object, ...candidates: Array<string | null | undefi
   return candidates.find((candidate) => candidate?.trim()) ?? JSON.stringify(item)
 }
 
+function isCurrentPagingRequest(
+  requestScopeKey: string,
+  requestGeneration: number,
+  currentScopeKey: string,
+  currentGeneration: number,
+) {
+  return requestScopeKey === currentScopeKey && requestGeneration === currentGeneration
+}
+
 function exactItem<TItem>(
   envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
   matches: (item: TItem) => boolean,
@@ -399,8 +408,12 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
         throwOnError: true,
       })
       if (
-        requestScopeKey === scope.responseScopeKey.value &&
-        requestGeneration === pagingGeneration.value
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
       ) {
         page.acceptPage(
           data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
@@ -409,7 +422,16 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
         )
       }
     } catch (error) {
-      loadMoreError.value = error
+      if (
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
+      ) {
+        loadMoreError.value = error
+      }
       throw error
     } finally {
       loadingMore.value = false
@@ -617,8 +639,12 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         throwOnError: true,
       })
       if (
-        requestScopeKey === scope.responseScopeKey.value &&
-        requestGeneration === pagingGeneration.value
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
       ) {
         page.acceptPage(
           data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
@@ -627,7 +653,16 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         )
       }
     } catch (error) {
-      loadMoreError.value = error
+      if (
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
+      ) {
+        loadMoreError.value = error
+      }
       throw error
     } finally {
       loadingMore.value = false
@@ -972,8 +1007,12 @@ function useWmsWarehouseTasks(
         throwOnError: true,
       })
       if (
-        requestScopeKey === scope.responseScopeKey.value &&
-        requestGeneration === pagingGeneration.value
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
       ) {
         page.acceptPage(
           data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
@@ -982,7 +1021,16 @@ function useWmsWarehouseTasks(
         )
       }
     } catch (error) {
-      loadMoreError.value = error
+      if (
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
+      ) {
+        loadMoreError.value = error
+      }
       throw error
     } finally {
       loadingMore.value = false
@@ -1352,8 +1400,12 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
         throwOnError: true,
       })
       if (
-        requestScopeKey === scope.responseScopeKey.value &&
-        requestGeneration === pagingGeneration.value
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
       ) {
         page.acceptPage(
           data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
@@ -1362,7 +1414,16 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
         )
       }
     } catch (error) {
-      loadMoreError.value = error
+      if (
+        isCurrentPagingRequest(
+          requestScopeKey,
+          requestGeneration,
+          scope.responseScopeKey.value,
+          pagingGeneration.value,
+        )
+      ) {
+        loadMoreError.value = error
+      }
       throw error
     } finally {
       loadingMore.value = false
