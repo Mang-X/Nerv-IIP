@@ -80,6 +80,15 @@ function candidateLabel(candidate: (typeof candidates.value)[number]) {
       <Spinner aria-hidden="true" />
       正在读取候选工单
     </div>
+    <!-- 作业范围未就绪：候选查询根本没发（enabled=false），不许说「没有匹配的可排工单」（#1288）。 -->
+    <p
+      v-else-if="!mes.workOrderReadScopeReady.value"
+      class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+      role="alert"
+      data-testid="single-order-candidate-scope-blocked"
+    >
+      {{ mes.workOrderReadScopeMessage.value || '作业范围未就绪，尚未读取候选工单。' }}
+    </p>
     <p
       v-else-if="failed"
       class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
