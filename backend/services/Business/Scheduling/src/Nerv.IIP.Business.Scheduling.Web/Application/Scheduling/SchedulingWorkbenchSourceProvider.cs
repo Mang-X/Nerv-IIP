@@ -1,5 +1,5 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text.Json;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -133,10 +133,24 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
 
         using var response = await mesClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MesWorkOrderListResponse>>(
-            SchedulingJson.Options,
-            cancellationToken);
-        return envelope?.Data ?? throw new InvalidOperationException("MES returned an empty work-order response envelope.");
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new InvalidOperationException("MES returned an empty work-order response.");
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var payload = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
+            ? data
+            : root;
+        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            throw new InvalidOperationException("MES returned an empty work-order response payload.");
+        }
+
+        return payload.Deserialize<MesWorkOrderListResponse>(SchedulingJson.Options)
+            ?? throw new InvalidOperationException("MES returned an empty work-order response payload.");
     }
 
     // Service-side authority. The Business Console mirrors these values only to improve pool UX.

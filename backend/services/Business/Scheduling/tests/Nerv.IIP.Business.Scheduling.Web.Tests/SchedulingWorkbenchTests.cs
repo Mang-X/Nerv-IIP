@@ -82,7 +82,7 @@ public sealed class SchedulingWorkbenchTests
             workOrderNo = $"MO-{index:000}",
             operationTasks = new[] { new { earliestStartUtc = start } },
         }).ToArray();
-        var handler = new StubHandler(_ => Json(new { data = new { items = orders, total = orders.Length }, success = true }));
+        var handler = new StubHandler(_ => Json(new { items = orders, total = orders.Length }));
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
             new StubProductEngineeringClient());
@@ -105,27 +105,23 @@ public sealed class SchedulingWorkbenchTests
     {
         var handler = new StubHandler(_ => Json(new
         {
-            data = new
+            items = new[]
             {
-                items = new[]
+                new
                 {
-                    new
-                    {
-                        workOrderId = "WO-DONE",
-                        skuId = "SKU-001",
-                        skuCode = "SKU-001",
-                        productionVersionId = "pv-001",
-                        quantity = 1,
-                        priority = 10,
-                        dueUtc = DateTimeOffset.UtcNow.AddDays(1),
-                        status = "completed",
-                        workOrderNo = "MO-DONE",
-                        operationTasks = new[] { new { earliestStartUtc = DateTimeOffset.UtcNow } },
-                    }
-                },
-                total = 1,
+                    workOrderId = "WO-DONE",
+                    skuId = "SKU-001",
+                    skuCode = "SKU-001",
+                    productionVersionId = "pv-001",
+                    quantity = 1,
+                    priority = 10,
+                    dueUtc = DateTimeOffset.UtcNow.AddDays(1),
+                    status = "completed",
+                    workOrderNo = "MO-DONE",
+                    operationTasks = new[] { new { earliestStartUtc = DateTimeOffset.UtcNow } },
+                }
             },
-            success = true,
+            total = 1,
         }));
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
@@ -153,7 +149,7 @@ public sealed class SchedulingWorkbenchTests
             var items = isSecondPage
                 ? new[] { WorkOrder("WO-501", start) }
                 : Array.Empty<object>();
-            return Json(new { data = new { items, total = 501 }, success = true });
+            return Json(new { items, total = 501 });
         });
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
