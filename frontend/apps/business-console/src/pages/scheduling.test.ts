@@ -82,6 +82,19 @@ vi.mock('@/stores/auth', () => ({
     },
   }),
 }))
+const stub = vi.hoisted(() => ({
+  releasePlan: vi
+    .fn()
+    .mockResolvedValue({ success: true, data: { planId: 'plan-001', status: 'released' } }),
+  revokePlan: vi
+    .fn()
+    .mockResolvedValue({ success: true, data: { planId: 'plan-released', status: 'revoked' } }),
+  upsertOperationOverride: vi.fn().mockResolvedValue({ success: true, data: {} }),
+  generatePlan: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
+
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
@@ -99,123 +112,128 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidatesPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
-    generatePlan: vi.fn(),
+    generatePlan: stub.generatePlan,
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
     revisePlan: vi.fn(),
-    schedulableCandidates: computed(() => []),
+    // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
+    schedulableCandidates: computed(() => [
+      {
+        workOrderId: 'WO-20260701-001',
+        productionVersionId: 'PV-001',
+        skuCode: 'SKU-PISTON-ROD',
+        status: 'released',
+        priority: 100,
+      },
+    ]),
   }),
-}))
-
-const stub = vi.hoisted(() => ({
-  releasePlan: vi
-    .fn()
-    .mockResolvedValue({ success: true, data: { planId: 'plan-001', status: 'released' } }),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
 }))
 
 const detailSelection = reactive({ planId: '' })
 const detailError = shallowRef<unknown>()
+// plan-001 的方案明细：既作为 planDetail 返回值，也作为「生成首版」的返回方案，
+// 让草案工作区拿到真实任务（持久化 override 用例要按 taskId 找回工序）。
+const planOne = {
+  planId: 'plan-001',
+  status: 'generated',
+  generatedAtUtc: '2026-07-01T09:30:00Z',
+  metrics: {
+    scheduledOperationCount: 6,
+    unscheduledOperationCount: 1,
+    assignedMinutes: 480,
+    makespanMinutes: 720,
+  },
+  assignments: [
+    {
+      assignmentId: 'assign-001',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T08:00:00Z',
+      endUtc: '2026-07-02T10:00:00Z',
+    },
+    {
+      assignmentId: 'assign-002',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-20',
+      operationSequence: 20,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T10:00:00Z',
+      endUtc: '2026-07-02T12:00:00Z',
+      isLocked: true,
+    },
+    {
+      assignmentId: 'assign-003',
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-ASM-01',
+      workCenterId: 'WC-ASSEMBLY',
+      startUtc: '2026-07-02T08:30:00Z',
+      endUtc: '2026-07-02T11:00:00Z',
+    },
+    {
+      assignmentId: 'assign-004',
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-20',
+      operationSequence: 20,
+      resourceId: 'RES-ASM-01',
+      workCenterId: 'WC-ASSEMBLY',
+      startUtc: '2026-07-02T11:00:00Z',
+      endUtc: '2026-07-02T14:00:00Z',
+    },
+    {
+      assignmentId: 'assign-005',
+      orderId: 'WO-20260701-003',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T12:30:00Z',
+      endUtc: '2026-07-02T15:00:00Z',
+    },
+  ],
+  resourceLoads: [
+    {
+      resourceId: 'RES-CNC-01',
+      assignedMinutes: 480,
+      availableMinutes: 600,
+      utilization: 0.8,
+    },
+    {
+      resourceId: 'RES-ASM-01',
+      assignedMinutes: 330,
+      availableMinutes: 600,
+      utilization: 0.55,
+    },
+  ],
+  conflicts: [
+    {
+      conflictId: 'conflict-001',
+      reasonCode: 'material',
+      severity: 'warning',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-10',
+      resourceId: 'RES-CNC-01',
+      message: '关键物料到货晚于计划开工',
+    },
+  ],
+  unscheduledOperations: [
+    {
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-30',
+      reasonCode: 'capacity',
+      message: '瓶颈资源产能不足',
+    },
+  ],
+}
+
 const detail = computed(() => {
   if (detailSelection.planId === 'plan-001') {
-    return {
-      planId: detailSelection.planId,
-      status: 'generated',
-      generatedAtUtc: '2026-07-01T09:30:00Z',
-      metrics: {
-        scheduledOperationCount: 6,
-        unscheduledOperationCount: 1,
-        assignedMinutes: 480,
-        makespanMinutes: 720,
-      },
-      assignments: [
-        {
-          assignmentId: 'assign-001',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T08:00:00Z',
-          endUtc: '2026-07-02T10:00:00Z',
-        },
-        {
-          assignmentId: 'assign-002',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-20',
-          operationSequence: 20,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T10:00:00Z',
-          endUtc: '2026-07-02T12:00:00Z',
-          isLocked: true,
-        },
-        {
-          assignmentId: 'assign-003',
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-ASM-01',
-          workCenterId: 'WC-ASSEMBLY',
-          startUtc: '2026-07-02T08:30:00Z',
-          endUtc: '2026-07-02T11:00:00Z',
-        },
-        {
-          assignmentId: 'assign-004',
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-20',
-          operationSequence: 20,
-          resourceId: 'RES-ASM-01',
-          workCenterId: 'WC-ASSEMBLY',
-          startUtc: '2026-07-02T11:00:00Z',
-          endUtc: '2026-07-02T14:00:00Z',
-        },
-        {
-          assignmentId: 'assign-005',
-          orderId: 'WO-20260701-003',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T12:30:00Z',
-          endUtc: '2026-07-02T15:00:00Z',
-        },
-      ],
-      resourceLoads: [
-        {
-          resourceId: 'RES-CNC-01',
-          assignedMinutes: 480,
-          availableMinutes: 600,
-          utilization: 0.8,
-        },
-        {
-          resourceId: 'RES-ASM-01',
-          assignedMinutes: 330,
-          availableMinutes: 600,
-          utilization: 0.55,
-        },
-      ],
-      conflicts: [
-        {
-          conflictId: 'conflict-001',
-          reasonCode: 'material',
-          severity: 'warning',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-10',
-          resourceId: 'RES-CNC-01',
-          message: '关键物料到货晚于计划开工',
-        },
-      ],
-      unscheduledOperations: [
-        {
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-30',
-          reasonCode: 'capacity',
-          message: '瓶颈资源产能不足',
-        },
-      ],
-    }
+    return planOne
   }
   if (detailSelection.planId === 'plan-invalid') {
     return {
@@ -318,11 +336,25 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
         conflictCount: 0,
         unscheduledOperationCount: 0,
       },
+      // 已发布方案：撤销发布入口只对它开放。
+      {
+        planId: 'plan-released',
+        status: 'released',
+        generatedAtUtc: '2026-07-01T12:00:00Z',
+        releasedAtUtc: '2026-07-01T12:30:00Z',
+        assignmentCount: 4,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
     ]),
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
     releasePlanPending: shallowRef(false),
+    revokePlan: stub.revokePlan,
+    revokePlanPending: shallowRef(false),
+    upsertOperationOverride: stub.upsertOperationOverride,
+    upsertOperationOverridePending: shallowRef(false),
     refreshPlans: vi.fn(),
   }),
 }))
@@ -347,6 +379,15 @@ beforeEach(() => {
   detailSelection.planId = ''
   detailError.value = undefined
   stub.releasePlan.mockClear()
+  stub.revokePlan.mockClear()
+  stub.revokePlan.mockResolvedValue({
+    success: true,
+    data: { planId: 'plan-released', status: 'revoked' },
+  })
+  stub.upsertOperationOverride.mockClear()
+  stub.upsertOperationOverride.mockResolvedValue({ success: true, data: {} })
+  stub.generatePlan.mockClear()
+  stub.generatePlan.mockResolvedValue(planOne)
   stub.toastError.mockClear()
   stub.toastSuccess.mockClear()
 })
@@ -355,6 +396,15 @@ beforeEach(() => {
  * 页面默认停在「排程总览」（挑工单 → 生成 → 发布的主线入口），方案表格是查阅面。
  * 断言表格的用例得先切到那个 Tab —— 和用户真实操作一致。
  */
+/** 撤销确认框走 reka 的 teleport，渲染在 document.body 而不是挂载根里。 */
+function clickConfirmRevoke() {
+  const confirm = [...document.body.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('确认撤销'),
+  )
+  if (!confirm) throw new Error('撤销确认框没有渲染出「确认撤销」按钮')
+  confirm.click()
+}
+
 async function openPlanTable(wrapper: ReturnType<typeof mount>) {
   const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格'))!
   await tableTab.trigger('focus')
@@ -510,7 +560,7 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
-    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(5)
+    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(6)
   })
 
   it('opens plan detail and releases the selected plan through the composable', async () => {
@@ -699,6 +749,118 @@ describe('APS scheduling workbench page', () => {
 
     expect(detailSelection.planId).toBe('plan-empty')
     expect(wrapper.text()).toContain('明细加载失败，请稍后重试')
+  })
+
+  it('revokes a released plan only after the confirmation dialog is accepted', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const rows = wrapper.findAll('tbody tr')
+    // 撤销发布只对已发布方案开放：其他状态行不得出现该入口。
+    expect(
+      rows
+        .find((row) => row.text().includes('plan-001'))!
+        .findAll('button')
+        .some((button) => button.text().includes('撤销发布')),
+    ).toBe(false)
+
+    const releasedRow = rows.find((row) => row.text().includes('plan-released'))!
+    await releasedRow
+      .findAll('button')
+      .find((button) => button.text().includes('撤销发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 只开了确认框，还没真撤销——误触不能直接改状态。
+    expect(stub.revokePlan).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('确认撤销发布该排程方案？')
+
+    clickConfirmRevoke()
+    await flushPromises()
+
+    expect(stub.revokePlan).toHaveBeenCalledWith('plan-released')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('surfaces the service message and changes nothing when revoke fails', async () => {
+    stub.revokePlan.mockRejectedValueOnce(new Error('方案不处于已发布状态'))
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const releasedRow = wrapper
+      .findAll('tbody tr')
+      .find((row) => row.text().includes('plan-released'))!
+    await releasedRow
+      .findAll('button')
+      .find((button) => button.text().includes('撤销发布'))!
+      .trigger('click')
+    await flushPromises()
+    clickConfirmRevoke()
+    await flushPromises()
+
+    // 诚实失败：透传服务端说法，不冒充成功；方案行仍留在「已发布」，用户可重试。
+    expect(stub.toastError).toHaveBeenCalledWith('撤销失败：方案不处于已发布状态')
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('plan-released')
+    wrapper.unmount()
+  })
+
+  it('persists a draft operation override with the plan id and the operation behind the task', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    // 挑工单 → 生成首版 → 草案工作区才有工序可持久锁定。
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.generatePlan).toHaveBeenCalled()
+
+    // 组件回的是甘特 taskId（= assignmentId）；页面必须把它映回 operationId 再落库。
+    wrapper
+      .findComponent({ name: 'SchedulingDraftBoard' })
+      .vm.$emit('persistOverride', 'assign-001')
+    await flushPromises()
+
+    expect(stub.upsertOperationOverride).toHaveBeenCalledWith({
+      planId: 'plan-001',
+      operationId: 'OP-10',
+      resourceId: 'RES-CNC-01',
+      startUtc: '2026-07-02T08:00:00Z',
+      endUtc: '2026-07-02T10:00:00Z',
+    })
+    expect(stub.toastSuccess).toHaveBeenCalledWith('工序 override 已持久化，重排程自动继承')
+  })
+
+  it('refuses to persist an override for a task the draft does not know', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    // 草案还没生成方案：不能静默吞掉这次点击，也绝不能发请求。
+    wrapper
+      .findComponent({ name: 'SchedulingDraftBoard' })
+      .vm.$emit('persistOverride', 'assign-001')
+    await flushPromises()
+
+    expect(stub.upsertOperationOverride).not.toHaveBeenCalled()
   })
 
   it('shows explicit detail feedback when the facade returns no detail payload', async () => {
