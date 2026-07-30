@@ -65,7 +65,7 @@ public sealed class BusinessGatewayPrincipalWorkContextResolverTests
 
         Assert.Equal(Context().CandidateScopes.Count, organization.AuthorizedScopes.Count);
         Assert.Equal(
-            ["site:SITE-A", "team:TEAM-A", "work-center:WC-A", "workshop:WS-A"],
+            ["team:TEAM-A", "work-center:WC-A", "workshop:WS-A"],
             site.AuthorizedScopes.Select(x => $"{x.Kind}:{x.Id}"));
         var lineScope = Assert.Single(line.AuthorizedScopes);
         Assert.Equal("work-center", lineScope.Kind);
@@ -74,21 +74,28 @@ public sealed class BusinessGatewayPrincipalWorkContextResolverTests
     }
 
     [Fact]
-    public void Exact_site_selection_is_authorized_by_a_matching_site_grant()
+    public void Site_candidate_is_excluded_from_the_generic_scope_closed_set()
     {
+        var context = Context();
         var result = PrincipalWorkContextAuthorizationResolver.Resolve(
-            Context(),
+            context with
+            {
+                CandidateScopes =
+                [
+                    .. context.CandidateScopes,
+                    Scope("site", "SITE-A", "南京工厂", "resolved-site", ("organization", "org-001")),
+                ],
+            },
             Authorization(new AuthorizationScopeGrant("role", "role-site", "site", "SITE-A", [PermissionCode])),
             "org-001",
             PermissionCode,
             "site",
             "SITE-A");
 
-        Assert.True(result.SelectionAuthorized);
-        var selected = Assert.IsType<BusinessConsoleAuthorizedWorkScope>(result.SelectedScope);
-        Assert.Equal("site", selected.Kind);
-        Assert.Equal("SITE-A", selected.Id);
-        Assert.Equal("exact", Assert.Single(selected.AuthorizationPaths).Relationship);
+        Assert.False(result.SelectionAuthorized);
+        Assert.Null(result.SelectedScope);
+        Assert.DoesNotContain("site", result.CandidateScopeKinds);
+        Assert.DoesNotContain(result.AuthorizedScopes, scope => scope.Kind == "site");
     }
 
     [Fact]
@@ -389,10 +396,9 @@ public sealed class BusinessGatewayPrincipalWorkContextResolverTests
                 Scope("work-center", "WC-A", "加工中心", "workshop-covered", ("workshop", "WS-A"), ("site", "SITE-A"), ("production-line", "LINE-A")),
                 Scope("work-center", "WC-B", "装配中心", "workshop-covered", ("workshop", "WS-B"), ("site", "SITE-B"), ("production-line", "LINE-B")),
                 Scope("workshop", "WS-A", "机加车间", "active-team-workshop", ("site", "SITE-A")),
-                Scope("site", "SITE-A", "南京工厂", "resolved-site", ("organization", "org-001")),
                 Scope("organization", "org-001", "当前组织", "principal-membership"),
             ],
-            ["organization", "self", "site", "team", "work-center", "workshop"],
+            ["organization", "self", "team", "work-center", "workshop"],
             ["position-master-not-modeled"]);
 
     private static BusinessMasterDataWorkContextCandidateScope Scope(

@@ -71,12 +71,8 @@ public sealed class PrincipalWorkContextQueryTests
         Assert.Equal(["SHIFT-DAY", "SHIFT-NIGHT"], result.Shifts.Select(x => x.Id));
         Assert.Equal(["SITE-NJ"], result.Sites.Select(x => x.Id));
         Assert.Contains("work-center", result.CandidateScopeKinds);
-        Assert.Contains("site", result.CandidateScopeKinds);
-        Assert.Contains(result.CandidateScopes, x =>
-            x.Kind == "site"
-            && x.Id == "SITE-NJ"
-            && x.Relationship == "resolved-site"
-            && x.Ancestors.Contains(new WorkContextScopeAncestor("organization", OrganizationId)));
+        Assert.DoesNotContain("site", result.CandidateScopeKinds);
+        Assert.DoesNotContain(result.CandidateScopes, x => x.Kind == "site");
         Assert.Contains(result.CandidateScopes, x =>
             x.Kind == "work-center"
             && x.Id == "WC-CNC"

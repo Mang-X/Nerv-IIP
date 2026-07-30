@@ -98,15 +98,11 @@ public sealed class WmsTrustedRequestContextResolver(
                 environmentId,
                 authorization.PrincipalId.Trim()),
             cancellationToken);
-        var authorizedSiteCodes = PrincipalWorkContextAuthorizationResolver.Resolve(
+        var authorizedSiteCodes = PrincipalWorkContextAuthorizationResolver.ResolveSiteCandidates(
                 context,
                 authorization,
                 organizationId,
-                permissionCode,
-                requestedScopeKind: null,
-                requestedScopeId: null)
-            .AuthorizedScopes
-            .Where(scope => string.Equals(scope.Kind, "site", StringComparison.Ordinal))
+                permissionCode)
             .Select(scope => scope.Id)
             .ToArray();
 

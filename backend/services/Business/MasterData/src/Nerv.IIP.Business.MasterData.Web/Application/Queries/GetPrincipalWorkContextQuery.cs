@@ -358,13 +358,6 @@ public sealed class GetPrincipalWorkContextQueryHandler(ApplicationDbContext dbC
                 OrderedAncestors(teams.SelectMany(x => WorkshopAncestors(x.WorkshopCode)))),
             new("organization", organizationId, "当前组织", "principal-membership", []),
         };
-        candidateScopes.AddRange(siteItems.Select(x =>
-            new WorkContextCandidateScope(
-                "site",
-                x.Id,
-                x.Name,
-                "resolved-site",
-                [new WorkContextScopeAncestor("organization", organizationId)])));
         candidateScopes.AddRange(teamItems.Select(x =>
             new WorkContextCandidateScope(
                 "team",

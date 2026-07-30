@@ -931,10 +931,12 @@ public sealed class BusinessGatewayWmsTests
             {
                 PrincipalWorkContext = context with
                 {
-                    CandidateScopes =
+                    Sites =
                     [
-                        .. context.CandidateScopes,
-                        Candidate("site", "SITE-A", "Conflicting site name"),
+                        .. context.Sites,
+                        new BusinessMasterDataWorkContextReference(
+                            "SITE-A",
+                            "Conflicting site name"),
                     ],
                 },
             });
@@ -2162,13 +2164,9 @@ public sealed class BusinessGatewayWmsTests
                 Candidate("team", "TEAM-A", "Team A"),
                 Candidate("work-center", "WC-A", "Work center A"),
                 Candidate("workshop", "WS-A", "Workshop A"),
-                Candidate("site", "S1", "Site 1"),
-                Candidate("site", "SITE-001", "Site 001"),
-                Candidate("site", "SITE-A", "Site A"),
-                Candidate("site", "SITE-B", "Site B"),
                 Candidate("organization", "org-001", "Organization"),
             ],
-            ["self", "team", "work-center", "workshop", "site", "organization"],
+            ["self", "team", "work-center", "workshop", "organization"],
             []);
 
     private static BusinessMasterDataWorkContextCandidateScope Candidate(

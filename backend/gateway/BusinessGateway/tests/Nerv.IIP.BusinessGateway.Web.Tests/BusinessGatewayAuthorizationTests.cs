@@ -966,6 +966,7 @@ public sealed class BusinessGatewayAuthorizationTests
         "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete" => new
         {
             idempotencyKey = "complete-in-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/outbound-orders" => new
         {
@@ -1002,6 +1003,7 @@ public sealed class BusinessGatewayAuthorizationTests
             packReviewNo = "PACK-001",
             passed = true,
             idempotencyKey = "complete-out-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/count-executions" => new
         {
@@ -1018,6 +1020,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             countedQuantity = 1,
             idempotencyKey = "complete-count-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new
         {
