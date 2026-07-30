@@ -96,11 +96,15 @@ const wmsState = vi.hoisted(() => ({
   linesRefresh: vi.fn(() => Promise.resolve()),
 }))
 const scopeKey = ref<string | undefined>('self:emp049')
+const scopeKind = computed(() => scopeKey.value?.split(':', 2)[0])
+const scopeId = computed(() => scopeKey.value?.split(':', 2)[1])
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
     scopeKey,
+    scopeKind,
+    scopeId,
     scopeOptions: computed(() => [
       { label: '我的任务', value: 'self:emp049' },
       { label: '一号仓收货作业池', value: 'work-pool:WMS-SITE-001-RECEIVING' },
@@ -125,7 +129,13 @@ vi.mock('@/composables/useBusinessWms', () => ({
     completeInbound: wmsState.completeInbound,
     completePending: computed(() => wmsState.completePending),
   }),
-  useWmsReceivingLines: (orderNo: MaybeRefOrGetter<string>) => ({
+  useWmsReceivingLines: (
+    orderNo: MaybeRefOrGetter<string>,
+    selectedScope: {
+      scopeKind: MaybeRefOrGetter<string | undefined>
+      scopeId: MaybeRefOrGetter<string | undefined>
+    },
+  ) => ({
     lines: computed(() => wmsState.linesByOrderNo[toValue(orderNo)] ?? []),
     total: computed(
       () => wmsState.linesTotal ?? (wmsState.linesByOrderNo[toValue(orderNo)] ?? []).length,
@@ -138,7 +148,12 @@ vi.mock('@/composables/useBusinessWms', () => ({
     pending: computed(() => wmsState.linesPending),
     error: computed(() => wmsState.linesError),
     hasSuccessfulResponse: computed(
-      () => Boolean(toValue(orderNo)) && !wmsState.linesPending && !wmsState.linesError,
+      () =>
+        Boolean(toValue(orderNo)) &&
+        Boolean(toValue(selectedScope.scopeKind)) &&
+        Boolean(toValue(selectedScope.scopeId)) &&
+        !wmsState.linesPending &&
+        !wmsState.linesError,
     ),
     hasFailedResponse: computed(() => false),
     refresh: wmsState.linesRefresh,

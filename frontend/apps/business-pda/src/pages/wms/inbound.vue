@@ -68,6 +68,8 @@ const {
   completePending,
   organizationId,
   environmentId,
+  scopeKind,
+  scopeId,
   scopeReady,
   lastUpdatedAt,
   hasSuccessfulResponse,
@@ -102,7 +104,7 @@ const {
   hasSuccessfulResponse: linesHasSuccessfulResponse,
   hasFailedResponse: linesHasFailedResponse,
   refresh: refreshLines,
-} = useWmsReceivingLines(selectedOrderNo)
+} = useWmsReceivingLines(selectedOrderNo, { scopeKind, scopeId })
 
 // 收货现场「当前作业行」：多行单先选行再扫码，GS1 采集落到选中行（新收货行上尚无
 // 批号时无法按 lotNo 匹配）。单行单自动选中；未选中时扫码回退 lotNo 匹配/单行兜底。

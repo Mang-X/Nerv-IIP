@@ -304,6 +304,8 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   return {
     organizationId: scope.organizationId,
     environmentId: scope.environmentId,
+    scopeKind: scope.scopeKind,
+    scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,
@@ -953,16 +955,36 @@ export type ReceivingQualityGateLine = BusinessConsoleWmsReceivingQualityGateIte
 // sku/检验号会跨单串扰）；再暴露 total → complete 判据，行数被 take 截断（未证明完整）
 // 时调用方 fail closed 禁止提交，避免以不完整行完成收货静默漏采集。
 const RECEIVING_LINES_TAKE = 500
-export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
+export interface WmsReceivingLinesScope {
+  scopeKind: MaybeRefOrGetter<string | undefined>
+  scopeId: MaybeRefOrGetter<string | undefined>
+}
+
+export function useWmsReceivingLines(
+  inboundOrderNo: MaybeRefOrGetter<string>,
+  selectedScope: WmsReceivingLinesScope,
+) {
   const scope = useWmsTenantScope()
   const orderNo = computed(() => toValue(inboundOrderNo).trim())
-  const enabled = computed(() => scope.hasScope.value && orderNo.value.length > 0)
-  const responseScopeKey = computed(() => `${scope.scopeKey.value}:${orderNo.value}`)
+  const scopeKind = computed(() => toValue(selectedScope.scopeKind)?.trim() ?? '')
+  const scopeId = computed(() => toValue(selectedScope.scopeId)?.trim() ?? '')
+  const enabled = computed(
+    () =>
+      scope.hasScope.value &&
+      scopeKind.value.length > 0 &&
+      scopeId.value.length > 0 &&
+      orderNo.value.length > 0,
+  )
+  const responseScopeKey = computed(
+    () => `${scope.scopeKey.value}:${scopeKind.value}:${scopeId.value}:${orderNo.value}`,
+  )
 
   const linesQuery = useQuery(() => ({
     ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
       query: {
         ...scope.scopeQuery(),
+        scopeKind: scopeKind.value,
+        scopeId: scopeId.value,
         skip: 0,
         take: RECEIVING_LINES_TAKE,
         inboundOrderNo: orderNo.value,
@@ -1005,8 +1027,7 @@ export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
     hasFailedResponse,
     pending: linesQuery.isLoading,
     error: linesQuery.error,
-    refresh: () =>
-      scope.hasScope.value && orderNo.value.length > 0 ? linesQuery.refetch() : Promise.resolve(),
+    refresh: () => (enabled.value ? linesQuery.refetch() : Promise.resolve()),
   }
 }
 

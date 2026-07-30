@@ -9012,6 +9012,8 @@ export type ListBusinessConsoleWmsReceivingQualityGatesData = {
         keyword?: string | null;
         includeNotRequired?: boolean;
         inboundOrderNo?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/wms/receiving-quality-gates';
 };

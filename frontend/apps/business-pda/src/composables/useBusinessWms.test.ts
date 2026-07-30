@@ -9,6 +9,7 @@ import {
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
   startBusinessConsoleWmsPickingTask,
 } from '@nerv-iip/api-client'
 import {
@@ -1191,10 +1192,32 @@ describe('PDA WMS composables', () => {
       },
     })
     const orderNo = shallowRef('IN-1')
-    const result = useWmsReceivingLines(orderNo)
+    const scopeKind = shallowRef<string | undefined>('self')
+    const scopeId = shallowRef<string | undefined>('emp049')
+    const result = useWmsReceivingLines(orderNo, { scopeKind, scopeId })
 
     expect(result.lines.value).toHaveLength(1)
     expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(
+      vi.mocked(listBusinessConsoleWmsReceivingQualityGatesQueryOptions).mock.calls.at(-1)?.[0],
+    ).toEqual({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        skip: 0,
+        take: 500,
+        inboundOrderNo: 'IN-1',
+        includeNotRequired: true,
+      },
+    })
+
+    scopeId.value = 'POOL-RECEIVING'
+    await nextTick()
+    expect(result.lines.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
 
     orderNo.value = 'IN-2'
     await nextTick()
