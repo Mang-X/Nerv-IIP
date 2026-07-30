@@ -763,11 +763,7 @@ public sealed class PlanningInputAdapterTests
 
             return JsonResponse("""
                 {
-                  "success": true,
-                  "message": "ok",
-                  "code": 0,
-                  "data": {
-                    "total": 4,
+                  "total": 4,
                     "items": [
                       {
                         "workOrderId": "WO-OPEN-001",
@@ -817,8 +813,7 @@ public sealed class PlanningInputAdapterTests
                         "status": "released",
                         "operationTasks": []
                       }
-                    ]
-                  }
+                  ]
                 }
                 """);
         });
@@ -857,7 +852,7 @@ public sealed class PlanningInputAdapterTests
             requests.Add(request.RequestUri!);
             return request.RequestUri!.AbsolutePath.Contains("/erp/", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse("""{"success":true,"message":"ok","code":0,"data":{"total":0,"items":[]}}""")
-                : JsonResponse("""{"success":true,"message":"ok","code":0,"data":{"total":0,"items":[]}}""");
+                : JsonResponse("""{"total":0,"items":[]}""");
         }));
         services.AddPlanningScheduledReceiptSourceClients(
             new Uri("http://erp.test"),

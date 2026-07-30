@@ -82,7 +82,7 @@ public sealed class SchedulingWorkbenchTests
             workOrderNo = $"MO-{index:000}",
             operationTasks = new[] { new { earliestStartUtc = start } },
         }).ToArray();
-        var handler = new StubHandler(_ => Json(new { data = new { items = orders, total = orders.Length }, success = true }));
+        var handler = new StubHandler(_ => Json(new { items = orders, total = orders.Length }));
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
             new StubProductEngineeringClient());
@@ -101,31 +101,49 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Source_provider_wraps_invalid_mes_work_order_json_as_known_exception()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        });
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            new StubProductEngineeringClient());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.ResolveOrdersAsync(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.UtcNow,
+            [new("WO-001", 10, false)],
+            CancellationToken.None));
+
+        Assert.Contains("MES", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("work-order", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Source_provider_fails_closed_for_a_terminal_work_order()
     {
         var handler = new StubHandler(_ => Json(new
         {
-            data = new
+            items = new[]
             {
-                items = new[]
+                new
                 {
-                    new
-                    {
-                        workOrderId = "WO-DONE",
-                        skuId = "SKU-001",
-                        skuCode = "SKU-001",
-                        productionVersionId = "pv-001",
-                        quantity = 1,
-                        priority = 10,
-                        dueUtc = DateTimeOffset.UtcNow.AddDays(1),
-                        status = "completed",
-                        workOrderNo = "MO-DONE",
-                        operationTasks = new[] { new { earliestStartUtc = DateTimeOffset.UtcNow } },
-                    }
-                },
-                total = 1,
+                    workOrderId = "WO-DONE",
+                    skuId = "SKU-001",
+                    skuCode = "SKU-001",
+                    productionVersionId = "pv-001",
+                    quantity = 1,
+                    priority = 10,
+                    dueUtc = DateTimeOffset.UtcNow.AddDays(1),
+                    status = "completed",
+                    workOrderNo = "MO-DONE",
+                    operationTasks = new[] { new { earliestStartUtc = DateTimeOffset.UtcNow } },
+                }
             },
-            success = true,
+            total = 1,
         }));
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
@@ -153,7 +171,7 @@ public sealed class SchedulingWorkbenchTests
             var items = isSecondPage
                 ? new[] { WorkOrder("WO-501", start) }
                 : Array.Empty<object>();
-            return Json(new { data = new { items, total = 501 }, success = true });
+            return Json(new { items, total = 501 });
         });
         var provider = new HttpSchedulingWorkbenchSourceProvider(
             new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
