@@ -34,7 +34,7 @@ const wmsState = vi.hoisted(() => ({
     {
       outboundOrderId: '22222222-2222-2222-2222-222222222222',
       outboundOrderNo: 'OB-2026-0002',
-      status: 'inProgress',
+      status: 'inventoryPostingPending',
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
   ],
@@ -102,7 +102,7 @@ function resetState() {
     {
       outboundOrderId: '22222222-2222-2222-2222-222222222222',
       outboundOrderNo: 'OB-2026-0002',
-      status: 'inProgress',
+      status: 'inventoryPostingPending',
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
   ]
@@ -124,11 +124,11 @@ describe('WMS 复核发货', () => {
     expect(text).toContain('OB-2026-0001')
     expect(text).toContain('OB-2026-0002')
     // 中文状态
-    expect(text).toContain('待发货')
-    expect(text).toContain('发货中')
+    expect(text).toContain('待复核发货')
+    expect(text).toContain('库存过账中')
     // 不暴露工程语言：原始状态码 / GUID
     expect(text).not.toContain('open')
-    expect(text).not.toContain('inProgress')
+    expect(text).not.toContain('inventoryPostingPending')
     expect(text).not.toContain('11111111-1111-1111-1111-111111111111')
   })
 

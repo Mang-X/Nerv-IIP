@@ -95,7 +95,12 @@ const {
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.scopeKind, () => filters.scopeId],
+  resetOn: [
+    () => filters.keyword,
+    () => filters.status,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
 })
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
@@ -477,6 +482,12 @@ function refreshAll() {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索出库单号、来源单据或物料"
+          aria-label="关键字搜索"
+        />
         <NvSearchSelect
           v-model="scopeKey"
           class="w-56"

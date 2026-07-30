@@ -8,6 +8,7 @@ import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
+import { PDA_OUTBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   outboundOrderStatusLabel,
   outboundReviewFlow,
@@ -61,14 +62,7 @@ const reviewScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const reviewTotal = computed(() => total.value)
-const reviewStatusOptions = [
-  { label: '全部状态', value: '' },
-  { label: '待复核发货', value: 'Open' },
-  { label: '库存过账中', value: 'InventoryPostingPending' },
-  { label: '库存过账失败', value: 'InventoryPostingFailed' },
-  { label: '已完成', value: 'Completed' },
-  { label: '已取消', value: 'Cancelled' },
-]
+const reviewStatusOptions = PDA_OUTBOUND_ORDER_STATUS_OPTIONS
 
 // 选中的出库单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')

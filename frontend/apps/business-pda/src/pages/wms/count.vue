@@ -8,6 +8,7 @@ import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
+import { PDA_COUNT_EXECUTION_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   countExecutionFlow,
   countExecutionStatusLabel,
@@ -61,13 +62,7 @@ const countScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const countTotal = computed(() => total.value)
-const countStatusOptions = [
-  { label: '全部状态', value: '' },
-  { label: '待盘点', value: 'Open' },
-  { label: '已完成', value: 'Completed' },
-  { label: '差异完成', value: 'CompletedWithDifference' },
-  { label: '已取消', value: 'Cancelled' },
-]
+const countStatusOptions = PDA_COUNT_EXECUTION_STATUS_OPTIONS
 
 // 选中的盘点号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedExecutionId = ref('')

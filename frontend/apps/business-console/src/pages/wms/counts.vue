@@ -25,8 +25,8 @@ import {
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import {
-  wmsWarehouseTaskStatusFilterOptions,
-  wmsWarehouseTaskStatusLabel,
+  wmsCountExecutionStatusFilterOptions,
+  wmsCountExecutionStatusLabel,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
@@ -98,6 +98,7 @@ const {
 } = bindWmsWorkScopeFilters(filters, 'counts')
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
+    () => filters.keyword,
     () => filters.locationCode,
     () => filters.status,
     () => filters.scopeKind,
@@ -216,7 +217,7 @@ function locationLabel(row: { siteCode?: string | null; locationCode?: string | 
   return [row.siteCode, location].filter(Boolean).join(' / ') || '—'
 }
 function statusLabel(value?: string | null) {
-  return wmsWarehouseTaskStatusLabel(value)
+  return wmsCountExecutionStatusLabel(value)
 }
 
 type CountRow = BusinessConsoleWmsCountExecutionItem
@@ -491,6 +492,12 @@ function refreshAll() {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索盘点单号或物料"
+          aria-label="关键字搜索"
+        />
         <NvSearchSelect
           v-model="scopeKey"
           class="w-56"
@@ -514,7 +521,7 @@ function refreshAll() {
         <NvSearchSelect
           v-model="statusFilter"
           class="w-32"
-          :options="wmsWarehouseTaskStatusFilterOptions"
+          :options="wmsCountExecutionStatusFilterOptions"
           placeholder="全部状态"
           aria-label="盘点状态"
         />

@@ -7,6 +7,7 @@ import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { PDA_INBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   useWmsInbound,
   useWmsReceivingLines,
@@ -79,14 +80,7 @@ const inboundScope = computed(() =>
   scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const inboundTotal = computed(() => total.value)
-const inboundStatusOptions = [
-  { label: '全部状态', value: '' },
-  { label: '待收货', value: 'Open' },
-  { label: '待质检', value: 'PendingQualityCheck' },
-  { label: '库存过账失败', value: 'InventoryPostingFailed' },
-  { label: '已完成', value: 'Completed' },
-  { label: '已取消', value: 'Cancelled' },
-]
+const inboundStatusOptions = PDA_INBOUND_ORDER_STATUS_OPTIONS
 
 // 选中的收货单（单据级质检状态/上架放行来自列表项派生字段，避免按分页门禁行跨页聚合）。
 const selectedOrder = ref<InboundOrder | null>(null)

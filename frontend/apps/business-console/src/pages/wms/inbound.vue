@@ -118,6 +118,7 @@ const canReadQuality = computed(() =>
 )
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
+    () => filters.keyword,
     () => filters.status,
     () => filters.skuCode,
     () => filters.siteCode,
@@ -484,6 +485,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索入库单号、来源单据或物料"
+          aria-label="关键字搜索"
+        />
         <NvSearchSelect
           v-model="scopeKey"
           class="w-56"
