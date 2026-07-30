@@ -78,6 +78,12 @@ export interface WmsScopeFilters {
 
 export interface WmsTaskFilters extends WmsScopeFilters {
   locationCode?: string
+  lotNo?: string
+}
+
+export interface WmsInboundFilters extends WmsScopeFilters {
+  locationCode?: string
+  lotNo?: string
 }
 
 // outbound/count 写入参数：调用方传业务字段 + idempotencyKey（页面在用户发起操作时生成一次，
@@ -113,6 +119,75 @@ function listItems<TItem>(
 
 function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
   return envelope?.success ? (envelope.data?.total ?? 0) : 0
+}
+
+type ListEnvelope<TItem> =
+  | { success?: boolean; data?: { items?: TItem[]; total?: number } | null }
+  | undefined
+
+function usePagedAccumulator<TSource, TItem>(
+  envelope: MaybeRefOrGetter<ListEnvelope<TSource>>,
+  enabled: MaybeRefOrGetter<boolean>,
+  project: (item: TSource) => TItem | undefined,
+  itemKey: (item: TItem) => string,
+) {
+  const items = shallowRef<TItem[]>([])
+  const total = shallowRef(0)
+  const nextSkip = shallowRef(0)
+  const exhausted = shallowRef(true)
+
+  function merge(projected: TItem[], replace: boolean) {
+    const byKey = new Map<string, TItem>()
+    if (!replace) {
+      for (const item of items.value) byKey.set(itemKey(item), item)
+    }
+    for (const item of projected) byKey.set(itemKey(item), item)
+    items.value = [...byKey.values()]
+  }
+
+  function reset() {
+    items.value = []
+    total.value = 0
+    nextSkip.value = 0
+    exhausted.value = true
+  }
+
+  function acceptPage(value: ListEnvelope<TSource>, skip: number, take: number) {
+    if (value?.success !== true) {
+      throw new Error('WMS 列表响应无效，请刷新后重试')
+    }
+    const rawItems = listItems<TSource>(value)
+    merge(
+      rawItems.map(project).filter((item): item is TItem => item !== undefined),
+      skip === 0,
+    )
+    total.value = listTotal(value)
+    nextSkip.value = skip + rawItems.length
+    exhausted.value =
+      rawItems.length === 0 || rawItems.length < take || nextSkip.value >= total.value
+  }
+
+  watch(
+    [() => toValue(envelope), () => toValue(enabled)],
+    ([value, ready]) => {
+      if (!ready || value === undefined) {
+        reset()
+        return
+      }
+      if (value.success !== true) {
+        reset()
+        return
+      }
+      acceptPage(value, 0, TASK_PAGE_SIZE)
+    },
+    { immediate: true, flush: 'sync' },
+  )
+
+  return { items, total, nextSkip, exhausted, reset, acceptPage }
+}
+
+function stableItemKey(item: object, ...candidates: Array<string | null | undefined>) {
+  return candidates.find((candidate) => candidate?.trim()) ?? JSON.stringify(item)
 }
 
 function exactItem<TItem>(
@@ -226,9 +301,9 @@ function useAuthorizedWmsScope(catalog: WmsWorkScopeCatalogKind) {
   }
 }
 
-export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
+export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
   const scope = useAuthorizedWmsScope('receipts')
-  const filters = defaultFilters<WmsScopeFilters>({
+  const filters = defaultFilters<WmsInboundFilters>({
     ...initialFilters,
     take: initialFilters.take ?? TASK_PAGE_SIZE,
   })
@@ -237,7 +312,12 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsInboundOrdersQueryOptions({
-      query: scope.scopeQueryWithPaging(filters),
+      query: {
+        ...scope.scopeQueryWithPaging(filters),
+        ...optionalQuery('locationCode', filters.locationCode),
+        ...optionalQuery('lotNo', filters.lotNo),
+        ...optionalQuery('lotNo', filters.lotNo),
+      },
     }),
     enabled: scope.hasScope.value,
   }))
@@ -252,22 +332,38 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     scope.hasScope,
     ordersQuery.isLoading,
   )
-  const orders = computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
-    listItems<BusinessConsoleWmsInboundOrderItem>(
-      currentResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
-    ),
+  const page = usePagedAccumulator(
+    () => currentResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+    scope.hasScope,
+    (item: BusinessConsoleWmsInboundOrderItem) => item,
+    (item) => stableItemKey(item, item.inboundOrderId, item.inboundOrderNo),
   )
-  const total = computed(() =>
-    listTotal(currentResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
-  )
+  const loadMoreError = shallowRef<unknown>()
+  const pagingGeneration = shallowRef(0)
 
-  watch([scope.selectedScopeKey, () => filters.status, () => filters.keyword], () => {
+  function resetPaging() {
+    pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
-  })
+    loadMoreError.value = undefined
+    page.reset()
+  }
+
+  watch(
+    [
+      scope.selectedScopeKey,
+      () => filters.status,
+      () => filters.keyword,
+      () => filters.locationCode,
+      () => filters.lotNo,
+    ],
+    resetPaging,
+    { flush: 'sync' },
+  )
 
   async function refresh() {
     if (!scope.hasScope.value) return
+    resetPaging()
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -281,14 +377,40 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
       loadingMore.value ||
-      orders.value.length >= total.value
+      page.exhausted.value
     ) {
       return
     }
     loadingMore.value = true
-    filters.take += TASK_PAGE_SIZE
+    const requestedSkip = page.nextSkip.value
+    const requestScopeKey = scope.responseScopeKey.value
+    const requestGeneration = pagingGeneration.value
     try {
-      await ordersQuery.refetch()
+      const { data } = await listBusinessConsoleWmsInboundOrders({
+        query: {
+          ...scope.scopeQuery(),
+          skip: requestedSkip,
+          take: TASK_PAGE_SIZE,
+          ...optionalQuery('status', filters.status),
+          ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
+        throwOnError: true,
+      })
+      if (
+        requestScopeKey === scope.responseScopeKey.value &&
+        requestGeneration === pagingGeneration.value
+      ) {
+        page.acceptPage(
+          data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+          requestedSkip,
+          TASK_PAGE_SIZE,
+        )
+      }
+    } catch (error) {
+      loadMoreError.value = error
+      throw error
     } finally {
       loadingMore.value = false
     }
@@ -297,7 +419,7 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void ordersQuery.refetch()
+      void refresh()
     },
   })
 
@@ -311,10 +433,10 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
     filters,
-    orders,
-    total,
+    orders: computed(() => page.items.value),
+    total: computed(() => page.total.value),
     pending: computed(() => ordersQuery.isLoading.value || scope.pending.value),
-    error: computed(() => ordersQuery.error.value ?? scope.error.value),
+    error: computed(() => loadMoreError.value ?? ordersQuery.error.value ?? scope.error.value),
     refreshing,
     loadingMore,
     lastUpdatedAt,
@@ -341,8 +463,26 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
       const isReplay = restoredPending !== undefined
+      if (restoredPending && !requireFrozenScope(restoredPending.payloadSnapshot)) {
+        throw lifecycleUnavailable()
+      }
+      const restoredSnapshot = restoredPending?.payloadSnapshot as
+        | {
+            lines?: InboundLineCapture[]
+            scopeKind: string
+            scopeId: string
+            expectedVersion: number
+          }
+        | undefined
+      const commandScope = restoredSnapshot
+        ? {
+            ...scope.tenantQuery(),
+            scopeKind: restoredSnapshot.scopeKind,
+            scopeId: restoredSnapshot.scopeId,
+          }
+        : scope.scopeQuery()
       const { data } = await listBusinessConsoleWmsInboundOrders({
-        query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
+        query: { ...commandScope, inboundOrderId, skip: 0, take: 2 },
         throwOnError: true,
       })
       const authoritative = exactItem(
@@ -357,17 +497,13 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
           idempotentReplay: isReplay,
         },
       })
-      const freshPayload = {
+      const freshPayload = restoredSnapshot ?? {
         lines: lines ?? [],
-        scopeKind: scope.scopeKind.value!,
-        scopeId: scope.scopeId.value!,
+        scopeKind: commandScope.scopeKind,
+        scopeId: commandScope.scopeId,
         expectedVersion: requireVersion(authoritative),
       }
-      const pending = acquirePendingBusinessIntent(
-        intentScope,
-        () => idempotencyKey,
-        restoredPending?.payloadSnapshot ?? freshPayload,
-      )
+      const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, freshPayload)
       if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
       const frozen = pending.payloadSnapshot as typeof freshPayload
       const frozenLines = (frozen.lines as InboundLineCapture[] | undefined) ?? []
@@ -424,22 +560,30 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     scope.hasScope,
     ordersQuery.isLoading,
   )
-  const orders = computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
-    listItems<BusinessConsoleWmsOutboundOrderItem>(
-      currentResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
-    ),
+  const page = usePagedAccumulator(
+    () => currentResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+    scope.hasScope,
+    (item: BusinessConsoleWmsOutboundOrderItem) => item,
+    (item) => stableItemKey(item, item.outboundOrderId, item.outboundOrderNo),
   )
-  const total = computed(() =>
-    listTotal(currentResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
-  )
+  const loadMoreError = shallowRef<unknown>()
+  const pagingGeneration = shallowRef(0)
 
-  watch([scope.selectedScopeKey, () => filters.status, () => filters.keyword], () => {
+  function resetPaging() {
+    pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    loadMoreError.value = undefined
+    page.reset()
+  }
+
+  watch([scope.selectedScopeKey, () => filters.status, () => filters.keyword], resetPaging, {
+    flush: 'sync',
   })
 
   async function refresh() {
     if (!scope.hasScope.value) return
+    resetPaging()
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -453,14 +597,38 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
       loadingMore.value ||
-      orders.value.length >= total.value
+      page.exhausted.value
     ) {
       return
     }
     loadingMore.value = true
-    filters.take += TASK_PAGE_SIZE
+    const requestedSkip = page.nextSkip.value
+    const requestScopeKey = scope.responseScopeKey.value
+    const requestGeneration = pagingGeneration.value
     try {
-      await ordersQuery.refetch()
+      const { data } = await listBusinessConsoleWmsOutboundOrders({
+        query: {
+          ...scope.scopeQuery(),
+          skip: requestedSkip,
+          take: TASK_PAGE_SIZE,
+          ...optionalQuery('status', filters.status),
+          ...optionalQuery('keyword', filters.keyword),
+        },
+        throwOnError: true,
+      })
+      if (
+        requestScopeKey === scope.responseScopeKey.value &&
+        requestGeneration === pagingGeneration.value
+      ) {
+        page.acceptPage(
+          data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+          requestedSkip,
+          TASK_PAGE_SIZE,
+        )
+      }
+    } catch (error) {
+      loadMoreError.value = error
+      throw error
     } finally {
       loadingMore.value = false
     }
@@ -469,7 +637,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void ordersQuery.refetch()
+      void refresh()
     },
   })
 
@@ -481,10 +649,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
     filters,
-    orders,
-    total,
+    orders: computed(() => page.items.value),
+    total: computed(() => page.total.value),
     pending: computed(() => ordersQuery.isLoading.value || scope.pending.value),
-    error: computed(() => ordersQuery.error.value ?? scope.error.value),
+    error: computed(() => loadMoreError.value ?? ordersQuery.error.value ?? scope.error.value),
     refreshing,
     loadingMore,
     lastUpdatedAt,
@@ -513,8 +681,25 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
       const isReplay = restoredPending !== undefined
+      if (restoredPending && !requireFrozenScope(restoredPending.payloadSnapshot)) {
+        throw lifecycleUnavailable()
+      }
+      const restoredSnapshot = restoredPending?.payloadSnapshot as
+        | (typeof payload & {
+            scopeKind: string
+            scopeId: string
+            expectedVersion: number
+          })
+        | undefined
+      const commandScope = restoredSnapshot
+        ? {
+            ...scope.tenantQuery(),
+            scopeKind: restoredSnapshot.scopeKind,
+            scopeId: restoredSnapshot.scopeId,
+          }
+        : scope.scopeQuery()
       const { data } = await listBusinessConsoleWmsOutboundOrders({
-        query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
+        query: { ...commandScope, outboundOrderId, skip: 0, take: 2 },
         throwOnError: true,
       })
       const authoritative = exactItem(
@@ -529,17 +714,13 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
           idempotentReplay: isReplay,
         },
       })
-      const freshPayload = {
+      const freshPayload = restoredSnapshot ?? {
         ...payload,
-        scopeKind: scope.scopeKind.value!,
-        scopeId: scope.scopeId.value!,
+        scopeKind: commandScope.scopeKind,
+        scopeId: commandScope.scopeId,
         expectedVersion: requireVersion(authoritative),
       }
-      const pending = acquirePendingBusinessIntent(
-        intentScope,
-        () => suppliedKey,
-        restoredPending?.payloadSnapshot ?? freshPayload,
-      )
+      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, freshPayload)
       if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
       const frozen = pending.payloadSnapshot as typeof freshPayload
       const body = {
@@ -720,16 +901,22 @@ function useWmsWarehouseTasks(
     scope.hasScope,
     tasksQuery.isLoading,
   )
-  const tasks = computed<WmsWarehouseTask[]>(() =>
-    listItems<BusinessConsoleWmsWarehouseTaskItem>(
-      currentResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
-    )
-      .map(normalizeWarehouseTask)
-      .filter((task): task is WmsWarehouseTask => task !== undefined),
+  const page = usePagedAccumulator(
+    () => currentResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+    scope.hasScope,
+    normalizeWarehouseTask,
+    (task) => task.warehouseTaskId,
   )
-  const total = computed(() =>
-    listTotal(currentResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
-  )
+  const loadMoreError = shallowRef<unknown>()
+  const pagingGeneration = shallowRef(0)
+
+  function resetPaging() {
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadMoreError.value = undefined
+    page.reset()
+  }
 
   watch(
     [
@@ -737,15 +924,15 @@ function useWmsWarehouseTasks(
       () => filters.status,
       () => filters.keyword,
       () => filters.locationCode,
+      () => filters.lotNo,
     ],
-    () => {
-      filters.skip = 0
-      filters.take = TASK_PAGE_SIZE
-    },
+    resetPaging,
+    { flush: 'sync' },
   )
 
   async function refresh() {
     if (!scope.hasScope.value) return
+    resetPaging()
     refreshing.value = true
     try {
       await tasksQuery.refetch()
@@ -759,14 +946,44 @@ function useWmsWarehouseTasks(
       !scope.hasScope.value ||
       tasksQuery.isLoading.value ||
       loadingMore.value ||
-      tasks.value.length >= total.value
+      page.exhausted.value
     ) {
       return
     }
     loadingMore.value = true
-    filters.take += TASK_PAGE_SIZE
+    const requestedSkip = page.nextSkip.value
+    const requestScopeKey = scope.responseScopeKey.value
+    const requestGeneration = pagingGeneration.value
     try {
-      await tasksQuery.refetch()
+      const listOperation =
+        taskType === 'picking'
+          ? listBusinessConsoleWmsPickingTasks
+          : listBusinessConsoleWmsPutawayTasks
+      const { data } = await listOperation({
+        query: {
+          ...scope.scopeQuery(),
+          skip: requestedSkip,
+          take: TASK_PAGE_SIZE,
+          ...optionalQuery('status', filters.status),
+          ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
+        throwOnError: true,
+      })
+      if (
+        requestScopeKey === scope.responseScopeKey.value &&
+        requestGeneration === pagingGeneration.value
+      ) {
+        page.acceptPage(
+          data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+          requestedSkip,
+          TASK_PAGE_SIZE,
+        )
+      }
+    } catch (error) {
+      loadMoreError.value = error
+      throw error
     } finally {
       loadingMore.value = false
     }
@@ -897,7 +1114,7 @@ function useWmsWarehouseTasks(
           body,
         ),
       )
-      await tasksQuery.refetch()
+      await refresh()
       return result
     } catch (error) {
       if (!isReplay && !mutationStarted && peekPendingBusinessIntent(intentScope)) {
@@ -922,10 +1139,12 @@ function useWmsWarehouseTasks(
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
     filters,
-    tasks,
-    total,
+    tasks: computed(() => page.items.value),
+    total: computed(() => page.total.value),
     pending: computed(() => tasksQuery.isLoading.value || scope.pending.value),
-    error: computed(() => actionError.value ?? tasksQuery.error.value ?? scope.error.value),
+    error: computed(
+      () => actionError.value ?? loadMoreError.value ?? tasksQuery.error.value ?? scope.error.value,
+    ),
     refreshing,
     loadingMore,
     actionPending,
@@ -1068,14 +1287,22 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     scope.hasScope,
     executionsQuery.isLoading,
   )
-  const executions = computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
-    listItems<BusinessConsoleWmsCountExecutionItem>(
-      currentResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
-    ),
+  const page = usePagedAccumulator(
+    () => currentResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+    scope.hasScope,
+    (item: BusinessConsoleWmsCountExecutionItem) => item,
+    (item) => stableItemKey(item, item.countExecutionId, item.countNo),
   )
-  const total = computed(() =>
-    listTotal(currentResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined),
-  )
+  const loadMoreError = shallowRef<unknown>()
+  const pagingGeneration = shallowRef(0)
+
+  function resetPaging() {
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadMoreError.value = undefined
+    page.reset()
+  }
 
   watch(
     [
@@ -1084,14 +1311,13 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       () => filters.keyword,
       () => filters.locationCode,
     ],
-    () => {
-      filters.skip = 0
-      filters.take = TASK_PAGE_SIZE
-    },
+    resetPaging,
+    { flush: 'sync' },
   )
 
   async function refresh() {
     if (!scope.hasScope.value) return
+    resetPaging()
     refreshing.value = true
     try {
       await executionsQuery.refetch()
@@ -1105,14 +1331,39 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       !scope.hasScope.value ||
       executionsQuery.isLoading.value ||
       loadingMore.value ||
-      executions.value.length >= total.value
+      page.exhausted.value
     ) {
       return
     }
     loadingMore.value = true
-    filters.take += TASK_PAGE_SIZE
+    const requestedSkip = page.nextSkip.value
+    const requestScopeKey = scope.responseScopeKey.value
+    const requestGeneration = pagingGeneration.value
     try {
-      await executionsQuery.refetch()
+      const { data } = await listBusinessConsoleWmsCountExecutions({
+        query: {
+          ...scope.scopeQuery(),
+          skip: requestedSkip,
+          take: TASK_PAGE_SIZE,
+          ...optionalQuery('status', filters.status),
+          ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('locationCode', filters.locationCode),
+        },
+        throwOnError: true,
+      })
+      if (
+        requestScopeKey === scope.responseScopeKey.value &&
+        requestGeneration === pagingGeneration.value
+      ) {
+        page.acceptPage(
+          data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+          requestedSkip,
+          TASK_PAGE_SIZE,
+        )
+      }
+    } catch (error) {
+      loadMoreError.value = error
+      throw error
     } finally {
       loadingMore.value = false
     }
@@ -1121,7 +1372,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
     onSuccess() {
-      void executionsQuery.refetch()
+      void refresh()
     },
   })
 
@@ -1133,10 +1384,10 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
     filters,
-    executions,
-    total,
+    executions: computed(() => page.items.value),
+    total: computed(() => page.total.value),
     pending: computed(() => executionsQuery.isLoading.value || scope.pending.value),
-    error: computed(() => executionsQuery.error.value ?? scope.error.value),
+    error: computed(() => loadMoreError.value ?? executionsQuery.error.value ?? scope.error.value),
     refreshing,
     loadingMore,
     lastUpdatedAt,
@@ -1163,8 +1414,25 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
       const isReplay = restoredPending !== undefined
+      if (restoredPending && !requireFrozenScope(restoredPending.payloadSnapshot)) {
+        throw lifecycleUnavailable()
+      }
+      const restoredSnapshot = restoredPending?.payloadSnapshot as
+        | (typeof payload & {
+            scopeKind: string
+            scopeId: string
+            expectedVersion: number
+          })
+        | undefined
+      const commandScope = restoredSnapshot
+        ? {
+            ...scope.tenantQuery(),
+            scopeKind: restoredSnapshot.scopeKind,
+            scopeId: restoredSnapshot.scopeId,
+          }
+        : scope.scopeQuery()
       const { data } = await listBusinessConsoleWmsCountExecutions({
-        query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
+        query: { ...commandScope, countExecutionId, skip: 0, take: 2 },
         throwOnError: true,
       })
       const authoritative = exactItem(
@@ -1179,17 +1447,13 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
           idempotentReplay: isReplay,
         },
       })
-      const freshPayload = {
+      const freshPayload = restoredSnapshot ?? {
         ...payload,
-        scopeKind: scope.scopeKind.value!,
-        scopeId: scope.scopeId.value!,
+        scopeKind: commandScope.scopeKind,
+        scopeId: commandScope.scopeId,
         expectedVersion: requireVersion(authoritative),
       }
-      const pending = acquirePendingBusinessIntent(
-        intentScope,
-        () => suppliedKey,
-        restoredPending?.payloadSnapshot ?? freshPayload,
-      )
+      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, freshPayload)
       if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
       const frozen = pending.payloadSnapshot as typeof freshPayload
       const body = {
