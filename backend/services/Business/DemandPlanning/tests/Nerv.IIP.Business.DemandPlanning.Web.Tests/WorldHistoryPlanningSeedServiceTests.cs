@@ -79,6 +79,13 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         Assert.Contains(suggestions, x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
 
         // 采购建议 ID 走同一确定性算法（盐串带 purchase + 组件维度），不与销售/预测建议撞车。
+        // 黄金向量：算法或盐串漂移时此断言先红（与 #1276 的销售建议黄金向量同一姿势）。
+        Assert.Equal(
+            "889785a2-74cc-8d51-b7ea-ba26f67cde37",
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForComponentPurchase("SO-2026-00001", "RM-OIL-01").ToString());
+        Assert.NotEqual(
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForSalesOrder("SO-2026-00001"),
+            WorldHistoryPlanningSpec.PlanningSuggestionIdForComponentPurchase("SO-2026-00001", "RM-OIL-01"));
         var purchaseFact = facts.MrpRuns[^1].Suggestions
             .First(x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
         Assert.Contains(suggestions, x =>
