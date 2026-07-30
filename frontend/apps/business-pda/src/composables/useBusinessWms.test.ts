@@ -561,6 +561,133 @@ describe('PDA WMS composables', () => {
     },
   )
 
+  it.each([
+    {
+      name: 'inbound',
+      list: coladaState.listInbound,
+      mutationId: 'completeInbound',
+      openItem: { inboundOrderId: 'inbound-1', status: 'Open', version: 5 },
+      terminalItem: () => ({
+        inboundOrderId: 'inbound-1',
+        status: 'Completed',
+        get version(): never {
+          throw new Error('restored replay read the current inbound version')
+        },
+      }),
+      create: () => useWmsInbound(),
+      execute: (
+        result: ReturnType<typeof useWmsInbound>,
+        key: string,
+        attempt: 'initial' | 'retry',
+      ) => result.completeInbound('inbound-1', key, [{ lineNo: '1', lotNo: 'LOT-A' }], { attempt }),
+      expectedBody: {
+        lines: [{ lineNo: '1', lotNo: 'LOT-A' }],
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 5,
+        idempotencyKey: 'KEY-SCOPE-A',
+      },
+    },
+    {
+      name: 'outbound',
+      list: coladaState.listOutbound,
+      mutationId: 'completeOutbound',
+      openItem: { outboundOrderId: 'outbound-1', status: 'Open', version: 6 },
+      terminalItem: () => ({
+        outboundOrderId: 'outbound-1',
+        status: 'InventoryPostingPending',
+        get version(): never {
+          throw new Error('restored replay read the current outbound version')
+        },
+      }),
+      create: () => useWmsOutbound(),
+      execute: (
+        result: ReturnType<typeof useWmsOutbound>,
+        key: string,
+        attempt: 'initial' | 'retry',
+      ) =>
+        result.completeOutbound(
+          'outbound-1',
+          { packReviewNo: 'PR-A', passed: true, idempotencyKey: key },
+          { attempt },
+        ),
+      expectedBody: {
+        packReviewNo: 'PR-A',
+        passed: true,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 6,
+        idempotencyKey: 'KEY-SCOPE-A',
+      },
+    },
+    {
+      name: 'count',
+      list: coladaState.listCount,
+      mutationId: 'completeCount',
+      openItem: { countExecutionId: 'count-1', status: 'Open', version: 7 },
+      terminalItem: () => ({
+        countExecutionId: 'count-1',
+        status: 'Completed',
+        get version(): never {
+          throw new Error('restored replay read the current count version')
+        },
+      }),
+      create: () => useWmsCount(),
+      execute: (
+        result: ReturnType<typeof useWmsCount>,
+        key: string,
+        attempt: 'initial' | 'retry',
+      ) =>
+        result.completeCount('count-1', { countedQuantity: 5, idempotencyKey: key }, { attempt }),
+      expectedBody: {
+        countedQuantity: 5,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 7,
+        idempotencyKey: 'KEY-SCOPE-A',
+      },
+    },
+  ])(
+    'restores $name completion entirely from scope A after the user switches to scope B',
+    async ({ list, mutationId, openItem, terminalItem, create, execute, expectedBody }) => {
+      list.mockResolvedValueOnce({
+        data: { success: true, data: { items: [openItem], total: 1 } },
+      })
+      coladaState.mutationResultById.set(mutationId, { operationType: mutationId })
+      const unconfirmed = Object.assign(new Error('first response was not confirmed'), {
+        code: 'business-operation-unconfirmed',
+      })
+      coladaState.confirmationFailure = unconfirmed
+      const result = create()
+
+      await expect(execute(result as never, 'KEY-SCOPE-A', 'initial')).rejects.toBe(unconfirmed)
+
+      result.scopeKey.value = 'work-pool:WMS-SITE-001'
+      await nextTick()
+      list.mockResolvedValueOnce({
+        data: { success: true, data: { items: [terminalItem()], total: 1 } },
+      })
+      coladaState.confirmationFailure = undefined
+
+      await expect(execute(result as never, 'KEY-SCOPE-B', 'retry')).resolves.toBeDefined()
+
+      expect(list.mock.calls.at(-1)?.[0]).toMatchObject({
+        query: {
+          ...SCOPE,
+          scopeKind: 'self',
+          scopeId: 'emp049',
+          skip: 0,
+          take: 2,
+        },
+        throwOnError: true,
+      })
+      expect(coladaState.lastMutationVars.get(mutationId)).toMatchObject({
+        query: SCOPE,
+        body: expectedBody,
+      })
+    },
+  )
+
   it('allows only a persisted same-key inbound retry after completion', async () => {
     coladaState.listInbound.mockResolvedValue({
       data: {
@@ -848,7 +975,7 @@ describe('PDA WMS composables', () => {
     expect(result.lastUpdatedAt.value).toBeNull()
   })
 
-  it('normalizes task rows, loads the next page and refreshes the authorized query', async () => {
+  it('normalizes task rows and refreshes the authorized query from page zero', async () => {
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
       success: true,
       data: {
@@ -875,16 +1002,222 @@ describe('PDA WMS composables', () => {
       }),
     ])
 
-    await result.loadMore()
-    expect(result.filters.take).toBe(40)
+    await result.refresh()
     expect(coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')).toHaveBeenCalledTimes(
       1,
     )
+  })
 
-    await result.refresh()
-    expect(coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')).toHaveBeenCalledTimes(
-      2,
+  it.each([
+    {
+      name: 'inbound',
+      id: 'listBusinessConsoleWmsInboundOrders',
+      list: coladaState.listInbound,
+      create: () => {
+        const result = useWmsInbound()
+        return { rows: result.orders, ...result }
+      },
+      makeItem: (index: number) => ({ inboundOrderId: `inbound-${index}`, status: 'Open' }),
+    },
+    {
+      name: 'outbound',
+      id: 'listBusinessConsoleWmsOutboundOrders',
+      list: coladaState.listOutbound,
+      create: () => {
+        const result = useWmsOutbound()
+        return { rows: result.orders, ...result }
+      },
+      makeItem: (index: number) => ({ outboundOrderId: `outbound-${index}`, status: 'Open' }),
+    },
+    {
+      name: 'picking',
+      id: 'listBusinessConsoleWmsPickingTasks',
+      list: coladaState.listPicking,
+      create: () => {
+        const result = useWmsPicking()
+        return { rows: result.tasks, ...result }
+      },
+      makeItem: (index: number) => ({
+        warehouseTaskId: `picking-${index}`,
+        status: 'Open',
+        allowedActions: [],
+      }),
+    },
+    {
+      name: 'putaway',
+      id: 'listBusinessConsoleWmsPutawayTasks',
+      list: coladaState.listPutaway,
+      create: () => {
+        const result = useWmsPutaway()
+        return { rows: result.tasks, ...result }
+      },
+      makeItem: (index: number) => ({
+        warehouseTaskId: `putaway-${index}`,
+        status: 'Open',
+        allowedActions: [],
+      }),
+    },
+    {
+      name: 'count',
+      id: 'listBusinessConsoleWmsCountExecutions',
+      list: coladaState.listCount,
+      create: () => {
+        const result = useWmsCount()
+        return { rows: result.executions, ...result }
+      },
+      makeItem: (index: number) => ({ countExecutionId: `count-${index}`, status: 'Open' }),
+    },
+  ])(
+    'loads all 520 $name rows with fixed take and advancing skip, then stops at no-more',
+    async ({ id, list, create, makeItem }) => {
+      const total = 520
+      const page = (skip: number) =>
+        Array.from({ length: Math.min(20, total - skip) }, (_, offset) => makeItem(skip + offset))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total },
+      })
+      list.mockImplementation(async ({ query }: { query: { skip?: number } }) => ({
+        data: {
+          success: true,
+          data: { items: page(query.skip ?? 0), total },
+        },
+      }))
+      const result = create()
+
+      expect(result.rows.value).toHaveLength(20)
+      const first = result.loadMore()
+      const duplicate = result.loadMore()
+      await Promise.all([first, duplicate])
+      expect(list).toHaveBeenCalledTimes(1)
+
+      for (let pageIndex = 2; pageIndex < 26; pageIndex += 1) {
+        await result.loadMore()
+      }
+
+      expect(list).toHaveBeenCalledTimes(25)
+      expect(list.mock.calls.map(([options]) => options.query.skip)).toEqual(
+        Array.from({ length: 25 }, (_, index) => (index + 1) * 20),
+      )
+      expect(list.mock.calls.every(([options]) => options.query.take === 20)).toBe(true)
+      expect(result.rows.value).toHaveLength(520)
+      expect(new Set(result.rows.value.map((item) => JSON.stringify(item))).size).toBe(520)
+
+      await result.loadMore()
+      expect(list).toHaveBeenCalledTimes(25)
+    },
+  )
+
+  it('deduplicates a repeated picking page boundary without requesting the terminal page twice', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: Array.from({ length: 20 }, (_, index) => ({
+          warehouseTaskId: `pick-${index}`,
+          allowedActions: [],
+        })),
+        total: 39,
+      },
+    })
+    coladaState.listPicking.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => ({
+            warehouseTaskId: `pick-${index + 19}`,
+            allowedActions: [],
+          })),
+          total: 39,
+        },
+      },
+    })
+    const result = useWmsPicking()
+
+    await result.loadMore()
+    await result.loadMore()
+
+    expect(result.tasks.value).toHaveLength(39)
+    expect(new Set(result.tasks.value.map((task) => task.warehouseTaskId)).size).toBe(39)
+    expect(coladaState.listPicking).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards an in-flight picking page after the keyword changes', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: Array.from({ length: 20 }, (_, index) => ({
+          warehouseTaskId: `pick-old-${index}`,
+          allowedActions: [],
+        })),
+        total: 40,
+      },
+    })
+    let resolvePage!: (value: unknown) => void
+    coladaState.listPicking.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePage = resolve
+      }),
     )
+    const result = useWmsPicking()
+
+    const load = result.loadMore()
+    result.filters.keyword = 'PICK-NEW'
+    await nextTick()
+    expect(result.tasks.value).toEqual([])
+
+    resolvePage({
+      data: {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => ({
+            warehouseTaskId: `pick-old-${index + 20}`,
+            allowedActions: [],
+          })),
+          total: 40,
+        },
+      },
+    })
+    await load
+
+    expect(result.tasks.value).toEqual([])
+  })
+
+  it('clears accumulated rows before refresh and every task scope/filter dimension change', async () => {
+    const initialEnvelope = () => ({
+      success: true,
+      data: {
+        items: [{ warehouseTaskId: 'pick-old', allowedActions: [] }],
+        total: 31,
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', initialEnvelope())
+    const result = useWmsPicking()
+
+    const refreshPromise = result.refresh()
+    expect(result.tasks.value).toEqual([])
+    expect(result.filters.skip).toBe(0)
+    expect(result.filters.take).toBe(20)
+    await refreshPromise
+
+    for (const change of [
+      () => (result.scopeKey.value = 'work-pool:WMS-SITE-001'),
+      () => (result.filters.status = 'Completed'),
+      () => (result.filters.keyword = 'PICK-NEW'),
+      () => (result.filters.locationCode = 'A-02'),
+      () => (result.filters.lotNo = 'LOT-02'),
+    ]) {
+      coladaState.queryDataRefById.get('listBusinessConsoleWmsPickingTasks')!.value =
+        initialEnvelope()
+      await nextTick()
+      expect(result.tasks.value).toHaveLength(1)
+
+      change()
+      await nextTick()
+
+      expect(result.tasks.value).toEqual([])
+      expect(result.filters.skip).toBe(0)
+      expect(result.filters.take).toBe(20)
+    }
   })
 
   it('re-reads the exact picking task and starts it with trusted scope, version and stable key', async () => {
