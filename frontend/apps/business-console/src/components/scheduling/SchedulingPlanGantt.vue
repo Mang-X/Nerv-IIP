@@ -147,7 +147,7 @@ const legendCategories = computed(() => {
   return WC_FAMILIES.filter((f) => used.has(f.key)).map((f) => ({ key: f.key, label: f.label }))
 })
 
-// 工序选中态：点甘特上的工序块 → 右侧并排展开该工序详情（甘特不被遮挡、仍可点）。
+// 选中态：点甘特上的条 → 右侧并排展开该条的详情（甘特不被遮挡、仍可点）。
 // 方案级抽屉只由「方案明细」按钮打开——两个入口对应两种粒度，不再混为一谈。
 const selectedTaskId = shallowRef('')
 const selectedTask = computed<ScheduleTask | undefined>(() =>
@@ -156,19 +156,40 @@ const selectedTask = computed<ScheduleTask | undefined>(() =>
     : undefined,
 )
 const detailPanelOpen = computed(() => Boolean(selectedTask.value))
-// 换方案（或方案重新加载后工序不在了）就收起详情，避免停在一条不存在的工序上。
+/**
+ * 选中条的粒度。资源排产板只铺工序条，但工单甘特会有工单汇总行、资源时间块，
+ * 引擎也可能把它们回给 taskSelect——粒度不同，标题和字段就得不同：
+ * 工单行没有"工序号"，资源时间块没有工单，硬套工序模板会显示「工序号：无」这种假事实。
+ */
+const selectedKind = computed<'order' | 'block' | 'operation' | undefined>(() => {
+  const task = selectedTask.value
+  if (!task) return undefined
+  if (task.blockKind) return 'block'
+  return task.type === 'order' ? 'order' : 'operation'
+})
+const detailPanelTitle = computed(() => {
+  if (selectedKind.value === 'order') return '工单详情'
+  if (selectedKind.value === 'block') return '资源时间块'
+  return '工序详情'
+})
+// 换方案就收起详情；同方案内模型刷新后选中的条不在了也收起，
+// 避免停在一条已经不存在的工序上（两种情形一个 watch 处理，不重复设值）。
 watch(
   () => [props.plan?.planId, model.value] as const,
-  () => {
-    if (selectedTaskId.value && !selectedTask.value) selectedTaskId.value = ''
+  ([planId], previous) => {
+    if (!selectedTaskId.value) return
+    if (planId !== previous?.[0] || !selectedTask.value) selectedTaskId.value = ''
   },
 )
-watch(
-  () => props.plan?.planId,
-  () => {
-    selectedTaskId.value = ''
-  },
-)
+
+// 选中的是工单汇总行时，给一个工单级读数（本方案里这张工单排了几道工序）。
+const selectedOrderOperationCount = computed(() => {
+  const task = selectedTask.value
+  if (!task || selectedKind.value !== 'order') return 0
+  return (model.value?.tasks ?? []).filter(
+    (candidate) => candidate.type === 'operation' && candidate.orderId === task.orderId,
+  ).length
+})
 
 const selectedWorkOrder = computed(() =>
   selectedTask.value ? workOrderById.value.get(selectedTask.value.orderId) : undefined,
@@ -392,8 +413,8 @@ function formatDateTime(value: string) {
         >
       </div>
 
-      <!-- 甘特与工序详情并排：详情是同一行里的一列（不是覆盖层），
-           打开时甘特只是变窄，仍然可见、可点、可继续换选工序。 -->
+      <!-- 甘特与详情并排：详情是同一行里的一列（不是覆盖层），
+           打开时甘特只是变窄，仍然可见、可点、可继续换选。 -->
       <div class="flex h-[34rem] min-h-[28rem] gap-3">
         <div class="min-w-0 flex-1 overflow-hidden rounded-lg border bg-card p-2">
           <ResourceSchedulerBoard
@@ -407,17 +428,18 @@ function formatDateTime(value: string) {
         <aside
           v-if="detailPanelOpen && selectedTask"
           class="flex w-[21rem] flex-none flex-col overflow-y-auto rounded-lg border bg-card"
-          aria-label="工序详情"
+          :aria-label="detailPanelTitle"
           data-testid="scheduling-task-detail"
+          :data-detail-kind="selectedKind"
         >
           <div class="flex items-center justify-between gap-2 px-4 pt-3 pb-1">
-            <h3 class="text-sm font-semibold text-foreground">工序详情</h3>
+            <h3 class="text-sm font-semibold text-foreground">{{ detailPanelTitle }}</h3>
             <NvButton
               size="icon"
               variant="ghost"
               type="button"
               class="size-7 text-muted-foreground"
-              aria-label="关闭工序详情"
+              :aria-label="`关闭${detailPanelTitle}`"
               @click="selectedTaskId = ''"
             >
               <XIcon class="size-4" aria-hidden="true" />
@@ -434,16 +456,26 @@ function formatDateTime(value: string) {
                   {{ selectedWorkCenterLabel }}
                 </dd>
               </div>
-              <div class="flex justify-between gap-3">
-                <dt class="text-muted-foreground">工序号</dt>
+              <!-- 工序号/锁定状态是工序级事实：工单汇总行与资源时间块上没有这两样，
+                   不套模板显示「工序号：无」。 -->
+              <template v-if="selectedKind === 'operation'">
+                <div class="flex justify-between gap-3">
+                  <dt class="text-muted-foreground">工序号</dt>
+                  <dd class="text-right font-medium text-foreground">
+                    {{ selectedTask.operationId || '无' }}
+                  </dd>
+                </div>
+                <div class="flex justify-between gap-3">
+                  <dt class="text-muted-foreground">锁定状态</dt>
+                  <dd class="text-right font-medium text-foreground">
+                    {{ selectedTask.locked ? '已锁定（重排程保持不变）' : '未锁定' }}
+                  </dd>
+                </div>
+              </template>
+              <div v-else-if="selectedKind === 'order'" class="flex justify-between gap-3">
+                <dt class="text-muted-foreground">本方案工序数</dt>
                 <dd class="text-right font-medium text-foreground">
-                  {{ selectedTask.operationId || '无' }}
-                </dd>
-              </div>
-              <div class="flex justify-between gap-3">
-                <dt class="text-muted-foreground">锁定状态</dt>
-                <dd class="text-right font-medium text-foreground">
-                  {{ selectedTask.locked ? '已锁定（重排程保持不变）' : '未锁定' }}
+                  {{ selectedOrderOperationCount }} 道
                 </dd>
               </div>
             </dl>
@@ -460,8 +492,10 @@ function formatDateTime(value: string) {
             </div>
 
             <!-- 齐套率当前没有权威来源：APS 方案契约与 MES 工单读面都不返回它。
-                 与其显示一个编出来的百分比，不如说明去哪儿看。 -->
+                 与其显示一个编出来的百分比，不如说明去哪儿看。
+                 资源时间块（维护/停机/换线）不关联工单，这段说明对它不成立。 -->
             <p
+              v-if="selectedKind !== 'block'"
               class="rounded-md border border-dashed bg-muted/30 px-2.5 py-2 text-xs leading-5 text-muted-foreground"
             >
               物料 / 数量 / 交期取自 MES 工单{{

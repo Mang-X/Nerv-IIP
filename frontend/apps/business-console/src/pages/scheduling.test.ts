@@ -455,6 +455,9 @@ describe('APS scheduling workbench page', () => {
 
     const detailPanel = wrapper.find('[data-testid="scheduling-task-detail"]')
     expect(detailPanel.exists()).toBe(true)
+    // 粒度要对：点的是一道工序，标题与字段就走工序形态（工单汇总行/资源时间块另有形态）。
+    expect(detailPanel.attributes('data-detail-kind')).toBe('operation')
+    expect(detailPanel.text()).toContain('工序详情')
     // 工序级事实：工单、工序、资源、时间、锁定状态、工单级物料。
     expect(detailPanel.text()).toContain('WO-20260701-001')
     expect(detailPanel.text()).toContain('OP-20')
