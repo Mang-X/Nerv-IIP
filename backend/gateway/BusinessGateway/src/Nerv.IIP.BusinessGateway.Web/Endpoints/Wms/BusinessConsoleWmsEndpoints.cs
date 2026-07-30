@@ -552,7 +552,7 @@ public sealed class AssignBusinessConsoleWmsCountExecutionEndpoint(
         wms,
         tokenProvider,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsReceiptsManage,
+        BusinessGatewayPermissions.InventoryCountsManage,
         "countExecutionId")
 {
     protected override Task<BusinessConsoleWmsAssignmentResult> AssignAsync(
@@ -1566,7 +1566,7 @@ public sealed class CreateBusinessConsoleWmsCountExecutionEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateWmsCountExecutionRequest, BusinessConsoleCreateWmsCountExecutionResponse>(
         auth,
-        BusinessGatewayPermissions.WmsReceiptsManage)
+        BusinessGatewayPermissions.InventoryCountsManage)
 {
     protected override string OrganizationId(BusinessConsoleCreateWmsCountExecutionRequest request) => request.OrganizationId;
 
@@ -1642,7 +1642,7 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
     : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsCountExecutionRequest, BusinessConsoleCompleteWmsMovementResponse>(
         auth,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsReceiptsManage)
+        BusinessGatewayPermissions.InventoryCountsManage)
 {
     protected override bool IncludePrincipalContext => true;
 

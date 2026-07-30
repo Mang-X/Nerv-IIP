@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DOMAIN_SIDE_NAV, resolveDomainId } from './navigation'
+import { DOMAIN_SIDE_NAV, permittedBy, resolveDomainId } from './navigation'
 import { BUSINESS_PERMISSION_CODES as P } from './permissions'
 
 describe('business console quality navigation', () => {
@@ -175,6 +175,17 @@ describe('business console inventory navigation', () => {
     expect(resolveDomainId('/inventory/lots')).toBe('inventory')
     expect(lots?.title).toBe('批次与预留')
     expect(lots?.requiredPermissions).toEqual([P.inventoryLedgerRead])
+  })
+})
+
+describe('business console WMS count navigation', () => {
+  it('shows count execution only to the dedicated count reader', () => {
+    const wmsItems = DOMAIN_SIDE_NAV.wms?.flatMap((section) => section.items) ?? []
+    const countExecution = wmsItems.find((item) => pathOf(item.to) === '/wms/counts')
+
+    expect(countExecution?.requiredPermissions).toEqual([P.wmsCountsRead])
+    expect(permittedBy([countExecution!], [P.wmsCountsRead])).toEqual([countExecution])
+    expect(permittedBy([countExecution!], [P.wmsReceiptsRead])).toEqual([])
   })
 })
 

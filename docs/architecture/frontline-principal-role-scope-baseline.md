@@ -228,7 +228,7 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 | PDA role | 当前 seed 的准确 `permissionCodes` |
 | --- | --- |
 | `role-pda-operator` | `business.mes.work-orders.read`、`business.mes.dispatch.read`、`business.mes.operations.read`、`business.mes.operations.manage`、`business.mes.reporting.read`、`business.mes.reporting.write`、`business.mes.materials.read`、`business.mes.materials.manage`、`business.mes.receipts.read`、`business.mes.receipts.manage`、`business.engineering.documents.read`、`business.iiot.alarms.read`、`business.iiot.alarms.write`、`business.maintenance.work-orders.read`、`business.maintenance.work-orders.manage`、`business.maintenance.plans.read`、`business.masterdata.resources.read` |
-| `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read` |
+| `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.wms.counts.read`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read` |
 | `role-pda-inspector` | `business.quality.inspection-records.read`、`business.quality.inspection-records.create`、`business.mes.work-orders.read`、`business.masterdata.resources.read` |
 
 上述三个角色不写 role data scopes；四个 PDA membership seed 显式写入各自 principal 的

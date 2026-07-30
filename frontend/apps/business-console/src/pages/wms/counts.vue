@@ -70,7 +70,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '盘点执行',
-    requiredPermissions: ['business.wms.receipts.read'],
+    requiredPermissions: ['business.wms.counts.read'],
   },
 })
 

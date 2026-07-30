@@ -693,7 +693,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '盘点执行',
           icon: ClipboardCheckIcon,
           to: { path: '/wms/counts' },
-          requiredPermissions: [P.wmsReceiptsRead],
+          requiredPermissions: [P.wmsCountsRead],
         },
       ],
     },

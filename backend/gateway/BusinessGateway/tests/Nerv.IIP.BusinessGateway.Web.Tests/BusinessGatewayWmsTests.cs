@@ -489,10 +489,12 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Fact]
-    public async Task Receipt_write_facades_use_receipts_manage_permission_internal_token_and_route_ids()
+    public async Task Receipt_and_count_write_facades_use_domain_permissions_internal_token_and_route_ids()
     {
         var wms = new RecordingWmsClient();
-        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsManage);
+        var auth = OrganizationScopeAuth(
+            BusinessGatewayPermissions.WmsReceiptsManage,
+            BusinessGatewayPermissions.InventoryCountsManage);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -582,7 +584,15 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, completeCount.StatusCode);
         var completeInboundResponse = await completeInbound.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("request-in-001", completeInboundResponse.GetProperty("data").GetProperty("requestId").GetString());
-        Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsReceiptsManage, requirement.PermissionCode));
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.InboundOrderNo);
@@ -609,6 +619,128 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("self", wms.LastCompleteCountRequest.ScopeKind);
         Assert.Equal("user-admin", wms.LastCompleteCountRequest.ScopeId);
         Assert.Equal(3, wms.LastCompleteCountRequest.ExpectedVersion);
+    }
+
+    [Fact]
+    public async Task Receipts_manage_alone_cannot_create_assign_or_complete_counts()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsManage);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var create = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                countNo = "COUNT-001",
+                skuCode = "SKU-001",
+                uomCode = "EA",
+                siteCode = "S1",
+                locationCode = "BIN-01",
+                expectedQuantity = 9,
+            });
+        var assignment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions/count-execution-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-count",
+                expectedVersion = 3,
+            });
+        var complete = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions/count-execution-001/complete?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                countedQuantity = 8,
+                idempotencyKey = "complete-count-001",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, assignment.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, complete.StatusCode);
+        Assert.Empty(wms.Calls);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.InventoryCountsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+    }
+
+    [Fact]
+    public async Task Inventory_counts_manage_can_create_assign_and_complete_counts()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.InventoryCountsManage);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var create = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                countNo = "COUNT-001",
+                skuCode = "SKU-001",
+                uomCode = "EA",
+                siteCode = "S1",
+                locationCode = "BIN-01",
+                expectedQuantity = 9,
+            });
+        var assignment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions/count-execution-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-count",
+                expectedVersion = 3,
+            });
+        var complete = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/count-executions/count-execution-001/complete?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                countedQuantity = 8,
+                idempotencyKey = "complete-count-001",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, assignment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
+        Assert.Equal(["create-count", "assign-count-execution", "complete-count"], wms.Calls);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.InventoryCountsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
+            ],
+            auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal("user-admin", wms.LastCompleteCountRequest!.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastCompleteCountRequest.AuthorizedSiteCodes);
     }
 
     [Fact]
@@ -1006,6 +1138,7 @@ public sealed class BusinessGatewayWmsTests
             [
                 BusinessGatewayPermissions.WmsReceiptsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
             ],
             new AuthorizationScopeGrant(
                 "role",
@@ -1015,6 +1148,7 @@ public sealed class BusinessGatewayWmsTests
                 [
                     BusinessGatewayPermissions.WmsReceiptsManage,
                     BusinessGatewayPermissions.WmsShipmentsManage,
+                    BusinessGatewayPermissions.InventoryCountsManage,
                 ]));
         await using var factory = CreateFactory(auth, services =>
         {
@@ -1091,7 +1225,7 @@ public sealed class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsReceiptsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
-                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.InventoryCountsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));

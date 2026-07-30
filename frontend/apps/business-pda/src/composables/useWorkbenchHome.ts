@@ -36,6 +36,7 @@ export const HOME_PERMISSIONS = {
   workerProfile: 'business.masterdata.resources.read',
   wmsReceipts: 'business.wms.receipts.read',
   wmsShipments: 'business.wms.shipments.read',
+  wmsCounts: 'business.wms.counts.read',
   quality: 'business.quality.inspection-records.read',
   alarms: 'business.iiot.alarms.read',
 } as const
@@ -192,7 +193,10 @@ export function useWarehouseSummary() {
   const canShipments = computed(
     () => identity.hasScope.value && identity.can(HOME_PERMISSIONS.wmsShipments),
   )
-  const enabled = computed(() => canReceipts.value || canShipments.value)
+  const canCounts = computed(
+    () => identity.hasScope.value && identity.can(HOME_PERMISSIONS.wmsCounts),
+  )
+  const enabled = computed(() => canReceipts.value || canShipments.value || canCounts.value)
 
   const scopeQuery = () => ({
     organizationId: identity.organizationId.value,
@@ -216,7 +220,7 @@ export function useWarehouseSummary() {
   }))
   const countQuery = useQuery(() => ({
     ...listBusinessConsoleWmsCountExecutionsQueryOptions({ query: scopeQuery() }),
-    enabled: canReceipts.value,
+    enabled: canCounts.value,
   }))
 
   const entries = computed<WarehouseSummaryEntry[]>(() => {
@@ -243,7 +247,7 @@ export function useWarehouseSummary() {
         count: listTotal(pickingQuery.data.value),
       })
     }
-    if (canReceipts.value) {
+    if (canCounts.value) {
       result.push({
         key: 'count',
         label: '待盘点',

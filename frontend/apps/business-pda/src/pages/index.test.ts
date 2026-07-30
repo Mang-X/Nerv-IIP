@@ -68,6 +68,7 @@ vi.mock('@/composables/useWorkbenchHome', () => {
     workerProfile: 'business.masterdata.resources.read',
     wmsReceipts: 'business.wms.receipts.read',
     wmsShipments: 'business.wms.shipments.read',
+    wmsCounts: 'business.wms.counts.read',
     quality: 'business.quality.inspection-records.read',
     alarms: 'business.iiot.alarms.read',
   }
@@ -98,7 +99,8 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       enabled: computed(
         () =>
           permissions.value.has(HOME_PERMISSIONS.wmsReceipts) ||
-          permissions.value.has(HOME_PERMISSIONS.wmsShipments),
+          permissions.value.has(HOME_PERMISSIONS.wmsShipments) ||
+          permissions.value.has(HOME_PERMISSIONS.wmsCounts),
       ),
       entries: warehouseEntries,
       pending: ref(false),
@@ -127,6 +129,7 @@ const ALL_PERMISSIONS = [
   'business.masterdata.resources.read',
   'business.wms.receipts.read',
   'business.wms.shipments.read',
+  'business.wms.counts.read',
   'business.quality.inspection-records.read',
   'business.iiot.alarms.read',
   'business.mes.reporting.read',
@@ -201,6 +204,30 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).not.toContain('报工')
     expect(wrapper.text()).not.toContain('查看报警')
+  })
+
+  it('shows count work without receipt entries for a counts-read-only principal', () => {
+    permissions.value = new Set(['business.wms.counts.read'])
+    warehouseEntries.value = [{ key: 'count', label: '待盘点', route: '/wms/count', count: 7 }]
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('待盘点')
+    expect(wrapper.text()).toContain('盘点')
+    expect(wrapper.text()).not.toContain('收货入库')
+  })
+
+  it('does not expose count work to a receipts-read-only principal', () => {
+    permissions.value = new Set(['business.wms.receipts.read'])
+    warehouseEntries.value = [{ key: 'inbound', label: '待收货', route: '/wms/inbound', count: 4 }]
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('待收货')
+    expect(wrapper.text()).toContain('收货入库')
+    expect(wrapper.text()).not.toContain('盘点')
   })
 
   it('shows the inspection source and missing-scope explanation when permitted without scope', () => {

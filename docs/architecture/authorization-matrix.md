@@ -210,6 +210,7 @@ PlatformGateway 的 Console Observability facade 在查询 VictoriaLogs 前，�
 | `business.wms.receipts.manage` | `user` / `external-client` | environment + resource | 创建和完成收货、入库、上架作业。 |
 | `business.wms.shipments.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看出库单、拣货任务和复核包装。 |
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
+| `business.wms.counts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看盘点工作范围、作业候选和盘点执行列表；不授权创建、派工或完成盘点。 |
 | `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS adapter 任务并处理外部自动化设备回执。 |
 | `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
 | `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
