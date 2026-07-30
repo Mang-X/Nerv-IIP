@@ -184,6 +184,24 @@ const selectStubs = {
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+// 新建销售订单弹框：真实 NvDialog 会 teleport 到 body、NvEntityPicker 要开面板选工厂，
+// 本用例只关心「提交失败时用户看到什么」，把这层壳桩成普通节点。
+const orderDialogStubs = {
+  NvDialog: { props: ['open'], template: '<div><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogClose: { template: '<div><slot /></div>' },
+  NvEntityPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" data-testid="site-picker" @click="$emit(\'update:modelValue\', \'SITE-01\')">选择履约工厂</button>',
+  },
+}
+
 const rowActionStubs = {
   RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
   DropdownMenuItem: {
@@ -299,6 +317,27 @@ describe('ERP sales quotation page', () => {
 })
 
 describe('ERP sales order and delivery pages', () => {
+  // MAN-700 / #1289 的实测受害点：报价转订单的 400 曾被整条吞成
+  // 「创建销售订单失败，请稍后重试。」，后端说的「报价单未审批通过」根本到不了用户眼前。
+  it('surfaces the service domain message when converting a quotation to a sales order fails', async () => {
+    state.createSalesOrder = vi.fn(async () => {
+      throw { title: 'Bad Request', status: 400, detail: '报价单未审批通过，不能转订单' }
+    })
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...orderDialogStubs } },
+    })
+    await flushPromises()
+
+    await wrapper.get('#erp-so-quotation').setValue('QUO-2026-0007')
+    await wrapper.get('[data-testid="site-picker"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.createSalesOrder).toHaveBeenCalledTimes(1)
+    expect(state.toastError).toHaveBeenCalledWith('创建销售订单失败：报价单未审批通过，不能转订单')
+    expect(state.toastSuccess).not.toHaveBeenCalled()
+  })
+
   it('sales orders keep keyword search and only expose the shared urgency display selector', async () => {
     const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
     await flushPromises()

@@ -180,6 +180,17 @@ export function notifySuccess(message: string): void {
 }
 
 /**
+ * 提醒反馈：请求**成功了**，但业务结果不是用户想要的那一档
+ * （如「采购申请转单成功返回，但缺少有效价源」）——既不是失败也不该报喜。
+ *
+ * 参数是**调用方写死的中文文案**，不接 error：它不属于分层透传链，也不需要映射。
+ * 存在的理由是保住「业务页不直接调 toast」这条边界（否则同类提醒会绕过 notify 各写一套）。
+ */
+export function notifyWarning(message: string): void {
+  toast.warning(message)
+}
+
+/**
  * 失败反馈：toast.error（友好文案），不在页面留常驻错误条。
  *
  * 与 `notifyOperationFailure` **同一条分层透传链**（只是不带动作前缀）：先取服务端真正说的那句话

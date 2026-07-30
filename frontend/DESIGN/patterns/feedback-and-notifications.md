@@ -33,14 +33,20 @@
    调用方的领域兜底文案。
    ⚠️ 别只判 `error instanceof Error`：generated client 在 `throwOnError` 下抛出的是**解析后的
    响应体对象**，那样写会把所有 HTTP 失败（含 500）吞成猜测性文案。
-   1c. **三个入口同源，不许各写一套**（MAN-700 / #1289 全量铺开）：
+   1c. **透传三入口同源，不许各写一套**（MAN-700 / #1289 全量铺开）：
    `notifyOperationFailure(动作, error, 兜底)` 用于**写操作**（带「哪个动作失败了」前缀）；
    `notifyError(error, 兜底)` 用于**没有明确动作名的失败**（读面加载失败等），走同一条透传链、
    只是不加前缀；`inlineErrorMessage(error, 兜底)` 用于**行内错误态**（列表加载失败条、弹窗内
    `submitError`），返回的就是 toast 会说的那句话，杜绝「toast 说人话、行内条却是
-   `Internal Server Error`」的两套口径。三者都在 `apps/business-console/src/utils/notify.ts`。
+   `Internal Server Error`」的两套口径。
+   另有两个**不接 error、只收写死中文**的入口：`notifySuccess(文案)` 与
+   `notifyWarning(文案)`（后者用于「请求成功但业务结果不是用户想要的那一档」，如
+   「转单成功返回但缺少有效价源」）。五个入口都在
+   `apps/business-console/src/utils/notify.ts`——**业务页一律经它们，不直接调 `toast.*`**。
    门禁：`apps/business-console/src/pages/errorTransparency.contract.test.ts` 扫全仓源码，
-   拦裸 `instanceof Error` 判形和绕开 notify 直调 `toast.*` 的写法。
+   拦①裸 `instanceof Error` 判错误形状 ②直调 `toast.error/success/warning/info`
+   ③各业务域必须有页面走 `notifyOperationFailure`。少数例外（`scheduling.vue` 的写死文案等）
+   在该文件的 allowlist 里逐条写明理由。
 
 2. **请求成功 → `notifySuccess('xxx 已创建/已更新')`**。
 3. **弹窗内提交失败**：toast 报错 + **弹窗保持打开**让用户改正重试；**不在弹窗里堆常驻
