@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   reject: null as Error | null,
   /** `useMesWorkOrders` 被实例化的次数——一实例化就会发候选查询。 */
   mesCalls: 0,
+  toasts: [] as { action: string; fallback: string }[],
 }))
 
 vi.mock('@/composables/useSingleOrderScheduling', async () => {
@@ -56,10 +57,18 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({
-  notifyError: vi.fn(),
-  notifySuccess: vi.fn(),
-}))
+// 只桩住会弹 toast 的两个；serverErrorMessage / friendlyErrorMessage 用真实实现，
+// 否则「服务端说了什么才上屏」这条断言测的就是桩而不是产品逻辑。
+vi.mock('@/utils/notify', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
+  return {
+    ...actual,
+    notifyOperationFailure: vi.fn((action: string, _error: unknown, fallback: string) => {
+      state.toasts.push({ action, fallback })
+    }),
+    notifySuccess: vi.fn(),
+  }
+})
 
 vi.mock('@nerv-iip/ui', async () => {
   const { defineComponent } = await vi.importActual<typeof import('vue')>('vue')
@@ -108,6 +117,7 @@ vi.mock('@nerv-iip/ui', async () => {
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
     Spinner: Shell,
+    toast: { error: vi.fn(), success: vi.fn() },
   }
 })
 
@@ -129,6 +139,7 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     state.reject = null
     state.permissionCodes = ['business.scheduling.plans.manage']
     state.mesCalls = 0
+    state.toasts = []
   })
 
   it('已知目标工单时不查候选：候选查询只在需要挑单时才实例化', () => {
@@ -192,7 +203,7 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     expect(wrapper.text()).toContain('business.scheduling.plans.manage')
   })
 
-  it('失败原因留在弹窗里，用户改完窗口能重试', async () => {
+  it('服务端的中文领域拒绝理由原样留在弹窗里，用户改完就能重试', async () => {
     state.reject = new Error('工单没有生产版本')
     const wrapper = mountDialog({ workOrderId: 'WO-77' })
 
@@ -200,6 +211,21 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('工单没有生产版本')
+    // 与 #1278 的分层透传同源：toast 也带动作前缀，不再各写一套错误取值。
+    expect(state.toasts).toEqual([
+      { action: '排产失败', fallback: '排产失败，请检查工单生产版本与排程基础数据。' },
+    ])
     expect(state.pushed).toHaveLength(0)
+  })
+
+  it('英文 5xx 原文不上屏：按反馈规范降级为领域兜底文案（#1278 口径）', async () => {
+    state.reject = Object.assign(new Error(''), { message: 'Internal Server Error' })
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Internal Server Error')
+    expect(wrapper.text()).toContain('排产失败，请检查工单生产版本与排程基础数据。')
   })
 })

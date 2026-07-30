@@ -11,7 +11,12 @@ import {
 } from '@/composables/useSingleOrderScheduling'
 import SchedulingCandidatePicker from './SchedulingCandidatePicker.vue'
 import SchedulingHorizonFields from './SchedulingHorizonFields.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  friendlyErrorMessage,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} from '@/utils/notify'
 import {
   NvButton,
   NvCheckbox,
@@ -51,6 +56,9 @@ const props = withDefaults(
   }>(),
   { workOrderId: null, contextLabel: '', initialKeyword: '' },
 )
+
+/** 服务端什么都没说时的领域兜底文案（弹窗内联与 toast 用同一句，不写两遍）。 */
+const SUBMIT_FALLBACK = '排产失败，请检查工单生产版本与排程基础数据。'
 
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ scheduled: [planId: string] }>()
@@ -120,11 +128,12 @@ async function submit() {
     }
   } catch (error) {
     // 失败留在弹窗里说清楚，用户改窗口就能重试；不要关窗后只剩一句 toast。
-    submitError.value =
-      error instanceof Error && error.message
-        ? error.message
-        : '排产失败，请检查工单生产版本与排程基础数据。'
-    notifyError(error, submitError.value)
+    //
+    // 消息取法与 #1278 的 notifyOperationFailure 同源（serverErrorMessage → friendlyErrorMessage）：
+    // generated client 在 throwOnError 下抛的是响应体对象而不是 Error，`error instanceof Error`
+    // 会把所有 HTTP 失败吞成猜测文案；而英文 5xx 原文按反馈规范不能上屏，必须先过映射。
+    submitError.value = friendlyErrorMessage(serverErrorMessage(error) || error, SUBMIT_FALLBACK)
+    notifyOperationFailure('排产失败', error, SUBMIT_FALLBACK)
   }
 }
 </script>
