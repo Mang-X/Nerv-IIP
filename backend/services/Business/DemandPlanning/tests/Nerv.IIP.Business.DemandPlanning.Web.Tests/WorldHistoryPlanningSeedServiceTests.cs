@@ -24,7 +24,10 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         var facts = WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, 1.0d);
 
         var accepted = facts.MrpRuns.SelectMany(x => x.Suggestions).Count(x => x.IsAccepted);
-        var open = facts.MrpRuns.SelectMany(x => x.Suggestions).Count(x => !x.IsAccepted);
+        var openForecast = facts.MrpRuns.SelectMany(x => x.Suggestions)
+            .Count(x => !x.IsAccepted && x.SourceType == "forecast");
+        var openPurchase = facts.MrpRuns.SelectMany(x => x.Suggestions)
+            .Count(x => !x.IsAccepted && x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
         var historicalAccepted = facts.HistoricalMrpRuns.SelectMany(x => x.Suggestions).Count(x => x.IsAccepted);
         output.WriteLine($"planning-world-history-demands={facts.Demands.Count}");
         output.WriteLine($"planning-world-history-forecasts={facts.Forecasts.Count}");
@@ -32,13 +35,21 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         output.WriteLine($"planning-world-history-mrp-runs={facts.MrpRuns.Count}");
         output.WriteLine($"planning-world-history-historical-mrp-runs={facts.HistoricalMrpRuns.Count}");
         output.WriteLine($"planning-world-history-suggestions-accepted={accepted}");
-        output.WriteLine($"planning-world-history-suggestions-open={open}");
+        output.WriteLine($"planning-world-history-suggestions-open-forecast={openForecast}");
+        output.WriteLine($"planning-world-history-suggestions-open-purchase={openPurchase}");
         output.WriteLine($"planning-world-history-historical-suggestions-accepted={historicalAccepted}");
 
         // 设定集 §7：周均约 105 单 × 10 周窗口。
         Assert.InRange(facts.Demands.Count, 700, 1500);
         Assert.Equal(WorldHistoryPlanningSpec.DemandWindowWeeks, facts.MrpRuns.Count);
-        Assert.InRange(open, 1, WorldHistoryPlanningSpec.ForecastSkus.Count);
+        Assert.InRange(openForecast, 1, WorldHistoryPlanningSpec.ForecastSkus.Count);
+        Assert.Contains(
+            facts.MrpRuns[^1].Suggestions,
+            x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
+        // 历史回填批次只补「已接受的生产建议」因果链，不产出滞留的待处理采购建议。
+        Assert.DoesNotContain(
+            facts.HistoricalMrpRuns.SelectMany(x => x.Suggestions),
+            x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
         Assert.Equal(facts.Demands.Count(x => !x.IsCancelled), accepted);
         Assert.Equal(
             WorldHistorySpec.BuildOrderPlans(AsOfDate, 1.0d)
@@ -47,6 +58,43 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
         Assert.NotEmpty(facts.HistoricalMrpRuns);
         Assert.NotEmpty(facts.MpsBuckets);
         Assert.NotEmpty(facts.Forecasts);
+    }
+
+    [Fact]
+    public async Task Latest_mrp_run_contains_both_production_and_purchase_suggestions()
+    {
+        await using var db = CreateDbContext();
+        var facts = WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, SmallScale);
+        var latestHorizonStart = facts.MrpRuns[^1].HorizonStart;
+
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var latestRun = await db.MrpRuns.SingleAsync(x => x.HorizonStart == latestHorizonStart);
+        var suggestions = await db.PlanningSuggestions
+            .Include(x => x.PeggingLinks)
+            .Where(x => x.MrpRunId == latestRun.Id)
+            .ToArrayAsync();
+
+        Assert.Contains(suggestions, x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedWorkOrderSuggestionType);
+        Assert.Contains(suggestions, x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
+
+        // 采购建议 ID 走同一确定性算法（盐串带 purchase + 组件维度），不与销售/预测建议撞车。
+        var purchaseFact = facts.MrpRuns[^1].Suggestions
+            .First(x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType);
+        Assert.Contains(suggestions, x =>
+            x.Id.ToString() == WorldHistoryPlanningSpec
+                .PlanningSuggestionIdForComponentPurchase(purchaseFact.DemandSourceReference, purchaseFact.SkuCode)
+                .ToString());
+
+        // pegging 的需求侧引用对齐真实存在的销售订单需求，组件身份放在父/子物料槽位。
+        Assert.All(
+            suggestions.Where(x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType),
+            candidate => Assert.Contains(candidate.PeggingLinks, link =>
+                link.PeggingType == "demand" &&
+                link.DemandSourceReference.StartsWith("SO-2026-", StringComparison.Ordinal) &&
+                !link.DemandSourceReference.Contains(':', StringComparison.Ordinal) &&
+                link.ParentSkuCode != link.ComponentSkuCode &&
+                link.ComponentSkuCode == candidate.SkuCode));
     }
 
     [Fact]

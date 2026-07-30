@@ -28,6 +28,8 @@ public static class WorldHistoryPlanningSpec
     public const string SiteCode = WorldHistorySpec.SiteCode;
     public const string UomCode = WorldHistorySpec.UomCode;
     public const string SalesOrderLineNo = "10";
+    public const string PlannedWorkOrderSuggestionType = "planned-work-order";
+    public const string PlannedPurchaseSuggestionType = "planned-purchase";
 
     /// <summary>需求回看窗口（设定集 §7：近 8–12 周取 10 周）。</summary>
     public const int DemandWindowWeeks = 10;
@@ -100,6 +102,17 @@ public static class WorldHistoryPlanningSpec
         return StablePlanningSuggestionId($"forecast:{forecastReference}");
     }
 
+    /// <summary>
+    /// 组件采购建议的确定性 ID：复用同一哈希算法，盐串加入 <c>purchase</c> 与组件维度，
+    /// 保证与同一销售订单的生产建议（裸 <c>SO-…</c> 盐串）不撞车。
+    /// </summary>
+    public static Guid PlanningSuggestionIdForComponentPurchase(string salesOrderNo, string componentSkuCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(salesOrderNo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(componentSkuCode);
+        return StablePlanningSuggestionId($"purchase:{salesOrderNo}:{componentSkuCode}");
+    }
+
     private static Guid StablePlanningSuggestionId(string sourceReference)
     {
         var bytes = SHA256.HashData(
@@ -135,9 +148,10 @@ public static class WorldHistoryPlanningSpec
         var demands = BuildDemandFacts(plans);
         var forecasts = BuildForecastFacts(windowStart, asOfDate, scale);
         var mpsBuckets = BuildMpsFacts(plans, asOfDate);
-        var mrpRuns = BuildMrpRunFacts(plans, forecasts, asOfDate);
-        // 历史批次只补历史订单的 MRP 运行/建议，不把历史需求、MPS 混入当前 10 周活动窗口。
-        var historicalMrpRuns = BuildMrpRunFacts(historicalPlans, [], asOfDate);
+        var mrpRuns = BuildMrpRunFacts(plans, forecasts, asOfDate, includeLatestOpenSuggestions: true);
+        // 历史批次只补历史订单的 MRP 运行/建议，不把历史需求、MPS 混入当前 10 周活动窗口，
+        // 也不产出滞留在过去的「待处理」预测/采购建议。
+        var historicalMrpRuns = BuildMrpRunFacts(historicalPlans, [], asOfDate, includeLatestOpenSuggestions: false);
 
         return new WorldHistoryPlanningFacts(windowStart, demands, forecasts, mpsBuckets, mrpRuns, historicalMrpRuns);
     }
@@ -271,7 +285,8 @@ public static class WorldHistoryPlanningSpec
     private static IReadOnlyList<WorldHistoryMrpRunFact> BuildMrpRunFacts(
         IReadOnlyList<WorldHistoryOrderPlan> plans,
         IReadOnlyList<WorldHistoryForecastFact> forecasts,
-        DateOnly asOfDate)
+        DateOnly asOfDate,
+        bool includeLatestOpenSuggestions)
     {
         var runs = new List<WorldHistoryMrpRunFact>();
         var groups = plans
@@ -295,9 +310,17 @@ public static class WorldHistoryPlanningSpec
                 suggestions.Add(BuildSalesSuggestion(plan, asOfDate, completedAtUtc));
             }
 
-            // 最近一次运行额外产出预测驱动的「待处理」建议（少量未来需求）。
-            if (weekStart == latestWeekStart)
+            // 最近一次运行额外产出「待处理」建议（组件采购 + 预测驱动的少量未来需求）；
+            // 历史回填批次不参与，避免造出滞留在过去的待处理建议。
+            if (includeLatestOpenSuggestions && weekStart == latestWeekStart)
             {
+                // 成品的 MBOM 中包含减振器专用油（前/后型号各一项）。历史种子此前只写成品
+                // 工单建议，导致真实的组件采购需求在结果中完全不可见；这里按同一批需求补出
+                // 待处理的组件采购建议，保持与 L0 世界观物料编码一致。
+                suggestions.AddRange(BuildComponentPurchaseSuggestions(
+                    group.Where(plan => plan.Stage != WorldHistoryOrderStage.Cancelled),
+                    asOfDate,
+                    completedAtUtc));
                 suggestions.AddRange(BuildForecastSuggestions(forecasts, asOfDate, completedAtUtc));
             }
 
@@ -359,7 +382,51 @@ public static class WorldHistoryPlanningSpec
             IsAccepted: true,
             DownstreamDocumentId: plan.WorkOrderNo,
             CreatedAtUtc: runCompletedAtUtc,
-            AcceptedAtUtc: acceptedAtUtc);
+            AcceptedAtUtc: acceptedAtUtc,
+            SuggestionType: PlannedWorkOrderSuggestionType,
+            UomCode: UomCode,
+            ParentSkuCode: null);
+    }
+
+    private static IEnumerable<WorldHistorySuggestionFact> BuildComponentPurchaseSuggestions(
+        IEnumerable<WorldHistoryOrderPlan> plans,
+        DateOnly asOfDate,
+        DateTimeOffset runCompletedAtUtc)
+    {
+        foreach (var plan in plans.OrderBy(plan => plan.Index))
+        {
+            var timeline = WorldHistoryTimeline.For(plan, asOfDate);
+            var componentSkuCode = plan.SkuCode.StartsWith("FG-QJ-", StringComparison.Ordinal)
+                ? "RM-OIL-01"
+                : "RM-OIL-02";
+            const decimal quantityPerParent = 0.65m;
+            const decimal scrapRate = 0.02m;
+            var gross = plan.Quantity * quantityPerParent;
+            var planned = Math.Max(0.1m, decimal.Ceiling(gross * (1m + scrapRate)));
+            var requiredDate = timeline.WorkOrderReleaseDate;
+
+            // pegging 的需求侧引用对齐真实存在的销售订单需求来源（裸 SO-…，不造合成串）；
+            // 组件身份由建议自身的 SkuCode 与 pegging 的父/子物料槽位表达。
+            yield return new WorldHistorySuggestionFact(
+                SuggestionId: PlanningSuggestionIdForComponentPurchase(plan.SalesOrderNo, componentSkuCode),
+                DemandSourceReference: plan.SalesOrderNo,
+                SourceType: "sales",
+                SkuCode: componentSkuCode,
+                GrossQuantity: gross,
+                OnHandQuantity: 0m,
+                NetQuantity: gross,
+                PlannedQuantity: planned,
+                ScrapRate: scrapRate,
+                RequiredDate: requiredDate,
+                ReleaseDate: ClampToWindow(requiredDate.AddDays(-7), asOfDate),
+                IsAccepted: false,
+                DownstreamDocumentId: null,
+                CreatedAtUtc: runCompletedAtUtc,
+                AcceptedAtUtc: null,
+                SuggestionType: PlannedPurchaseSuggestionType,
+                UomCode: "l",
+                ParentSkuCode: plan.SkuCode);
+        }
     }
 
     private static IEnumerable<WorldHistorySuggestionFact> BuildForecastSuggestions(
@@ -396,7 +463,10 @@ public static class WorldHistoryPlanningSpec
                 IsAccepted: false,
                 DownstreamDocumentId: null,
                 CreatedAtUtc: runCompletedAtUtc,
-                AcceptedAtUtc: null);
+                AcceptedAtUtc: null,
+                SuggestionType: PlannedWorkOrderSuggestionType,
+                UomCode: UomCode,
+                ParentSkuCode: null);
         }
     }
 
@@ -477,7 +547,7 @@ public sealed record WorldHistoryMrpRunFact(
     int AvailabilityCount,
     IReadOnlyList<WorldHistorySuggestionFact> Suggestions);
 
-/// <summary>一条计划建议事实（planned-work-order）。</summary>
+/// <summary>一条计划建议事实（生产建议或组件采购建议）。</summary>
 public sealed record WorldHistorySuggestionFact(
     Guid SuggestionId,
     string DemandSourceReference,
@@ -493,4 +563,7 @@ public sealed record WorldHistorySuggestionFact(
     bool IsAccepted,
     string? DownstreamDocumentId,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? AcceptedAtUtc);
+    DateTimeOffset? AcceptedAtUtc,
+    string SuggestionType,
+    string UomCode,
+    string? ParentSkuCode);
