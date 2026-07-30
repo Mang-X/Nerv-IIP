@@ -596,6 +596,12 @@ public sealed class BusinessGatewayOpenApiTests
             AssertNoQueryParameter(paths, path, "get", "assignedTeamIds");
             AssertNoQueryParameter(paths, path, "get", "siteCodes");
         }
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/wms/outbound-orders",
+            "get",
+            "locationCode",
+            "lotNo");
         AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/start", "post", "startBusinessConsoleWmsPutawayTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/progress", "post", "recordBusinessConsoleWmsPutawayTaskProgress");
         AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks/{warehouseTaskId}/exception", "post", "reportBusinessConsoleWmsPutawayTaskException");

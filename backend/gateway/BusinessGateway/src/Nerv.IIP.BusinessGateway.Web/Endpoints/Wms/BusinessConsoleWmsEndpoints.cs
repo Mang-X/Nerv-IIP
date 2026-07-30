@@ -1197,8 +1197,8 @@ public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
                 trusted.AuthorizedSiteCodes,
                 scope.ScopeKind,
                 scope.ScopeId,
-                LocationCode: null,
-                LotNo: null,
+                request.LocationCode,
+                request.LotNo,
                 SiteCode: null,
                 request.Skip,
                 request.Take,
@@ -2265,6 +2265,8 @@ public sealed class BusinessConsoleWmsOutboundOrderListRequestValidator
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.LocationCode).MaximumLength(100);
+        RuleFor(x => x.LotNo).MaximumLength(100);
         RuleFor(x => x.OutboundOrderId)
             .Must(value => value is null || (Guid.TryParse(value, out var parsed) && parsed != Guid.Empty))
             .WithMessage("OutboundOrderId must be a non-empty GUID.");

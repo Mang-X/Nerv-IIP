@@ -8473,6 +8473,8 @@ export type ListBusinessConsoleWmsOutboundOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
+        locationCode?: string | null;
+        lotNo?: string | null;
         skip?: number;
         take?: number;
         status?: string | null;

@@ -1434,7 +1434,7 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002");
+        var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&locationCode=BIN-OUT-01&lotNo=LOT-OUT-01&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
@@ -1446,6 +1446,8 @@ public sealed class BusinessGatewayWmsTests
                 ["S1"],
                 "self",
                 "user-admin",
+                LocationCode: "BIN-OUT-01",
+                LotNo: "LOT-OUT-01",
                 Skip: 20,
                 Take: 10,
                 Status: "Completed",
@@ -1479,6 +1481,8 @@ public sealed class BusinessGatewayWmsTests
             "/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&take=0",
             $"/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&status={new string('s', 51)}",
             $"/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword={new string('k', 151)}",
+            $"/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&locationCode={new string('l', 101)}",
+            $"/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&lotNo={new string('l', 101)}",
             "/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&outboundOrderId=not-a-guid",
         };
 

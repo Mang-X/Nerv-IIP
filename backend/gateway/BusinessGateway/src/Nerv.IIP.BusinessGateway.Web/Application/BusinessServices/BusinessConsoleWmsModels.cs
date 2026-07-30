@@ -506,6 +506,8 @@ public sealed record BusinessConsoleWmsOutboundOrderListResponse(
 public sealed record BusinessConsoleWmsOutboundOrderListRequest(
     string OrganizationId,
     string EnvironmentId,
+    string? LocationCode = null,
+    string? LotNo = null,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
