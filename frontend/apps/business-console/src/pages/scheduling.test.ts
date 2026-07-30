@@ -892,8 +892,10 @@ describe('APS scheduling workbench page', () => {
     expect(stub.toastError).toHaveBeenCalledWith('发布失败：方案已被后续方案取代，不能发布')
   })
 
-  it('falls back to a specific hint only when the service says nothing', async () => {
-    stub.releasePlan.mockRejectedValueOnce({ status: 500 })
+  it('never puts an English 500 body on screen — falls back to the domain hint', async () => {
+    // 反馈规范禁止英文错误码 / 5xx 原文上屏：这类通用文案只进 console，界面用领域兜底。
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    stub.releasePlan.mockRejectedValueOnce({ title: 'Internal Server Error', status: 500 })
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
     })
@@ -908,6 +910,9 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(stub.toastError).toHaveBeenCalledWith('发布失败，请稍后重试')
+    expect(stub.toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server'))
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 
   it('states that the history plan table is read-only and routes edits to the draft workbench', async () => {

@@ -30,7 +30,7 @@ import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionRevi
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
-import { serverErrorMessage } from '@/utils/notify'
+import { notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -268,18 +268,6 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
   return `${timestamps[0]!.toLocaleString()} 至 ${timestamps[timestamps.length - 1]!.toLocaleString()}`
 }
 
-/**
- * 失败反馈统一走这里：**先透传服务端消息**，取不到才用兜底文案。
- *
- * 之前每个 catch 都写 `error instanceof Error ? … : 兜底`——而 generated client 抛出的是
- * 解析后的响应体（普通对象），于是所有 HTTP 失败（含 500）都落到兜底猜测文案上，
- * 用户在界面上看不到后端到底报了什么（MAN-691 / #1259）。
- */
-function notifyOperationFailure(prefix: string, error: unknown, fallback: string) {
-  const detail = serverErrorMessage(error)
-  toast.error(detail ? `${prefix}：${detail}` : fallback)
-}
-
 function openDetail(planId: string | undefined) {
   if (!planId) return
   detailSelection.planId = planId
@@ -303,7 +291,8 @@ async function publish(planId: string | undefined) {
 // （勿用 POST /scheduling/plans/preview——其契约要求前端提交完整 SchedulingProblemContract，
 // 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
-  if (!canManage.value || draft.includedOrders.value.length === 0) return
+  // 与按钮 disabled 同一处事实：命中任一禁用原因就不发请求。
+  if (generateBlockedReason.value) return
   const horizonStart = new Date()
   horizonStart.setMinutes(0, 0, 0)
   const horizonEnd = new Date(horizonStart)
@@ -331,11 +320,8 @@ async function generateWorkbenchPlan() {
 
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
-  if (!canManage.value || !planId || draft.includedOrders.value.length === 0) return
-  if (draft.modifiedUnlockedTaskIds.value.length > 0) {
-    toast.error('有未锁定的人工修改；请先锁定全部修改再重预览')
-    return
-  }
+  // 未锁定的人工修改也是禁用原因之一（按钮灰 + title 说明 + 旁边就有「锁定全部修改」）。
+  if (repreviewBlockedReason.value || !planId || draft.includedOrders.value.length === 0) return
   try {
     const revision = await workbench.revisePlan(planId, {
       organizationId: schedulingFilters.organizationId,
@@ -360,7 +346,7 @@ function onLockedDragAttempt() {
 
 async function publishCandidate() {
   const planId = draft.model.value?.meta.planId
-  if (!canPublish.value || !planId) return
+  if (publishCandidateBlockedReason.value || !planId) return
   detailSelection.planId = planId
   try {
     await releasePlan(planId)
@@ -446,31 +432,59 @@ function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse
   return '发布该排程方案'
 }
 
-// 草案工作区三个主操作：按钮灰掉时必须能 hover 看到**为什么**灰（MAN-691 / #1259），
-// 口径与历史方案表的 releaseDisabledReason 一致：可用时说明这一步做什么，不可用时说明缺什么。
-const generateDisabledReason = computed(() => {
-  if (!canManage.value) return '当前账号没有排产管理权限，不能生成排程方案'
-  if (draft.includedOrders.value.length === 0)
-    return '还没有选中工单：先在待排工单池里勾选要排的工单'
-  if (workbench.generatePending.value) return '正在生成首版方案，请稍候'
-  return '按当前勾选的工单生成首版排程方案'
-})
+/**
+ * 草案工作区主操作的**禁用原因表**：按钮灰掉时必须能 hover 看到为什么灰（MAN-691 / #1259）。
+ *
+ * 写成「原因列表」而不是长布尔链，是为了 disabled 与 title 出自**同一处事实**
+ * （disabled = 有命中的原因），也方便后续往列表里并入新原因（如排程窗口非法），
+ * 不用再同时改两处判断。口径与历史方案表的 `releaseDisabledReason` 一致：
+ * 不可用时说明缺什么，可用时说明这一步会做什么。
+ */
+type ActionBlocker = { blocked: boolean; reason: string }
 
-const repreviewDisabledReason = computed(() => {
-  if (!canManage.value) return '当前账号没有排产管理权限，不能重预览'
-  if (!draft.model.value) return '还没有草案方案：先生成首版方案，再做锁定重预览'
-  if (workbench.revisionPending.value) return '正在按锁定约束重预览，请稍候'
-  if (draft.modifiedUnlockedTaskIds.value.length > 0)
-    return '有未锁定的人工修改：重预览前需先锁定，否则会被候选方案覆盖'
-  return '保持已锁定工序不动，重排其余工序生成新版本'
-})
+function firstBlockingReason(blockers: ActionBlocker[]) {
+  return blockers.find((blocker) => blocker.blocked)?.reason
+}
 
-const publishCandidateDisabledReason = computed(() => {
-  if (!canPublish.value) return '当前账号没有排程发布权限'
-  if (!draft.model.value) return '还没有可发布的版本：先生成首版或重预览出一版方案'
-  if (releasePlanPending.value) return '正在发布，请稍候'
-  return '把当前草案版本发布给车间执行'
-})
+const generateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能生成排程方案' },
+    {
+      blocked: draft.includedOrders.value.length === 0,
+      reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
+    },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
+  ]),
+)
+const generateDisabledReason = computed(
+  () => generateBlockedReason.value ?? '按当前勾选的工单生成首版排程方案',
+)
+
+const repreviewBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能重预览' },
+    { blocked: !draft.model.value, reason: '还没有草案方案：先生成首版方案，再做锁定重预览' },
+    { blocked: workbench.revisionPending.value, reason: '正在按锁定约束重预览，请稍候' },
+    {
+      blocked: draft.modifiedUnlockedTaskIds.value.length > 0,
+      reason: '有未锁定的人工修改：先锁定全部修改再重预览，否则会被候选方案覆盖',
+    },
+  ]),
+)
+const repreviewDisabledReason = computed(
+  () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
+)
+
+const publishCandidateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
+    { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
+  ]),
+)
+const publishCandidateDisabledReason = computed(
+  () => publishCandidateBlockedReason.value ?? '把当前草案版本发布给车间执行',
+)
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
   const assigned = load.assignedMinutes ?? 0
@@ -591,11 +605,7 @@ function reasonLabel(reason?: string | null) {
               size="sm"
               variant="outline"
               type="button"
-              :disabled="
-                !canManage ||
-                draft.includedOrders.value.length === 0 ||
-                workbench.generatePending.value
-              "
+              :disabled="Boolean(generateBlockedReason)"
               :title="generateDisabledReason"
               @click="generateWorkbenchPlan"
             >
@@ -605,7 +615,7 @@ function reasonLabel(reason?: string | null) {
               size="sm"
               variant="outline"
               type="button"
-              :disabled="!canManage || !draft.model.value || workbench.revisionPending.value"
+              :disabled="Boolean(repreviewBlockedReason)"
               :title="repreviewDisabledReason"
               @click="repreviewLockedDraft"
             >
@@ -614,7 +624,7 @@ function reasonLabel(reason?: string | null) {
             <NvButton
               size="sm"
               type="button"
-              :disabled="!canPublish || !draft.model.value || releasePlanPending"
+              :disabled="Boolean(publishCandidateBlockedReason)"
               :title="publishCandidateDisabledReason"
               @click="publishCandidate"
             >

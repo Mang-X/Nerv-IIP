@@ -9,8 +9,13 @@ vi.mock('@nerv-iip/ui', () => ({
   },
 }))
 
-const { friendlyErrorMessage, notifyError, notifySuccess, serverErrorMessage } =
-  await import('./notify')
+const {
+  friendlyErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} = await import('./notify')
 
 beforeEach(() => {
   toastError.mockClear()
@@ -120,11 +125,52 @@ describe('serverErrorMessage', () => {
     expect(serverErrorMessage({ status: 500 })).toBe('')
   })
 
-  it('循环引用不炸栈；超长消息截断后再上界面', () => {
+  it('循环引用不炸栈；超长消息截断到与中文透传同一阈值', () => {
     const cyclic: Record<string, unknown> = { status: 500 }
     cyclic.response = cyclic
     expect(serverErrorMessage(cyclic)).toBe('')
-    expect(serverErrorMessage({ message: '排'.repeat(400) })).toHaveLength(201)
+    expect(serverErrorMessage({ message: '排'.repeat(400) })).toHaveLength(60)
+  })
+})
+
+describe('notifyOperationFailure', () => {
+  it('服务端领域消息（中文、可行动）带动作前缀原样透传', () => {
+    notifyOperationFailure(
+      '生成失败',
+      { title: 'Bad Request', detail: '工单缺少生产版本，无法排程', status: 400 },
+      '生成失败，请检查工单生产版本与排程基础数据',
+    )
+    expect(toastError).toHaveBeenCalledWith('生成失败：工单缺少生产版本，无法排程')
+  })
+
+  it('英文通用 HTTP 文案不上屏：无可映射语义时退到调用方兜底，原文只进 console', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    notifyOperationFailure('发布失败', { title: 'Internal Server Error' }, '发布失败，请稍后重试')
+
+    expect(toastError).toHaveBeenCalledWith('发布失败，请稍后重试')
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server Error'))
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('发布失败'),
+      'Internal Server Error',
+      expect.anything(),
+    )
+    consoleError.mockRestore()
+  })
+
+  it('可识别的技术串走 friendlyErrorMessage 映射成人话，不甩英文错误码', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    notifyOperationFailure('发布失败', { detail: '502 Bad Gateway' }, '发布失败，请稍后重试')
+
+    expect(toastError).toHaveBeenCalledWith(
+      '发布失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('502'))
+    consoleError.mockRestore()
+  })
+
+  it('服务端什么都没说 → 调用方的领域兜底文案', () => {
+    notifyOperationFailure('撤销失败', { status: 500 }, '撤销失败，请稍后重试')
+    expect(toastError).toHaveBeenCalledWith('撤销失败，请稍后重试')
   })
 })
 
