@@ -326,7 +326,7 @@ function formatError(error: unknown) {
                   class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                 >
                   <span>创建后立即发布该修订</span>
-                  <NvCheckbox id="item-release" v-model:checked="form.release" />
+                  <NvCheckbox id="item-release" v-model="form.release" />
                 </label>
                 <NvFieldDescription>发布后该修订不可变。</NvFieldDescription>
               </NvField>

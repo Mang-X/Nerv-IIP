@@ -82,129 +82,158 @@ vi.mock('@/stores/auth', () => ({
     },
   }),
 }))
-vi.mock('@/composables/useSchedulingWorkbench', () => ({
-  useSchedulingWorkbench: () => ({
-    candidatesError: shallowRef(undefined),
-    candidatesPending: shallowRef(false),
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
-    generatePending: shallowRef(false),
-    generatePlan: vi.fn(),
-    refreshCandidates: vi.fn(),
-    revisionPending: shallowRef(false),
-    revisePlan: vi.fn(),
-    schedulableCandidates: computed(() => []),
-  }),
-}))
-
 const stub = vi.hoisted(() => ({
   releasePlan: vi
     .fn()
     .mockResolvedValue({ success: true, data: { planId: 'plan-001', status: 'released' } }),
+  revokePlan: vi
+    .fn()
+    .mockResolvedValue({ success: true, data: { planId: 'plan-released', status: 'revoked' } }),
+  upsertOperationOverride: vi.fn().mockResolvedValue({ success: true, data: {} }),
+  generatePlan: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
 
+vi.mock('@/composables/useSchedulingWorkbench', () => ({
+  useSchedulingWorkbench: () => ({
+    // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
+    candidates: computed(() => [
+      {
+        workOrderId: 'WO-20260701-001',
+        skuCode: 'SKU-PISTON-01',
+        quantity: 120,
+        dueUtc: '2026-07-06T00:00:00Z',
+        status: 'released',
+        productionVersionId: 'pv-001',
+      },
+    ]),
+    candidatesError: shallowRef(undefined),
+    candidatesPending: shallowRef(false),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    generatePending: shallowRef(false),
+    generatePlan: stub.generatePlan,
+    refreshCandidates: vi.fn(),
+    revisionPending: shallowRef(false),
+    revisePlan: vi.fn(),
+    // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
+    schedulableCandidates: computed(() => [
+      {
+        workOrderId: 'WO-20260701-001',
+        productionVersionId: 'PV-001',
+        skuCode: 'SKU-PISTON-ROD',
+        status: 'released',
+        priority: 100,
+      },
+    ]),
+  }),
+}))
+
 const detailSelection = reactive({ planId: '' })
 const detailError = shallowRef<unknown>()
+// plan-001 的方案明细：既作为 planDetail 返回值，也作为「生成首版」的返回方案，
+// 让草案工作区拿到真实任务（持久化 override 用例要按 taskId 找回工序）。
+const planOne = {
+  planId: 'plan-001',
+  status: 'generated',
+  generatedAtUtc: '2026-07-01T09:30:00Z',
+  metrics: {
+    scheduledOperationCount: 6,
+    unscheduledOperationCount: 1,
+    assignedMinutes: 480,
+    makespanMinutes: 720,
+  },
+  assignments: [
+    {
+      assignmentId: 'assign-001',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T08:00:00Z',
+      endUtc: '2026-07-02T10:00:00Z',
+    },
+    {
+      assignmentId: 'assign-002',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-20',
+      operationSequence: 20,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T10:00:00Z',
+      endUtc: '2026-07-02T12:00:00Z',
+      isLocked: true,
+    },
+    {
+      assignmentId: 'assign-003',
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-ASM-01',
+      workCenterId: 'WC-ASSEMBLY',
+      startUtc: '2026-07-02T08:30:00Z',
+      endUtc: '2026-07-02T11:00:00Z',
+    },
+    {
+      assignmentId: 'assign-004',
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-20',
+      operationSequence: 20,
+      resourceId: 'RES-ASM-01',
+      workCenterId: 'WC-ASSEMBLY',
+      startUtc: '2026-07-02T11:00:00Z',
+      endUtc: '2026-07-02T14:00:00Z',
+    },
+    {
+      assignmentId: 'assign-005',
+      orderId: 'WO-20260701-003',
+      operationId: 'OP-10',
+      operationSequence: 10,
+      resourceId: 'RES-CNC-01',
+      workCenterId: 'WC-CNC',
+      startUtc: '2026-07-02T12:30:00Z',
+      endUtc: '2026-07-02T15:00:00Z',
+    },
+  ],
+  resourceLoads: [
+    {
+      resourceId: 'RES-CNC-01',
+      assignedMinutes: 480,
+      availableMinutes: 600,
+      utilization: 0.8,
+    },
+    {
+      resourceId: 'RES-ASM-01',
+      assignedMinutes: 330,
+      availableMinutes: 600,
+      utilization: 0.55,
+    },
+  ],
+  conflicts: [
+    {
+      conflictId: 'conflict-001',
+      reasonCode: 'material',
+      severity: 'warning',
+      orderId: 'WO-20260701-001',
+      operationId: 'OP-10',
+      resourceId: 'RES-CNC-01',
+      message: '关键物料到货晚于计划开工',
+    },
+  ],
+  unscheduledOperations: [
+    {
+      orderId: 'WO-20260701-002',
+      operationId: 'OP-30',
+      reasonCode: 'capacity',
+      message: '瓶颈资源产能不足',
+    },
+  ],
+}
+
 const detail = computed(() => {
   if (detailSelection.planId === 'plan-001') {
-    return {
-      planId: detailSelection.planId,
-      status: 'generated',
-      generatedAtUtc: '2026-07-01T09:30:00Z',
-      metrics: {
-        scheduledOperationCount: 6,
-        unscheduledOperationCount: 1,
-        assignedMinutes: 480,
-        makespanMinutes: 720,
-      },
-      assignments: [
-        {
-          assignmentId: 'assign-001',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T08:00:00Z',
-          endUtc: '2026-07-02T10:00:00Z',
-        },
-        {
-          assignmentId: 'assign-002',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-20',
-          operationSequence: 20,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T10:00:00Z',
-          endUtc: '2026-07-02T12:00:00Z',
-          isLocked: true,
-        },
-        {
-          assignmentId: 'assign-003',
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-ASM-01',
-          workCenterId: 'WC-ASSEMBLY',
-          startUtc: '2026-07-02T08:30:00Z',
-          endUtc: '2026-07-02T11:00:00Z',
-        },
-        {
-          assignmentId: 'assign-004',
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-20',
-          operationSequence: 20,
-          resourceId: 'RES-ASM-01',
-          workCenterId: 'WC-ASSEMBLY',
-          startUtc: '2026-07-02T11:00:00Z',
-          endUtc: '2026-07-02T14:00:00Z',
-        },
-        {
-          assignmentId: 'assign-005',
-          orderId: 'WO-20260701-003',
-          operationId: 'OP-10',
-          operationSequence: 10,
-          resourceId: 'RES-CNC-01',
-          workCenterId: 'WC-CNC',
-          startUtc: '2026-07-02T12:30:00Z',
-          endUtc: '2026-07-02T15:00:00Z',
-        },
-      ],
-      resourceLoads: [
-        {
-          resourceId: 'RES-CNC-01',
-          assignedMinutes: 480,
-          availableMinutes: 600,
-          utilization: 0.8,
-        },
-        {
-          resourceId: 'RES-ASM-01',
-          assignedMinutes: 330,
-          availableMinutes: 600,
-          utilization: 0.55,
-        },
-      ],
-      conflicts: [
-        {
-          conflictId: 'conflict-001',
-          reasonCode: 'material',
-          severity: 'warning',
-          orderId: 'WO-20260701-001',
-          operationId: 'OP-10',
-          resourceId: 'RES-CNC-01',
-          message: '关键物料到货晚于计划开工',
-        },
-      ],
-      unscheduledOperations: [
-        {
-          orderId: 'WO-20260701-002',
-          operationId: 'OP-30',
-          reasonCode: 'capacity',
-          message: '瓶颈资源产能不足',
-        },
-      ],
-    }
+    return planOne
   }
   if (detailSelection.planId === 'plan-invalid') {
     return {
@@ -307,11 +336,25 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
         conflictCount: 0,
         unscheduledOperationCount: 0,
       },
+      // 已发布方案：撤销发布入口只对它开放。
+      {
+        planId: 'plan-released',
+        status: 'released',
+        generatedAtUtc: '2026-07-01T12:00:00Z',
+        releasedAtUtc: '2026-07-01T12:30:00Z',
+        assignmentCount: 4,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
     ]),
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
     releasePlanPending: shallowRef(false),
+    revokePlan: stub.revokePlan,
+    revokePlanPending: shallowRef(false),
+    upsertOperationOverride: stub.upsertOperationOverride,
+    upsertOperationOverridePending: shallowRef(false),
     refreshPlans: vi.fn(),
   }),
 }))
@@ -336,6 +379,15 @@ beforeEach(() => {
   detailSelection.planId = ''
   detailError.value = undefined
   stub.releasePlan.mockClear()
+  stub.revokePlan.mockClear()
+  stub.revokePlan.mockResolvedValue({
+    success: true,
+    data: { planId: 'plan-released', status: 'revoked' },
+  })
+  stub.upsertOperationOverride.mockClear()
+  stub.upsertOperationOverride.mockResolvedValue({ success: true, data: {} })
+  stub.generatePlan.mockClear()
+  stub.generatePlan.mockResolvedValue(planOne)
   stub.toastError.mockClear()
   stub.toastSuccess.mockClear()
 })
@@ -344,6 +396,15 @@ beforeEach(() => {
  * 页面默认停在「排程总览」（挑工单 → 生成 → 发布的主线入口），方案表格是查阅面。
  * 断言表格的用例得先切到那个 Tab —— 和用户真实操作一致。
  */
+/** 撤销确认框走 reka 的 teleport，渲染在 document.body 而不是挂载根里。 */
+function clickConfirmRevoke() {
+  const confirm = [...document.body.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('确认撤销'),
+  )
+  if (!confirm) throw new Error('撤销确认框没有渲染出「确认撤销」按钮')
+  confirm.click()
+}
+
 async function openPlanTable(wrapper: ReturnType<typeof mount>) {
   const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格'))!
   await tableTab.trigger('focus')
@@ -426,6 +487,67 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).not.toContain('甘特可视化待接入')
   })
 
+  it('opens the clicked operation detail beside the Gantt instead of the whole-plan drawer', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub } },
+    })
+    await flushPromises()
+
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="scheduling-task-detail"]').exists()).toBe(false)
+
+    await wrapper.find('[data-task-id="assign-002"]').trigger('click')
+    await flushPromises()
+
+    const detailPanel = wrapper.find('[data-testid="scheduling-task-detail"]')
+    expect(detailPanel.exists()).toBe(true)
+    // 粒度要对：点的是一道工序，标题与字段就走工序形态（工单汇总行/资源时间块另有形态）。
+    expect(detailPanel.attributes('data-detail-kind')).toBe('operation')
+    expect(detailPanel.text()).toContain('工序详情')
+    // 工序级事实：工单、工序、资源、时间、锁定状态、工单级物料。
+    expect(detailPanel.text()).toContain('WO-20260701-001')
+    expect(detailPanel.text()).toContain('OP-20')
+    expect(detailPanel.text()).toContain('RES-CNC-01')
+    expect(detailPanel.text()).toContain('已锁定')
+    expect(detailPanel.text()).toContain('SKU-PISTON-01')
+    // 齐套没有权威来源：说明去哪儿看，不给估算数。
+    expect(detailPanel.text()).toContain('齐套率排程契约未返回')
+    // 甘特没有被遮挡，仍然在场且可继续换选。
+    expect(wrapper.find('[data-testid="readonly-schedule-timeline"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('排程方案明细')
+
+    await wrapper.find('[data-task-id="assign-003"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="scheduling-task-detail"]').text()).toContain(
+      'WO-20260701-002',
+    )
+  })
+
+  it('keeps the whole-plan drawer behind the plan-level entry on the Gantt tab', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('方案明细'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('排程方案明细')
+    expect(wrapper.text()).toContain('资源分配')
+  })
+
   it('does not render summaries without a plan id as Gantt selector options', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
@@ -438,7 +560,7 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
-    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(5)
+    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(6)
   })
 
   it('opens plan detail and releases the selected plan through the composable', async () => {
@@ -627,6 +749,243 @@ describe('APS scheduling workbench page', () => {
 
     expect(detailSelection.planId).toBe('plan-empty')
     expect(wrapper.text()).toContain('明细加载失败，请稍后重试')
+  })
+
+  it('revokes a released plan only after the confirmation dialog is accepted', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const rows = wrapper.findAll('tbody tr')
+    // 撤销发布只对已发布方案开放：其他状态行不得出现该入口。
+    expect(
+      rows
+        .find((row) => row.text().includes('plan-001'))!
+        .findAll('button')
+        .some((button) => button.text().includes('撤销发布')),
+    ).toBe(false)
+
+    const releasedRow = rows.find((row) => row.text().includes('plan-released'))!
+    await releasedRow
+      .findAll('button')
+      .find((button) => button.text().includes('撤销发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 只开了确认框，还没真撤销——误触不能直接改状态。
+    expect(stub.revokePlan).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('确认撤销发布该排程方案？')
+
+    clickConfirmRevoke()
+    await flushPromises()
+
+    expect(stub.revokePlan).toHaveBeenCalledWith('plan-released')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('surfaces the service message and changes nothing when revoke fails', async () => {
+    stub.revokePlan.mockRejectedValueOnce(new Error('方案不处于已发布状态'))
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const releasedRow = wrapper
+      .findAll('tbody tr')
+      .find((row) => row.text().includes('plan-released'))!
+    await releasedRow
+      .findAll('button')
+      .find((button) => button.text().includes('撤销发布'))!
+      .trigger('click')
+    await flushPromises()
+    clickConfirmRevoke()
+    await flushPromises()
+
+    // 诚实失败：透传服务端说法，不冒充成功；方案行仍留在「已发布」，用户可重试。
+    expect(stub.toastError).toHaveBeenCalledWith('撤销失败：方案不处于已发布状态')
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('plan-released')
+    wrapper.unmount()
+  })
+
+  it('explains why the workbench actions are disabled instead of leaving grey buttons', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    const generate = wrapper.findAll('button').find((button) => button.text().includes('生成首版'))!
+    const repreview = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+    const publish = wrapper.findAll('button').find((button) => button.text().includes('发布新版'))!
+
+    // 还没勾工单、还没有草案：三个主操作都灰着，hover 必须说得清缺什么。
+    expect(generate.attributes('disabled')).toBeDefined()
+    expect(generate.attributes('title')).toBe('还没有选中工单：先在待排工单池里勾选要排的工单')
+    expect(repreview.attributes('disabled')).toBeDefined()
+    expect(repreview.attributes('title')).toBe('还没有草案方案：先生成首版方案，再做锁定重预览')
+    expect(publish.attributes('disabled')).toBeDefined()
+    expect(publish.attributes('title')).toBe('还没有可发布的版本：先生成首版或重预览出一版方案')
+
+    // 勾上工单后按钮可用，提示改成"这一步会做什么"。
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+
+    const enabledGenerate = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+    expect(enabledGenerate.attributes('disabled')).toBeUndefined()
+    expect(enabledGenerate.attributes('title')).toBe('按当前勾选的工单生成首版排程方案')
+  })
+
+  it('surfaces the service message when generating the first plan fails', async () => {
+    // generated client 在 throwOnError 下抛的是响应体对象（不是 Error）：以前这里被吞成猜测文案。
+    stub.generatePlan.mockRejectedValueOnce({
+      title: 'Bad Request',
+      detail: '工单 WO-20260701-001 缺少生产版本，无法排程',
+      status: 400,
+    })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '生成失败：工单 WO-20260701-001 缺少生产版本，无法排程',
+    )
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('surfaces the service message when releasing a plan fails', async () => {
+    stub.releasePlan.mockRejectedValueOnce({ message: '方案已被后续方案取代，不能发布' })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const planRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('plan-001'))!
+    await planRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith('发布失败：方案已被后续方案取代，不能发布')
+  })
+
+  it('never puts an English 500 body on screen — falls back to the domain hint', async () => {
+    // 反馈规范禁止英文错误码 / 5xx 原文上屏：这类通用文案只进 console，界面用领域兜底。
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    stub.releasePlan.mockRejectedValueOnce({ title: 'Internal Server Error', status: 500 })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const planRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('plan-001'))!
+    await planRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith('发布失败，请稍后重试')
+    expect(stub.toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server'))
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('states that the history plan table is read-only and routes edits to the draft workbench', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const notice = wrapper.find('[data-testid="plan-table-readonly-notice"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('只读查阅')
+    expect(notice.text()).toContain('回草案工作区')
+
+    await notice
+      .findAll('button')
+      .find((button) => button.text().includes('去草案工作区修改'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 引导入口要真的把人送回可编辑的地方，不是一句说明。
+    expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
+    expect(wrapper.text()).toContain('待排工单池')
+  })
+
+  it('persists a draft operation override with the plan id and the operation behind the task', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    // 挑工单 → 生成首版 → 草案工作区才有工序可持久锁定。
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.generatePlan).toHaveBeenCalled()
+
+    // 组件回的是甘特 taskId（= assignmentId）；页面必须把它映回 operationId 再落库。
+    wrapper
+      .findComponent({ name: 'SchedulingDraftBoard' })
+      .vm.$emit('persistOverride', 'assign-001')
+    await flushPromises()
+
+    expect(stub.upsertOperationOverride).toHaveBeenCalledWith({
+      planId: 'plan-001',
+      operationId: 'OP-10',
+      resourceId: 'RES-CNC-01',
+      startUtc: '2026-07-02T08:00:00Z',
+      endUtc: '2026-07-02T10:00:00Z',
+    })
+    expect(stub.toastSuccess).toHaveBeenCalledWith('工序 override 已持久化，重排程自动继承')
+  })
+
+  it('refuses to persist an override for a task the draft does not know', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    // 草案还没生成方案：不能静默吞掉这次点击，也绝不能发请求。
+    wrapper
+      .findComponent({ name: 'SchedulingDraftBoard' })
+      .vm.$emit('persistOverride', 'assign-001')
+    await flushPromises()
+
+    expect(stub.upsertOperationOverride).not.toHaveBeenCalled()
   })
 
   it('shows explicit detail feedback when the facade returns no detail payload', async () => {

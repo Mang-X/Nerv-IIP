@@ -88,7 +88,9 @@ describe('DhtmlxEngine (fake factory)', () => {
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
     engine.mount(el(), { ...options(), view: 'resource' })
     engine.setData(toModel(samplePlan))
-    expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(0.25)
+    expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(
+      0.25,
+    )
   })
 
   it('aggregates underlying resource loads for a non-resource grouping dimension', () => {
@@ -104,7 +106,47 @@ describe('DhtmlxEngine (fake factory)', () => {
     engine.mount(el(), { ...options(), view: 'resource', groupBy: 'device' })
     engine.setData(model)
 
-    expect(fake.state.parsed.data.find((task) => task.id === 'lane:DEVICE-A')?.kpi?.utilization).toBe(0.25)
+    expect(
+      fake.state.parsed.data.find((task) => task.id === 'lane:DEVICE-A')?.kpi?.utilization,
+    ).toBe(0.25)
+  })
+
+  // 泳道播种:资源用于让空泳道常驻(拖走最后一个工序时该行不消失),但只在资源本身
+  // 属于当前分组维度时才播种。工序维度 id(WC-*)与资源 id(DEV-*)分属两个空间时,
+  // 全量播种会生出一批永远为空的泳道垫在最上方,把真正有工序的泳道挤出首屏。
+  it('seeds work-center lanes only from resources that belong to that dimension', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    // 资源空间里混入一台设备:它不是任何工序携带的 workCenter,不该长出泳道。
+    model.resources = [...model.resources, { id: 'DEVICE-A', text: '设备 A' }]
+
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(model)
+
+    const laneIds = fake.state.parsed.data
+      .map((task) => task.id)
+      .filter((id) => id.startsWith('lane:'))
+    expect(laneIds).toContain('lane:WC-001')
+    expect(laneIds).not.toContain('lane:DEVICE-A')
+  })
+
+  it('keeps every resource lane when no task carries the grouping dimension', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    // 没有任何工序携带 workCenter 维度 → 无从判断资源是否属于该维度,
+    // 此时必须保留全部资源泳道,否则整块时间轴会一行不剩。
+    for (const task of model.tasks) task.dimensions = undefined
+    model.resources = [...model.resources, { id: 'DEVICE-A', text: '设备 A' }]
+
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(model)
+
+    const laneIds = fake.state.parsed.data
+      .map((task) => task.id)
+      .filter((id) => id.startsWith('lane:'))
+    expect(laneIds).toContain('lane:DEVICE-A')
   })
 
   it('selectTask command selects in gantt and emits taskSelected', () => {

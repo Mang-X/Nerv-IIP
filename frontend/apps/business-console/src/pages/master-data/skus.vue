@@ -610,7 +610,7 @@ function isNonEmpty(value: string) {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>投产前需质检</span>
-                    <NvCheckbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
+                    <NvCheckbox id="sku-quality" v-model="createForm.qualityRequired" />
                   </label>
                 </NvField>
                 <NvField
@@ -727,8 +727,8 @@ function isNonEmpty(value: string) {
                       class="flex items-center gap-2 text-sm"
                     >
                       <NvCheckbox
-                        :checked="createForm.complianceTags.includes(option.value)"
-                        @update:checked="setComplianceTag(option.value, $event === true)"
+                        :model-value="createForm.complianceTags.includes(option.value)"
+                        @update:model-value="setComplianceTag(option.value, $event === true)"
                       />
                       {{ option.label }}
                     </label>
@@ -765,7 +765,7 @@ function isNonEmpty(value: string) {
     <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
       <template #filters>
         <label class="flex items-center gap-2 text-sm text-muted-foreground">
-          <NvCheckbox v-model:checked="includeDisabled" />
+          <NvCheckbox v-model="includeDisabled" />
           包含停用
         </label>
       </template>

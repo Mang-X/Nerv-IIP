@@ -33,6 +33,7 @@ import {
   hasBusinessContext,
   withBusinessContextEnabled,
 } from './businessContextBinding'
+import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 export interface PlanningContextFilters {
   organizationId: string
@@ -213,17 +214,6 @@ function isBusinessQuery(ids: string[]) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
-
-// 软失败诚实上抛：透传服务端 message（照 useBusinessScheduling 成例）。
-function assertEnvelopeSuccess<T extends { success?: boolean; message?: string | null }>(
-  envelope: T,
-  fallbackMessage: string,
-): T {
-  if (!envelope.success) {
-    throw new Error(envelope.message || fallbackMessage)
-  }
-  return envelope
-}
 
 export function useBusinessPlanning() {
   const auth = useAuthStore()

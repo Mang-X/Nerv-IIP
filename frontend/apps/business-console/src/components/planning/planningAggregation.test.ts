@@ -4,6 +4,8 @@ import {
   buildCoverageRows,
   buildRunSuggestionRows,
   buildTimePhasedRows,
+  countsTowardCoverage,
+  coveredDemandSkuCodes,
   phasedUomCodes,
   planningPeriodOf,
   topDemandSkuCodes,
@@ -88,6 +90,43 @@ const suggestions = [
     uomCode: 'pcs',
     quantity: 3,
     requiredDate: '2026-06-09',
+  },
+]
+
+/**
+ * 覆盖口径专用样本：同一次运行 run-1 内，FG-A 的建议已被拒绝、FG-B 的仍待评审。
+ * 拒绝后 FG-A 必须掉出覆盖；跨运行的 run-2 建议不得替 run-1 撑覆盖。
+ */
+const coverageSuggestions = [
+  {
+    suggestionId: 'c-1',
+    runId: 'run-1',
+    suggestionType: 'planned-work-order',
+    skuCode: 'FG-A',
+    uomCode: 'pcs',
+    quantity: 4,
+    requiredDate: '2026-06-02',
+    status: 'rejected',
+  },
+  {
+    suggestionId: 'c-2',
+    runId: 'run-1',
+    suggestionType: 'planned-work-order',
+    skuCode: 'FG-B',
+    uomCode: 'pcs',
+    quantity: 6,
+    requiredDate: '2026-06-09',
+    status: 'open',
+  },
+  {
+    suggestionId: 'c-3',
+    runId: 'run-2',
+    suggestionType: 'planned-work-order',
+    skuCode: 'FG-A',
+    uomCode: 'pcs',
+    quantity: 9,
+    requiredDate: '2026-06-02',
+    status: 'accepted',
   },
 ]
 
@@ -187,18 +226,48 @@ describe('topDemandSkuCodes', () => {
 
 describe('buildCoverageRows', () => {
   it('counts demand SKUs vs SKUs already covered by supply suggestions per period', () => {
-    const rows = buildCoverageRows(demands, suggestions, 'week')
+    const rows = buildCoverageRows(demands, suggestions, 'week', 'run-1')
 
     expect(rows).toEqual([
       { period: '26-06-01周', demandSkuCount: 1, coveredSkuCount: 1 },
-      { period: '26-06-08周', demandSkuCount: 1, coveredSkuCount: 1 },
+      // FG-B 的建议属于 run-2，不能替 run-1 撑覆盖。
+      { period: '26-06-08周', demandSkuCount: 1, coveredSkuCount: 0 },
     ])
   })
 
   it('reports uncovered SKUs when no supply suggestion exists', () => {
-    const rows = buildCoverageRows(demands, [], 'month')
+    const rows = buildCoverageRows(demands, [], 'month', 'run-1')
 
     expect(rows).toEqual([{ period: '2026-06', demandSkuCount: 2, coveredSkuCount: 0 }])
+  })
+
+  it('drops a rejected suggestion from coverage right away', () => {
+    const rows = buildCoverageRows(demands, coverageSuggestions, 'month', 'run-1')
+
+    // 需求物料 FG-A / FG-B 两个；FG-A 的建议已拒绝 → 只剩 FG-B 算覆盖。
+    expect(rows).toEqual([{ period: '2026-06', demandSkuCount: 2, coveredSkuCount: 1 }])
+  })
+
+  it('keeps coverage locked to one run, exactly like the time-phased chart', () => {
+    // run-2 里 FG-A 有已接受建议，但统计的是 run-1 → 不能算进 run-1 的覆盖。
+    expect(coveredDemandSkuCodes(coverageSuggestions, 'run-1')).toEqual(new Set(['FG-B']))
+    expect(coveredDemandSkuCodes(coverageSuggestions, 'run-2')).toEqual(new Set(['FG-A']))
+    // 尚未运行 MRP：没有任何建议算数，不能凭历史建议画出覆盖。
+    expect(coveredDemandSkuCodes(coverageSuggestions, '')).toEqual(new Set())
+  })
+
+  it('still counts suggestions whose status the facade did not return', () => {
+    // 黑名单口径：status 缺失不等于作废，不能因为字段没回就把覆盖清零。
+    expect(countsTowardCoverage(suggestions[0], 'run-1')).toBe(true)
+    expect(countsTowardCoverage(coverageSuggestions[0], 'run-1')).toBe(false)
+  })
+
+  it('never counts a covered SKU that has no demand', () => {
+    const demandSkus = new Set(['FG-B'])
+    expect(coveredDemandSkuCodes(suggestions, 'run-1', demandSkus)).toEqual(new Set())
+    expect(coveredDemandSkuCodes(coverageSuggestions, 'run-1', demandSkus)).toEqual(
+      new Set(['FG-B']),
+    )
   })
 })
 

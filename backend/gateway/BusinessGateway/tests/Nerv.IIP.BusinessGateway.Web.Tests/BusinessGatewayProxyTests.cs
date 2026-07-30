@@ -5657,6 +5657,39 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Reject_planning_suggestion_forwards_the_authorized_principal_as_the_rejecting_actor()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/planning/suggestions/SUG-001/reject?organizationId=org-001&environmentId=env-dev", new
+        {
+            // Caller-supplied identities must never reach the downstream service: the rejecting
+            // actor is always the authorized principal behind the bearer token.
+            rejectedBy = "someone-else",
+            actorRef = "someone-else",
+            reason = "产能已由现有工单覆盖",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal("SUG-001", planning.LastRejectedSuggestionId);
+        Assert.Equal("user-admin", planning.LastRejectedBy);
+        Assert.Equal("SUG-001", planning.LastRejectSuggestionRequest?.SuggestionId);
+        Assert.Equal("产能已由现有工单覆盖", planning.LastRejectSuggestionRequest?.Reason);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("data").GetProperty("rejected").GetBoolean());
+    }
+
+    [Fact]
     public async Task List_skus_maps_downstream_service_error_to_gateway_error_response()
     {
         var masterData = new RecordingMasterDataClient
