@@ -62,7 +62,11 @@ public sealed class WmsStockMovementPostedConsumerTests
                     null),
             ]);
         outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
-        var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var movementRequest = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            outbound.Version));
 
         Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
         Assert.Null(outbound.CompletedAtUtc);
@@ -125,7 +129,11 @@ public sealed class WmsStockMovementPostedConsumerTests
                 ]);
             outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
             outbound.CreatePickingTask("TASK-OUT-002", "SO-LINE-002", "receiving", "PACK-01", 2m);
-            requests = outbound.CompletePackReview("PACK-001", true, "idem-out-concurrent")
+            requests = outbound.CompletePackReview(
+                    "PACK-001",
+                    true,
+                    "idem-out-concurrent",
+                    outbound.Version)
                 .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
                 .ToArray();
             seedContext.OutboundOrders.Add(outbound);

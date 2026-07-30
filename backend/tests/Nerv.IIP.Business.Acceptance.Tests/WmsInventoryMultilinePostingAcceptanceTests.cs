@@ -28,6 +28,11 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         await using var inventoryDb = CreateInventoryContext();
         var inventoryHandler = CreateInventoryHandler(inventoryDb);
         var wmsPostedHandler = CreateWmsPostedHandler(wmsDb);
+        await WmsTrustedCompletionAcceptanceFixture.SeedAsync(
+            wmsDb,
+            "org-001",
+            "env-dev",
+            "SITE-01");
         var inbound = InboundOrder.Create(
             "org-001",
             "env-dev",
@@ -38,12 +43,23 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
             [
                 new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
                 new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 3m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001"),
-            ]);
+            ],
+            WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+            WmsTrustedCompletionAcceptanceFixture.PoolCode);
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
-            new CompleteInboundOrderCommand(inbound.Id, "idem-in-multi-001"),
+            new CompleteInboundOrderCommand(
+                inbound.Id,
+                "idem-in-multi-001",
+                OrganizationId: inbound.OrganizationId,
+                EnvironmentId: inbound.EnvironmentId,
+                ActorPrincipalId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                AuthorizedSiteCodes: [inbound.SiteCode],
+                ScopeKind: "self",
+                ScopeId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                ExpectedVersion: inbound.Version),
             CancellationToken.None);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
@@ -69,6 +85,11 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         var wmsPostedHandler = CreateWmsPostedHandler(wmsDb);
         await SeedInventoryAsync(inventoryHandler, "SKU-FG-1000", "LOC-A-01", "LOT-001", 10m, "seed-out-001");
         await SeedInventoryAsync(inventoryHandler, "SKU-RM-2000", "LOC-A-02", "LOT-002", 7m, "seed-out-002");
+        await WmsTrustedCompletionAcceptanceFixture.SeedAsync(
+            wmsDb,
+            "org-001",
+            "env-dev",
+            "SITE-01");
         var outbound = OutboundOrder.Create(
             "org-001",
             "env-dev",
@@ -79,12 +100,57 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
             [
                 new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
                 new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001"),
-            ]);
+            ],
+            WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+            WmsTrustedCompletionAcceptanceFixture.PoolCode);
+        var pickingTasks = new[]
+        {
+            outbound.CreatePickingTask(
+                "PICK-OUT-MULTI-001-01",
+                "LINE-001",
+                "LOC-A-01",
+                "PACK-01",
+                4m,
+                assignedOperatorUserId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                assignedPoolCode: WmsTrustedCompletionAcceptanceFixture.PoolCode),
+            outbound.CreatePickingTask(
+                "PICK-OUT-MULTI-001-02",
+                "LINE-002",
+                "LOC-A-02",
+                "PACK-01",
+                2m,
+                assignedOperatorUserId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                assignedPoolCode: WmsTrustedCompletionAcceptanceFixture.PoolCode),
+        };
+        foreach (var pickingTask in pickingTasks)
+        {
+            pickingTask.Start(
+                WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                pickingTask.Version);
+            pickingTask.Complete(
+                pickingTask.PlannedQuantity,
+                WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                completionReason: null,
+                pickingTask.Version);
+        }
+
         wmsDb.OutboundOrders.Add(outbound);
+        wmsDb.WarehouseTasks.AddRange(pickingTasks);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteOutboundOrderCommandHandler(wmsDb).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-multi-001"),
+            new CompleteOutboundOrderCommand(
+                outbound.Id,
+                "PACK-001",
+                true,
+                "idem-out-multi-001",
+                OrganizationId: outbound.OrganizationId,
+                EnvironmentId: outbound.EnvironmentId,
+                ActorPrincipalId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                AuthorizedSiteCodes: [outbound.SiteCode],
+                ScopeKind: "self",
+                ScopeId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                ExpectedVersion: outbound.Version),
             CancellationToken.None);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 

@@ -64,6 +64,13 @@ public sealed class WmsEndpointContractTests
             {
                 inboundOrderId,
                 idempotencyKey = "wms-conflict",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
             });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -121,7 +128,7 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public void Complete_inbound_contract_accepts_optional_line_captures_without_changing_the_operation_id()
+    public void Complete_inbound_contract_requires_trusted_execution_context_and_preserves_line_captures()
     {
         var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
         var legacyRequest = new CompleteInboundOrderRequest(
@@ -133,19 +140,33 @@ public sealed class WmsEndpointContractTests
             "idem-capture-001",
             [capture],
             "org-001",
-            "env-dev");
+            "env-dev",
+            "operator-001",
+            ["SITE-01"],
+            "self",
+            "operator-001",
+            3);
         var command = new CompleteInboundOrderCommand(
             captureRequest.InboundOrderId,
             captureRequest.IdempotencyKey,
             captureRequest.Lines,
             captureRequest.OrganizationId,
-            captureRequest.EnvironmentId);
+            captureRequest.EnvironmentId,
+            captureRequest.ActorPrincipalId,
+            captureRequest.AuthorizedSiteCodes,
+            captureRequest.ScopeKind,
+            captureRequest.ScopeId,
+            captureRequest.ExpectedVersion);
 
-        Assert.Null(legacyRequest.Lines);
-        Assert.Null(legacyRequest.OrganizationId);
-        Assert.Null(legacyRequest.EnvironmentId);
+        Assert.False(new CompleteInboundOrderRequestValidator().Validate(legacyRequest).IsValid);
+        Assert.True(new CompleteInboundOrderRequestValidator().Validate(captureRequest).IsValid);
         Assert.Equal([capture], captureRequest.Lines);
         Assert.Equal([capture], command.Lines);
+        Assert.Equal("operator-001", command.ActorPrincipalId);
+        Assert.Equal(["SITE-01"], command.AuthorizedSiteCodes);
+        Assert.Equal("self", command.ScopeKind);
+        Assert.Equal("operator-001", command.ScopeId);
+        Assert.Equal(3, command.ExpectedVersion);
         Assert.Equal(
             "completeWmsInboundOrder",
             WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>().OperationId);
@@ -349,19 +370,38 @@ public sealed class WmsEndpointContractTests
                 "org-http", "env-http", "IN-CAPTURE-HTTP", "purchase-receipt", "PO-CAPTURE-HTTP", "SITE-01",
                 [new InboundOrderLineDraft("20", "SKU-CAPTURE", "pcs", 2m, "STAGE-01", "LOT-OLD", null, "qualified", "company", null)]);
             dbContext.InboundOrders.AddRange(legacyOrder, capturedOrder);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, legacyOrder);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, capturedOrder);
             await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
         await PostJsonAndAssertOkAsync(
             client,
             $"/api/business/v1/wms/inbound-orders/{legacyOrder.Id}/complete",
-            new { idempotencyKey = "idem-legacy-http" });
+            new
+            {
+                idempotencyKey = "idem-legacy-http",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
         await PostJsonAndAssertOkAsync(
             client,
             $"/api/business/v1/wms/inbound-orders/{capturedOrder.Id}/complete",
             new
             {
                 idempotencyKey = "idem-capture-http",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
                 lines = new[]
                 {
                     new
@@ -415,18 +455,22 @@ public sealed class WmsEndpointContractTests
                     new InboundOrderLineDraft("10", "SKU-IN-1", "pcs", 1m, "STAGE-01", null, null, "qualified", "company", null),
                     new InboundOrderLineDraft("20", "SKU-IN-2", "pcs", 2m, "STAGE-02", null, null, "qualified", "company", null),
                 ]);
-            var inboundReceipts = inbound.Complete(lineKey).OrderBy(x => x.SourceDocumentLineId).ToArray();
+            var inboundReceipts = inbound.Complete(lineKey, inbound.Version).OrderBy(x => x.SourceDocumentLineId).ToArray();
             inboundAuthority = inboundReceipts[0];
             inboundAuthority.MarkPosted("inventory-movement-in-v1");
 
             outbound = OutboundOrder.Create(
                 "org-http", "env-http", "OUT-V1-REPLAY", "sales-delivery", "SO-V1-REPLAY", "SITE-01",
                 [new OutboundOrderLineDraft("10", "SKU-OUT-1", "pcs", 3m, "PICK-01", null, null, "qualified", "company", null)]);
-            outboundAuthority = Assert.Single(outbound.CompletePackReview("PACK-V1", true, rawKey));
+            outboundAuthority = Assert.Single(outbound.CompletePackReview(
+                "PACK-V1",
+                true,
+                rawKey,
+                outbound.Version));
             outboundAuthority.MarkPosted("inventory-movement-out-v1");
 
             count = CountExecution.Create("org-http", "env-http", "COUNT-V1-REPLAY", "SKU-COUNT-1", "pcs", "SITE-01", "COUNT-01", 10m);
-            count.Complete(8m);
+            count.Complete(8m, count.Version);
             countAuthority = InventoryMovementRequest.RecordPosted(
                 "org-http",
                 "env-http",
@@ -447,18 +491,57 @@ public sealed class WmsEndpointContractTests
             dbContext.CountExecutions.Add(count);
             dbContext.InventoryMovementRequests.AddRange(inboundReceipts);
             dbContext.InventoryMovementRequests.AddRange(outboundAuthority, countAuthority);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, inbound);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, outbound);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, count);
             await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
         var inboundResponse = await client.PostAsJsonAsync(
             $"/api/business/v1/wms/inbound-orders/{inbound.Id}/complete",
-            new { inboundOrderId = inbound.Id.ToString(), idempotencyKey = lineKey, organizationId = "org-http", environmentId = "env-http" });
+            new
+            {
+                inboundOrderId = inbound.Id.ToString(),
+                idempotencyKey = lineKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
         var outboundResponse = await client.PostAsJsonAsync(
             $"/api/business/v1/wms/outbound-orders/{outbound.Id}/complete",
-            new { outboundOrderId = outbound.Id.ToString(), packReviewNo = "PACK-V1", passed = true, idempotencyKey = rawKey, organizationId = "org-http", environmentId = "env-http" });
+            new
+            {
+                outboundOrderId = outbound.Id.ToString(),
+                packReviewNo = "PACK-V1",
+                passed = true,
+                idempotencyKey = rawKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
         var countResponse = await client.PostAsJsonAsync(
             $"/api/business/v1/wms/count-executions/{count.Id}/complete",
-            new { countExecutionId = count.Id.ToString(), countedQuantity = 8m, idempotencyKey = rawKey, organizationId = "org-http", environmentId = "env-http" });
+            new
+            {
+                countExecutionId = count.Id.ToString(),
+                countedQuantity = 8m,
+                idempotencyKey = rawKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
 
         var inboundBody = await inboundResponse.Content.ReadAsStringAsync();
         var outboundBody = await outboundResponse.Content.ReadAsStringAsync();
@@ -678,18 +761,18 @@ public sealed class WmsEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
-        passed.Complete("idem-gate-pass-001");
+        passed.Complete("idem-gate-pass-001", passed.Version);
         passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
         var productionDate = new DateOnly(2026, 1, 15);
         var expiryDate = new DateOnly(2027, 1, 15);
         var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001", productionDate: productionDate, expiryDate: expiryDate);
-        rejected.Complete("idem-gate-rej-001");
+        rejected.Complete("idem-gate-rej-001", rejected.Version);
         rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
         var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
-        pending.Complete("idem-gate-pend-001");
+        pending.Complete("idem-gate-pend-001", pending.Version);
         var notRequired = CreateInboundOrder("IN-GATE-NOGATE-001");
         var otherTenant = CreateQualityGateInboundOrder("IN-GATE-PASS-001", "org-002");
-        otherTenant.Complete("idem-gate-other-001");
+        otherTenant.Complete("idem-gate-other-001", otherTenant.Version);
         dbContext.InboundOrders.AddRange(passed, rejected, pending, notRequired, otherTenant);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -839,7 +922,11 @@ public sealed class WmsEndpointContractTests
             "finished-goods",
             [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)],
             assignedPoolCode: "POOL-TEST");
-        var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var movementRequest = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            outbound.Version));
         movementRequest.MarkFailed("NEGATIVE_ON_HAND", "Stock movement would make on-hand quantity negative.");
         outbound.MarkInventoryPostingFailed();
         dbContext.OutboundOrders.Add(outbound);
@@ -991,7 +1078,7 @@ public sealed class WmsEndpointContractTests
             "BIN-A",
             3m,
             assignedPoolCode: "POOL-TEST");
-        completed.Complete(2m);
+        completed.Complete(2m, completed.Version);
         dbContext.CountExecutions.AddRange(
             CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-001", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
             CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-002", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
@@ -1094,7 +1181,7 @@ public sealed class WmsEndpointContractTests
             "BIN-A",
             3m,
             assignedPoolCode: "POOL-TEST");
-        count.Complete(2m);
+        count.Complete(2m, count.Version);
         var movement = InventoryMovementRequest.Create(
             "org-001",
             "env-dev",
@@ -1403,7 +1490,7 @@ public sealed class WmsEndpointContractTests
             assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
-            order.Complete($"idem-{orderNo}");
+            order.Complete($"idem-{orderNo}", order.Version);
         }
 
         return order;
@@ -1462,7 +1549,11 @@ public sealed class WmsEndpointContractTests
             assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
-            order.CompletePackReview($"PACK-{orderNo}", true, $"idem-{orderNo}");
+            order.CompletePackReview(
+                $"PACK-{orderNo}",
+                true,
+                $"idem-{orderNo}",
+                order.Version);
         }
 
         return order;

@@ -183,7 +183,12 @@ public sealed record CompleteInboundOrderRequest(
     string IdempotencyKey,
     IReadOnlyCollection<InboundOrderLineCapture>? Lines = null,
     string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
@@ -237,7 +242,12 @@ public sealed record CompleteOutboundOrderRequest(
     bool Passed,
     string IdempotencyKey,
     string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0);
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
 public sealed record CancelOutboundOrderResponse(OutboundOrderId OutboundOrderId, string Status);
 public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
@@ -280,14 +290,25 @@ public sealed record CompleteCountExecutionRequest(
     decimal CountedQuantity,
     string IdempotencyKey,
     string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0);
 
 public sealed class CompleteInboundOrderRequestValidator : Validator<CompleteInboundOrderRequest>
 {
     public CompleteInboundOrderRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -295,8 +316,14 @@ public sealed class CompleteOutboundOrderRequestValidator : Validator<CompleteOu
 {
     public CompleteOutboundOrderRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -304,8 +331,14 @@ public sealed class CompleteCountExecutionRequestValidator : Validator<CompleteC
 {
     public CompleteCountExecutionRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -540,7 +573,9 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
 {
     public override void Configure() => ConfigureWmsContract(
         WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>(),
-        StatusCodes.Status409Conflict);
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(CompleteInboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteInboundOrderCommand(
@@ -548,7 +583,12 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
             req.IdempotencyKey,
             req.Lines,
             req.OrganizationId,
-            req.EnvironmentId), ct);
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.ExpectedVersion), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -1000,7 +1040,9 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
 {
     public override void Configure() => ConfigureWmsContract(
         WmsEndpointContracts.Get<CompleteOutboundOrderEndpoint>(),
-        StatusCodes.Status409Conflict);
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(CompleteOutboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteOutboundOrderCommand(
@@ -1009,7 +1051,12 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
             req.Passed,
             req.IdempotencyKey,
             req.OrganizationId,
-            req.EnvironmentId), ct);
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.ExpectedVersion), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -1135,7 +1182,9 @@ public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint
 {
     public override void Configure() => ConfigureWmsContract(
         WmsEndpointContracts.Get<CompleteCountExecutionEndpoint>(),
-        StatusCodes.Status409Conflict);
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status422UnprocessableEntity);
     public override async Task HandleAsync(CompleteCountExecutionRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteCountExecutionCommand(
@@ -1143,7 +1192,12 @@ public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint
             req.CountedQuantity,
             req.IdempotencyKey,
             req.OrganizationId,
-            req.EnvironmentId), ct);
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            req.ExpectedVersion), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }

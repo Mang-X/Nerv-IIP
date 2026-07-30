@@ -114,7 +114,7 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
 
                 if (plan.IsCompleted)
                 {
-                    execution.Complete(plan.CountedQuantity);
+                    execution.Complete(plan.CountedQuantity, execution.Version);
                 }
 
                 execution.ClearDomainEvents();

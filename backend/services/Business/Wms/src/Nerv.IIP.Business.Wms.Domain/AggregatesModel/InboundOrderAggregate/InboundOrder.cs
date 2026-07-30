@@ -176,8 +176,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
     public IReadOnlyCollection<InventoryMovementRequest> Complete(
         string idempotencyKey,
+        long expectedVersion,
         IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
     {
+        EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();

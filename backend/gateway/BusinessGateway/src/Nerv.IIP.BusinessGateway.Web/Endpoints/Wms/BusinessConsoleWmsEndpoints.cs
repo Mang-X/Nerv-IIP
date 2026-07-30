@@ -939,7 +939,9 @@ public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsInboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -948,6 +950,11 @@ public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
         auth,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleCompleteWmsInboundOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsInboundOrderRequest request) => request.EnvironmentId;
@@ -958,10 +965,24 @@ public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var inboundOrderId = Route<string>("inboundOrderId") ?? request.InboundOrderId;
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return wms.CompleteInboundOrderAsync(
             tokenProvider.BearerToken,
             inboundOrderId,
-            request with { InboundOrderId = inboundOrderId },
+            new BusinessWmsCompleteInboundOrderRequest(
+                inboundOrderId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.ExpectedVersion,
+                request.IdempotencyKey,
+                request.Lines),
             cancellationToken);
     }
 }
@@ -1308,7 +1329,9 @@ public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsOutboundOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -1317,6 +1340,11 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
         auth,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleCompleteWmsOutboundOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsOutboundOrderRequest request) => request.EnvironmentId;
@@ -1327,10 +1355,25 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var outboundOrderId = Route<string>("outboundOrderId") ?? request.OutboundOrderId;
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsShipmentsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return wms.CompleteOutboundOrderAsync(
             tokenProvider.BearerToken,
             outboundOrderId,
-            request with { OutboundOrderId = outboundOrderId },
+            new BusinessWmsCompleteOutboundOrderRequest(
+                outboundOrderId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.ExpectedVersion,
+                request.PackReviewNo,
+                request.Passed,
+                request.IdempotencyKey),
             cancellationToken);
     }
 }
@@ -1438,7 +1481,9 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
 [Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/count-executions/{countExecutionId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsCountExecution")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
 public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
@@ -1447,6 +1492,11 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
         auth,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleCompleteWmsCountExecutionRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsCountExecutionRequest request) => request.EnvironmentId;
@@ -1457,10 +1507,24 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
         CancellationToken cancellationToken)
     {
         var countExecutionId = Route<string>("countExecutionId") ?? request.CountExecutionId;
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsManage);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return wms.CompleteCountExecutionAsync(
             tokenProvider.BearerToken,
             countExecutionId,
-            request with { CountExecutionId = countExecutionId },
+            new BusinessWmsCompleteCountExecutionRequest(
+                countExecutionId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.ExpectedVersion,
+                request.CountedQuantity,
+                request.IdempotencyKey),
             cancellationToken);
     }
 }
@@ -1730,6 +1794,16 @@ public sealed class BusinessConsoleCompleteWmsInboundOrderRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+        RuleFor(x => x.ScopeKind)
+            .Must(BusinessConsoleWmsScopeKinds.Contains)
+            .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
+        RuleFor(x => x.ScopeId).MaximumLength(200);
+        RuleFor(x => x)
+            .Must(x =>
+                string.IsNullOrWhiteSpace(x.ScopeKind)
+                == string.IsNullOrWhiteSpace(x.ScopeId))
+            .WithMessage("scopeKind and scopeId must be supplied together.");
         RuleForEach(x => x.Lines).SetValidator(new BusinessConsoleWmsInboundLineCaptureInputValidator());
     }
 }
@@ -1803,6 +1877,16 @@ public sealed class BusinessConsoleCompleteWmsOutboundOrderRequestValidator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.PackReviewNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+        RuleFor(x => x.ScopeKind)
+            .Must(BusinessConsoleWmsScopeKinds.Contains)
+            .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
+        RuleFor(x => x.ScopeId).MaximumLength(200);
+        RuleFor(x => x)
+            .Must(x =>
+                string.IsNullOrWhiteSpace(x.ScopeKind)
+                == string.IsNullOrWhiteSpace(x.ScopeId))
+            .WithMessage("scopeKind and scopeId must be supplied together.");
     }
 }
 
@@ -1849,6 +1933,16 @@ public sealed class BusinessConsoleCompleteWmsCountExecutionRequestValidator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CountedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+        RuleFor(x => x.ScopeKind)
+            .Must(BusinessConsoleWmsScopeKinds.Contains)
+            .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
+        RuleFor(x => x.ScopeId).MaximumLength(200);
+        RuleFor(x => x)
+            .Must(x =>
+                string.IsNullOrWhiteSpace(x.ScopeKind)
+                == string.IsNullOrWhiteSpace(x.ScopeId))
+            .WithMessage("scopeKind and scopeId must be supplied together.");
     }
 }
 

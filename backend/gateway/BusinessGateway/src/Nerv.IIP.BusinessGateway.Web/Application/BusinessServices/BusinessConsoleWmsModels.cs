@@ -230,6 +230,21 @@ public sealed record BusinessConsoleCompleteWmsInboundOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleWmsInboundLineCaptureInput>? Lines = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    [property: JsonRequired, Required] long ExpectedVersion = 0);
+
+public sealed record BusinessWmsCompleteInboundOrderRequest(
+    string InboundOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    long ExpectedVersion,
+    string IdempotencyKey,
     IReadOnlyCollection<BusinessConsoleWmsInboundLineCaptureInput>? Lines = null);
 
 public sealed record BusinessConsoleWmsInboundLineCaptureInput(
@@ -270,6 +285,22 @@ public sealed record BusinessConsoleCompleteWmsOutboundOrderRequest(
     [property: QueryParam] string EnvironmentId,
     string PackReviewNo,
     bool Passed,
+    string IdempotencyKey,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    [property: JsonRequired, Required] long ExpectedVersion = 0);
+
+public sealed record BusinessWmsCompleteOutboundOrderRequest(
+    string OutboundOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    long ExpectedVersion,
+    string PackReviewNo,
+    bool Passed,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleRetryWmsOutboundInventoryPostingRequest(
@@ -294,6 +325,21 @@ public sealed record BusinessConsoleCompleteWmsCountExecutionRequest(
     [property: RouteParam] string CountExecutionId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    decimal CountedQuantity,
+    string IdempotencyKey,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    [property: JsonRequired, Required] long ExpectedVersion = 0);
+
+public sealed record BusinessWmsCompleteCountExecutionRequest(
+    string CountExecutionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    long ExpectedVersion,
     decimal CountedQuantity,
     string IdempotencyKey);
 

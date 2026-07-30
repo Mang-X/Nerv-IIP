@@ -28,8 +28,8 @@ public sealed class WmsExecutionAggregateTests
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
 
-        var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" "));
-        var request = Assert.Single(inbound.Complete("idem-in-001"));
+        var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" ", inbound.Version));
+        var request = Assert.Single(inbound.Complete("idem-in-001", inbound.Version));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
@@ -54,7 +54,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-quality-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-quality-001", inbound.Version));
 
         Assert.Equal(InboundOrderStatus.PendingQualityCheck, inbound.Status);
         Assert.Equal("quality", request.QualityStatus);
@@ -64,7 +64,7 @@ public sealed class WmsExecutionAggregateTests
     public void Inspection_passed_releases_putaway_gate_after_pending_quality_check()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         inbound.ApplyInspectionResult("quality.InspectionPassed", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "accepted");
         var task = inbound.CreatePutawayTask("TASK-IN-PASSED-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
@@ -77,7 +77,7 @@ public sealed class WmsExecutionAggregateTests
     public void Inspection_rejected_keeps_putaway_blocked_and_creates_supplier_return_fact()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         var supplierReturn = inbound.ApplyInspectionResult("quality.InspectionRejected", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
 
@@ -93,7 +93,7 @@ public sealed class WmsExecutionAggregateTests
     public void Conditional_release_allows_restricted_putaway_after_quality_result()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         inbound.ApplyInspectionResult("quality.InspectionConditionalReleased", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "use-as-is");
         var task = inbound.CreatePutawayTask("TASK-IN-CONDITIONAL-001", "LINE-001", "LOC-STAGE", "LOC-RESTRICTED-01", 5m);
@@ -107,7 +107,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-exempt-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-exempt-001", inbound.Version));
 
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
         Assert.Equal("unrestricted", request.QualityStatus);
@@ -118,7 +118,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.MixedQualityInboundOrder();
 
-        var requests = inbound.Complete("idem-in-mixed-001");
+        var requests = inbound.Complete("idem-in-mixed-001", inbound.Version);
         var exemptTask = inbound.CreatePutawayTask("TASK-IN-MIXED-001", "LINE-002", "LOC-STAGE", "LOC-A-01", 2m);
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-MIXED-002", "LINE-001", "LOC-STAGE", "LOC-A-02", 5m));
@@ -135,7 +135,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.QualifiedInboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-qualified-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-qualified-001", inbound.Version));
         inbound.MarkInventoryPostingFailed();
         var retry = Assert.Single(inbound.RetryInventoryPosting("idem-in-qualified-retry-001"));
 
@@ -148,7 +148,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InboundOrderWithQualityStatus("iqc");
 
-        var request = Assert.Single(inbound.Complete("idem-in-iqc-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-iqc-001", inbound.Version));
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-IQC-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m));
 
@@ -173,7 +173,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
-        inbound.Complete("idem-in-001");
+        inbound.Complete("idem-in-001", inbound.Version);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-002", "LINE-001", "LOC-STAGE", "LOC-B-01", 1m));
@@ -187,7 +187,8 @@ public sealed class WmsExecutionAggregateTests
         var inbound = DomainWmsFactory.InboundOrder();
         DomainWmsFactory.ClearInboundLines(inbound);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => inbound.Complete("idem-in-001"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.Complete("idem-in-001", inbound.Version));
 
         Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -198,8 +199,10 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m);
 
-        var exception = Assert.Throws<ArgumentException>(() => outbound.CompletePackReview("PACK-001", true, " "));
-        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var exception = Assert.Throws<ArgumentException>(() =>
+            outbound.CompletePackReview("PACK-001", true, " ", outbound.Version));
+        var request = Assert.Single(
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
@@ -220,7 +223,8 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
 
-        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var request = Assert.Single(
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Equal("res-001", request.InventoryReservationId);
     }
@@ -231,7 +235,8 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         DomainWmsFactory.ClearOutboundLines(outbound);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -582,6 +587,7 @@ public sealed class WmsExecutionAggregateTests
             "PACK-001",
             true,
             "idem-out-001",
+            outbound.Version,
             new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["LINE-001"] = 8m,
@@ -604,6 +610,7 @@ public sealed class WmsExecutionAggregateTests
             "PACK-001",
             true,
             "idem-out-001",
+            outbound.Version,
             new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["LINE-001"] = 13m,

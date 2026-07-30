@@ -70,7 +70,8 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
-    builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
+builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
+builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,

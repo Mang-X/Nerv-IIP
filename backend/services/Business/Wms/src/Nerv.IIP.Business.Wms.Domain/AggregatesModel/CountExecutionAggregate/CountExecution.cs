@@ -113,11 +113,20 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         InventoryCountTaskId = normalizedCountTaskId;
     }
 
-    public void Complete(decimal countedQuantity)
+    public void Complete(decimal countedQuantity, long expectedVersion)
     {
+        EnsureExpectedVersion(expectedVersion);
         if (Status == CountExecutionStatus.Completed)
         {
             throw new InvalidOperationException("Completed count executions are immutable.");
+        }
+
+        if (countedQuantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(countedQuantity),
+                countedQuantity,
+                "Counted quantity cannot be negative.");
         }
 
         CountedQuantity = countedQuantity;

@@ -359,7 +359,7 @@ public sealed class BusinessGatewayWmsTests
     public async Task Receipt_write_facades_use_receipts_manage_permission_internal_token_and_route_ids()
     {
         var wms = new RecordingWmsClient();
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsManage);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -408,6 +408,9 @@ public sealed class BusinessGatewayWmsTests
         var completeInbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev", new
         {
             idempotencyKey = "complete-in-001",
+            expectedVersion = 3,
+            actorPrincipalId = "forged-user",
+            authorizedSiteCodes = new[] { "FORGED-SITE" },
             lines = new[]
             {
                 new
@@ -434,6 +437,9 @@ public sealed class BusinessGatewayWmsTests
         {
             countedQuantity = 8,
             idempotencyKey = "complete-count-001",
+            expectedVersion = 3,
+            actorPrincipalId = "forged-user",
+            authorizedSiteCodes = new[] { "FORGED-SITE" },
         });
 
         Assert.Equal(HttpStatusCode.OK, inbound.StatusCode);
@@ -453,6 +459,11 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("inbound-order-001", wms.LastCreatePutawayRequest!.InboundOrderId);
         Assert.Equal("inbound-order-001", wms.LastCompleteInboundRequest!.InboundOrderId);
         Assert.Equal("complete-in-001", wms.LastCompleteInboundRequest.IdempotencyKey);
+        Assert.Equal("user-admin", wms.LastCompleteInboundRequest.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastCompleteInboundRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastCompleteInboundRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastCompleteInboundRequest.ScopeId);
+        Assert.Equal(3, wms.LastCompleteInboundRequest.ExpectedVersion);
         var completeInboundLine = Assert.Single(wms.LastCompleteInboundRequest.Lines!);
         Assert.Equal("10", completeInboundLine.LineNo);
         Assert.Equal("LOT-CAPTURED-001", completeInboundLine.LotNo);
@@ -460,13 +471,18 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(new DateOnly(2027, 1, 16), completeInboundLine.ExpiryDate);
         Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.CountNo);
         Assert.Equal("count-execution-001", wms.LastCompleteCountRequest!.CountExecutionId);
+        Assert.Equal("user-admin", wms.LastCompleteCountRequest.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastCompleteCountRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastCompleteCountRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastCompleteCountRequest.ScopeId);
+        Assert.Equal(3, wms.LastCompleteCountRequest.ExpectedVersion);
     }
 
     [Fact]
     public async Task Shipment_write_facades_use_shipments_manage_permission_internal_token_and_route_ids()
     {
         var wms = new RecordingWmsClient();
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsShipmentsManage);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -515,6 +531,9 @@ public sealed class BusinessGatewayWmsTests
             packReviewNo = "PACK-001",
             passed = true,
             idempotencyKey = "complete-out-001",
+            expectedVersion = 3,
+            actorPrincipalId = "forged-user",
+            authorizedSiteCodes = new[] { "FORGED-SITE" },
         });
         var retryOutbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry?organizationId=org-001&environmentId=env-dev", new
         {
@@ -531,6 +550,11 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("OUT-NEW", wms.LastCreateOutboundRequest!.OutboundOrderNo);
         Assert.Equal("outbound-order-001", wms.LastCreatePickingRequest!.OutboundOrderId);
         Assert.Equal("outbound-order-001", wms.LastCompleteOutboundRequest!.OutboundOrderId);
+        Assert.Equal("user-admin", wms.LastCompleteOutboundRequest.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastCompleteOutboundRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastCompleteOutboundRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastCompleteOutboundRequest.ScopeId);
+        Assert.Equal(3, wms.LastCompleteOutboundRequest.ExpectedVersion);
         Assert.Equal("outbound-order-001", wms.LastRetryOutboundRequest!.OutboundOrderId);
         Assert.Equal("retry-out-001", wms.LastRetryOutboundRequest.IdempotencyKey);
     }
@@ -1836,11 +1860,16 @@ public sealed class BusinessGatewayWmsTests
     private static BusinessConsoleCreateWmsPutawayTaskRequest ValidPutawayRequest() =>
         new("inbound-order-001", "org-001", "env-dev", "PUT-001", "10", "STAGE-01", "BIN-01", 1);
 
-    private static BusinessConsoleCompleteWmsInboundOrderRequest ValidCompleteInboundRequest() =>
+    private static BusinessWmsCompleteInboundOrderRequest ValidCompleteInboundRequest() =>
         new(
             "inbound-order-001",
             "org-001",
             "env-dev",
+            "user-admin",
+            ["S1"],
+            "self",
+            "user-admin",
+            1,
             "complete-in-001",
             [new("10", "LOT-CAPTURED-001", new DateOnly(2026, 1, 16), new DateOnly(2027, 1, 16))]);
 
@@ -1857,8 +1886,19 @@ public sealed class BusinessGatewayWmsTests
     private static BusinessConsoleCreateWmsPickingTaskRequest ValidPickingRequest() =>
         new("outbound-order-001", "org-001", "env-dev", "PICK-001", "10", "BIN-01", "SHIP-01", 1);
 
-    private static BusinessConsoleCompleteWmsOutboundOrderRequest ValidCompleteOutboundRequest() =>
-        new("outbound-order-001", "org-001", "env-dev", "PACK-001", true, "complete-out-001");
+    private static BusinessWmsCompleteOutboundOrderRequest ValidCompleteOutboundRequest() =>
+        new(
+            "outbound-order-001",
+            "org-001",
+            "env-dev",
+            "user-admin",
+            ["S1"],
+            "self",
+            "user-admin",
+            1,
+            "PACK-001",
+            true,
+            "complete-out-001");
 
     private static BusinessConsoleRetryWmsOutboundInventoryPostingRequest ValidRetryOutboundRequest() =>
         new("outbound-order-001", "org-001", "env-dev", "retry-out-001");
@@ -1866,8 +1906,18 @@ public sealed class BusinessGatewayWmsTests
     private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
         new("org-001", "env-dev", "COUNT-001", "SKU-001", "EA", "S1", "BIN-01", 1);
 
-    private static BusinessConsoleCompleteWmsCountExecutionRequest ValidCompleteCountRequest() =>
-        new("count-execution-001", "org-001", "env-dev", 1, "complete-count-001");
+    private static BusinessWmsCompleteCountExecutionRequest ValidCompleteCountRequest() =>
+        new(
+            "count-execution-001",
+            "org-001",
+            "env-dev",
+            "user-admin",
+            ["S1"],
+            "self",
+            "user-admin",
+            1,
+            1,
+            "complete-count-001");
 
     private static BusinessWmsDispatchWcsTaskRequest ValidDispatchWcsRequest() =>
         new(
@@ -2015,7 +2065,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessConsoleCreateWmsPutawayTaskRequest? LastCreatePutawayRequest { get; private set; }
 
-    public BusinessConsoleCompleteWmsInboundOrderRequest? LastCompleteInboundRequest { get; private set; }
+    public BusinessWmsCompleteInboundOrderRequest? LastCompleteInboundRequest { get; private set; }
 
     public BusinessServiceProxyException? CompleteInboundFailure { get; init; }
 
@@ -2025,13 +2075,13 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessConsoleCreateWmsPickingTaskRequest? LastCreatePickingRequest { get; private set; }
 
-    public BusinessConsoleCompleteWmsOutboundOrderRequest? LastCompleteOutboundRequest { get; private set; }
+    public BusinessWmsCompleteOutboundOrderRequest? LastCompleteOutboundRequest { get; private set; }
 
     public BusinessConsoleRetryWmsOutboundInventoryPostingRequest? LastRetryOutboundRequest { get; private set; }
 
     public BusinessConsoleCreateWmsCountExecutionRequest? LastCreateCountRequest { get; private set; }
 
-    public BusinessConsoleCompleteWmsCountExecutionRequest? LastCompleteCountRequest { get; private set; }
+    public BusinessWmsCompleteCountExecutionRequest? LastCompleteCountRequest { get; private set; }
 
     public BusinessWmsDispatchWcsTaskRequest? LastDispatchWcsRequest { get; private set; }
 
@@ -2097,7 +2147,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
         string inboundOrderId,
-        BusinessConsoleCompleteWmsInboundOrderRequest request,
+        BusinessWmsCompleteInboundOrderRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -2151,7 +2201,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteOutboundOrderAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleCompleteWmsOutboundOrderRequest request,
+        BusinessWmsCompleteOutboundOrderRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -2193,7 +2243,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
-        BusinessConsoleCompleteWmsCountExecutionRequest request,
+        BusinessWmsCompleteCountExecutionRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

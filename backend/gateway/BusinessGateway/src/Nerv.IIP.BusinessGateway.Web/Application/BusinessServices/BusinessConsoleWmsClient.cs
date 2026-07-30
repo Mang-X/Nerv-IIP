@@ -78,7 +78,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
         string inboundOrderId,
-        BusinessConsoleCompleteWmsInboundOrderRequest request,
+        BusinessWmsCompleteInboundOrderRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateWmsOutboundOrderResponse> CreateOutboundOrderAsync(
@@ -142,7 +142,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteOutboundOrderAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleCompleteWmsOutboundOrderRequest request,
+        BusinessWmsCompleteOutboundOrderRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
@@ -170,7 +170,7 @@ public interface IBusinessWmsClient
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
-        BusinessConsoleCompleteWmsCountExecutionRequest request,
+        BusinessWmsCompleteCountExecutionRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
@@ -355,7 +355,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
         string inboundOrderId,
-        BusinessConsoleCompleteWmsInboundOrderRequest request,
+        BusinessWmsCompleteInboundOrderRequest request,
         CancellationToken cancellationToken) =>
         CompleteMovementAsync(
             internalBearerToken,
@@ -495,7 +495,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteOutboundOrderAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleCompleteWmsOutboundOrderRequest request,
+        BusinessWmsCompleteOutboundOrderRequest request,
         CancellationToken cancellationToken) =>
         CompleteMovementAsync(
             internalBearerToken,
@@ -556,7 +556,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
         string internalBearerToken,
         string countExecutionId,
-        BusinessConsoleCompleteWmsCountExecutionRequest request,
+        BusinessWmsCompleteCountExecutionRequest request,
         CancellationToken cancellationToken) =>
         CompleteMovementAsync(
             internalBearerToken,

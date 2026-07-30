@@ -181,15 +181,14 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
-        => CompletePackReview(packReviewNo, passed, idempotencyKey, null);
-
     public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(
         string packReviewNo,
         bool passed,
         string idempotencyKey,
-        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+        long expectedVersion,
+        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine = null)
     {
+        EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         if (!passed)
@@ -198,24 +197,28 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
 
         EnsureHasLines();
-        PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
-        PackReviewPassed = true;
-        Status = OutboundOrderStatus.InventoryPostingPending;
-        CompletedAtUtc = null;
-        var singleLine = lines.Count == 1;
-        foreach (var line in lines)
-        {
-            line.RecordFulfillment(GetExecutedQuantity(line, executedQuantitiesByLine));
-        }
-
-        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
-        if (postingLines.Length == 0)
+        var normalizedPackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
+        var executedQuantityByLine = lines.ToDictionary(
+            line => line.LineNo,
+            line => GetExecutedQuantity(line, executedQuantitiesByLine),
+            StringComparer.Ordinal);
+        if (executedQuantityByLine.Values.All(quantity => quantity == 0))
         {
             throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
         }
 
+        foreach (var line in lines)
+        {
+            line.RecordFulfillment(executedQuantityByLine[line.LineNo]);
+        }
+
+        PackReviewNo = normalizedPackReviewNo;
+        PackReviewPassed = true;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
+        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
         AdvanceVersion();
-        singleLine = postingLines.Length == 1;
+        var singleLine = postingLines.Length == 1;
         var requests = postingLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,

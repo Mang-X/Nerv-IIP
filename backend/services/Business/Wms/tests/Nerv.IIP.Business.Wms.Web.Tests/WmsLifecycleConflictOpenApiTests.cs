@@ -64,6 +64,35 @@ public sealed class WmsLifecycleConflictOpenApiTests
         }
     }
 
+    [Fact]
+    public async Task Assigned_resource_completion_contracts_declare_authorization_and_business_validation_responses()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        using var client = factory.CreateClient();
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var paths = document.RootElement.GetProperty("paths");
+
+        foreach (var route in AssignedResourceCompletionRoutes)
+        {
+            var responses = paths.GetProperty(route)
+                .GetProperty("post")
+                .GetProperty("responses");
+
+            Assert.True(responses.TryGetProperty("403", out _));
+            Assert.True(responses.TryGetProperty("409", out _));
+            Assert.True(responses.TryGetProperty("422", out _));
+        }
+    }
+
+    private static readonly string[] AssignedResourceCompletionRoutes =
+    [
+        "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
+        "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete",
+        "/api/business/v1/wms/count-executions/{countExecutionId}/complete",
+    ];
+
     private static readonly string[] ConflictRoutes =
     [
         "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",

@@ -191,12 +191,52 @@ public sealed record CompleteInboundOrderCommand(
     string IdempotencyKey,
     IReadOnlyCollection<InboundOrderLineCapture>? Lines = null,
     string? OrganizationId = null,
-    string? EnvironmentId = null) : ICommand<CompleteWmsMovementResult>;
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0) : ICommand<CompleteWmsMovementResult>;
+
+internal static class WarehouseAssignedResourceCompletionExecution
+{
+    public static WarehouseAssignedResourceExecutionAuthorizer CreateAuthorizer(
+        ApplicationDbContext dbContext) =>
+        new(new WarehouseWorkScopeAuthorizer(dbContext, TimeProvider.System));
+
+    public static void EnsureExpectedVersion(
+        long actualVersion,
+        long expectedVersion,
+        string action)
+    {
+        if (actualVersion != expectedVersion)
+        {
+            throw new WmsLifecycleConflictException(
+                action,
+                $"version-conflict:{expectedVersion}:{actualVersion}");
+        }
+    }
+}
 
 public sealed class CompleteInboundOrderCommandValidator : AbstractValidator<CompleteInboundOrderCommand>
 {
-    public CompleteInboundOrderCommandValidator() =>
+    public CompleteInboundOrderCommandValidator()
+    {
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        AddAssignedResourceExecutionRules();
+    }
+
+    private void AddAssignedResourceExecutionRules()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+    }
 }
 
 public sealed class CompleteInboundOrderCommandLock : ICommandLock<CompleteInboundOrderCommand>
@@ -214,17 +254,36 @@ public sealed class CompleteInboundOrderCommandLock : ICommandLock<CompleteInbou
 
 public sealed record CompleteWmsMovementResult(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 
-public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteInboundOrderCommandHandler
     : ICommandHandler<CompleteInboundOrderCommand, CompleteWmsMovementResult>
 {
+    private readonly ApplicationDbContext dbContext;
+    private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
+
+    public CompleteInboundOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer)
+    {
+        this.dbContext = dbContext;
+        this.executionAuthorizer = executionAuthorizer;
+    }
+
+    public CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext)
+        : this(
+            dbContext,
+            WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext))
+    {
+    }
+
     public async Task<CompleteWmsMovementResult> Handle(CompleteInboundOrderCommand request, CancellationToken cancellationToken)
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
-            x => x.Id == request.InboundOrderId
-                && (request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-                && (request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId),
+            x => x.Id == request.InboundOrderId,
             cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+        await executionAuthorizer.AuthorizeAsync(
+            AssignedResourceExecution(request, inbound),
+            cancellationToken);
         if (inbound.Status == InboundOrderStatus.Cancelled)
         {
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
@@ -261,10 +320,46 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
-        var movementRequests = inbound.Complete(baseIdempotencyKey, request.Lines);
+        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
+            inbound.Version,
+            request.ExpectedVersion,
+            "complete-inbound");
+        IReadOnlyCollection<InventoryMovementRequest> movementRequests;
+        try
+        {
+            movementRequests = inbound.Complete(
+                baseIdempotencyKey,
+                request.ExpectedVersion,
+                request.Lines);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(CanonicalRequest(movementRequests).Id, null);
     }
+
+    private static WarehouseAssignedResourceExecutionRequest AssignedResourceExecution(
+        CompleteInboundOrderCommand request,
+        InboundOrder inbound) =>
+        new(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes,
+            request.ScopeKind,
+            request.ScopeId,
+            inbound.OrganizationId,
+            inbound.EnvironmentId,
+            inbound.SiteCode,
+            inbound.AssignedPoolCode,
+            inbound.AssignedOperatorUserId);
 
     private static bool HasSameCompletionFacts(
         InboundOrder inbound,
@@ -1211,7 +1306,12 @@ public sealed record CompleteOutboundOrderCommand(
     bool Passed,
     string IdempotencyKey,
     string? OrganizationId = null,
-    string? EnvironmentId = null) : ICommand<CompleteWmsMovementResult>;
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class CompleteOutboundOrderCommandValidator : AbstractValidator<CompleteOutboundOrderCommand>
 {
@@ -1219,6 +1319,14 @@ public sealed class CompleteOutboundOrderCommandValidator : AbstractValidator<Co
     {
         RuleFor(x => x.PackReviewNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -1264,20 +1372,43 @@ public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbCon
     }
 }
 
-public sealed class CompleteOutboundOrderCommandHandler(
-    ApplicationDbContext dbContext,
-    IWmsInventoryReservationClient? inventoryReservationClient = null)
+public sealed class CompleteOutboundOrderCommandHandler
     : ICommandHandler<CompleteOutboundOrderCommand, CompleteWmsMovementResult>
 {
+    private readonly ApplicationDbContext dbContext;
+    private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
+    private readonly IWmsInventoryReservationClient? inventoryReservationClient;
+
+    public CompleteOutboundOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer,
+        IWmsInventoryReservationClient? inventoryReservationClient = null)
+    {
+        this.dbContext = dbContext;
+        this.executionAuthorizer = executionAuthorizer;
+        this.inventoryReservationClient = inventoryReservationClient;
+    }
+
+    public CompleteOutboundOrderCommandHandler(
+        ApplicationDbContext dbContext,
+        IWmsInventoryReservationClient? inventoryReservationClient = null)
+        : this(
+            dbContext,
+            WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext),
+            inventoryReservationClient)
+    {
+    }
+
     public async Task<CompleteWmsMovementResult> Handle(CompleteOutboundOrderCommand request, CancellationToken cancellationToken)
     {
         var baseIdempotencyKey = WmsText.IdempotencyKey(request.IdempotencyKey);
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
-            x => x.Id == request.OutboundOrderId
-                && (request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-                && (request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId),
+            x => x.Id == request.OutboundOrderId,
             cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        await executionAuthorizer.AuthorizeAsync(
+            AssignedResourceExecution(request, outbound),
+            cancellationToken);
         if (outbound.Status is OutboundOrderStatus.Completed or OutboundOrderStatus.InventoryPostingPending)
         {
             if (!string.Equals(outbound.PackReviewNo, request.PackReviewNo.Trim(), StringComparison.Ordinal) ||
@@ -1316,9 +1447,37 @@ public sealed class CompleteOutboundOrderCommandHandler(
             throw new WmsLifecycleConflictException("complete-outbound", outbound.Status.ToString());
         }
 
+        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
+            outbound.Version,
+            request.ExpectedVersion,
+            "complete-outbound");
+        if (!request.Passed)
+        {
+            throw new WmsUnprocessableException(
+                "Outbound order cannot complete when pack review failed.");
+        }
+
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
-        var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, baseIdempotencyKey, executedQuantitiesByLine);
+        IReadOnlyCollection<InventoryMovementRequest> movementRequests;
+        try
+        {
+            movementRequests = outbound.CompletePackReview(
+                request.PackReviewNo,
+                request.Passed,
+                baseIdempotencyKey,
+                request.ExpectedVersion,
+                executedQuantitiesByLine);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+
         await ReleaseShortPickedReservationBalancesAsync(outbound, cancellationToken);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
@@ -1341,6 +1500,22 @@ public sealed class CompleteOutboundOrderCommandHandler(
 
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
+
+    private static WarehouseAssignedResourceExecutionRequest AssignedResourceExecution(
+        CompleteOutboundOrderCommand request,
+        OutboundOrder outbound) =>
+        new(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes,
+            request.ScopeKind,
+            request.ScopeId,
+            outbound.OrganizationId,
+            outbound.EnvironmentId,
+            outbound.SiteCode,
+            outbound.AssignedPoolCode,
+            outbound.AssignedOperatorUserId);
 
     private async Task<IReadOnlyDictionary<string, decimal>> GetExecutedPickingQuantitiesAsync(
         OutboundOrder outbound,
@@ -1367,7 +1542,7 @@ public sealed class CompleteOutboundOrderCommandHandler(
                 x.Status == WarehouseTaskStatus.CompletedWithDifference
                 && string.IsNullOrWhiteSpace(x.CompletionReason)))
         {
-            throw new KnownException(
+            throw new WmsUnprocessableException(
                 "Outbound order requires terminal picking task execution facts with a persisted difference reason before pack review.");
         }
 
@@ -1379,7 +1554,7 @@ public sealed class CompleteOutboundOrderCommandHandler(
                 StringComparer.Ordinal);
         if (outbound.Lines.Any(line => !executedQuantities.ContainsKey(line.LineNo)))
         {
-            throw new KnownException(
+            throw new WmsUnprocessableException(
                 "Every outbound order line requires a terminal picking task execution fact before pack review.");
         }
 
@@ -1687,7 +1862,12 @@ public sealed record CompleteCountExecutionCommand(
     decimal CountedQuantity,
     string IdempotencyKey,
     string? OrganizationId = null,
-    string? EnvironmentId = null) : ICommand<CompleteWmsMovementResult>;
+    string? EnvironmentId = null,
+    string? ActorPrincipalId = null,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    long ExpectedVersion = 0) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class CompleteCountExecutionCommandValidator : AbstractValidator<CompleteCountExecutionCommand>
 {
@@ -1695,6 +1875,14 @@ public sealed class CompleteCountExecutionCommandValidator : AbstractValidator<C
     {
         RuleFor(x => x.CountedQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -1711,21 +1899,44 @@ public sealed class CompleteCountExecutionCommandLock : ICommandLock<CompleteCou
     }
 }
 
-public sealed class CompleteCountExecutionCommandHandler(
-    ApplicationDbContext dbContext,
-    IWmsInventoryReservationClient? inventoryReservationClient = null)
+public sealed class CompleteCountExecutionCommandHandler
     : ICommandHandler<CompleteCountExecutionCommand, CompleteWmsMovementResult>
 {
+    private readonly ApplicationDbContext dbContext;
+    private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
+    private readonly IWmsInventoryReservationClient? inventoryReservationClient;
+
+    public CompleteCountExecutionCommandHandler(
+        ApplicationDbContext dbContext,
+        WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer,
+        IWmsInventoryReservationClient? inventoryReservationClient = null)
+    {
+        this.dbContext = dbContext;
+        this.executionAuthorizer = executionAuthorizer;
+        this.inventoryReservationClient = inventoryReservationClient;
+    }
+
+    public CompleteCountExecutionCommandHandler(
+        ApplicationDbContext dbContext,
+        IWmsInventoryReservationClient? inventoryReservationClient = null)
+        : this(
+            dbContext,
+            WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext),
+            inventoryReservationClient)
+    {
+    }
+
     public async Task<CompleteWmsMovementResult> Handle(CompleteCountExecutionCommand request, CancellationToken cancellationToken)
     {
         var baseIdempotencyKey = WmsText.IdempotencyKey(request.IdempotencyKey);
         var replayKeys = WmsText.ReplayIdempotencyKeys(request.IdempotencyKey);
         var count = await dbContext.CountExecutions.SingleOrDefaultAsync(
-            x => x.Id == request.CountExecutionId
-                && (request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-                && (request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId),
+            x => x.Id == request.CountExecutionId,
             cancellationToken)
             ?? throw new KnownException($"Count execution was not found: {request.CountExecutionId}");
+        await executionAuthorizer.AuthorizeAsync(
+            AssignedResourceExecution(request, count),
+            cancellationToken);
         var priorRequests = await dbContext.InventoryMovementRequests
             .Where(x =>
                 x.OrganizationId == count.OrganizationId &&
@@ -1755,6 +1966,16 @@ public sealed class CompleteCountExecutionCommandHandler(
             throw new WmsLifecycleConflictException("complete-count", count.Status.ToString());
         }
 
+        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
+            count.Version,
+            request.ExpectedVersion,
+            "complete-count");
+        if (request.CountedQuantity < 0)
+        {
+            throw new WmsUnprocessableException(
+                "Counted quantity cannot be negative.");
+        }
+
         if (inventoryReservationClient is not null)
         {
             if (count.InventoryCountTaskId is null)
@@ -1768,7 +1989,19 @@ public sealed class CompleteCountExecutionCommandHandler(
             var adjustment = await inventoryReservationClient.ConfirmCountAdjustmentAsync(
                 new WmsInventoryCountAdjustmentRequest(count.InventoryCountTaskId!, request.CountedQuantity, baseIdempotencyKey),
                 cancellationToken);
-            count.Complete(request.CountedQuantity);
+            try
+            {
+                count.Complete(request.CountedQuantity, request.ExpectedVersion);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new WmsUnprocessableException(exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new WmsUnprocessableException(exception.Message);
+            }
+
             var postedReceipt = InventoryMovementRequest.RecordPosted(
                 count.OrganizationId,
                 count.EnvironmentId,
@@ -1788,7 +2021,19 @@ public sealed class CompleteCountExecutionCommandHandler(
             return new CompleteWmsMovementResult(postedReceipt.Id, adjustment.MovementId);
         }
 
-        count.Complete(request.CountedQuantity);
+        try
+        {
+            count.Complete(request.CountedQuantity, request.ExpectedVersion);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+
         var varianceQuantity = count.VarianceQuantity
             ?? throw new KnownException("Count execution variance was not calculated.");
         var movementRequest = InventoryMovementRequest.Create(
@@ -1811,6 +2056,22 @@ public sealed class CompleteCountExecutionCommandHandler(
         dbContext.InventoryMovementRequests.Add(movementRequest);
         return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
+
+    private static WarehouseAssignedResourceExecutionRequest AssignedResourceExecution(
+        CompleteCountExecutionCommand request,
+        CountExecution count) =>
+        new(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes,
+            request.ScopeKind,
+            request.ScopeId,
+            count.OrganizationId,
+            count.EnvironmentId,
+            count.SiteCode,
+            count.AssignedPoolCode,
+            count.AssignedOperatorUserId);
 
     private static void EnsureSameCountPayload(
         CountExecution count,
