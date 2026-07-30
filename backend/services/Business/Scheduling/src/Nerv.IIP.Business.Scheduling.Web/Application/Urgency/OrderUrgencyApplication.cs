@@ -211,11 +211,49 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         CancellationToken cancellationToken)
     {
         var latest = await LoadLatestAsync(organizationId, environmentId, [], cancellationToken);
+        if (latest.Count == 0) return;
+
         var now = timeProvider.GetUtcNow();
+        var bucket = Bucket(now);
+        var orderIds = latest.Keys.ToArray();
+        var priorities = await LoadPriorityFactsAsync(
+            organizationId, environmentId, orderIds, now, cancellationToken);
+        var earliestCalculatedAtUtc = latest.Values.Min(x => x.CalculatedAtUtc);
+        var invalidations = await LoadRelevantInvalidationsAsync(
+            organizationId, environmentId, orderIds, earliestCalculatedAtUtc, cancellationToken);
+        var bucketSnapshots = await LoadBucketSnapshotsAsync(
+            organizationId, environmentId, orderIds, bucket, cancellationToken);
+        var calculatedOrderIds = bucketSnapshots
+            .Select(x => x.OrderId)
+            .ToHashSet(StringComparer.Ordinal);
+        var existingIdentities = bucketSnapshots
+            .Select(ToIdentity)
+            .ToHashSet();
         var changed = false;
         foreach (var snapshot in latest.Values)
         {
-            changed |= await RefreshFromSnapshotAsync(snapshot, now, null, cancellationToken) is not null;
+            var latestInvalidation = invalidations
+                .Where(x => x.RecordedAtUtc > snapshot.CalculatedAtUtc &&
+                    (x.AffectedWorkOrderId is null || x.AffectedWorkOrderId == snapshot.OrderId))
+                .OrderByDescending(x => x.RecordedAtUtc)
+                .FirstOrDefault();
+            var priority = priorities.TryGetValue(snapshot.OrderId, out var current)
+                ? current
+                : DefaultPriority();
+            var result = CalculateRefreshResult(
+                snapshot,
+                now,
+                latestInvalidation,
+                priority,
+                calculatedOrderIds.Contains(snapshot.OrderId));
+            if (result is null || !existingIdentities.Add(ToIdentity(result)))
+            {
+                continue;
+            }
+
+            dbContext.OrderUrgencySnapshots.Add(CreateSnapshot(
+                organizationId, environmentId, result));
+            changed = true;
         }
         if (!changed) return;
 
@@ -270,12 +308,33 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
                 x.RecordedAtUtc > snapshot.CalculatedAtUtc &&
                 (x.AffectedWorkOrderId == null || x.AffectedWorkOrderId == snapshot.OrderId))
             .OrderByDescending(x => x.RecordedAtUtc)
-            .Select(x => new { x.SourceEventId, x.RecordedAtUtc })
+            .Select(x => new InvalidationFact(x.SourceEventId, x.RecordedAtUtc, x.AffectedWorkOrderId))
             .FirstOrDefaultAsync(cancellationToken);
-        var invalidated = latestInvalidation is not null;
-        if (!force && !invalidated && snapshot.CalculationBucketUtc == bucket) return null;
-        var current = OrderUrgencyContractMapper.Deserialize(snapshot.ResultJson);
         var priority = priorityOverride ?? await LoadPriorityFactAsync(snapshot, now, cancellationToken);
+        var result = CalculateRefreshResult(
+            snapshot,
+            now,
+            latestInvalidation,
+            priority,
+            snapshot.CalculationBucketUtc == bucket,
+            force);
+        return result is null
+            ? null
+            : await AddSnapshotIfMissingAsync(snapshot.OrganizationId, snapshot.EnvironmentId, result, cancellationToken);
+    }
+
+    private static OrderUrgencyCalculationResult? CalculateRefreshResult(
+        OrderUrgencySnapshot snapshot,
+        DateTimeOffset now,
+        InvalidationFact? latestInvalidation,
+        BusinessPriorityFact priority,
+        bool bucketAlreadyCalculated,
+        bool force = false)
+    {
+        var invalidated = latestInvalidation is not null;
+        if (!force && !invalidated && bucketAlreadyCalculated) return null;
+
+        var current = OrderUrgencyContractMapper.Deserialize(snapshot.ResultJson);
         var observedAt = current.ExecutionRisk.FactsObservedAtUtc;
         var stale = invalidated || !observedAt.HasValue || now - observedAt.Value > FreshnessWindow;
         var remaining = current.TimeCriticality.EstimatedCompletionUtc > now
@@ -289,8 +348,81 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
             current.ExecutionRisk.Facts.Select(x => new ExecutionRiskFact(
                 x.ReasonCode, Enum.Parse<ExecutionRiskCategory>(x.Category, true), x.IsBlocking, x.SourceReference, x.ObservedAtUtc)).ToArray(),
             current.ExecutionRisk.IsSourceMissing, stale, observedAt, inputFingerprint));
-        return await AddSnapshotIfMissingAsync(snapshot.OrganizationId, snapshot.EnvironmentId, result, cancellationToken);
+        return result;
     }
+
+    private async Task<Dictionary<string, BusinessPriorityFact>> LoadPriorityFactsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> orderIds,
+        DateTimeOffset atUtc,
+        CancellationToken cancellationToken)
+    {
+        var priorities = await dbContext.OrderUrgencyBusinessPriorities.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                orderIds.Contains(x.OrderId))
+            .ToArrayAsync(cancellationToken);
+        return priorities.ToDictionary(x => x.OrderId, x => x.ToFact(atUtc), StringComparer.Ordinal);
+    }
+
+    private async Task<InvalidationFact[]> LoadRelevantInvalidationsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> orderIds,
+        DateTimeOffset earliestCalculatedAtUtc,
+        CancellationToken cancellationToken) =>
+        await dbContext.SchedulePlanInvalidations.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.RecordedAtUtc > earliestCalculatedAtUtc &&
+                (x.AffectedWorkOrderId == null || orderIds.Contains(x.AffectedWorkOrderId!)))
+            .Select(x => new InvalidationFact(x.SourceEventId, x.RecordedAtUtc, x.AffectedWorkOrderId))
+            .ToArrayAsync(cancellationToken);
+
+    private async Task<OrderUrgencySnapshot[]> LoadBucketSnapshotsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> orderIds,
+        DateTimeOffset bucket,
+        CancellationToken cancellationToken) =>
+        await dbContext.OrderUrgencySnapshots.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                orderIds.Contains(x.OrderId) && x.CalculationBucketUtc == bucket)
+            .ToArrayAsync(cancellationToken);
+
+    private static OrderUrgencySnapshot CreateSnapshot(
+        string organizationId,
+        string environmentId,
+        OrderUrgencyCalculationResult result) => new(
+        organizationId, environmentId, result.OrderId, result.BusinessReference, result.Level,
+        result.ModelVersion, result.InputFingerprint, result.BusinessPriority.Revision,
+        Bucket(result.CalculatedAtUtc), result.CalculatedAtUtc, OrderUrgencyContractMapper.Serialize(result));
+
+    private static SnapshotIdentity ToIdentity(OrderUrgencySnapshot snapshot) => new(
+        snapshot.OrderId,
+        snapshot.ModelVersion,
+        snapshot.InputFingerprint,
+        snapshot.BusinessPriorityRevision,
+        snapshot.CalculationBucketUtc);
+
+    private static SnapshotIdentity ToIdentity(
+        OrderUrgencyCalculationResult result) => new(
+        result.OrderId,
+        result.ModelVersion,
+        result.InputFingerprint,
+        result.BusinessPriority.Revision,
+        Bucket(result.CalculatedAtUtc));
+
+    private readonly record struct SnapshotIdentity(
+        string OrderId,
+        string ModelVersion,
+        string InputFingerprint,
+        long BusinessPriorityRevision,
+        DateTimeOffset CalculationBucketUtc);
+
+    private sealed record InvalidationFact(
+        string SourceEventId,
+        DateTimeOffset RecordedAtUtc,
+        string? AffectedWorkOrderId);
 
     private async Task<BusinessPriorityFact> LoadPriorityFactAsync(OrderUrgencySnapshot snapshot, DateTimeOffset now, CancellationToken cancellationToken)
     {

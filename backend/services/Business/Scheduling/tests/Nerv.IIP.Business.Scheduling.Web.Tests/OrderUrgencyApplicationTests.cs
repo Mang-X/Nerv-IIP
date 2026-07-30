@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.Services;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
@@ -86,6 +88,142 @@ public sealed class OrderUrgencyApplicationTests
 
         Assert.True(Assert.Single(refreshed).ExecutionRisk.IsSourceStale);
         Assert.True(await db.OrderUrgencySnapshots.CountAsync() > before);
+    }
+
+    [Fact]
+    public async Task Refresh_context_prefetches_order_facts_and_preserves_each_order_result()
+    {
+        await using var provider = CreateProvider();
+        var clock = new MutableTimeProvider(Now);
+        OrderUrgencySnapshot[] initialSnapshots;
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var db = setupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var service = new OrderUrgencyService(db, clock);
+            var handler = new CreateSchedulePlanCommandHandler(
+                db, new FiniteCapacityScheduler(), clock,
+                new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+                new SchedulingOperationOverrideOverlay(db), service);
+
+            await handler.Handle(new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()), CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+            initialSnapshots = await db.OrderUrgencySnapshots.AsNoTracking().ToArrayAsync();
+        }
+
+        clock.UtcNow = Now.AddHours(3);
+        await using (var refreshScope = provider.CreateAsyncScope())
+        {
+            var db = refreshScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new OrderUrgencyService(db, clock).RefreshContextAsync("org-001", "prod", CancellationToken.None);
+        }
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var serviceForRead = new OrderUrgencyService(assertionDb, clock);
+        var refreshed = await serviceForRead.ListAsync("org-001", "prod", [], CancellationToken.None);
+        Assert.Equal(initialSnapshots.Length * 2, await assertionDb.OrderUrgencySnapshots.CountAsync());
+
+        foreach (var initial in initialSnapshots)
+        {
+            var current = OrderUrgencyContractMapper.Deserialize(initial.ResultJson);
+            var observedAt = current.ExecutionRisk.FactsObservedAtUtc;
+            var remaining = current.TimeCriticality.EstimatedCompletionUtc > clock.UtcNow
+                ? current.TimeCriticality.EstimatedCompletionUtc - clock.UtcNow
+                : TimeSpan.Zero;
+            var expected = OrderUrgencyContractMapper.ToContract(OrderUrgencyCalculator.Calculate(
+                new OrderUrgencyCalculationInput(
+                    current.OrderId,
+                    current.BusinessReference,
+                    clock.UtcNow,
+                    current.TimeCriticality.DueUtc,
+                    remaining,
+                    new BusinessPriorityFact(
+                        BusinessPriorityLevel.P2,
+                        "authoritative-default",
+                        "No manual business-priority override.",
+                        DateTimeOffset.UnixEpoch,
+                        null,
+                        0),
+                    current.ExecutionRisk.Facts.Select(fact => new ExecutionRiskFact(
+                        fact.ReasonCode,
+                        Enum.Parse<ExecutionRiskCategory>(fact.Category, true),
+                        fact.IsBlocking,
+                        fact.SourceReference,
+                        fact.ObservedAtUtc)).ToArray(),
+                    current.ExecutionRisk.IsSourceMissing,
+                    !observedAt.HasValue || clock.UtcNow - observedAt.Value > TimeSpan.FromHours(2),
+                    observedAt,
+                    current.InputFingerprint)));
+            var actual = Assert.Single(refreshed, result => result.OrderId == initial.OrderId);
+
+            Assert.Equal(expected.OrderId, actual.OrderId);
+            Assert.Equal(expected.BusinessReference, actual.BusinessReference);
+            Assert.Equal(expected.Level, actual.Level);
+            Assert.Equal(expected.BusinessPriority.Level, actual.BusinessPriority.Level);
+            Assert.Equal(expected.BusinessPriority.Source, actual.BusinessPriority.Source);
+            Assert.Equal(expected.BusinessPriority.Reason, actual.BusinessPriority.Reason);
+            Assert.Equal(expected.BusinessPriority.SetAtUtc, actual.BusinessPriority.SetAtUtc);
+            Assert.Equal(expected.BusinessPriority.ExpiresAtUtc, actual.BusinessPriority.ExpiresAtUtc);
+            Assert.Equal(expected.BusinessPriority.Revision, actual.BusinessPriority.Revision);
+            Assert.Equal(expected.BusinessPriority.ReasonCodes, actual.BusinessPriority.ReasonCodes);
+            Assert.Equal(expected.TimeCriticality.Level, actual.TimeCriticality.Level);
+            Assert.Equal(expected.TimeCriticality.CriticalRatio, actual.TimeCriticality.CriticalRatio);
+            Assert.Equal(expected.TimeCriticality.SlackHours, actual.TimeCriticality.SlackHours);
+            Assert.Equal(expected.TimeCriticality.ExpectedDelayHours, actual.TimeCriticality.ExpectedDelayHours);
+            Assert.Equal(expected.TimeCriticality.DueUtc, actual.TimeCriticality.DueUtc);
+            Assert.Equal(expected.TimeCriticality.EstimatedCompletionUtc, actual.TimeCriticality.EstimatedCompletionUtc);
+            Assert.Equal(expected.TimeCriticality.RemainingCycleHours, actual.TimeCriticality.RemainingCycleHours);
+            Assert.Equal(expected.TimeCriticality.ReasonCodes, actual.TimeCriticality.ReasonCodes);
+            Assert.Equal(expected.ExecutionRisk.Level, actual.ExecutionRisk.Level);
+            Assert.Equal(expected.ExecutionRisk.IsSourceMissing, actual.ExecutionRisk.IsSourceMissing);
+            Assert.Equal(expected.ExecutionRisk.IsSourceStale, actual.ExecutionRisk.IsSourceStale);
+            Assert.Equal(expected.ExecutionRisk.FactsObservedAtUtc, actual.ExecutionRisk.FactsObservedAtUtc);
+            Assert.Equal(expected.ExecutionRisk.ReasonCodes, actual.ExecutionRisk.ReasonCodes);
+            Assert.Equal(expected.ExecutionRisk.Facts, actual.ExecutionRisk.Facts);
+        }
+    }
+
+    [Fact]
+    public async Task Refresh_context_uses_a_persisted_bucket_when_a_new_scope_runs_again()
+    {
+        await using var provider = CreateProvider();
+        var clock = new MutableTimeProvider(Now);
+        int initialCount;
+        await using (var firstScope = provider.CreateAsyncScope())
+        {
+            var db = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var service = new OrderUrgencyService(db, clock);
+            var handler = new CreateSchedulePlanCommandHandler(
+                db, new FiniteCapacityScheduler(), clock,
+                new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+                new SchedulingOperationOverrideOverlay(db), service);
+
+            await handler.Handle(new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()), CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+            initialCount = await db.OrderUrgencySnapshots.CountAsync();
+        }
+
+        clock.UtcNow = Now.AddMinutes(5);
+        await using (var secondScope = provider.CreateAsyncScope())
+        {
+            var db = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new OrderUrgencyService(db, clock).RefreshContextAsync("org-001", "prod", CancellationToken.None);
+        }
+
+        await using var assertionScope = provider.CreateAsyncScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(initialCount, await assertionDb.OrderUrgencySnapshots.CountAsync());
+    }
+
+    [Fact]
+    public void Refresh_worker_tick_interval_is_shorter_than_the_fifteen_minute_calculation_bucket()
+    {
+        var interval = typeof(OrderUrgencyRefreshWorker)
+            .GetField("Interval", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?.GetValue(null);
+
+        Assert.IsType<TimeSpan>(interval);
+        Assert.True((TimeSpan)interval! < TimeSpan.FromMinutes(15));
     }
 
     [Fact]
@@ -205,9 +343,12 @@ public sealed class OrderUrgencyApplicationTests
 
     private static ServiceProvider CreateProvider()
     {
+        var databaseName = $"urgency-{Guid.NewGuid():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase($"urgency-{Guid.NewGuid():N}"));
+        services.AddDbContext<ApplicationDbContext>(options => options
+            .UseInMemoryDatabase(databaseName, databaseRoot));
         return services.BuildServiceProvider();
     }
 
