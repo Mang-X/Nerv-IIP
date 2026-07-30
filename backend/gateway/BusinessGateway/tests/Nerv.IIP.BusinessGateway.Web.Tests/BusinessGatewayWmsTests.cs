@@ -1579,7 +1579,17 @@ public sealed class BusinessGatewayWmsTests
                 HttpStatusCode.Conflict,
                 "lifecycle-conflict"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-wms-receipts",
+                    "site",
+                    "SITE-001",
+                    [BusinessGatewayPermissions.WmsReceiptsManage]),
+            ]);
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -1591,12 +1601,19 @@ public sealed class BusinessGatewayWmsTests
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev",
-            new { idempotencyKey = "complete-conflict-001" });
+            new
+            {
+                idempotencyKey = "complete-conflict-001",
+                expectedVersion = 3,
+            });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
         Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
+        Assert.Equal(3, wms.LastCompleteInboundRequest!.ExpectedVersion);
+        Assert.Equal(["SITE-001"], wms.LastCompleteInboundRequest.AuthorizedSiteCodes);
+        Assert.Equal(["complete-inbound"], wms.Calls);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
