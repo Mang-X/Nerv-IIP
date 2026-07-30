@@ -267,7 +267,8 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
   )
   const lockedAssignments = computed<BusinessConsoleSchedulingLockedAssignment[]>(() =>
     (model.value?.tasks ?? [])
-      .filter((task) => task.type === 'operation' && task.locked)
+      // 资源时间块(维护/停机/换线/换型)也是 locked(不可拖拽),但它不是工序,不能当锁定项回传。
+      .filter((task) => task.type === 'operation' && task.locked && !task.blockKind)
       .map((task) => ({
         assignmentId: task.id,
         orderId: task.orderId,

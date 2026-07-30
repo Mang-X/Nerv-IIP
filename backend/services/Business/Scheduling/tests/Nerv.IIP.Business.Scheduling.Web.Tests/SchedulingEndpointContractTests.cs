@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
@@ -202,7 +203,7 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = CreatePlanHandler(dbContext);
-        var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
+        var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance);
 
         var problem = CreateProblemWithUnscheduledOperation();
         var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
@@ -543,7 +544,7 @@ public sealed class SchedulingEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var createHandler = CreatePlanHandler(dbContext);
-        var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
+        var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance);
         var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(
             dbContext,

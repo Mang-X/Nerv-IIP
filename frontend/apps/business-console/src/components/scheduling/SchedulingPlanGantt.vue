@@ -99,6 +99,21 @@ const model = computed<ScheduleModel | undefined>(() => {
   return {
     ...mapped,
     tasks: mapped.tasks.map((task) => {
+      // 资源时间块(维护/停机/换线/换型)不是工序:只把工作中心换成人话名,不套工序标题。
+      if (task.blockKind) {
+        return task.workCenterId
+          ? {
+              ...task,
+              dimensions: {
+                ...task.dimensions,
+                workCenter: {
+                  id: task.workCenterId,
+                  label: resolveWorkCenter(task.workCenterId) ?? task.workCenterId,
+                },
+              },
+            }
+          : task
+      }
       if (task.type !== 'operation') return task
       const sequence = task.operationSequence > 0 ? `第 ${task.operationSequence} 道` : '工序'
       const family = wcFamily(task.workCenterId)
@@ -506,7 +521,7 @@ function formatDateTime(value: string) {
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-card">
-        <SchedulingLegend :categories="legendCategories" view="resource" />
+        <SchedulingLegend :categories="legendCategories" view="resource" :model="model" />
         <p class="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
           点击工序块在右侧查看该工序详情；整方案信息走「方案明细」。只读视图不支持拖拽或改派，编辑请回「排程总览」草案工作区。
         </p>

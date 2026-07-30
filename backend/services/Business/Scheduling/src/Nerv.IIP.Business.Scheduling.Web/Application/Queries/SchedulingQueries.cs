@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -119,7 +121,9 @@ public sealed class GetSchedulePlanDetailQueryValidator : AbstractValidator<GetS
     }
 }
 
-public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetSchedulePlanDetailQueryHandler(
+    ApplicationDbContext dbContext,
+    ILogger<GetSchedulePlanDetailQueryHandler> logger)
     : IQueryHandler<GetSchedulePlanDetailQuery, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(GetSchedulePlanDetailQuery request, CancellationToken cancellationToken)
@@ -137,7 +141,46 @@ public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbCon
                 cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
 
-        return SchedulePlanContractMapper.ToContract(plan);
+        // 工作日历与不可用窗口存在问题快照里(排程输入),读面顺带投影出来,不新增端点。
+        // 快照缺失(历史数据)时按无日历返回,读面自行退化,不编造。
+        var problem = await LoadProblemAsync(request, plan.ProblemId, cancellationToken);
+        return SchedulePlanContractMapper.ToContract(plan, problem);
+    }
+
+    private async Task<SchedulingProblemContract?> LoadProblemAsync(
+        GetSchedulePlanDetailQuery request,
+        string problemId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await dbContext.ScheduleProblems.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.ProblemId == problemId &&
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId,
+                cancellationToken);
+        if (snapshot is null)
+        {
+            logger.LogInformation(
+                "Schedule problem snapshot is absent; plan detail is returned without calendars. PlanId = {PlanId}, ProblemId = {ProblemId}",
+                request.PlanId,
+                problemId);
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options);
+        }
+        catch (JsonException exception)
+        {
+            // 快照读不动不该让整个方案读面挂掉,但必须留痕:否则甘特"突然没有日历"无从排障。
+            logger.LogWarning(
+                exception,
+                "Schedule problem snapshot could not be deserialized; plan detail is returned without calendars. PlanId = {PlanId}, ProblemId = {ProblemId}",
+                request.PlanId,
+                problemId);
+            return null;
+        }
     }
 }
 

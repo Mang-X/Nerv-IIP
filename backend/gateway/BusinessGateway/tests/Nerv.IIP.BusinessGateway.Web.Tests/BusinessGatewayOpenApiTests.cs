@@ -1339,6 +1339,7 @@ public sealed class BusinessGatewayOpenApiTests
             "NervIIPContractsSchedulingScheduleConflictSeverityContract",
             "NervIIPContractsSchedulingScheduleChangeTypeContract",
             "NervIIPContractsSchedulingScheduleSplitPolicyContract",
+            "NervIIPContractsSchedulingScheduleBlockKindContract",
             "NervIIPContractsEquipmentRuntimeEquipmentRuntimeSourceType",
         })
         {

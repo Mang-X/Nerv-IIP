@@ -512,7 +512,11 @@ file sealed class SchedulerState
                     Status: SchedulePlanStatusContract.Preview,
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
                     ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey));
-            }).ToList());
+            }).ToList(),
+            // 工作日历与不可用窗口是排程输入的一部分,随计划一起带出:读面据此画工作日/非工作日、
+            // 班次边界与维护/停机/换线/换型底纹,不必再单独取一次日历。
+            Calendars: SchedulePlanCalendarProjector.ProjectCalendars(problem),
+            BlockWindows: SchedulePlanCalendarProjector.ProjectBlockWindows(problem));
     }
 
     private SchedulePlanMetricsContract BuildMetrics(

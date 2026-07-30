@@ -39,7 +39,9 @@ interface TimelineLane {
 
 const operationTasks = computed(() =>
   props.model.tasks
-    .filter((task) => task.type === 'operation')
+    // 资源时间块(维护/停机/换线/换型)不是工序:只读时间轴画不了单元格底纹,
+    // 与其把它冒充成一道工序条,不如不画(泳道的「N 道工序」读数也才是真的)。
+    .filter((task) => task.type === 'operation' && !task.blockKind)
     .filter(
       (task) =>
         Number.isFinite(Date.parse(task.startUtc)) && Number.isFinite(Date.parse(task.endUtc)),

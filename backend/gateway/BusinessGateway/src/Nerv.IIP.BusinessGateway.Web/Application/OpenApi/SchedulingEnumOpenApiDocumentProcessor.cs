@@ -16,6 +16,7 @@ public sealed class SchedulingEnumOpenApiDocumentProcessor : IDocumentProcessor
         ["NervIIPContractsSchedulingScheduleConflictSeverityContract"] = EnumValues<ScheduleConflictSeverityContract>(),
         ["NervIIPContractsSchedulingScheduleChangeTypeContract"] = EnumValues<ScheduleChangeTypeContract>(),
         ["NervIIPContractsSchedulingScheduleSplitPolicyContract"] = EnumValues<ScheduleSplitPolicyContract>(),
+        ["NervIIPContractsSchedulingScheduleBlockKindContract"] = EnumValues<ScheduleBlockKindContract>(),
         ["NervIIPContractsEquipmentRuntimeEquipmentRuntimeSourceType"] =
         [
             "device-state",
