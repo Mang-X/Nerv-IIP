@@ -863,9 +863,11 @@ IndustrialTelemetry 现在按请求从同一组织、环境和设备范围内的
 
 ### 2026-07-28 WMS 角色范围与任务执行记录（MAN-629 / #1166）
 
-WMS 收货、上架、拣货、复核发货与盘点五类列表已接入 WMS 自有工作池授权。公开范围目录只提供 `self/work-pool/site`，公开请求只接受 `scopeKind/scopeId`；BusinessGateway 从 bearer 主体和 IAM 读取 principal、精确站点授权并注入固定权限，客户端不能提交可信字段。当前 MasterData 尚无独立仓库聚合，首版“仓库范围”使用 IAM 精确授权的 site 映射 WMS `SiteCode`，不得从库位编码前缀猜测仓库；不提供 team/organization scope，也不落 `assigned_team_id`。五类聚合均保存工作池/操作员派工与并发版本，遗留未派工记录默认不可见、不可执行。IAM seed v2 仅为 PDA 仓储角色增量授予 `SITE-001`，WMS seed 提供 emp049 可验收的确定性现场队列。
+WMS 收货、上架、拣货、复核发货与盘点五类列表已接入 WMS 自有工作池授权。公开范围目录只提供 `self/work-pool/site`，公开请求只接受 `scopeKind/scopeId`；BusinessGateway 从 bearer 主体取得 principal，读取 MasterData 当前组织/环境下的启用 site 目录，再与 IAM 对当前端点权限返回的 permission-aware grants 求交。Organization grant 只能展开为该目录中的启用 site，Site grant 只能命中同编码 site；未知、停用、跨组织或权限不匹配的站点均 fail closed，客户端不能提交 actor、授权站点或内部派工过滤。当前 MasterData 尚无独立仓库聚合，首版“仓库范围”仍以授权 site 映射 WMS `SiteCode`，不得从库位编码前缀猜测仓库；公开范围不提供 team/organization，也不落 `assigned_team_id`。五类聚合均保存工作池/操作员派工与并发版本，遗留未派工记录默认不可见、不可执行。IAM site-scope seed v2 仅为未定制的 PDA 仓储基线角色补 `SITE-001`，WMS seed 提供 emp049 可验收的确定性现场队列。
 
-五类受控派工端点和上架/拣货任务的 start、progress、exception、complete 人工动作均已通过 BusinessGateway 暴露；派工与动作使用数据库并发版本及持久幂等回执，同键同载荷可重放、同键异载荷拒绝。人工执行与 WCS 使用相同任务锁和版本形成原子互斥，WCS callback 不会自动认领人工任务；进度采用累计数量且不可回退或超计划，上架必须足量完成，拣货短拣必须提交差异原因。终态只返回空 `allowedActions`，PDA 不自行猜测可执行性。旧 `/warehouse-tasks/{id}/progress|complete` 继续作为 WCS adapter/callback 内部边界。离线队列、WCS 设备控制、波次拣货和独立仓库主数据不属于本切片。
+为减少库位和批次手填，WMS 新增服务端 `GET /api/business/v1/wms/operational-candidates`，BusinessGateway 以 `/operational-candidates/receipts`、`/shipments`、`/counts` 三个公开 facade 分别注入固定候选域和读取权限。收货域只聚合入库单与上架任务，发货域只聚合出库单与拣货任务，盘点域只聚合盘点执行，不能由客户端切换候选域或读取其它作业域。候选严格受当前 `self/work-pool/site`、授权 site、组织和环境约束，只从有界的近期 WMS 持久作业事实生成；响应以 `sourceKind=wms-operational-facts` 标明来源，并返回 `asOfUtc`、`freshnessUtc` 与 `truncated`。它不是库位主数据或全量批次目录，`truncated=true` 时也不能解释为全集。盘点聚合当前没有 lot 语义，因此盘点列表和候选只支持库位，不伪造批次筛选；Inventory 权威 `StockLocation` 可读目录和面向输入选择器的全量批次目录仍是后续能力缺口。
+
+盘点只读链已拆出 `business.wms.counts.read`：公开盘点范围目录、盘点作业候选和盘点列表均使用该权限，WMS 盘点范围/列表契约同步声明该读取权限；创建、派工和完成仍沿用既有管理权限。IAM 的一次性 counts-read backfill 只升级名称和旧权限集合精确匹配的仓储基线角色，并且只接受空 scope，或已存在 site-scope v2 manifest 且 scope 精确为 `site/SITE-001` 的受管旧角色；任意自定义 Site、Workshop、Organization 或其它 scope 都不扩权。五类受控派工端点和上架/拣货任务的 start、progress、exception、complete 人工动作均已通过 BusinessGateway 暴露；派工与动作使用数据库并发版本及持久幂等回执，同键同载荷可重放、同键异载荷拒绝。人工执行与 WCS 使用相同任务锁和版本形成原子互斥，WCS callback 不会自动认领人工任务；进度采用累计数量且不可回退或超计划，上架必须足量完成，拣货短拣必须提交差异原因。终态只返回空 `allowedActions`，PDA 不自行猜测可执行性。旧 `/warehouse-tasks/{id}/progress|complete` 继续作为 WCS adapter/callback 内部边界。离线队列、WCS 设备控制、波次拣货和独立仓库主数据不属于本切片。
 
 ### 可以并行但不阻塞开工的事项
 

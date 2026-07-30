@@ -11,24 +11,31 @@
 
 ## 前置资料
 
-- MasterData 中已有仓库、库位、SKU、UOM 和供应商/客户资料。
+- MasterData 中已有启用站点、SKU、UOM 和供应商/客户资料；当前没有独立仓库聚合，也没有面向作业输入的权威库位读目录。
+- WMS 中已有所选“本人 / 工作池 / 站点”授权范围内的收货、上架、拣货、出库或盘点作业事实；快捷候选来自这些事实，不代表全量库位或批次。
 - Inventory 已能处理 movement requested、posted 和 failed 事实。
 - WMS 与 Inventory 的公共契约和 BusinessGateway facade 已可用。
 
 ## 页面入口
 
-| 环节 | Business Console 路由 | 当前事实或缺口 |
-| --- | --- | --- |
-| WMS 总览 | `/wms` | 已有 route-ready 汇总页；侧栏主要入口是具体作业页。 |
-| 收货 | `/wms/inbound` | 已在仓储作业域暴露，支持收货单列表和完成入库动作。 |
-| 上架 | `/wms/putaway` | 已在仓储作业域暴露。 |
-| 拣货 | `/wms/picking` | 已在仓储作业域暴露。 |
-| 出库 | `/wms/outbound` | 已在仓储作业域暴露，支持复核发货相关动作。 |
-| 盘点 | `/wms/counts` | 已在仓储作业域暴露。 |
-| WCS 任务 | `/wms/wcs` | 已在仓储作业域暴露为任务状态和基础动作读写面。 |
-| 库存可用量 | `/inventory/availability` | 已在库存管理域暴露。 |
-| 库存移动 | `/inventory/movements` | 已在库存管理域暴露。 |
-| 库存盘点 | `/inventory/counts` | 已在库存管理域暴露。 |
+| 环节       | Business Console 路由     | 当前事实或缺口                                      |
+| ---------- | ------------------------- | --------------------------------------------------- |
+| WMS 总览   | `/wms`                    | 已有 route-ready 汇总页；侧栏主要入口是具体作业页。 |
+| 收货       | `/wms/inbound`            | 已在仓储作业域暴露，支持收货单列表和完成入库动作。  |
+| 上架       | `/wms/putaway`            | 已在仓储作业域暴露。                                |
+| 拣货       | `/wms/picking`            | 已在仓储作业域暴露。                                |
+| 出库       | `/wms/outbound`           | 已在仓储作业域暴露，支持复核发货相关动作。          |
+| 盘点       | `/wms/counts`             | 已在仓储作业域暴露。                                |
+| WCS 任务   | `/wms/wcs`                | 已在仓储作业域暴露为任务状态和基础动作读写面。      |
+| 库存可用量 | `/inventory/availability` | 已在库存管理域暴露。                                |
+| 库存移动   | `/inventory/movements`    | 已在库存管理域暴露。                                |
+| 库存盘点   | `/inventory/counts`       | 已在库存管理域暴露。                                |
+
+## 移动作业范围与快捷候选
+
+PDA 仓储作业只使用服务端返回的“本人 / 工作池 / 站点”范围；站点必须同时存在于当前组织的启用站点目录，并被当前账号对相应收货、发货或盘点读取权限授权。库位和批次快捷候选来自所选范围内的近期 WMS 作业事实：收货只看入库/上架，发货只看出库/拣货，盘点只看盘点执行，三类候选不会串用。
+
+候选响应会标明事实来源、查询时点、最新事实时间和是否截断。显示“已截断”表示当前候选不是全集；没有候选也不等于库位或批次不存在。盘点当前只支持库位候选和库位筛选，没有批次语义。需要查完整库存批次时仍进入 `/inventory/lots`；面向 WMS 输入选择器的 Inventory 权威库位目录和全量批次目录尚未交付。
 
 ## 操作步骤
 
@@ -68,6 +75,8 @@ Inbound Order -> Receiving -> Putaway -> Stock Balance -> Reservation -> Picking
 ## 当前限制
 
 - FEFO/FIFO 拣货、ASN expected/received 差异、directed putaway、LPN/HU 仍未作为完整能力交付。
+- WMS 快捷候选是当前授权范围内的有界近期作业事实，不是 Inventory `StockLocation` 权威目录或全量批次目录。
+- 盘点作业当前没有批次筛选；不得用其它作业域的批次候选代替。
 - 条码标签已有后端能力和 PDA/扫码相关基础，但正式 BarcodeLabel 前端页面仍后置。
 - MinIO/S3 multipart 和对象存储直传不属于当前 WMS 上手路径。
 

@@ -117,6 +117,20 @@ is `exposed` through Gateway operation
 current manifest rather than from samples, so the facade must preserve
 `current` versus `unavailable` and nullable sample timestamps.
 
+For MAN-629 WMS operational candidates, the exposed declaration is intentionally
+one service operation to three Gateway operations:
+`listWmsOperationalCandidates` maps to
+`listBusinessConsoleWmsReceiptOperationalCandidates`,
+`listBusinessConsoleWmsShipmentOperationalCandidates`, and
+`listBusinessConsoleWmsCountOperationalCandidates`. Each Gateway facade fixes the
+candidate domain and checks its own receipts, shipments, or counts read
+permission before forwarding trusted principal, scope, and authorized site
+facts. The response preserves `sourceKind`, `asOfUtc`, nullable `freshnessUtc`,
+and `truncated`; it is a bounded view of WMS operational facts, not a
+MasterData/Inventory location catalog or a complete lot catalog. This row is the
+two-hop evidence for all three public operations; the service endpoint is not
+three separate public contracts.
+
 ### Deferred endpoints (facade tracked, not yet exposed)
 
 | Service | Method | Service route | Follow-up |
