@@ -12,6 +12,11 @@ export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useS
 
 export { toModel, toLockedAssignments } from './model/aps-mapper'
 export {
+  deriveLegendSemantics,
+  type BlockKind,
+  type SchedulingLegendSemantics,
+} from './model/legend'
+export {
   conflictReasonLabel,
   changeTypeLabel,
   severityTone,

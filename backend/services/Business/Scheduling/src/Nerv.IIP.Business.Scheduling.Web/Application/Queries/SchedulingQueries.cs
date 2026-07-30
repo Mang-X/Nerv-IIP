@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -137,7 +138,37 @@ public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbCon
                 cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
 
-        return SchedulePlanContractMapper.ToContract(plan);
+        // 工作日历与不可用窗口存在问题快照里(排程输入),读面顺带投影出来,不新增端点。
+        // 快照缺失(历史数据)时按无日历返回,读面自行退化,不编造。
+        var problem = await LoadProblemAsync(plan.ProblemId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        return SchedulePlanContractMapper.ToContract(plan, problem);
+    }
+
+    private async Task<SchedulingProblemContract?> LoadProblemAsync(
+        string problemId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await dbContext.ScheduleProblems.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.ProblemId == problemId &&
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId,
+                cancellationToken);
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
 

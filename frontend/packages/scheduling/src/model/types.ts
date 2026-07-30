@@ -150,6 +150,22 @@ export interface ScheduleChange {
   taskId?: string
 }
 
+/** 单个班次工作窗口(窗口之外即非工作时间)。 */
+export interface ScheduleShiftWindow {
+  startUtc: string
+  endUtc: string
+  /** 班次码(如 early-shift / middle-shift),用于区分班次边界。 */
+  shiftCode: string
+}
+
+/** 工作日历:一份日历被哪些资源/工作中心使用,以及它的班次窗口。 */
+export interface ScheduleCalendar {
+  calendarId: string
+  resourceIds: string[]
+  workCenterIds: string[]
+  shiftWindows: ScheduleShiftWindow[]
+}
+
 export interface ScheduleModel {
   tasks: ScheduleTask[]
   links: ScheduleLink[]
@@ -161,6 +177,11 @@ export interface ScheduleModel {
   changes: ScheduleChange[]
   /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */
   groupDimensions?: SchedulingDimension[]
+  /**
+   * 计划所依据的工作日历。有值时甘特按它画工作/非工作底纹与班次边界;
+   * 无值时引擎退回「周末 + 夜间」的通用作息假设。
+   */
+  calendars?: ScheduleCalendar[]
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }
 }

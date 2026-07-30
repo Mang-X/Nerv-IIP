@@ -141,7 +141,9 @@ const view = shallowRef('gantt')
           </thead>
           <tbody>
             <tr
-              v-for="task in model.tasks.filter((item) => item.type === 'operation')"
+              v-for="task in model.tasks.filter(
+                (item) => item.type === 'operation' && !item.blockKind,
+              )"
               :key="task.id"
               class="border-t"
             >

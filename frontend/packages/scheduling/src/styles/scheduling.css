@@ -305,6 +305,11 @@
   .nerv-gantt-dhx .gantt_task_cell.nerv-offwork {
     background-color: color-mix(in srgb, var(--foreground) 3%, transparent) !important;
   }
+  /* 班次边界:交班时刻起的第一格左侧一条竖线,让"这一格属于哪个班"一眼可辨。
+     只在后端带出工作日历时出现(见 DhtmlxEngine.shiftStarts)。 */
+  .nerv-gantt-dhx .gantt_task_cell.nerv-shift-start {
+    border-left: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+  }
   .nerv-gantt-dhx .gantt_task_content {
     color: var(--foreground);
     font-weight: 500;

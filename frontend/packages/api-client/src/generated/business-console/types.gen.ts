@@ -90,9 +90,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     [key: string]: never;
 };
 
+/**
+ * the dto used to send an error response to the client
+ */
 export type FastEndpointsErrorResponse = {
+    /**
+     * the http status code sent to the client. default is 400.
+     */
     statusCode?: number;
+    /**
+     * the message for the error response
+     */
     message?: string;
+    /**
+     * the collection of errors for the current context
+     */
     errors?: {
         [key: string]: Array<string>;
     };
@@ -1190,6 +1202,8 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     unscheduledOperations?: Array<NervIipContractsSchedulingUnscheduledOperationContract>;
     changeSummary?: Array<NervIipContractsSchedulingScheduleChangeContract>;
     ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
+    calendars?: Array<NervIipContractsSchedulingSchedulePlanCalendarContract> | null;
+    blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1273,6 +1287,30 @@ export type NervIipContractsSchedulingGanttScheduleItemContract = {
     hasConflict?: boolean;
     conflictReasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract | null;
 };
+
+export type NervIipContractsSchedulingSchedulePlanCalendarContract = {
+    calendarId?: string;
+    resourceIds?: Array<string>;
+    workCenterIds?: Array<string>;
+    shiftWindows?: Array<NervIipContractsSchedulingSchedulePlanShiftWindowContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanShiftWindowContract = {
+    startUtc?: string;
+    endUtc?: string;
+    shiftCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanBlockWindowContract = {
+    resourceId?: string | null;
+    workCenterId?: string | null;
+    startUtc?: string;
+    endUtc?: string;
+    reasonCode?: string;
+    kind?: NervIipContractsSchedulingScheduleBlockKindContract;
+};
+
+export type NervIipContractsSchedulingScheduleBlockKindContract = 'maintenance' | 'downtime' | 'lineChange' | 'changeover';
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;

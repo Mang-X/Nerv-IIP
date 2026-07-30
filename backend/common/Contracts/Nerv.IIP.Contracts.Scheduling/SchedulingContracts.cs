@@ -125,7 +125,45 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<ScheduleConflictContract> Conflicts,
     IReadOnlyCollection<UnscheduledOperationContract> UnscheduledOperations,
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
-    IReadOnlyCollection<GanttScheduleItemContract> GanttItems);
+    IReadOnlyCollection<GanttScheduleItemContract> GanttItems,
+    IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
+    IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null);
+
+/// <summary>
+/// 计划所依据的工作日历(投影自排程问题的班次窗口),供读面画工作日/非工作日与班次边界。
+/// 一份日历可被多台资源 / 多个工作中心共用,故带出使用它的资源与工作中心清单。
+/// </summary>
+public sealed record SchedulePlanCalendarContract(
+    string CalendarId,
+    IReadOnlyCollection<string> ResourceIds,
+    IReadOnlyCollection<string> WorkCenterIds,
+    IReadOnlyCollection<SchedulePlanShiftWindowContract> ShiftWindows);
+
+/// <summary>单个班次工作窗口。窗口之外即非工作时间。</summary>
+public sealed record SchedulePlanShiftWindowContract(
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string ShiftCode);
+
+/// <summary>
+/// 计划期内资源不可用窗口:设备维护 / 计划停机 / 换线 / 换型。
+/// <see cref="ReasonCode"/> 保留上游原始码值,<see cref="Kind"/> 是读面用的归类。
+/// </summary>
+public sealed record SchedulePlanBlockWindowContract(
+    string? ResourceId,
+    string? WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string ReasonCode,
+    ScheduleBlockKindContract Kind);
+
+public enum ScheduleBlockKindContract
+{
+    Maintenance = 0,
+    Downtime = 1,
+    LineChange = 2,
+    Changeover = 3
+}
 
 public sealed record SchedulePlanImpactContract(
     bool IsInvalidated,
