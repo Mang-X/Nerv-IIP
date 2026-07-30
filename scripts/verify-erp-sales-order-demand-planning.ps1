@@ -109,9 +109,177 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Invoke-Man517JsonRequest {
+    param(
+        [ValidateSet('Get', 'Post')]
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [AllowNull()][hashtable]$Body,
+        [ValidateRange(1, 30)]
+        [int]$TimeoutSeconds = 5,
+        [datetime]$Deadline
+    )
+
+    $safeMethod = Protect-Man517DiagnosticText -Text $Method.ToUpperInvariant()
+    $safeUri = Protect-Man517DiagnosticText -Text $Uri
+    $effectiveDeadline = if ($PSBoundParameters.ContainsKey('Deadline')) {
+        $Deadline
+    } else {
+        (Get-Date).AddSeconds($TimeoutSeconds)
+    }
+    $remaining = $effectiveDeadline - (Get-Date)
+    if ($remaining -le [TimeSpan]::Zero) {
+        throw [System.TimeoutException]::new(
+            "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri")
+    }
+
+    $handler = $null
+    $client = $null
+    $requestMessage = $null
+    $responseMessage = $null
+    $deadlineCancellation = $null
+    $httpStatus = $null
+    $responseContent = $null
+    try {
+        $deadlineCancellation = [System.Threading.CancellationTokenSource]::new($remaining)
+        $handler = [System.Net.Http.SocketsHttpHandler]::new()
+        $handler.ConnectTimeout = [TimeSpan]::FromSeconds(5)
+        $client = [System.Net.Http.HttpClient]::new($handler, $true)
+        $client.Timeout = [System.Threading.Timeout]::InfiniteTimeSpan
+        $requestMessage = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::new($Method.ToUpperInvariant()),
+            $Uri)
+        foreach ($header in $Headers.GetEnumerator()) {
+            if (-not $requestMessage.Headers.TryAddWithoutValidation([string]$header.Key, [string]$header.Value)) {
+                throw "MAN-517 request header was rejected: method=$safeMethod uri=$safeUri header=$($header.Key)"
+            }
+        }
+        if ($PSBoundParameters.ContainsKey('Body')) {
+            $requestMessage.Content = [System.Net.Http.StringContent]::new(
+                ($Body | ConvertTo-Json -Depth 12),
+                [System.Text.Encoding]::UTF8,
+                'application/json')
+        }
+
+        $responseMessage = $client.SendAsync(
+            $requestMessage,
+            [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+            $deadlineCancellation.Token).GetAwaiter().GetResult()
+        $httpStatus = [int]$responseMessage.StatusCode
+        if ($httpStatus -lt 200 -or $httpStatus -ge 300) {
+            throw "MAN-517 request HTTP failure: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+        }
+        $responseContent = $responseMessage.Content.ReadAsStringAsync(
+            $deadlineCancellation.Token).GetAwaiter().GetResult()
+    }
+    catch [System.OperationCanceledException] {
+        if (($null -ne $deadlineCancellation -and $deadlineCancellation.IsCancellationRequested) -or
+            (Get-Date) -ge $effectiveDeadline) {
+            throw [System.TimeoutException]::new(
+                "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri",
+                $_.Exception)
+        }
+        $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
+        throw "MAN-517 request transport failed: method=$safeMethod uri=$safeUri error=$safeError"
+    }
+    catch {
+        if ($null -ne $httpStatus -and ($httpStatus -lt 200 -or $httpStatus -ge 300)) {
+            throw "MAN-517 request HTTP failure: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+        }
+        $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
+        throw "MAN-517 request transport failed: method=$safeMethod uri=$safeUri error=$safeError"
+    }
+    finally {
+        if ($null -ne $responseMessage) {
+            $responseMessage.Dispose()
+        }
+        if ($null -ne $requestMessage) {
+            $requestMessage.Dispose()
+        }
+        if ($null -ne $client) {
+            $client.Dispose()
+        }
+        if ($null -ne $deadlineCancellation) {
+            $deadlineCancellation.Dispose()
+        }
+    }
+
+    try {
+        $response = "$responseContent" | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "MAN-517 request did not return valid JSON: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+    }
+
+    $successProperty = $response.PSObject.Properties['success']
+    if ($null -eq $successProperty -or $successProperty.Value -isnot [bool]) {
+        throw "MAN-517 response is missing boolean 'success': method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+    }
+    if (-not $successProperty.Value) {
+        $codeProperty = $response.PSObject.Properties['code']
+        $messageProperty = $response.PSObject.Properties['message']
+        $safeCode = Protect-Man517DiagnosticText -Text $(if ($null -eq $codeProperty) { 'missing' } else { "$($codeProperty.Value)" })
+        $safeMessage = Protect-Man517DiagnosticText -Text $(if ($null -eq $messageProperty) { 'missing' } else { "$($messageProperty.Value)" })
+        throw "MAN-517 business request failed: method=$safeMethod uri=$safeUri code=$safeCode message=$safeMessage"
+    }
+
+    return $response
+}
+
 function Invoke-JsonPost {
     param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
+    Invoke-Man517JsonRequest -Method Post -Uri $Uri -Headers $Headers -Body $Body
+}
+
+function Wait-ErpSalesOrderReady {
+    param(
+        [string]$ErpUrl,
+        [hashtable]$Headers,
+        [int]$TimeoutSeconds = 90,
+        [int]$PollIntervalMilliseconds = 500
+    )
+
+    $keyword = [Uri]::EscapeDataString('SO-DEMO-001')
+    $uri = "$ErpUrl/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=$keyword&skip=0&take=10"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastObservedOrder = $null
+    do {
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
+        try {
+            $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers -Deadline $deadline
+        }
+        catch [System.TimeoutException] {
+            if ((Get-Date) -lt $deadline) {
+                throw
+            }
+            break
+        }
+        $rows = @($response.data.items | Where-Object { $_.salesOrderNo -ceq 'SO-DEMO-001' })
+        $lastObservedOrder = if ($rows.Count -eq 1) {
+            [ordered]@{
+                salesOrderNo = $rows[0].salesOrderNo
+                status = $rows[0].status
+                totalAmount = $rows[0].totalAmount
+            }
+        } else {
+            [ordered]@{ matchingRowCount = $rows.Count }
+        }
+        if ($rows.Count -eq 1 -and
+            "$($rows[0].status)" -ieq 'released' -and
+            [decimal]$rows[0].totalAmount -eq 200) {
+            return $rows[0]
+        }
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min($PollIntervalMilliseconds, $remainingMilliseconds))
+        }
+    } while ((Get-Date) -lt $deadline)
+
+    $safeObservation = Protect-Man517DiagnosticText -Text ($lastObservedOrder | ConvertTo-Json -Depth 4 -Compress)
+    throw "ERP sales order SO-DEMO-001 did not become query-visible as released with totalAmount=200. Last observation: $safeObservation"
 }
 
 function Wait-Demand {
@@ -124,27 +292,35 @@ function Wait-Demand {
     $lastRequestException = $null
     $lastObservedDemand = $null
     do {
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
         try {
-            $httpResponse = Invoke-WebRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -SkipHttpErrorCheck
-            $lastHttpStatus = [int]$httpResponse.StatusCode
-            $fullResponseBody = "$($httpResponse.Content)"
-            $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
-            $lastRequestException = $null
-            $response = $fullResponseBody | ConvertFrom-Json
-            $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
-            $lastObservedDemand = if ($rows.Count -eq 1) {
-                [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
-            } else {
-                [ordered]@{ matchingRowCount = $rows.Count }
-            }
-            if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
-                return $rows[0]
-            }
+            $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
         }
-        catch {
-            $lastRequestException = $_.Exception.Message
+        catch [System.TimeoutException] {
+            if ((Get-Date) -lt $deadline) {
+                throw
+            }
+            break
         }
-        Start-Sleep -Milliseconds 500
+        $lastHttpStatus = 200
+        $fullResponseBody = $response | ConvertTo-Json -Depth 12 -Compress
+        $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
+        $lastRequestException = $null
+        $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
+        $lastObservedDemand = if ($rows.Count -eq 1) {
+            [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
+        } else {
+            [ordered]@{ matchingRowCount = $rows.Count }
+        }
+        if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
+            return $rows[0]
+        }
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+        }
     } while ((Get-Date) -lt $deadline)
     $lastObservation = [ordered]@{
         lastHttpStatus = $lastHttpStatus
@@ -159,14 +335,29 @@ function Wait-Demand {
 function Assert-DemandStable {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
     $deadline = (Get-Date).AddSeconds($Seconds)
+    $row = $null
     do {
-        $response = Invoke-RestMethod -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        if ((Get-Date) -ge $deadline) {
+            break
+        }
+        try {
+            $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -Deadline $deadline
+        }
+        catch [System.TimeoutException] {
+            if ((Get-Date) -lt $deadline -or $null -eq $row) {
+                throw
+            }
+            break
+        }
         $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
         if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
             throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."
         }
         $row = $rows[0]
-        Start-Sleep -Milliseconds 500
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+        }
     } while ((Get-Date) -lt $deadline)
     return $row
 }
@@ -385,6 +576,7 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:planner-demo'
     }
+    $erpSalesOrder = Wait-ErpSalesOrderReady -ErpUrl $erpUrl -Headers $headers
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
@@ -460,7 +652,7 @@ try {
         database = $databaseName
         capVersion = $capVersion
         processes = @{ masterData = $masterDataProcess.ProcessId; erp = $erpProcess.ProcessId; demandPlanning = $demandPlanningProcess.ProcessId }
-        checkpoints = @{ released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
+        checkpoints = @{ erpSalesOrder = $erpSalesOrder; released = $released; duplicateReplay = $duplicateReplay; changedV2 = $changedV2; changedV3 = $changedV3; outOfOrder = $outOfOrder; cancelled = $cancelled }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
     Write-Host "MAN-517 separate-process PostgreSQL + Redis acceptance passed. Evidence: $evidencePath"
 }
