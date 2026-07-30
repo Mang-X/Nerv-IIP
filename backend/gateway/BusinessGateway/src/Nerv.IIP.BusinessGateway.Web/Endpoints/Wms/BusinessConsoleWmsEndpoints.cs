@@ -29,24 +29,20 @@ public sealed class CreateBusinessConsoleWmsInboundOrderEndpoint(
         wms.CreateInboundOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
-public abstract class BusinessConsoleWmsWorkScopeCatalogEndpoint
-    : AuthorizedBusinessProxyEndpoint<
-        BusinessConsoleWmsWorkScopeCatalogRequest,
-        BusinessConsoleWmsWorkScopeCatalog>
+public abstract class BusinessConsoleWmsTrustedProxyEndpoint<TRequest, TResponse>
+    : AuthorizedBusinessProxyEndpoint<TRequest, TResponse>
+    where TRequest : notnull
 {
-    private readonly IBusinessWmsClient _wms;
-    private readonly IInternalServiceTokenProvider _tokenProvider;
+    private readonly WmsTrustedRequestContextResolver _trustedContextResolver;
     private readonly string _permissionCode;
 
-    protected BusinessConsoleWmsWorkScopeCatalogEndpoint(
+    protected BusinessConsoleWmsTrustedProxyEndpoint(
         IBusinessGatewayAuthorizationClient auth,
-        IBusinessWmsClient wms,
-        IInternalServiceTokenProvider tokenProvider,
+        WmsTrustedRequestContextResolver trustedContextResolver,
         string permissionCode)
         : base(auth, permissionCode)
     {
-        _wms = wms;
-        _tokenProvider = tokenProvider;
+        _trustedContextResolver = trustedContextResolver;
         _permissionCode = permissionCode;
     }
 
@@ -55,21 +51,50 @@ public abstract class BusinessConsoleWmsWorkScopeCatalogEndpoint
     protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
         BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
+    protected Task<WmsTrustedRequestContext> ResolveTrustedContextAsync(
+        TRequest request,
+        CancellationToken cancellationToken) =>
+        _trustedContextResolver.ResolveAsync(
+            AuthorizationResult,
+            OrganizationId(request),
+            EnvironmentId(request),
+            _permissionCode,
+            cancellationToken);
+}
+
+public abstract class BusinessConsoleWmsWorkScopeCatalogEndpoint
+    : BusinessConsoleWmsTrustedProxyEndpoint<
+        BusinessConsoleWmsWorkScopeCatalogRequest,
+        BusinessConsoleWmsWorkScopeCatalog>
+{
+    private readonly IBusinessWmsClient _wms;
+    private readonly IInternalServiceTokenProvider _tokenProvider;
+
+    protected BusinessConsoleWmsWorkScopeCatalogEndpoint(
+        IBusinessGatewayAuthorizationClient auth,
+        IBusinessWmsClient wms,
+        IInternalServiceTokenProvider tokenProvider,
+        WmsTrustedRequestContextResolver trustedContextResolver,
+        string permissionCode)
+        : base(auth, trustedContextResolver, permissionCode)
+    {
+        _wms = wms;
+        _tokenProvider = tokenProvider;
+    }
+
     protected override string OrganizationId(BusinessConsoleWmsWorkScopeCatalogRequest request) =>
         request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleWmsWorkScopeCatalogRequest request) =>
         request.EnvironmentId;
 
-    protected override Task<BusinessConsoleWmsWorkScopeCatalog> ForwardAsync(
+    protected override async Task<BusinessConsoleWmsWorkScopeCatalog> ForwardAsync(
         BusinessConsoleWmsWorkScopeCatalogRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            _permissionCode);
-        return GetCatalogAsync(
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        return await GetCatalogAsync(
             _wms,
             _tokenProvider.BearerToken,
             new BusinessWmsWorkScopeCatalogRequest(
@@ -94,11 +119,13 @@ public abstract class BusinessConsoleWmsWorkScopeCatalogEndpoint
 public sealed class GetBusinessConsoleWmsReceiptWorkScopesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsWorkScopeCatalogEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
     protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
@@ -119,11 +146,13 @@ public sealed class GetBusinessConsoleWmsReceiptWorkScopesEndpoint(
 public sealed class GetBusinessConsoleWmsShipmentWorkScopesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsWorkScopeCatalogEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsRead)
 {
     protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
@@ -144,11 +173,13 @@ public sealed class GetBusinessConsoleWmsShipmentWorkScopesEndpoint(
 public sealed class GetBusinessConsoleWmsCountWorkScopesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsWorkScopeCatalogEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
     protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
@@ -163,33 +194,27 @@ public sealed class GetBusinessConsoleWmsCountWorkScopesEndpoint(
 }
 
 public abstract class BusinessConsoleWmsAssignmentEndpoint
-    : AuthorizedBusinessProxyEndpoint<
+    : BusinessConsoleWmsTrustedProxyEndpoint<
         BusinessConsoleAssignWmsResourceRequest,
         BusinessConsoleWmsAssignmentResult>
 {
     private readonly IBusinessWmsClient _wms;
     private readonly IInternalServiceTokenProvider _tokenProvider;
-    private readonly string _permissionCode;
     private readonly string _routeParameterName;
 
     protected BusinessConsoleWmsAssignmentEndpoint(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessWmsClient wms,
         IInternalServiceTokenProvider tokenProvider,
+        WmsTrustedRequestContextResolver trustedContextResolver,
         string permissionCode,
         string routeParameterName)
-        : base(auth, permissionCode)
+        : base(auth, trustedContextResolver, permissionCode)
     {
         _wms = wms;
         _tokenProvider = tokenProvider;
-        _permissionCode = permissionCode;
         _routeParameterName = routeParameterName;
     }
-
-    protected override bool IncludePrincipalContext => true;
-
-    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
-        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
     protected override string OrganizationId(BusinessConsoleAssignWmsResourceRequest request) =>
         request.OrganizationId;
@@ -197,7 +222,7 @@ public abstract class BusinessConsoleWmsAssignmentEndpoint
     protected override string EnvironmentId(BusinessConsoleAssignWmsResourceRequest request) =>
         request.EnvironmentId;
 
-    protected override Task<BusinessConsoleWmsAssignmentResult> ForwardAsync(
+    protected override async Task<BusinessConsoleWmsAssignmentResult> ForwardAsync(
         BusinessConsoleAssignWmsResourceRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
@@ -210,10 +235,8 @@ public abstract class BusinessConsoleWmsAssignmentEndpoint
                 "resource-id-required");
         }
 
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            _permissionCode);
-        return AssignAsync(
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        return await AssignAsync(
             _wms,
             _tokenProvider.BearerToken,
             resourceId,
@@ -240,11 +263,13 @@ public abstract class BusinessConsoleWmsAssignmentEndpoint
 public sealed class AssignBusinessConsoleWmsInboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsAssignmentEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage,
         "inboundOrderId")
 {
@@ -280,11 +305,13 @@ public sealed class AssignBusinessConsoleWmsInboundOrderEndpoint(
 public sealed class AssignBusinessConsoleWmsPutawayTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsAssignmentEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage,
         "warehouseTaskId")
 {
@@ -320,11 +347,13 @@ public sealed class AssignBusinessConsoleWmsPutawayTaskEndpoint(
 public sealed class AssignBusinessConsoleWmsOutboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsAssignmentEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage,
         "outboundOrderId")
 {
@@ -360,11 +389,13 @@ public sealed class AssignBusinessConsoleWmsOutboundOrderEndpoint(
 public sealed class AssignBusinessConsoleWmsPickingTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsAssignmentEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage,
         "warehouseTaskId")
 {
@@ -400,11 +431,13 @@ public sealed class AssignBusinessConsoleWmsPickingTaskEndpoint(
 public sealed class AssignBusinessConsoleWmsCountExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
     : BusinessConsoleWmsAssignmentEndpoint(
         auth,
         wms,
         tokenProvider,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage,
         "countExecutionId")
 {
@@ -435,30 +468,31 @@ public sealed class AssignBusinessConsoleWmsCountExecutionEndpoint(
 [HttpGet("/api/business-console/v1/wms/inbound-orders")]
 [BusinessGatewayOperationId("listBusinessConsoleWmsInboundOrders")]
 public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsInboundOrderListRequest, BusinessConsoleWmsInboundOrderListResponse>
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsInboundOrderListRequest, BusinessConsoleWmsInboundOrderListResponse>
 {
     private readonly IBusinessGatewayAuthorizationClient _auth;
     private readonly IBusinessWmsClient _wms;
     private readonly IBusinessInventoryClient _inventory;
     private readonly IInternalServiceTokenProvider _tokenProvider;
+    private readonly WmsTrustedRequestContextResolver _trustedContextResolver;
 
     public ListBusinessConsoleWmsInboundOrdersEndpoint(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessWmsClient wms,
         IBusinessInventoryClient inventory,
-        IInternalServiceTokenProvider tokenProvider)
-        : base(auth, BusinessGatewayPermissions.WmsReceiptsRead)
+        IInternalServiceTokenProvider tokenProvider,
+        WmsTrustedRequestContextResolver trustedContextResolver)
+        : base(
+            auth,
+            trustedContextResolver,
+            BusinessGatewayPermissions.WmsReceiptsRead)
     {
         _auth = auth;
         _wms = wms;
         _inventory = inventory;
         _tokenProvider = tokenProvider;
+        _trustedContextResolver = trustedContextResolver;
     }
-
-    protected override bool IncludePrincipalContext => true;
-
-    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
-        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
     protected override string OrganizationId(BusinessConsoleWmsInboundOrderListRequest request) => request.OrganizationId;
 
@@ -469,9 +503,7 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         var response = await _wms.ListInboundOrdersAsync(
             _tokenProvider.BearerToken,
@@ -544,7 +576,7 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
             return ForbiddenInventoryContext(request, authorization.DenialReason ?? "forbidden");
         }
 
-        if (!IsInventorySiteAuthorized(authorization, request))
+        if (!await IsInventorySiteAuthorizedAsync(authorization, request, cancellationToken))
         {
             return ForbiddenInventoryContext(request, "work-scope-not-authorized");
         }
@@ -629,15 +661,19 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
         }
     }
 
-    private static bool IsInventorySiteAuthorized(
+    private async Task<bool> IsInventorySiteAuthorizedAsync(
         BusinessGatewayAuthorizationResult authorization,
-        BusinessConsoleWmsInboundOrderListRequest request)
+        BusinessConsoleWmsInboundOrderListRequest request,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var trusted = WmsTrustedRequestContext.FromAuthorization(
+            var trusted = await _trustedContextResolver.ResolveAsync(
                 authorization,
-                BusinessGatewayPermissions.InventoryLedgerRead);
+                request.OrganizationId,
+                request.EnvironmentId,
+                BusinessGatewayPermissions.InventoryLedgerRead,
+                cancellationToken);
             return trusted.AuthorizedSiteCodes.Contains(request.SiteCode!, StringComparer.Ordinal);
         }
         catch (BusinessServiceProxyException)
@@ -704,9 +740,11 @@ public sealed class CreateBusinessConsoleWmsPutawayTaskEndpoint(
 public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
     protected override bool IncludePrincipalContext => true;
@@ -723,9 +761,7 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListPutawayTasksAsync(
             tokenProvider.BearerToken,
@@ -756,9 +792,11 @@ public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
 public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -772,9 +810,7 @@ public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.StartPutawayTaskAsync(
             tokenProvider.BearerToken,
@@ -802,9 +838,11 @@ public sealed class StartBusinessConsoleWmsPutawayTaskEndpoint(
 public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -818,9 +856,7 @@ public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.RecordPutawayTaskProgressAsync(
             tokenProvider.BearerToken,
@@ -849,9 +885,11 @@ public sealed class RecordBusinessConsoleWmsPutawayTaskProgressEndpoint(
 public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -865,9 +903,7 @@ public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ReportPutawayTaskExceptionAsync(
             tokenProvider.BearerToken,
@@ -897,9 +933,11 @@ public sealed class ReportBusinessConsoleWmsPutawayTaskExceptionEndpoint(
 public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -913,9 +951,7 @@ public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.CompletePutawayTaskAsync(
             tokenProvider.BearerToken,
@@ -945,9 +981,11 @@ public sealed class CompleteBusinessConsoleWmsPutawayTaskEndpoint(
 public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsInboundOrderRequest, BusinessConsoleCompleteWmsMovementResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsInboundOrderRequest, BusinessConsoleCompleteWmsMovementResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -959,17 +997,15 @@ public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsInboundOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
         BusinessConsoleCompleteWmsInboundOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var inboundOrderId = Route<string>("inboundOrderId") ?? request.InboundOrderId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
-        return wms.CompleteInboundOrderAsync(
+        return await wms.CompleteInboundOrderAsync(
             tokenProvider.BearerToken,
             inboundOrderId,
             new BusinessWmsCompleteInboundOrderRequest(
@@ -1015,9 +1051,11 @@ public sealed class CreateBusinessConsoleWmsOutboundOrderEndpoint(
 public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsOutboundOrderListRequest, BusinessConsoleWmsOutboundOrderListResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsOutboundOrderListRequest, BusinessConsoleWmsOutboundOrderListResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsRead)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1034,9 +1072,7 @@ public sealed class ListBusinessConsoleWmsOutboundOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListOutboundOrdersAsync(
             tokenProvider.BearerToken,
@@ -1094,9 +1130,11 @@ public sealed class CreateBusinessConsoleWmsPickingTaskEndpoint(
 public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsRead)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1113,9 +1151,7 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListPickingTasksAsync(
             tokenProvider.BearerToken,
@@ -1146,9 +1182,11 @@ public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
 public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleStartWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1162,9 +1200,7 @@ public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.StartPickingTaskAsync(
             tokenProvider.BearerToken,
@@ -1192,9 +1228,11 @@ public sealed class StartBusinessConsoleWmsPickingTaskEndpoint(
 public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleRecordWmsWarehouseTaskProgressRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1208,9 +1246,7 @@ public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.RecordPickingTaskProgressAsync(
             tokenProvider.BearerToken,
@@ -1239,9 +1275,11 @@ public sealed class RecordBusinessConsoleWmsPickingTaskProgressEndpoint(
 public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleReportWmsWarehouseTaskExceptionRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1255,9 +1293,7 @@ public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ReportPickingTaskExceptionAsync(
             tokenProvider.BearerToken,
@@ -1287,9 +1323,11 @@ public sealed class ReportBusinessConsoleWmsPickingTaskExceptionEndpoint(
 public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsWarehouseTaskRequest, BusinessConsoleWmsWarehouseTaskActionResult>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1303,9 +1341,7 @@ public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
         CancellationToken cancellationToken)
     {
         var taskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.CompletePickingTaskAsync(
             tokenProvider.BearerToken,
@@ -1335,9 +1371,11 @@ public sealed class CompleteBusinessConsoleWmsPickingTaskEndpoint(
 public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsOutboundOrderRequest, BusinessConsoleCompleteWmsMovementResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsOutboundOrderRequest, BusinessConsoleCompleteWmsMovementResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1349,17 +1387,15 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsOutboundOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
         BusinessConsoleCompleteWmsOutboundOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var outboundOrderId = Route<string>("outboundOrderId") ?? request.OutboundOrderId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsShipmentsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
-        return wms.CompleteOutboundOrderAsync(
+        return await wms.CompleteOutboundOrderAsync(
             tokenProvider.BearerToken,
             outboundOrderId,
             new BusinessWmsCompleteOutboundOrderRequest(
@@ -1435,9 +1471,11 @@ public sealed class CreateBusinessConsoleWmsCountExecutionEndpoint(
 public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsCountExecutionListRequest, BusinessConsoleWmsCountExecutionListResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsCountExecutionListRequest, BusinessConsoleWmsCountExecutionListResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1454,9 +1492,7 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         return await wms.ListCountExecutionsAsync(
             tokenProvider.BearerToken,
@@ -1487,9 +1523,11 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
 public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteWmsCountExecutionRequest, BusinessConsoleCompleteWmsMovementResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleCompleteWmsCountExecutionRequest, BusinessConsoleCompleteWmsMovementResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1501,17 +1539,15 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleCompleteWmsCountExecutionRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
         BusinessConsoleCompleteWmsCountExecutionRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var countExecutionId = Route<string>("countExecutionId") ?? request.CountExecutionId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsManage);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
-        return wms.CompleteCountExecutionAsync(
+        return await wms.CompleteCountExecutionAsync(
             tokenProvider.BearerToken,
             countExecutionId,
             new BusinessWmsCompleteCountExecutionRequest(
@@ -1538,9 +1574,11 @@ public sealed class CompleteBusinessConsoleWmsCountExecutionEndpoint(
 public sealed class DispatchBusinessConsoleWmsWcsTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDispatchWmsWcsTaskRequest, BusinessConsoleDispatchWmsWcsTaskResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleDispatchWmsWcsTaskRequest, BusinessConsoleDispatchWmsWcsTaskResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsAutomationManage)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1552,16 +1590,14 @@ public sealed class DispatchBusinessConsoleWmsWcsTaskEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleDispatchWmsWcsTaskRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleDispatchWmsWcsTaskResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleDispatchWmsWcsTaskResponse> ForwardAsync(
         BusinessConsoleDispatchWmsWcsTaskRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var warehouseTaskId = Route<string>("warehouseTaskId") ?? request.WarehouseTaskId;
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsAutomationManage);
-        return wms.DispatchWcsTaskAsync(
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        return await wms.DispatchWcsTaskAsync(
             tokenProvider.BearerToken,
             warehouseTaskId,
             new BusinessWmsDispatchWcsTaskRequest(
@@ -1665,9 +1701,11 @@ public sealed class ListBusinessConsoleWmsWcsTasksEndpoint(
 public sealed class ListBusinessConsoleWmsReceivingQualityGatesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsReceivingQualityGateListRequest, BusinessConsoleWmsReceivingQualityGateListResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsReceivingQualityGateListRequest, BusinessConsoleWmsReceivingQualityGateListResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
     protected override bool IncludePrincipalContext => true;
@@ -1679,16 +1717,14 @@ public sealed class ListBusinessConsoleWmsReceivingQualityGatesEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleWmsReceivingQualityGateListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleWmsReceivingQualityGateListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleWmsReceivingQualityGateListResponse> ForwardAsync(
         BusinessConsoleWmsReceivingQualityGateListRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
-            AuthorizationResult,
-            BusinessGatewayPermissions.WmsReceiptsRead);
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
         var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
-        return wms.ListReceivingQualityGatesAsync(
+        return await wms.ListReceivingQualityGatesAsync(
             tokenProvider.BearerToken,
             new BusinessWmsReceivingQualityGateListRequest(
                 request.OrganizationId,

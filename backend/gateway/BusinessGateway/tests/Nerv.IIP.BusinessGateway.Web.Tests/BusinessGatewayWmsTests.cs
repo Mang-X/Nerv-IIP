@@ -790,6 +790,168 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Fact]
+    public async Task Wms_directory_list_and_action_derive_sites_from_permission_aware_organization_candidates()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [
+                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+            ],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "organization",
+                "org-001",
+                [
+                    BusinessGatewayPermissions.WmsReceiptsRead,
+                    BusinessGatewayPermissions.WmsReceiptsManage,
+                ],
+                OrganizationWide: true));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var catalog = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
+        var list = await client.GetAsync(
+            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A");
+        var assignment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound-org-scope",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, assignment.StatusCode);
+        Assert.Equal(
+            ["S1", "SITE-001", "SITE-A", "SITE-B"],
+            wms.LastWorkScopeCatalogRequest!.AuthorizedSiteCodes);
+        Assert.Equal(
+            ["S1", "SITE-001", "SITE-A", "SITE-B"],
+            wms.LastInboundRequest!.AuthorizedSiteCodes);
+        Assert.Equal("site", wms.LastInboundRequest.ScopeKind);
+        Assert.Equal("SITE-A", wms.LastInboundRequest.ScopeId);
+        Assert.Equal(
+            ["S1", "SITE-001", "SITE-A", "SITE-B"],
+            Assert.IsType<BusinessWmsAssignInboundOrderRequest>(wms.LastAssignmentRequest)
+                .AuthorizedSiteCodes);
+        Assert.Equal(
+            ["receipt-scopes", "assign-inbound-order"],
+            wms.Calls);
+    }
+
+    [Fact]
+    public async Task Wms_catalog_rejects_an_exact_site_grant_missing_from_master_data_candidates()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsRead],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-NOT-IN-DIRECTORY",
+                [BusinessGatewayPermissions.WmsReceiptsRead]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(wms.Calls);
+        Assert.Null(wms.LastWorkScopeCatalogRequest);
+    }
+
+    [Fact]
+    public async Task Wms_catalog_rejects_a_site_candidate_when_the_grant_permission_does_not_match()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsRead],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsShipmentsRead]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(wms.Calls);
+        Assert.Null(wms.LastWorkScopeCatalogRequest);
+    }
+
+    [Fact]
+    public async Task Wms_catalog_rejects_conflicting_duplicate_site_candidates()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsRead],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsRead]));
+        var context = WmsPrincipalWorkContext();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
+            {
+                PrincipalWorkContext = context with
+                {
+                    CandidateScopes =
+                    [
+                        .. context.CandidateScopes,
+                        Candidate("site", "SITE-A", "Conflicting site name"),
+                    ],
+                },
+            });
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(wms.Calls);
+        Assert.Null(wms.LastWorkScopeCatalogRequest);
+    }
+
+    [Fact]
     public async Task Wms_assignment_facades_inject_trusted_assigner_sites_and_route_resource_ids()
     {
         var wms = new RecordingWmsClient();
@@ -1989,13 +2151,21 @@ public sealed class BusinessGatewayWmsTests
             [new BusinessMasterDataWorkContextCoveredWorkCenter("WC-A", "Work center A", "WS-A", "assigned")],
             [new BusinessMasterDataWorkContextReference("WS-A", "Workshop A")],
             [],
-            [new BusinessMasterDataWorkContextReference("SITE-A", "Site A")],
+            [
+                new BusinessMasterDataWorkContextReference("S1", "Site 1"),
+                new BusinessMasterDataWorkContextReference("SITE-001", "Site 001"),
+                new BusinessMasterDataWorkContextReference("SITE-A", "Site A"),
+                new BusinessMasterDataWorkContextReference("SITE-B", "Site B"),
+            ],
             [
                 Candidate("self", "user-admin", "Admin"),
                 Candidate("team", "TEAM-A", "Team A"),
                 Candidate("work-center", "WC-A", "Work center A"),
                 Candidate("workshop", "WS-A", "Workshop A"),
+                Candidate("site", "S1", "Site 1"),
+                Candidate("site", "SITE-001", "Site 001"),
                 Candidate("site", "SITE-A", "Site A"),
+                Candidate("site", "SITE-B", "Site B"),
                 Candidate("organization", "org-001", "Organization"),
             ],
             ["self", "team", "work-center", "workshop", "site", "organization"],

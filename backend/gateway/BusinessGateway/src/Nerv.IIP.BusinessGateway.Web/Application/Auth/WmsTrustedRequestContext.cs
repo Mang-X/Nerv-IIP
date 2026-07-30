@@ -1,5 +1,6 @@
 using System.Net;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
@@ -39,9 +40,9 @@ public sealed record WmsTrustedRequestContext(
             : throw Forbidden();
     }
 
-    public static WmsTrustedRequestContext FromAuthorization(
+    public static WmsTrustedRequestContext FromResolvedSites(
         BusinessGatewayAuthorizationResult? authorization,
-        string permissionCode)
+        IReadOnlyCollection<string> authorizedSiteCodes)
     {
         if (authorization is null
             || !authorization.IsAllowed
@@ -51,30 +52,66 @@ public sealed record WmsTrustedRequestContext(
             throw Forbidden();
         }
 
-        var authorizedSiteCodes = (authorization.ScopeGrants ?? [])
-            .Where(grant =>
-                grant is not null
-                && IsTrustedGrantSource(grant.SourceKind)
-                && string.Equals(grant.ScopeKind, "site", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(grant.ScopeId)
-                && grant.ApplicablePermissionCodes?.Contains(permissionCode, StringComparer.Ordinal) == true)
-            .Select(grant => grant.ScopeId.Trim())
+        var normalizedSiteCodes = authorizedSiteCodes
+            .Where(siteCode => !string.IsNullOrWhiteSpace(siteCode))
+            .Select(siteCode => siteCode.Trim())
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        if (authorizedSiteCodes.Length == 0)
+        if (normalizedSiteCodes.Length == 0)
         {
             throw Forbidden();
         }
 
         return new WmsTrustedRequestContext(
             authorization.PrincipalId.Trim(),
-            authorizedSiteCodes);
+            normalizedSiteCodes);
     }
-
-    private static bool IsTrustedGrantSource(string? sourceKind) =>
-        sourceKind?.Trim().ToLowerInvariant() is "role" or "membership";
 
     private static BusinessServiceProxyException Forbidden() =>
         new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+}
+
+public sealed class WmsTrustedRequestContextResolver(
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+{
+    public async Task<WmsTrustedRequestContext> ResolveAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        if (authorization is null
+            || !authorization.IsAllowed
+            || authorization.DataScope?.DenyAll == true
+            || string.IsNullOrWhiteSpace(authorization.PrincipalId))
+        {
+            return WmsTrustedRequestContext.FromResolvedSites(authorization, []);
+        }
+
+        var context = await masterData.GetPrincipalWorkContextAsync(
+            tokenProvider.BearerToken,
+            new BusinessMasterDataPrincipalWorkContextRequest(
+                organizationId,
+                environmentId,
+                authorization.PrincipalId.Trim()),
+            cancellationToken);
+        var authorizedSiteCodes = PrincipalWorkContextAuthorizationResolver.Resolve(
+                context,
+                authorization,
+                organizationId,
+                permissionCode,
+                requestedScopeKind: null,
+                requestedScopeId: null)
+            .AuthorizedScopes
+            .Where(scope => string.Equals(scope.Kind, "site", StringComparison.Ordinal))
+            .Select(scope => scope.Id)
+            .ToArray();
+
+        return WmsTrustedRequestContext.FromResolvedSites(
+            authorization,
+            authorizedSiteCodes);
+    }
 }

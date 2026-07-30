@@ -7,28 +7,17 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class WmsTrustedRequestContextTests
 {
-    private const string Permission = "business.wms.receipts.read";
-
     [Fact]
-    public void From_authorization_accepts_only_role_or_membership_exact_site_grants_for_permission()
+    public void From_resolved_sites_normalizes_only_the_authorized_candidate_set()
     {
         var authorization = BusinessGatewayAuthorizationResult.Allowed(
             " user-emp-049 ",
             "user",
-            "emp049",
-            scopeGrants:
-            [
-                new("role", "warehouse-role", "site", " SITE-B ", [Permission]),
-                new("membership", "warehouse-membership", "site", "SITE-A", [Permission]),
-                new("membership", "duplicate-membership", "site", "SITE-A", [Permission]),
-                new("user", "direct-user-grant", "site", "FORGED-SITE", [Permission]),
-                new("role", "wrong-permission", "site", "OTHER-SITE", ["business.wms.shipments.read"]),
-                new("role", "wrong-scope-kind", "work-pool", "POOL-A", [Permission]),
-            ]);
+            "emp049");
 
-        var trusted = WmsTrustedRequestContext.FromAuthorization(
+        var trusted = WmsTrustedRequestContext.FromResolvedSites(
             authorization,
-            Permission);
+            [" SITE-B ", "SITE-A", "SITE-A", " "]);
 
         Assert.Equal("user-emp-049", trusted.ActorPrincipalId);
         Assert.Equal(["SITE-A", "SITE-B"], trusted.AuthorizedSiteCodes);
@@ -77,7 +66,7 @@ public sealed class WmsTrustedRequestContextTests
     }
 
     [Fact]
-    public void From_authorization_fails_closed_without_allowed_principal_and_exact_site()
+    public void From_resolved_sites_fails_closed_without_allowed_principal_and_site_candidate()
     {
         var candidates = new BusinessGatewayAuthorizationResult?[]
         {
@@ -86,35 +75,24 @@ public sealed class WmsTrustedRequestContextTests
             BusinessGatewayAuthorizationResult.Allowed(
                 "",
                 "user",
-                "emp049",
-                scopeGrants:
-                [
-                    new("role", "warehouse-role", "site", "SITE-A", [Permission]),
-                ]),
+                "emp049"),
             BusinessGatewayAuthorizationResult.Allowed(
                 "user-emp-049",
                 "user",
                 "emp049",
-                new AuthorizationDataScope([], [], [], DenyAll: true),
-                [
-                    new("role", "warehouse-role", "site", "SITE-A", [Permission]),
-                ]),
+                new AuthorizationDataScope([], [], [], DenyAll: true)),
             BusinessGatewayAuthorizationResult.Allowed(
                 "user-emp-049",
                 "user",
-                "emp049",
-                scopeGrants:
-                [
-                    new("role", "self-role", "self", "user-emp-049", [Permission]),
-                ]),
+                "emp049"),
         };
 
         foreach (var authorization in candidates)
         {
             var exception = Assert.Throws<BusinessServiceProxyException>(
-                () => WmsTrustedRequestContext.FromAuthorization(
+                () => WmsTrustedRequestContext.FromResolvedSites(
                     authorization,
-                    Permission));
+                    []));
 
             Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
         }
