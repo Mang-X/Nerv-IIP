@@ -112,6 +112,22 @@ ERP 服务公开 GET/POST `/api/business/v1/erp/finance/work-center-cost-rates`�
 
 PostgreSQL + Redis managed full-stack session `nerv-a4e1-684a9b` 已在当前 rebase 后提交上以退出码 0 完成 `leader-demo-main-chain`，证据为 `artifacts/fullstack/nerv-a4e1-684a9b/leader-demo-main-chain-evidence.json`：16 个节点全部 `runtime-confirmed`，无 gap 或 not-verified。公开 facade 配置并回读 `org-001/env-dev/WC-M524-20260723111458` 的 revision 1、CNY 3000/小时、有效窗、认证 actor `user:user-admin` 与 MAN-595 原因；公开 MES 工单事实得出 120 件/小时和 0.083333 小时，报工劳动成本为 250，ERP 资本化后 MES receipt 回读 unit cost 25，Inventory 在一次 durable outbox recovery 内经 266 次、273498 ms 有界轮询将同一 FGR/work order/lot 精确过账 10 件并建立 ledger version 1。session 最终为 `Stopped`，`cleanup.remaining=[]`、`cleanup.errors=[]`，隔离容器、网络与卷均已清理。
 
+## Quality 检验任务主体范围与领取（MAN-630 / #1167）
+
+Quality `InspectionTask` 已持久保存 inspector/team assignment 和共享 `version`，并以
+`inspection_task_assignment_receipts` 记录派工、转派、领取的可信 actor、前后归属、原因、
+载荷指纹和权威结果版本。Self/Team/Organization 列表与强 ID 详情统一由 Quality 服务端裁决；
+来源类型/服务、来源编号或物料关键字、超期和状态在 `total` 与分页前过滤，详情返回检验方案
+抽样/特性、`allowedActions` 与阻塞原因。领取和提交共享任务级分布式锁；只有当前已领取
+检验员可提交，完成态只读。无权领取、错误生命周期、已被他人领取分别映射为 403/409/422。
+
+BusinessGateway 使用当前认证 principal 和 `PrincipalWorkScopeResolver` 注入可信主体/授权班组，
+不接受客户端伪造 inspector；派工目标人员/班组须经 MasterData 活跃目录校验。Quality 的
+detail/assignment/claim 三个新增 endpoint 已在 facade coverage 登记为 `exposed`，并同步
+BusinessGateway OpenAPI、generated client 与 stable barrel。PDA `/quality/tasks` 现在显式请求
+Self scope，待领取行先原子 claim 再进入录入，状态和不可操作原因保持可见；本变更未修改 PC 页面。
+世界观历史 seed 对既有 pending 未归属任务做幂等回填，新任务沿用事实检验员归属。
+
 ## Quality 报工待检计划主链前置（MAN-578 / #1046）
 
 `leader-demo-main-chain` 在 MES 报工前通过 BusinessGateway 的受权公开 facade 创建并激活 run-scoped Quality inspection plan；plan 精确绑定当前 organization、environment、动态 finished SKU、work center、`category=operation` 和 `documentType=operation-task`，不使用数据库直写、固定旧 SKU、测试专用旁路或宽松匹配。Quality 服务既有 create/activate endpoint 未改变，本次把两者在 facade matrix 中从 `deferred` 提升为 `exposed`，并同步 BusinessGateway OpenAPI 与 generated client。激活按聚合边界重新加载 plan 时显式包含 characteristics，仍由领域规则拒绝无特性 plan；BusinessGateway 按 Quality 的真实 string strong-ID wire shape 解析创建响应并构造激活请求，空值与非法 GUID 继续 fail closed。MES `OperationTaskCompleted` consumer 的 envelope 校验、trigger idempotency key、来源业务键去重、唯一索引冲突处理和无 active plan 时直接返回的 fail-closed 语义保持不变；主链证据只在同一 work order、operation task 和 run-scoped SKU 恰好出现一条 inspection task 时确认该节点。

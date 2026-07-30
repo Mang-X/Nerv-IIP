@@ -116,7 +116,7 @@ scope kind/code 只能是请求，不能成为授权事实。
 
 | 范围 | 统一含义 | 当前可验证的事实锚点 | 当前交付状态与 fail-closed 规则 |
 | --- | --- | --- | --- |
-| Self | 只包含业务对象明确记录的当前主体本人：例如任务 `assignedUserId == principalId`，或命令 subject 是映射到 principal 的 Worker `userId`。 | Principal `principalId` 与 Worker `userId`；PDA “我的任务”当前按 `assignedUserId=principalId` 做服务端查询并再次行级校验。 | 仅部分 MES 派工读面已有实例。没有 assignee/owner/subject 字段的对象不能伪称“我的”；交由 #1157、#1163、#1165–#1168 明确各域归属。 |
+| Self | 只包含业务对象明确记录的当前主体本人：例如任务 `assignedUserId == principalId`，或命令 subject 是映射到 principal 的 Worker `userId`。 | Principal `principalId` 与 Worker `userId`；PDA “我的任务”必须由 Gateway 绑定认证主体并在领域服务按 assignment 做服务端查询。 | MES/WMS 与 Quality 检验任务已有主体绑定实例；没有 assignee/owner/subject 字段的对象不能伪称“我的”，其余领域继续由 #1157、#1163、#1165–#1168 明确归属。 |
 | Team | 当前主体被服务端确认可管理/参与的一个或多个稳定 `teamCode` 所覆盖的对象集合。成员关系必须当前有效；跨成员动作还需独立 permissionCode。 | `TeamMember(teamCode,userId,isLeader,effectiveFrom/effectiveTo)` 和 `Team.shiftCode/workshopCode`。 | IAM 已支持显式 `team` grant；work-context 只把当前有效成员关系解析为候选，再与 grant 求交。`JobTitle=班组长` 或 `isLeader` 仍不会自动授予权限。 |
 | WorkCenter | 明确绑定一个或多个稳定 WorkCenter code 的任务、工序、设备或其它对象集合。 | `WorkCenter.Code/WorkshopCode`、设备与任务已有的 WorkCenter 引用。 | IAM 已支持显式 `work-center` grant；work-context 会验证车间和产线层级，孤立或冲突 WorkCenter 不成为候选。各域列表下推仍由 #1165–#1168 交付。 |
 | Workshop | 明确绑定一个或多个稳定 Workshop code，及各域契约明确声明可沿 Workshop 展开的对象集合。 | IAM `workshop` grant；MasterData Workshop、WorkCenter.WorkshopCode、Team.WorkshopCode。 | work-context 可沿已验证层级展开 Team 与 WorkCenter，但这不代表所有业务域读写都已接入范围门禁。 |
@@ -216,7 +216,7 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 | --- | --- | --- | --- | --- |
 | `emp010` | `user-emp-010` | `EMP-010` 吴桂芳，生产部，操作工 | `TEAM-WB-MC-A` 机加车间早班组，非 leader；Workshop `WS-01`；Shift `EARLY` | `role-pda-operator`；获得下表 operator 权限并集 |
 | `emp012` | `user-emp-012` | `EMP-012` 孙明辉，生产部，操作工 | `TEAM-WB-AS-A` 装配车间早班组，非 leader；Workshop `WS-02`；Shift `EARLY` | `role-pda-operator`；获得下表 operator 权限并集 |
-| `emp034` | `user-emp-034` | `EMP-034` 朱立新，质量部，检验员 | 当前无 Team，因此无可解析 Workshop/Shift | `role-pda-inspector`；获得下表 inspector 权限并集 |
+| `emp034` | `user-emp-034` | `EMP-034` 朱立新，质量部，检验员 | 当前无 Team，因此不能领取仅派给 Team 的任务；可处理明确派给 `user-emp-034` 的 Self 待检 | `role-pda-inspector`；获得下表 inspector 权限并集 |
 | `emp049` | `user-emp-049` | `EMP-049` 周文斌，仓储部，库管 | 当前无 Team，因此无可解析 Workshop/Shift | `role-pda-warehouse`；获得下表 warehouse 权限并集 |
 
 姓名、岗位和人员编号由两侧同一确定性 World Bible 规格生成；班组关系来自 MasterData seed，
