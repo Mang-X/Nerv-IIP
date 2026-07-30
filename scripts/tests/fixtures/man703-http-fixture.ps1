@@ -96,6 +96,23 @@ try {
             elseif ($target.StartsWith('/missing-success', [StringComparison]::Ordinal)) {
                 $body = '{"code":200,"message":"OK","data":{}}'
             }
+            elseif ($target.StartsWith('/slow-trickle', [StringComparison]::Ordinal)) {
+                $responseHeaders = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: 1048576`r`nConnection: close`r`n`r`n"
+                $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($responseHeaders)
+                $stream.Write($headerBytes, 0, $headerBytes.Length)
+                $chunk = [byte[]](123)
+                for ($index = 0; $index -lt 40; $index++) {
+                    try {
+                        $stream.Write($chunk, 0, $chunk.Length)
+                        $stream.Flush()
+                    }
+                    catch {
+                        break
+                    }
+                    Start-Sleep -Milliseconds 100
+                }
+                continue
+            }
             elseif ($target.StartsWith('/half-open', [StringComparison]::Ordinal)) {
                 Start-Sleep -Seconds 30
                 continue

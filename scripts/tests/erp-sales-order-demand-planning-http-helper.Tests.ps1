@@ -92,7 +92,6 @@ Assert-Helper ($parseErrors.Count -eq 0) 'Verify script must parse before helper
 foreach ($functionName in @(
         'Protect-Man517DiagnosticText',
         'Invoke-Man517JsonRequest',
-        'Get-Man517RemainingRequestTimeoutSeconds',
         'Wait-ErpSalesOrderReady'
     )) {
     Import-VerifyFunction -Ast $ast -Name $functionName
@@ -172,11 +171,22 @@ try {
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `
             -Method Get `
+            -Uri "$baseUrl/slow-trickle?token=slow-trickle-uri-secret" `
+            -Headers @{} `
+            -TimeoutSeconds 1
+    } `
+        -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
+        -ForbiddenFragments @('slow-trickle-uri-secret') `
+        -MaximumSeconds 3
+
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest `
+            -Method Get `
             -Uri "$baseUrl/half-open?token=half-open-uri-secret" `
             -Headers @{} `
             -TimeoutSeconds 1
     } `
-        -ExpectedFragments @('transport failed', 'method=GET', 'uri=') `
+        -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
         -ForbiddenFragments @('half-open-uri-secret') `
         -MaximumSeconds 3
 }

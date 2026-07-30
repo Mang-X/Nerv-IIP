@@ -75,11 +75,12 @@ foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStab
     Assert-Contract ($functionText.Contains('Invoke-Man517JsonRequest')) "$functionName must use the shared fail-closed JSON request path."
 }
 foreach ($functionName in @('Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
-    Assert-Contract ((Get-FunctionContractText -Name $functionName).Contains('-TimeoutSeconds $requestTimeoutSeconds')) "$functionName must bound each request by its remaining deadline."
+    Assert-Contract ((Get-FunctionContractText -Name $functionName).Contains('-Deadline $deadline')) "$functionName must pass its absolute deadline into every request."
 }
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SkipHttpErrorCheck')) 'The shared JSON request path must inspect non-success HTTP responses itself.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ConnectionTimeoutSeconds')) 'The shared JSON request path must set an explicit connection timeout.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('OperationTimeoutSeconds')) 'The shared JSON request path must set an explicit operation timeout.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ResponseHeadersRead')) 'The shared JSON request path must stream the response under its absolute cancellation budget.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('CancellationTokenSource')) 'The shared JSON request path must enforce one absolute cancellation budget.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SendAsync')) 'The shared JSON request path must pass cancellation into the HTTP send.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ReadAsStringAsync')) 'The shared JSON request path must pass cancellation into complete response reading.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
 Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200')) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)
