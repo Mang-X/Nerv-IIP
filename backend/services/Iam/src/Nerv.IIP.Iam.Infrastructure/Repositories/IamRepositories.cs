@@ -426,10 +426,11 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
     Task<UserSession?> GetByRefreshTokenHashAsync(
         string refreshTokenHash,
         CancellationToken cancellationToken = default);
-    Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+    Task<bool> RotateActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
         string revokedReason,
+        UserSession rotatedSession,
         CancellationToken cancellationToken = default);
     Task<int> RevokeFamilyAsync(
         string tokenFamilyId,
@@ -471,6 +472,7 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         CancellationToken cancellationToken = default)
     {
         return await DbContext.UserSessions
+            .AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now,
                 cancellationToken);
@@ -481,13 +483,15 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         CancellationToken cancellationToken = default)
     {
         return await DbContext.UserSessions
+            .AsNoTracking()
             .SingleOrDefaultAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
     }
 
-    public async Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+    public async Task<bool> RotateActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
         string revokedReason,
+        UserSession rotatedSession,
         CancellationToken cancellationToken = default)
     {
         await using var transaction = DbContext.Database.CurrentTransaction is null
@@ -509,16 +513,17 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
                 await transaction.RollbackAsync(cancellationToken);
             }
 
-            return null;
+            return false;
         }
 
-        var session = await DbContext.UserSessions.SingleAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+        await DbContext.UserSessions.AddAsync(rotatedSession, cancellationToken);
+        await DbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null)
         {
             await transaction.CommitAsync(cancellationToken);
         }
 
-        return session;
+        return true;
     }
 
     public async Task<int> RevokeFamilyAsync(
