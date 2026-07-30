@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { PDA_WAREHOUSE_TASK_STATUS_OPTIONS } from '@/data/wmsReference'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
 import {
   NvBottomSheet,
+  NvCell,
   NvListRow,
   NvMobileButton,
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
   NvMobileEmpty,
-  NvMobileInput,
   NvMobileTag,
+  NvNumberKeyboard,
   NvPullRefresh,
   NvScanBar,
   NvSearchBar,
@@ -93,18 +95,12 @@ const emit = defineEmits<{
 }>()
 
 const selectedTask = shallowRef<WarehouseTaskExecutionItem>()
-const executedQuantity = shallowRef<number | string>(0)
+const executedQuantity = shallowRef('0')
+const numberKeyboardOpen = shallowRef(false)
 const selectedReason = shallowRef('')
 const validationMessage = shallowRef('')
 
-const statusOptions: DropdownOption[] = [
-  { label: '全部状态', value: '' },
-  { label: '待执行', value: 'Open' },
-  { label: '执行中', value: 'InProgress' },
-  { label: '异常待处理', value: 'Exception' },
-  { label: '已完成', value: 'Completed' },
-  { label: '差异完成', value: 'CompletedWithDifference' },
-]
+const statusOptions = PDA_WAREHOUSE_TASK_STATUS_OPTIONS
 const quickReasons = [
   { code: 'short-stock', label: '库位缺货' },
   { code: 'damaged', label: '包装破损' },
@@ -136,6 +132,7 @@ const canReportException = computed(() => selectedActions.value.includes('except
 const canComplete = computed(() => selectedActions.value.includes('complete'))
 const actionSheetOpen = computed(() => selectedTask.value !== undefined)
 const actionLabel = computed(() => (props.taskType === 'picking' ? '拣货' : '上架'))
+const scanActive = computed(() => !actionSheetOpen.value && !numberKeyboardOpen.value)
 
 useIntersectionObserver(
   loadMoreSentinel,
@@ -169,7 +166,15 @@ function selectedReasonLabel() {
 }
 
 function blockReasonLabel(reason: string) {
-  return reason === 'TASK_TERMINAL' ? '任务已结束，不可继续操作' : '当前任务不可操作'
+  const labels: Record<string, string> = {
+    TASK_TERMINAL: '任务已结束，不可继续操作',
+    TASK_NOT_ASSIGNED_TO_WORK_POOL: '任务尚未分配作业池',
+    TASK_ASSIGNED_TO_ANOTHER_OPERATOR: '任务已派给其他人员',
+    TASK_EXECUTION_CLAIMED_BY_WCS: '任务已由 WCS 接管',
+    TASK_EXECUTION_CLAIMED_BY_ANOTHER_OPERATOR: '任务正由其他人员执行',
+    TASK_EXECUTION_NOT_CLAIMED: '任务尚未开始执行',
+  }
+  return labels[reason] ?? '当前任务不可操作'
 }
 
 function assignmentLabel(task: WarehouseTaskExecutionItem) {
@@ -181,14 +186,20 @@ function assignmentLabel(task: WarehouseTaskExecutionItem) {
 function selectTask(task: WarehouseTaskExecutionItem) {
   if ((task.allowedActions ?? []).length === 0) return
   selectedTask.value = task
-  executedQuantity.value = task.executedQuantity ?? 0
+  executedQuantity.value = String(task.executedQuantity ?? 0)
+  numberKeyboardOpen.value = false
   selectedReason.value = ''
   validationMessage.value = ''
 }
 
 function closeSheet() {
   selectedTask.value = undefined
+  numberKeyboardOpen.value = false
   validationMessage.value = ''
+}
+
+function openQuantityKeyboard() {
+  if (!props.actionPending) numberKeyboardOpen.value = true
 }
 
 watch(
@@ -249,7 +260,8 @@ function emitQuantityAction(action: 'progress' | 'complete') {
     <div class="space-y-3 border-b border-border bg-card px-4 py-3">
       <NvSearchBar v-model="keywordModel" :placeholder="`搜索任务号、源单号或物料`" />
       <NvScanBar
-        :placeholder="locationCode ? `当前库位 ${locationCode}` : '扫描库位或容器码'"
+        :active="scanActive"
+        :placeholder="locationCode ? `当前库位 ${locationCode}` : '扫描库位'"
         @scan="emit('scan-location', $event)"
       />
       <NvMobileDropdownMenu>
@@ -338,13 +350,16 @@ function emitQuantityAction(action: 'progress' | 'complete') {
 
         <div v-if="canProgress || canComplete" class="space-y-2">
           <span class="text-sm font-medium text-foreground">本次累计完成数量</span>
-          <NvMobileInput
-            v-model="executedQuantity"
-            data-testid="executed-quantity"
-            inputmode="decimal"
-            :min="selectedTask.executedQuantity ?? 0"
-            :max="selectedTask.plannedQuantity ?? 0"
-          />
+          <div class="overflow-hidden rounded-xl border border-border">
+            <NvCell
+              data-testid="executed-quantity"
+              title="累计完成数量"
+              :value="executedQuantity || '点击录入'"
+              :arrow="!actionPending"
+              :aria-disabled="actionPending"
+              @click="openQuantityKeyboard"
+            />
+          </div>
         </div>
 
         <div v-if="canReportException || canComplete" class="space-y-2">
@@ -407,5 +422,12 @@ function emitQuantityAction(action: 'progress' | 'complete') {
         </NvMobileButton>
       </div>
     </NvBottomSheet>
+
+    <NvNumberKeyboard
+      v-model="executedQuantity"
+      v-model:show="numberKeyboardOpen"
+      title="录入累计完成数量"
+      extra-key="."
+    />
   </div>
 </template>

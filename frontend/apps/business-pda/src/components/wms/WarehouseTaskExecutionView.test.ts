@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { NvPullRefresh } from '@nerv-iip/ui-mobile'
+import { NvNumberKeyboard, NvPullRefresh, NvScanBar } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -37,7 +37,7 @@ const openTask = {
   version: 1,
   assignedOperatorUserId: 'emp049',
   allowedActions: ['start'],
-  blockReasons: [],
+  blockReasons: [] as string[],
 }
 
 const inProgressTask = {
@@ -108,6 +108,30 @@ describe('WarehouseTaskExecutionView', () => {
     expect(text).toContain('已完成')
     expect(text).not.toContain('task-open')
     expect(text).not.toContain('InProgress')
+    expect(wrapper.findComponent(NvScanBar).props('placeholder')).toBe('扫描库位')
+  })
+
+  it('完整翻译服务端阻塞原因，不把不同原因复用成同一句兜底', () => {
+    const wrapper = mountView([
+      {
+        ...completedTask,
+        blockReasons: [
+          'TASK_TERMINAL',
+          'TASK_NOT_ASSIGNED_TO_WORK_POOL',
+          'TASK_ASSIGNED_TO_ANOTHER_OPERATOR',
+          'TASK_EXECUTION_CLAIMED_BY_WCS',
+          'TASK_EXECUTION_CLAIMED_BY_ANOTHER_OPERATOR',
+          'TASK_EXECUTION_NOT_CLAIMED',
+        ],
+      },
+    ])
+
+    expect(wrapper.text()).toContain('任务已结束，不可继续操作')
+    expect(wrapper.text()).toContain('任务尚未分配作业池')
+    expect(wrapper.text()).toContain('任务已派给其他人员')
+    expect(wrapper.text()).toContain('任务已由 WCS 接管')
+    expect(wrapper.text()).toContain('任务正由其他人员执行')
+    expect(wrapper.text()).toContain('任务尚未开始执行')
   })
 
   it('站点或作业池中的他人派工不得误标为我的任务', () => {
@@ -155,9 +179,11 @@ describe('WarehouseTaskExecutionView', () => {
     expect(document.querySelector('[data-testid="report-exception"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="confirm-complete"]')).not.toBeNull()
 
-    const quantity = document.querySelector<HTMLInputElement>('[data-testid="executed-quantity"]')!
-    quantity.value = '8'
-    quantity.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLElement>('[data-testid="executed-quantity"]')!.click()
+    await nextTick()
+    expect(wrapper.findComponent(NvNumberKeyboard).props('show')).toBe(true)
+    wrapper.findComponent(NvNumberKeyboard).vm.$emit('update:modelValue', '8')
+    await nextTick()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await nextTick()
     expect(document.body.textContent).toContain('请选择差异原因')
@@ -178,13 +204,14 @@ describe('WarehouseTaskExecutionView', () => {
   })
 
   it('上架任务不允许用差异原因绕过全量完成门禁', async () => {
-    mountView([inProgressTask], 'putaway')
+    const wrapper = mountView([inProgressTask], 'putaway')
     document.querySelector<HTMLElement>('[data-task-no="PK-2026-0002"]')!.click()
     await nextTick()
 
-    const quantity = document.querySelector<HTMLInputElement>('[data-testid="executed-quantity"]')!
-    quantity.value = '8'
-    quantity.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLElement>('[data-testid="executed-quantity"]')!.click()
+    await nextTick()
+    wrapper.findComponent(NvNumberKeyboard).vm.$emit('update:modelValue', '8')
+    await nextTick()
     document.querySelector<HTMLButtonElement>('[data-testid="difference-short-stock"]')!.click()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await nextTick()
