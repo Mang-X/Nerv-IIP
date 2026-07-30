@@ -91,6 +91,7 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :candidate-truncated="candidates.truncated.value"
         :candidate-pending="candidates.pending.value"
         :candidate-error="candidates.error.value"
+        :candidate-scan-overrides="candidates.scanOverrides.value"
         :error="error"
         :action-pending="actionPending"
         @refresh="refreshAll"

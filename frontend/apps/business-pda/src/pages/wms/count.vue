@@ -283,6 +283,7 @@ function goHome() {
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
           :error="candidates.error.value"
+          :scan-overrides="candidates.scanOverrides.value"
           :active="scanActive"
           :show-lot="false"
           @scan-override-change="candidates.setScanOverride"

@@ -23,6 +23,7 @@ const props = withDefaults(
     ready?: boolean
     error?: unknown
     searchKeyword?: string
+    scanOverrides?: Readonly<Partial<Record<'location' | 'lot', string>>>
     showLot?: boolean
     sourceLabel: string
     asOfUtc?: string
@@ -38,6 +39,7 @@ const props = withDefaults(
     ready: false,
     error: undefined,
     searchKeyword: '',
+    scanOverrides: () => ({}),
     showLot: true,
     asOfUtc: undefined,
     freshnessUtc: undefined,
@@ -59,7 +61,6 @@ const emit = defineEmits<{
 const locationPickerOpen = ref(false)
 const lotPickerOpen = ref(false)
 const scanTarget = ref<'location' | 'lot'>('location')
-const scanOverrides = ref<Partial<Record<'location' | 'lot', string>>>({})
 
 const searchModel = computed({
   get: () => props.searchKeyword,
@@ -92,11 +93,9 @@ const locationModel = computed({
   get: () => props.locationCode,
   set: (value: string | undefined) => {
     const normalized = value || undefined
-    scanOverrides.value = { ...scanOverrides.value, location: undefined }
     emit('scanOverrideChange', 'location', undefined)
     emit('update:locationCode', normalized)
     if (normalized !== props.locationCode) {
-      scanOverrides.value = { ...scanOverrides.value, lot: undefined }
       emit('scanOverrideChange', 'lot', undefined)
       emit('update:lotNo', undefined)
     }
@@ -105,7 +104,6 @@ const locationModel = computed({
 const lotModel = computed({
   get: () => props.lotNo,
   set: (value: string | undefined) => {
-    scanOverrides.value = { ...scanOverrides.value, lot: undefined }
     emit('scanOverrideChange', 'lot', undefined)
     emit('update:lotNo', value || undefined)
   },
@@ -134,10 +132,8 @@ function acceptScan(value: string) {
   if (!normalized) return
   const matched = currentOptions.value.find((option) => option.value === normalized)
   if (!matched) {
-    scanOverrides.value = { ...scanOverrides.value, [scanTarget.value]: normalized }
     emit('scanOverrideChange', scanTarget.value, normalized)
     if (scanTarget.value === 'location') {
-      scanOverrides.value = { ...scanOverrides.value, lot: undefined }
       emit('scanOverrideChange', 'lot', undefined)
       emit('update:locationCode', normalized)
       emit('update:lotNo', undefined)
@@ -151,11 +147,9 @@ function acceptScan(value: string) {
 }
 
 function clearScanOverride(target: 'location' | 'lot') {
-  if (!scanOverrides.value[target]) return
-  scanOverrides.value = { ...scanOverrides.value, [target]: undefined }
+  if (!props.scanOverrides[target]) return
   emit('scanOverrideChange', target, undefined)
   if (target === 'location') {
-    scanOverrides.value = { ...scanOverrides.value, lot: undefined }
     emit('scanOverrideChange', 'lot', undefined)
     emit('update:locationCode', undefined)
     emit('update:lotNo', undefined)
@@ -180,19 +174,12 @@ watch(
     if (!showLot && scanTarget.value === 'lot') chooseTarget('location')
   },
 )
-watch([() => props.locationCode, () => props.lotNo], ([locationCode, lotNo]) => {
-  const next = { ...scanOverrides.value }
-  if (next.location && next.location !== locationCode) next.location = undefined
-  if (next.lot && next.lot !== lotNo) next.lot = undefined
-  scanOverrides.value = next
-})
 watch(
   [() => props.ready, () => props.error],
   ([ready, error]) => {
     if (ready && !error) return
     locationPickerOpen.value = false
     lotPickerOpen.value = false
-    scanOverrides.value = {}
   },
   { flush: 'sync' },
 )
@@ -267,9 +254,9 @@ watch(
       @scan="acceptScan"
     />
     <template v-for="target in ['location', 'lot'] as const" :key="target">
-      <div v-if="scanOverrides[target]" class="space-y-1 px-1">
+      <div v-if="props.scanOverrides[target]" class="space-y-1 px-1">
         <p class="text-sm text-warning">
-          {{ target === 'location' ? '库位' : '批次' }} {{ scanOverrides[target] }}
+          {{ target === 'location' ? '库位' : '批次' }} {{ props.scanOverrides[target] }}
           已作为扫码筛选值应用；未在当前候选中，候选可能因范围或截断不完整，未验证为主数据。
         </p>
         <NvMobileButton size="sm" variant="text" @click="clearScanOverride(target)">

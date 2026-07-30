@@ -454,6 +454,7 @@ function goPutaway() {
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
           :error="candidates.error.value"
+          :scan-overrides="candidates.scanOverrides.value"
           :show-scanner="false"
           @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"

@@ -24,6 +24,7 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
       lotOptions: shallowRef([]),
       ready: shallowRef(true),
       searchKeyword: shallowRef(''),
+      scanOverrides: shallowRef({}),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),

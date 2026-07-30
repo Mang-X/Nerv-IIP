@@ -181,6 +181,7 @@ export function useWmsOperationalCandidates(
   return {
     ready,
     searchKeyword,
+    scanOverrides: computed(() => ({ ...explicitScanOverrides.value })),
     setScanOverride,
     locationOptions,
     lotOptions,

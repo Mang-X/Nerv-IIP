@@ -84,6 +84,7 @@ const props = withDefaults(
     candidatePending?: boolean
     candidateError?: unknown
     candidateSearchKeyword?: string
+    candidateScanOverrides?: Readonly<Partial<Record<'location' | 'lot', string>>>
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
     actionPending?: boolean
@@ -105,6 +106,7 @@ const props = withDefaults(
     candidatePending: false,
     candidateError: undefined,
     candidateSearchKeyword: '',
+    candidateScanOverrides: () => ({}),
     scopeOptions: () => [],
     error: undefined,
     actionPending: false,
@@ -314,6 +316,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
         :pending="candidatePending"
         :error="candidateError"
         :search-keyword="candidateSearchKeyword"
+        :scan-overrides="candidateScanOverrides"
         :active="scanActive"
         @update:location-code="emit('update:locationCode', $event)"
         @update:lot-no="emit('update:lotNo', $event)"

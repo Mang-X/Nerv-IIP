@@ -54,6 +54,8 @@ describe('WMS operational candidate picker', () => {
     scanner.vm.$emit('scan', 'UNKNOWN')
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:locationCode')?.at(-1)).toEqual(['UNKNOWN'])
+    expect(wrapper.emitted('scanOverrideChange')?.at(-2)).toEqual(['location', 'UNKNOWN'])
+    await wrapper.setProps({ scanOverrides: { location: 'UNKNOWN' } })
     expect(wrapper.text()).toContain('已作为扫码筛选值应用')
     expect(wrapper.text()).toContain('候选可能因范围或截断不完整')
     expect(wrapper.text()).toContain('未验证为主数据')

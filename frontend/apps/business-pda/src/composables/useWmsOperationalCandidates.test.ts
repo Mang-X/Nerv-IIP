@@ -16,6 +16,7 @@ const queryState = vi.hoisted(() => ({
   options: undefined as undefined | { enabled?: boolean },
   factory: undefined as undefined | (() => Record<string, unknown>),
   data: undefined as undefined | { value: unknown },
+  error: undefined as undefined | { value: unknown },
 }))
 
 afterEach(() => {
@@ -39,10 +40,12 @@ vi.mock('@pinia/colada', () => ({
     queryState.factory = factory
     queryState.options = factory()
     const data = shallowRef(queryState.response)
+    const error = shallowRef()
     queryState.data = data
+    queryState.error = error
     return {
       data,
-      error: shallowRef(),
+      error,
       isLoading: shallowRef(false),
       refetch: vi.fn(),
     }
@@ -177,6 +180,7 @@ describe('PDA WMS operational candidates', () => {
       locationCode: undefined as string | undefined,
       lotNo: undefined as string | undefined,
     })
+    const pickerVisible = shallowRef(true)
     const Harness = defineComponent({
       setup() {
         const candidates = useWmsOperationalCandidates('shipment', {
@@ -188,21 +192,25 @@ describe('PDA WMS operational candidates', () => {
           filters,
         })
         return () =>
-          h(WmsOperationalCandidatePicker, {
-            locationCode: filters.locationCode,
-            lotNo: filters.lotNo,
-            locationOptions: candidates.locationOptions.value,
-            lotOptions: candidates.lotOptions.value,
-            ready: candidates.ready.value,
-            sourceLabel: candidates.sourceLabel.value,
-            'onUpdate:locationCode': (value) => {
-              filters.locationCode = value
-            },
-            'onUpdate:lotNo': (value) => {
-              filters.lotNo = value
-            },
-            onScanOverrideChange: candidates.setScanOverride,
-          })
+          pickerVisible.value
+            ? h(WmsOperationalCandidatePicker, {
+                locationCode: filters.locationCode,
+                lotNo: filters.lotNo,
+                locationOptions: candidates.locationOptions.value,
+                lotOptions: candidates.lotOptions.value,
+                ready: candidates.ready.value,
+                error: candidates.error.value,
+                sourceLabel: candidates.sourceLabel.value,
+                scanOverrides: candidates.scanOverrides.value,
+                'onUpdate:locationCode': (value) => {
+                  filters.locationCode = value
+                },
+                'onUpdate:lotNo': (value) => {
+                  filters.lotNo = value
+                },
+                onScanOverrideChange: candidates.setScanOverride,
+              })
+            : null
       },
     })
     const wrapper = mount(Harness)
@@ -229,6 +237,24 @@ describe('PDA WMS operational candidates', () => {
 
     expect(filters.locationCode).toBe('UNKNOWN-BIN')
     expect(wrapper.text()).toContain('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('清除扫码筛选')
+
+    queryState.error!.value = new Error('network')
+    await nextTick()
+    expect(filters.locationCode).toBe('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('未验证为主数据')
+    expect(wrapper.text()).toContain('清除扫码筛选')
+
+    queryState.error!.value = undefined
+    await nextTick()
+    expect(wrapper.text()).toContain('清除扫码筛选')
+
+    pickerVisible.value = false
+    await nextTick()
+    pickerVisible.value = true
+    await nextTick()
+    expect(filters.locationCode).toBe('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('未验证为主数据')
     expect(wrapper.text()).toContain('清除扫码筛选')
 
     await wrapper
