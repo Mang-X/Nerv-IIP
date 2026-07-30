@@ -81,8 +81,14 @@ export interface WmsTaskFilters extends WmsScopeFilters {
 
 // outbound/count 写入参数：调用方传业务字段 + idempotencyKey（页面在用户发起操作时生成一次，
 // 重试复用同一键以防丢响应导致重复入库；新操作才换新键）。org/env 不在 body，由本封装从主体注入。
-export type CompleteOutboundInput = BusinessConsoleCompleteWmsOutboundOrderRequest
-export type CompleteCountInput = BusinessConsoleCompleteWmsCountExecutionRequest
+export type CompleteOutboundInput = Omit<
+  BusinessConsoleCompleteWmsOutboundOrderRequest,
+  'expectedVersion' | 'scopeKind' | 'scopeId'
+>
+export type CompleteCountInput = Omit<
+  BusinessConsoleCompleteWmsCountExecutionRequest,
+  'expectedVersion' | 'scopeKind' | 'scopeId'
+>
 export type WmsCompletionAttemptOptions = Readonly<{
   attempt: 'initial' | 'retry'
   onCommandAttempt?: () => void
@@ -114,6 +120,43 @@ function exactItem<TItem>(
 ) {
   const matchesById = listItems(envelope).filter(matches)
   return matchesById.length === 1 ? matchesById[0] : undefined
+}
+
+function lifecycleUnavailable(resource?: { status?: string }) {
+  const status = resource?.status?.trim().toLowerCase()
+  const terminal = new Set(['completed', 'completedwithdifference', 'cancelled']).has(status ?? '')
+  return new LifecycleActionUnavailableError({
+    known: resource !== undefined,
+    terminal,
+    executable: false,
+    legalNoop: false,
+    reason:
+      resource === undefined
+        ? 'unknown-status'
+        : terminal
+          ? 'terminal-status'
+          : 'incompatible-state',
+  })
+}
+
+function requireVersion(resource: { status?: string; version?: number } | undefined) {
+  const version = resource?.version
+  if (!Number.isInteger(version)) throw lifecycleUnavailable(resource)
+  return version!
+}
+
+function requireFrozenScope(
+  snapshot: unknown,
+): snapshot is { expectedVersion: number; scopeKind: string; scopeId: string } {
+  if (!snapshot || typeof snapshot !== 'object') return false
+  const value = snapshot as Record<string, unknown>
+  return (
+    Number.isInteger(value.expectedVersion) &&
+    typeof value.scopeKind === 'string' &&
+    value.scopeKind.trim().length > 0 &&
+    typeof value.scopeId === 'string' &&
+    value.scopeId.trim().length > 0
+  )
 }
 
 // 明细接口仅需要租户边界；作业列表另由 WMS 可信目录绑定 self/work-pool/site。
@@ -294,38 +337,42 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         payloadFingerprint,
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
-      const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, {
-        lines: lines ?? [],
+      const isReplay = restoredPending !== undefined
+      const { data } = await listBusinessConsoleWmsInboundOrders({
+        query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
+        throwOnError: true,
       })
-      const isReplay =
-        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
-      try {
-        const { data } = await listBusinessConsoleWmsInboundOrders({
-          query: { ...scope.scopeQuery(), inboundOrderId, skip: 0, take: 2 },
-          throwOnError: true,
-        })
-        const authoritative = exactItem(
-          data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
-          (item: BusinessConsoleWmsInboundOrderItem) => item.inboundOrderId === inboundOrderId,
-        )
-        assertLifecycleActionExecutable({
-          domain: 'wms-inbound',
-          action: 'complete',
-          facts: {
-            status: authoritative?.status,
-            idempotentReplay: isReplay,
-          },
-        })
-      } catch (error) {
-        if (!isReplay) clearPendingBusinessIntent(intentScope)
-        throw error
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+        (item: BusinessConsoleWmsInboundOrderItem) => item.inboundOrderId === inboundOrderId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-inbound',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: isReplay,
+        },
+      })
+      const freshPayload = {
+        lines: lines ?? [],
+        scopeKind: scope.scopeKind.value!,
+        scopeId: scope.scopeId.value!,
+        expectedVersion: requireVersion(authoritative),
       }
-      const frozenLines =
-        (pending.payloadSnapshot as { lines?: InboundLineCapture[] } | undefined)?.lines ??
-        lines ??
-        []
+      const pending = acquirePendingBusinessIntent(
+        intentScope,
+        () => idempotencyKey,
+        restoredPending?.payloadSnapshot ?? freshPayload,
+      )
+      if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
+      const frozen = pending.payloadSnapshot as typeof freshPayload
+      const frozenLines = (frozen.lines as InboundLineCapture[] | undefined) ?? []
       const body = {
         idempotencyKey: pending.idempotencyKey,
+        scopeKind: frozen.scopeKind,
+        scopeId: frozen.scopeId,
+        expectedVersion: frozen.expectedVersion,
         ...(frozenLines.length ? { lines: frozenLines } : {}),
       } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
       options.onCommandAttempt?.()
@@ -449,7 +496,11 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     ) => {
       // 页面提供 packReviewNo/passed/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
-      const { idempotencyKey: suppliedKey, ...payload } = input
+      const suppliedKey = input.idempotencyKey
+      const payload = {
+        packReviewNo: input.packReviewNo,
+        ...(input.passed === undefined ? {} : { passed: input.passed }),
+      }
       const intentScope = {
         principalId: scope.principalId.value,
         organizationId: scope.organizationId.value,
@@ -458,32 +509,38 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
         payloadFingerprint: `${outboundOrderId}:${JSON.stringify(payload)}`,
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
-      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
-      const isReplay =
-        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
-      try {
-        const { data } = await listBusinessConsoleWmsOutboundOrders({
-          query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
-          throwOnError: true,
-        })
-        const authoritative = exactItem(
-          data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
-          (item: BusinessConsoleWmsOutboundOrderItem) => item.outboundOrderId === outboundOrderId,
-        )
-        assertLifecycleActionExecutable({
-          domain: 'wms-outbound',
-          action: 'complete',
-          facts: {
-            status: authoritative?.status,
-            idempotentReplay: isReplay,
-          },
-        })
-      } catch (error) {
-        if (!isReplay) clearPendingBusinessIntent(intentScope)
-        throw error
+      const isReplay = restoredPending !== undefined
+      const { data } = await listBusinessConsoleWmsOutboundOrders({
+        query: { ...scope.scopeQuery(), outboundOrderId, skip: 0, take: 2 },
+        throwOnError: true,
+      })
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+        (item: BusinessConsoleWmsOutboundOrderItem) => item.outboundOrderId === outboundOrderId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-outbound',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: isReplay,
+        },
+      })
+      const freshPayload = {
+        ...payload,
+        scopeKind: scope.scopeKind.value!,
+        scopeId: scope.scopeId.value!,
+        expectedVersion: requireVersion(authoritative),
       }
+      const pending = acquirePendingBusinessIntent(
+        intentScope,
+        () => suppliedKey,
+        restoredPending?.payloadSnapshot ?? freshPayload,
+      )
+      if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
+      const frozen = pending.payloadSnapshot as typeof freshPayload
       const body = {
-        ...((pending.payloadSnapshot ?? payload) as Omit<CompleteOutboundInput, 'idempotencyKey'>),
+        ...frozen,
         idempotencyKey: pending.idempotencyKey,
       } satisfies BusinessConsoleCompleteWmsOutboundOrderRequest
       options.onCommandAttempt?.()
@@ -537,16 +594,7 @@ function normalizeWarehouseTask(
 }
 
 function taskLifecycleError(task: BusinessConsoleWmsWarehouseTaskItem | undefined) {
-  const status = task?.status?.trim().toLowerCase()
-  const terminal = new Set(['completed', 'completedwithdifference', 'cancelled']).has(status ?? '')
-  return new LifecycleActionUnavailableError({
-    known: task !== undefined,
-    terminal,
-    executable: false,
-    legalNoop: false,
-    reason:
-      task === undefined ? 'unknown-status' : terminal ? 'terminal-status' : 'incompatible-state',
-  })
+  return lifecycleUnavailable(task)
 }
 
 function unwrapTaskActionResult(
@@ -1046,7 +1094,9 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     ) => {
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
-      const { idempotencyKey: suppliedKey, ...payload } = input
+      const suppliedKey = input.idempotencyKey
+      const payload =
+        input.countedQuantity === undefined ? {} : { countedQuantity: input.countedQuantity }
       const intentScope = {
         principalId: scope.principalId.value,
         organizationId: scope.organizationId.value,
@@ -1055,33 +1105,38 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
         payloadFingerprint: `${countExecutionId}:${JSON.stringify(payload)}`,
       }
       const restoredPending = peekPendingBusinessIntent(intentScope)
-      const pending = acquirePendingBusinessIntent(intentScope, () => suppliedKey, payload)
-      const isReplay =
-        restoredPending !== undefined && restoredPending.idempotencyKey === pending.idempotencyKey
-      try {
-        const { data } = await listBusinessConsoleWmsCountExecutions({
-          query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
-          throwOnError: true,
-        })
-        const authoritative = exactItem(
-          data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
-          (item: BusinessConsoleWmsCountExecutionItem) =>
-            item.countExecutionId === countExecutionId,
-        )
-        assertLifecycleActionExecutable({
-          domain: 'wms-count',
-          action: 'complete',
-          facts: {
-            status: authoritative?.status,
-            idempotentReplay: isReplay,
-          },
-        })
-      } catch (error) {
-        if (!isReplay) clearPendingBusinessIntent(intentScope)
-        throw error
+      const isReplay = restoredPending !== undefined
+      const { data } = await listBusinessConsoleWmsCountExecutions({
+        query: { ...scope.scopeQuery(), countExecutionId, skip: 0, take: 2 },
+        throwOnError: true,
+      })
+      const authoritative = exactItem(
+        data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+        (item: BusinessConsoleWmsCountExecutionItem) => item.countExecutionId === countExecutionId,
+      )
+      assertLifecycleActionExecutable({
+        domain: 'wms-count',
+        action: 'complete',
+        facts: {
+          status: authoritative?.status,
+          idempotentReplay: isReplay,
+        },
+      })
+      const freshPayload = {
+        ...payload,
+        scopeKind: scope.scopeKind.value!,
+        scopeId: scope.scopeId.value!,
+        expectedVersion: requireVersion(authoritative),
       }
+      const pending = acquirePendingBusinessIntent(
+        intentScope,
+        () => suppliedKey,
+        restoredPending?.payloadSnapshot ?? freshPayload,
+      )
+      if (!requireFrozenScope(pending.payloadSnapshot)) throw lifecycleUnavailable(authoritative)
+      const frozen = pending.payloadSnapshot as typeof freshPayload
       const body = {
-        ...((pending.payloadSnapshot ?? payload) as Omit<CompleteCountInput, 'idempotencyKey'>),
+        ...frozen,
         idempotencyKey: pending.idempotencyKey,
       } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
       options.onCommandAttempt?.()

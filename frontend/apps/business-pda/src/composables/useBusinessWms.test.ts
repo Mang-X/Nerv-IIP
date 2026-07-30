@@ -213,19 +213,19 @@ describe('PDA WMS composables', () => {
     coladaState.listInbound.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ inboundOrderId: 'inbound-1', status: 'Open' }], total: 1 },
+        data: { items: [{ inboundOrderId: 'inbound-1', status: 'Open', version: 5 }], total: 1 },
       },
     })
     coladaState.listOutbound.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ outboundOrderId: 'outbound-1', status: 'Open' }], total: 1 },
+        data: { items: [{ outboundOrderId: 'outbound-1', status: 'Open', version: 6 }], total: 1 },
       },
     })
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-1', status: 'Open' }], total: 1 },
+        data: { items: [{ countExecutionId: 'count-1', status: 'Open', version: 7 }], total: 1 },
       },
     })
     coladaState.listPicking.mockResolvedValue({
@@ -355,12 +355,22 @@ describe('PDA WMS composables', () => {
     const vars = coladaState.lastMutationVars.get('completeInbound') as {
       path: { inboundOrderId: string }
       query: { organizationId: string; environmentId: string }
-      body: { idempotencyKey: string }
+      body: {
+        idempotencyKey: string
+        scopeKind: string
+        scopeId: string
+        expectedVersion: number
+      }
     }
     expect(vars.path).toEqual({ inboundOrderId: 'inbound-1' })
     expect(vars.query).toEqual(SCOPE)
     // 页面提供的稳定键原样透传，封装不再生成。
     expect(vars.body.idempotencyKey).toBe('KEY-1')
+    expect(vars.body).toMatchObject({
+      scopeKind: 'self',
+      scopeId: 'emp049',
+      expectedVersion: 5,
+    })
   })
 
   it('passes the supplied idempotencyKey through outbound and keeps org/env override-proof', async () => {
@@ -377,13 +387,25 @@ describe('PDA WMS composables', () => {
     const vars = coladaState.lastMutationVars.get('completeOutbound') as {
       path: { outboundOrderId: string }
       query: { organizationId: string; environmentId: string }
-      body: { packReviewNo: string; passed?: boolean; idempotencyKey: string }
+      body: {
+        packReviewNo: string
+        passed?: boolean
+        idempotencyKey: string
+        scopeKind: string
+        scopeId: string
+        expectedVersion: number
+      }
     }
     expect(vars.path).toEqual({ outboundOrderId: 'outbound-1' })
     expect(vars.body.packReviewNo).toBe('PR')
     expect(vars.body.passed).toBe(true)
     // 页面提供的稳定键原样透传。
     expect(vars.body.idempotencyKey).toBe('KEY-OUT')
+    expect(vars.body).toMatchObject({
+      scopeKind: 'self',
+      scopeId: 'emp049',
+      expectedVersion: 6,
+    })
     // org/env 取自登录主体，敌意值永远不进 query。
     expect(vars.query).toEqual(SCOPE)
   })
@@ -394,14 +416,27 @@ describe('PDA WMS composables', () => {
       operationType: 'wms.inbound-order.complete',
       resourceId: 'inbound-1',
       payloadFingerprint: 'inbound-1:[]',
-      payloadSnapshot: { lines: [] },
+      payloadSnapshot: {
+        lines: [],
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 5,
+      },
       mutationId: 'completeInbound',
-      expectedBody: { idempotencyKey: 'KEY-OLD' },
+      expectedBody: {
+        idempotencyKey: 'KEY-OLD',
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 5,
+      },
       arrangeTerminal: () =>
         coladaState.listInbound.mockResolvedValue({
           data: {
             success: true,
-            data: { items: [{ inboundOrderId: 'inbound-1', status: 'Completed' }], total: 1 },
+            data: {
+              items: [{ inboundOrderId: 'inbound-1', status: 'Completed', version: 6 }],
+              total: 1,
+            },
           },
         }),
       execute: () =>
@@ -412,14 +447,30 @@ describe('PDA WMS composables', () => {
       operationType: 'wms.outbound-order.complete',
       resourceId: 'outbound-1',
       payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
-      payloadSnapshot: { packReviewNo: 'PR', passed: true },
+      payloadSnapshot: {
+        packReviewNo: 'PR',
+        passed: true,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 6,
+      },
       mutationId: 'completeOutbound',
-      expectedBody: { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-OLD' },
+      expectedBody: {
+        packReviewNo: 'PR',
+        passed: true,
+        idempotencyKey: 'KEY-OLD',
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 6,
+      },
       arrangeTerminal: () =>
         coladaState.listOutbound.mockResolvedValue({
           data: {
             success: true,
-            data: { items: [{ outboundOrderId: 'outbound-1', status: 'Completed' }], total: 1 },
+            data: {
+              items: [{ outboundOrderId: 'outbound-1', status: 'Completed', version: 7 }],
+              total: 1,
+            },
           },
         }),
       execute: () =>
@@ -434,14 +485,28 @@ describe('PDA WMS composables', () => {
       operationType: 'wms.count-execution.complete',
       resourceId: 'count-1',
       payloadFingerprint: 'count-1:{"countedQuantity":5}',
-      payloadSnapshot: { countedQuantity: 5 },
+      payloadSnapshot: {
+        countedQuantity: 5,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 7,
+      },
       mutationId: 'completeCount',
-      expectedBody: { countedQuantity: 5, idempotencyKey: 'KEY-OLD' },
+      expectedBody: {
+        countedQuantity: 5,
+        idempotencyKey: 'KEY-OLD',
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 7,
+      },
       arrangeTerminal: () =>
         coladaState.listCount.mockResolvedValue({
           data: {
             success: true,
-            data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+            data: {
+              items: [{ countExecutionId: 'count-1', status: 'Completed', version: 8 }],
+              total: 1,
+            },
           },
         }),
       execute: () =>
@@ -499,7 +564,10 @@ describe('PDA WMS composables', () => {
     coladaState.listInbound.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ inboundOrderId: 'inbound-1', status: 'Completed' }], total: 1 },
+        data: {
+          items: [{ inboundOrderId: 'inbound-1', status: 'Completed', version: 6 }],
+          total: 1,
+        },
       },
     })
     const { completeInbound } = useWmsInbound()
@@ -522,7 +590,7 @@ describe('PDA WMS composables', () => {
         payloadFingerprint: 'inbound-1:[]',
       },
       () => 'KEY-1',
-      { lines: [] },
+      { lines: [], scopeKind: 'self', scopeId: 'emp049', expectedVersion: 5 },
     )
     await expect(
       completeInbound('inbound-1', 'KEY-1', undefined, { attempt: 'retry' }),
@@ -535,7 +603,7 @@ describe('PDA WMS composables', () => {
       data: {
         success: true,
         data: {
-          items: [{ outboundOrderId: 'outbound-1', status: 'InventoryPostingPending' }],
+          items: [{ outboundOrderId: 'outbound-1', status: 'InventoryPostingPending', version: 7 }],
           total: 1,
         },
       },
@@ -561,7 +629,13 @@ describe('PDA WMS composables', () => {
         payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
       },
       () => 'KEY-OUT',
-      { packReviewNo: 'PR', passed: true },
+      {
+        packReviewNo: 'PR',
+        passed: true,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 6,
+      },
     )
     await expect(
       completeOutbound('outbound-1', input, { attempt: 'retry' }),
@@ -587,6 +661,11 @@ describe('PDA WMS composables', () => {
     expect(vars.path).toEqual({ countExecutionId: 'count-1' })
     expect(vars.body.countedQuantity).toBe(5)
     expect(vars.body.idempotencyKey).toBe('KEY-CNT')
+    expect(vars.body).toMatchObject({
+      scopeKind: 'self',
+      scopeId: 'emp049',
+      expectedVersion: 7,
+    })
     expect(vars.query).toEqual(SCOPE)
   })
 
@@ -594,7 +673,10 @@ describe('PDA WMS composables', () => {
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+        data: {
+          items: [{ countExecutionId: 'count-1', status: 'Completed', version: 8 }],
+          total: 1,
+        },
       },
     })
     const { completeCount } = useWmsCount()
@@ -622,7 +704,10 @@ describe('PDA WMS composables', () => {
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+        data: {
+          items: [{ countExecutionId: 'count-1', status: 'Completed', version: 8 }],
+          total: 1,
+        },
       },
     })
     coladaState.mutationResultById.set('completeCount', receipt)
@@ -635,7 +720,12 @@ describe('PDA WMS composables', () => {
         payloadFingerprint: 'count-1:{"countedQuantity":5}',
       },
       () => 'KEY-CNT-FROZEN',
-      { countedQuantity: 5 },
+      {
+        countedQuantity: 5,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 7,
+      },
     )
 
     await expect(
@@ -648,7 +738,13 @@ describe('PDA WMS composables', () => {
 
     expect(coladaState.lastMutationVars.get('completeCount')).toMatchObject({
       path: { countExecutionId: 'count-1' },
-      body: { countedQuantity: 5, idempotencyKey: 'KEY-CNT-FROZEN' },
+      body: {
+        countedQuantity: 5,
+        idempotencyKey: 'KEY-CNT-FROZEN',
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        expectedVersion: 7,
+      },
     })
   })
 
@@ -662,7 +758,10 @@ describe('PDA WMS composables', () => {
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-1', status: 'Completed' }], total: 1 },
+        data: {
+          items: [{ countExecutionId: 'count-1', status: 'Completed', version: 8 }],
+          total: 1,
+        },
       },
     })
     await expect(completeCount('count-1', input, { attempt: 'retry' })).rejects.toThrow(
@@ -672,7 +771,7 @@ describe('PDA WMS composables', () => {
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-2', status: 'Open' }], total: 1 },
+        data: { items: [{ countExecutionId: 'count-2', status: 'Open', version: 2 }], total: 1 },
       },
     })
     coladaState.mutationFailureById.set(
@@ -685,7 +784,10 @@ describe('PDA WMS composables', () => {
     coladaState.listCount.mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ countExecutionId: 'count-2', status: 'Completed' }], total: 1 },
+        data: {
+          items: [{ countExecutionId: 'count-2', status: 'Completed', version: 3 }],
+          total: 1,
+        },
       },
     })
     await expect(
