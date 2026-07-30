@@ -51,7 +51,9 @@ function Assert-RequestFailure {
     if ($null -ne $ExpectedExceptionType) {
         Assert-Helper ($caughtException -is $ExpectedExceptionType) "Request failure must be $($ExpectedExceptionType.FullName). Actual: $($caughtException.GetType().FullName)"
     }
-    Assert-Helper ($stopwatch.Elapsed.TotalSeconds -lt $MaximumSeconds) "The request failure exceeded $MaximumSeconds seconds."
+    Assert-Helper (
+        $stopwatch.Elapsed.TotalSeconds -lt $MaximumSeconds
+    ) "The request failure took $($stopwatch.Elapsed.TotalSeconds) seconds and exceeded $MaximumSeconds seconds."
     foreach ($fragment in $ExpectedFragments) {
         Assert-Helper ($failure.Contains($fragment)) "Request failure must contain '$fragment'. Actual: $failure"
     }
@@ -109,6 +111,7 @@ $readyFile = Join-Path $testRoot 'ready.txt'
 $counterFile = Join-Path $testRoot 'sales-order-request-count.txt'
 [System.IO.Directory]::CreateDirectory($testRoot) | Out-Null
 $port = Get-TestFreeTcpPort
+$connectStallPort = Get-TestFreeTcpPort
 $baseUrl = "http://127.0.0.1:$port"
 $fixtureProcess = $null
 $cleanupError = $null
@@ -126,7 +129,9 @@ try {
             '-ReadyFile',
             $readyFile,
             '-CounterFile',
-            $counterFile) `
+            $counterFile,
+            '-ConnectStallPort',
+            "$connectStallPort") `
         -WorkingDirectory $repoRoot `
         -Name 'man703-http-fixture' `
         -LogDirectory (Join-Path $testRoot 'fixture')
@@ -199,6 +204,31 @@ try {
         -ForbiddenFragments @('slow-trickle-uri-secret') `
         -MaximumSeconds 3 `
         -ExpectedExceptionType ([System.TimeoutException])
+
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest `
+            -Method Get `
+            -Uri "https://127.0.0.1:$connectStallPort/connect-timeout?token=connect-timeout-uri-secret" `
+            -Headers @{} `
+            -TimeoutSeconds 10
+    } `
+        -ExpectedFragments @('request transport failed', 'method=GET', 'uri=') `
+        -ForbiddenFragments @('deadline exceeded', 'connect-timeout-uri-secret') `
+        -MaximumSeconds 8
+
+    $stalledHttpStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest `
+            -Method Get `
+            -Uri "$baseUrl/http-error-stalled-body?token=stalled-http-uri-secret" `
+            -Headers @{} `
+            -TimeoutSeconds 2
+    } `
+        -ExpectedFragments @('request HTTP failure', 'httpStatus=503') `
+        -ForbiddenFragments @('deadline exceeded', 'stalled-http-uri-secret') `
+        -MaximumSeconds 1
+    $stalledHttpStopwatch.Stop()
+    Write-Host "503 stalled-body failure preserved after $($stalledHttpStopwatch.Elapsed.TotalMilliseconds) ms."
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `

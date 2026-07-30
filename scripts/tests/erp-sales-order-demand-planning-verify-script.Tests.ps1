@@ -82,9 +82,16 @@ Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Con
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SendAsync')) 'The shared JSON request path must pass cancellation into the HTTP send.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ReadAsStringAsync')) 'The shared JSON request path must pass cancellation into complete response reading.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('System.TimeoutException')) 'Deadline expiry must use a typed TimeoutException.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('$deadlineCancellation.IsCancellationRequested')) 'OperationCanceledException must be mapped to TimeoutException only when the owned absolute deadline token fired.'
+$requestFunctionText = Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'
+$httpStatusFailureIndex = $requestFunctionText.IndexOf('$httpStatus -lt 200', [StringComparison]::Ordinal)
+$responseReadIndex = $requestFunctionText.IndexOf('ReadAsStringAsync', [StringComparison]::Ordinal)
+Assert-Contract ($httpStatusFailureIndex -ge 0 -and $responseReadIndex -gt $httpStatusFailureIndex) 'Non-success HTTP status must fail immediately after headers, before response body reading.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
 foreach ($functionName in @('Wait-Demand', 'Wait-ErpSalesOrderReady', 'Assert-DemandStable')) {
-    Assert-Contract ((Get-FunctionContractText -Name $functionName).Contains('catch [System.TimeoutException]')) "$functionName must handle typed request deadline expiry explicitly."
+    $functionText = Get-FunctionContractText -Name $functionName
+    Assert-Contract ($functionText.Contains('catch [System.TimeoutException]')) "$functionName must handle typed request deadline expiry explicitly."
+    Assert-Contract ($functionText.Contains('(Get-Date) -lt $deadline')) "$functionName must rethrow a typed timeout that occurs before its own absolute deadline."
 }
 Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200')) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)

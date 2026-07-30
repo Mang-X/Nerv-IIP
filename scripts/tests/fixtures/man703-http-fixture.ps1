@@ -15,14 +15,20 @@ param(
     [Parameter(Mandatory)]
     [string]$ReadyFile,
     [Parameter(Mandatory)]
-    [string]$CounterFile
+    [string]$CounterFile,
+    [Parameter(Mandatory)]
+    [int]$ConnectStallPort
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+$connectStallListener = [System.Net.Sockets.TcpListener]::new(
+    [System.Net.IPAddress]::Loopback,
+    $ConnectStallPort)
 $listener.Start()
+$connectStallListener.Start()
 $salesOrderRequests = 0
 $demandRequests = 0
 [System.IO.File]::WriteAllText($ReadyFile, 'ready')
@@ -109,6 +115,22 @@ try {
             elseif ($target.StartsWith('/business-error', [StringComparison]::Ordinal)) {
                 $body = '{"success":false,"code":404,"message":"password=message-secret-value","data":null}'
             }
+            elseif ($target.StartsWith('/http-error-stalled-body', [StringComparison]::Ordinal)) {
+                $responseHeaders = "HTTP/1.1 503 Service Unavailable`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: 1048576`r`nConnection: close`r`n`r`n"
+                $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($responseHeaders)
+                $stream.Write($headerBytes, 0, $headerBytes.Length)
+                for ($index = 0; $index -lt 300; $index++) {
+                    try {
+                        $stream.WriteByte([byte][char]'{')
+                        $stream.Flush()
+                    }
+                    catch {
+                        break
+                    }
+                    Start-Sleep -Milliseconds 100
+                }
+                continue
+            }
             elseif ($target.StartsWith('/http-error', [StringComparison]::Ordinal)) {
                 $statusCode = 503
                 $reason = 'Service Unavailable'
@@ -156,4 +178,5 @@ try {
 }
 finally {
     $listener.Stop()
+    $connectStallListener.Stop()
 }
