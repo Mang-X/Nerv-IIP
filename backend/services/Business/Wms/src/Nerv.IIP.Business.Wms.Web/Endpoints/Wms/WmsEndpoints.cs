@@ -342,6 +342,26 @@ public sealed class CompleteCountExecutionRequestValidator : Validator<CompleteC
     }
 }
 
+public sealed class ListReceivingQualityGatesRequestValidator
+    : Validator<ListReceivingQualityGatesRequest>
+{
+    public ListReceivingQualityGatesRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.AuthorizedSiteCodes).NotEmpty();
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.GateStatus).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.InboundOrderNo).MaximumLength(150);
+    }
+}
+
 internal sealed record WmsAuthorizedListScope(
     IReadOnlyCollection<string>? OperatorPrincipalIds,
     IReadOnlyCollection<string>? PoolCodes,
@@ -408,7 +428,19 @@ public sealed record ListWcsTasksRequest(
     string? Keyword = null);
 public sealed record ListWcsDispatchCircuitsRequest(string OrganizationId, string EnvironmentId);
 public sealed record ResetWcsDispatchCircuitRequest(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId);
-public sealed record ListReceivingQualityGatesRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? GateStatus = null, string? Keyword = null, bool IncludeNotRequired = false, string? InboundOrderNo = null);
+public sealed record ListReceivingQualityGatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    int Skip = 0,
+    int Take = 100,
+    string? GateStatus = null,
+    string? Keyword = null,
+    bool IncludeNotRequired = false,
+    string? InboundOrderNo = null);
 public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record WarehouseWorkScopeCatalogRequest(
     string OrganizationId,
@@ -1282,12 +1314,36 @@ public sealed class ResetWcsDispatchCircuitEndpoint(ISender sender) : WmsEndpoin
     }
 }
 
-public sealed class ListReceivingQualityGatesEndpoint(ISender sender) : WmsEndpoint<ListReceivingQualityGatesRequest, ResponseData<ListReceivingQualityGatesResponse>>
+public sealed class ListReceivingQualityGatesEndpoint(
+    ISender sender,
+    WarehouseWorkScopeAuthorizer authorizer)
+    : WmsEndpoint<ListReceivingQualityGatesRequest, ResponseData<ListReceivingQualityGatesResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReceivingQualityGatesEndpoint>());
     public override async Task HandleAsync(ListReceivingQualityGatesRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListReceivingQualityGatesQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.GateStatus, req.Keyword, req.IncludeNotRequired, req.InboundOrderNo), ct);
+        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
+            authorizer,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ActorPrincipalId,
+            req.AuthorizedSiteCodes,
+            req.ScopeKind,
+            req.ScopeId,
+            siteCode: null,
+            ct);
+        var response = await sender.Send(new ListReceivingQualityGatesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Skip,
+            req.Take,
+            req.GateStatus,
+            req.Keyword,
+            req.IncludeNotRequired,
+            req.InboundOrderNo,
+            scope.OperatorPrincipalIds,
+            scope.PoolCodes,
+            scope.SiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

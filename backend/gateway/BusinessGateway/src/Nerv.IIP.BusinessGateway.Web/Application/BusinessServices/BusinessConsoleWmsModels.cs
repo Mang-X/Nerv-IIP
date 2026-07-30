@@ -681,6 +681,22 @@ public sealed record BusinessConsoleWmsReceivingQualityGateListRequest(
     // 默认 false 保持质检工作清单语义（仅需检行）。
     bool IncludeNotRequired = false,
     // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword 跨单串扰。
+    string? InboundOrderNo = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessWmsReceivingQualityGateListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    int Skip = 0,
+    int Take = 100,
+    string? GateStatus = null,
+    string? Keyword = null,
+    bool IncludeNotRequired = false,
     string? InboundOrderNo = null);
 
 public sealed record BusinessConsoleWmsReceivingQualityGateListResponse(

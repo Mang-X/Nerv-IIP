@@ -198,7 +198,7 @@ public interface IBusinessWmsClient
 
     Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
         string internalBearerToken,
-        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        BusinessWmsReceivingQualityGateListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleWmsSupplierReturnListResponse> ListSupplierReturnRequestsAsync(
@@ -662,20 +662,25 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
 
     public Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
         string internalBearerToken,
-        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        BusinessWmsReceivingQualityGateListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleWmsReceivingQualityGateListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/wms/receiving-quality-gates?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("skip", request.Skip),
-                ("take", request.Take),
-                ("gateStatus", request.GateStatus),
-                ("keyword", request.Keyword),
-                ("includeNotRequired", TrueFlag(request.IncludeNotRequired)),
-                ("inboundOrderNo", request.InboundOrderNo)),
+            "/api/business/v1/wms/receiving-quality-gates?" + AppendAuthorizedSites(
+                Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("actorPrincipalId", request.ActorPrincipalId),
+                    ("scopeKind", request.ScopeKind),
+                    ("scopeId", request.ScopeId),
+                    ("skip", request.Skip),
+                    ("take", request.Take),
+                    ("gateStatus", request.GateStatus),
+                    ("keyword", request.Keyword),
+                    ("includeNotRequired", TrueFlag(request.IncludeNotRequired)),
+                    ("inboundOrderNo", request.InboundOrderNo)),
+                request.AuthorizedSiteCodes),
             null,
             cancellationToken);
 

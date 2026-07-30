@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -31,6 +32,22 @@ public sealed class WmsInboundReceivingQueryTests
             "SITE-1",
             lines,
             assignedPoolCode: "POOL-RECEIVING");
+
+    private static InboundOrder AssignedInboundOrder(
+        string inboundOrderNo,
+        string assignedPoolCode,
+        string assignedOperatorUserId,
+        params InboundOrderLineDraft[] lines) =>
+        Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            inboundOrderNo,
+            "asn",
+            $"SRC-{inboundOrderNo}",
+            "SITE-1",
+            lines,
+            assignedOperatorUserId,
+            assignedPoolCode);
 
     private static InboundOrderLineDraft Line(string lineNo, string qualityStatus) =>
         new(lineNo, $"SKU-{lineNo}", "kg", 5m, "LOC-STAGE", $"LOT-{lineNo}", null, qualityStatus, "company", "owner-001");
@@ -84,14 +101,23 @@ public sealed class WmsInboundReceivingQueryTests
 
         // 默认（质检工作清单）：排除免检行，仅需检行。
         var workList = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev"),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                AssignedPoolCodes: ["POOL-RECEIVING"],
+                SiteCodes: ["SITE-1"]),
             CancellationToken.None);
         Assert.Single(workList.Items);
         Assert.All(workList.Items, x => Assert.NotEqual(InboundQualityGateStatuses.NotRequired, x.QualityGateStatus));
 
         // includeNotRequired：返回全部收货行（含免检）。
         var allLines = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", IncludeNotRequired: true),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                IncludeNotRequired: true,
+                AssignedPoolCodes: ["POOL-RECEIVING"],
+                SiteCodes: ["SITE-1"]),
             CancellationToken.None);
         Assert.Equal(2, allLines.Items.Count);
         Assert.Contains(allLines.Items, x => x.QualityGateStatus == InboundQualityGateStatuses.NotRequired);
@@ -108,7 +134,8 @@ public sealed class WmsInboundReceivingQueryTests
             seed.InboundOrders.Add(InboundOrder("IN-777", Line("1", "quality")));
             seed.InboundOrders.Add(Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
                 "org-001", "env-dev", "IN-777-B", "asn", "SRC-B", "SITE-1",
-                [new InboundOrderLineDraft("1", "SKU-IN-777-XREF", "kg", 5m, "LOC-STAGE", "LOT-X", null, "quality", "company", "owner-001")]));
+                [new InboundOrderLineDraft("1", "SKU-IN-777-XREF", "kg", 5m, "LOC-STAGE", "LOT-X", null, "quality", "company", "owner-001")],
+                assignedPoolCode: "POOL-RECEIVING"));
             await seed.SaveChangesAsync(CancellationToken.None);
         }
 
@@ -117,15 +144,73 @@ public sealed class WmsInboundReceivingQueryTests
 
         // 精确单号：只返回 IN-777 的行，不被 IN-777-B（单号子串 + SKU 含 IN-777）串扰。
         var exact = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", InboundOrderNo: "IN-777"),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                InboundOrderNo: "IN-777",
+                AssignedPoolCodes: ["POOL-RECEIVING"],
+                SiteCodes: ["SITE-1"]),
             CancellationToken.None);
         Assert.Equal(1, exact.Total);
         Assert.All(exact.Items, x => Assert.Equal("IN-777", x.InboundOrderNo));
 
         // 对照：keyword=IN-777 会同时命中两单（证明精确过滤的必要性）。
         var byKeyword = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", Keyword: "IN-777"),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                Keyword: "IN-777",
+                AssignedPoolCodes: ["POOL-RECEIVING"],
+                SiteCodes: ["SITE-1"]),
             CancellationToken.None);
         Assert.Equal(2, byKeyword.Total);
+    }
+
+    [Fact]
+    public async Task ListReceivingQualityGates_exact_order_fails_closed_outside_persisted_assignment_scope()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = nameof(ListReceivingQualityGates_exact_order_fails_closed_outside_persisted_assignment_scope);
+        await using (var seed = CreateContext(databaseName, databaseRoot))
+        {
+            seed.InboundOrders.AddRange(
+                AssignedInboundOrder(
+                    "IN-MINE",
+                    "POOL-A",
+                    "worker-a",
+                    Line("1", "quality")),
+                AssignedInboundOrder(
+                    "IN-OUTSIDE",
+                    "POOL-B",
+                    "worker-b",
+                    Line("1", "quality")));
+            await seed.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var context = CreateContext(databaseName, databaseRoot);
+        var handler = new ListReceivingQualityGatesQueryHandler(context);
+        var own = await handler.Handle(
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                IncludeNotRequired: true,
+                InboundOrderNo: "IN-MINE",
+                AssignedOperatorUserIds: ["worker-a"],
+                SiteCodes: ["SITE-1"]),
+            CancellationToken.None);
+
+        Assert.Equal("IN-MINE", Assert.Single(own.Items).InboundOrderNo);
+
+        var denied = await Assert.ThrowsAsync<WmsAuthorizationException>(
+            () => handler.Handle(
+                new ListReceivingQualityGatesQuery(
+                    "org-001",
+                    "env-dev",
+                    IncludeNotRequired: true,
+                    InboundOrderNo: "IN-OUTSIDE",
+                    AssignedOperatorUserIds: ["worker-a"],
+                    SiteCodes: ["SITE-1"]),
+                CancellationToken.None));
+        Assert.Equal("resource-outside-selected-work-scope", denied.Reason);
     }
 }

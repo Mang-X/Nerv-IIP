@@ -778,7 +778,13 @@ public sealed class WmsEndpointContractTests
 
         var handler = new ListReceivingQualityGatesQueryHandler(dbContext);
         var all = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(3, all.Total);
@@ -786,7 +792,14 @@ public sealed class WmsEndpointContractTests
         Assert.DoesNotContain(all.Items, x => x.InboundOrderNo == "IN-GATE-NOGATE-001");
 
         var rejectedOnly = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100, "rejected"),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "rejected",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         var fact = Assert.Single(rejectedOnly.Items);
@@ -1509,7 +1522,8 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)]);
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)],
+            assignedPoolCode: "POOL-TEST");
     }
 
     private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")

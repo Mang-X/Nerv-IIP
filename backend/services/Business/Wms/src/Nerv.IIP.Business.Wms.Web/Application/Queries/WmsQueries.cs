@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
@@ -1063,7 +1064,10 @@ public sealed record ListReceivingQualityGatesQuery(
     bool IncludeNotRequired = false,
     // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword（同时命中 SKU/检验号）
     // 跨单串扰。与 keyword 互补——keyword 用于列表模糊搜。
-    string? InboundOrderNo = null) : IQuery<ListReceivingQualityGatesResponse>;
+    string? InboundOrderNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null) : IQuery<ListReceivingQualityGatesResponse>;
 
 public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
 
@@ -1097,13 +1101,79 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
 {
     public async Task<ListReceivingQualityGatesResponse> Handle(ListReceivingQualityGatesQuery request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
         var skip = Math.Max(0, request.Skip);
         var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
-        var query = dbContext.InboundOrders
+        var orderQuery = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .SelectMany(order => order.Lines, (order, line) => new { order, line });
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                organizationWideScope: false,
+                out var ownershipScope))
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length == 0)
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.InboundOrderNo))
+        {
+            var exactOrder = await orderQuery
+                .Where(x => x.InboundOrderNo == request.InboundOrderNo)
+                .Select(x => new
+                {
+                    x.AssignedOperatorUserId,
+                    x.AssignedPoolCode,
+                    x.SiteCode,
+                })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (exactOrder is not null)
+            {
+                var ownershipMatches = ownershipScope.Kind switch
+                {
+                    WmsOwnershipScopeKind.Operator =>
+                        exactOrder.AssignedOperatorUserId is not null
+                        && ownershipScope.Values.Contains(exactOrder.AssignedOperatorUserId),
+                    WmsOwnershipScopeKind.Pool =>
+                        exactOrder.AssignedPoolCode is not null
+                        && ownershipScope.Values.Contains(exactOrder.AssignedPoolCode),
+                    _ => false,
+                };
+                if (!ownershipMatches || !siteCodes.Contains(exactOrder.SiteCode))
+                {
+                    throw WmsAuthorizationException.Forbidden(
+                        "resource-outside-selected-work-scope");
+                }
+            }
+        }
+
+        orderQuery = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => orderQuery.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => orderQuery.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            _ => orderQuery.Where(_ => false),
+        };
+        orderQuery = orderQuery.Where(x => siteCodes.Contains(x.SiteCode));
+        var query = orderQuery.SelectMany(
+            order => order.Lines,
+            (order, line) => new { order, line });
 
         // 默认仅质检工作清单（排除免检行）；IncludeNotRequired=true 时返回全部收货行，
         // 供 PDA 收货明细展示/采集免检行的批号效期与「免检」状态标。

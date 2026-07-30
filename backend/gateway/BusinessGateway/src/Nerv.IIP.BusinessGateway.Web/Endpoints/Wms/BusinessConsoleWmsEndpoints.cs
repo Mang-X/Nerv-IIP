@@ -1670,6 +1670,11 @@ public sealed class ListBusinessConsoleWmsReceivingQualityGatesEndpoint(
         auth,
         BusinessGatewayPermissions.WmsReceiptsRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleWmsReceivingQualityGateListRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleWmsReceivingQualityGateListRequest request) => request.EnvironmentId;
@@ -1677,8 +1682,29 @@ public sealed class ListBusinessConsoleWmsReceivingQualityGatesEndpoint(
     protected override Task<BusinessConsoleWmsReceivingQualityGateListResponse> ForwardAsync(
         BusinessConsoleWmsReceivingQualityGateListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        wms.ListReceivingQualityGatesAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var trusted = WmsTrustedRequestContext.FromAuthorization(
+            AuthorizationResult,
+            BusinessGatewayPermissions.WmsReceiptsRead);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
+        return wms.ListReceivingQualityGatesAsync(
+            tokenProvider.BearerToken,
+            new BusinessWmsReceivingQualityGateListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                trusted.ActorPrincipalId,
+                trusted.AuthorizedSiteCodes,
+                scope.ScopeKind,
+                scope.ScopeId,
+                request.Skip,
+                request.Take,
+                request.GateStatus,
+                request.Keyword,
+                request.IncludeNotRequired,
+                request.InboundOrderNo),
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console WMS")]
@@ -2124,6 +2150,11 @@ public sealed class BusinessConsoleWmsReceivingQualityGateListRequestValidator :
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.GateStatus).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.InboundOrderNo).MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .Must(BusinessConsoleWmsScopeKinds.Contains)
+            .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
+        RuleFor(x => x.ScopeId).MaximumLength(200);
     }
 }
 

@@ -388,7 +388,22 @@ public sealed class BusinessGatewayWmsTests
                 "0199aa00-0000-7000-8000-000000000003"),
             CancellationToken.None);
         var wcs = await client.ListWcsTasksAsync("internal-token-001", new BusinessConsoleWmsWcsTaskListRequest("org-001", "env-dev", "EXT-001", "warehouse-task-001", 30, 15, "Failed", true, "EXT"), CancellationToken.None);
-        var gates = await client.ListReceivingQualityGatesAsync("internal-token-001", new BusinessConsoleWmsReceivingQualityGateListRequest("org-001", "env-dev", 5, 15, "rejected", "IN-GATE", IncludeNotRequired: true, InboundOrderNo: "IN-EXACT"), CancellationToken.None);
+        var gates = await client.ListReceivingQualityGatesAsync(
+            "internal-token-001",
+            new BusinessWmsReceivingQualityGateListRequest(
+                "org-001",
+                "env-dev",
+                "user-001",
+                ["SITE-A"],
+                "self",
+                "user-001",
+                5,
+                15,
+                "rejected",
+                "IN-GATE",
+                IncludeNotRequired: true,
+                InboundOrderNo: "IN-EXACT"),
+            CancellationToken.None);
         var returns = await client.ListSupplierReturnRequestsAsync("internal-token-001", new BusinessConsoleWmsListRequest("org-001", "env-dev", 10, 20, "Open", "RTS"), CancellationToken.None);
 
         Assert.Equal(23, inbound.Total);
@@ -425,7 +440,7 @@ public sealed class BusinessGatewayWmsTests
             "GET /api/business/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=work-pool&scopeId=POOL-B&locationCode=BIN-01&siteCode=SITE-A&skip=25&take=35&status=Open&keyword=PICK-001&authorizedSiteCodes=SITE-A",
             "GET /api/business/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=site&scopeId=SITE-A&locationCode=BIN-02&siteCode=SITE-A&skip=5&take=15&status=Open&keyword=COUNT-001&countExecutionId=0199aa00-0000-7000-8000-000000000003&authorizedSiteCodes=SITE-A",
             "GET /api/business/v1/wms/wcs-tasks?organizationId=org-001&environmentId=env-dev&externalTaskId=EXT-001&warehouseTaskId=warehouse-task-001&skip=30&take=15&status=Failed&failed=true&keyword=EXT",
-            "GET /api/business/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE&includeNotRequired=true&inboundOrderNo=IN-EXACT",
+            "GET /api/business/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-001&scopeKind=self&scopeId=user-001&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE&includeNotRequired=true&inboundOrderNo=IN-EXACT&authorizedSiteCodes=SITE-A",
             "GET /api/business/v1/wms/supplier-return-requests?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=RTS",
         ],
         handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.PathAndQuery}").ToArray());
@@ -1408,7 +1423,7 @@ public sealed class BusinessGatewayWmsTests
     public async Task Receiving_quality_gate_and_supplier_return_lists_use_receipts_read_permission_internal_token_and_filters()
     {
         var wms = new RecordingWmsClient();
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -1419,7 +1434,8 @@ public sealed class BusinessGatewayWmsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var gates = await client.GetAsync("/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE");
+        var gates = await client.GetAsync("/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool&scopeId=POOL-RECEIVING&actorPrincipalId=forged&authorizedSiteCodes=FORGED&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE");
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
         var returns = await client.GetAsync("/api/business-console/v1/wms/supplier-return-requests?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=RTS");
 
         Assert.Equal(HttpStatusCode.OK, gates.StatusCode);
@@ -1431,8 +1447,22 @@ public sealed class BusinessGatewayWmsTests
         ],
         auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal("internal-test-token", wms.LastInternalToken);
-        Assert.Equal(new BusinessConsoleWmsReceivingQualityGateListRequest("org-001", "env-dev", 5, 15, "rejected", "IN-GATE"), wms.LastReceivingQualityGateRequest);
+        Assert.Equivalent(
+            new BusinessWmsReceivingQualityGateListRequest(
+                "org-001",
+                "env-dev",
+                "user-admin",
+                ["S1"],
+                "work-pool",
+                "POOL-RECEIVING",
+                5,
+                15,
+                "rejected",
+                "IN-GATE"),
+            wms.LastReceivingQualityGateRequest,
+            strict: true);
         Assert.Equal(new BusinessConsoleWmsListRequest("org-001", "env-dev", 10, 20, "Open", "RTS"), wms.LastSupplierReturnRequest);
+        Assert.True(auth.Requirements[0].IncludePrincipalContext);
 
         using var gatesDocument = JsonDocument.Parse(await gates.Content.ReadAsStringAsync());
         var gatesData = gatesDocument.RootElement.GetProperty("data");
@@ -1452,6 +1482,37 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("RTS-IN-GATE-001-10-QI-REJ-001", returnItem.GetProperty("supplierReturnNo").GetString());
         Assert.Equal("return-to-supplier", returnItem.GetProperty("dispositionType").GetString());
         Assert.Equal("Open", returnItem.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Receiving_quality_gate_exact_order_propagates_scope_forbidden_without_leaking_lines()
+    {
+        var wms = new RecordingWmsClient
+        {
+            ForbiddenReceivingQualityGateOrderNo = "IN-OUTSIDE",
+        };
+        var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin&actorPrincipalId=forged&authorizedSiteCodes=FORGED&inboundOrderNo=IN-OUTSIDE&includeNotRequired=true");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("user-admin", wms.LastReceivingQualityGateRequest!.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastReceivingQualityGateRequest.AuthorizedSiteCodes);
+        Assert.Equal("self", wms.LastReceivingQualityGateRequest.ScopeKind);
+        Assert.Equal("user-admin", wms.LastReceivingQualityGateRequest.ScopeId);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("IN-OUTSIDE", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("SKU-FG-1000", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2163,7 +2224,9 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessConsoleWmsWcsTaskListRequest? LastWcsTaskRequest { get; private set; }
 
-    public BusinessConsoleWmsReceivingQualityGateListRequest? LastReceivingQualityGateRequest { get; private set; }
+    public BusinessWmsReceivingQualityGateListRequest? LastReceivingQualityGateRequest { get; private set; }
+
+    public string? ForbiddenReceivingQualityGateOrderNo { get; init; }
 
     public BusinessConsoleWmsListRequest? LastSupplierReturnRequest { get; private set; }
 
@@ -2660,11 +2723,22 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
         string internalBearerToken,
-        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        BusinessWmsReceivingQualityGateListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastReceivingQualityGateRequest = request;
+        if (ForbiddenReceivingQualityGateOrderNo is not null
+            && string.Equals(
+                request.InboundOrderNo,
+                ForbiddenReceivingQualityGateOrderNo,
+                StringComparison.Ordinal)
+            && string.Equals(request.ActorPrincipalId, "user-admin", StringComparison.Ordinal)
+            && request.AuthorizedSiteCodes.SequenceEqual(["S1"], StringComparer.Ordinal))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "scope-forbidden");
+        }
+
         return Task.FromResult(new BusinessConsoleWmsReceivingQualityGateListResponse(
         [
             new BusinessConsoleWmsReceivingQualityGateItem(
