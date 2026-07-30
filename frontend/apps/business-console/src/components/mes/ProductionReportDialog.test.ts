@@ -50,8 +50,10 @@ const stubs = {
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   NvCheckbox: {
-    props: ['disabled'],
-    template: '<input type="checkbox" :disabled="disabled" />',
+    props: ['disabled', 'modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input type="checkbox" :disabled="disabled" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
   },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },

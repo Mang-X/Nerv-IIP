@@ -152,7 +152,7 @@ async function onSubmit() {
             <NvFieldLabel for="report-complete">本工序已完成</NvFieldLabel>
             <NvCheckbox
               id="report-complete"
-              v-model:checked="form.completesOperation"
+              v-model="form.completesOperation"
               :disabled="!canCompleteOperation || intentLocked || !reportScopeReady"
             />
           </NvField>

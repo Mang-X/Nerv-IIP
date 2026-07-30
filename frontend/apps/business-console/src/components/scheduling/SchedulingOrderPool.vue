@@ -123,10 +123,12 @@ function setPriority(workOrderId: string, value: string | number) {
           <tr v-for="candidate in candidates" :key="candidate.workOrderId" class="border-t">
             <td class="p-2">
               <NvCheckbox
-                :checked="byId.get(candidate.workOrderId ?? '')?.included ?? false"
+                :model-value="byId.get(candidate.workOrderId ?? '')?.included ?? false"
                 :disabled="readOnly"
                 :aria-label="`加入工单 ${candidate.workOrderId}`"
-                @update:checked="emit('include', [candidate.workOrderId ?? ''], Boolean($event))"
+                @update:model-value="
+                  emit('include', [candidate.workOrderId ?? ''], Boolean($event))
+                "
               />
             </td>
             <td class="p-2 font-medium">{{ candidate.workOrderNo || candidate.workOrderId }}</td>
@@ -155,10 +157,10 @@ function setPriority(workOrderId: string, value: string | number) {
             </td>
             <td class="p-2">
               <NvCheckbox
-                :checked="byId.get(candidate.workOrderId ?? '')?.isRush ?? false"
+                :model-value="byId.get(candidate.workOrderId ?? '')?.isRush ?? false"
                 :disabled="readOnly"
                 :aria-label="`急单 ${candidate.workOrderId}`"
-                @update:checked="
+                @update:model-value="
                   emit('update', candidate.workOrderId ?? '', { isRush: Boolean($event) })
                 "
               />

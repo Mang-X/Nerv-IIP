@@ -464,21 +464,21 @@ async function confirmArchive() {
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>需要报工</span>
-                  <NvCheckbox id="op-report" v-model:checked="form.requiresReporting" />
+                  <NvCheckbox id="op-report" v-model="form.requiresReporting" />
                 </label>
                 <label
                   for="op-inspect"
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>需要质检</span>
-                  <NvCheckbox id="op-inspect" v-model:checked="form.requiresQualityInspection" />
+                  <NvCheckbox id="op-inspect" v-model="form.requiresQualityInspection" />
                 </label>
                 <label
                   for="op-outsource"
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>外协工序</span>
-                  <NvCheckbox id="op-outsource" v-model:checked="form.isOutsourced" />
+                  <NvCheckbox id="op-outsource" v-model="form.isOutsourced" />
                 </label>
               </NvFieldGroup>
 
