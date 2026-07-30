@@ -58,7 +58,7 @@ import {
   refetchWithBusinessContext,
   withBusinessContextEnabled,
 } from './businessContextBinding'
-import { executeLifecycleAction } from './lifecycleAction'
+import { executeLifecycleAction, LifecycleStateChangedError } from './lifecycleAction'
 import {
   useListFreshness,
   useListResponseState,
@@ -143,6 +143,9 @@ export interface WmsListFilters {
   take: number
   status?: string
   keyword?: string
+  scopeKind?: string
+  scopeId?: string
+  workScopeRequired?: boolean
 }
 
 export type WmsCompletionAttemptOptions = Readonly<{
@@ -170,6 +173,7 @@ export interface WmsWcsTaskListFilters extends WmsListFilters {
 
 export interface WmsWarehouseTaskListFilters extends WmsListFilters {
   locationCode?: string
+  lotNo?: string
 }
 
 function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
@@ -196,6 +200,8 @@ function baseQuery(filters: WmsListFilters) {
     take: filters.take,
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
+    ...optionalQuery('scopeKind', filters.scopeKind),
+    ...optionalQuery('scopeId', filters.scopeId),
   }
 }
 
@@ -235,19 +241,109 @@ function requireSuccessfulList<TItem>(
   return result.data.data?.items ?? []
 }
 
-function listScopeReady(filters: { organizationId: string; environmentId: string }) {
-  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
+function exactSuccessfulItem<TItem>(
+  result: Readonly<{
+    data?: { success?: boolean; data?: { items?: TItem[] } | null }
+    error?: unknown
+  }>,
+  matches: (item: TItem) => boolean,
+) {
+  const matchingItems = requireSuccessfulList(result).filter(matches)
+  return matchingItems.length === 1 ? matchingItems[0] : undefined
 }
 
-function listScopeKey(filters: { organizationId: string; environmentId: string }) {
-  return `${filters.organizationId.trim()}:${filters.environmentId.trim()}`
+function listScopeReady(filters: WmsListFilters) {
+  const tenantReady =
+    filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
+  if (!tenantReady) return false
+  if (!filters.workScopeRequired) return true
+  return Boolean(filters.scopeKind?.trim() && filters.scopeId?.trim())
+}
+
+function listScopeKey(filters: WmsListFilters) {
+  return [
+    filters.organizationId.trim(),
+    filters.environmentId.trim(),
+    filters.scopeKind?.trim() ?? '',
+    filters.scopeId?.trim() ?? '',
+  ].join(':')
+}
+
+function withWmsListScopeEnabled<TOptions extends object>(
+  options: TOptions,
+  filters: WmsListFilters,
+) {
+  return {
+    ...options,
+    enabled: listScopeReady(filters),
+  }
+}
+
+function refetchWithWmsListScope<TResult>(
+  filters: WmsListFilters,
+  query: { refetch: () => Promise<TResult> },
+): Promise<TResult | undefined> {
+  return listScopeReady(filters) ? query.refetch() : Promise.resolve(undefined)
+}
+
+type FrozenWmsCompletionScope = {
+  expectedVersion: number
+  scopeKind: string
+  scopeId: string
+}
+
+function trustedWorkScope(
+  filters: WmsListFilters,
+  restoredSnapshot?: unknown,
+): Pick<FrozenWmsCompletionScope, 'scopeKind' | 'scopeId'> {
+  if (restoredSnapshot !== undefined) {
+    if (!restoredSnapshot || typeof restoredSnapshot !== 'object') {
+      throw new LifecycleStateChangedError('preflight')
+    }
+    const snapshot = restoredSnapshot as Partial<FrozenWmsCompletionScope>
+    const scopeKind = snapshot.scopeKind?.trim()
+    const scopeId = snapshot.scopeId?.trim()
+    if (!scopeKind || !scopeId) throw new LifecycleStateChangedError('preflight')
+    return { scopeKind, scopeId }
+  }
+
+  const scopeKind = filters.scopeKind?.trim()
+  const scopeId = filters.scopeId?.trim()
+  if (!scopeKind || !scopeId) throw new LifecycleStateChangedError('preflight')
+  return { scopeKind, scopeId }
+}
+
+function requireVersion(resource?: { version?: number }) {
+  if (!Number.isInteger(resource?.version) || resource!.version! <= 0) {
+    throw new LifecycleStateChangedError('preflight')
+  }
+  return resource!.version!
+}
+
+function requireFrozenCompletion<TPayload extends object>(
+  snapshot: unknown,
+  operation: string,
+): TPayload & FrozenWmsCompletionScope {
+  const payload = requirePendingPayloadSnapshot<TPayload & Partial<FrozenWmsCompletionScope>>(
+    snapshot,
+    operation,
+  )
+  if (
+    !Number.isInteger(payload.expectedVersion) ||
+    payload.expectedVersion! <= 0 ||
+    !payload.scopeKind?.trim() ||
+    !payload.scopeId?.trim()
+  ) {
+    throw new Error(`${operation}缺少冻结的作业范围或版本，请保留当前页面并人工核实。`)
+  }
+  return payload as TPayload & FrozenWmsCompletionScope
 }
 
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
   const auth = useAuthStore()
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
   const inboundOrdersQuery = useQuery(() => ({
-    ...withBusinessContextEnabled(
+    ...withWmsListScopeEnabled(
       listBusinessConsoleWmsInboundOrdersQueryOptions({
         query: {
           ...baseQuery(filters),
@@ -330,7 +426,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
   )
 
   function refreshAll() {
-    void refetchWithBusinessContext(filters, inboundOrdersQuery)
+    void refetchWithWmsListScope(filters, inboundOrdersQuery)
     void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
     void refetchWithBusinessContext(filters, supplierReturnsQuery)
   }
@@ -357,8 +453,9 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
       payloadFingerprint: inboundOrderId,
     }
     const restored = peekPendingBusinessIntent(scope)
-    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, {})
-    requirePendingPayloadSnapshot<Record<string, never>>(pending.payloadSnapshot, '入库完成')
+    const commandScope = trustedWorkScope(filters, restored?.payloadSnapshot)
+    let authoritative: BusinessConsoleWmsInboundOrderItem | undefined
+    let pending: ReturnType<typeof acquirePendingBusinessIntent> | undefined
     completeInboundPending.value = true
     completeInboundError.value = undefined
     try {
@@ -369,27 +466,41 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
               query: {
                 organizationId: filters.organizationId,
                 environmentId: filters.environmentId,
+                ...commandScope,
                 inboundOrderId,
                 skip: 0,
-                take: 1,
+                take: 2,
               },
               throwOnError: false,
             })
-            const item = requireSuccessfulList<BusinessConsoleWmsInboundOrderItem>(response).find(
+            authoritative = exactSuccessfulItem<BusinessConsoleWmsInboundOrderItem>(
+              response,
               (candidate) => candidate.inboundOrderId === inboundOrderId,
             )
-            return item
+            return authoritative
               ? {
                   domain: 'wms-inbound' as const,
                   action: 'complete' as const,
                   facts: {
-                    status: item.status,
-                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                    status: authoritative.status,
+                    idempotentReplay: restored !== undefined,
                   },
                 }
               : undefined
           },
           command: () => {
+            pending = acquirePendingBusinessIntent(
+              scope,
+              () => idempotencyKey,
+              restored?.payloadSnapshot ?? {
+                ...commandScope,
+                expectedVersion: requireVersion(authoritative),
+              },
+            )
+            const stablePayload = requireFrozenCompletion<Record<string, never>>(
+              pending.payloadSnapshot,
+              '入库完成',
+            )
             options.onCommandAttempt?.()
             return completeBusinessConsoleWmsInboundOrder({
               path: { inboundOrderId },
@@ -397,12 +508,17 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
                 organizationId: filters.organizationId,
                 environmentId: filters.environmentId,
               },
-              body: { idempotencyKey: pending.idempotencyKey },
+              body: {
+                idempotencyKey: pending.idempotencyKey,
+                scopeKind: stablePayload.scopeKind,
+                scopeId: stablePayload.scopeId,
+                expectedVersion: stablePayload.expectedVersion,
+              },
               throwOnError: false,
             })
           },
         })
-        if (!envelope) throw new Error('入库完成未返回业务信封')
+        if (!envelope || !pending) throw new Error('入库完成未返回业务信封')
         await confirmBusinessConsoleOperation(envelope, {
           expectedOperationType: 'wms.inbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
@@ -443,7 +559,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     inboundOrdersLastUpdatedAt,
     inboundOrdersHasSuccessfulResponse,
     inboundOrdersHasFailedResponse,
-    refreshInboundOrders: () => refetchWithBusinessContext(filters, inboundOrdersQuery),
+    refreshInboundOrders: () => refetchWithWmsListScope(filters, inboundOrdersQuery),
     receivingQualityGates: computed<BusinessConsoleWmsReceivingQualityGateItem[]>(() =>
       listItems<BusinessConsoleWmsReceivingQualityGateItem>(
         receivingQualityGatesQuery.data.value as
@@ -479,7 +595,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
   const auth = useAuthStore()
   const filters = defaultFilters<WmsListFilters>(initialFilters)
   const outboundOrdersQuery = useQuery(() =>
-    withBusinessContextEnabled(
+    withWmsListScopeEnabled(
       listBusinessConsoleWmsOutboundOrdersQueryOptions({
         query: baseQuery(filters),
       }),
@@ -510,7 +626,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
   const createMutation = useMutation({
     ...createBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, outboundOrdersQuery)
+      void refetchWithWmsListScope(filters, outboundOrdersQuery)
     },
   })
 
@@ -528,11 +644,9 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
       payloadFingerprint: `${outboundOrderId}:${JSON.stringify(payload)}`,
     }
     const restored = peekPendingBusinessIntent(scope)
-    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, payload)
-    const stablePayload = requirePendingPayloadSnapshot<typeof payload>(
-      pending.payloadSnapshot,
-      '出库完成',
-    )
+    const commandScope = trustedWorkScope(filters, restored?.payloadSnapshot)
+    let authoritative: BusinessConsoleWmsOutboundOrderItem | undefined
+    let pending: ReturnType<typeof acquirePendingBusinessIntent> | undefined
     completeOutboundPending.value = true
     completeOutboundError.value = undefined
     try {
@@ -543,27 +657,42 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
               query: {
                 organizationId: filters.organizationId,
                 environmentId: filters.environmentId,
+                ...commandScope,
                 outboundOrderId,
                 skip: 0,
-                take: 1,
+                take: 2,
               },
               throwOnError: false,
             })
-            const item = requireSuccessfulList<BusinessConsoleWmsOutboundOrderItem>(response).find(
+            authoritative = exactSuccessfulItem<BusinessConsoleWmsOutboundOrderItem>(
+              response,
               (candidate) => candidate.outboundOrderId === outboundOrderId,
             )
-            return item
+            return authoritative
               ? {
                   domain: 'wms-outbound' as const,
                   action: 'complete' as const,
                   facts: {
-                    status: item.status,
-                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                    status: authoritative.status,
+                    idempotentReplay: restored !== undefined,
                   },
                 }
               : undefined
           },
           command: () => {
+            pending = acquirePendingBusinessIntent(
+              scope,
+              () => idempotencyKey,
+              restored?.payloadSnapshot ?? {
+                ...payload,
+                ...commandScope,
+                expectedVersion: requireVersion(authoritative),
+              },
+            )
+            const stablePayload = requireFrozenCompletion<typeof payload>(
+              pending.payloadSnapshot,
+              '出库完成',
+            )
             options.onCommandAttempt?.()
             return completeBusinessConsoleWmsOutboundOrder({
               path: { outboundOrderId },
@@ -571,12 +700,19 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
                 organizationId: filters.organizationId,
                 environmentId: filters.environmentId,
               },
-              body: { ...stablePayload, idempotencyKey: pending.idempotencyKey },
+              body: {
+                packReviewNo: stablePayload.packReviewNo,
+                passed: stablePayload.passed,
+                idempotencyKey: pending.idempotencyKey,
+                scopeKind: stablePayload.scopeKind,
+                scopeId: stablePayload.scopeId,
+                expectedVersion: stablePayload.expectedVersion,
+              },
               throwOnError: false,
             })
           },
         })
-        if (!envelope) throw new Error('出库完成未返回业务信封')
+        if (!envelope || !pending) throw new Error('出库完成未返回业务信封')
         await confirmBusinessConsoleOperation(envelope, {
           expectedOperationType: 'wms.outbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
@@ -584,7 +720,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
         })
         return envelope
       })
-      await refetchWithBusinessContext(filters, outboundOrdersQuery)
+      await refetchWithWmsListScope(filters, outboundOrdersQuery)
       return result
     } catch (error) {
       completeOutboundError.value = error
@@ -611,7 +747,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
     outboundOrdersLastUpdatedAt,
     outboundOrdersHasSuccessfulResponse,
     outboundOrdersHasFailedResponse,
-    refreshOutboundOrders: () => refetchWithBusinessContext(filters, outboundOrdersQuery),
+    refreshOutboundOrders: () => refetchWithWmsListScope(filters, outboundOrdersQuery),
     completeOutbound: completeOutboundOrder,
     completeOutboundPending,
     completeOutboundError,
@@ -674,13 +810,27 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
     refreshWcsTasks: () => refetchWithBusinessContext(filters, wcsTasksQuery),
     dispatchWcs: (
       warehouseTaskId: string,
-      payload: { adapterType: string; externalTaskId: string; payloadJson: string },
-    ) =>
-      dispatchMutation.mutateAsync({
+      payload: {
+        adapterType: string
+        externalTaskId: string
+        payloadJson: string
+        expectedVersion?: number
+      },
+    ) => {
+      if (!Number.isInteger(payload.expectedVersion)) {
+        return Promise.reject(new LifecycleStateChangedError('preflight'))
+      }
+      return dispatchMutation.mutateAsync({
         path: { warehouseTaskId },
         query: withQuery(),
-        body: payload,
-      }),
+        body: {
+          adapterType: payload.adapterType,
+          externalTaskId: payload.externalTaskId,
+          payloadJson: payload.payloadJson,
+          expectedVersion: payload.expectedVersion!,
+        },
+      })
+    },
     dispatchWcsPending: dispatchMutation.isLoading,
     dispatchWcsError: dispatchMutation.error,
     failWcs: (externalTaskId: string, payload: { failureCode: string; failureMessage: string }) =>
@@ -698,6 +848,7 @@ function warehouseTaskQuery(filters: WmsWarehouseTaskListFilters) {
   return {
     ...baseQuery(filters),
     ...optionalQuery('locationCode', filters.locationCode),
+    ...optionalQuery('lotNo', filters.lotNo),
   }
 }
 
@@ -705,7 +856,7 @@ function warehouseTaskQuery(filters: WmsWarehouseTaskListFilters) {
 export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const putawayTasksQuery = useQuery(() =>
-    withBusinessContextEnabled(
+    withWmsListScopeEnabled(
       listBusinessConsoleWmsPutawayTasksQueryOptions({
         query: warehouseTaskQuery(filters),
       }),
@@ -731,7 +882,7 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, putawayTasksQuery)
+      void refetchWithWmsListScope(filters, putawayTasksQuery)
     },
   })
 
@@ -752,7 +903,7 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
     putawayTasksLastUpdatedAt,
     putawayTasksHasSuccessfulResponse,
     putawayTasksHasFailedResponse,
-    refreshPutawayTasks: () => refetchWithBusinessContext(filters, putawayTasksQuery),
+    refreshPutawayTasks: () => refetchWithWmsListScope(filters, putawayTasksQuery),
     createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
       createMutation.mutateAsync({
         path: { inboundOrderId },
@@ -768,7 +919,7 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
 export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const pickingTasksQuery = useQuery(() =>
-    withBusinessContextEnabled(
+    withWmsListScopeEnabled(
       listBusinessConsoleWmsPickingTasksQueryOptions({
         query: warehouseTaskQuery(filters),
       }),
@@ -794,7 +945,7 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPickingTaskMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, pickingTasksQuery)
+      void refetchWithWmsListScope(filters, pickingTasksQuery)
     },
   })
 
@@ -815,7 +966,7 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
     pickingTasksLastUpdatedAt,
     pickingTasksHasSuccessfulResponse,
     pickingTasksHasFailedResponse,
-    refreshPickingTasks: () => refetchWithBusinessContext(filters, pickingTasksQuery),
+    refreshPickingTasks: () => refetchWithWmsListScope(filters, pickingTasksQuery),
     createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
       createMutation.mutateAsync({
         path: { outboundOrderId },
@@ -832,7 +983,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
   const auth = useAuthStore()
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const countExecutionsQuery = useQuery(() =>
-    withBusinessContextEnabled(
+    withWmsListScopeEnabled(
       listBusinessConsoleWmsCountExecutionsQueryOptions({
         query: {
           ...baseQuery(filters),
@@ -864,7 +1015,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
   const createMutation = useMutation({
     ...createBusinessConsoleWmsCountExecutionMutationOptions(),
     onSuccess() {
-      void refetchWithBusinessContext(filters, countExecutionsQuery)
+      void refetchWithWmsListScope(filters, countExecutionsQuery)
     },
   })
   const completeCountExecutionPending = shallowRef(false)
@@ -884,11 +1035,9 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       payloadFingerprint: `${countExecutionId}:${countedQuantity}`,
     }
     const restored = peekPendingBusinessIntent(scope)
-    const pending = acquirePendingBusinessIntent(scope, () => idempotencyKey, { countedQuantity })
-    const stablePayload = requirePendingPayloadSnapshot<{ countedQuantity: number }>(
-      pending.payloadSnapshot,
-      '盘点完成',
-    )
+    const commandScope = trustedWorkScope(filters, restored?.payloadSnapshot)
+    let authoritative: BusinessConsoleWmsCountExecutionItem | undefined
+    let pending: ReturnType<typeof acquirePendingBusinessIntent> | undefined
     completeCountExecutionPending.value = true
     completeCountExecutionError.value = undefined
     try {
@@ -899,27 +1048,42 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
               query: {
                 organizationId: filters.organizationId,
                 environmentId: filters.environmentId,
+                ...commandScope,
                 countExecutionId,
                 skip: 0,
-                take: 1,
+                take: 2,
               },
               throwOnError: false,
             })
-            const item = requireSuccessfulList<BusinessConsoleWmsCountExecutionItem>(response).find(
+            authoritative = exactSuccessfulItem<BusinessConsoleWmsCountExecutionItem>(
+              response,
               (candidate) => candidate.countExecutionId === countExecutionId,
             )
-            return item
+            return authoritative
               ? {
                   domain: 'wms-count' as const,
                   action: 'complete' as const,
                   facts: {
-                    status: item.status,
-                    idempotentReplay: restored?.idempotencyKey === pending.idempotencyKey,
+                    status: authoritative.status,
+                    idempotentReplay: restored !== undefined,
                   },
                 }
               : undefined
           },
           command: () => {
+            pending = acquirePendingBusinessIntent(
+              scope,
+              () => idempotencyKey,
+              restored?.payloadSnapshot ?? {
+                countedQuantity,
+                ...commandScope,
+                expectedVersion: requireVersion(authoritative),
+              },
+            )
+            const stablePayload = requireFrozenCompletion<{ countedQuantity: number }>(
+              pending.payloadSnapshot,
+              '盘点完成',
+            )
             options.onCommandAttempt?.()
             return completeBusinessConsoleWmsCountExecution({
               path: { countExecutionId },
@@ -930,12 +1094,15 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
               body: {
                 countedQuantity: stablePayload.countedQuantity,
                 idempotencyKey: pending.idempotencyKey,
+                scopeKind: stablePayload.scopeKind,
+                scopeId: stablePayload.scopeId,
+                expectedVersion: stablePayload.expectedVersion,
               },
               throwOnError: false,
             })
           },
         })
-        if (!envelope) throw new Error('盘点完成未返回业务信封')
+        if (!envelope || !pending) throw new Error('盘点完成未返回业务信封')
         await confirmBusinessConsoleOperation(envelope, {
           expectedOperationType: 'wms.count-execution.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
@@ -943,7 +1110,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
         })
         return envelope
       })
-      await refetchWithBusinessContext(filters, countExecutionsQuery)
+      await refetchWithWmsListScope(filters, countExecutionsQuery)
       return result
     } catch (error) {
       completeCountExecutionError.value = error
@@ -970,7 +1137,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     countExecutionsLastUpdatedAt,
     countExecutionsHasSuccessfulResponse,
     countExecutionsHasFailedResponse,
-    refreshCountExecutions: () => refetchWithBusinessContext(filters, countExecutionsQuery),
+    refreshCountExecutions: () => refetchWithWmsListScope(filters, countExecutionsQuery),
     createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
       createMutation.mutateAsync({ body }),
     createCountExecutionPending: createMutation.isLoading,

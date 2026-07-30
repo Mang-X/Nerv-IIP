@@ -10,6 +10,7 @@ import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusin
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -68,21 +69,43 @@ const {
   pickingTasksLastUpdatedAt,
   pickingTasksHasSuccessfulResponse,
   pickingTasksHasFailedResponse,
-} = useWmsPickingTasks()
-const pickingScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
-)
-const pickingScope = computed(() =>
-  pickingScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
+} = useWmsPickingTasks({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: pickingScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'shipments')
 const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
+  resetOn: [
+    () => filters.status,
+    () => filters.locationCode,
+    () => filters.keyword,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
 })
 // 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
 const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
 // 出库单是真实读面（只要组织/环境即可列出），拣货任务必须挂在已存在的出库单下。
-const { outboundOrders, outboundOrdersPending } = useWmsOutboundOrders({ take: 200 })
+const {
+  filters: outboundOrderFilters,
+  outboundOrders,
+  outboundOrdersPending,
+} = useWmsOutboundOrders({ take: 200, workScopeRequired: true })
+watch(
+  () => [filters.scopeKind, filters.scopeId] as const,
+  ([scopeKind, scopeId]) => {
+    outboundOrderFilters.scopeKind = scopeKind
+    outboundOrderFilters.scopeId = scopeId
+    outboundOrderFilters.skip = 0
+  },
+  { immediate: true, flush: 'sync' },
+)
 /**
  * 选择器以**人读单号**为选中值，而不是出库单的内部 id——选择器会把 value 当编码显示出来，
  * 直接绑 id 会把 GUID 露到界面上（UI 不暴露工程语言）。提交时再映射回 id，提交体不变。
@@ -204,7 +227,7 @@ const listErrorMessage = computed(() =>
  */
 // 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && pickingScopeReady.value)
 const headerCount = computed(() => {
   if (!contextReady.value) return '未选择业务范围'
   if (pickingTasksError.value) return '任务数取不到'
@@ -282,6 +305,11 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshPickingTasks()
+}
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
@@ -297,7 +325,7 @@ function firstQuery(value: unknown) {
           type="button"
           variant="outline"
           :disabled="pickingTasksPending"
-          @click="refreshPickingTasks"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -310,23 +338,31 @@ function firstQuery(value: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="pickingScope"
-      source="拣货任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 发货作业范围目录"
       :loaded="pickingTasks.length"
       :total="pickingTasksTotal"
       :updated-at="pickingTasksLastUpdatedAt"
       :empty="pickingTasksHasSuccessfulResponse && !pickingTasksError && pickingTasks.length === 0"
-      :failed="pickingTasksHasFailedResponse || Boolean(pickingTasksError)"
-      failure-explanation="拣货任务服务未成功返回，请重试。"
+      :failed="
+        pickingTasksHasFailedResponse || Boolean(pickingTasksError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 发货作业范围或拣货任务未成功返回，请重试。"
       :empty-explanation="
-        pickingScopeReady
-          ? '当前组织/环境范围没有拣货任务；后端未提供操作员归属过滤，空态不代表个人任务。'
-          : '缺少组织或环境范围，未发起查询。'
+        pickingScopeReady ? '当前作业范围没有拣货任务。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
         <NvInput
           v-model="filters.keyword"
           class="h-9 w-40"

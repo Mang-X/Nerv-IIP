@@ -31,6 +31,7 @@ import {
 } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -85,15 +86,23 @@ const {
   countExecutionsLastUpdatedAt,
   countExecutionsHasSuccessfulResponse,
   countExecutionsHasFailedResponse,
-} = useWmsCountExecutions()
-const countScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
-)
-const countScope = computed(() =>
-  countScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
+} = useWmsCountExecutions({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: countScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'counts')
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.locationCode],
+  resetOn: [
+    () => filters.locationCode,
+    () => filters.status,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
 })
 // 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
@@ -133,7 +142,7 @@ const varianceCount = computed(() => countExecutions.value.filter(hasVariance).l
  * `varianceCount` 恒为 0，直接渲染就会告诉仓管「账实一致」——把故障说成绿灯。
  * 非就绪一律值显 `—`、状态说取不到、脚注说清无法判断。
  */
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && countScopeReady.value)
 const varianceCardReady = computed(
   () => contextReady.value && !countExecutionsError.value && !countExecutionsPending.value,
 )
@@ -403,6 +412,11 @@ async function submitComplete() {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshCountExecutions()
+}
 </script>
 
 <template>
@@ -418,7 +432,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="countExecutionsPending"
-          @click="refreshCountExecutions"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -431,8 +445,8 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="countScope"
-      source="仓储盘点任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 盘点作业范围目录"
       :loaded="countExecutions.length"
       :total="countExecutionsTotal"
       :updated-at="countExecutionsLastUpdatedAt"
@@ -441,12 +455,12 @@ function formatError(error: unknown) {
         !countExecutionsError &&
         countExecutions.length === 0
       "
-      :failed="countExecutionsHasFailedResponse || Boolean(countExecutionsError)"
-      failure-explanation="仓储盘点任务服务未成功返回，请重试。"
+      :failed="
+        countExecutionsHasFailedResponse || Boolean(countExecutionsError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 盘点作业范围或盘点任务未成功返回，请重试。"
       :empty-explanation="
-        countScopeReady
-          ? '当前组织/环境范围没有盘点任务；后端未提供操作员归属过滤，空态不代表个人任务。'
-          : '缺少组织或环境范围，未发起查询。'
+        countScopeReady ? '当前作业范围没有盘点任务。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
@@ -477,6 +491,14 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
         <NvEntityPicker
           v-model="filters.locationCode"
           class="w-36"

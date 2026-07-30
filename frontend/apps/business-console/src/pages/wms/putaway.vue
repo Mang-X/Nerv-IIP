@@ -11,6 +11,7 @@ import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusine
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -73,13 +74,16 @@ const {
   putawayTasksLastUpdatedAt,
   putawayTasksHasSuccessfulResponse,
   putawayTasksHasFailedResponse,
-} = useWmsPutawayTasks()
-const putawayScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
-)
-const putawayScope = computed(() =>
-  putawayScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
+} = useWmsPutawayTasks({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: putawayScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'receipts')
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
 const inboundOrderNo = computed(() => firstQuery(route.query.inboundOrderNo))
@@ -92,12 +96,31 @@ watch(
   { immediate: true },
 )
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
+  resetOn: [
+    () => filters.status,
+    () => filters.locationCode,
+    () => filters.keyword,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
 })
 // 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
 const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
 // 入库单是真实读面（只要组织/环境即可列出），上架任务必须挂在已存在的入库单下。
-const { inboundOrders, inboundOrdersPending } = useWmsInboundOrders({ take: 200 })
+const {
+  filters: inboundOrderFilters,
+  inboundOrders,
+  inboundOrdersPending,
+} = useWmsInboundOrders({ take: 200, workScopeRequired: true })
+watch(
+  () => [filters.scopeKind, filters.scopeId] as const,
+  ([scopeKind, scopeId]) => {
+    inboundOrderFilters.scopeKind = scopeKind
+    inboundOrderFilters.scopeId = scopeId
+    inboundOrderFilters.skip = 0
+  },
+  { immediate: true, flush: 'sync' },
+)
 /**
  * 选择器以**人读单号**为选中值，而不是入库单的内部 id——选择器会把 value 当编码显示出来，
  * 直接绑 id 会把 GUID 露到界面上（UI 不暴露工程语言）。提交时再映射回 id，提交体不变。
@@ -226,7 +249,7 @@ const listErrorMessage = computed(() =>
  */
 // 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && putawayScopeReady.value)
 const headerCount = computed(() => {
   if (!contextReady.value) return '未选择业务范围'
   if (putawayTasksError.value) return '任务数取不到'
@@ -304,6 +327,11 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshPutawayTasks()
+}
 function firstQuery(value: unknown) {
   return Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' ? value : ''
 }
@@ -318,7 +346,7 @@ function firstQuery(value: unknown) {
           type="button"
           variant="outline"
           :disabled="putawayTasksPending"
-          @click="refreshPutawayTasks"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -331,23 +359,31 @@ function firstQuery(value: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="putawayScope"
-      source="上架任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 收货作业范围目录"
       :loaded="putawayTasks.length"
       :total="putawayTasksTotal"
       :updated-at="putawayTasksLastUpdatedAt"
       :empty="putawayTasksHasSuccessfulResponse && !putawayTasksError && putawayTasks.length === 0"
-      :failed="putawayTasksHasFailedResponse || Boolean(putawayTasksError)"
-      failure-explanation="上架任务服务未成功返回，请重试。"
+      :failed="
+        putawayTasksHasFailedResponse || Boolean(putawayTasksError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 收货作业范围或上架任务未成功返回，请重试。"
       :empty-explanation="
-        putawayScopeReady
-          ? '当前组织/环境范围没有上架任务；后端未提供操作员归属过滤，空态不代表个人任务。'
-          : '缺少组织或环境范围，未发起查询。'
+        putawayScopeReady ? '当前作业范围没有上架任务。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
         <NvInput
           v-model="filters.keyword"
           class="h-9 w-40"

@@ -142,6 +142,23 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
+vi.mock('@/composables/useWmsWorkScope', () => ({
+  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+    filters.scopeKind = 'self'
+    filters.scopeId = 'emp049'
+    filters.skip = 0
+    return {
+      scopeKey: shallowRef('self:emp049'),
+      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+      selectedScopeLabel: computed(() => '我的任务'),
+      hasSelection: computed(() => true),
+      pending: shallowRef(false),
+      error: shallowRef(undefined),
+      refresh: vi.fn(async () => undefined),
+    }
+  },
+}))
+
 vi.mock('@/composables/useBusinessWms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: () => ({

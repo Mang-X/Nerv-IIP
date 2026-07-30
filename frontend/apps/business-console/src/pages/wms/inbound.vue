@@ -15,6 +15,7 @@ import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGua
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -99,13 +100,16 @@ const {
   inboundOrdersLastUpdatedAt,
   inboundOrdersHasSuccessfulResponse,
   inboundOrdersHasFailedResponse,
-} = useWmsInboundOrders()
-const inboundScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
-)
-const inboundScope = computed(() =>
-  inboundScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
+} = useWmsInboundOrders({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: inboundScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'receipts')
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
@@ -119,6 +123,8 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.siteCode,
     () => filters.locationCode,
     () => filters.lotNo,
+    () => filters.scopeKind,
+    () => filters.scopeId,
   ],
 })
 
@@ -315,7 +321,7 @@ const listErrorMessage = computed(() =>
  */
 // 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && inboundScopeReady.value)
 const headerCount = computed(() => {
   if (!contextReady.value) return '未选择业务范围'
   if (inboundOrdersError.value) return '入库单数取不到'
@@ -356,6 +362,7 @@ const contextUnavailable = computed(() => {
 })
 
 function refreshAll() {
+  void refreshWorkScopes()
   void refreshInboundOrders()
   void refreshReceivingQuality()
 }
@@ -426,18 +433,20 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="inboundScope"
-      source="收货入库服务（组织/环境范围）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 收货作业范围目录"
       :loaded="inboundOrders.length"
       :total="inboundOrdersTotal"
       :updated-at="inboundOrdersLastUpdatedAt"
       :empty="
         inboundOrdersHasSuccessfulResponse && !inboundOrdersError && inboundOrders.length === 0
       "
-      :failed="inboundOrdersHasFailedResponse || Boolean(inboundOrdersError)"
-      failure-explanation="收货入库服务未成功返回，请重试。"
+      :failed="
+        inboundOrdersHasFailedResponse || Boolean(inboundOrdersError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 收货作业范围或入库单未成功返回，请重试。"
       :empty-explanation="
-        inboundScopeReady ? '当前组织/环境范围没有收货单。' : '缺少组织或环境范围，未发起查询。'
+        inboundScopeReady ? '当前作业范围没有收货单。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
@@ -475,6 +484,14 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
         <NvEntityPicker
           v-model="filters.skuCode"
           class="w-56"
