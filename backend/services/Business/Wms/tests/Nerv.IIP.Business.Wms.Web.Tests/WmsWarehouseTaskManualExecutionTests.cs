@@ -1,5 +1,10 @@
+using MediatR;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -110,6 +115,166 @@ public sealed class WmsWarehouseTaskManualExecutionTests
         Assert.Equal(2, first.Version);
         Assert.Equal(first with { AllowedActions = replay.AllowedActions, BlockReasons = replay.BlockReasons }, replay);
         Assert.Single(await dbContext.WarehouseTaskActionReceipts.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public void Warehouse_task_action_receipt_recovery_wraps_unit_of_work_save()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<StartWarehouseTaskCommand, WarehouseTaskActionResult>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var recoveryBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.IsGenericType
+                && type.GetGenericTypeDefinition()
+                    == typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>));
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(recoveryBehaviorIndex >= 0, "Action-receipt recovery behavior must be registered.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit-of-work behavior must be registered.");
+        Assert.True(
+            recoveryBehaviorIndex < unitOfWorkBehaviorIndex,
+            "Action-receipt recovery behavior must wrap the unit-of-work save.");
+    }
+
+    [Fact]
+    public async Task Concurrent_same_payload_replays_the_winning_action_receipt()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"wms-action-receipt-same-{Guid.CreateVersion7():N}";
+        await using var losingDbContext =
+            CreateConcurrentContext(databaseName, databaseRoot);
+        var task = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-RACE-SAME",
+            assignedOperatorUserId: "user-001");
+        GrantPoolAccess(losingDbContext, "user-001");
+        losingDbContext.WarehouseTasks.Add(task);
+        await losingDbContext.SaveChangesAsync();
+        var command = new StartWarehouseTaskCommand(
+            task.Id,
+            "org-001",
+            "env-dev",
+            "user-001",
+            "start-race-same",
+            1,
+            WarehouseTaskType.Picking,
+            ["SITE-01"],
+            "self",
+            "user-001");
+        var losingHandler = new StartWarehouseTaskCommandHandler(
+            losingDbContext,
+            CreateAuthorizer(losingDbContext));
+        var behavior =
+            new WarehouseTaskActionReceiptRecoveryBehavior<
+                StartWarehouseTaskCommand,
+                WarehouseTaskActionResult>(losingDbContext);
+        var attempts = 0;
+
+        var result = await behavior.Handle(
+            command,
+            async cancellationToken =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    await losingHandler.Handle(command, cancellationToken);
+                    await using var winningDbContext =
+                        CreateConcurrentContext(databaseName, databaseRoot);
+                    await new StartWarehouseTaskCommandHandler(
+                            winningDbContext,
+                            CreateAuthorizer(winningDbContext))
+                        .Handle(command, cancellationToken);
+                    await winningDbContext.SaveChangesAsync(cancellationToken);
+                    throw ActionReceiptUniqueConflict(losingDbContext);
+                }
+
+                return await losingHandler.Handle(command, cancellationToken);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(WarehouseTaskStatus.InProgress.ToString(), result.Status);
+        Assert.Equal(2, result.Version);
+        Assert.Single(
+            await losingDbContext.WarehouseTaskActionReceipts
+                .AsNoTracking()
+                .ToListAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_different_payload_retries_as_an_idempotency_conflict()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"wms-action-receipt-different-{Guid.CreateVersion7():N}";
+        await using var losingDbContext =
+            CreateConcurrentContext(databaseName, databaseRoot);
+        var task = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-RACE-DIFFERENT",
+            assignedOperatorUserId: "user-001");
+        task.Start("user-001", task.Version);
+        GrantPoolAccess(losingDbContext, "user-001");
+        losingDbContext.WarehouseTasks.Add(task);
+        await losingDbContext.SaveChangesAsync();
+        var losingCommand = new RecordWarehouseTaskProgressActionCommand(
+            task.Id,
+            "org-001",
+            "env-dev",
+            "user-001",
+            "progress-race-different",
+            2,
+            6m,
+            WarehouseTaskType.Picking,
+            ["SITE-01"],
+            "self",
+            "user-001");
+        var winningCommand = losingCommand with { ExecutedQuantity = 5m };
+        var losingHandler = new RecordWarehouseTaskProgressActionCommandHandler(
+            losingDbContext,
+            CreateAuthorizer(losingDbContext));
+        var behavior =
+            new WarehouseTaskActionReceiptRecoveryBehavior<
+                RecordWarehouseTaskProgressActionCommand,
+                WarehouseTaskActionResult>(losingDbContext);
+        var attempts = 0;
+
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() => behavior.Handle(
+            losingCommand,
+            async cancellationToken =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    await losingHandler.Handle(losingCommand, cancellationToken);
+                    await using var winningDbContext =
+                        CreateConcurrentContext(databaseName, databaseRoot);
+                    await new RecordWarehouseTaskProgressActionCommandHandler(
+                            winningDbContext,
+                            CreateAuthorizer(winningDbContext))
+                        .Handle(winningCommand, cancellationToken);
+                    await winningDbContext.SaveChangesAsync(cancellationToken);
+                    throw ActionReceiptUniqueConflict(losingDbContext);
+                }
+
+                return await losingHandler.Handle(losingCommand, cancellationToken);
+            },
+            CancellationToken.None));
+
+        Assert.Equal(2, attempts);
+        var receipt = Assert.Single(
+            await losingDbContext.WarehouseTaskActionReceipts
+                .AsNoTracking()
+                .ToListAsync());
+        Assert.Equal(5m, receipt.ResultExecutedQuantity);
     }
 
     [Fact]
@@ -500,6 +665,44 @@ public sealed class WmsWarehouseTaskManualExecutionTests
                 principalId,
                 DateTime.UtcNow.AddDays(-1),
                 DateTime.UtcNow.AddDays(1)));
+    }
+
+    private static DbUpdateException ActionReceiptUniqueConflict(
+        ApplicationDbContext dbContext)
+    {
+        var constraintName = dbContext.Model.FindEntityType(typeof(WarehouseTaskActionReceipt))!
+            .GetIndexes()
+            .Single(index =>
+                index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(
+                    [
+                        nameof(WarehouseTaskActionReceipt.OrganizationId),
+                        nameof(WarehouseTaskActionReceipt.EnvironmentId),
+                        nameof(WarehouseTaskActionReceipt.WarehouseTaskId),
+                        nameof(WarehouseTaskActionReceipt.Action),
+                        nameof(WarehouseTaskActionReceipt.IdempotencyKey),
+                    ]))
+            .GetDatabaseName()!;
+        return new DbUpdateException(
+            "unique conflict",
+            new FakePostgresException("23505", constraintName));
+    }
+
+    private static ApplicationDbContext CreateConcurrentContext(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class FakePostgresException(string sqlState, string constraintName) : Exception
+    {
+        public string SqlState { get; } = sqlState;
+
+        public string ConstraintName { get; } = constraintName;
     }
 
     private sealed record ExpectedContract(

@@ -1054,6 +1054,36 @@ public sealed class WarehouseTaskActionCommandLock<TCommand> : ICommandLock<TCom
     }
 }
 
+public sealed class WarehouseTaskActionReceiptRecoveryBehavior<TRequest, TResponse>(
+    ApplicationDbContext dbContext)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    public async Task<TResponse> Handle(
+        TRequest request,
+        RequestHandlerDelegate<TResponse> next,
+        CancellationToken cancellationToken)
+    {
+        if (request is not IWarehouseTaskActionCommand)
+        {
+            return await next(cancellationToken);
+        }
+
+        try
+        {
+            return await next(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (
+            WarehouseTaskActionReceiptPersistenceConflicts.IsTargetConflict(
+                exception,
+                dbContext))
+        {
+            dbContext.ChangeTracker.Clear();
+            return await next(cancellationToken);
+        }
+    }
+}
+
 internal static class WarehouseTaskActionExecution
 {
     public static async Task<WarehouseTaskActionResult> ExecuteAsync<TCommand>(
@@ -1241,7 +1271,9 @@ public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
     RequestDelegate next,
     ILogger<WarehouseTaskActionPersistenceConflictMiddleware> logger)
 {
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(
+        HttpContext context,
+        ApplicationDbContext dbContext)
     {
         try
         {
@@ -1263,10 +1295,14 @@ public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
                 context.RequestAborted);
         }
         catch (DbUpdateException exception) when (
-            exception.Entries.Any(entry =>
-                entry.Entity is WarehouseTaskActionReceipt
-                    or WarehouseAssignmentReceipt)
-            && HasPostgreSqlUniqueViolation(exception))
+            (exception.Entries.Any(entry =>
+                    entry.Entity is WarehouseTaskActionReceipt)
+                && WarehouseTaskActionReceiptPersistenceConflicts.IsTargetConflict(
+                    exception,
+                    dbContext))
+            || (exception.Entries.Any(entry =>
+                    entry.Entity is WarehouseAssignmentReceipt)
+                && HasPostgreSqlUniqueViolation(exception)))
         {
             logger.LogInformation(
                 "WMS warehouse-task action receipt uniqueness conflict. Path={Path}",

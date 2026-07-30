@@ -109,6 +109,7 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
+            .AddOpenBehavior(typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();

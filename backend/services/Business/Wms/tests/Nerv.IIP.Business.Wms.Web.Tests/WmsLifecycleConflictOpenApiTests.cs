@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
@@ -36,6 +37,37 @@ public sealed class WmsLifecycleConflictOpenApiTests
             dbContext));
         Assert.False(WmsIdempotencyPersistenceConflicts.IsTargetConflict(
             UniqueConflict("ux_unrelated_wms_constraint"),
+            dbContext));
+    }
+
+    [Fact]
+    public void Warehouse_task_action_receipt_recovery_only_classifies_its_owned_unique_constraint()
+    {
+        using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        using var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var constraintName = dbContext.Model.FindEntityType(typeof(WarehouseTaskActionReceipt))!
+            .GetIndexes()
+            .Single(index =>
+                index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(
+                    [
+                        nameof(WarehouseTaskActionReceipt.OrganizationId),
+                        nameof(WarehouseTaskActionReceipt.EnvironmentId),
+                        nameof(WarehouseTaskActionReceipt.WarehouseTaskId),
+                        nameof(WarehouseTaskActionReceipt.Action),
+                        nameof(WarehouseTaskActionReceipt.IdempotencyKey),
+                    ]))
+            .GetDatabaseName()!;
+
+        Assert.True(WarehouseTaskActionReceiptPersistenceConflicts.IsTargetConflict(
+            UniqueConflict(constraintName),
+            dbContext));
+        Assert.False(WarehouseTaskActionReceiptPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_unrelated_wms_constraint"),
+            dbContext));
+        Assert.False(WarehouseTaskActionReceiptPersistenceConflicts.IsTargetConflict(
+            UniqueConflict(constraintName, "40001"),
             dbContext));
     }
 
@@ -153,8 +185,10 @@ public sealed class WmsLifecycleConflictOpenApiTests
         "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch",
     ];
 
-    private static DbUpdateException UniqueConflict(string constraintName) =>
-        new("unique conflict", new FakePostgresException("23505", constraintName));
+    private static DbUpdateException UniqueConflict(
+        string constraintName,
+        string sqlState = "23505") =>
+        new("unique conflict", new FakePostgresException(sqlState, constraintName));
 
     private sealed class FakePostgresException(string sqlState, string constraintName) : Exception
     {

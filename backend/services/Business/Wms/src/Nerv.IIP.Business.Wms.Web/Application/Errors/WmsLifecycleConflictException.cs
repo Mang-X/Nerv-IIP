@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 
@@ -164,6 +165,32 @@ public static class WmsWcsDispatchPersistenceConflicts
                 index.IsUnique
                 && index.Properties.Select(property => property.Name).SequenceEqual(
                     [nameof(WcsTask.WarehouseTaskId)]))
+            .GetDatabaseName();
+        return WmsIdempotencyPersistenceConflicts.MatchesPostgreSqlUniqueConstraint(
+            exception,
+            expectedConstraint);
+    }
+}
+
+public static class WarehouseTaskActionReceiptPersistenceConflicts
+{
+    public static bool IsTargetConflict(
+        DbUpdateException exception,
+        ApplicationDbContext dbContext)
+    {
+        var expectedConstraint = dbContext.Model
+            .FindEntityType(typeof(WarehouseTaskActionReceipt))
+            ?.GetIndexes()
+            .Single(index =>
+                index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(
+                    [
+                        nameof(WarehouseTaskActionReceipt.OrganizationId),
+                        nameof(WarehouseTaskActionReceipt.EnvironmentId),
+                        nameof(WarehouseTaskActionReceipt.WarehouseTaskId),
+                        nameof(WarehouseTaskActionReceipt.Action),
+                        nameof(WarehouseTaskActionReceipt.IdempotencyKey),
+                    ]))
             .GetDatabaseName();
         return WmsIdempotencyPersistenceConflicts.MatchesPostgreSqlUniqueConstraint(
             exception,
