@@ -757,6 +757,7 @@ function reasonLabel(reason?: string | null) {
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
+          :work-orders="workbench.candidates.value"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"

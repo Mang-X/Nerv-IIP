@@ -84,6 +84,17 @@ vi.mock('@/stores/auth', () => ({
 }))
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
+    // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
+    candidates: computed(() => [
+      {
+        workOrderId: 'WO-20260701-001',
+        skuCode: 'SKU-PISTON-01',
+        quantity: 120,
+        dueUtc: '2026-07-06T00:00:00Z',
+        status: 'released',
+        productionVersionId: 'pv-001',
+      },
+    ]),
     candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
@@ -424,6 +435,67 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('冲突')
     expect(wrapper.text()).toContain('锁定')
     expect(wrapper.text()).not.toContain('甘特可视化待接入')
+  })
+
+  it('opens the clicked operation detail beside the Gantt instead of the whole-plan drawer', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub } },
+    })
+    await flushPromises()
+
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="scheduling-task-detail"]').exists()).toBe(false)
+
+    await wrapper.find('[data-task-id="assign-002"]').trigger('click')
+    await flushPromises()
+
+    const detailPanel = wrapper.find('[data-testid="scheduling-task-detail"]')
+    expect(detailPanel.exists()).toBe(true)
+    // 粒度要对：点的是一道工序，标题与字段就走工序形态（工单汇总行/资源时间块另有形态）。
+    expect(detailPanel.attributes('data-detail-kind')).toBe('operation')
+    expect(detailPanel.text()).toContain('工序详情')
+    // 工序级事实：工单、工序、资源、时间、锁定状态、工单级物料。
+    expect(detailPanel.text()).toContain('WO-20260701-001')
+    expect(detailPanel.text()).toContain('OP-20')
+    expect(detailPanel.text()).toContain('RES-CNC-01')
+    expect(detailPanel.text()).toContain('已锁定')
+    expect(detailPanel.text()).toContain('SKU-PISTON-01')
+    // 齐套没有权威来源：说明去哪儿看，不给估算数。
+    expect(detailPanel.text()).toContain('齐套率排程契约未返回')
+    // 甘特没有被遮挡，仍然在场且可继续换选。
+    expect(wrapper.find('[data-testid="readonly-schedule-timeline"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('排程方案明细')
+
+    await wrapper.find('[data-task-id="assign-003"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="scheduling-task-detail"]').text()).toContain(
+      'WO-20260701-002',
+    )
+  })
+
+  it('keeps the whole-plan drawer behind the plan-level entry on the Gantt tab', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('方案明细'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('排程方案明细')
+    expect(wrapper.text()).toContain('资源分配')
   })
 
   it('does not render summaries without a plan id as Gantt selector options', async () => {

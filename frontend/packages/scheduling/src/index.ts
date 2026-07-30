@@ -3,6 +3,9 @@
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ResourceSchedulerBoard } from './components/ResourceSchedulerBoard.vue'
 export { default as SchedulingLegend } from './components/panels/SchedulingLegend.vue'
+// 选中工序详情面板。业务侧的只读甘特与草案工作区共用同一份工序详情呈现,
+// 不要在应用层另写一份重复实现。
+export { default as TaskDetailPanel } from './components/panels/TaskDetailPanel.vue'
 
 export { useSchedulingPlan, type SchedulingContext } from './composables/useSchedulingPlan'
 export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useSchedulingEdits'
