@@ -439,7 +439,7 @@ BusinessGateway console API 引入后，生成链路增加 `business-gateway-con
 
 根治方案：两个 Gateway 的 `SwaggerDocument` 配置统一设置 `s.SchemaSettings.ResolveExternalXmlDocumentation = false`，禁止 NJsonSchema 探测程序集旁路径之外的外部 XML（NuGet 缓存、SDK 目录），使导出结果机器无关；随构建输出的本仓库项目 XML（如 `Nerv.IIP.Contracts.*.xml`）仍正常参与 description 生成。已在“本机缓存已解出 package XML”的污染状态下实证：导出 + `pnpm -C frontend generate:api` 与已提交快照零漂移。辅助口径：`scripts/export-gateway-openapi.ps1` 的构建步骤固定 `NUGET_XMLDOC_MODE=skip`，与 CI restore 行为一致，避免导出流程继续向本机缓存解出 XML。
 
-另注意：corepack 按“就近 `package.json` 的 `packageManager` 字段”决定 pnpm 版本，仓库根目录没有 `package.json`，从根目录调用 `pnpm -C frontend ...` 会拉取最新 pnpm 并因与锁定版本不一致直接失败；脚本内的 pnpm 调用必须以 `frontend/` 为工作目录（`scripts/verify-openapi-client-drift.ps1` 已如此处理）。
+另注意：corepack 按“就近 `package.json` 的 `packageManager` 字段”决定 pnpm 版本，仓库根目录没有 `package.json`，从根目录 cwd 调用 `pnpm -C frontend ...` 会拉取最新 pnpm 并因与锁定版本不一致直接失败。该坑已在 helper 层根治：`scripts/lib/ScriptAutomation.ps1` 的 `Invoke-Pnpm` 统一经 `Resolve-PnpmInvocation` 把 `-C`/`--dir` 对齐为进程 cwd，未显式传 `WorkingDirectory` 时默认以 `frontend/` 为 cwd；脚本内 pnpm 调用一律走 `Invoke-Pnpm`，不需要各脚本再各自处理工作目录。
 
 ## 使用规则
 

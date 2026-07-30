@@ -586,7 +586,8 @@ describe('business MES composables', () => {
         },
         { idempotencyKey: 'no-scope-key' },
       ),
-    ).rejects.toThrow('尚未选择已授权作业范围')
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+    ).rejects.toThrow('没有已授权的作业范围')
 
     expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
     expect(mutation).not.toHaveBeenCalled()
@@ -865,7 +866,8 @@ describe('business MES composables', () => {
         completesOperation: false,
         idempotencyKey: 'report-no-scope',
       }),
-    ).rejects.toThrow('尚未选择已授权作业范围')
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+    ).rejects.toThrow('没有已授权的作业范围')
     expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
   })
 

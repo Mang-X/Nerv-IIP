@@ -45,6 +45,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
       workOrders: computed(() => state.workOrders),
       workOrdersError: computed(() => undefined),
       workOrdersPending: computed(() => false),
+      // #1288 候选选择器现在按 scope gate 区分「没查」与「没有」，本文件按就绪打桩。
+      workOrderReadScopeMessage: computed(() => ''),
+      workOrderReadScopeReady: computed(() => true),
     }
   },
 }))

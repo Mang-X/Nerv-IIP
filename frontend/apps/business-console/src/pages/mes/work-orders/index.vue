@@ -19,6 +19,7 @@ import {
   orderRowsByUrgency,
   type UrgencyDisplayMode,
 } from '@/composables/useUrgencyDisplayMode'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -511,6 +512,7 @@ function isNonEmpty(value: string) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
+        <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工单状态"
             ><NvSelectValue
