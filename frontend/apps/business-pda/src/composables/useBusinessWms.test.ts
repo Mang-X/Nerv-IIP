@@ -1450,9 +1450,9 @@ describe('PDA WMS composables', () => {
             {
               warehouseTaskId: 'pick-1',
               taskNo: 'PICK-001',
-              status: 'Completed',
-              version: 3,
-              allowedActions: [],
+              status: 'Open',
+              version: 2,
+              allowedActions: ['start'],
             },
           ],
           total: 1,
@@ -1492,6 +1492,89 @@ describe('PDA WMS composables', () => {
       { ...SCOPE, scopeKind: 'self', scopeId: 'emp049' },
       { ...SCOPE, scopeKind: 'self', scopeId: 'emp049' },
     ])
+  })
+
+  it('authoritative refresh confirms an unconfirmed start and clears the stale action error', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const unconfirmed = Object.assign(new Error('unconfirmed'), {
+      code: 'business-operation-unconfirmed',
+    })
+    coladaState.startPicking.mockRejectedValueOnce(unconfirmed)
+    const result = useWmsPicking()
+    const intent = { action: 'start' as const, task: result.tasks.value[0]! }
+
+    await expect(result.executeTask(intent)).rejects.toBe(unconfirmed)
+    expect(result.actionUnconfirmed.value).toBe(true)
+    expect(result.error.value).toBe(unconfirmed)
+
+    coladaState.listPicking.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              warehouseTaskId: 'pick-1',
+              taskNo: 'PICK-001',
+              status: 'InProgress',
+              version: 3,
+              executedQuantity: 0,
+              allowedActions: ['progress', 'exception', 'complete'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+
+    await expect(result.refresh()).resolves.toMatchObject({ confirmedAction: 'start' })
+    expect(result.actionUnconfirmed.value).toBe(false)
+    expect(result.error.value).toBeUndefined()
+    expect(result.actionConfirmedSequence.value).toBe(1)
+    expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a confirmed start successful when only the follow-up list refresh fails', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const result = useWmsPicking()
+    const refreshFailure = new Error('list refresh failed')
+    coladaState.refetchById
+      .get('listBusinessConsoleWmsPickingTasks')!
+      .mockRejectedValueOnce(refreshFailure)
+
+    await expect(
+      result.executeTask({ action: 'start', task: result.tasks.value[0]! }),
+    ).resolves.toMatchObject({ warehouseTaskId: 'pick-1', status: 'InProgress' })
+    expect(result.actionUnconfirmed.value).toBe(false)
+    expect(result.actionConfirmedSequence.value).toBe(1)
+    expect(result.error.value).toBe(refreshFailure)
   })
 
   it('exposes success:false and malformed raw responses as failures for every WMS list', async () => {

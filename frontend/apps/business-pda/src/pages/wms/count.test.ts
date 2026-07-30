@@ -10,6 +10,7 @@ import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
+const authPermissionCodes = ref(['business.inventory.counts.manage'])
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
@@ -40,6 +41,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     }),
   }
 })
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    get principal() {
+      return {
+        permissionCodes: authPermissionCodes.value,
+      }
+    },
+  }),
+}))
 
 // 真实组合式用真实的 ref/computed，贴合运行时解包行为。
 const wmsState = vi.hoisted(() => ({
@@ -125,6 +135,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
 import CountPage from './count.vue'
 
 function resetState() {
+  authPermissionCodes.value = ['business.inventory.counts.manage']
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
   scopeKey.value = 'self:emp049'
@@ -218,6 +229,30 @@ describe('WMS 盘点', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findComponent(NvNumberKeyboard).props('show')).toBe(true)
+  })
+
+  it('只读盘点用户仍可查看任务，但不能进入完成动作', async () => {
+    authPermissionCodes.value = ['business.wms.counts.read']
+    const wrapper = mount(CountPage, { attachTo: document.body })
+
+    expect(wrapper.text()).toContain('CT-2026-0001')
+    await wrapper.findAll('[data-row]')[0]!.trigger('click')
+
+    expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(wmsState.completeCount).not.toHaveBeenCalled()
+  })
+
+  it('抽屉打开后权限失效也不得提交盘点完成', async () => {
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0]!.trigger('click')
+    await enterCount(wrapper, '8')
+
+    authPermissionCodes.value = ['business.wms.counts.read']
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wmsState.completeCount).not.toHaveBeenCalled()
   })
 
   it('点任务 → 抽屉 → 实盘数未填时确认按钮禁用', async () => {

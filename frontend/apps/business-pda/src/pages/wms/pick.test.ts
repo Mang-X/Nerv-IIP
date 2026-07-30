@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
@@ -130,5 +130,48 @@ describe('WMS 拣货作业页', () => {
     expect(filters.status).toBe('InProgress')
     expect(scopeKey.value).toBe('team:TEAM-WMS-01')
     expect(executeTask).toHaveBeenCalledWith({ action: 'start', task })
+  })
+
+  it('开始成功后聚焦执行中任务，避免任务从待执行列表消失', async () => {
+    executeTask.mockResolvedValueOnce({ ...task, status: 'InProgress', version: 2 })
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['execute'],
+            template:
+              '<button data-testid="execute" @click="$emit(\'execute\', { action: \'start\', task })" />',
+            setup() {
+              return { task }
+            },
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="execute"]').trigger('click')
+    await Promise.resolve()
+
+    expect(filters.status).toBe('InProgress')
+  })
+
+  it('候选刷新失败也不阻断权威任务刷新后的执行中聚焦', async () => {
+    refresh.mockResolvedValueOnce({ confirmedAction: 'start' })
+    candidateState.refresh.mockRejectedValueOnce(new Error('candidate refresh failed'))
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['refresh'],
+            template: '<button data-testid="refresh" @click="$emit(\'refresh\')" />',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(filters.status).toBe('InProgress')
   })
 })

@@ -88,6 +88,8 @@ const props = withDefaults(
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
     actionPending?: boolean
+    actionUnconfirmed?: boolean
+    actionConfirmedSequence?: number
   }>(),
   {
     currentPrincipalId: undefined,
@@ -110,6 +112,8 @@ const props = withDefaults(
     scopeOptions: () => [],
     error: undefined,
     actionPending: false,
+    actionUnconfirmed: false,
+    actionConfirmedSequence: 0,
   },
 )
 
@@ -125,10 +129,12 @@ const emit = defineEmits<{
   refresh: []
   loadMore: []
   retry: []
+  verify: []
   execute: [intent: WarehouseTaskExecutionIntent]
 }>()
 
 const selectedTask = shallowRef<WarehouseTaskExecutionItem>()
+const frozenIntent = shallowRef<WarehouseTaskExecutionIntent>()
 const executedQuantity = shallowRef('0')
 const numberKeyboardOpen = shallowRef(false)
 const selectedReason = shallowRef('')
@@ -165,6 +171,7 @@ const canProgress = computed(() => selectedActions.value.includes('progress'))
 const canReportException = computed(() => selectedActions.value.includes('exception'))
 const canComplete = computed(() => selectedActions.value.includes('complete'))
 const actionSheetOpen = computed(() => selectedTask.value !== undefined)
+const actionLocked = computed(() => props.actionPending || props.actionUnconfirmed)
 const actionLabel = computed(() => (props.taskType === 'picking' ? '拣货' : '上架'))
 const scanActive = computed(() => !actionSheetOpen.value && !numberKeyboardOpen.value)
 
@@ -230,14 +237,16 @@ function selectTask(task: WarehouseTaskExecutionItem) {
   validationMessage.value = ''
 }
 
-function closeSheet() {
+function closeSheet(force = false) {
+  if (!force && actionLocked.value) return
   selectedTask.value = undefined
+  frozenIntent.value = undefined
   numberKeyboardOpen.value = false
   validationMessage.value = ''
 }
 
 function openQuantityKeyboard() {
-  if (!props.actionPending) numberKeyboardOpen.value = true
+  if (!actionLocked.value) numberKeyboardOpen.value = true
 }
 
 watch(
@@ -248,8 +257,27 @@ watch(
     () => props.locationCode,
     () => props.lotNo,
   ],
-  closeSheet,
+  () => closeSheet(),
 )
+
+watch(
+  () => props.actionConfirmedSequence,
+  (sequence, previous) => {
+    if (sequence > previous) closeSheet(true)
+  },
+)
+
+function dispatchIntent(intent: WarehouseTaskExecutionIntent) {
+  if (props.actionPending) return
+  const nextIntent = props.actionUnconfirmed && frozenIntent.value ? frozenIntent.value : intent
+  frozenIntent.value = nextIntent
+  emit('execute', nextIntent)
+}
+
+function retryFrozenIntent() {
+  if (!frozenIntent.value || props.actionPending) return
+  emit('execute', frozenIntent.value)
+}
 
 function emitSimpleAction(action: 'start' | 'exception') {
   const task = selectedTask.value
@@ -259,14 +287,13 @@ function emitSimpleAction(action: 'start' | 'exception') {
     return
   }
 
-  emit('execute', {
+  dispatchIntent({
     action,
     task,
     ...(action === 'exception'
       ? { exceptionCode: selectedReason.value, reason: selectedReasonLabel() }
       : {}),
   })
-  closeSheet()
 }
 
 function emitQuantityAction(action: 'progress' | 'complete') {
@@ -289,13 +316,12 @@ function emitQuantityAction(action: 'progress' | 'complete') {
   }
 
   validationMessage.value = ''
-  emit('execute', {
+  dispatchIntent({
     action,
     task,
     executedQuantity: quantity,
     ...(quantity < planned ? { reason: selectedReasonLabel() } : {}),
   })
-  closeSheet()
 }
 </script>
 
@@ -415,8 +441,8 @@ function emitQuantityAction(action: 'progress' | 'complete') {
               data-testid="executed-quantity"
               title="累计完成数量"
               :value="executedQuantity || '点击录入'"
-              :arrow="!actionPending"
-              :aria-disabled="actionPending"
+              :arrow="!actionLocked"
+              :aria-disabled="actionLocked"
               @click="openQuantityKeyboard"
             />
           </div>
@@ -430,6 +456,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
               :key="reason.code"
               :data-testid="`difference-${reason.code}`"
               :variant="selectedReason === reason.code ? 'primary' : 'outline'"
+              :disabled="actionLocked"
               @click="selectedReason = reason.code"
             >
               {{ reason.label }}
@@ -441,8 +468,36 @@ function emitQuantityAction(action: 'progress' | 'complete') {
           {{ validationMessage }}
         </p>
 
+        <div
+          v-if="actionUnconfirmed"
+          class="space-y-2 rounded-xl border border-warning/40 bg-warning/10 p-3"
+        >
+          <p class="text-sm font-medium text-foreground">提交结果待核实</p>
+          <p class="text-xs text-muted-foreground">
+            当前任务、动作、数量与原因已锁定。请先刷新核实，或按原内容重试。
+          </p>
+          <NvMobileButton
+            data-testid="verify-frozen-action"
+            block
+            variant="outline"
+            :disabled="actionPending || refreshing"
+            @click="emit('verify')"
+          >
+            刷新核实
+          </NvMobileButton>
+          <NvMobileButton
+            data-testid="retry-frozen-action"
+            block
+            variant="primary"
+            :disabled="actionPending"
+            @click="retryFrozenIntent"
+          >
+            {{ actionPending ? '提交中…' : '按原内容重试' }}
+          </NvMobileButton>
+        </div>
+
         <NvMobileButton
-          v-if="canStart"
+          v-else-if="canStart"
           block
           variant="primary"
           :disabled="actionPending"
@@ -451,7 +506,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
           开始{{ actionLabel }}
         </NvMobileButton>
         <NvMobileButton
-          v-if="canProgress"
+          v-if="!actionUnconfirmed && canProgress"
           data-testid="confirm-progress"
           block
           variant="outline"
@@ -461,7 +516,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
           保存进度
         </NvMobileButton>
         <NvMobileButton
-          v-if="canComplete"
+          v-if="!actionUnconfirmed && canComplete"
           data-testid="confirm-complete"
           block
           variant="primary"
@@ -471,7 +526,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
           完成{{ actionLabel }}
         </NvMobileButton>
         <NvMobileButton
-          v-if="canReportException"
+          v-if="!actionUnconfirmed && canReportException"
           data-testid="report-exception"
           block
           variant="outline"

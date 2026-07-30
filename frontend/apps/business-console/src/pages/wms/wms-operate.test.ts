@@ -337,6 +337,8 @@ describe('WMS operate actions', () => {
     wms.permissionCodes = [
       'business.wms.receipts.read',
       'business.wms.receipts.manage',
+      'business.wms.counts.read',
+      'business.inventory.counts.manage',
       'business.quality.inspection-records.read',
     ]
   })
@@ -362,6 +364,16 @@ describe('WMS operate actions', () => {
     expect(refreshList).toHaveBeenCalledOnce()
     expect(candidateState.refresh).toHaveBeenCalledOnce()
     wrapper.unmount()
+  })
+
+  it('盘点只读用户仍可查看列表，但不显示新建与完成动作', async () => {
+    wms.permissionCodes = ['business.wms.counts.read']
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('CNT-1')
+    expect(wrapper.text()).not.toContain('新建盘点单')
+    expect(wrapper.find('button[aria-label="盘点操作 CNT-1"]').exists()).toBe(false)
   })
 
   it('completes an inbound order after confirmation', async () => {

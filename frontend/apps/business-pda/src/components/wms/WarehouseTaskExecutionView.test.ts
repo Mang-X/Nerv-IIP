@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { NvNumberKeyboard, NvPullRefresh, NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvNumberKeyboard, NvPullRefresh, NvScanBar } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -172,6 +172,52 @@ describe('WarehouseTaskExecutionView', () => {
     expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
   })
 
+  it('请求发出后保留动作抽屉，结果未知时冻结原意图并支持核实与原样重试', async () => {
+    const wrapper = mountView([openTask])
+    await wrapper.get('[data-task-no="PK-2026-0001"]').trigger('click')
+    const start = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes('开始拣货'),
+    )!
+
+    start.click()
+    await wrapper.setProps({ actionPending: true })
+
+    expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeNull()
+    expect(wrapper.emitted('execute')?.at(-1)).toEqual([
+      {
+        action: 'start',
+        task: openTask,
+      },
+    ])
+
+    await wrapper.setProps({ actionPending: false, actionUnconfirmed: true })
+    const retry = document.querySelector<HTMLButtonElement>('[data-testid="retry-frozen-action"]')!
+    const verify = document.querySelector<HTMLButtonElement>(
+      '[data-testid="verify-frozen-action"]',
+    )!
+    expect(retry.textContent).toContain('按原内容重试')
+    expect(verify.textContent).toContain('刷新核实')
+
+    retry.click()
+    verify.click()
+    await nextTick()
+
+    expect(wrapper.emitted('execute')?.at(-1)).toEqual([
+      {
+        action: 'start',
+        task: openTask,
+      },
+    ])
+    expect(wrapper.emitted('verify')).toHaveLength(1)
+
+    wrapper.findComponent(NvBottomSheet).vm.$emit('update:open', false)
+    await nextTick()
+    expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeNull()
+
+    await wrapper.setProps({ actionUnconfirmed: false, actionConfirmedSequence: 1 })
+    expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeNull()
+  })
+
   it('执行中任务支持进度、异常、完成，并以快捷原因完成短拣', async () => {
     const wrapper = mountView()
     await wrapper.get('[data-task-no="PK-2026-0002"]').trigger('click')
@@ -201,6 +247,7 @@ describe('WarehouseTaskExecutionView', () => {
         reason: '库位缺货',
       },
     ])
+    await wrapper.setProps({ actionConfirmedSequence: 1 })
     expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeNull()
   })
 

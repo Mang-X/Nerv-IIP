@@ -814,6 +814,26 @@ export interface WmsWarehouseTaskExecutionIntent {
   reason?: string
 }
 
+type WarehouseTaskAction = WmsWarehouseTaskExecutionIntent['action']
+
+interface FrozenWarehouseTaskAction {
+  action: WarehouseTaskAction
+  warehouseTaskId: string
+  taskNo?: string
+  expectedVersion: number
+  payloadSnapshot: {
+    expectedVersion: number
+    executedQuantity?: number
+    exceptionCode?: string
+    reason?: string
+    differenceReason?: string
+    scopeKind: string
+    scopeId: string
+  }
+  intentScope: PendingBusinessIntentScope
+  pendingLookupKey: string
+}
+
 function normalizeWarehouseTask(
   task: BusinessConsoleWmsWarehouseTaskItem,
 ): WmsWarehouseTask | undefined {
@@ -829,6 +849,36 @@ function normalizeWarehouseTask(
 
 function taskLifecycleError(task: BusinessConsoleWmsWarehouseTaskItem | undefined) {
   return lifecycleUnavailable(task)
+}
+
+function canonicalWarehouseTaskStatus(status: string | null | undefined) {
+  return (
+    status
+      ?.trim()
+      .toLowerCase()
+      .replaceAll(/[^a-z]/g, '') ?? ''
+  )
+}
+
+function isWarehouseTaskActionConfirmed(
+  frozen: FrozenWarehouseTaskAction,
+  authoritative: BusinessConsoleWmsWarehouseTaskItem | undefined,
+) {
+  if (
+    !authoritative ||
+    !Number.isInteger(authoritative.version) ||
+    authoritative.version! <= frozen.expectedVersion
+  ) {
+    return false
+  }
+
+  const status = canonicalWarehouseTaskStatus(authoritative.status)
+  if (frozen.action === 'start') return status === 'inprogress'
+  if (frozen.action === 'exception') return status === 'exception'
+
+  const quantityMatches = authoritative.executedQuantity === frozen.payloadSnapshot.executedQuantity
+  if (frozen.action === 'progress') return status === 'inprogress' && quantityMatches
+  return (status === 'completed' || status === 'completedwithdifference') && quantityMatches
 }
 
 function unwrapTaskActionResult(
@@ -929,6 +979,9 @@ function useWmsWarehouseTasks(
   const loadingMore = shallowRef(false)
   const actionPending = shallowRef(false)
   const actionError = shallowRef<unknown>()
+  const unconfirmedTaskAction = shallowRef<FrozenWarehouseTaskAction>()
+  const actionConfirmedSequence = shallowRef(0)
+  const actionUnconfirmed = computed(() => unconfirmedTaskAction.value !== undefined)
   const pendingTaskIntentScopes = new Map<string, PendingBusinessIntentScope>()
 
   const tasksQuery = useQuery(() => ({
@@ -986,7 +1039,13 @@ function useWmsWarehouseTasks(
     resetPaging()
     refreshing.value = true
     try {
+      const confirmedAction = await verifyUnconfirmedTaskAction()
       await tasksQuery.refetch()
+      if (!unconfirmedTaskAction.value) actionError.value = undefined
+      return confirmedAction ? { confirmedAction } : {}
+    } catch (error) {
+      actionError.value = error
+      throw error
     } finally {
       refreshing.value = false
     }
@@ -1051,6 +1110,52 @@ function useWmsWarehouseTasks(
     } finally {
       loadingMore.value = false
     }
+  }
+
+  function taskListOperation() {
+    return taskType === 'picking'
+      ? listBusinessConsoleWmsPickingTasks
+      : listBusinessConsoleWmsPutawayTasks
+  }
+
+  async function readAuthoritativeTask(frozen: FrozenWarehouseTaskAction) {
+    const { data } = await taskListOperation()({
+      query: {
+        organizationId: frozen.intentScope.organizationId,
+        environmentId: frozen.intentScope.environmentId,
+        scopeKind: frozen.payloadSnapshot.scopeKind,
+        scopeId: frozen.payloadSnapshot.scopeId,
+        keyword: frozen.taskNo?.trim() || frozen.warehouseTaskId,
+        skip: 0,
+        take: TASK_PAGE_SIZE,
+      },
+      throwOnError: true,
+    })
+    return exactItem(
+      data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+      (item: BusinessConsoleWmsWarehouseTaskItem) =>
+        item.warehouseTaskId === frozen.warehouseTaskId,
+    )
+  }
+
+  function confirmFrozenTaskAction(frozen: FrozenWarehouseTaskAction) {
+    clearPendingBusinessIntent(frozen.intentScope)
+    pendingTaskIntentScopes.delete(frozen.pendingLookupKey)
+    if (unconfirmedTaskAction.value?.pendingLookupKey === frozen.pendingLookupKey) {
+      unconfirmedTaskAction.value = undefined
+    }
+    actionError.value = undefined
+    actionConfirmedSequence.value += 1
+  }
+
+  async function verifyUnconfirmedTaskAction() {
+    const frozen = unconfirmedTaskAction.value
+    if (!frozen) return undefined
+    const authoritative = await readAuthoritativeTask(frozen)
+    if (!isWarehouseTaskActionConfirmed(frozen, authoritative)) return undefined
+
+    confirmFrozenTaskAction(frozen)
+    return frozen.action
   }
 
   async function executeTask(intent: WmsWarehouseTaskExecutionIntent) {
@@ -1127,28 +1232,25 @@ function useWmsWarehouseTasks(
       scopeKind: frozenSnapshot.scopeKind,
       scopeId: frozenSnapshot.scopeId,
     }
+    const frozenTaskAction: FrozenWarehouseTaskAction = {
+      action: intent.action,
+      warehouseTaskId,
+      taskNo: intent.task.taskNo,
+      expectedVersion: frozenSnapshot.expectedVersion,
+      payloadSnapshot: frozenSnapshot,
+      intentScope,
+      pendingLookupKey,
+    }
 
     actionError.value = undefined
     actionPending.value = true
     let mutationStarted = false
     try {
-      const listOperation =
-        taskType === 'picking'
-          ? listBusinessConsoleWmsPickingTasks
-          : listBusinessConsoleWmsPutawayTasks
-      const { data } = await listOperation({
-        query: {
-          ...frozenCommandScope,
-          keyword: intent.task.taskNo?.trim() || warehouseTaskId,
-          skip: 0,
-          take: TASK_PAGE_SIZE,
-        },
-        throwOnError: true,
-      })
-      const authoritative = exactItem(
-        data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
-        (item: BusinessConsoleWmsWarehouseTaskItem) => item.warehouseTaskId === warehouseTaskId,
-      )
+      const authoritative = await readAuthoritativeTask(frozenTaskAction)
+      if (isReplay && isWarehouseTaskActionConfirmed(frozenTaskAction, authoritative)) {
+        confirmFrozenTaskAction(frozenTaskAction)
+        return authoritative
+      }
       if (
         !isReplay &&
         (!authoritative ||
@@ -1178,12 +1280,21 @@ function useWmsWarehouseTasks(
           body,
         ),
       )
-      await refresh()
+      confirmFrozenTaskAction(frozenTaskAction)
+      try {
+        await refresh()
+      } catch {
+        // The command receipt already confirmed success. Keep the refresh error visible, but do
+        // not turn a confirmed write back into a failed action or lose the page's status focus.
+      }
       return result
     } catch (error) {
       if (!isReplay && !mutationStarted && peekPendingBusinessIntent(intentScope)) {
         clearPendingBusinessIntent(intentScope)
       }
+      unconfirmedTaskAction.value = peekPendingBusinessIntent(intentScope)
+        ? frozenTaskAction
+        : undefined
       actionError.value = error
       throw error
     } finally {
@@ -1214,6 +1325,8 @@ function useWmsWarehouseTasks(
     refreshing,
     loadingMore,
     actionPending,
+    actionUnconfirmed,
+    actionConfirmedSequence,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,

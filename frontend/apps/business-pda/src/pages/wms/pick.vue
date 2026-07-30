@@ -30,6 +30,8 @@ const {
   refreshing,
   loadingMore,
   actionPending,
+  actionUnconfirmed,
+  actionConfirmedSequence,
   refresh,
   loadMore,
   executeTask,
@@ -45,12 +47,19 @@ const candidates = useWmsOperationalCandidates('shipment', {
 })
 
 async function refreshAll() {
-  await Promise.all([refresh(), candidates.refresh()])
+  const result = await refresh()
+  if (result?.confirmedAction === 'start') filters.status = 'InProgress'
+  try {
+    await candidates.refresh()
+  } catch {
+    // 候选目录有独立错误态；不能让它覆盖任务动作已经得到的权威确认。
+  }
 }
 
 async function execute(intent: WarehouseTaskExecutionIntent) {
   try {
     await executeTask(intent)
+    if (intent.action === 'start') filters.status = 'InProgress'
   } catch {
     // Mutation error is exposed by the composable and rendered by the shared retry banner.
   }
@@ -94,8 +103,11 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :candidate-scan-overrides="candidates.scanOverrides.value"
         :error="error"
         :action-pending="actionPending"
+        :action-unconfirmed="actionUnconfirmed"
+        :action-confirmed-sequence="actionConfirmedSequence"
         @refresh="refreshAll"
         @retry="refreshAll"
+        @verify="refreshAll"
         @candidate-retry="candidates.refresh"
         @candidate-scan-override-change="candidates.setScanOverride"
         @load-more="loadMore"

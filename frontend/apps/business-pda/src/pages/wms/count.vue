@@ -10,6 +10,7 @@ import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { useAuthStore } from '@/stores/auth'
 import { PDA_COUNT_EXECUTION_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   countExecutionFlow,
@@ -37,6 +38,10 @@ definePage({
 })
 
 const router = useRouter()
+const auth = useAuthStore()
+const canManageCounts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.inventory.counts.manage'),
+)
 const {
   filters,
   scopeKey,
@@ -144,11 +149,14 @@ function displayCountStatus(status?: string) {
 }
 
 function canComplete(status?: string) {
-  return statusActionGate({
-    domain: 'wms-count',
-    action: 'complete',
-    facts: { status },
-  }).executable
+  return (
+    canManageCounts.value &&
+    statusActionGate({
+      domain: 'wms-count',
+      action: 'complete',
+      facts: { status },
+    }).executable
+  )
 }
 
 function selectExecution(
@@ -192,6 +200,7 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function confirmComplete() {
+  if (!canManageCounts.value) return
   // 防重：pending 中或实盘数无效直接早退（按钮也已禁用，UI 守双道）。
   if (completePending.value || !validCount.value) return
   numberKeyboardOpen.value = false
@@ -385,7 +394,7 @@ function goHome() {
             size="lg"
             variant="primary"
             data-testid="confirm-complete"
-            :disabled="completePending || !validCount"
+            :disabled="!canManageCounts || completePending || !validCount"
             @click="confirmComplete"
           >
             {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}

@@ -35,6 +35,8 @@ import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCand
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -89,6 +91,10 @@ const {
   countExecutionsHasSuccessfulResponse,
   countExecutionsHasFailedResponse,
 } = useWmsCountExecutions({ workScopeRequired: true })
+const auth = useAuthStore()
+const canManageCounts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.inventoryCountsManage),
+)
 const {
   scopeKey,
   scopeOptions,
@@ -275,6 +281,7 @@ function varianceLabel(value?: number | null) {
 }
 
 function openCreate() {
+  if (!canManageCounts.value) return
   createForm.countNo = ''
   createForm.skuCode = ''
   createForm.uomCode = 'EA'
@@ -285,6 +292,7 @@ function openCreate() {
   createOpen.value = true
 }
 async function submitCreate() {
+  if (!canManageCounts.value) return
   if (
     !createForm.countNo.trim() ||
     !createForm.skuCode.trim() ||
@@ -320,6 +328,7 @@ async function submitCreate() {
 }
 
 function openComplete(row: CountRow) {
+  if (!canManageCounts.value) return
   completeTarget.value = row
   completeIntentKey.value = createWmsIdempotencyKey()
   completeIntentAttempted.value = false
@@ -354,6 +363,7 @@ const completeContextItems = computed(() => {
   ]
 })
 async function submitComplete() {
+  if (!canManageCounts.value) return
   const target = completeTarget.value
   if (!target?.countExecutionId) return
   if (completeForm.countedQuantity === '') {
@@ -442,7 +452,7 @@ function refreshAll() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageCounts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建盘点单
         </NvButton>
@@ -559,7 +569,7 @@ function refreshAll() {
         <p class="max-w-md text-sm text-muted-foreground">
           盘点单由仓管按库位 × 物料发起；日常收发货不会自动产生盘点单。
         </p>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageCounts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建盘点单
         </NvButton>
@@ -592,7 +602,7 @@ function refreshAll() {
           :tone="wmsStatusTone(row.status)"
       /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
+        <NvRowActions v-if="canManageCounts" :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
           <NvDropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
@@ -601,7 +611,7 @@ function refreshAll() {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="createOpen">
+    <NvDialog v-if="canManageCounts" v-model:open="createOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建盘点单</NvDialogTitle>
@@ -704,7 +714,7 @@ function refreshAll() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog :open="completeOpen" @update:open="onCompleteOpenChange">
+    <NvDialog v-if="canManageCounts" :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>完成盘点</NvDialogTitle>
