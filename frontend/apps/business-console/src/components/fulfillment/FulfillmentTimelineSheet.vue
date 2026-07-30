@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useAuthStore } from '@/stores/auth'
+import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
 import {
   NvButton,
   NvSheet,
@@ -31,10 +30,7 @@ const openModel = computed({
 // 销售订单 → 工单 的稳定关联键（见 useFulfillmentTimeline 的 mes-work-order 节点），
 // 所以这里把销售单号当**检索起点**交给弹窗，由排产员确认工单——绝不按相似编号自动认定。
 const scheduleOpen = shallowRef(false)
-const auth = useAuthStore()
-const canSchedule = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.schedulingPlansManage),
-)
+const canSchedule = useCanScheduleSingleOrder()
 const salesOrderNo = computed(() => props.order?.salesOrderNo?.trim() ?? '')
 </script>
 
@@ -75,7 +71,6 @@ const salesOrderNo = computed(() => props.order?.salesOrderNo?.trim() ?? '')
         v-model:open="scheduleOpen"
         :context-label="`销售订单 ${salesOrderNo}`"
         :initial-keyword="salesOrderNo"
-        :read-only="!canSchedule"
       />
 
       <FulfillmentTimelineBody v-if="open" :order="order" />

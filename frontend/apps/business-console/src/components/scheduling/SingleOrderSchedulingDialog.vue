@@ -3,15 +3,13 @@ import {
   createSchedulingHorizonInput,
   resolveSchedulingHorizon,
 } from '@/composables/schedulingHorizon'
-import { useMesWorkOrders } from '@/composables/useBusinessMes'
-import {
-  isSchedulableWorkbenchCandidate,
-  SCHEDULABLE_WORK_ORDER_STATUSES,
-} from '@/composables/useSchedulingWorkbench'
 import {
   singleOrderSchedulingResultRoute,
+  useCanScheduleSingleOrder,
   useSingleOrderScheduling,
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
 } from '@/composables/useSingleOrderScheduling'
+import SchedulingCandidatePicker from './SchedulingCandidatePicker.vue'
 import SchedulingHorizonFields from './SchedulingHorizonFields.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -50,10 +48,8 @@ const props = withDefaults(
      * （见履约追踪「MES 工单」节点），所以最终由排产员确认选哪一张，前端不按相似编号猜。
      */
     initialKeyword?: string
-    /** 无 `business.scheduling.plans.manage` 时只读：表单禁用并说明原因。 */
-    readOnly?: boolean
   }>(),
-  { workOrderId: null, contextLabel: '', initialKeyword: '', readOnly: false },
+  { workOrderId: null, contextLabel: '', initialKeyword: '' },
 )
 
 const open = defineModel<boolean>('open', { required: true })
@@ -69,26 +65,12 @@ const selectedWorkOrderId = shallowRef('')
 const submitError = shallowRef('')
 
 const fixedWorkOrderId = computed(() => props.workOrderId?.trim() ?? '')
+// 候选查询由 SchedulingCandidatePicker 自己持有，并且只在这里为 true 时才挂载：
+// 工单详情 / 计划建议行这类已知目标工单的入口，打开弹窗不会白查一页候选。
 const needsPicker = computed(() => fixedWorkOrderId.value.length === 0)
-
-// 候选工单只在需要挑单时才查；父级用 v-if 挂载本弹窗，关闭即不再持有查询。
-const mes = useMesWorkOrders({ initialTake: 50 })
-mes.filters.statuses = SCHEDULABLE_WORK_ORDER_STATUSES.join(',')
-
-const candidates = computed(() =>
-  needsPicker.value ? mes.workOrders.value.filter(isSchedulableWorkbenchCandidate) : [],
-)
-const candidatesFailed = computed(
-  () => !mes.workOrdersPending.value && mes.workOrdersError.value != null,
-)
-
-watch(
-  () => props.initialKeyword,
-  (keyword) => {
-    if (needsPicker.value) mes.filters.keyword = keyword?.trim() || undefined
-  },
-  { immediate: true },
-)
+// 权限判定与三处入口共用同一处（useCanScheduleSingleOrder），不在组件里各写一份。
+const canSchedule = useCanScheduleSingleOrder()
+const readOnly = computed(() => !canSchedule.value)
 
 watch(
   open,
@@ -109,7 +91,7 @@ const targetWorkOrderId = computed(() =>
 )
 const resolvedHorizon = computed(() => resolveSchedulingHorizon(horizon.value))
 const disabledReason = computed(() => {
-  if (props.readOnly) return '当前账号没有排产管理权限（business.scheduling.plans.manage）。'
+  if (readOnly.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
   if (!scheduling.hasScope.value) return '请先在顶部选择组织与环境。'
   if (!targetWorkOrderId.value) return '请先选择要排产的工单。'
   if (!resolvedHorizon.value.ok) return resolvedHorizon.value.message
@@ -179,75 +161,12 @@ async function submit() {
             <NvFieldLabel for="single-order-scheduling-target">目标工单</NvFieldLabel>
             <NvInput id="single-order-scheduling-target" :model-value="fixedWorkOrderId" readonly />
           </NvField>
-          <NvField v-else>
-            <NvFieldLabel for="single-order-scheduling-keyword">选择工单</NvFieldLabel>
-            <NvInput
-              id="single-order-scheduling-keyword"
-              :model-value="mes.filters.keyword ?? ''"
-              placeholder="工单号 / SKU / 生产版本"
-              autocomplete="off"
-              :disabled="readOnly"
-              @update:model-value="mes.filters.keyword = String($event).trim() || undefined"
-            />
-            <p class="text-sm text-muted-foreground">
-              契约里还没有「销售订单 → MES 工单」的稳定关联键，检索词只是起点，请确认要排的工单。
-            </p>
-            <div
-              v-if="mes.workOrdersPending.value"
-              class="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Spinner aria-hidden="true" />
-              正在读取候选工单
-            </div>
-            <p
-              v-else-if="candidatesFailed"
-              class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
-              role="alert"
-            >
-              候选工单读取失败，当前无法判断有哪些可排工单。
-              <NvButton
-                size="sm"
-                variant="outline"
-                type="button"
-                class="ml-2"
-                @click="mes.refreshWorkOrders()"
-                >重试</NvButton
-              >
-            </p>
-            <p
-              v-else-if="candidates.length === 0"
-              class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground"
-              role="status"
-            >
-              没有匹配的可排工单。该单可能尚未下达到 MES，或检索词与工单号不一致。
-            </p>
-            <ul v-else class="grid max-h-56 gap-1 overflow-y-auto">
-              <li v-for="candidate in candidates" :key="candidate.workOrderId">
-                <label
-                  class="flex cursor-pointer items-center gap-3 rounded-md border p-2 text-sm"
-                  :class="
-                    selectedWorkOrderId === candidate.workOrderId
-                      ? 'border-primary/60 bg-primary/5'
-                      : 'bg-background'
-                  "
-                >
-                  <input
-                    v-model="selectedWorkOrderId"
-                    type="radio"
-                    name="single-order-scheduling-candidate"
-                    :value="candidate.workOrderId"
-                    :disabled="readOnly"
-                  />
-                  <span class="font-medium">{{
-                    candidate.workOrderNo ?? candidate.workOrderId
-                  }}</span>
-                  <span class="text-muted-foreground">
-                    {{ candidate.skuCode ?? candidate.skuId }} · {{ candidate.quantity ?? 0 }}
-                  </span>
-                </label>
-              </li>
-            </ul>
-          </NvField>
+          <SchedulingCandidatePicker
+            v-else
+            v-model="selectedWorkOrderId"
+            :initial-keyword="initialKeyword"
+            :disabled="readOnly"
+          />
         </NvFieldGroup>
 
         <SchedulingHorizonFields

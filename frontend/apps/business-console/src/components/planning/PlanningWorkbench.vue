@@ -27,8 +27,7 @@ import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggest
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useAuthStore } from '@/stores/auth'
+import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -593,10 +592,7 @@ function downstreamLabel(service?: string | null, type?: string | null) {
 // —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
 // 排程的最小单位是 MES 工单。生产建议只有**被接受、承接成 MES 工单之后**才有可排的单，
 // 承接单据 id 就是工单 id（同一个值也被 downstreamRoute 拿去下钻 /mes/work-orders/{id}）。
-const auth = useAuthStore()
-const canScheduleSingleOrder = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.schedulingPlansManage),
-)
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
 const scheduleTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
 
 function suggestionWorkOrderId(row: BusinessConsolePlanningSuggestionItem) {
@@ -1564,7 +1560,6 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         :open="true"
         :work-order-id="suggestionWorkOrderId(scheduleTarget)"
         :context-label="`计划建议 · ${skuLabel(scheduleTarget.skuCode)}`"
-        :read-only="!canScheduleSingleOrder"
         @update:open="
           (value: boolean) => {
             if (!value) scheduleTarget = null

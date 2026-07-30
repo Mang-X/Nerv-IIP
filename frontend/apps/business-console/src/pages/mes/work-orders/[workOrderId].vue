@@ -6,6 +6,10 @@ import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import {
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
+  useCanScheduleSingleOrder,
+} from '@/composables/useSingleOrderScheduling'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
@@ -252,9 +256,7 @@ const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
 // 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
 // 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
 const scheduleOpen = ref(false)
-const canManageSchedulingPlans = computed(() =>
-  permissionCodes.value.includes(P.schedulingPlansManage),
-)
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
 const scheduleDisabledReason = computed(() => {
   if (!detail.value) return '工单信息加载中，请稍候。'
   if (!isSchedulableWorkbenchCandidate(detail.value)) {
@@ -262,9 +264,7 @@ const scheduleDisabledReason = computed(() => {
       ? '工单已处于终态，不能再排产。'
       : '工单没有生产版本，排程无法展开工艺路线。'
   }
-  if (!canManageSchedulingPlans.value) {
-    return '当前账号没有排产管理权限（business.scheduling.plans.manage）。'
-  }
+  if (!canScheduleSingleOrder.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
   return ''
 })
 const canCancel = computed(

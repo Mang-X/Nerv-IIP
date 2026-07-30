@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   workOrders: [] as Record<string, unknown>[],
   hasScope: true,
   reject: null as Error | null,
+  /** `useMesWorkOrders` 被实例化的次数——一实例化就会发候选查询。 */
+  mesCalls: 0,
 }))
 
 vi.mock('@/composables/useSingleOrderScheduling', async () => {
@@ -34,13 +36,16 @@ vi.mock('@/composables/useSingleOrderScheduling', async () => {
 })
 
 vi.mock('@/composables/useBusinessMes', () => ({
-  useMesWorkOrders: () => ({
-    filters: reactive({ keyword: undefined as string | undefined, statuses: '' }),
-    refreshWorkOrders: vi.fn(),
-    workOrders: computed(() => state.workOrders),
-    workOrdersError: computed(() => undefined),
-    workOrdersPending: computed(() => false),
-  }),
+  useMesWorkOrders: () => {
+    state.mesCalls += 1
+    return {
+      filters: reactive({ keyword: undefined as string | undefined, statuses: '' }),
+      refreshWorkOrders: vi.fn(),
+      workOrders: computed(() => state.workOrders),
+      workOrdersError: computed(() => undefined),
+      workOrdersPending: computed(() => false),
+    }
+  },
 }))
 
 vi.mock('vue-router', () => ({
@@ -95,6 +100,8 @@ vi.mock('@nerv-iip/ui', async () => {
     NvFieldGroup: Shell,
     NvFieldLabel: Shell,
     NvInput: Input,
+    NvRadioGroup: Shell,
+    NvRadioGroupItem: Shell,
     NvSelect: Select,
     NvSelectContent: Shell,
     NvSelectItem: Shell,
@@ -120,6 +127,16 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     state.workOrders = []
     state.hasScope = true
     state.reject = null
+    state.permissionCodes = ['business.scheduling.plans.manage']
+    state.mesCalls = 0
+  })
+
+  it('已知目标工单时不查候选：候选查询只在需要挑单时才实例化', () => {
+    mountDialog({ workOrderId: 'WO-77' })
+    expect(state.mesCalls).toBe(0)
+
+    mountDialog({ initialKeyword: 'SO-2026-0001' })
+    expect(state.mesCalls).toBe(1)
   })
 
   it('界面上写明语义：新建只含该单的方案，插入现有方案尚不可用', () => {
@@ -165,7 +182,8 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
   })
 
   it('只读（无排产管理权限）时不发请求，并说明缺哪个权限码', async () => {
-    const wrapper = mountDialog({ workOrderId: 'WO-77', readOnly: true })
+    state.permissionCodes = []
+    const wrapper = mountDialog({ workOrderId: 'WO-77' })
 
     await wrapper.get('form').trigger('submit')
     await flushPromises()

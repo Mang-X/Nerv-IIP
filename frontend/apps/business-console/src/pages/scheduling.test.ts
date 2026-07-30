@@ -665,6 +665,33 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('已定位订单 WO-20260701-001')
   })
 
+  it('单单排产落点：带 planId 进入页面直接打开该方案明细（MAN-694 / #1262）', async () => {
+    // 不用列表首个方案（plan-001），特意点名一个靠后的方案，证明是路由说了算。
+    routeStub.query = { planId: 'plan-invalid', orderReference: 'WO-20260701-004' }
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    // 明细查询锁定路由点名的方案，抽屉已打开（而不是停在列表让用户自己找）。
+    expect(detailSelection.planId).toBe('plan-invalid')
+    expect(wrapper.text()).toContain('排程方案明细')
+    expect(wrapper.text()).toContain('已定位订单 WO-20260701-004')
+    expect(wrapper.find('[data-targeted-order="true"]').exists()).toBe(true)
+  })
+
+  it('带 planId 时不再走「逐个方案找订单」的兜底，方案选择保持路由点名的那个', async () => {
+    // 明细里没有这张工单：没有 planId 时页面会翻下一个方案；点名了就不该改选。
+    routeStub.query = { planId: 'plan-invalid', orderReference: 'WO-NOT-IN-PLAN' }
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-invalid')
+    expect(wrapper.text()).toContain('正在定位订单 WO-NOT-IN-PLAN')
+  })
+
   it('marks invalidated plans with their reason and blocks release', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },

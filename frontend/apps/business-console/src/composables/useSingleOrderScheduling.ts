@@ -4,10 +4,29 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { BUSINESS_PERMISSION_CODES } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 import { isSchedulingWorkbenchQuery } from './useSchedulingWorkbench'
 
 const SCHEDULING_IDS = ['listBusinessConsoleSchedulingPlans', 'getBusinessConsoleSchedulingPlan']
+
+/** 单单排产入口缺权限时的统一说明（三处入口 + 弹窗共用一句话）。 */
+export const SINGLE_ORDER_SCHEDULING_DENIED_REASON =
+  '当前账号没有排产管理权限（business.scheduling.plans.manage）。'
+
+/**
+ * 能否发起单单排产。三处入口（销售订单 / MES 工单详情 / 计划建议行）与弹窗共用同一判定，
+ * 避免各写一份 `permissionCodes.includes(...)` 而在权限码调整时漂移。
+ */
+export function useCanScheduleSingleOrder() {
+  const auth = useAuthStore()
+  return computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes(
+      BUSINESS_PERMISSION_CODES.schedulingPlansManage,
+    ),
+  )
+}
 
 export interface SingleOrderSchedulingRequest {
   workOrderId: string
