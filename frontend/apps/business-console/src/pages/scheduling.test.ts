@@ -813,6 +813,126 @@ describe('APS scheduling workbench page', () => {
     wrapper.unmount()
   })
 
+  it('explains why the workbench actions are disabled instead of leaving grey buttons', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    const generate = wrapper.findAll('button').find((button) => button.text().includes('生成首版'))!
+    const repreview = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+    const publish = wrapper.findAll('button').find((button) => button.text().includes('发布新版'))!
+
+    // 还没勾工单、还没有草案：三个主操作都灰着，hover 必须说得清缺什么。
+    expect(generate.attributes('disabled')).toBeDefined()
+    expect(generate.attributes('title')).toBe('还没有选中工单：先在待排工单池里勾选要排的工单')
+    expect(repreview.attributes('disabled')).toBeDefined()
+    expect(repreview.attributes('title')).toBe('还没有草案方案：先生成首版方案，再做锁定重预览')
+    expect(publish.attributes('disabled')).toBeDefined()
+    expect(publish.attributes('title')).toBe('还没有可发布的版本：先生成首版或重预览出一版方案')
+
+    // 勾上工单后按钮可用，提示改成"这一步会做什么"。
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+
+    const enabledGenerate = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+    expect(enabledGenerate.attributes('disabled')).toBeUndefined()
+    expect(enabledGenerate.attributes('title')).toBe('按当前勾选的工单生成首版排程方案')
+  })
+
+  it('surfaces the service message when generating the first plan fails', async () => {
+    // generated client 在 throwOnError 下抛的是响应体对象（不是 Error）：以前这里被吞成猜测文案。
+    stub.generatePlan.mockRejectedValueOnce({
+      title: 'Bad Request',
+      detail: '工单 WO-20260701-001 缺少生产版本，无法排程',
+      status: 400,
+    })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '生成失败：工单 WO-20260701-001 缺少生产版本，无法排程',
+    )
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('surfaces the service message when releasing a plan fails', async () => {
+    stub.releasePlan.mockRejectedValueOnce({ message: '方案已被后续方案取代，不能发布' })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const planRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('plan-001'))!
+    await planRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith('发布失败：方案已被后续方案取代，不能发布')
+  })
+
+  it('falls back to a specific hint only when the service says nothing', async () => {
+    stub.releasePlan.mockRejectedValueOnce({ status: 500 })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const planRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('plan-001'))!
+    await planRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith('发布失败，请稍后重试')
+  })
+
+  it('states that the history plan table is read-only and routes edits to the draft workbench', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+
+    const notice = wrapper.find('[data-testid="plan-table-readonly-notice"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('只读查阅')
+    expect(notice.text()).toContain('回草案工作区')
+
+    await notice
+      .findAll('button')
+      .find((button) => button.text().includes('去草案工作区修改'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 引导入口要真的把人送回可编辑的地方，不是一句说明。
+    expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
+    expect(wrapper.text()).toContain('待排工单池')
+  })
+
   it('persists a draft operation override with the plan id and the operation behind the task', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },

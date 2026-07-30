@@ -65,6 +65,72 @@ export function friendlyErrorMessage(error: unknown, fallback = '操作失败，
   return fallback
 }
 
+/** 服务端消息的最大透传长度：超长的堆栈/序列化体不往界面上甩。 */
+const MAX_SERVER_MESSAGE_LENGTH = 200
+/** 按优先级读取的消息字段：信封 message → RFC7807 detail → problem title。 */
+const SERVER_MESSAGE_FIELDS = ['message', 'detail', 'title'] as const
+/** 消息可能藏在下一层的容器字段里（拦截器包装 / 嵌套信封）。 */
+const SERVER_MESSAGE_CONTAINERS = ['error', 'data', 'body', 'response', 'cause'] as const
+
+/**
+ * 取出**服务端真正说的那句话**：信封 `message`、RFC7807 `detail`/`title`、校验错误汇总。
+ *
+ * 为什么必须有它：generated client 在 `throwOnError` 下抛出的是**解析后的响应体**（普通对象），
+ * 并不是 `Error` 实例。只判 `error instanceof Error` 会把所有 HTTP 失败都吞成猜测性兜底文案，
+ * 用户看不到后端到底报了什么（MAN-691 / #1259）。
+ *
+ * 取不到就返回空串，由调用方决定兜底文案。
+ */
+export function serverErrorMessage(error: unknown): string {
+  return readServerMessage(error, new Set<object>(), 0)
+}
+
+function readServerMessage(error: unknown, seen: Set<object>, depth: number): string {
+  if (error == null || depth > 4) return ''
+  if (typeof error === 'string') return clampServerMessage(error)
+  if (typeof error !== 'object') return ''
+  // 循环引用（拦截器把 response 挂回 error 上很常见）不能把递归拖进死循环。
+  if (seen.has(error)) return ''
+  seen.add(error)
+
+  const record = error as Record<string, unknown>
+  for (const field of SERVER_MESSAGE_FIELDS) {
+    const value = record[field]
+    if (typeof value === 'string' && value.trim()) return clampServerMessage(value)
+  }
+
+  const validation = readValidationErrors(record.errors)
+  if (validation) return validation
+
+  for (const container of SERVER_MESSAGE_CONTAINERS) {
+    const nested = readServerMessage(record[container], seen, depth + 1)
+    if (nested) return nested
+  }
+  return ''
+}
+
+/** RFC7807 `errors`：既可能是 `{ 字段: [消息] }`，也可能是消息数组。 */
+function readValidationErrors(errors: unknown): string {
+  const messages: string[] = []
+  const collect = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) messages.push(value.trim())
+    else if (Array.isArray(value)) value.forEach(collect)
+  }
+
+  if (Array.isArray(errors)) collect(errors)
+  else if (errors && typeof errors === 'object') Object.values(errors).forEach(collect)
+
+  return messages.length > 0 ? clampServerMessage(messages.join('；')) : ''
+}
+
+function clampServerMessage(raw: string): string {
+  const text = raw.trim()
+  if (!text) return ''
+  return text.length > MAX_SERVER_MESSAGE_LENGTH
+    ? `${text.slice(0, MAX_SERVER_MESSAGE_LENGTH)}…`
+    : text
+}
+
 /** 成功反馈。 */
 export function notifySuccess(message: string): void {
   toast.success(message)

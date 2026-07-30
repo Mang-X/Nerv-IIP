@@ -30,6 +30,7 @@ import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionRevi
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
+import { serverErrorMessage } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -267,6 +268,18 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
   return `${timestamps[0]!.toLocaleString()} 至 ${timestamps[timestamps.length - 1]!.toLocaleString()}`
 }
 
+/**
+ * 失败反馈统一走这里：**先透传服务端消息**，取不到才用兜底文案。
+ *
+ * 之前每个 catch 都写 `error instanceof Error ? … : 兜底`——而 generated client 抛出的是
+ * 解析后的响应体（普通对象），于是所有 HTTP 失败（含 500）都落到兜底猜测文案上，
+ * 用户在界面上看不到后端到底报了什么（MAN-691 / #1259）。
+ */
+function notifyOperationFailure(prefix: string, error: unknown, fallback: string) {
+  const detail = serverErrorMessage(error)
+  toast.error(detail ? `${prefix}：${detail}` : fallback)
+}
+
 function openDetail(planId: string | undefined) {
   if (!planId) return
   detailSelection.planId = planId
@@ -282,11 +295,7 @@ async function publish(planId: string | undefined) {
     await releasePlan(planId)
     toast.success('排程方案已发布')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `发布失败：${error.message}`
-        : '发布失败，请稍后重试',
-    )
+    notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')
   }
 }
 
@@ -315,8 +324,8 @@ async function generateWorkbenchPlan() {
     detailSelection.planId = plan.planId ?? ''
     revisionResult.value = undefined
     toast.success('首版排程方案已生成')
-  } catch {
-    toast.error('生成失败，请检查工单生产版本与排程基础数据')
+  } catch (error) {
+    notifyOperationFailure('生成失败', error, '生成失败，请检查工单生产版本与排程基础数据')
   }
 }
 
@@ -340,8 +349,8 @@ async function repreviewLockedDraft() {
       detailSelection.planId = revision.candidate.planId ?? ''
     }
     toast.success('已生成锁定约束下的新版本')
-  } catch {
-    toast.error('重预览失败，请检查锁定资源与时间窗口')
+  } catch (error) {
+    notifyOperationFailure('重预览失败', error, '重预览失败，请检查锁定资源与时间窗口')
   }
 }
 
@@ -357,11 +366,7 @@ async function publishCandidate() {
     await releasePlan(planId)
     toast.success('新版排程已发布')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `发布失败：${error.message}`
-        : '发布失败；失效或终态方案不能发布',
-    )
+    notifyOperationFailure('发布失败', error, '发布失败；失效或终态方案不能发布')
   }
 }
 
@@ -389,11 +394,7 @@ async function confirmRevoke() {
     revokeConfirmOpen.value = false
     toast.success('排程方案已撤销发布，MES 侧将回流撤销对应工序排程')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `撤销失败：${error.message}`
-        : '撤销失败，请稍后重试',
-    )
+    notifyOperationFailure('撤销失败', error, '撤销失败，请稍后重试')
   }
 }
 
@@ -427,11 +428,7 @@ async function persistOperationOverride(taskId: string) {
     }
     toast.success('工序 override 已持久化，重排程自动继承')
   } catch (error) {
-    toast.error(
-      error instanceof Error && error.message
-        ? `持久化失败：${error.message}`
-        : '持久化失败，请稍后重试',
-    )
+    notifyOperationFailure('持久化失败', error, '持久化失败，请稍后重试')
   }
 }
 
@@ -448,6 +445,32 @@ function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse
     return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
   return '发布该排程方案'
 }
+
+// 草案工作区三个主操作：按钮灰掉时必须能 hover 看到**为什么**灰（MAN-691 / #1259），
+// 口径与历史方案表的 releaseDisabledReason 一致：可用时说明这一步做什么，不可用时说明缺什么。
+const generateDisabledReason = computed(() => {
+  if (!canManage.value) return '当前账号没有排产管理权限，不能生成排程方案'
+  if (draft.includedOrders.value.length === 0)
+    return '还没有选中工单：先在待排工单池里勾选要排的工单'
+  if (workbench.generatePending.value) return '正在生成首版方案，请稍候'
+  return '按当前勾选的工单生成首版排程方案'
+})
+
+const repreviewDisabledReason = computed(() => {
+  if (!canManage.value) return '当前账号没有排产管理权限，不能重预览'
+  if (!draft.model.value) return '还没有草案方案：先生成首版方案，再做锁定重预览'
+  if (workbench.revisionPending.value) return '正在按锁定约束重预览，请稍候'
+  if (draft.modifiedUnlockedTaskIds.value.length > 0)
+    return '有未锁定的人工修改：重预览前需先锁定，否则会被候选方案覆盖'
+  return '保持已锁定工序不动，重排其余工序生成新版本'
+})
+
+const publishCandidateDisabledReason = computed(() => {
+  if (!canPublish.value) return '当前账号没有排程发布权限'
+  if (!draft.model.value) return '还没有可发布的版本：先生成首版或重预览出一版方案'
+  if (releasePlanPending.value) return '正在发布，请稍候'
+  return '把当前草案版本发布给车间执行'
+})
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
   const assigned = load.assignedMinutes ?? 0
@@ -551,6 +574,7 @@ function reasonLabel(reason?: string | null) {
               variant="ghost"
               type="button"
               :disabled="!draft.canUndo.value"
+              :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
               @click="draft.undo"
               >撤销</NvButton
             >
@@ -559,6 +583,7 @@ function reasonLabel(reason?: string | null) {
               variant="ghost"
               type="button"
               :disabled="!draft.canRedo.value"
+              :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
               @click="draft.redo"
               >重做</NvButton
             >
@@ -571,6 +596,7 @@ function reasonLabel(reason?: string | null) {
                 draft.includedOrders.value.length === 0 ||
                 workbench.generatePending.value
               "
+              :title="generateDisabledReason"
               @click="generateWorkbenchPlan"
             >
               <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
@@ -580,6 +606,7 @@ function reasonLabel(reason?: string | null) {
               variant="outline"
               type="button"
               :disabled="!canManage || !draft.model.value || workbench.revisionPending.value"
+              :title="repreviewDisabledReason"
               @click="repreviewLockedDraft"
             >
               <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
@@ -588,6 +615,7 @@ function reasonLabel(reason?: string | null) {
               size="sm"
               type="button"
               :disabled="!canPublish || !draft.model.value || releasePlanPending"
+              :title="publishCandidateDisabledReason"
               @click="publishCandidate"
             >
               <SendIcon aria-hidden="true" />发布新版
@@ -616,6 +644,11 @@ function reasonLabel(reason?: string | null) {
             variant="outline"
             type="button"
             :disabled="!canManage"
+            :title="
+              canManage
+                ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
+                : '当前账号没有排产管理权限，不能锁定修改'
+            "
             @click="draft.lockModifiedTasks"
             >锁定全部修改</NvButton
           >
@@ -648,6 +681,29 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
 
       <NvTabsContent value="table" class="grid gap-4">
+        <!-- 只读边界要自解释：历史方案是已生成结果的查阅面，改排程只能回草案工作区。
+             不写这句，用户会在表里反复点、以为"表格坏了"（MAN-691 / #1259）。 -->
+        <div
+          data-testid="plan-table-readonly-notice"
+          class="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+        >
+          <div class="grid gap-1">
+            <p class="text-sm font-medium text-foreground">历史方案：只读查阅</p>
+            <p class="max-w-2xl text-sm text-muted-foreground">
+              这里列的是已生成的排程方案，只能查看明细、发布或撤销发布；工序的资源与时间不能在这张表上改。
+              要调整排程，回草案工作区改完再重预览生成新版本。
+            </p>
+          </div>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            title="回到草案工作区调整工序资源与时间，再重预览生成新版本"
+            @click="activeView = 'workbench'"
+          >
+            去草案工作区修改
+          </NvButton>
+        </div>
         <NvDataTable
           :pagination="false"
           :columns="columns"
@@ -798,7 +854,7 @@ function reasonLabel(reason?: string | null) {
         <NvSheetHeader>
           <NvSheetTitle>排程方案明细</NvSheetTitle>
           <NvSheetDescription>
-            {{ detailSelection.planId || '未选择方案' }}
+            {{ detailSelection.planId || '未选择方案' }} · 只读查阅，调整排程请回草案工作区
           </NvSheetDescription>
         </NvSheetHeader>
 

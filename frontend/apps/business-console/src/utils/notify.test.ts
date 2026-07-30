@@ -9,7 +9,8 @@ vi.mock('@nerv-iip/ui', () => ({
   },
 }))
 
-const { friendlyErrorMessage, notifyError, notifySuccess } = await import('./notify')
+const { friendlyErrorMessage, notifyError, notifySuccess, serverErrorMessage } =
+  await import('./notify')
 
 beforeEach(() => {
   toastError.mockClear()
@@ -73,6 +74,57 @@ describe('friendlyErrorMessage', () => {
     expect(friendlyErrorMessage(new Error(''))).toBe('操作失败，请稍后重试。')
     expect(friendlyErrorMessage({})).toBe('操作失败，请稍后重试。')
     expect(friendlyErrorMessage('x', '自定义兜底')).toBe('自定义兜底')
+  })
+})
+
+describe('serverErrorMessage', () => {
+  it('透传信封 message（200 + success:false 与 4xx 信封同款）', () => {
+    expect(serverErrorMessage({ success: false, message: '工单缺少生产版本，无法排程' })).toBe(
+      '工单缺少生产版本，无法排程',
+    )
+  })
+
+  it('透传 problem detail：detail 优先于 title', () => {
+    expect(
+      serverErrorMessage({
+        title: 'Bad Request',
+        detail: '排程窗口内没有可用资源日历',
+        status: 400,
+      }),
+    ).toBe('排程窗口内没有可用资源日历')
+    expect(serverErrorMessage({ title: '排程服务内部错误', status: 500 })).toBe('排程服务内部错误')
+  })
+
+  it('汇总 problem detail 的字段校验错误', () => {
+    expect(
+      serverErrorMessage({
+        title: '',
+        errors: { HorizonEndUtc: ['结束时间必须晚于开始时间'], Orders: ['至少选择一个工单'] },
+      }),
+    ).toBe('结束时间必须晚于开始时间；至少选择一个工单')
+  })
+
+  it('generated client 抛出的是响应体对象，不是 Error —— 也要能取到消息', () => {
+    // hey-api 在 throwOnError 下 throw 的是解析后的响应体，`error instanceof Error` 为 false。
+    const thrown: unknown = { error: { message: '方案已失效，请重排后再发布' } }
+    expect(thrown instanceof Error).toBe(false)
+    expect(serverErrorMessage(thrown)).toBe('方案已失效，请重排后再发布')
+  })
+
+  it('Error 实例、字符串同样取得到；取不到时返回空串交给调用方兜底', () => {
+    expect(serverErrorMessage(new Error('排程服务未确认发布结果。'))).toBe(
+      '排程服务未确认发布结果。',
+    )
+    expect(serverErrorMessage('Internal Server Error')).toBe('Internal Server Error')
+    expect(serverErrorMessage(undefined)).toBe('')
+    expect(serverErrorMessage({ status: 500 })).toBe('')
+  })
+
+  it('循环引用不炸栈；超长消息截断后再上界面', () => {
+    const cyclic: Record<string, unknown> = { status: 500 }
+    cyclic.response = cyclic
+    expect(serverErrorMessage(cyclic)).toBe('')
+    expect(serverErrorMessage({ message: '排'.repeat(400) })).toHaveLength(201)
   })
 })
 
