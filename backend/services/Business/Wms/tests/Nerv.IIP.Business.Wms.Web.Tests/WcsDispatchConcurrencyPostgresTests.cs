@@ -1,10 +1,15 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using NetCorePal.Extensions.DistributedLocks;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -90,6 +95,117 @@ public sealed class WcsDispatchConcurrencyPostgresTests
         Assert.Single(await assertionContext.WcsTasks
             .Where(task => task.WarehouseTaskId == warehouseTaskId)
             .ToListAsync());
+    }
+
+    [WmsWcsDispatchPostgresFact]
+    public async Task Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock()
+    {
+        var adminConnectionString =
+            Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_wms_wcs_callback");
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            await setup.Database.MigrateAsync();
+            var warehouseTask = WarehouseTask.CreatePicking(
+                "org-001",
+                "env-dev",
+                "PICK-WCS-CALLBACK-RACE-001",
+                "OUT-001",
+                "10",
+                "SKU-001",
+                "pcs",
+                "SITE-001",
+                "BIN-01",
+                "PACK-01",
+                5m,
+                assignedPoolCode: "POOL-WAREHOUSE");
+            var wcsTask = WcsTask.Dispatch(
+                "org-001",
+                "env-dev",
+                warehouseTask.Id,
+                "wcs-a",
+                "EXT-WCS-CALLBACK-RACE",
+                """{"task":"callback-race"}""");
+            warehouseTask.ClaimWcsExecution(
+                wcsTask.Id.Id.ToString("D"),
+                warehouseTask.Version);
+            setup.WarehouseTasks.Add(warehouseTask);
+            setup.WcsTasks.Add(wcsTask);
+            await setup.SaveChangesAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddInMemoryDistributedLock();
+        await using var serviceProvider = services.BuildServiceProvider();
+        var distributedLock = serviceProvider.GetRequiredService<IDistributedLock>();
+        await using var completeContext = CreateContext(database.ConnectionString);
+        await using var failContext = CreateContext(database.ConnectionString);
+        var completeCommand = new CompleteWcsTaskCommand(
+            "org-001",
+            "env-dev",
+            "EXT-WCS-CALLBACK-RACE",
+            """{"actualQuantity":5}""");
+        var failCommand = new FailWcsTaskCommand(
+            "org-001",
+            "env-dev",
+            "EXT-WCS-CALLBACK-RACE",
+            "PLC_TIMEOUT",
+            "PLC timeout");
+        var completeEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseComplete = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var failEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completeBehavior = new NervIipCommandLockBehavior<CompleteWcsTaskCommand, Unit>(
+            [new WcsTaskCallbackCommandLock<CompleteWcsTaskCommand>(completeContext)],
+            distributedLock);
+        var failBehavior = new NervIipCommandLockBehavior<FailWcsTaskCommand, Unit>(
+            [new WcsTaskCallbackCommandLock<FailWcsTaskCommand>(failContext)],
+            distributedLock);
+
+        var completeRun = completeBehavior.Handle(
+            completeCommand,
+            async cancellationToken =>
+            {
+                completeEntered.SetResult();
+                await releaseComplete.Task.WaitAsync(cancellationToken);
+                await new CompleteWcsTaskCommandHandler(completeContext)
+                    .Handle(completeCommand, cancellationToken);
+                await completeContext.SaveChangesAsync(cancellationToken);
+                return Unit.Value;
+            },
+            CancellationToken.None);
+        await completeEntered.Task;
+        var failRun = failBehavior.Handle(
+            failCommand,
+            async cancellationToken =>
+            {
+                failEntered.SetResult();
+                await new FailWcsTaskCommandHandler(failContext)
+                    .Handle(failCommand, cancellationToken);
+                await failContext.SaveChangesAsync(cancellationToken);
+                return Unit.Value;
+            },
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => failEntered.Task.WaitAsync(TimeSpan.FromMilliseconds(200)));
+        releaseComplete.SetResult();
+        await completeRun;
+        var failure = await Assert.ThrowsAsync<WmsLifecycleConflictException>(
+            () => failRun);
+        Assert.Equal("fail-wcs-task", failure.Action);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.Equal(
+            WcsTaskStatus.Completed,
+            (await assertionContext.WcsTasks.SingleAsync()).Status);
+        Assert.Equal(
+            WarehouseTaskStatus.Completed,
+            (await assertionContext.WarehouseTasks.SingleAsync()).Status);
     }
 
     private static async Task<Exception?> TrySaveAsync(

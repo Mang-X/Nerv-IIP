@@ -70,8 +70,8 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
-builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
-builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
+    builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
+    builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,
@@ -128,6 +128,12 @@ builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
     builder.Services.AddScoped<
         ICommandLock<DispatchWcsTaskCommand>,
         DispatchWcsTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<CompleteWcsTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<FailWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<FailWcsTaskCommand>>();
     builder.Services.AddScoped<
         ICommandLock<AssignInboundOrderCommand>,
         WarehouseAssignmentCommandLock<AssignInboundOrderCommand>>();

@@ -1538,7 +1538,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Complete_wcs_task_records_actual_progress_on_linked_warehouse_task()
+    public async Task Partial_wcs_completion_stays_retryable_until_a_full_callback_completes_both_tasks()
     {
         await using var dbContext = CreateContext();
         var warehouseTask = WarehouseTask.CreatePicking(
@@ -1563,12 +1563,22 @@ public sealed class WmsInventoryBoundaryTests
             """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+        await handler.Handle(
             new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-ACTUAL-001", """{"actualQuantity":8}"""),
             CancellationToken.None);
 
         Assert.Equal(8m, warehouseTask.ExecutedQuantity);
         Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+
+        await handler.Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-ACTUAL-001", """{"actualQuantity":10}"""),
+            CancellationToken.None);
+
+        Assert.Equal(10m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
     [Fact]
@@ -1611,7 +1621,58 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Complete_wcs_task_without_explicit_executed_quantity_does_not_advance_warehouse_progress()
+    public async Task Complete_and_fail_wcs_callbacks_share_the_warehouse_task_action_lock()
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-CALLBACK-LOCK-001",
+            "OUT-WCS-CALLBACK-LOCK-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m,
+            assignedPoolCode: "POOL-WCS");
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await DispatchWcsAsync(
+            dbContext,
+            warehouseTask,
+            "WCS-CALLBACK-LOCK-001",
+            """{"step":1}""");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var completeSettings = await new WcsTaskCallbackCommandLock<CompleteWcsTaskCommand>(dbContext)
+            .GetLockKeysAsync(
+                new CompleteWcsTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "WCS-CALLBACK-LOCK-001",
+                    """{"actualQuantity":10}"""),
+                CancellationToken.None);
+        var failSettings = await new WcsTaskCallbackCommandLock<FailWcsTaskCommand>(dbContext)
+            .GetLockKeysAsync(
+                new FailWcsTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "WCS-CALLBACK-LOCK-001",
+                    "PLC_TIMEOUT",
+                    "PLC timeout"),
+                CancellationToken.None);
+
+        var expectedKey = $"business-wms:warehouse-task-action:{warehouseTask.Id}";
+        Assert.Equal(expectedKey, completeSettings.LockKey);
+        Assert.Equal(expectedKey, failSettings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), completeSettings.AcquireTimeout);
+        Assert.Equal(completeSettings, failSettings);
+    }
+
+    [Fact]
+    public async Task Complete_wcs_task_without_explicit_executed_quantity_rejects_and_can_be_retried()
     {
         await using var dbContext = CreateContext();
         var warehouseTask = WarehouseTask.CreatePicking(
@@ -1636,12 +1697,22 @@ public sealed class WmsInventoryBoundaryTests
             """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
-            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-MISSING-QTY-001", """{"ok":true,"quantity":10}"""),
-            CancellationToken.None);
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            handler.Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-MISSING-QTY-001", """{"ok":true,"quantity":10}"""),
+                CancellationToken.None));
 
+        Assert.Contains("executed quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0m, warehouseTask.ExecutedQuantity);
         Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+
+        await handler.Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-MISSING-QTY-001", """{"actualQuantity":10}"""),
+            CancellationToken.None);
+
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
         Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
@@ -1750,7 +1821,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Complete_wcs_task_logs_warning_when_completion_payload_has_no_executed_quantity()
+    public async Task Complete_wcs_task_with_malformed_json_rejects_without_losing_retryability()
     {
         await using var dbContext = CreateContext();
         var warehouseTask = WarehouseTask.CreatePicking(
@@ -1774,16 +1845,23 @@ public sealed class WmsInventoryBoundaryTests
             "WCS-DIAG-001",
             """{"step":1}""");
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var logger = new ListLogger<CompleteWcsTaskCommandHandler>();
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            handler.Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-DIAG-001", """{"actualQuantity":"""),
+                CancellationToken.None));
 
-        await new CompleteWcsTaskCommandHandler(dbContext, logger).Handle(
-            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-DIAG-001", """{"ok":true}"""),
+        Assert.Contains("valid JSON", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+
+        await handler.Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-DIAG-001", """{"actualQuantity":10}"""),
             CancellationToken.None);
 
-        var entry = Assert.Single(logger.Entries);
-        Assert.Equal(LogLevel.Warning, entry.Level);
-        Assert.Contains("WCS-DIAG-001", entry.Message, StringComparison.Ordinal);
-        Assert.Contains("executed quantity", entry.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
     [Fact]

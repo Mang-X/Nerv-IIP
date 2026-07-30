@@ -342,7 +342,7 @@ public sealed class WmsEndpointContractTests
             organizationId = "org-acceptance",
             environmentId = "env-acceptance",
             externalTaskId = retryExternalTaskId,
-            completionPayloadJson = """{"ok":true}""",
+            completionPayloadJson = """{"actualQuantity":3}""",
         });
 
         var diagnostics = await client.GetStringAsync($"/api/business/v1/wms/wcs-tasks?OrganizationId=org-acceptance&EnvironmentId=env-acceptance&ExternalTaskId={retryExternalTaskId}&WarehouseTaskId={warehouseTaskId}");
@@ -595,7 +595,7 @@ public sealed class WmsEndpointContractTests
                 warehouseTask.Version),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-002", """{"ok":true}"""), CancellationToken.None);
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-002", """{"actualQuantity":10}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await commandHandler.Handle(
             WcsDispatchCommand(otherTenantTask, "EXT-003", """{"step":3}""", 1),
@@ -673,7 +673,7 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(
-            new Application.Commands.CompleteWcsTaskCommand("org-002", "env-dev", "EXT-SHARED", """{"ok":true}"""),
+            new Application.Commands.CompleteWcsTaskCommand("org-002", "env-dev", "EXT-SHARED", """{"actualQuantity":1}"""),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

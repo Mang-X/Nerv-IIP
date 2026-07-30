@@ -2412,11 +2412,20 @@ public sealed class DispatchWcsTaskCommandLock : ICommandLock<DispatchWcsTaskCom
     }
 }
 
-public sealed record CompleteWcsTaskCommand(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson) : ICommand;
+public interface IWcsTaskCallbackCommand
+{
+    string OrganizationId { get; }
+    string EnvironmentId { get; }
+    string ExternalTaskId { get; }
+}
 
-public sealed class CompleteWcsTaskCommandHandler(
-    ApplicationDbContext dbContext,
-    ILogger<CompleteWcsTaskCommandHandler>? logger = null)
+public sealed record CompleteWcsTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ExternalTaskId,
+    string CompletionPayloadJson) : ICommand, IWcsTaskCallbackCommand;
+
+public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CompleteWcsTaskCommand>
 {
     public async Task Handle(CompleteWcsTaskCommand request, CancellationToken cancellationToken)
@@ -2432,26 +2441,16 @@ public sealed class CompleteWcsTaskCommandHandler(
             return;
         }
 
-        var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
+        var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson);
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
         var claimReference = task.Id.Id.ToString("D");
         try
         {
             warehouseTask.ValidateWcsExecution(claimReference);
-            if (executedQuantity is null)
-            {
-                logger?.LogWarning(
-                    "WCS completion callback for external task {ExternalTaskId} did not update warehouse task progress: {DiagnosticMessage}",
-                    request.ExternalTaskId,
-                    diagnosticMessage);
-            }
-            else
-            {
-                warehouseTask.RecordWcsProgress(
-                    executedQuantity.Value,
-                    claimReference);
-            }
+            warehouseTask.RecordWcsProgress(
+                executedQuantity,
+                claimReference);
         }
         catch (ArgumentException exception)
         {
@@ -2462,6 +2461,11 @@ public sealed class CompleteWcsTaskCommandHandler(
             throw new WmsLifecycleConflictException(
                 "complete-wcs-task",
                 exception.Message);
+        }
+
+        if (warehouseTask.Status != WarehouseTaskStatus.Completed)
+        {
+            return;
         }
 
         try
@@ -2488,9 +2492,8 @@ public sealed class CompleteWcsTaskCommandHandler(
         circuit?.RecordSuccess();
     }
 
-    private static decimal? ExtractExecutedQuantity(string completionPayloadJson, out string diagnosticMessage)
+    private static decimal ExtractExecutedQuantity(string completionPayloadJson)
     {
-        diagnosticMessage = string.Empty;
         try
         {
             using var document = JsonDocument.Parse(completionPayloadJson);
@@ -2503,18 +2506,45 @@ public sealed class CompleteWcsTaskCommandHandler(
                 }
             }
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
-            diagnosticMessage = "Payload is not valid JSON.";
-            return null;
+            throw new WmsUnprocessableException(
+                $"WCS completion payload is not valid JSON: {exception.Message}");
         }
 
-        diagnosticMessage = "Payload does not include an explicit executed quantity field.";
-        return null;
+        throw new WmsUnprocessableException(
+            "WCS completion payload must include an explicit numeric executed quantity in 'actualQuantity' or 'executedQuantity'.");
     }
 }
 
-public sealed record FailWcsTaskCommand(string OrganizationId, string EnvironmentId, string ExternalTaskId, string FailureCode, string FailureMessage) : ICommand;
+public sealed record FailWcsTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ExternalTaskId,
+    string FailureCode,
+    string FailureMessage) : ICommand, IWcsTaskCallbackCommand;
+
+public sealed class WcsTaskCallbackCommandLock<TCommand>(ApplicationDbContext dbContext)
+    : ICommandLock<TCommand>
+    where TCommand : IBaseCommand, IWcsTaskCallbackCommand
+{
+    public async Task<CommandLockSettings> GetLockKeysAsync(
+        TCommand command,
+        CancellationToken cancellationToken)
+    {
+        var task = await dbContext.WcsTasks
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == command.OrganizationId
+                && x.EnvironmentId == command.EnvironmentId
+                && x.ExternalTaskId == command.ExternalTaskId)
+            .Select(x => new { x.WarehouseTaskId })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException($"WCS task was not found: {command.ExternalTaskId}");
+        return new CommandLockSettings(
+            $"business-wms:warehouse-task-action:{task.WarehouseTaskId}",
+            30);
+    }
+}
 
 public sealed class FailWcsTaskCommandHandler(
     ApplicationDbContext dbContext,
