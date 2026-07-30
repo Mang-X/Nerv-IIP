@@ -41,6 +41,7 @@ public sealed class BusinessGatewayWmsTests
                 ["SITE-A"],
                 "work-pool",
                 "POOL-A",
+                "receipts",
                 "lot-001",
                 "SKU-001",
                 "LOC-A",
@@ -52,7 +53,7 @@ public sealed class BusinessGatewayWmsTests
         var request = Assert.Single(handler.Requests);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
         Assert.Equal(
-            "/api/business/v1/wms/operational-candidates?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-admin&scopeKind=work-pool&scopeId=POOL-A&keyword=lot-001&skuCode=SKU-001&locationCode=LOC-A&take=25&siteCode=SITE-A&authorizedSiteCodes=SITE-A",
+            "/api/business/v1/wms/operational-candidates?organizationId=org-001&environmentId=env-dev&actorPrincipalId=user-admin&scopeKind=work-pool&scopeId=POOL-A&candidateDomain=receipts&keyword=lot-001&skuCode=SKU-001&locationCode=LOC-A&take=25&siteCode=SITE-A&authorizedSiteCodes=SITE-A",
             request.RequestUri!.PathAndQuery);
     }
 
@@ -745,6 +746,7 @@ public sealed class BusinessGatewayWmsTests
             [
                 BusinessGatewayPermissions.WmsReceiptsRead,
                 BusinessGatewayPermissions.WmsShipmentsRead,
+                BusinessGatewayPermissions.WmsCountsRead,
             ],
             new AuthorizationScopeGrant(
                 "membership",
@@ -754,6 +756,7 @@ public sealed class BusinessGatewayWmsTests
                 [
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsShipmentsRead,
+                    BusinessGatewayPermissions.WmsCountsRead,
                 ]),
             new AuthorizationScopeGrant(
                 "role",
@@ -763,6 +766,7 @@ public sealed class BusinessGatewayWmsTests
                 [
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsShipmentsRead,
+                    BusinessGatewayPermissions.WmsCountsRead,
                 ]),
             new AuthorizationScopeGrant(
                 "user",
@@ -772,6 +776,7 @@ public sealed class BusinessGatewayWmsTests
                 [
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsShipmentsRead,
+                    BusinessGatewayPermissions.WmsCountsRead,
                 ]));
         await using var factory = CreateFactory(auth, services =>
         {
@@ -820,7 +825,7 @@ public sealed class BusinessGatewayWmsTests
             [
                 BusinessGatewayPermissions.WmsReceiptsRead,
                 BusinessGatewayPermissions.WmsShipmentsRead,
-                BusinessGatewayPermissions.WmsReceiptsRead,
+                BusinessGatewayPermissions.WmsCountsRead,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));
@@ -962,7 +967,6 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-A",
                 [BusinessGatewayPermissions.WmsReceiptsRead]));
-        var context = WmsPrincipalWorkContext();
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -970,16 +974,16 @@ public sealed class BusinessGatewayWmsTests
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
             {
-                PrincipalWorkContext = context with
-                {
-                    Sites =
-                    [
-                        .. context.Sites,
-                        new BusinessMasterDataWorkContextReference(
-                            "SITE-A",
-                            "Conflicting site name"),
-                    ],
-                },
+                Resources =
+                [
+                    .. WmsSiteDirectory(),
+                    new BusinessConsoleResourceItem(
+                        "site",
+                        "SITE-A",
+                        "Conflicting site name",
+                        true,
+                        "v1"),
+                ],
             });
         });
         var client = factory.CreateClient();
@@ -1494,7 +1498,8 @@ public sealed class BusinessGatewayWmsTests
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(
             BusinessGatewayPermissions.WmsReceiptsRead,
-            BusinessGatewayPermissions.WmsShipmentsRead);
+            BusinessGatewayPermissions.WmsShipmentsRead,
+            BusinessGatewayPermissions.WmsCountsRead);
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
@@ -1516,7 +1521,7 @@ public sealed class BusinessGatewayWmsTests
         [
             BusinessGatewayPermissions.WmsReceiptsRead,
             BusinessGatewayPermissions.WmsShipmentsRead,
-            BusinessGatewayPermissions.WmsReceiptsRead,
+            BusinessGatewayPermissions.WmsCountsRead,
         ],
         auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal("internal-test-token", wms.LastInternalToken);
@@ -1597,6 +1602,51 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(
             "Stock movement would make on-hand quantity negative.",
             countItem.GetProperty("inventoryPostingFailureMessage").GetString());
+    }
+
+    [Fact]
+    public async Task Counts_read_alone_authorizes_count_catalog_and_list_but_not_receipts()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsCountsRead],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-counts-only",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsCountsRead]));
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var catalog = await client.GetAsync(
+            "/api/business-console/v1/wms/work-scopes/counts?organizationId=org-001&environmentId=env-dev");
+        var countList = await client.GetAsync(
+            "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev");
+        var receiptList = await client.GetAsync(
+            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, countList.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, receiptList.StatusCode);
+        Assert.Equal(["SITE-A"], wms.LastWorkScopeCatalogRequest!.AuthorizedSiteCodes);
+        Assert.Equal(["SITE-A"], wms.LastCountExecutionListRequest!.AuthorizedSiteCodes);
+        Assert.Null(wms.LastInboundRequest);
+        Assert.Equal(
+            [
+                BusinessGatewayPermissions.WmsCountsRead,
+                BusinessGatewayPermissions.WmsCountsRead,
+                BusinessGatewayPermissions.WmsReceiptsRead,
+            ],
+            auth.Requirements
+                .Select(requirement => requirement.PermissionCode)
+                .ToArray());
     }
 
     [Fact]
@@ -1728,6 +1778,7 @@ public sealed class BusinessGatewayWmsTests
             [
                 BusinessGatewayPermissions.WmsReceiptsRead,
                 BusinessGatewayPermissions.WmsShipmentsRead,
+                BusinessGatewayPermissions.WmsCountsRead,
             ],
             new AuthorizationScopeGrant(
                 "role",
@@ -1737,6 +1788,7 @@ public sealed class BusinessGatewayWmsTests
                 [
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsShipmentsRead,
+                    BusinessGatewayPermissions.WmsCountsRead,
                 ]));
         await using var factory = CreateFactory(auth, services =>
         {
@@ -1833,6 +1885,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(["SITE-A"], receiptRequest.AuthorizedSiteCodes);
         Assert.Equal("work-pool", receiptRequest.ScopeKind);
         Assert.Equal("POOL-A", receiptRequest.ScopeId);
+        Assert.Equal("receipts", receiptRequest.CandidateDomain);
         Assert.Equal("lot", receiptRequest.Keyword);
         Assert.Equal("SKU-001", receiptRequest.SkuCode);
         Assert.Equal("LOC-A", receiptRequest.LocationCode);
@@ -1848,6 +1901,7 @@ public sealed class BusinessGatewayWmsTests
             "/api/business-console/v1/wms/operational-candidates/shipments?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A");
 
         Assert.Equal(HttpStatusCode.OK, shipments.StatusCode);
+        Assert.Equal("shipments", wms.LastOperationalCandidatesRequest!.CandidateDomain);
         Assert.Equal("site", wms.LastOperationalCandidatesRequest!.ScopeKind);
         Assert.Equal("SITE-A", wms.LastOperationalCandidatesRequest.ScopeId);
 
@@ -1855,6 +1909,7 @@ public sealed class BusinessGatewayWmsTests
             "/api/business-console/v1/wms/operational-candidates/counts?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
 
         Assert.Equal(HttpStatusCode.OK, counts.StatusCode);
+        Assert.Equal("counts", wms.LastOperationalCandidatesRequest!.CandidateDomain);
         Assert.Equal("self", wms.LastOperationalCandidatesRequest!.ScopeKind);
         Assert.Equal("user-admin", wms.LastOperationalCandidatesRequest.ScopeId);
         Assert.Equal(
@@ -2069,6 +2124,7 @@ public sealed class BusinessGatewayWmsTests
                 services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
                 {
                     PrincipalWorkContext = WmsPrincipalWorkContext(),
+                    Resources = WmsSiteDirectory(),
                 });
                 configureServices?.Invoke(services);
             });
@@ -2290,6 +2346,14 @@ public sealed class BusinessGatewayWmsTests
             ],
             ["self", "team", "work-center", "workshop", "organization"],
             []);
+
+    private static BusinessConsoleResourceItem[] WmsSiteDirectory() =>
+    [
+        new("site", "S1", "Site 1", true, "v1"),
+        new("site", "SITE-001", "Site 001", true, "v1"),
+        new("site", "SITE-A", "Site A", true, "v1"),
+        new("site", "SITE-B", "Site B", true, "v1"),
+    ];
 
     private static BusinessMasterDataWorkContextCandidateScope Candidate(
         string kind,

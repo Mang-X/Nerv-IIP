@@ -292,6 +292,7 @@ public sealed record ListWarehouseOperationalCandidatesRequest(
     IReadOnlyCollection<string> AuthorizedSiteCodes,
     string ScopeKind,
     string ScopeId,
+    string CandidateDomain,
     string? Keyword = null,
     string? SkuCode = null,
     string? LocationCode = null,
@@ -386,6 +387,8 @@ public sealed class ListWarehouseOperationalCandidatesRequestValidator
         RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(50);
         RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.CandidateDomain)
+            .Must(WarehouseOperationalCandidateDomains.IsSupported);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.SkuCode).MaximumLength(100);
         RuleFor(x => x.LocationCode).MaximumLength(100);
@@ -1427,6 +1430,7 @@ public sealed class ListWarehouseOperationalCandidatesEndpoint(
                 req.EnvironmentId,
                 scope.ScopeKind,
                 scope.ScopeId,
+                req.CandidateDomain,
                 scope.OperatorPrincipalIds,
                 scope.PoolCodes,
                 scope.SiteCodes,
@@ -1536,7 +1540,7 @@ public static class WmsEndpointContracts
         new(typeof(CloseBackorderOrderEndpoint), "POST", "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "closeWmsBackorderOrder"),
         new(typeof(RetryOutboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsOutboundInventoryPosting"),
         new(typeof(CreateCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsCountExecution"),
-        new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
+        new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.CountsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
         new(typeof(AssignCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions/{countExecutionId}/assignment", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "assignWmsCountExecution"),
         new(typeof(CompleteCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions/{countExecutionId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsCountExecution"),
         new(typeof(DispatchWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "dispatchWmsWcsTask"),
@@ -1550,7 +1554,7 @@ public static class WmsEndpointContracts
         new(typeof(ListWarehouseOperationalCandidatesEndpoint), "GET", "/api/business/v1/wms/operational-candidates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOperationalCandidates"),
         new(typeof(GetReceiptWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/receipts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsReceiptWorkScopes"),
         new(typeof(GetShipmentWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/shipments", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "getWmsShipmentWorkScopes"),
-        new(typeof(GetCountWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/counts", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "getWmsCountWorkScopes"),
+        new(typeof(GetCountWorkScopesEndpoint), "GET", "/api/business/v1/wms/work-scopes/counts", WmsPermissionCodes.CountsRead, InternalServiceAuthorizationPolicy.Name, "getWmsCountWorkScopes"),
     ];
 
     public static WmsEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

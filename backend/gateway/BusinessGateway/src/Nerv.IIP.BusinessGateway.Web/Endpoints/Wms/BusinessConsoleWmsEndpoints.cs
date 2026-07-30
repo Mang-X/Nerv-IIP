@@ -180,7 +180,7 @@ public sealed class GetBusinessConsoleWmsCountWorkScopesEndpoint(
         wms,
         tokenProvider,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsReceiptsRead)
+        BusinessGatewayPermissions.WmsCountsRead)
 {
     protected override Task<BusinessConsoleWmsWorkScopeCatalog> GetCatalogAsync(
         IBusinessWmsClient wmsClient,
@@ -200,17 +200,20 @@ public abstract class BusinessConsoleWmsOperationalCandidatesEndpoint
 {
     private readonly IBusinessWmsClient _wms;
     private readonly IInternalServiceTokenProvider _tokenProvider;
+    private readonly string _candidateDomain;
 
     protected BusinessConsoleWmsOperationalCandidatesEndpoint(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessWmsClient wms,
         IInternalServiceTokenProvider tokenProvider,
         WmsTrustedRequestContextResolver trustedContextResolver,
-        string permissionCode)
+        string permissionCode,
+        string candidateDomain)
         : base(auth, trustedContextResolver, permissionCode)
     {
         _wms = wms;
         _tokenProvider = tokenProvider;
+        _candidateDomain = candidateDomain;
     }
 
     protected override string OrganizationId(
@@ -237,6 +240,7 @@ public abstract class BusinessConsoleWmsOperationalCandidatesEndpoint
                 trusted.AuthorizedSiteCodes,
                 scope.ScopeKind,
                 scope.ScopeId,
+                _candidateDomain,
                 request.Keyword,
                 request.SkuCode,
                 request.LocationCode,
@@ -262,7 +266,8 @@ public sealed class ListBusinessConsoleWmsReceiptOperationalCandidatesEndpoint(
         wms,
         tokenProvider,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsReceiptsRead);
+        BusinessGatewayPermissions.WmsReceiptsRead,
+        "receipts");
 
 [Tags("Business Console WMS")]
 [HttpGet("/api/business-console/v1/wms/operational-candidates/shipments")]
@@ -280,7 +285,8 @@ public sealed class ListBusinessConsoleWmsShipmentOperationalCandidatesEndpoint(
         wms,
         tokenProvider,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsShipmentsRead);
+        BusinessGatewayPermissions.WmsShipmentsRead,
+        "shipments");
 
 [Tags("Business Console WMS")]
 [HttpGet("/api/business-console/v1/wms/operational-candidates/counts")]
@@ -298,7 +304,8 @@ public sealed class ListBusinessConsoleWmsCountOperationalCandidatesEndpoint(
         wms,
         tokenProvider,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsCountsRead);
+        BusinessGatewayPermissions.WmsCountsRead,
+        "counts");
 
 public abstract class BusinessConsoleWmsAssignmentEndpoint
     : BusinessConsoleWmsTrustedProxyEndpoint<
@@ -1583,7 +1590,7 @@ public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
     : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleWmsCountExecutionListRequest, BusinessConsoleWmsCountExecutionListResponse>(
         auth,
         trustedContextResolver,
-        BusinessGatewayPermissions.WmsReceiptsRead)
+        BusinessGatewayPermissions.WmsCountsRead)
 {
     protected override bool IncludePrincipalContext => true;
 

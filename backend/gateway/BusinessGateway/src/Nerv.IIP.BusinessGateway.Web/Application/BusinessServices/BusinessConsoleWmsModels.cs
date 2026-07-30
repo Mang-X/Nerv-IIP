@@ -419,6 +419,7 @@ public sealed record BusinessWmsOperationalCandidatesRequest(
     IReadOnlyCollection<string> AuthorizedSiteCodes,
     string ScopeKind,
     string ScopeId,
+    string CandidateDomain,
     string? Keyword = null,
     string? SkuCode = null,
     string? LocationCode = null,

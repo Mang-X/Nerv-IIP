@@ -137,7 +137,9 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         if (!warehouseCountsReadApplied)
         {
             var warehouseRole = rolesById[WarehouseRoleId];
-            if (IsLegacyWarehouseRoleBeforeCountsRead(warehouseRole))
+            if (IsLegacyWarehouseRoleBeforeCountsRead(
+                    warehouseRole,
+                    warehouseSiteScopeApplied))
             {
                 warehouseRole.ReplacePermissions([
                     .. warehouseRole.Permissions.Select(permission => permission.PermissionCode),
@@ -239,7 +241,9 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
                 .SetEquals(baseline.PermissionCodes);
     }
 
-    private static bool IsLegacyWarehouseRoleBeforeCountsRead(Role role)
+    private static bool IsLegacyWarehouseRoleBeforeCountsRead(
+        Role role,
+        bool warehouseSiteScopeApplied)
     {
         var baseline = Roles.Single(x => x.RoleId == WarehouseRoleId);
         var previousPermissionCodes = baseline.PermissionCodes
@@ -253,6 +257,34 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             && role.Permissions
                 .Select(permission => permission.PermissionCode)
                 .ToHashSet(StringComparer.Ordinal)
-                .SetEquals(previousPermissionCodes);
+                .SetEquals(previousPermissionCodes)
+            && IsManagedLegacyWarehouseScope(
+                role,
+                warehouseSiteScopeApplied);
+    }
+
+    private static bool IsManagedLegacyWarehouseScope(
+        Role role,
+        bool warehouseSiteScopeApplied)
+    {
+        if (role.DataScopes.Count == 0)
+        {
+            return true;
+        }
+
+        if (!warehouseSiteScopeApplied || role.DataScopes.Count != 1)
+        {
+            return false;
+        }
+
+        var scope = role.DataScopes.Single();
+        return string.Equals(
+                scope.ScopeType,
+                DataScopeBinding.Site,
+                StringComparison.Ordinal)
+            && string.Equals(
+                scope.ScopeCode,
+                "SITE-001",
+                StringComparison.Ordinal);
     }
 }

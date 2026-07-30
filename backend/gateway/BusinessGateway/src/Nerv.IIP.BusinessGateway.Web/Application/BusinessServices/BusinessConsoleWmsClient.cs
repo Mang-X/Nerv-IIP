@@ -828,6 +828,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
                 ("actorPrincipalId", request.ActorPrincipalId),
                 ("scopeKind", request.ScopeKind),
                 ("scopeId", request.ScopeId),
+                ("candidateDomain", request.CandidateDomain),
                 ("keyword", request.Keyword),
                 ("skuCode", request.SkuCode),
                 ("locationCode", request.LocationCode),

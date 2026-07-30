@@ -39,6 +39,7 @@ public sealed record ListWarehouseOperationalCandidatesQuery(
     string EnvironmentId,
     string ScopeKind,
     string ScopeId,
+    string CandidateDomain,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
@@ -46,6 +47,19 @@ public sealed record ListWarehouseOperationalCandidatesQuery(
     string? SkuCode = null,
     string? LocationCode = null,
     int Take = 50) : IQuery<WarehouseOperationalCandidatesResponse>;
+
+public static class WarehouseOperationalCandidateDomains
+{
+    public const string Receipts = "receipts";
+    public const string Shipments = "shipments";
+    public const string Counts = "counts";
+
+    public static bool IsSupported(string? value) =>
+        value is not null
+        && (string.Equals(value.Trim(), Receipts, StringComparison.Ordinal)
+            || string.Equals(value.Trim(), Shipments, StringComparison.Ordinal)
+            || string.Equals(value.Trim(), Counts, StringComparison.Ordinal));
+}
 
 public sealed record WarehouseOperationalCandidatesResponse(
     string SourceKind,
@@ -93,6 +107,8 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             || string.IsNullOrWhiteSpace(request.EnvironmentId)
             || string.IsNullOrWhiteSpace(request.ScopeKind)
             || string.IsNullOrWhiteSpace(request.ScopeId)
+            || !WarehouseOperationalCandidateDomains.IsSupported(
+                request.CandidateDomain)
             || !WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
@@ -111,6 +127,7 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
 
         var take = request.Take <= 0 ? 50 : Math.Clamp(request.Take, 1, 100);
         var sourceTake = Math.Clamp(take * 20, 100, 1_000);
+        var candidateDomain = request.CandidateDomain.Trim();
         var inbound = ApplyScope(
                 dbContext.InboundOrders
                     .AsNoTracking()
@@ -146,22 +163,43 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
                         && siteCodes.Contains(execution.SiteCode)),
                 ownershipScope);
 
-        var inboundPage = await ReadRecentAsync(
-            inbound.OrderByDescending(order => order.CreatedAtUtc),
-            sourceTake,
-            cancellationToken);
-        var outboundPage = await ReadRecentAsync(
-            outbound.OrderByDescending(order => order.CreatedAtUtc),
-            sourceTake,
-            cancellationToken);
-        var taskPage = await ReadRecentAsync(
-            warehouseTasks.OrderByDescending(task => task.CreatedAtUtc),
-            sourceTake,
-            cancellationToken);
-        var countPage = await ReadRecentAsync(
-            counts.OrderByDescending(execution => execution.CreatedAtUtc),
-            sourceTake,
-            cancellationToken);
+        var inboundPage = EmptyPage<InboundOrder>();
+        var outboundPage = EmptyPage<OutboundOrder>();
+        var taskPage = EmptyPage<WarehouseTask>();
+        var countPage = EmptyPage<CountExecution>();
+        switch (candidateDomain)
+        {
+            case WarehouseOperationalCandidateDomains.Receipts:
+                inboundPage = await ReadRecentAsync(
+                    inbound.OrderByDescending(order => order.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                taskPage = await ReadRecentAsync(
+                    warehouseTasks
+                        .Where(task => task.TaskType == WarehouseTaskType.Putaway)
+                        .OrderByDescending(task => task.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+            case WarehouseOperationalCandidateDomains.Shipments:
+                outboundPage = await ReadRecentAsync(
+                    outbound.OrderByDescending(order => order.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                taskPage = await ReadRecentAsync(
+                    warehouseTasks
+                        .Where(task => task.TaskType == WarehouseTaskType.Picking)
+                        .OrderByDescending(task => task.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+            case WarehouseOperationalCandidateDomains.Counts:
+                countPage = await ReadRecentAsync(
+                    counts.OrderByDescending(execution => execution.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+        }
         var observations = inboundPage.Items
             .SelectMany(order => order.Lines.Select(line => new CandidateObservation(
                 order.SiteCode,
@@ -367,6 +405,9 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             rows.Take(take).ToArray(),
             rows.Length > take);
     }
+
+    private static CandidatePage<T> EmptyPage<T>() =>
+        new([], Truncated: false);
 
     private static string? Optional(string? value)
     {

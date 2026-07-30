@@ -91,15 +91,18 @@ public sealed class WmsTrustedRequestContextResolver(
             return WmsTrustedRequestContext.FromResolvedSites(authorization, []);
         }
 
-        var context = await masterData.GetPrincipalWorkContextAsync(
+        var siteDirectory = await masterData.ListResourcesAsync(
             tokenProvider.BearerToken,
-            new BusinessMasterDataPrincipalWorkContextRequest(
+            new BusinessConsoleListResourcesRequest(
                 organizationId,
                 environmentId,
-                authorization.PrincipalId.Trim()),
+                "site",
+                IncludeDisabled: false,
+                Take: 500,
+                All: true),
             cancellationToken);
         var authorizedSiteCodes = PrincipalWorkContextAuthorizationResolver.ResolveSiteCandidates(
-                context,
+                siteDirectory.Resources,
                 authorization,
                 organizationId,
                 permissionCode)

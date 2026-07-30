@@ -99,27 +99,32 @@ public static class PrincipalWorkContextAuthorizationResolver
     }
 
     public static IReadOnlyList<BusinessConsoleAuthorizedWorkScope> ResolveSiteCandidates(
-        BusinessMasterDataPrincipalWorkContextResponse context,
+        IReadOnlyCollection<BusinessConsoleResourceItem> siteDirectory,
         BusinessGatewayAuthorizationResult authorization,
         string organizationId,
         string permissionCode)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(siteDirectory);
         ArgumentNullException.ThrowIfNull(authorization);
         if (!authorization.IsAllowed || authorization.DataScope?.DenyAll == true)
         {
             return [];
         }
 
-        var siteCandidates = (context.Sites ?? [])
+        var siteCandidates = siteDirectory
             .Where(site =>
                 site is not null
-                && !string.IsNullOrWhiteSpace(site.Id)
-                && !string.IsNullOrWhiteSpace(site.Name))
+                && site.Active
+                && string.Equals(
+                    site.ResourceType?.Trim(),
+                    "site",
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(site.Code)
+                && !string.IsNullOrWhiteSpace(site.DisplayName))
             .Select(site => new BusinessMasterDataWorkContextCandidateScope(
                 "site",
-                site.Id,
-                site.Name,
+                site.Code,
+                site.DisplayName,
                 "wms-site-candidate",
                 [new BusinessMasterDataWorkContextScopeAncestor("organization", organizationId)]))
             .ToArray();

@@ -110,7 +110,7 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "closeWmsBackorderOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "retryWmsOutboundInventoryPosting");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsCountExecution");
-        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "listWmsCountExecutions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
@@ -123,7 +123,7 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/receipts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsReceiptWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/shipments" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "getWmsShipmentWorkScopes");
-        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsCountWorkScopes");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "getWmsCountWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/operational-candidates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsOperationalCandidates");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
     }
@@ -138,6 +138,7 @@ public sealed class WmsEndpointContractTests
             ["SITE-A"],
             "self",
             "worker-a",
+            "receipts",
             Take: 50);
         var forgedEmptyContext = valid with
         {
@@ -145,11 +146,13 @@ public sealed class WmsEndpointContractTests
             AuthorizedSiteCodes = [],
         };
         var oversized = valid with { Take = 101 };
+        var unsupportedDomain = valid with { CandidateDomain = "all" };
         var validator = new ListWarehouseOperationalCandidatesRequestValidator();
 
         Assert.True(validator.Validate(valid).IsValid);
         Assert.False(validator.Validate(forgedEmptyContext).IsValid);
         Assert.False(validator.Validate(oversized).IsValid);
+        Assert.False(validator.Validate(unsupportedDomain).IsValid);
     }
 
     [Fact]

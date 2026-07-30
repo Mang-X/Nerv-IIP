@@ -74,6 +74,7 @@ public sealed class WarehouseOperationalCandidatesQueryTests
                 "env-dev",
                 "self",
                 "worker-a",
+                WarehouseOperationalCandidateDomains.Receipts,
                 AssignedOperatorUserIds: ["worker-a"],
                 SiteCodes: ["SITE-A"],
                 Take: 50),
@@ -85,19 +86,125 @@ public sealed class WarehouseOperationalCandidatesQueryTests
         Assert.Equal(AsOf.UtcDateTime, result.AsOfUtc);
         Assert.NotNull(result.FreshnessUtc);
         Assert.False(result.Truncated);
-        Assert.Equal(["LOC-A", "LOC-B", "LOC-C"], result.Locations
+        Assert.Equal(["LOC-A", "LOC-B"], result.Locations
             .Select(candidate => candidate.LocationCode)
             .Order(StringComparer.Ordinal));
 
         var location = result.Locations.Single(candidate => candidate.LocationCode == "LOC-A");
         Assert.Equal("SITE-A", location.SiteCode);
         Assert.Equal(["SKU-001", "SKU-002"], location.SkuCodes);
-        Assert.Equal(3, location.ReferenceCount);
+        Assert.Equal(2, location.ReferenceCount);
 
         var lot = result.Lots.Single(candidate => candidate.LotNo == "LOT-001");
         Assert.Equal("SKU-001", lot.SkuCode);
         Assert.Equal(["LOC-A"], lot.LocationCodes);
-        Assert.Equal(2, lot.ReferenceCount);
+        Assert.Equal(1, lot.ReferenceCount);
+    }
+
+    [Fact]
+    public async Task Candidate_domain_exposes_only_its_authorized_operational_facts()
+    {
+        var root = new InMemoryDatabaseRoot();
+        var databaseName = nameof(
+            Candidate_domain_exposes_only_its_authorized_operational_facts);
+        await using (var seed = CreateContext(databaseName, root))
+        {
+            seed.InboundOrders.Add(Inbound(
+                "IN-DOMAIN",
+                "SITE-A",
+                "worker-a",
+                "POOL-A",
+                "SKU-RECEIPT",
+                "LOC-RECEIPT-IN",
+                "LOT-RECEIPT"));
+            seed.WarehouseTasks.Add(WarehouseTask.CreatePutaway(
+                "org-001",
+                "env-dev",
+                "PUT-DOMAIN",
+                "IN-DOMAIN",
+                "10",
+                "SKU-RECEIPT",
+                "EA",
+                "SITE-A",
+                "LOC-RECEIPT-FROM",
+                "LOC-RECEIPT-TO",
+                1m,
+                "LOT-RECEIPT",
+                assignedOperatorUserId: "worker-a",
+                assignedPoolCode: "POOL-A"));
+            seed.OutboundOrders.Add(Outbound(
+                "OUT-DOMAIN",
+                "SITE-A",
+                "worker-a",
+                "POOL-A",
+                "SKU-SHIPMENT",
+                "LOC-SHIPMENT-OUT",
+                "LOT-SHIPMENT"));
+            seed.WarehouseTasks.Add(WarehouseTask.CreatePicking(
+                "org-001",
+                "env-dev",
+                "PICK-DOMAIN",
+                "OUT-DOMAIN",
+                "10",
+                "SKU-SHIPMENT",
+                "EA",
+                "SITE-A",
+                "LOC-SHIPMENT-FROM",
+                "LOC-SHIPMENT-TO",
+                1m,
+                "LOT-SHIPMENT",
+                assignedOperatorUserId: "worker-a",
+                assignedPoolCode: "POOL-A"));
+            seed.CountExecutions.Add(CountExecution.Create(
+                "org-001",
+                "env-dev",
+                "COUNT-DOMAIN",
+                "SKU-COUNT",
+                "EA",
+                "SITE-A",
+                "LOC-COUNT",
+                1m,
+                assignedOperatorUserId: "worker-a",
+                assignedPoolCode: "POOL-A"));
+            await seed.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var context = CreateContext(databaseName, root);
+        var handler = Handler(context);
+        var receipts = await handler.Handle(
+            Query(WarehouseOperationalCandidateDomains.Receipts),
+            CancellationToken.None);
+        var shipments = await handler.Handle(
+            Query(WarehouseOperationalCandidateDomains.Shipments),
+            CancellationToken.None);
+        var counts = await handler.Handle(
+            Query(WarehouseOperationalCandidateDomains.Counts),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["LOC-RECEIPT-FROM", "LOC-RECEIPT-IN", "LOC-RECEIPT-TO"],
+            LocationCodes(receipts));
+        Assert.Equal(
+            ["LOC-SHIPMENT-FROM", "LOC-SHIPMENT-OUT", "LOC-SHIPMENT-TO"],
+            LocationCodes(shipments));
+        Assert.Equal(["LOC-COUNT"], LocationCodes(counts));
+
+        static ListWarehouseOperationalCandidatesQuery Query(string domain) =>
+            new(
+                "org-001",
+                "env-dev",
+                "self",
+                "worker-a",
+                domain,
+                AssignedOperatorUserIds: ["worker-a"],
+                SiteCodes: ["SITE-A"]);
+
+        static string[] LocationCodes(
+            WarehouseOperationalCandidatesResponse response) =>
+            response.Locations
+                .Select(candidate => candidate.LocationCode)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
     }
 
     [Fact]
@@ -160,6 +267,7 @@ public sealed class WarehouseOperationalCandidatesQueryTests
                 "env-dev",
                 "self",
                 "worker-a",
+                WarehouseOperationalCandidateDomains.Receipts,
                 AssignedOperatorUserIds: ["worker-a"],
                 SiteCodes: ["SITE-A"]),
             CancellationToken.None);
@@ -173,6 +281,7 @@ public sealed class WarehouseOperationalCandidatesQueryTests
                 "env-dev",
                 "work-pool",
                 "POOL-A",
+                WarehouseOperationalCandidateDomains.Receipts,
                 AssignedPoolCodes: ["POOL-A"],
                 SiteCodes: ["SITE-A"]),
             CancellationToken.None);
@@ -243,6 +352,7 @@ public sealed class WarehouseOperationalCandidatesQueryTests
                 "env-dev",
                 "self",
                 "worker-a",
+                WarehouseOperationalCandidateDomains.Receipts,
                 AssignedOperatorUserIds: ["worker-a"],
                 SiteCodes: ["SITE-A"],
                 Keyword: "lot",
@@ -266,6 +376,7 @@ public sealed class WarehouseOperationalCandidatesQueryTests
                 "env-dev",
                 "self",
                 "worker-a",
+                WarehouseOperationalCandidateDomains.Receipts,
                 AssignedOperatorUserIds: ["worker-a"],
                 SiteCodes: ["SITE-A"],
                 Take: 1),
