@@ -59,7 +59,7 @@ describe('PDA WMS operational candidates', () => {
     queryState.response = {
       success: true,
       data: {
-        sourceKind: 'warehouse-operational-records',
+        sourceKind: 'wms-operational-facts',
         scopeKind: 'self',
         scopeId: 'worker-1',
         asOfUtc: '2026-07-30T01:00:00Z',
@@ -223,7 +223,7 @@ describe('PDA WMS operational candidates', () => {
     queryState.data!.value = {
       success: true,
       data: {
-        sourceKind: 'warehouse-operational-records',
+        sourceKind: 'wms-operational-facts',
         scopeKind: 'self',
         scopeId: 'worker-1',
         asOfUtc: '2026-07-30T01:01:00Z',

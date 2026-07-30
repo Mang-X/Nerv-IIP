@@ -231,13 +231,15 @@ BusinessApproval delegation 是审批域事实，不能自动授权业务域代�
 | `role-pda-warehouse` | `business.wms.receipts.read`、`business.wms.receipts.manage`、`business.wms.shipments.read`、`business.wms.shipments.manage`、`business.wms.counts.read`、`business.inventory.ledger.read`、`business.inventory.counts.manage`、`business.inventory.movements.create`、`business.masterdata.resources.read` |
 | `role-pda-inspector` | `business.quality.inspection-records.read`、`business.quality.inspection-records.create`、`business.mes.work-orders.read`、`business.masterdata.resources.read` |
 
-上述三个角色不写 role data scopes；四个 PDA membership seed 显式写入各自 principal 的
-Self scope，避免空 scope 被误读为全量。Platform Administrator seed 则显式写入当前
-Organization scope。MAN-627 前已落库且仍严格匹配旧 seed 基线的空 scope 身份，会由独立
-seed manifest 做一次性回填：管理员需同时匹配旧默认 manifest、固定角色名和完整基线权限，
-PDA membership 需只含对应固定角色且该角色名/权限均未变化。任何非空或已自定义的
-permissions、roles、scopes 均不覆盖；验收仍必须通过公开实时授权路径读取实际结果，不能只看 seed。
-这些 seed 只提供本人或组织边界，不代表 Team、WorkCenter、Workshop 等五级范围已自动配置。
+`role-pda-warehouse` 在严格匹配受管基线时写入 `site/SITE-001` role data scope；
+`role-pda-operator` 与 `role-pda-inspector` 不写 role data scopes。四个 PDA membership
+seed 仍显式写入各自 principal 的 Self scope，避免空 scope 被误读为全量。Platform
+Administrator seed 则显式写入当前 Organization scope。MAN-627 前已落库且仍严格匹配旧
+seed 基线的空 scope 身份，会由独立 seed manifest 做一次性回填：管理员需同时匹配旧默认
+manifest、固定角色名和完整基线权限，PDA membership 需只含对应固定角色且该角色名/权限均未
+变化。任意已自定义的 permissions、roles、scopes 均不覆盖；验收仍必须通过公开实时授权路径
+读取实际结果，不能只看 seed。这些 seed 只提供本人、受管仓储角色的 `SITE-001` 或管理员
+Organization 边界，不代表 Team、WorkCenter、Workshop 等五级范围已自动配置。
 
 ## 7. 缺少的验收身份与前置
 

@@ -34,7 +34,7 @@ describe('WMS operational candidate picker', () => {
     expect(wrapper.findAllComponents(NvPicker)).toHaveLength(2)
     expect(wrapper.findAllComponents(NvScanBar)).toHaveLength(1)
     expect(wrapper.text()).toContain('当前范围仓储作业记录候选')
-    expect(wrapper.text()).not.toContain('warehouse-operational-records')
+    expect(wrapper.text()).not.toContain('wms-operational-facts')
     expect(wrapper.text()).not.toContain('2026-07-30T01:00:00Z')
     expect(wrapper.text()).toContain('候选已截断')
     expect(wrapper.findAllComponents(NvPicker)[0]!.props('options')[0]).toEqual({

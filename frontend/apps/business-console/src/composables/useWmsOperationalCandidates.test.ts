@@ -50,7 +50,7 @@ describe('PC WMS operational candidates', () => {
     queryState.response = {
       success: true,
       data: {
-        sourceKind: 'warehouse-operational-records',
+        sourceKind: 'wms-operational-facts',
         scopeKind: 'self',
         scopeId: 'worker-1',
         asOfUtc: '2026-07-30T01:00:00Z',
@@ -103,7 +103,7 @@ describe('PC WMS operational candidates', () => {
     queryState.response = {
       success: true,
       data: {
-        sourceKind: 'warehouse-operational-records',
+        sourceKind: 'wms-operational-facts',
         scopeKind: 'self',
         scopeId: 'old-worker',
         locations: [{ locationCode: 'STALE-01' }],

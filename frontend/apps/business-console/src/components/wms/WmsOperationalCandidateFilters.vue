@@ -82,8 +82,8 @@ function formatTime(value?: string | null) {
     v-model="searchModel"
     type="search"
     class="w-52"
-    placeholder="远端搜索当前范围候选"
-    aria-label="远端搜索仓储作业候选"
+    placeholder="搜索当前作业范围"
+    aria-label="搜索仓储作业候选"
   />
   <NvSearchSelect
     v-model="locationModel"
@@ -108,11 +108,9 @@ function formatTime(value?: string | null) {
     empty-text="当前范围仓储作业记录中没有匹配批次"
     aria-label="批次候选"
   />
-  <p v-if="!ready" class="max-w-80 text-xs leading-5 text-muted-foreground">
-    请先选择可用作业范围，范围就绪前不会请求或应用候选。
-  </p>
+  <p v-if="!ready" class="max-w-80 text-xs leading-5 text-muted-foreground">请先选择作业范围。</p>
   <div v-else-if="error" class="flex max-w-80 items-center gap-2 text-xs text-destructive">
-    <span>候选加载失败，请重试；当前不会把失败伪装为空候选。</span>
+    <span>候选加载失败，请重试</span>
     <NvButton data-testid="candidate-retry" size="sm" variant="outline" @click="emit('retry')">
       重试
     </NvButton>
@@ -120,6 +118,6 @@ function formatTime(value?: string | null) {
   <p v-else class="max-w-80 text-xs leading-5 text-muted-foreground" data-testid="candidate-source">
     {{ sourceLabel }} · 截至 {{ formatTime(asOfUtc) }} · 最近记录
     {{ formatTime(freshnessUtc) }}
-    <span v-if="truncated"> · 候选已截断，可继续搜索收窄</span>
+    <span v-if="truncated"> · 结果较多，请继续搜索收窄</span>
   </p>
 </template>

@@ -36,9 +36,9 @@ describe('WmsOperationalCandidateFilters', () => {
     })
 
     expect(wrapper.text()).toContain('当前范围仓储作业记录候选')
-    expect(wrapper.text()).toContain('候选已截断')
+    expect(wrapper.text()).toContain('结果较多，请继续搜索收窄')
     expect(wrapper.text()).not.toContain('主数据')
-    expect(wrapper.text()).not.toContain('warehouse-operational-records')
+    expect(wrapper.text()).not.toContain('wms-operational-facts')
     expect(wrapper.text()).not.toContain('2026-07-30T01:00:00Z')
   })
 
@@ -53,7 +53,7 @@ describe('WmsOperationalCandidateFilters', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('候选加载失败')
+    expect(wrapper.text()).toContain('候选加载失败，请重试')
     await wrapper.get('[data-testid="candidate-retry"]').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('暂无库位候选')
@@ -68,7 +68,7 @@ describe('WmsOperationalCandidateFilters', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('请先选择可用作业范围')
+    expect(wrapper.text()).toContain('请先选择作业范围')
     expect(
       wrapper.findAllComponents(NvSearchSelect).every((select) => select.props('disabled')),
     ).toBe(true)
@@ -85,5 +85,6 @@ describe('WmsOperationalCandidateFilters', () => {
     })
 
     expect(wrapper.findComponent(NvInput).exists()).toBe(true)
+    expect(wrapper.get('input[type="search"]').attributes('placeholder')).toBe('搜索当前作业范围')
   })
 })
