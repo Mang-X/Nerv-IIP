@@ -25,6 +25,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -91,7 +92,7 @@ function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

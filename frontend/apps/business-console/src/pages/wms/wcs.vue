@@ -12,7 +12,7 @@ import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -133,7 +133,7 @@ async function submitDispatch() {
     openAction.value = ''
     notifySuccess('WCS 任务已派发')
   } catch (error) {
-    notifyError(error, '派发 WCS 任务失败，请稍后重试。')
+    notifyOperationFailure('派发 WCS 任务失败', error, '派发 WCS 任务失败，请稍后重试。')
   }
 }
 
@@ -152,7 +152,7 @@ async function submitFail() {
     openAction.value = ''
     notifySuccess('已标记为失败')
   } catch (error) {
-    notifyError(error, '标记失败未成功，请稍后重试。')
+    notifyOperationFailure('标记为失败未成功', error, '标记失败未成功，请稍后重试。')
   }
 }
 
@@ -168,7 +168,7 @@ async function submitComplete() {
     openAction.value = ''
     notifySuccess('WCS 任务已完成')
   } catch (error) {
-    notifyError(error, '标记完成失败，请稍后重试。')
+    notifyOperationFailure('标记完成失败', error, '标记完成失败，请稍后重试。')
   }
 }
 
@@ -299,7 +299,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

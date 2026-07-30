@@ -19,7 +19,7 @@ import {
   WAREHOUSE_SERIAL_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -245,7 +245,7 @@ async function submitTask() {
   try {
     response = await createCountTask(body)
   } catch (error) {
-    notifyError(error, '创建盘点任务失败，请稍后重试。')
+    notifyOperationFailure('创建盘点任务失败', error, '创建盘点任务失败，请稍后重试。')
     return
   }
   // 列表来自服务端读面：mutation 成功后失效查询即可，新建的任务刷新之后仍然在。
@@ -264,7 +264,7 @@ async function submitAdjustment() {
   try {
     response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
   } catch (error) {
-    notifyError(error, '确认库存调整失败，请稍后重试。')
+    notifyOperationFailure('确认库存调整失败', error, '确认库存调整失败，请稍后重试。')
     return
   }
   const approvalPending = response?.data?.status === 'pending-approval'

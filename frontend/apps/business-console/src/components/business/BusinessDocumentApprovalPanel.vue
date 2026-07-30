@@ -10,7 +10,7 @@ import { useBusinessApproval } from '@/composables/useBusinessApproval'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvField,
@@ -179,9 +179,13 @@ async function startApprovalChain() {
       notifySuccess('审批链已发起')
       return
     }
-    notifyError(result, '审批链发起未成功，请确认模板与单据状态。')
+    notifyOperationFailure('发起审批链失败', result, '审批链发起未成功，请确认模板与单据状态。')
   } catch (error) {
-    notifyError(error, '审批链发起失败，请确认模板、权限和单据状态后重试。')
+    notifyOperationFailure(
+      '发起审批链失败',
+      error,
+      '审批链发起失败，请确认模板、权限和单据状态后重试。',
+    )
   }
 }
 

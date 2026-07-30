@@ -45,7 +45,7 @@ import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -232,7 +232,7 @@ async function submitRule() {
     formOpen.value = false
     notifySuccess('报警规则已保存')
   } catch (error) {
-    notifyError(error, '报警规则保存失败，请稍后重试。')
+    notifyOperationFailure('报警规则保存失败', error, '报警规则保存失败，请稍后重试。')
   }
 }
 function severityLabel(value?: string | null) {
@@ -264,7 +264,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
   return row.alarmRuleId ?? `${row.deviceAssetId}-${row.ruleCode}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

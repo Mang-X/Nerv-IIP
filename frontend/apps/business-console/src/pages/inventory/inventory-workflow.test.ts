@@ -29,6 +29,7 @@ const inventoryState = vi.hoisted(() => ({
   movementsPage: undefined as { value: number } | undefined,
   movementsPageSize: undefined as { value: number } | undefined,
   notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
   notifySuccess: vi.fn(),
 }))
 
@@ -203,8 +204,10 @@ vi.mock('@/composables/useBusinessInventory', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifyError: inventoryState.notifyError,
+  notifyOperationFailure: inventoryState.notifyOperationFailure,
   notifySuccess: inventoryState.notifySuccess,
 }))
 

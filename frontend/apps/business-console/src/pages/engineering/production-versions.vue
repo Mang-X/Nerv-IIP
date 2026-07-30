@@ -57,7 +57,7 @@ import {
 import { PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -371,7 +371,7 @@ async function submitForm() {
     editingId.value = null
     editingRow.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存生产版本失败', error, '保存生产版本失败，请稍后重试。')
   }
 }
 
@@ -395,7 +395,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('归档生产版本失败', error, '归档生产版本失败，请稍后重试。')
   }
 }
 
@@ -420,12 +420,12 @@ async function runResolve() {
       lotSize: parseNumber(resolveForm.lotSize) ?? 0,
     })
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('解析生产版本失败', error, '解析生产版本失败，请稍后重试。')
   }
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

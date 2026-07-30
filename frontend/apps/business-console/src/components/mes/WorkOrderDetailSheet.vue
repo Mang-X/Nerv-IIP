@@ -20,7 +20,12 @@ import {
   useMesOperationTasks,
   useMesWorkOrderDetail,
 } from '@/composables/useBusinessMes'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -97,9 +102,7 @@ const open = computed({
   },
 })
 
-const errorMessage = computed(() =>
-  detailError.value instanceof Error ? detailError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(detailError.value))
 
 const operations = computed(() =>
   [...(detail.value?.operationTasks ?? [])].sort(
@@ -171,6 +174,18 @@ const LIFECYCLE_DONE_MESSAGES: Record<MesLifecycleActionKey, string> = {
   resume: '已恢复加工。',
   complete: '该工序已完工。',
 }
+const LIFECYCLE_FAIL_ACTIONS: Record<MesLifecycleActionKey, string> = {
+  start: '开工失败',
+  pause: '暂停失败',
+  resume: '恢复加工失败',
+  complete: '完工失败',
+}
+const LIFECYCLE_FAIL_FALLBACKS: Record<MesLifecycleActionKey, string> = {
+  start: '开工失败，请稍后重试。',
+  pause: '暂停失败，请稍后重试。',
+  resume: '恢复加工失败，请稍后重试。',
+  complete: '完工失败，请稍后重试。',
+}
 function lifecycleActionEnabled(task: OperationRow, action: MesLifecycleActionKey) {
   if (!operationScopeReady.value) return false
   if (task.operationTaskId && !lifecycleIntent.permits(task.operationTaskId, action)) return false
@@ -220,7 +235,7 @@ async function runLifecycleAction(task: OperationRow, action: MesLifecycleAction
       return
     }
     lifecycleIntent.recordFailure(error)
-    notifyError(error)
+    notifyOperationFailure(LIFECYCLE_FAIL_ACTIONS[action], error, LIFECYCLE_FAIL_FALLBACKS[action])
   } finally {
     lifecyclePending.value = null
   }

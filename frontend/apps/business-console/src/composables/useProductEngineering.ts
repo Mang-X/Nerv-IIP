@@ -1453,11 +1453,11 @@ export function useBomRevisionSuggestions(
     }
   })
 
-  type RevisionRow = { revision?: string, status?: string }
+  type RevisionRow = { revision?: string; status?: string }
   const takenRevisions = computed<BomVersionPickerOption[]>(() => {
     // EBOM / MBOM 两种 envelope 只用到 revision + status 两个共有字段，按最小结构解包。
     const envelope = query.data.value as
-      | { success?: boolean, data?: { items?: RevisionRow[] } | null }
+      | { success?: boolean; data?: { items?: RevisionRow[] } | null }
       | undefined
     const items = unwrapItems<RevisionRow>(envelope)
     const byRevision = new Map<string, BomVersionPickerOption>()

@@ -131,7 +131,9 @@ export function useMesMaterialVersionCatalog() {
     return versionCatalog.productionVersions.value
       .filter((row) => !!row.productionVersionId && (!sku || row.skuCode === sku))
       .map<EntityPickerOption>((row) => {
-        const owner = row.skuCode ? (skuNameByCode.value.get(row.skuCode) ?? row.skuCode) : '未知物料'
+        const owner = row.skuCode
+          ? (skuNameByCode.value.get(row.skuCode) ?? row.skuCode)
+          : '未知物料'
         const from = row.validFrom ? row.validFrom.slice(0, 10) : ''
         return {
           value: row.productionVersionId as string,

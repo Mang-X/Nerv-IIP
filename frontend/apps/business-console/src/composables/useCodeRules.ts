@@ -23,19 +23,28 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from './businessContextBinding'
 
 export function useCodeRules() {
   const context = useBusinessContextStore()
-  const filters = bindBusinessContext(reactive({
-    organizationId: context.organizationId,
-    environmentId: context.environmentId,
-  }))
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+    }),
+  )
 
   const listQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleCodeRulesQueryOptions({
-      query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleCodeRulesQueryOptions({
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      }),
+      filters,
+    ),
   )
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
 
@@ -48,20 +57,22 @@ export function useCodeRules() {
     filters,
     rules: computed<BusinessConsoleCodeRuleItem[]>(() => {
       const env = listQuery.data.value as BusinessConsoleCodeRuleListEnvelope | undefined
-      return env?.success ? env.data?.rules ?? [] : []
+      return env?.success ? (env.data?.rules ?? []) : []
     }),
     rulesError: listQuery.error,
     rulesPending: listQuery.isLoading,
     refresh,
 
     // 详情（含版本历史）：按需拉取。
-    async fetchRuleDetail(ruleKey: string): Promise<BusinessConsoleCodeRuleDetailResponse | undefined> {
+    async fetchRuleDetail(
+      ruleKey: string,
+    ): Promise<BusinessConsoleCodeRuleDetailResponse | undefined> {
       const res = await getBusinessConsoleCodeRule({
         path: { ruleKey },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
       })
       const env = (res as { data?: BusinessConsoleCodeRuleDetailEnvelope }).data
-      return env?.success ? env.data ?? undefined : undefined
+      return env?.success ? (env.data ?? undefined) : undefined
     },
 
     // 预览：按当前 segments 生成一个样例编码（验证格式用）。
@@ -80,7 +91,7 @@ export function useCodeRules() {
         },
       })
       const env = (res as { data?: BusinessConsoleCodeRulePreviewEnvelope }).data
-      return env?.success ? env.data?.sampleCode ?? undefined : undefined
+      return env?.success ? (env.data?.sampleCode ?? undefined) : undefined
     },
 
     // 新建版本（版本化配置发布）。

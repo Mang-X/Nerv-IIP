@@ -6,7 +6,7 @@ import {
   useMesFinishedGoodsReceipts,
   useMesWorkOrderProducedLots,
 } from '@/composables/useBusinessMes'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess, serverErrorMessage } from '@/utils/notify'
 
 /** 登记完工入库所需的工单上下文（由路由页编排后传入，表单本身只负责登记态）。 */
 export interface ReceiptCreateContext {
@@ -42,9 +42,12 @@ function toIsoFromLocalInput(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toISOString()
 }
 // 累计申请量超过工单完工数量：后端返回带 WorkOrderId 后缀的技术消息，收敛成 issue 指定的一线业务文案。
-// 命中时返回映射文案（作为「实际错误消息」传入 notifyError，绕过其 ≤60 字中文原文透传）；否则 undefined。
+// 命中时返回映射文案（作为「实际错误消息」传入 notifyOperationFailure，替掉技术原文）；否则 undefined。
 function overQuantityMessage(error: unknown): string | undefined {
-  const raw = error instanceof Error ? error.message : error ? String(error) : ''
+  // 先走 serverErrorMessage：generated client 抛的是响应体对象，只判 `instanceof Error` 会漏掉整条服务端消息。
+  const raw =
+    serverErrorMessage(error) ||
+    (error instanceof Error ? error.message : error ? String(error) : '')
   if (raw && (raw.includes('累计完工入库申请数量超过') || raw.includes('完工数量'))) {
     return '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。'
   }
@@ -193,10 +196,14 @@ export function useReceiptCreateForm(
     // 登记成功与「列表刷新」是两件独立的事：刷新失败不得否定已成功的登记（否则同时看到成功+失败并可能重复提交）。
     try {
       await createReceiptRequest(body)
-    } catch {
-      const err = createReceiptRequestError.value ?? undefined
+    } catch (error) {
+      const err = createReceiptRequestError.value ?? error
       const overQuantity = overQuantityMessage(err)
-      notifyError(overQuantity ? new Error(overQuantity) : err, '登记完工入库失败，请稍后重试。')
+      notifyOperationFailure(
+        '登记完工入库失败',
+        overQuantity ? new Error(overQuantity) : err,
+        '登记完工入库失败，请稍后重试。',
+      )
       return false
     }
     notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)

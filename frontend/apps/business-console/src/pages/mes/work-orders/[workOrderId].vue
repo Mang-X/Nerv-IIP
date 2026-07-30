@@ -22,7 +22,12 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -429,7 +434,7 @@ async function submitCancel() {
     ) {
       return
     }
-    notifyError(error, '取消工单失败，请稍后重试。')
+    notifyOperationFailure('取消工单失败', error, '取消工单失败，请稍后重试。')
   }
 }
 
@@ -472,7 +477,7 @@ function formatStatus(value?: string | null) {
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

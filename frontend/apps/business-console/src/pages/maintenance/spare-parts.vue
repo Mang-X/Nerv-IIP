@@ -42,7 +42,7 @@ import {
 import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -166,7 +166,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('备件需求已创建')
   } catch (error) {
-    notifyError(error, '备件需求创建失败，请稍后重试。')
+    notifyOperationFailure('备件需求创建失败', error, '备件需求创建失败，请稍后重试。')
   }
 }
 </script>

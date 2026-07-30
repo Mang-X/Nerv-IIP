@@ -18,7 +18,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -357,7 +357,7 @@ async function submitReverse() {
     )
   } catch (error) {
     // 失败保留 key:同一确认框重试、或 Escape 关闭后重开,都复用同一 key 命中后端幂等重放,不产生第二次意图
-    notifyError(error, '冲销报工失败,请稍后重试。')
+    notifyOperationFailure('冲销报工失败', error, '冲销报工失败,请稍后重试。')
   }
 }
 
@@ -401,7 +401,7 @@ function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 async function promoteCandidate(candidate: {
   candidateId?: string

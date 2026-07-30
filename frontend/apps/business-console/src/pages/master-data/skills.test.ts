@@ -14,19 +14,37 @@ const stub = vi.hoisted(() => ({
   rows: [
     {
       userId: 'usr-1',
-      skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined as string | undefined }],
+      skills: [
+        { skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined as string | undefined },
+      ],
     },
-  ] as Array<{ userId: string, skills: Array<{ skillCode: string, level: string, effectiveTo?: string }> }>,
+  ] as Array<{
+    userId: string
+    skills: Array<{ skillCode: string; level: string; effectiveTo?: string }>
+  }>,
 }))
 
 // 技能目录字典（reference-data, codeSet=skill）：SKILL-A → 焊接技能、SKILL-WELD → 电焊；工人解析另走 useBusinessWorkers。
 function stubReadonlyResource(resourceType: string) {
-  const rows = resourceType === 'reference-data'
-    ? [
-        { resourceType, code: 'SKILL-A', displayName: '焊接技能', active: true, snapshotVersion: '1' },
-        { resourceType, code: 'SKILL-WELD', displayName: '电焊', active: true, snapshotVersion: '1' },
-      ]
-    : []
+  const rows =
+    resourceType === 'reference-data'
+      ? [
+          {
+            resourceType,
+            code: 'SKILL-A',
+            displayName: '焊接技能',
+            active: true,
+            snapshotVersion: '1',
+          },
+          {
+            resourceType,
+            code: 'SKILL-WELD',
+            displayName: '电焊',
+            active: true,
+            snapshotVersion: '1',
+          },
+        ]
+      : []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     resources: computed(() => rows),
@@ -39,10 +57,22 @@ function stubReadonlyResource(resourceType: string) {
 
 function stubWorkers() {
   const rows = [
-    { userId: 'usr-1', displayName: '张三', employeeNo: 'E001', department: '总装部', status: 'active' },
+    {
+      userId: 'usr-1',
+      displayName: '张三',
+      employeeNo: 'E001',
+      department: '总装部',
+      status: 'active',
+    },
   ]
   return {
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', keyword: undefined, pageIndex: 0, pageSize: 100 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      keyword: undefined,
+      pageIndex: 0,
+      pageSize: 100,
+    }),
     refresh: vi.fn(),
     workers: computed(() => rows),
     workersError: shallowRef(undefined),
@@ -53,7 +83,13 @@ function stubWorkers() {
 
 function stubSkillMatrix() {
   return {
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', userId: undefined, skillCode: undefined, includeDisabled: undefined }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      userId: undefined,
+      skillCode: undefined,
+      includeDisabled: undefined,
+    }),
     refresh: stub.matrixRefresh,
     skillCodes: computed(() => stub.skillCodes),
     rows: computed(() => stub.rows),
@@ -110,7 +146,8 @@ const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -120,13 +157,19 @@ const formSelectStubs = {
   WorkerSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="usr-1">张三</option></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="usr-1">张三</option></select>',
   },
 }
 
 function resetMatrix() {
   stub.skillCodes = ['SKILL-A']
-  stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined }] }]
+  stub.rows = [
+    {
+      userId: 'usr-1',
+      skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined }],
+    },
+  ]
 }
 
 describe('master-data skills page (matrix)', () => {
@@ -151,7 +194,9 @@ describe('master-data skills page (matrix)', () => {
   it('highlights soon-expiring cells with a 临期 badge and token class', async () => {
     resetMatrix()
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString()
-    stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: soon }] }]
+    stub.rows = [
+      { userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: soon }] },
+    ]
     const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
@@ -162,7 +207,9 @@ describe('master-data skills page (matrix)', () => {
   it('highlights past-expired cells with 已过期 badge and destructive token', async () => {
     resetMatrix()
     const past = new Date(Date.now() - 5 * 86_400_000).toISOString()
-    stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'expert', effectiveTo: past }] }]
+    stub.rows = [
+      { userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'expert', effectiveTo: past }] },
+    ]
     const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
@@ -184,10 +231,15 @@ describe('master-data skills page (matrix)', () => {
   it('blocks assignment on empty required fields with summary alert and no assign call', async () => {
     resetMatrix()
     stub.assign.mockClear()
-    const wrapper = mount(SkillsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    const wrapper = mount(SkillsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('登记技能'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('登记技能'))!
+      .trigger('click')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -201,10 +253,15 @@ describe('master-data skills page (matrix)', () => {
     stub.assign.mockClear()
     stub.matrixRefresh.mockClear()
     stub.toastSuccess.mockClear()
-    const wrapper = mount(SkillsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    const wrapper = mount(SkillsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('登记技能'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('登记技能'))!
+      .trigger('click')
     await flushPromises()
     const workerSelect = wrapper.findAll('select').find((s) => s.html().includes('usr-1'))!
     await workerSelect.setValue('usr-1')
@@ -217,7 +274,11 @@ describe('master-data skills page (matrix)', () => {
     await flushPromises()
 
     expect(stub.assign).toHaveBeenCalledTimes(1)
-    const body = stub.assign.mock.calls[0]![0] as { userId: string, skillCode: string, level: string }
+    const body = stub.assign.mock.calls[0]![0] as {
+      userId: string
+      skillCode: string
+      level: string
+    }
     expect(body.userId).toBe('usr-1')
     expect(body.skillCode).toBe('SKILL-WELD')
     expect(body.level).toBe('senior')

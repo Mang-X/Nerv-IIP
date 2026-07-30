@@ -35,6 +35,7 @@ import {
 import { ActivityIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -263,7 +264,7 @@ function fromDateInput(value: string, dayOffset: number) {
   return new Date(y, m - 1, d + dayOffset).toISOString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function refreshAll() {

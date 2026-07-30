@@ -14,7 +14,7 @@ import {
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   COMMON_INSPECTION_CHARACTERISTICS,
@@ -282,7 +282,7 @@ async function submitRecord() {
     recordOpen.value = false
     notifySuccess('点检记录已提交')
   } catch (error) {
-    notifyError(error, '点检记录提交失败，请稍后重试。')
+    notifyOperationFailure('点检记录提交失败', error, '点检记录提交失败，请稍后重试。')
   }
 }
 
@@ -292,7 +292,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

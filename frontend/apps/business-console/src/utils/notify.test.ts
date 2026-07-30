@@ -11,6 +11,7 @@ vi.mock('@nerv-iip/ui', () => ({
 
 const {
   friendlyErrorMessage,
+  inlineErrorMessage,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
@@ -186,5 +187,46 @@ describe('notifyError / notifySuccess', () => {
   it('notifySuccess 透传到 toast.success', () => {
     notifySuccess('物料「A」已创建。')
     expect(toastSuccess).toHaveBeenCalledWith('物料「A」已创建。')
+  })
+
+  // MAN-700 / #1289：generated client 抛的是响应体对象，旧实现只判 instanceof Error，
+  // 于是 ERP 报价转订单的 400 领域理由全被吞成「创建销售订单失败，请稍后重试。」。
+  it('notifyError 透传响应体对象里的中文领域消息，不吞成兜底文案', () => {
+    notifyError({ detail: '报价单已过期，不能转订单' }, '创建销售订单失败，请稍后重试。')
+    expect(toastError).toHaveBeenCalledWith('报价单已过期，不能转订单')
+  })
+
+  it('notifyError 遇英文 500 body 用调用方兜底，原文只进 console', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    notifyError({ title: 'Internal Server Error', status: 500 }, '创建销售订单失败，请稍后重试。')
+
+    expect(toastError).toHaveBeenCalledWith('创建销售订单失败，请稍后重试。')
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server'))
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+})
+
+describe('inlineErrorMessage', () => {
+  it('无错误时返回空串，模板可直接判空', () => {
+    expect(inlineErrorMessage(undefined)).toBe('')
+    expect(inlineErrorMessage(null)).toBe('')
+  })
+
+  it('与 toast 同源：中文领域消息原样显示', () => {
+    expect(inlineErrorMessage({ message: '当前业务范围内没有该工作中心' })).toBe(
+      '当前业务范围内没有该工作中心',
+    )
+  })
+
+  it('行内错误条同样不许出现英文错误码 / 5xx 原文', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(inlineErrorMessage({ detail: '502 Bad Gateway' })).toBe(
+      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
+    expect(inlineErrorMessage({ title: 'Internal Server Error' }, '库存台账读取失败。')).toBe(
+      '库存台账读取失败。',
+    )
+    consoleError.mockRestore()
   })
 })

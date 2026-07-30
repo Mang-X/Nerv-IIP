@@ -45,7 +45,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDate } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -233,7 +233,7 @@ async function submitSkill() {
     skillOpen.value = false
     void matrix.refresh()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('登记人员技能失败', error, '登记人员技能失败，请稍后重试。')
   }
 }
 </script>

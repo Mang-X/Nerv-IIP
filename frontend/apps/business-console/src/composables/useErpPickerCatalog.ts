@@ -11,11 +11,7 @@
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { computed } from 'vue'
-import {
-  useErpDeliveryOrders,
-  useErpPurchaseOrders,
-  useErpSalesOrders,
-} from './useBusinessErp'
+import { useErpDeliveryOrders, useErpPurchaseOrders, useErpSalesOrders } from './useBusinessErp'
 import {
   useBusinessMasterDataResources,
   useBusinessPartners,

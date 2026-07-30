@@ -19,15 +19,34 @@ const routingRow = {
   effectiveDate: '2026-01-01',
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skuCode: undefined as string | undefined, status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  skuCode: undefined as string | undefined,
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 const workCenters = ref([
   { code: 'WC-A', displayName: '焊接中心' },
   { code: 'WC-B', displayName: '装配中心' },
 ])
 // 标准工序主数据（#397）：每条带默认工作中心 + 标准工时，选中后自动带出。
 const standardOperations = ref([
-  { operationCode: 'OP-WELD', operationName: '焊接', defaultWorkCenterCode: 'WC-A', standardMinutes: 6, enabled: true },
-  { operationCode: 'OP-ASSY', operationName: '装配', defaultWorkCenterCode: 'WC-B', standardMinutes: 9, enabled: true },
+  {
+    operationCode: 'OP-WELD',
+    operationName: '焊接',
+    defaultWorkCenterCode: 'WC-A',
+    standardMinutes: 6,
+    enabled: true,
+  },
+  {
+    operationCode: 'OP-ASSY',
+    operationName: '装配',
+    defaultWorkCenterCode: 'WC-B',
+    standardMinutes: 9,
+    enabled: true,
+  },
 ])
 
 vi.mock('@/composables/useProductEngineering', () => ({
@@ -88,14 +107,16 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
@@ -104,7 +125,14 @@ const formSelectStubs = {
 }
 const routerLinkStub = { RouterLink: { props: ['to'], template: '<a><slot /></a>' } }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStub }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+  ...routerLinkStub,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -133,8 +161,20 @@ beforeEach(() => {
     { code: 'WC-B', displayName: '装配中心' },
   ]
   standardOperations.value = [
-    { operationCode: 'OP-WELD', operationName: '焊接', defaultWorkCenterCode: 'WC-A', standardMinutes: 6, enabled: true },
-    { operationCode: 'OP-ASSY', operationName: '装配', defaultWorkCenterCode: 'WC-B', standardMinutes: 9, enabled: true },
+    {
+      operationCode: 'OP-WELD',
+      operationName: '焊接',
+      defaultWorkCenterCode: 'WC-A',
+      standardMinutes: 6,
+      enabled: true,
+    },
+    {
+      operationCode: 'OP-ASSY',
+      operationName: '装配',
+      defaultWorkCenterCode: 'WC-B',
+      standardMinutes: 9,
+      enabled: true,
+    },
   ]
 })
 
@@ -269,8 +309,20 @@ describe('engineering routings page', () => {
       skuCode: 'SKU-1',
       status: 'Published',
       operations: [
-        { sequence: 20, workCenterCode: 'WC-B', operationCode: 'OP-ASSY', operationName: '装配', standardMinutes: 8 },
-        { sequence: 10, workCenterCode: 'WC-A', operationCode: 'OP-WELD', operationName: '焊接', standardMinutes: 12 },
+        {
+          sequence: 20,
+          workCenterCode: 'WC-B',
+          operationCode: 'OP-ASSY',
+          operationName: '装配',
+          standardMinutes: 8,
+        },
+        {
+          sequence: 10,
+          workCenterCode: 'WC-A',
+          operationCode: 'OP-WELD',
+          operationName: '焊接',
+          standardMinutes: 12,
+        },
       ],
     })
     const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })

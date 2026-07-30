@@ -37,7 +37,12 @@ import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -323,7 +328,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('盘点单已创建')
   } catch (error) {
-    notifyError(error, '创建盘点单失败，请稍后重试。')
+    notifyOperationFailure('创建盘点单失败', error, '创建盘点单失败，请稍后重试。')
   }
 }
 
@@ -419,12 +424,12 @@ async function submitComplete() {
     completeError.value = completeIntentLocked.value
       ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
       : ''
-    notifyError(error, '完成盘点失败，请稍后重试。')
+    notifyOperationFailure('完成盘点失败', error, '完成盘点失败，请稍后重试。')
   }
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function refreshAll() {

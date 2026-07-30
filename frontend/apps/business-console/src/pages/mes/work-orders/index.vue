@@ -27,7 +27,7 @@ import type { ProductionReportContext } from '@/composables/mes/useProductionRep
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -384,7 +384,11 @@ async function submitRushWorkOrder() {
     rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
     rushSheetOpen.value = false
   } catch (error) {
-    notifyError(createRushWorkOrderError.value ?? error, '创建急单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建急单失败',
+      createRushWorkOrderError.value ?? error,
+      '创建急单失败，请稍后重试。',
+    )
   }
 }
 
@@ -447,7 +451,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
     }))
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

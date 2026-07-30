@@ -14,7 +14,12 @@ import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -226,7 +231,7 @@ async function submitNcrDisposition() {
     ) {
       return
     }
-    notifyError(error, '处置提交失败，请稍后重试。')
+    notifyOperationFailure('处置提交失败', error, '处置提交失败，请稍后重试。')
     return
   }
   notifySuccess(`不合格品 ${label} 处置已提交。`)
@@ -261,7 +266,7 @@ async function submitCloseNcr() {
     ) {
       return
     }
-    notifyError(error, '不合格品关闭失败，请稍后重试。')
+    notifyOperationFailure('不合格品关闭失败', error, '不合格品关闭失败，请稍后重试。')
     return
   }
   notifySuccess(`不合格品 ${label} 已关闭。`)
@@ -298,7 +303,7 @@ function firstQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

@@ -16,7 +16,12 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -248,12 +253,12 @@ async function submitGenerate() {
     generateOpen.value = false
     notifySuccess(count > 0 ? `已生成 ${count} 张到期维护工单` : '当前无到期保养计划')
   } catch (error) {
-    notifyError(error, '生成到期工单失败，请稍后重试。')
+    notifyOperationFailure('生成到期工单失败', error, '生成到期工单失败，请稍后重试。')
   }
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

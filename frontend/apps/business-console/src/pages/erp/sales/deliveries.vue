@@ -14,11 +14,11 @@ import {
   NvStatusBadge,
   NvToolbar,
   NvInput,
-  toast,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, TruckIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { erpReadState, formatDateTime, formatError, readCount } from '../shared'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { erpReadState, formatDateTime, readCount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售发货', requiredPermissions: ['business.erp.sales.read'] },
@@ -98,9 +98,13 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
   if (!row.deliveryOrderNo || !isReleasable(row)) return
   try {
     await deliveries.releaseDeliveryOrder(row.deliveryOrderNo)
-    toast.success(`发货单 ${row.deliveryOrderNo} 已释放`)
-  } catch {
-    toast.error(formatError(deliveries.releaseDeliveryOrderError.value) || '释放失败，请稍后重试。')
+    notifySuccess(`发货单 ${row.deliveryOrderNo} 已释放`)
+  } catch (error) {
+    notifyOperationFailure(
+      '释放发货单失败',
+      deliveries.releaseDeliveryOrderError.value ?? error,
+      '释放发货单失败，请稍后重试。',
+    )
   }
 }
 </script>

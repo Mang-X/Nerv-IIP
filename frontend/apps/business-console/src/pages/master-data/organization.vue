@@ -42,7 +42,12 @@ import {
 import { PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, UsersRoundIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -140,7 +145,7 @@ const treePending = computed(() => departments.pending.value)
 const treeTruncated = computed(() => departments.total.value > TREE_TAKE)
 const treeListError = computed(() => {
   const e = departments.error.value
-  return e instanceof Error ? e.message : e ? '部门数据加载失败，请刷新重试。' : ''
+  return inlineErrorMessage(e, '部门数据加载失败，请刷新重试。')
 })
 
 // ---- 树搜索 + 展开/折叠 ----
@@ -299,7 +304,7 @@ const teamRows = computed(() => {
 })
 const teamListError = computed(() => {
   const e = teams.error.value
-  return e instanceof Error ? e.message : e ? '班组数据加载失败，请刷新重试。' : ''
+  return inlineErrorMessage(e, '班组数据加载失败，请刷新重试。')
 })
 
 // ================= 新建部门（含就地建子部门，父 code 预填只读） =================
@@ -349,7 +354,7 @@ async function submitCreateDept() {
     deptShowErrors.value = false
     deptCreateOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('创建部门失败', error, '创建部门失败，请稍后重试。')
   }
 }
 
@@ -414,7 +419,7 @@ async function submitEditDept() {
     deptEditShowErrors.value = false
     deptEditOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('更新部门失败', error, '更新部门失败，请稍后重试。')
   }
 }
 
@@ -523,7 +528,7 @@ async function submitTeam() {
       teamShowErrors.value = false
       teamOpen.value = false
     } catch (error) {
-      notifyError(error)
+      notifyOperationFailure('更新班组失败', error, '更新班组失败，请稍后重试。')
     }
     return
   }
@@ -545,7 +550,7 @@ async function submitTeam() {
     teamShowErrors.value = false
     teamOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存班组失败', error, '保存班组失败，请稍后重试。')
   }
 }
 

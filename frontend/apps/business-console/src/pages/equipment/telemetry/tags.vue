@@ -19,6 +19,7 @@ import {
 import { EyeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -98,7 +99,7 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
   return row.telemetryTagId ?? `${row.deviceAssetId}-${row.tagKey}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

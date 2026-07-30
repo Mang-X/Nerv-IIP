@@ -6,7 +6,7 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -162,7 +162,11 @@ async function submit() {
     open.value = false
     notifySuccess(`${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`)
   } catch (error) {
-    notifyError(receipts.recordPurchaseReceiptError.value ?? error, '确认收货失败，请稍后重试。')
+    notifyOperationFailure(
+      '确认收货失败',
+      receipts.recordPurchaseReceiptError.value ?? error,
+      '确认收货失败，请稍后重试。',
+    )
   }
 }
 </script>

@@ -27,6 +27,7 @@ import {
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -137,7 +138,7 @@ const columns: NvDataTableColumn<NodeRow>[] = [
 ]
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''

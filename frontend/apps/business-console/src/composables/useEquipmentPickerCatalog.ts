@@ -40,7 +40,10 @@ function byLabel(a: EntityPickerOption, b: EntityPickerOption) {
 }
 
 function joinHint(...parts: (string | null | undefined)[]) {
-  return parts.map((part) => (part ?? '').trim()).filter(Boolean).join(' · ')
+  return parts
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /**
@@ -88,7 +91,10 @@ const TELEMETRY_VALUE_TYPE_LABELS: Record<string, string> = {
 
 /** tagKey 的分隔符各连接器不统一（`.` / `_` / `-`），对照表按连字符归一后查。 */
 function normalizeTagKey(tagKey: string) {
-  return tagKey.trim().toLowerCase().replace(/[._\s]+/g, '-')
+  return tagKey
+    .trim()
+    .toLowerCase()
+    .replace(/[._\s]+/g, '-')
 }
 
 /** 采集标签的人读名：对照表命中就用中文名，否则如实回落到 tagKey。 */
