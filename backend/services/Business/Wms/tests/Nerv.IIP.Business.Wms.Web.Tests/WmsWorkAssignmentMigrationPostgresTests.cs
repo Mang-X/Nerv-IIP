@@ -232,7 +232,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
         var migrator = db.GetService<IMigrator>();
 
         await migrator.MigrateAsync(PreviousMigration);
-        await SeedAmbiguousLegacyWcsRowsAsync(database.ConnectionString);
+        var warehouseTaskId = await SeedAmbiguousLegacyWcsRowsAsync(database.ConnectionString);
 
         var exception = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync());
         Assert.Contains(
@@ -244,7 +244,9 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
             exception.Hint,
             StringComparison.Ordinal);
 
-        var preserved = await ReadAmbiguousLegacyStateAsync(database.ConnectionString);
+        var preserved = await ReadAmbiguousLegacyStateAsync(
+            database.ConnectionString,
+            warehouseTaskId);
         Assert.Equal(2, preserved.WcsTaskCount);
         Assert.True(preserved.LegacyCompositeIndexExists);
         Assert.False(preserved.ExecutionChannelColumnExists);
@@ -271,7 +273,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
             var migrator = db.GetService<IMigrator>();
 
             await migrator.MigrateAsync(PreviousMigration);
-            await SeedUntrustworthyCompletedWcsRowAsync(
+            var seed = await SeedUntrustworthyCompletedWcsRowAsync(
                 database.ConnectionString,
                 @case.Payload,
                 @case.ExecutedQuantity);
@@ -287,8 +289,13 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
                 exception.Hint,
                 StringComparison.Ordinal);
 
-            var preserved = await ReadAmbiguousLegacyStateAsync(database.ConnectionString);
-            Assert.Equal(1, preserved.WcsTaskCount);
+            var preserved = await ReadRejectedCompletedWcsStateAsync(
+                database.ConnectionString,
+                seed);
+            Assert.Equal(@case.Payload, preserved.CompletionPayloadJson);
+            Assert.Equal("Completed", preserved.WcsStatus);
+            Assert.Equal("Completed", preserved.WarehouseTaskStatus);
+            Assert.Equal(@case.ExecutedQuantity, preserved.ExecutedQuantity);
             Assert.True(preserved.LegacyCompositeIndexExists);
             Assert.False(preserved.ExecutionChannelColumnExists);
             Assert.False(preserved.WorkAssignmentMigrationApplied);
@@ -399,11 +406,13 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task SeedUntrustworthyCompletedWcsRowAsync(
+    private static async Task<UntrustworthyCompletedWcsSeed> SeedUntrustworthyCompletedWcsRowAsync(
         string connectionString,
         string completionPayloadJson,
         decimal executedQuantity)
     {
+        var warehouseTaskId = Guid.CreateVersion7();
+        var wcsTaskId = Guid.CreateVersion7();
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
@@ -429,8 +438,8 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
                 @dispatched_at_utc, @completed_at_utc, 'org-legacy', 'env-legacy', FALSE);
             """,
             connection);
-        command.Parameters.AddWithValue("warehouse_task_id", Guid.CreateVersion7());
-        command.Parameters.AddWithValue("wcs_task_id", Guid.CreateVersion7());
+        command.Parameters.AddWithValue("warehouse_task_id", warehouseTaskId);
+        command.Parameters.AddWithValue("wcs_task_id", wcsTaskId);
         command.Parameters.AddWithValue("completion_payload_json", completionPayloadJson);
         command.Parameters.AddWithValue("executed_quantity", executedQuantity);
         command.Parameters.AddWithValue(
@@ -443,10 +452,13 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
             "completed_at_utc",
             new DateTime(2026, 7, 20, 1, 10, 0, DateTimeKind.Utc));
         await command.ExecuteNonQueryAsync();
+        return new UntrustworthyCompletedWcsSeed(warehouseTaskId, wcsTaskId);
     }
 
-    private static async Task SeedAmbiguousLegacyWcsRowsAsync(string connectionString)
+    private static async Task<Guid> SeedAmbiguousLegacyWcsRowsAsync(string connectionString)
     {
+        var warehouseTaskId =
+            Guid.Parse("01982f4d-3f80-7000-8000-000000000101");
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
@@ -475,9 +487,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
                 @created_at_utc, @completed_at_utc, 'org-conflict', 'env-conflict', FALSE);
             """,
             connection);
-        command.Parameters.AddWithValue(
-            "warehouse_task_id",
-            Guid.Parse("01982f4d-3f80-7000-8000-000000000101"));
+        command.Parameters.AddWithValue("warehouse_task_id", warehouseTaskId);
         command.Parameters.AddWithValue(
             "active_wcs_task_id",
             Guid.Parse("01982f4d-3f80-7000-8000-000000000102"));
@@ -491,6 +501,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
             "completed_at_utc",
             new DateTime(2026, 7, 20, 3, 10, 0, DateTimeKind.Utc));
         await command.ExecuteNonQueryAsync();
+        return warehouseTaskId;
     }
 
     private static async Task<LegacyAssignmentBoundary> ReadLegacyBoundaryAsync(string connectionString)
@@ -546,7 +557,8 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
         string? CountExecutionOperatorId);
 
     private static async Task<AmbiguousLegacyState> ReadAmbiguousLegacyStateAsync(
-        string connectionString)
+        string connectionString,
+        Guid warehouseTaskId)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -572,9 +584,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
                     WHERE "MigrationId" = @migration_id);
             """,
             connection);
-        command.Parameters.AddWithValue(
-            "warehouse_task_id",
-            Guid.Parse("01982f4d-3f80-7000-8000-000000000101"));
+        command.Parameters.AddWithValue("warehouse_task_id", warehouseTaskId);
         command.Parameters.AddWithValue("migration_id", WorkAssignmentMigration);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -587,6 +597,69 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
 
     private sealed record AmbiguousLegacyState(
         long WcsTaskCount,
+        bool LegacyCompositeIndexExists,
+        bool ExecutionChannelColumnExists,
+        bool WorkAssignmentMigrationApplied);
+
+    private static async Task<RejectedCompletedWcsState> ReadRejectedCompletedWcsStateAsync(
+        string connectionString,
+        UntrustworthyCompletedWcsSeed seed)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT
+                wcs.completion_payload_json,
+                wcs.status,
+                task.status,
+                task.executed_quantity,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'wms'
+                      AND indexname = 'IX_wcs_tasks_warehouse_task_id_adapter_type'),
+                EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'wms'
+                      AND table_name = 'warehouse_tasks'
+                      AND column_name = 'execution_channel'),
+                EXISTS (
+                    SELECT 1
+                    FROM wms."__EFMigrationsHistory"
+                    WHERE "MigrationId" = @migration_id)
+            FROM wms.wcs_tasks AS wcs
+            INNER JOIN wms.warehouse_tasks AS task
+                ON task.id = wcs.warehouse_task_id
+            WHERE wcs.id = @wcs_task_id
+              AND task.id = @warehouse_task_id;
+            """,
+            connection);
+        command.Parameters.AddWithValue("wcs_task_id", seed.WcsTaskId);
+        command.Parameters.AddWithValue("warehouse_task_id", seed.WarehouseTaskId);
+        command.Parameters.AddWithValue("migration_id", WorkAssignmentMigration);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new RejectedCompletedWcsState(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetDecimal(3),
+            reader.GetBoolean(4),
+            reader.GetBoolean(5),
+            reader.GetBoolean(6));
+    }
+
+    private sealed record UntrustworthyCompletedWcsSeed(
+        Guid WarehouseTaskId,
+        Guid WcsTaskId);
+
+    private sealed record RejectedCompletedWcsState(
+        string CompletionPayloadJson,
+        string WcsStatus,
+        string WarehouseTaskStatus,
+        decimal ExecutedQuantity,
         bool LegacyCompositeIndexExists,
         bool ExecutionChannelColumnExists,
         bool WorkAssignmentMigrationApplied);
