@@ -118,6 +118,7 @@ const emit = defineEmits<{
   'update:locationCode': [value: string | undefined]
   'update:lotNo': [value: string | undefined]
   'update:candidateSearchKeyword': [value: string]
+  candidateScanOverrideChange: [target: 'location' | 'lot', value: string | undefined]
   candidateRetry: []
   refresh: []
   loadMore: []
@@ -164,6 +165,10 @@ const canComplete = computed(() => selectedActions.value.includes('complete'))
 const actionSheetOpen = computed(() => selectedTask.value !== undefined)
 const actionLabel = computed(() => (props.taskType === 'picking' ? '拣货' : '上架'))
 const scanActive = computed(() => !actionSheetOpen.value && !numberKeyboardOpen.value)
+
+function forwardCandidateScanOverride(target: 'location' | 'lot', value: string | undefined) {
+  emit('candidateScanOverrideChange', target, value)
+}
 
 useIntersectionObserver(
   loadMoreSentinel,
@@ -313,6 +318,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
         @update:location-code="emit('update:locationCode', $event)"
         @update:lot-no="emit('update:lotNo', $event)"
         @update:search-keyword="emit('update:candidateSearchKeyword', $event)"
+        @scan-override-change="forwardCandidateScanOverride"
         @retry="emit('candidateRetry')"
       />
       <NvMobileDropdownMenu>

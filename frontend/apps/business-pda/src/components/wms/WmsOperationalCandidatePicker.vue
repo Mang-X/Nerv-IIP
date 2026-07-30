@@ -52,6 +52,7 @@ const emit = defineEmits<{
   'update:locationCode': [value: string | undefined]
   'update:lotNo': [value: string | undefined]
   'update:searchKeyword': [value: string]
+  scanOverrideChange: [target: 'location' | 'lot', value: string | undefined]
   retry: []
 }>()
 
@@ -92,14 +93,20 @@ const locationModel = computed({
   set: (value: string | undefined) => {
     const normalized = value || undefined
     scanOverrides.value = { ...scanOverrides.value, location: undefined }
+    emit('scanOverrideChange', 'location', undefined)
     emit('update:locationCode', normalized)
-    if (normalized !== props.locationCode) emit('update:lotNo', undefined)
+    if (normalized !== props.locationCode) {
+      scanOverrides.value = { ...scanOverrides.value, lot: undefined }
+      emit('scanOverrideChange', 'lot', undefined)
+      emit('update:lotNo', undefined)
+    }
   },
 })
 const lotModel = computed({
   get: () => props.lotNo,
   set: (value: string | undefined) => {
     scanOverrides.value = { ...scanOverrides.value, lot: undefined }
+    emit('scanOverrideChange', 'lot', undefined)
     emit('update:lotNo', value || undefined)
   },
 })
@@ -128,7 +135,10 @@ function acceptScan(value: string) {
   const matched = currentOptions.value.find((option) => option.value === normalized)
   if (!matched) {
     scanOverrides.value = { ...scanOverrides.value, [scanTarget.value]: normalized }
+    emit('scanOverrideChange', scanTarget.value, normalized)
     if (scanTarget.value === 'location') {
+      scanOverrides.value = { ...scanOverrides.value, lot: undefined }
+      emit('scanOverrideChange', 'lot', undefined)
       emit('update:locationCode', normalized)
       emit('update:lotNo', undefined)
     } else {
@@ -143,7 +153,10 @@ function acceptScan(value: string) {
 function clearScanOverride(target: 'location' | 'lot') {
   if (!scanOverrides.value[target]) return
   scanOverrides.value = { ...scanOverrides.value, [target]: undefined }
+  emit('scanOverrideChange', target, undefined)
   if (target === 'location') {
+    scanOverrides.value = { ...scanOverrides.value, lot: undefined }
+    emit('scanOverrideChange', 'lot', undefined)
     emit('update:locationCode', undefined)
     emit('update:lotNo', undefined)
   } else {
@@ -253,20 +266,17 @@ watch(
       :placeholder="scanTarget === 'location' ? '扫描当前范围库位候选' : '扫描当前范围批次候选'"
       @scan="acceptScan"
     />
-    <div
-      v-for="target in ['location', 'lot'] as const"
-      v-show="scanOverrides[target]"
-      :key="target"
-      class="space-y-1 px-1"
-    >
-      <p class="text-sm text-warning">
-        {{ target === 'location' ? '库位' : '批次' }} {{ scanOverrides[target] }}
-        已作为扫码筛选值应用；未在当前候选中，候选可能因范围或截断不完整，未验证为主数据。
-      </p>
-      <NvMobileButton size="sm" variant="text" @click="clearScanOverride(target)">
-        清除扫码筛选
-      </NvMobileButton>
-    </div>
+    <template v-for="target in ['location', 'lot'] as const" :key="target">
+      <div v-if="scanOverrides[target]" class="space-y-1 px-1">
+        <p class="text-sm text-warning">
+          {{ target === 'location' ? '库位' : '批次' }} {{ scanOverrides[target] }}
+          已作为扫码筛选值应用；未在当前候选中，候选可能因范围或截断不完整，未验证为主数据。
+        </p>
+        <NvMobileButton size="sm" variant="text" @click="clearScanOverride(target)">
+          清除扫码筛选
+        </NvMobileButton>
+      </div>
+    </template>
 
     <div class="space-y-0.5 px-1 text-xs text-muted-foreground">
       <p v-if="!ready">请先选择可用作业范围，范围就绪前不会请求或应用候选。</p>

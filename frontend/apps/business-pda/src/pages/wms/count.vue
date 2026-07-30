@@ -285,6 +285,7 @@ function goHome() {
           :error="candidates.error.value"
           :active="scanActive"
           :show-lot="false"
+          @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"
         />
         <ListScopeMeta

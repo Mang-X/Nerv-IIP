@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { NvSearchSelect } from '@nerv-iip/ui'
+import { NvInput, NvSearchSelect } from '@nerv-iip/ui'
 import { describe, expect, it } from 'vitest'
 import WmsOperationalCandidateFilters from './WmsOperationalCandidateFilters.vue'
 
@@ -73,5 +73,17 @@ describe('WmsOperationalCandidateFilters', () => {
       wrapper.findAllComponents(NvSearchSelect).every((select) => select.props('disabled')),
     ).toBe(true)
     expect(wrapper.find('input[type="search"]').exists()).toBe(false)
+  })
+
+  it('uses the branded NvInput boundary for remote search', () => {
+    const wrapper = mount(WmsOperationalCandidateFilters, {
+      props: {
+        locationOptions: [],
+        sourceLabel: '当前范围仓储作业记录候选',
+        ready: true,
+      },
+    })
+
+    expect(wrapper.findComponent(NvInput).exists()).toBe(true)
   })
 })

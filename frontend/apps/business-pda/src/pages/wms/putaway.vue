@@ -96,6 +96,7 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         @refresh="refreshAll"
         @retry="refreshAll"
         @candidate-retry="candidates.refresh"
+        @candidate-scan-override-change="candidates.setScanOverride"
         @load-more="loadMore"
         @execute="execute"
       />

@@ -455,6 +455,7 @@ function goPutaway() {
           :pending="candidates.pending.value"
           :error="candidates.error.value"
           :show-scanner="false"
+          @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"
         />
         <ListScopeMeta

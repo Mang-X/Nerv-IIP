@@ -1,4 +1,6 @@
-import { nextTick, reactive, shallowRef } from 'vue'
+import { mount } from '@vue/test-utils'
+import { NvScanBar } from '@nerv-iip/ui-mobile'
+import { defineComponent, h, nextTick, reactive, shallowRef } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -6,12 +8,14 @@ import {
   listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions,
   listBusinessConsoleWmsShipmentOperationalCandidatesQueryOptions,
 } from '@nerv-iip/api-client'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import { useWmsOperationalCandidates } from './useWmsOperationalCandidates'
 
 const queryState = vi.hoisted(() => ({
   response: undefined as unknown,
   options: undefined as undefined | { enabled?: boolean },
   factory: undefined as undefined | (() => Record<string, unknown>),
+  data: undefined as undefined | { value: unknown },
 }))
 
 afterEach(() => {
@@ -34,8 +38,10 @@ vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((factory) => {
     queryState.factory = factory
     queryState.options = factory()
+    const data = shallowRef(queryState.response)
+    queryState.data = data
     return {
-      data: shallowRef(queryState.response),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch: vi.fn(),
@@ -163,5 +169,74 @@ describe('PDA WMS operational candidates', () => {
     await nextTick()
     expect(result.locationOptions.value).toEqual([])
     expect(result.lotOptions.value).toEqual([])
+  })
+
+  it('keeps an explicit unknown scan through an empty response until the user clears it', async () => {
+    const filters = reactive({
+      status: 'Open',
+      locationCode: undefined as string | undefined,
+      lotNo: undefined as string | undefined,
+    })
+    const Harness = defineComponent({
+      setup() {
+        const candidates = useWmsOperationalCandidates('shipment', {
+          organizationId: shallowRef('org-1'),
+          environmentId: shallowRef('env-1'),
+          scopeKind: shallowRef('self'),
+          scopeId: shallowRef('worker-1'),
+          scopeReady: shallowRef(true),
+          filters,
+        })
+        return () =>
+          h(WmsOperationalCandidatePicker, {
+            locationCode: filters.locationCode,
+            lotNo: filters.lotNo,
+            locationOptions: candidates.locationOptions.value,
+            lotOptions: candidates.lotOptions.value,
+            ready: candidates.ready.value,
+            sourceLabel: candidates.sourceLabel.value,
+            'onUpdate:locationCode': (value) => {
+              filters.locationCode = value
+            },
+            'onUpdate:lotNo': (value) => {
+              filters.lotNo = value
+            },
+            onScanOverrideChange: candidates.setScanOverride,
+          })
+      },
+    })
+    const wrapper = mount(Harness)
+
+    wrapper.findComponent(NvScanBar).vm.$emit('scan', 'UNKNOWN-BIN')
+    await nextTick()
+    expect(filters.locationCode).toBe('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('清除扫码筛选')
+
+    queryState.data!.value = {
+      success: true,
+      data: {
+        sourceKind: 'warehouse-operational-records',
+        scopeKind: 'self',
+        scopeId: 'worker-1',
+        asOfUtc: '2026-07-30T01:01:00Z',
+        freshnessUtc: '2026-07-30T01:00:00Z',
+        truncated: false,
+        locations: [],
+        lots: [],
+      },
+    }
+    await nextTick()
+
+    expect(filters.locationCode).toBe('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('UNKNOWN-BIN')
+    expect(wrapper.text()).toContain('清除扫码筛选')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('清除扫码筛选'))!
+      .trigger('click')
+
+    expect(filters.locationCode).toBeUndefined()
+    expect(wrapper.text()).not.toContain('未验证为主数据')
   })
 })

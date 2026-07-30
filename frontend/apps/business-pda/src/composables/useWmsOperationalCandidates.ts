@@ -9,6 +9,7 @@ import { refDebounced } from '@vueuse/core'
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 export type WmsOperationalCandidateKind = 'receipt' | 'shipment' | 'count'
+export type WmsOperationalCandidateScanTarget = 'location' | 'lot'
 
 export interface WmsOperationalCandidateFilters {
   status?: string
@@ -31,6 +32,9 @@ export function useWmsOperationalCandidates(
   options: UseWmsOperationalCandidatesOptions,
 ) {
   const searchKeyword = shallowRef('')
+  const explicitScanOverrides = shallowRef<
+    Partial<Record<WmsOperationalCandidateScanTarget, string>>
+  >({})
   const debouncedKeyword = refDebounced(searchKeyword, 300)
   const selectedScope = computed(() => ({
     scopeKind: toValue(options.scopeKind)?.trim() ?? '',
@@ -80,6 +84,12 @@ export function useWmsOperationalCandidates(
     }
     return data
   })
+  function setScanOverride(target: WmsOperationalCandidateScanTarget, value: string | undefined) {
+    explicitScanOverrides.value = {
+      ...explicitScanOverrides.value,
+      [target]: value?.trim() || undefined,
+    }
+  }
 
   watch(
     [
@@ -94,6 +104,7 @@ export function useWmsOperationalCandidates(
       options.filters.locationCode = undefined
       options.filters.lotNo = undefined
       searchKeyword.value = ''
+      explicitScanOverrides.value = {}
     },
     { flush: 'sync' },
   )
@@ -101,6 +112,11 @@ export function useWmsOperationalCandidates(
     () => options.filters.skuCode,
     () => {
       options.filters.lotNo = undefined
+      setScanOverride('lot', undefined)
+      if (explicitScanOverrides.value.location) {
+        options.filters.locationCode = undefined
+        setScanOverride('location', undefined)
+      }
     },
     { flush: 'sync' },
   )
@@ -143,6 +159,7 @@ export function useWmsOperationalCandidates(
       if (!current || candidatesQuery.isLoading.value || candidatesQuery.error.value) return
       if (
         options.filters.locationCode &&
+        explicitScanOverrides.value.location !== options.filters.locationCode &&
         !locationOptions.value.some((option) => option.value === options.filters.locationCode)
       ) {
         options.filters.locationCode = undefined
@@ -152,6 +169,7 @@ export function useWmsOperationalCandidates(
       if (
         kind !== 'count' &&
         options.filters.lotNo &&
+        explicitScanOverrides.value.lot !== options.filters.lotNo &&
         !lotOptions.value.some((option) => option.value === options.filters.lotNo)
       ) {
         options.filters.lotNo = undefined
@@ -163,6 +181,7 @@ export function useWmsOperationalCandidates(
   return {
     ready,
     searchKeyword,
+    setScanOverride,
     locationOptions,
     lotOptions,
     sourceLabel: computed(() => '当前范围仓储作业记录候选'),

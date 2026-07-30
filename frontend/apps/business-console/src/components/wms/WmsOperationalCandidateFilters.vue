@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Input, NvButton, NvSearchSelect, type SearchSelectOption } from '@nerv-iip/ui'
+import { NvButton, NvInput, NvSearchSelect, type SearchSelectOption } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = withDefaults(
@@ -77,7 +77,7 @@ function formatTime(value?: string | null) {
 </script>
 
 <template>
-  <Input
+  <NvInput
     v-if="ready && !error"
     v-model="searchModel"
     type="search"
