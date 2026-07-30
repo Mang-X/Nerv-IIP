@@ -9,7 +9,12 @@ const coladaState = vi.hoisted(() => ({
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   dataById: new Map<string, { value: unknown }>(),
   submit: vi.fn(),
+  claim: vi.fn(),
   listPlain: vi.fn(),
+  listOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
+    query: vi.fn(),
+  })),
 }))
 
 // The composable consumes the Quality facade through the curated
@@ -18,10 +23,7 @@ const coladaState = vi.hoisted(() => ({
 vi.mock('@nerv-iip/api-client', () => ({
   confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleQualityInspectionTasks: coladaState.listPlain,
-  listBusinessConsoleQualityInspectionTasksQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
-    query: vi.fn(),
-  })),
+  listBusinessConsoleQualityInspectionTasksQueryOptions: coladaState.listOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityReasonCodes' }],
     query: vi.fn(),
@@ -32,6 +34,11 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
+    mutationKind: 'submit',
+  })),
+  claimBusinessConsoleQualityInspectionTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+    mutationKind: 'claim',
   })),
   getConsolePrincipal: vi.fn(),
   loginConsoleUser: vi.fn(),
@@ -54,8 +61,8 @@ vi.mock('@pinia/colada', () => ({
       refetch: vi.fn(),
     }
   }),
-  useMutation: vi.fn(() => ({
-    mutateAsync: coladaState.submit,
+  useMutation: vi.fn((options) => ({
+    mutateAsync: options.mutationKind === 'claim' ? coladaState.claim : coladaState.submit,
     isLoading: shallowRef(false),
     error: shallowRef(),
   })),
@@ -102,6 +109,15 @@ describe('useBusinessQualityInspectionTasks', () => {
     vi.clearAllMocks()
     coladaState.queryOptionsById.clear()
     coladaState.dataById.clear()
+    coladaState.claim.mockResolvedValue({
+      success: true,
+      data: {
+        inspectionTaskId: 'TASK-1',
+        status: 'in-progress',
+        assignedInspectorUserId: 'user-admin',
+        version: 3,
+      },
+    })
     coladaState.listPlain.mockImplementation(
       async ({ query }: { query: { inspectionTaskId?: string } }) => ({
         data: {
@@ -136,6 +152,46 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(
       true,
     )
+    expect(coladaState.listOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      }),
+    })
+  })
+
+  it('claims an assigned pending task with the trusted self scope before execution', async () => {
+    seedPrincipal()
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    const claimed = await claimTask({
+      inspectionTaskId: 'TASK-1',
+      status: 'pending',
+      version: 2,
+      allowedActions: ['claim'],
+    })
+
+    expect(coladaState.claim).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      },
+      body: {
+        idempotencyKey: expect.stringMatching(/^quality-claim-/),
+        expectedVersion: 2,
+      },
+    })
+    expect(claimed).toMatchObject({
+      inspectionTaskId: 'TASK-1',
+      status: 'in-progress',
+      assignedInspectorUserId: 'user-admin',
+      version: 3,
+    })
   })
 
   it('injects inspectorUserId (principalId) + org/env into the submit call — caller only supplies lines', async () => {
@@ -219,6 +275,8 @@ describe('useBusinessQualityInspectionTasks', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
         inspectionTaskId: 'TASK-1',
         skip: 0,
         take: 2,

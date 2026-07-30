@@ -45,7 +45,7 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
     expect(wrapper.text()).toContain('已加载 1 / 共 1')
     expect(wrapper.text()).toContain('更新时间（最近成功响应）：2026/7/28 18:20')
-    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
+    expect(wrapper.text()).toContain('质检待检任务服务（当前账号 Self 范围，状态：待检）')
   })
 
   it('renders a retryable response failure instead of a business empty state', () => {
