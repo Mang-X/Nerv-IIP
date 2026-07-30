@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
@@ -179,6 +180,8 @@ const rowActionStubs = {
 }
 
 beforeEach(() => {
+  // 履约追踪 Sheet 里的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
+  setActivePinia(createPinia())
   state.salesOrders = []
   state.deliveries = []
   state.quotations = []

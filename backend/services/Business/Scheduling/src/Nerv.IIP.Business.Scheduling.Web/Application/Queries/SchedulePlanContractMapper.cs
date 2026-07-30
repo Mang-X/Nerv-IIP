@@ -1,11 +1,17 @@
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
 public static class SchedulePlanContractMapper
 {
-    public static SchedulePlanContract ToContract(SchedulePlan plan)
+    /// <param name="plan">已落库的排程方案聚合。</param>
+    /// <param name="problem">
+    /// 该计划所依据的排程问题(快照)。给出时把工作日历与不可用窗口一并投影到读面;
+    /// 缺失时读面不带这两组事实(而不是编造一份日历)。
+    /// </param>
+    public static SchedulePlanContract ToContract(SchedulePlan plan, SchedulingProblemContract? problem = null)
     {
         var status = ToContractStatus(plan.Status);
         var assignments = plan.Assignments
@@ -52,7 +58,7 @@ public static class SchedulePlanContractMapper
                     x.Message)))
             .ToArray();
 
-        return new SchedulePlanContract(
+        var contract = new SchedulePlanContract(
             ContractVersion: plan.ContractVersion,
             PlanId: plan.PlanId,
             ProblemId: plan.ProblemId,
@@ -111,6 +117,8 @@ public static class SchedulePlanContractMapper
                     HasConflict: hasConflict,
                     ConflictReasonCode: hasConflict ? conflict!.ReasonCode : null);
             }).ToArray());
+
+        return SchedulePlanCalendarProjector.Attach(contract, problem);
     }
 
     private static ScheduleChangeContract ToChangeSummary(

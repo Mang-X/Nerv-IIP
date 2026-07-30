@@ -30666,6 +30666,20 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingGanttScheduleItemContract"
             }
+          },
+          "calendars": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanCalendarContract"
+            }
+          },
+          "blockWindows": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanBlockWindowContract"
+            }
           }
         }
       },
@@ -30947,6 +30961,88 @@
             ]
           }
         }
+      },
+      "NervIIPContractsSchedulingSchedulePlanCalendarContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "resourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workCenterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shiftWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanShiftWindowContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanShiftWindowContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shiftCode": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanBlockWindowContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleBlockKindContract"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleBlockKindContract": {
+        "type": "string",
+        "description": "",
+        "enum": [
+          "maintenance",
+          "downtime",
+          "lineChange",
+          "changeover"
+        ]
       },
       "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest": {
         "type": "object",

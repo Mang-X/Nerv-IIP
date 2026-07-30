@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
-import { samplePlan } from '../../model/fixtures'
+import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
 import { DhtmlxEngine } from './DhtmlxEngine'
 
@@ -197,6 +197,76 @@ describe('DhtmlxEngine (fake factory)', () => {
     expect(payload?.taskId).toBe('a1')
     expect(payload?.startUtc).toBe('2026-06-10T09:00:00.000Z')
     expect(payload?.kind).toBe('move')
+  })
+})
+
+// 时间线底纹是「日历事实 → 图面」的最后一环:这里直接调 timeline_cell_class 验证它到底给了哪些 class。
+describe('DhtmlxEngine 时间线底纹(工作日历 / 班次 / 资源时间块)', () => {
+  function cellClass(
+    view: 'order' | 'resource',
+    rowId: string,
+    date: string,
+    plan = samplePlanWithCalendar,
+  ) {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), { ...options(), view })
+    engine.setData(toModel(plan))
+    const template = fake.state.templates.timeline_cell_class as (
+      task: { id: string },
+      date: Date,
+    ) => string
+    return template({ id: rowId }, new Date(date)).split(' ').filter(Boolean)
+  }
+
+  it('有日历时按日历判定工作/非工作,而不是猜周末夜班', () => {
+    // 6/10 08:00 在中班窗口内 → 工作时间,无底纹。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T08:00:00.000Z')).not.toContain(
+      'nerv-offwork',
+    )
+    // 6/10 16:00 之后不在任何班次窗口 → 非工作。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T18:00:00.000Z')).toContain(
+      'nerv-offwork',
+    )
+    // 6/11 中班没排(只有早班)→ 非工作。
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-11T12:00:00.000Z')).toContain(
+      'nerv-offwork',
+    )
+  })
+
+  it('班次起点那一格带边界线', () => {
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T08:00:00.000Z')).toContain(
+      'nerv-shift-start',
+    )
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T09:00:00.000Z')).not.toContain(
+      'nerv-shift-start',
+    )
+  })
+
+  it('资源时间块给对应泳道的单元格上按类型着色的斜纹', () => {
+    expect(cellClass('resource', 'lane:WC-001', '2026-06-10T10:00:00.000Z')).toEqual(
+      expect.arrayContaining(['nerv-cell-block', 'nerv-cell-block-changeover']),
+    )
+    expect(cellClass('resource', 'lane:WC-002', '2026-06-10T14:00:00.000Z')).toEqual(
+      expect.arrayContaining(['nerv-cell-block', 'nerv-cell-block-maintenance']),
+    )
+    // 窗口之外不上斜纹。
+    expect(cellClass('resource', 'lane:WC-002', '2026-06-10T09:00:00.000Z')).not.toContain(
+      'nerv-cell-block',
+    )
+  })
+
+  it('工单甘特按工序自身的资源找块:那道工序所在设备停机,它那一行也有底纹', () => {
+    expect(cellClass('order', 'a1', '2026-06-10T10:00:00.000Z')).toContain(
+      'nerv-cell-block-changeover',
+    )
+    expect(cellClass('order', 'a2', '2026-06-10T10:00:00.000Z')).not.toContain('nerv-cell-block')
+  })
+
+  it('后端没带日历时退回通用作息假设(周末 + 夜间),不空着也不假装有日历', () => {
+    const classes = cellClass('resource', 'lane:WC-001', '2026-06-10T22:00:00.000Z', samplePlan)
+    expect(classes).toContain('nerv-offwork')
+    expect(classes).not.toContain('nerv-shift-start')
   })
 })
 
