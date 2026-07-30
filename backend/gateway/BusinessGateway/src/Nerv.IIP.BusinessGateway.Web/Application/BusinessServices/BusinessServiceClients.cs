@@ -327,7 +327,25 @@ public interface IBusinessQualityClient
 
     Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
-        BusinessConsoleQualityInspectionTaskListRequest request,
+        BusinessQualityInspectionTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskDetailResponse> GetInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityInspectionTaskDetailRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> AssignInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityAssignInspectionTaskRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ClaimInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityClaimInspectionTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
@@ -3035,7 +3053,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
-        BusinessConsoleQualityInspectionTaskListRequest request,
+        BusinessQualityInspectionTaskListRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamInspectionTaskListResponse>(
@@ -3048,13 +3066,79 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("skuCode", request.SkuCode),
                 ("skip", request.Skip),
                 ("take", request.Take),
-                ("inspectionTaskId", request.InspectionTaskId)),
+                ("inspectionTaskId", request.InspectionTaskId),
+                ("scopeKind", request.ScopeKind),
+                ("principalId", request.PrincipalId),
+                ("authorizedTeamIds", JoinValues(request.AuthorizedTeamIds)),
+                ("sourceType", request.SourceType),
+                ("sourceService", request.SourceService),
+                ("keyword", request.Keyword),
+                ("overdue", request.Overdue)),
             null,
             cancellationToken);
         return new BusinessConsoleQualityInspectionTaskListResponse(
             response.Items.Select(ToInspectionTaskItem).ToArray(),
             response.Total);
     }
+
+    public async Task<BusinessConsoleQualityInspectionTaskDetailResponse> GetInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityInspectionTaskDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamInspectionTaskDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("scopeKind", request.ScopeKind),
+                ("principalId", request.PrincipalId),
+                ("authorizedTeamIds", JoinValues(request.AuthorizedTeamIds))),
+            null,
+            cancellationToken);
+        return new BusinessConsoleQualityInspectionTaskDetailResponse(
+            ToInspectionTaskItem(response.Task),
+            response.PlanCode,
+            response.Category,
+            response.Characteristics.Select(x => new BusinessConsoleQualityInspectionTaskCharacteristic(
+                x.CharacteristicCode,
+                x.Name,
+                x.Method,
+                x.Severity,
+                x.IsRequired,
+                x.SamplingRule,
+                x.CharacteristicType,
+                x.NominalValue,
+                x.LowerSpecLimit,
+                x.UpperSpecLimit,
+                x.UnitCode)).ToArray());
+    }
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> AssignInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityAssignInspectionTaskRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/assignment",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ClaimInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityClaimInspectionTaskRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/claim",
+            request,
+            cancellationToken);
 
     public async Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
@@ -3588,6 +3672,25 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         IReadOnlyCollection<DownstreamInspectionTaskItem> Items,
         int Total);
 
+    private sealed record DownstreamInspectionTaskDetailResponse(
+        DownstreamInspectionTaskItem Task,
+        string PlanCode,
+        string Category,
+        IReadOnlyCollection<DownstreamInspectionTaskCharacteristic> Characteristics);
+
+    private sealed record DownstreamInspectionTaskCharacteristic(
+        string CharacteristicCode,
+        string Name,
+        string Method,
+        string Severity,
+        bool IsRequired,
+        string SamplingRule,
+        string CharacteristicType,
+        decimal? NominalValue,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit,
+        string? UnitCode);
+
     private sealed record DownstreamCreateInspectionRecordFromTaskResponse(
         string InspectionRecordId,
         string Result,
@@ -3610,7 +3713,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Status,
         DateTimeOffset DueAtUtc,
         DateTimeOffset CreatedAtUtc,
-        string? InspectionRecordId);
+        string? InspectionRecordId,
+        string? AssignedInspectorUserId,
+        string? AssignedTeamId,
+        long Version,
+        bool IsOverdue,
+        IReadOnlyCollection<string>? AllowedActions,
+        IReadOnlyCollection<string>? BlockReasons);
 
     private sealed record DownstreamCreateInspectionRecordFromTaskRequest(
         string InspectionTaskId,
@@ -3650,6 +3759,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             line.AttachmentFileIds ?? [],
             line.MeasuredValue);
 
+    private static string? JoinValues(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? null : string.Join(",", values);
+
     private static BusinessConsoleQualityInspectionTaskItem ToInspectionTaskItem(
         DownstreamInspectionTaskItem item) =>
         new(
@@ -3667,7 +3779,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.Status,
             item.DueAtUtc,
             item.CreatedAtUtc,
-            item.InspectionRecordId);
+            item.InspectionRecordId,
+            item.AssignedInspectorUserId,
+            item.AssignedTeamId,
+            item.Version,
+            item.IsOverdue,
+            item.AllowedActions ?? [],
+            item.BlockReasons ?? []);
 
     private static DownstreamMrbReview ToDownstreamMrbReview(BusinessConsoleMrbReview review) =>
         new(

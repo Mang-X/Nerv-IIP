@@ -1676,7 +1676,29 @@ public sealed record BusinessConsoleQualityInspectionTaskListRequest(
     string? SkuCode = null,
     int Skip = 0,
     int Take = 100,
-    string? InspectionTaskId = null);
+    string? InspectionTaskId = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    string? SourceType = null,
+    string? SourceService = null,
+    string? Keyword = null,
+    bool? Overdue = null);
+
+public sealed record BusinessQualityInspectionTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? SkuCode,
+    int Skip,
+    int Take,
+    string? InspectionTaskId,
+    string ScopeKind,
+    string PrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds,
+    string? SourceType,
+    string? SourceService,
+    string? Keyword,
+    bool? Overdue);
 
 public sealed record BusinessConsoleQualityInspectionTaskItem(
     string InspectionTaskId,
@@ -1693,11 +1715,95 @@ public sealed record BusinessConsoleQualityInspectionTaskItem(
     string Status,
     DateTimeOffset DueAtUtc,
     DateTimeOffset CreatedAtUtc,
-    string? InspectionRecordId);
+    string? InspectionRecordId,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null,
+    long Version = 1,
+    bool IsOverdue = false,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null);
 
 public sealed record BusinessConsoleQualityInspectionTaskListResponse(
     IReadOnlyCollection<BusinessConsoleQualityInspectionTaskItem> Items,
     int Total);
+
+public sealed record BusinessConsoleQualityInspectionTaskDetailRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessQualityInspectionTaskDetailRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ScopeKind,
+    string PrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds);
+
+public sealed record BusinessConsoleQualityInspectionTaskCharacteristic(
+    string CharacteristicCode,
+    string Name,
+    string Method,
+    string Severity,
+    bool IsRequired,
+    string SamplingRule,
+    string CharacteristicType,
+    decimal? NominalValue,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualityInspectionTaskDetailResponse(
+    BusinessConsoleQualityInspectionTaskItem Task,
+    string PlanCode,
+    string Category,
+    IReadOnlyCollection<BusinessConsoleQualityInspectionTaskCharacteristic> Characteristics);
+
+public sealed record BusinessConsoleAssignQualityInspectionTaskRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    string? Reason,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessQualityAssignInspectionTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    string? Reason,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessConsoleClaimQualityInspectionTaskRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind,
+    [property: QueryParam] string? ScopeId,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessQualityClaimInspectionTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessConsoleQualityInspectionTaskAssignmentResponse(
+    string InspectionTaskId,
+    string Status,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    long Version,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     [property: RouteParam] string InspectionTaskId,
