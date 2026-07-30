@@ -14,7 +14,8 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 ///
 /// 与 ERP/MES 的一致性靠 <see cref="WorldHistorySpec.BuildOrderPlans"/> 与
 /// <see cref="WorldHistoryTimeline"/> 两个确定性纯函数达成：两侧不通信、不跨库查询、
-/// 不建跨 schema 外键，仅以业务编码 <c>SO-2026-#####</c> ↔ <c>WO-2026-#####</c> 相互引用。
+/// 不建跨 schema 外键；订单 MRP 建议 ID 与 MES 侧按同一确定性算法计算，
+/// 仅以 <c>SO-2026-#####</c> ↔ <c>WO-2026-#####</c> 及建议 ID 相互引用。
 ///
 /// 领域事件说明：本仓栈里 <c>DbContext.SaveChangesAsync()</c> 不派发领域事件（派发只发生在
 /// netcorepal 的 UnitOfWork/命令管线上），因此这里可以放心调用会 <c>AddDomainEvent</c> 的聚合方法，
@@ -43,7 +44,16 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var demandsWritten = await SeedDemandSourcesAsync(organizationId, environmentId, facts.Demands, cancellationToken);
         var forecastsWritten = await SeedForecastInputsAsync(organizationId, environmentId, facts.Forecasts, cancellationToken);
         var mpsWritten = await SeedMpsBucketsAsync(organizationId, environmentId, facts.MpsBuckets, cancellationToken);
-        var (runsWritten, suggestionsWritten) = await SeedMrpRunsAsync(organizationId, environmentId, facts.MrpRuns, cancellationToken);
+        // 当前 10 周活动 MRP 与更早历史订单的回填批次共用同一落库路径；
+        // 活动需求/MPS 仍只来自 facts.Demands/MpsBuckets，不扩大现行窗口语义。
+        var mrpFacts = facts.MrpRuns
+            .Concat(facts.HistoricalMrpRuns)
+            .ToArray();
+        var (runsWritten, suggestionsWritten) = await SeedMrpRunsAsync(
+            organizationId,
+            environmentId,
+            mrpFacts,
+            cancellationToken);
 
         // fail-closed：需求/建议配对、MPS 对账或时间链对不上就让 seed 失败。
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
@@ -309,7 +319,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             fact.PlannedQuantity,
             fact.RequiredDate,
             fact.ReleaseDate,
-            reasonCode: "net-requirement");
+            reasonCode: "net-requirement",
+            suggestionId: new PlanningSuggestionId(fact.SuggestionId));
         suggestion.SetNetRequirementExplanation(
             grossDemandQuantity: fact.GrossQuantity,
             onHandQuantity: fact.OnHandQuantity,
