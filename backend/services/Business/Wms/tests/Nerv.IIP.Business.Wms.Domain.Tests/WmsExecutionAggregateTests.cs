@@ -1,4 +1,5 @@
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -27,8 +28,8 @@ public sealed class WmsExecutionAggregateTests
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
 
-        var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" "));
-        var request = Assert.Single(inbound.Complete("idem-in-001"));
+        var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" ", inbound.Version));
+        var request = Assert.Single(inbound.Complete("idem-in-001", inbound.Version));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
@@ -53,7 +54,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-quality-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-quality-001", inbound.Version));
 
         Assert.Equal(InboundOrderStatus.PendingQualityCheck, inbound.Status);
         Assert.Equal("quality", request.QualityStatus);
@@ -63,7 +64,7 @@ public sealed class WmsExecutionAggregateTests
     public void Inspection_passed_releases_putaway_gate_after_pending_quality_check()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         inbound.ApplyInspectionResult("quality.InspectionPassed", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "accepted");
         var task = inbound.CreatePutawayTask("TASK-IN-PASSED-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
@@ -76,7 +77,7 @@ public sealed class WmsExecutionAggregateTests
     public void Inspection_rejected_keeps_putaway_blocked_and_creates_supplier_return_fact()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         var supplierReturn = inbound.ApplyInspectionResult("quality.InspectionRejected", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
 
@@ -92,7 +93,7 @@ public sealed class WmsExecutionAggregateTests
     public void Conditional_release_allows_restricted_putaway_after_quality_result()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-quality-001");
+        inbound.Complete("idem-in-quality-001", inbound.Version);
 
         inbound.ApplyInspectionResult("quality.InspectionConditionalReleased", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "use-as-is");
         var task = inbound.CreatePutawayTask("TASK-IN-CONDITIONAL-001", "LINE-001", "LOC-STAGE", "LOC-RESTRICTED-01", 5m);
@@ -106,7 +107,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-exempt-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-exempt-001", inbound.Version));
 
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
         Assert.Equal("unrestricted", request.QualityStatus);
@@ -117,7 +118,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.MixedQualityInboundOrder();
 
-        var requests = inbound.Complete("idem-in-mixed-001");
+        var requests = inbound.Complete("idem-in-mixed-001", inbound.Version);
         var exemptTask = inbound.CreatePutawayTask("TASK-IN-MIXED-001", "LINE-002", "LOC-STAGE", "LOC-A-01", 2m);
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-MIXED-002", "LINE-001", "LOC-STAGE", "LOC-A-02", 5m));
@@ -134,7 +135,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.QualifiedInboundOrder();
 
-        var request = Assert.Single(inbound.Complete("idem-in-qualified-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-qualified-001", inbound.Version));
         inbound.MarkInventoryPostingFailed();
         var retry = Assert.Single(inbound.RetryInventoryPosting("idem-in-qualified-retry-001"));
 
@@ -147,7 +148,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InboundOrderWithQualityStatus("iqc");
 
-        var request = Assert.Single(inbound.Complete("idem-in-iqc-001"));
+        var request = Assert.Single(inbound.Complete("idem-in-iqc-001", inbound.Version));
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-IQC-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m));
 
@@ -172,7 +173,7 @@ public sealed class WmsExecutionAggregateTests
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
-        inbound.Complete("idem-in-001");
+        inbound.Complete("idem-in-001", inbound.Version);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             inbound.CreatePutawayTask("TASK-IN-002", "LINE-001", "LOC-STAGE", "LOC-B-01", 1m));
@@ -186,7 +187,8 @@ public sealed class WmsExecutionAggregateTests
         var inbound = DomainWmsFactory.InboundOrder();
         DomainWmsFactory.ClearInboundLines(inbound);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => inbound.Complete("idem-in-001"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.Complete("idem-in-001", inbound.Version));
 
         Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -197,8 +199,10 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m);
 
-        var exception = Assert.Throws<ArgumentException>(() => outbound.CompletePackReview("PACK-001", true, " "));
-        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var exception = Assert.Throws<ArgumentException>(() =>
+            outbound.CompletePackReview("PACK-001", true, " ", outbound.Version));
+        var request = Assert.Single(
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
@@ -219,7 +223,8 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
 
-        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var request = Assert.Single(
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Equal("res-001", request.InventoryReservationId);
     }
@@ -230,7 +235,8 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         DomainWmsFactory.ClearOutboundLines(outbound);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version));
 
         Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -262,6 +268,243 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Wms_execution_aggregates_capture_nullable_operator_and_team_assignment_snapshots()
+    {
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-ASSIGNED-001",
+            "purchase-receipt",
+            "PO-ASSIGNED-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "RECV-01", "LOT-001", "SER-001", "inspection-exempt", "company", null)],
+            " user-emp-049 ",
+            " POOL-WH-01 ");
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-ASSIGNED-001",
+            "sales-delivery",
+            "SO-ASSIGNED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "BIN-01", "LOT-001", "SER-001", "qualified", "company", null)],
+            "user-emp-049",
+            "POOL-WH-01");
+        var count = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-ASSIGNED-001",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            5m,
+            "user-emp-049",
+            "POOL-WH-01");
+
+        Assert.Equal("user-emp-049", inbound.AssignedOperatorUserId);
+        Assert.Equal("POOL-WH-01", inbound.AssignedPoolCode);
+        Assert.Equal("user-emp-049", outbound.AssignedOperatorUserId);
+        Assert.Equal("POOL-WH-01", outbound.AssignedPoolCode);
+        Assert.Equal("user-emp-049", count.AssignedOperatorUserId);
+        Assert.Equal("POOL-WH-01", count.AssignedPoolCode);
+    }
+
+    [Fact]
+    public void Warehouse_tasks_capture_source_lot_serial_and_assignment_snapshots()
+    {
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-TASK-001",
+            "purchase-receipt",
+            "PO-TASK-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "RECV-01", "LOT-IN-001", "SER-IN-001", "inspection-exempt", "company", null)]);
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-TASK-001",
+            "sales-delivery",
+            "SO-TASK-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 5m, "BIN-01", "LOT-OUT-001", "SER-OUT-001", "qualified", "company", null)]);
+
+        var putaway = inbound.CreatePutawayTask(
+            "PUT-TASK-001",
+            "10",
+            "RECV-01",
+            "BIN-01",
+            5m,
+            "user-emp-049",
+            "POOL-WH-01");
+        var picking = outbound.CreatePickingTask(
+            "PICK-TASK-001",
+            "10",
+            "BIN-01",
+            "PACK-01",
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-WH-01");
+
+        Assert.Equal("LOT-IN-001", putaway.LotNo);
+        Assert.Equal("SER-IN-001", putaway.SerialNo);
+        Assert.Equal("LOT-OUT-001", picking.LotNo);
+        Assert.Equal("SER-OUT-001", picking.SerialNo);
+        Assert.Equal("user-emp-049", putaway.AssignedOperatorUserId);
+        Assert.Equal("POOL-WH-01", picking.AssignedPoolCode);
+    }
+
+    [Fact]
+    public void Warehouse_task_start_progress_and_full_completion_advance_version()
+    {
+        var task = WarehouseTask.CreatePutaway(
+            "org-001",
+            "env-dev",
+            "PUT-LIFECYCLE-001",
+            "IN-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "RECV-01",
+            "BIN-01",
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-RECEIVING");
+
+        task.Start("user-emp-049", 1);
+        task.RecordProgress(3m, "user-emp-049", 2);
+        task.Complete(5m, "user-emp-049", null, 3);
+
+        Assert.Equal(WarehouseTaskStatus.Completed, task.Status);
+        Assert.Equal(5m, task.ExecutedQuantity);
+        Assert.Equal(4, task.Version);
+        Assert.NotNull(task.StartedAtUtc);
+        Assert.NotNull(task.CompletedAtUtc);
+        Assert.Equal("user-emp-049", task.CompletedBy);
+        Assert.Null(task.CompletionReason);
+    }
+
+    [Fact]
+    public void Picking_task_short_completion_requires_reason_and_records_difference_terminal()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "PICK-DIFFERENCE-001",
+            "OUT-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            "PACK-01",
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
+        task.Start("user-emp-049", 1);
+        task.RecordProgress(3m, "user-emp-049", 2);
+
+        var missingReason = Assert.Throws<ArgumentException>(() =>
+            task.Complete(3m, "user-emp-049", " ", 3));
+        task.Complete(3m, "user-emp-049", "source-bin-shortage", 3);
+        var terminalRewrite = Assert.Throws<InvalidOperationException>(() =>
+            task.RecordProgress(4m, "user-emp-049", 4));
+
+        Assert.Contains("reason", missingReason.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(WarehouseTaskStatus.CompletedWithDifference, task.Status);
+        Assert.Equal("source-bin-shortage", task.CompletionReason);
+        Assert.Equal(4, task.Version);
+        Assert.Contains("terminal", terminalRewrite.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Putaway_task_rejects_short_completion_without_mutating_version()
+    {
+        var task = WarehouseTask.CreatePutaway(
+            "org-001",
+            "env-dev",
+            "PUT-SHORT-001",
+            "IN-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "RECV-01",
+            "BIN-01",
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-RECEIVING");
+        task.Start("user-emp-049", 1);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            task.Complete(4m, "user-emp-049", "short", 2));
+
+        Assert.Contains("full", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(WarehouseTaskStatus.InProgress, task.Status);
+        Assert.Equal(2, task.Version);
+        Assert.Equal(0m, task.ExecutedQuantity);
+    }
+
+    [Fact]
+    public void Warehouse_task_exception_is_a_blocking_terminal_with_audited_facts()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "PICK-EXCEPTION-001",
+            "OUT-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            "PACK-01",
+            5m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
+
+        task.Start("user-emp-049", 1);
+        task.ReportException("BIN-BLOCKED", "source bin is blocked", "user-emp-049", 2);
+        var completion = Assert.Throws<InvalidOperationException>(() =>
+            task.Complete(5m, "user-emp-049", null, 3));
+
+        Assert.Equal(WarehouseTaskStatus.Exception, task.Status);
+        Assert.Equal("BIN-BLOCKED", task.ExceptionCode);
+        Assert.Equal("source bin is blocked", task.ExceptionReason);
+        Assert.Equal("user-emp-049", task.ExceptionBy);
+        Assert.NotNull(task.ExceptionAtUtc);
+        Assert.Equal(3, task.Version);
+        Assert.Contains("terminal", completion.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Warehouse_task_rejects_stale_expected_version_before_mutation()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "PICK-VERSION-001",
+            "OUT-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            "PACK-01",
+            5m);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            task.Start("user-emp-049", 2));
+
+        Assert.Contains("version", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(WarehouseTaskStatus.Open, task.Status);
+        Assert.Equal(1, task.Version);
+        Assert.Null(task.StartedAtUtc);
+    }
+
+    [Fact]
     public void Warehouse_task_tracks_execution_bounds()
     {
         var task = WarehouseTask.CreatePutaway(
@@ -282,6 +525,29 @@ public sealed class WmsExecutionAggregateTests
 
         Assert.Equal(3m, task.ExecutedQuantity);
         Assert.Contains("executed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Legacy_wcs_progress_keeps_partial_task_open_until_its_completion_callback_finishes_quantity()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-001",
+            "OUT-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            4m);
+
+        task.RecordProgress(3m);
+
+        Assert.Equal(WarehouseTaskStatus.Open, task.Status);
+        Assert.Equal(3m, task.ExecutedQuantity);
+        Assert.Equal(2, task.Version);
     }
 
     [Fact]
@@ -321,6 +587,7 @@ public sealed class WmsExecutionAggregateTests
             "PACK-001",
             true,
             "idem-out-001",
+            outbound.Version,
             new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["LINE-001"] = 8m,
@@ -343,6 +610,7 @@ public sealed class WmsExecutionAggregateTests
             "PACK-001",
             true,
             "idem-out-001",
+            outbound.Version,
             new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["LINE-001"] = 13m,

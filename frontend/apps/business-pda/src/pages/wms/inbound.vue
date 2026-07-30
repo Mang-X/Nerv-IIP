@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
+import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
+import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { PDA_INBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   useWmsInbound,
   useWmsReceivingLines,
   type InboundLineCapture,
   type ReceivingQualityGateLine,
 } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import {
   expiryToneFromDate,
@@ -51,24 +56,44 @@ type InboundOrder = BusinessConsoleWmsInboundOrderItem
 const router = useRouter()
 const {
   filters,
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
   orders,
   total,
   pending,
+  refreshing,
+  loadingMore,
   error,
   refresh,
+  loadMore,
   completeInbound,
   completePending,
   organizationId,
   environmentId,
+  scopeKind,
+  scopeId,
   scopeReady,
   lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
-} = useWmsInbound()
+} = useWmsInbound({ status: 'Open' })
+const candidates = useWmsOperationalCandidates('receipt', {
+  organizationId,
+  environmentId,
+  scopeKind,
+  scopeId,
+  scopeReady,
+  filters,
+})
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
 const inboundScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+  scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const inboundTotal = computed(() => total.value)
+const inboundStatusOptions = PDA_INBOUND_ORDER_STATUS_OPTIONS
 
 // 选中的收货单（单据级质检状态/上架放行来自列表项派生字段，避免按分页门禁行跨页聚合）。
 const selectedOrder = ref<InboundOrder | null>(null)
@@ -86,7 +111,7 @@ const {
   hasSuccessfulResponse: linesHasSuccessfulResponse,
   hasFailedResponse: linesHasFailedResponse,
   refresh: refreshLines,
-} = useWmsReceivingLines(selectedOrderNo)
+} = useWmsReceivingLines(selectedOrderNo, { scopeKind, scopeId })
 
 // 收货现场「当前作业行」：多行单先选行再扫码，GS1 采集落到选中行（新收货行上尚无
 // 批号时无法按 lotNo 匹配）。单行单自动选中；未选中时扫码回退 lotNo 匹配/单行兜底。
@@ -407,66 +432,106 @@ function goPutaway() {
       </template>
     </NvMobileResult>
 
-    <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
-      <ListScopeMeta
-        :scope="inboundScope"
-        source="收货入库服务（组织/环境范围）"
+    <div v-else class="flex h-full min-h-0 flex-col">
+      <div class="space-y-3 border-b border-border bg-card px-4 py-3">
+        <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
+        <WmsScopeStatusFilter
+          v-model:scope-key="scopeKey"
+          v-model:status="filters.status"
+          :scope-options="scopeOptions"
+          :status-options="inboundStatusOptions"
+        />
+        <WmsOperationalCandidatePicker
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          v-model:search-keyword="candidates.searchKeyword.value"
+          :location-options="candidates.locationOptions.value"
+          :lot-options="candidates.lotOptions.value"
+          :ready="candidates.ready.value"
+          :source-label="candidates.sourceLabel.value"
+          :as-of-utc="candidates.asOfUtc.value"
+          :freshness-utc="candidates.freshnessUtc.value"
+          :truncated="candidates.truncated.value"
+          :pending="candidates.pending.value"
+          :error="candidates.error.value"
+          :scan-overrides="candidates.scanOverrides.value"
+          :show-scanner="false"
+          @scan-override-change="candidates.setScanOverride"
+          @retry="candidates.refresh"
+        />
+        <ListScopeMeta
+          :scope="inboundScope"
+          source="WMS 收货作业范围目录"
+          :loaded="orders.length"
+          :total="inboundTotal"
+          :updated-at="lastUpdatedAt"
+          :failed="hasFailedResponse"
+          failure-explanation="收货入库服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showEmpty"
+          :empty-explanation="
+            scopeReady
+              ? `“${inboundScope}”在当前状态下没有收货单据。`
+              : 'WMS 未返回可用作业范围，未发起列表查询。'
+          "
+        />
+
+        <RetryableListError
+          v-if="error || hasFailedResponse"
+          :error="error ?? '收货入库服务未成功返回'"
+          :pending="pending"
+          fallback="单据加载失败，请下拉重试或检查网络。"
+          test-id="error-banner"
+          @retry="refreshAll"
+        />
+      </div>
+
+      <WmsPagedListFrame
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :pending="pending"
         :loaded="orders.length"
         :total="inboundTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="收货入库服务未成功返回，请刷新重试。"
-        :empty="!scopeReady || showEmpty"
-        :empty-explanation="
-          scopeReady ? '当前组织/环境范围没有待收货单据。' : '缺少组织或环境范围，未发起查询。'
-        "
-      />
-
-      <RetryableListError
-        v-if="error || hasFailedResponse"
-        :error="error ?? '收货入库服务未成功返回'"
-        :pending="pending"
-        fallback="单据加载失败，请下拉重试或检查网络。"
-        test-id="error-banner"
-        @retry="() => refresh()"
-      />
-
-      <div
-        v-if="showEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+        @refresh="refreshAll"
+        @load-more="loadMore"
       >
-        当前组织/环境范围暂无待收货单据
-      </div>
+        <div class="space-y-4 px-4 py-3">
+          <div
+            v-if="showEmpty"
+            class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            “{{ inboundScope }}”在当前状态下暂无收货单据；数据来自 WMS 派工
+          </div>
 
-      <div v-else class="overflow-hidden rounded-lg border border-border">
-        <div
-          v-for="order in orders"
-          :key="order.inboundOrderId"
-          data-row
-          role="button"
-          tabindex="0"
-          class="min-h-row flex w-full items-center gap-3 border-b border-border bg-card px-4 py-3 text-left last:border-b-0 active:bg-accent"
-          @click="selectOrder(order)"
-          @keydown.enter="selectOrder(order)"
-        >
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-base font-medium text-foreground">
-              {{ order.inboundOrderNo ?? '' }}
-            </div>
-            <div class="truncate text-sm text-muted-foreground">
-              {{ inboundOrderStatusLabel(order.status) }}
+          <div v-else class="overflow-hidden rounded-lg border border-border">
+            <div
+              v-for="order in orders"
+              :key="order.inboundOrderId"
+              data-row
+              role="button"
+              tabindex="0"
+              class="min-h-row flex w-full items-center gap-3 border-b border-border bg-card px-4 py-3 text-left last:border-b-0 active:bg-accent"
+              @click="selectOrder(order)"
+              @keydown.enter="selectOrder(order)"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-base font-medium text-foreground">
+                  {{ order.inboundOrderNo ?? '' }}
+                </div>
+                <div class="truncate text-sm text-muted-foreground">
+                  {{ inboundOrderStatusLabel(order.status) }}
+                </div>
+              </div>
+              <NvMobileTag
+                v-if="order.qualityGateStatus"
+                :variant="gateVariant(order.qualityGateStatus)"
+                size="sm"
+              >
+                {{ gateLabel(order.qualityGateStatus) }}
+              </NvMobileTag>
             </div>
           </div>
-          <NvMobileTag
-            v-if="order.qualityGateStatus"
-            :variant="gateVariant(order.qualityGateStatus)"
-            size="sm"
-          >
-            {{ gateLabel(order.qualityGateStatus) }}
-          </NvMobileTag>
         </div>
-      </div>
+      </WmsPagedListFrame>
     </div>
 
     <!-- 完成入库确认抽屉 -->
@@ -603,7 +668,8 @@ function goPutaway() {
           该单待质检，合格后方可上架
         </NvNoticeBar>
 
-        <p class="text-base text-foreground">确认完成收货入库？</p>
+        <p v-if="selectedCanComplete" class="text-base text-foreground">确认完成收货入库？</p>
+        <p v-else class="text-sm text-muted-foreground">该单已结束，仅可查看明细或进入后续上架</p>
 
         <p v-if="submitError" class="text-sm text-destructive">{{ submitError }}</p>
 

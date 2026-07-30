@@ -168,7 +168,7 @@ function arrangeCommandFailure(
 }
 
 function createHarnesses(): Record<string, DomainHarness> {
-  const wms = useWmsInboundOrders()
+  const wms = useWmsInboundOrders({ scopeKind: 'self', scopeId: 'user-001' })
   const maintenance = useMaintenanceWorkOrders()
   const quality = useQualityNcrs()
   const equipment = useBusinessEquipmentAlarms()
@@ -181,7 +181,7 @@ function createHarnesses(): Record<string, DomainHarness> {
       setStatus: (status) =>
         vi
           .mocked(listBusinessConsoleWmsInboundOrders)
-          .mockResolvedValue(envelope({ inboundOrderId: 'IN-1', status }) as never),
+          .mockResolvedValue(envelope({ inboundOrderId: 'IN-1', status, version: 1 }) as never),
       refresh: wms.refreshInboundOrders,
     },
     Maintenance: {
@@ -312,7 +312,7 @@ describe('Business Console lifecycle domain actions', () => {
   )
 
   it('replays a completed inbound only from an exact restored intent and its OLD key', async () => {
-    const wms = useWmsInboundOrders()
+    const wms = useWmsInboundOrders({ scopeKind: 'self', scopeId: 'user-001' })
     const pendingScope = {
       principalId: 'unrestored-session',
       organizationId: 'org-1',
@@ -339,19 +339,28 @@ describe('Business Console lifecycle domain actions', () => {
     ).rejects.toMatchObject({ source: 'preflight' })
     expect(completeBusinessConsoleWmsInboundOrder).not.toHaveBeenCalled()
 
-    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', {})
+    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', {
+      scopeKind: 'self',
+      scopeId: 'user-001',
+      expectedVersion: 4,
+    })
     await expect(
       wms.completeInbound('IN-1', 'wms-intent-new', { attempt: 'retry' }),
     ).resolves.toBeDefined()
     expect(completeBusinessConsoleWmsInboundOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: { idempotencyKey: 'wms-intent-old' },
+        body: {
+          idempotencyKey: 'wms-intent-old',
+          scopeKind: 'self',
+          scopeId: 'user-001',
+          expectedVersion: 4,
+        },
       }),
     )
   })
 
   it('replays a posting-pending outbound only from an exact restored intent and its OLD key', async () => {
-    const wms = useWmsOutboundOrders()
+    const wms = useWmsOutboundOrders({ scopeKind: 'self', scopeId: 'user-001' })
     const payload = { packReviewNo: 'PR-1', passed: true }
     const pendingScope = {
       principalId: 'unrestored-session',
@@ -379,13 +388,24 @@ describe('Business Console lifecycle domain actions', () => {
     ).rejects.toMatchObject({ source: 'preflight' })
     expect(completeBusinessConsoleWmsOutboundOrder).not.toHaveBeenCalled()
 
-    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', payload)
+    acquirePendingBusinessIntent(pendingScope, () => 'wms-intent-old', {
+      ...payload,
+      scopeKind: 'self',
+      scopeId: 'user-001',
+      expectedVersion: 5,
+    })
     await expect(
       wms.completeOutbound('OUT-1', payload, 'wms-intent-new', { attempt: 'retry' }),
     ).resolves.toBeDefined()
     expect(completeBusinessConsoleWmsOutboundOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: { ...payload, idempotencyKey: 'wms-intent-old' },
+        body: {
+          ...payload,
+          idempotencyKey: 'wms-intent-old',
+          scopeKind: 'self',
+          scopeId: 'user-001',
+          expectedVersion: 5,
+        },
       }),
     )
   })

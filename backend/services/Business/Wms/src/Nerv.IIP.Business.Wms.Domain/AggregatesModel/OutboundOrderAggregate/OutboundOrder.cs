@@ -44,7 +44,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<OutboundOrderLineDraft> lineDrafts)
+        IEnumerable<OutboundOrderLineDraft> lineDrafts,
+        string? assignedOperatorUserId,
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -52,6 +54,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         SourceDocumentType = WmsText.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         Status = OutboundOrderStatus.Open;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
@@ -72,6 +76,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
@@ -89,9 +95,32 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<OutboundOrderLineDraft> lines)
+        IEnumerable<OutboundOrderLineDraft> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
-        return new OutboundOrder(organizationId, environmentId, outboundOrderNo, sourceDocumentType, sourceDocumentId, siteCode, lines);
+        return new OutboundOrder(
+            organizationId,
+            environmentId,
+            outboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines,
+            assignedOperatorUserId,
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureOpen();
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
     }
 
     public WarehouseTask CreatePickingTask(
@@ -103,7 +132,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string? inventoryReservationId = null,
         string? reservedLocationCode = null,
         string? reservedLotNo = null,
-        string? reservedSerialNo = null)
+        string? reservedSerialNo = null,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
@@ -124,7 +155,11 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             SiteCode,
             taskFromLocationCode,
             toLocationCode,
-            quantity);
+            quantity,
+            line.LotNo,
+            line.SerialNo,
+            assignedOperatorUserId,
+            assignedPoolCode);
     }
 
     public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
@@ -146,15 +181,14 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
-        => CompletePackReview(packReviewNo, passed, idempotencyKey, null);
-
     public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(
         string packReviewNo,
         bool passed,
         string idempotencyKey,
-        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+        long expectedVersion,
+        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine = null)
     {
+        EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         if (!passed)
@@ -163,24 +197,28 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
 
         EnsureHasLines();
-        PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
-        PackReviewPassed = true;
-        Status = OutboundOrderStatus.InventoryPostingPending;
-        CompletedAtUtc = null;
-        var singleLine = lines.Count == 1;
-        foreach (var line in lines)
-        {
-            line.RecordFulfillment(GetExecutedQuantity(line, executedQuantitiesByLine));
-        }
-
-        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
-        if (postingLines.Length == 0)
+        var normalizedPackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
+        var executedQuantityByLine = lines.ToDictionary(
+            line => line.LineNo,
+            line => GetExecutedQuantity(line, executedQuantitiesByLine),
+            StringComparer.Ordinal);
+        if (executedQuantityByLine.Values.All(quantity => quantity == 0))
         {
             throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
         }
 
+        foreach (var line in lines)
+        {
+            line.RecordFulfillment(executedQuantityByLine[line.LineNo]);
+        }
+
+        PackReviewNo = normalizedPackReviewNo;
+        PackReviewPassed = true;
+        Status = OutboundOrderStatus.InventoryPostingPending;
+        CompletedAtUtc = null;
+        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
         AdvanceVersion();
-        singleLine = postingLines.Length == 1;
+        var singleLine = postingLines.Length == 1;
         var requests = postingLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,
@@ -364,6 +402,15 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     private void AdvanceVersion()
     {
         Version = checked(Version + 1);
+    }
+
+    private void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new InvalidOperationException(
+                $"Outbound order version conflict: expected {expectedVersion}, actual {Version}.");
+        }
     }
 
     private OutboundOrderLine FindLine(string lineNo)

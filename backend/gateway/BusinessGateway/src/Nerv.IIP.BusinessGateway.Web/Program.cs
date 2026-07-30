@@ -35,7 +35,6 @@ builder.Services
             // （NUGET_XMLDOC_MODE）会导致导出快照与 CI 重生成结果漂移。
             s.SchemaSettings.ResolveExternalXmlDocumentation = false;
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
-            s.DocumentProcessors.Add(new WmsWarehouseTaskOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
         };
@@ -54,6 +53,7 @@ builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(b
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
 builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
+builder.Services.AddScoped<WmsTrustedRequestContextResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();

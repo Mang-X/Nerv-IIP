@@ -4,7 +4,8 @@
  * 这些值域是后端枚举而不是主数据目录，没有、也不该有列表读面，所以在前端集中成常量
  * （AGENTS §6：业务取值走字典 / 常量模块，禁止散落在页面里写死）。
  * 码值与后端保持一致：
- * - `WarehouseTaskStatus`（上架 / 拣货 / 补货任务）Open / Completed / Cancelled
+ * - `WarehouseTaskStatus` Open / InProgress / Completed / CompletedWithDifference / Exception / Cancelled
+ * - `CountExecutionStatus` Open / Completed
  * - `InboundOrderStatus` Open / Completed / InventoryPostingFailed / PendingQualityCheck / Cancelled
  * - `OutboundOrderStatus` Open / Completed / InventoryPostingFailed / Cancelled / InventoryPostingPending
  */
@@ -20,8 +21,16 @@ function withAnyOption(options: SearchSelectOption[], anyLabel: string): SearchS
 /** 仓库作业任务（上架 / 拣货 / 补货）状态。 */
 export const WMS_WAREHOUSE_TASK_STATUS_OPTIONS: SearchSelectOption[] = [
   { value: 'Open', label: '待执行' },
+  { value: 'InProgress', label: '执行中' },
   { value: 'Completed', label: '已完成' },
+  { value: 'CompletedWithDifference', label: '差异完成' },
+  { value: 'Exception', label: '异常待处理' },
   { value: 'Cancelled', label: '已取消' },
+]
+
+export const WMS_COUNT_EXECUTION_STATUS_OPTIONS: SearchSelectOption[] = [
+  { value: 'Open', label: '待盘点' },
+  { value: 'Completed', label: '已完成' },
 ]
 
 export const WMS_INBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
@@ -59,6 +68,10 @@ export const wmsWarehouseTaskStatusFilterOptions = withAnyOption(
   WMS_WAREHOUSE_TASK_STATUS_OPTIONS,
   '全部状态',
 )
+export const wmsCountExecutionStatusFilterOptions = withAnyOption(
+  WMS_COUNT_EXECUTION_STATUS_OPTIONS,
+  '全部状态',
+)
 export const wmsInboundOrderStatusFilterOptions = withAnyOption(
   WMS_INBOUND_ORDER_STATUS_OPTIONS,
   '全部状态',
@@ -77,6 +90,8 @@ function labelOf(options: SearchSelectOption[], value?: string | null) {
 
 export const wmsWarehouseTaskStatusLabel = (value?: string | null) =>
   labelOf(WMS_WAREHOUSE_TASK_STATUS_OPTIONS, value)
+export const wmsCountExecutionStatusLabel = (value?: string | null) =>
+  labelOf(WMS_COUNT_EXECUTION_STATUS_OPTIONS, value)
 export const wmsInboundOrderStatusLabel = (value?: string | null) =>
   labelOf(WMS_INBOUND_ORDER_STATUS_OPTIONS, value)
 export const wmsOutboundOrderStatusLabel = (value?: string | null) =>

@@ -585,6 +585,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             "PACK-001",
             true,
             $"pack-review:{outbound.OutboundOrderNo}",
+            outbound.Version,
             executedQuantitiesByLine);
         return new OutboundOrderCompletedIntegrationEventConverter()
             .Convert(new OutboundOrderCompletedDomainEvent(outbound));
@@ -615,7 +616,11 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
                     "company",
                     "CUS-001")
             ]);
-        outbound.CompletePackReview("PACK-001", true, $"pack-review:{outboundOrderNo}:{lineNo}");
+        outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            $"pack-review:{outboundOrderNo}:{lineNo}",
+            outbound.Version);
         return new OutboundOrderCompletedIntegrationEventConverter()
             .Convert(new OutboundOrderCompletedDomainEvent(outbound));
     }

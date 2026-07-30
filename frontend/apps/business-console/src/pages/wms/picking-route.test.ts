@@ -59,7 +59,9 @@ const routeState = vi.hoisted(() => ({
 
 const wmsState = vi.hoisted(() => ({
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
+  refreshPickingTasks: vi.fn(async () => undefined),
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -99,6 +101,23 @@ vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
     }),
   }
 })
+
+vi.mock('@/composables/useWmsWorkScope', () => ({
+  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+    filters.scopeKind = 'self'
+    filters.scopeId = 'emp049'
+    filters.skip = 0
+    return {
+      scopeKey: shallowRef('self:emp049'),
+      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+      selectedScopeLabel: computed(() => '我的任务'),
+      hasSelection: computed(() => true),
+      pending: shallowRef(false),
+      error: shallowRef(undefined),
+      refresh: vi.fn(async () => undefined),
+    }
+  },
+}))
 
 vi.mock('@/composables/useBusinessWms', () => ({
   // 拣货任务必须挂在已存在的出库单下：出库单选择器的目录来源。
@@ -145,7 +164,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       pickingTasksError: shallowRef(undefined),
       pickingTasksPending: shallowRef(false),
       pickingTasksTotal: computed(() => 0),
-      refreshPickingTasks: vi.fn(),
+      refreshPickingTasks: wmsState.refreshPickingTasks,
     }
   },
 }))
@@ -188,6 +207,7 @@ const uiStubs = {
 
 describe('WMS picking route context', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     routeState.query = {}
     wmsState.filters = undefined
   })
@@ -236,4 +256,34 @@ describe('WMS picking route context', () => {
     ).toBe(true)
     expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
+
+  it('刷新任务时同步刷新当前范围候选', async () => {
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(wmsState.refreshPickingTasks).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+  })
+})
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
 })

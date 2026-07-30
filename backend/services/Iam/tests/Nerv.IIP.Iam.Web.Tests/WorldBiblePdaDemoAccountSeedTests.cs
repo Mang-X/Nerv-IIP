@@ -113,6 +113,30 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
             Assert.Equal(account.UserId, scope.ScopeCode);
         }
 
+        var seededRoles = await dbContext.Roles
+            .Include(x => x.DataScopes)
+            .Include(x => x.Permissions)
+            .Where(x => WorldBiblePdaDemoAccountSeedService.Roles
+                .Select(role => role.RoleId)
+                .Contains(x.Id.Id))
+            .ToArrayAsync();
+        var warehouseRole = Assert.Single(
+            seededRoles,
+            x => x.Id.Id == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        var warehouseSite = Assert.Single(warehouseRole.DataScopes);
+        Assert.Equal(DataScopeBinding.Site, warehouseSite.ScopeType);
+        Assert.Equal("SITE-001", warehouseSite.ScopeCode);
+        Assert.Contains(
+            warehouseRole.Permissions,
+            permission => permission.PermissionCode == "business.wms.counts.read");
+        Assert.All(
+            seededRoles.Where(x => x.Id.Id != WorldBiblePdaDemoAccountSeedService.WarehouseRoleId),
+            role => Assert.DoesNotContain(
+                role.DataScopes,
+                scope => scope.ScopeType == DataScopeBinding.Site));
+        Assert.NotNull(await dbContext.SeedManifests.FindAsync(
+            new SeedManifestId("iam-pda-warehouse-site-scope:v2")));
+
         var customized = WorldBiblePdaDemoAccountSeedService.Accounts[0];
         var customizedRole = await dbContext.Roles
             .Include(x => x.Permissions)
@@ -156,6 +180,129 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
     }
 
     [Fact]
+    public async Task Demo_account_seed_backfills_counts_read_only_for_the_legacy_warehouse_role()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"pda-demo-account-counts-read-{Guid.CreateVersion7():N}")
+            .Options;
+        await using var dbContext = new ApplicationDbContext(dbOptions, new NoopMediator());
+        var passwordService = new IamPasswordService();
+        var warehouseBaseline = Assert.Single(
+            WorldBiblePdaDemoAccountSeedService.Roles,
+            role => role.RoleId == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        var warehouseRoleBeforeCountsRead = new Role(
+            new RoleId(warehouseBaseline.RoleId),
+            warehouseBaseline.RoleName,
+            warehouseBaseline.PermissionCodes.Where(permissionCode =>
+                permissionCode != "business.wms.counts.read"));
+        warehouseRoleBeforeCountsRead.ReplaceDataScopes([
+            new DataScopeBinding(DataScopeBinding.Site, "SITE-001"),
+        ]);
+        dbContext.Roles.Add(warehouseRoleBeforeCountsRead);
+        dbContext.SeedManifests.Add(new SeedManifest(
+            new SeedManifestId("iam-pda-warehouse-site-scope:v2"),
+            "iam-pda-warehouse-site-scope",
+            "v2",
+            "iam",
+            DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync();
+
+        using var services = new ServiceCollection()
+            .AddSingleton(dbContext)
+            .BuildServiceProvider();
+        var seed = new WorldBiblePdaDemoAccountSeedService(
+            services,
+            Options.Create(new IamSeedOptions
+            {
+                OrganizationId = "org-001",
+                EnvironmentId = "env-dev",
+                DemoWorkerPassword = "Worker-Demo-Test-2026!",
+            }),
+            passwordService);
+
+        await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var warehouseRole = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .SingleAsync(role =>
+                role.Id.Id == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        Assert.Contains(
+            warehouseRole.Permissions,
+            permission => permission.PermissionCode == "business.wms.counts.read");
+        Assert.NotNull(await dbContext.SeedManifests.FindAsync(
+            new SeedManifestId("iam-pda-warehouse-counts-read-permission:v1")));
+    }
+
+    [Theory]
+    [InlineData(DataScopeBinding.Site, "SITE-CUSTOM")]
+    [InlineData(DataScopeBinding.Workshop, "WS-CUSTOM")]
+    [InlineData(DataScopeBinding.Organization, "org-custom")]
+    public async Task Demo_account_seed_does_not_expand_custom_warehouse_role_scopes_with_counts_read(
+        string scopeType,
+        string scopeCode)
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(
+                $"pda-demo-account-counts-read-custom-{scopeType}-{Guid.CreateVersion7():N}")
+            .Options;
+        await using var dbContext = new ApplicationDbContext(
+            dbOptions,
+            new NoopMediator());
+        var passwordService = new IamPasswordService();
+        var warehouseBaseline = Assert.Single(
+            WorldBiblePdaDemoAccountSeedService.Roles,
+            role => role.RoleId
+                == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        var warehouseRole = new Role(
+            new RoleId(warehouseBaseline.RoleId),
+            warehouseBaseline.RoleName,
+            warehouseBaseline.PermissionCodes.Where(permissionCode =>
+                permissionCode != "business.wms.counts.read"));
+        warehouseRole.ReplaceDataScopes([new DataScopeBinding(scopeType, scopeCode)]);
+        dbContext.Roles.Add(warehouseRole);
+        dbContext.SeedManifests.Add(new SeedManifest(
+            new SeedManifestId("iam-pda-warehouse-site-scope:v2"),
+            "iam-pda-warehouse-site-scope",
+            "v2",
+            "iam",
+            DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync();
+
+        using var services = new ServiceCollection()
+            .AddSingleton(dbContext)
+            .BuildServiceProvider();
+        var seed = new WorldBiblePdaDemoAccountSeedService(
+            services,
+            Options.Create(new IamSeedOptions
+            {
+                OrganizationId = "org-001",
+                EnvironmentId = "env-dev",
+                DemoWorkerPassword = "Worker-Demo-Test-2026!",
+            }),
+            passwordService);
+
+        await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var preserved = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role =>
+                role.Id.Id
+                == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        Assert.DoesNotContain(
+            preserved.Permissions,
+            permission =>
+                permission.PermissionCode == "business.wms.counts.read");
+        var scope = Assert.Single(preserved.DataScopes);
+        Assert.Equal(scopeType, scope.ScopeType);
+        Assert.Equal(scopeCode, scope.ScopeCode);
+        Assert.NotNull(await dbContext.SeedManifests.FindAsync(
+            new SeedManifestId("iam-pda-warehouse-counts-read-permission:v1")));
+    }
+
+    [Fact]
     public async Task Demo_account_seed_backfills_only_legacy_baseline_memberships_with_empty_scopes()
     {
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -170,7 +317,15 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
 
         foreach (var (roleId, roleName, permissionCodes) in WorldBiblePdaDemoAccountSeedService.Roles)
         {
-            dbContext.Roles.Add(new Role(new RoleId(roleId), roleName, permissionCodes));
+            var role = new Role(new RoleId(roleId), roleName, permissionCodes);
+            if (roleId == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId)
+            {
+                role.ReplaceDataScopes([
+                    new DataScopeBinding(DataScopeBinding.Workshop, "WS-RETAINED"),
+                ]);
+            }
+
+            dbContext.Roles.Add(role);
         }
 
         var customRoleId = new RoleId("role-pda-customized");
@@ -235,8 +390,31 @@ public sealed class WorldBiblePdaDemoAccountSeedTests
             .Include(x => x.DataScopes)
             .SingleAsync(x => x.Id.Id == $"{customizedAccount.UserId}:org-001:env-dev");
         Assert.Empty(customizedMembership.DataScopes);
+        var warehouseRole = await dbContext.Roles
+            .Include(x => x.DataScopes)
+            .SingleAsync(x => x.Id.Id == WorldBiblePdaDemoAccountSeedService.WarehouseRoleId);
+        Assert.Contains(warehouseRole.DataScopes, x =>
+            x.ScopeType == DataScopeBinding.Workshop
+            && x.ScopeCode == "WS-RETAINED");
+        Assert.DoesNotContain(warehouseRole.DataScopes, x =>
+            x.ScopeType == DataScopeBinding.Site
+            && x.ScopeCode == "SITE-001");
+        var nonWarehouseRoles = await dbContext.Roles
+            .Include(x => x.DataScopes)
+            .Where(x => WorldBiblePdaDemoAccountSeedService.Roles
+                .Select(role => role.RoleId)
+                .Contains(x.Id.Id)
+                && x.Id.Id != WorldBiblePdaDemoAccountSeedService.WarehouseRoleId)
+            .ToArrayAsync();
+        Assert.All(
+            nonWarehouseRoles,
+            role => Assert.DoesNotContain(
+                role.DataScopes,
+                scope => scope.ScopeType == DataScopeBinding.Site));
         Assert.NotNull(await dbContext.SeedManifests.FindAsync(
             new SeedManifestId("iam-pda-principal-scope-backfill:v1")));
+        Assert.NotNull(await dbContext.SeedManifests.FindAsync(
+            new SeedManifestId("iam-pda-warehouse-site-scope:v2")));
     }
 
     [Fact]

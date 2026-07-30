@@ -74,6 +74,31 @@ public sealed class BusinessGatewayPrincipalWorkContextResolverTests
     }
 
     [Fact]
+    public void Site_candidate_is_excluded_from_the_generic_scope_closed_set()
+    {
+        var context = Context();
+        var result = PrincipalWorkContextAuthorizationResolver.Resolve(
+            context with
+            {
+                CandidateScopes =
+                [
+                    .. context.CandidateScopes,
+                    Scope("site", "SITE-A", "南京工厂", "resolved-site", ("organization", "org-001")),
+                ],
+            },
+            Authorization(new AuthorizationScopeGrant("role", "role-site", "site", "SITE-A", [PermissionCode])),
+            "org-001",
+            PermissionCode,
+            "site",
+            "SITE-A");
+
+        Assert.False(result.SelectionAuthorized);
+        Assert.Null(result.SelectedScope);
+        Assert.DoesNotContain("site", result.CandidateScopeKinds);
+        Assert.DoesNotContain(result.AuthorizedScopes, scope => scope.Kind == "site");
+    }
+
+    [Fact]
     public void Exact_team_and_work_center_grants_do_not_infer_each_other()
     {
         var result = PrincipalWorkContextAuthorizationResolver.Resolve(

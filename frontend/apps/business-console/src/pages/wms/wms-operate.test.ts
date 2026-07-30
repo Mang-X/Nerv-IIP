@@ -78,8 +78,10 @@ const wms = vi.hoisted(() => ({
   ] as string[],
   refreshReceivingQuality: vi.fn(),
   refreshInboundOrders: vi.fn(async () => undefined),
+  refreshOutboundOrders: vi.fn(async () => undefined),
   refreshCountExecutions: vi.fn(async () => undefined),
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
@@ -142,6 +144,23 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
+vi.mock('@/composables/useWmsWorkScope', () => ({
+  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+    filters.scopeKind = 'self'
+    filters.scopeId = 'emp049'
+    filters.skip = 0
+    return {
+      scopeKey: shallowRef('self:emp049'),
+      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+      selectedScopeLabel: computed(() => '我的任务'),
+      hasSelection: computed(() => true),
+      pending: shallowRef(false),
+      error: shallowRef(undefined),
+      refresh: vi.fn(async () => undefined),
+    }
+  },
+}))
+
 vi.mock('@/composables/useBusinessWms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: () => ({
@@ -188,7 +207,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     outboundOrdersError: shallowRef(undefined),
     outboundOrdersPending: shallowRef(false),
     outboundOrdersTotal: computed(() => 1),
-    refreshOutboundOrders: vi.fn(),
+    refreshOutboundOrders: wms.refreshOutboundOrders,
     completeOutbound: wms.completeOutbound,
     completeOutboundPending: shallowRef(false),
     completeOutboundError: shallowRef(undefined),
@@ -318,6 +337,8 @@ describe('WMS operate actions', () => {
     wms.permissionCodes = [
       'business.wms.receipts.read',
       'business.wms.receipts.manage',
+      'business.wms.counts.read',
+      'business.inventory.counts.manage',
       'business.quality.inspection-records.read',
     ]
   })
@@ -327,6 +348,33 @@ describe('WMS operate actions', () => {
     el.value = value
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
+
+  it.each([
+    ['收货入库', InboundPage, wms.refreshInboundOrders],
+    ['复核发货', OutboundPage, wms.refreshOutboundOrders],
+    ['盘点执行', CountsPage, wms.refreshCountExecutions],
+  ])('%s 刷新列表时同步刷新当前范围候选', async (_title, Page, refreshList) => {
+    const wrapper = mount(Page, { global: { stubs: layoutStub } })
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(refreshList).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('盘点只读用户仍可查看列表，但不显示新建与完成动作', async () => {
+    wms.permissionCodes = ['business.wms.counts.read']
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('CNT-1')
+    expect(wrapper.text()).not.toContain('新建盘点单')
+    expect(wrapper.find('button[aria-label="盘点操作 CNT-1"]').exists()).toBe(false)
+  })
 
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
@@ -1008,4 +1056,22 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
   })
+})
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
 })

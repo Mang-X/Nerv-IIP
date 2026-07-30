@@ -9,12 +9,15 @@ import {
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
   WAREHOUSE_CATALOG_SOURCE_TEXT,
@@ -83,14 +86,27 @@ const {
   outboundOrdersLastUpdatedAt,
   outboundOrdersHasSuccessfulResponse,
   outboundOrdersHasFailedResponse,
-} = useWmsOutboundOrders()
-const outboundScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
-)
-const outboundScope = computed(() =>
-  outboundScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+} = useWmsOutboundOrders({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: outboundScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'shipments')
+const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [
+    () => filters.keyword,
+    () => filters.status,
+    () => filters.locationCode,
+    () => filters.lotNo,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
+})
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeCatalog()
@@ -345,7 +361,7 @@ const reviewContextItems = computed(() => [
  */
 // 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && outboundScopeReady.value)
 const listReady = computed(
   () => contextReady.value && !outboundOrdersError.value && !outboundOrdersPending.value,
 )
@@ -416,6 +432,12 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshOutboundOrders()
+  void operationalCandidates.refresh()
+}
 </script>
 
 <template>
@@ -427,7 +449,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="outboundOrdersPending"
-          @click="refreshOutboundOrders"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -440,18 +462,20 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="outboundScope"
-      source="出库发货服务（组织/环境范围）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 发货作业范围目录"
       :loaded="outboundOrders.length"
       :total="outboundOrdersTotal"
       :updated-at="outboundOrdersLastUpdatedAt"
       :empty="
         outboundOrdersHasSuccessfulResponse && !outboundOrdersError && outboundOrders.length === 0
       "
-      :failed="outboundOrdersHasFailedResponse || Boolean(outboundOrdersError)"
-      failure-explanation="出库发货服务未成功返回，请重试。"
+      :failed="
+        outboundOrdersHasFailedResponse || Boolean(outboundOrdersError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 发货作业范围或出库单未成功返回，请重试。"
       :empty-explanation="
-        outboundScopeReady ? '当前组织/环境范围没有出库单。' : '缺少组织或环境范围，未发起查询。'
+        outboundScopeReady ? '当前作业范围没有出库单。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
@@ -464,6 +488,35 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索出库单号、来源单据或物料"
+          aria-label="关键字搜索"
+        />
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="operationalCandidates.locationOptions.value"
+          :lot-options="operationalCandidates.lotOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :ready="operationalCandidates.ready.value"
+          :error="operationalCandidates.error.value"
+          v-model:search-keyword="operationalCandidates.searchKeyword.value"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
+          @retry="operationalCandidates.refresh"
+        />
         <NvSearchSelect
           v-model="statusFilter"
           class="w-36"

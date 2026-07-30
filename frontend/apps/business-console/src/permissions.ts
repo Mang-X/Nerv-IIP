@@ -45,6 +45,7 @@ export const BUSINESS_PERMISSION_CODES = {
   wmsReceiptsRead: 'business.wms.receipts.read',
   wmsReceiptsManage: 'business.wms.receipts.manage',
   wmsShipmentsRead: 'business.wms.shipments.read',
+  wmsCountsRead: 'business.wms.counts.read',
   wmsAutomationManage: 'business.wms.automation.manage',
   erpProcurementRead: 'business.erp.procurement.read',
   erpSalesRead: 'business.erp.sales.read',
@@ -115,7 +116,13 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
   ],
   quality: [P.qualityInspectionRecordsRead, P.qualityNcrRead, P.qualityNcrManage],
   inventory: [P.inventoryLedgerRead, P.inventoryMovementsCreate, P.inventoryCountsManage],
-  wms: [P.wmsReceiptsRead, P.wmsReceiptsManage, P.wmsShipmentsRead, P.wmsAutomationManage],
+  wms: [
+    P.wmsReceiptsRead,
+    P.wmsReceiptsManage,
+    P.wmsShipmentsRead,
+    P.wmsCountsRead,
+    P.wmsAutomationManage,
+  ],
   erp: [P.erpProcurementRead, P.erpSalesRead, P.erpFinanceRead],
   equipment: [
     P.iiotTelemetryRead,

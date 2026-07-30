@@ -38,16 +38,7 @@ public static class PrincipalWorkContextAuthorizationResolver
                 !hasCompleteSelection && !hasPartialSelection);
         }
 
-        var grants = (authorization.ScopeGrants ?? [])
-            .Where(x =>
-                x is not null
-                && IsKnownGrantSource(x.SourceKind)
-                && !string.IsNullOrWhiteSpace(x.SourceId)
-                && !string.IsNullOrWhiteSpace(x.ScopeKind)
-                && !string.IsNullOrWhiteSpace(x.ScopeId)
-                && x.ApplicablePermissionCodes?.Contains(permissionCode, StringComparer.Ordinal) == true
-                && IsKnownGrantKind(x.ScopeKind))
-            .ToArray();
+        var grants = TrustedGrants(authorization, permissionCode);
         var candidates = NormalizeCandidates(context.CandidateScopes ?? []).ToList();
         if (!candidates.Any(x =>
                 string.Equals(x.Kind, "organization", StringComparison.Ordinal)
@@ -67,13 +58,7 @@ public static class PrincipalWorkContextAuthorizationResolver
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        var authorized = candidates
-            .Select(candidate => Authorize(candidate, grants, organizationId))
-            .Where(x => x is not null)
-            .Cast<BusinessConsoleAuthorizedWorkScope>()
-            .OrderBy(x => x.Kind, StringComparer.Ordinal)
-            .ThenBy(x => x.Id, StringComparer.Ordinal)
-            .ToArray();
+        var authorized = AuthorizeCandidates(candidates, grants, organizationId);
         var availableKinds = authorized
             .Select(x => x.Kind)
             .Distinct(StringComparer.Ordinal)
@@ -113,6 +98,68 @@ public static class PrincipalWorkContextAuthorizationResolver
             selected is not null);
     }
 
+    public static IReadOnlyList<BusinessConsoleAuthorizedWorkScope> ResolveSiteCandidates(
+        IReadOnlyCollection<BusinessConsoleResourceItem> siteDirectory,
+        BusinessGatewayAuthorizationResult authorization,
+        string organizationId,
+        string permissionCode)
+    {
+        ArgumentNullException.ThrowIfNull(siteDirectory);
+        ArgumentNullException.ThrowIfNull(authorization);
+        if (!authorization.IsAllowed || authorization.DataScope?.DenyAll == true)
+        {
+            return [];
+        }
+
+        var siteCandidates = siteDirectory
+            .Where(site =>
+                site is not null
+                && site.Active
+                && string.Equals(
+                    site.ResourceType?.Trim(),
+                    "site",
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(site.Code)
+                && !string.IsNullOrWhiteSpace(site.DisplayName))
+            .Select(site => new BusinessMasterDataWorkContextCandidateScope(
+                "site",
+                site.Code,
+                site.DisplayName,
+                "wms-site-candidate",
+                [new BusinessMasterDataWorkContextScopeAncestor("organization", organizationId)]))
+            .ToArray();
+        return AuthorizeCandidates(
+            NormalizeCandidates(siteCandidates, allowSite: true),
+            TrustedGrants(authorization, permissionCode),
+            organizationId);
+    }
+
+    private static AuthorizationScopeGrant[] TrustedGrants(
+        BusinessGatewayAuthorizationResult authorization,
+        string permissionCode) =>
+        (authorization.ScopeGrants ?? [])
+            .Where(x =>
+                x is not null
+                && IsKnownGrantSource(x.SourceKind)
+                && !string.IsNullOrWhiteSpace(x.SourceId)
+                && !string.IsNullOrWhiteSpace(x.ScopeKind)
+                && !string.IsNullOrWhiteSpace(x.ScopeId)
+                && x.ApplicablePermissionCodes?.Contains(permissionCode, StringComparer.Ordinal) == true
+                && IsKnownGrantKind(x.ScopeKind))
+            .ToArray();
+
+    private static BusinessConsoleAuthorizedWorkScope[] AuthorizeCandidates(
+        IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> candidates,
+        IReadOnlyCollection<AuthorizationScopeGrant> grants,
+        string organizationId) =>
+        candidates
+            .Select(candidate => Authorize(candidate, grants, organizationId))
+            .Where(x => x is not null)
+            .Cast<BusinessConsoleAuthorizedWorkScope>()
+            .OrderBy(x => x.Kind, StringComparer.Ordinal)
+            .ThenBy(x => x.Id, StringComparer.Ordinal)
+            .ToArray();
+
     private static BusinessConsoleAuthorizedWorkScope? Authorize(
         BusinessMasterDataWorkContextCandidateScope candidate,
         IReadOnlyCollection<AuthorizationScopeGrant> grants,
@@ -150,13 +197,18 @@ public static class PrincipalWorkContextAuthorizationResolver
     }
 
     private static IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> NormalizeCandidates(
-        IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> candidates) =>
+        IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> candidates,
+        bool allowSite = false) =>
         candidates
             .Where(x =>
                 x is not null
                 && !string.IsNullOrWhiteSpace(x.Kind)
                 && !string.IsNullOrWhiteSpace(x.Id)
-                && IsKnownCandidateKind(x.Kind))
+                && (IsKnownCandidateKind(x.Kind)
+                    || allowSite && string.Equals(
+                        x.Kind.Trim(),
+                        "site",
+                        StringComparison.OrdinalIgnoreCase)))
             .GroupBy(
                 x => $"{x.Kind.Trim().ToLowerInvariant()}\u001f{x.Id.Trim()}",
                 StringComparer.Ordinal)
@@ -236,6 +288,7 @@ public static class PrincipalWorkContextAuthorizationResolver
             "team" when Exact(candidate, "team", grant.ScopeId) => "exact",
             "work-center" when Exact(candidate, "work-center", grant.ScopeId) => "exact",
             "workshop" when Exact(candidate, "workshop", grant.ScopeId) => "exact",
+            "site" when Exact(candidate, "site", grant.ScopeId) => "exact",
             "workshop" when candidate.Kind is "team" or "work-center"
                 && HasAncestor(candidate, "workshop", grant.ScopeId) => "workshop-descendant",
             "site" when candidate.Kind is "team" or "work-center" or "workshop"

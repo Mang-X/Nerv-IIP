@@ -22,12 +22,20 @@ public sealed class WmsShortPickBackorderTests
         var outbound = OutboundOrder.Create(
             "org-001", "env-dev", "OUT-001", "sales-delivery", "SO-001", "SITE-01",
             [new OutboundOrderLineDraft("LINE-001", "SKU-001", "pcs", 10m, "PICK-01", null, null, "qualified", "company", null)]);
-        var picking = outbound.CreatePickingTask("PICK-OUT-001-001", "LINE-001", "PICK-01", "PACK-01", 10m);
-        picking.RecordProgress(7m);
+        var picking = outbound.CreatePickingTask(
+            "PICK-OUT-001-001",
+            "LINE-001",
+            "PICK-01",
+            "PACK-01",
+            10m,
+            assignedPoolCode: "POOL-PICKING");
+        picking.Start("picker-001", picking.Version, claimPoolAssignment: true);
+        picking.Complete(7m, "picker-001", "缺货短拣", picking.Version);
         dbContext.AddRange(outbound, picking);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-        var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "complete-out-001");
+        var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "complete-out-001")
+            .TrustedFor(dbContext, outbound);
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -43,6 +51,8 @@ public sealed class WmsShortPickBackorderTests
             .ToListAsync());
         Assert.Equal(backorder.BackorderOrderNo, recommendation.SourceOrderNo);
         Assert.Equal("PICK-01", recommendation.ToLocationCode);
+        Assert.Equal(WarehouseTaskStatus.CompletedWithDifference, picking.Status);
+        Assert.Equal("缺货短拣", picking.CompletionReason);
         Assert.Equal(first, replay);
     }
 
@@ -111,12 +121,20 @@ public sealed class WmsShortPickBackorderTests
             var outbound = OutboundOrder.Create(
                 "org-postgres", "env-acceptance", "OUT-PG-001", "sales-delivery", "SO-PG-001", "SITE-01",
                 [new OutboundOrderLineDraft("LINE-001", "SKU-001", "pcs", 10m, "PICK-01", null, null, "qualified", "company", null)]);
-            var picking = outbound.CreatePickingTask("PICK-PG-001", "LINE-001", "PICK-01", "PACK-01", 10m);
-            picking.RecordProgress(7m);
+            var picking = outbound.CreatePickingTask(
+                "PICK-PG-001",
+                "LINE-001",
+                "PICK-01",
+                "PACK-01",
+                10m,
+                assignedPoolCode: "POOL-PICKING");
+            picking.Start("picker-001", picking.Version, claimPoolAssignment: true);
+            picking.Complete(7m, "picker-001", "缺货短拣", picking.Version);
             dbContext.AddRange(outbound, picking);
             await dbContext.SaveChangesAsync();
             var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-            var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-PG-001", true, "complete-pg-001");
+            var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-PG-001", true, "complete-pg-001")
+                .TrustedFor(dbContext, outbound);
 
             await handler.Handle(command, CancellationToken.None);
             await dbContext.SaveChangesAsync();

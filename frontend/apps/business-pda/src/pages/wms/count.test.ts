@@ -1,19 +1,54 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { NvBottomSheet } from '@nerv-iip/ui-mobile'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import {
+  NvBottomSheet,
+  NvMobileDropdownMenuItem,
+  NvNumberKeyboard,
+  NvPullRefresh,
+} from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
 
 const push = vi.fn()
+const authPermissionCodes = ref(['business.inventory.counts.manage'])
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
   }),
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
+}))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      scanOverrides: shallowRef({}),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
+})
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    get principal() {
+      return {
+        permissionCodes: authPermissionCodes.value,
+      }
+    },
+  }),
 }))
 
 // 真实组合式用真实的 ref/computed，贴合运行时解包行为。
@@ -63,11 +98,21 @@ const wmsState = vi.hoisted(() => ({
   error: null as unknown,
   pending: false,
   refresh: vi.fn(async () => {}),
+  loadMore: vi.fn(async () => {}),
 }))
+const scopeKey = ref<string | undefined>('self:emp049')
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsCount: () => ({
     filters: wmsState.filters,
+    scopeKey,
+    scopeOptions: computed(() => [
+      { label: '我的任务', value: 'self:emp049' },
+      { label: '一号仓盘点作业池', value: 'work-pool:WMS-SITE-001-COUNT' },
+    ]),
+    selectedScopeLabel: computed(() =>
+      scopeKey.value === 'self:emp049' ? '我的任务' : '一号仓盘点作业池',
+    ),
     executions: computed(() => wmsState.executions),
     total: computed(() => wmsState.executions.length),
     organizationId: computed(() => 'org-001'),
@@ -77,8 +122,11 @@ vi.mock('@/composables/useBusinessWms', () => ({
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
+    refreshing: computed(() => false),
+    loadingMore: computed(() => false),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,
+    loadMore: wmsState.loadMore,
     completeCount: wmsState.completeCount,
     completePending: computed(() => wmsState.completePending),
   }),
@@ -87,8 +135,10 @@ vi.mock('@/composables/useBusinessWms', () => ({
 import CountPage from './count.vue'
 
 function resetState() {
+  authPermissionCodes.value = ['business.inventory.counts.manage']
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
+  scopeKey.value = 'self:emp049'
   wmsState.filters.locationCode = undefined
   wmsState.executions = [
     {
@@ -119,7 +169,14 @@ function resetState() {
   wmsState.pending = false
   wmsState.completeCount.mockClear()
   wmsState.refresh.mockClear()
+  candidateState.refresh.mockClear()
+  wmsState.loadMore.mockClear()
   push.mockClear()
+}
+
+async function enterCount(wrapper: VueWrapper, value: string) {
+  wrapper.findComponent(NvNumberKeyboard).vm.$emit('update:modelValue', value)
+  await wrapper.vm.$nextTick()
 }
 
 describe('WMS 盘点', () => {
@@ -144,10 +201,58 @@ describe('WMS 盘点', () => {
 
   it('扫库位写入 filters.locationCode', async () => {
     const wrapper = mount(CountPage)
-    const input = wrapper.get('input[placeholder*="库位"]')
+    const input = wrapper.get('input[placeholder^="扫描当前范围库位"]')
     await input.setValue('A-02')
     await input.trigger('keydown.enter')
     expect(wmsState.filters.locationCode).toBe('A-02')
+  })
+
+  it('可从 WMS 可信目录切换作业范围和状态，不要求手输筛选值', async () => {
+    const wrapper = mount(CountPage)
+    const fields = wrapper.findAllComponents(NvMobileDropdownMenuItem)
+
+    expect(fields).toHaveLength(2)
+    fields[0]!.vm.$emit('update:modelValue', 'work-pool:WMS-SITE-001-COUNT')
+    fields[1]!.vm.$emit('update:modelValue', 'Completed')
+    await wrapper.vm.$nextTick()
+
+    expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-COUNT')
+    expect(wmsState.filters.status).toBe('Completed')
+    expect(wrapper.text()).toContain('WMS 盘点作业范围目录')
+  })
+
+  it('实盘数使用移动端数字键盘录入', async () => {
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+
+    document.querySelector<HTMLElement>('[data-testid="counted-quantity"]')!.click()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent(NvNumberKeyboard).props('show')).toBe(true)
+  })
+
+  it('只读盘点用户仍可查看任务，但不能进入完成动作', async () => {
+    authPermissionCodes.value = ['business.wms.counts.read']
+    const wrapper = mount(CountPage, { attachTo: document.body })
+
+    expect(wrapper.text()).toContain('CT-2026-0001')
+    await wrapper.findAll('[data-row]')[0]!.trigger('click')
+
+    expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(wmsState.completeCount).not.toHaveBeenCalled()
+  })
+
+  it('抽屉打开后权限失效也不得提交盘点完成', async () => {
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0]!.trigger('click')
+    await enterCount(wrapper, '8')
+
+    authPermissionCodes.value = ['business.wms.counts.read']
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wmsState.completeCount).not.toHaveBeenCalled()
   })
 
   it('点任务 → 抽屉 → 实盘数未填时确认按钮禁用', async () => {
@@ -164,11 +269,7 @@ describe('WMS 盘点', () => {
   it('填写实盘数后 → 以该执行 id 与 {countedQuantity,idempotencyKey} 调用 completeCount', async () => {
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    expect(countInput).toBeTruthy()
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(false)
     confirm.click()
@@ -194,16 +295,11 @@ describe('WMS 盘点', () => {
     )
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-    countInput.value = '9'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '9')
     confirm.click()
     await flushPromises()
     expect(wmsState.completeCount).toHaveBeenCalledTimes(2)
@@ -220,12 +316,7 @@ describe('WMS 盘点', () => {
 
     // 重新点任务（新操作）→ 新键。
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput2 = document.querySelector<HTMLInputElement>(
-      '[data-testid="counted-quantity"]',
-    )!
-    countInput2.value = '3'
-    countInput2.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '3')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
     expect(wmsState.completeCount).toHaveBeenCalledTimes(3)
@@ -244,18 +335,13 @@ describe('WMS 盘点', () => {
     )
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
     const firstKey = (wmsState.completeCount.mock.calls[0][1] as { idempotencyKey: string })
       .idempotencyKey
-    countInput.value = '9'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '9')
     confirm.click()
     await flushPromises()
 
@@ -275,14 +361,11 @@ describe('WMS 盘点', () => {
     )
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
-    const sheet = wrapper.findComponent(NvBottomSheet)
+    const sheet = wrapper.findAllComponents(NvBottomSheet).find((sheet) => sheet.props('open'))!
     sheet.vm.$emit('update:open', false)
     await wrapper.vm.$nextTick()
     expect(sheet.props('open')).toBe(true)
@@ -290,7 +373,11 @@ describe('WMS 盘点', () => {
       (button) => button.textContent?.trim() === '取消',
     )
     expect(cancel?.disabled).toBe(true)
-    expect(countInput.disabled).toBe(true)
+    expect(
+      document
+        .querySelector<HTMLElement>('[data-testid="counted-quantity"]')
+        ?.getAttribute('aria-disabled'),
+    ).toBe('true')
     expect(routeGuardState.guard?.()).toBe(false)
     wrapper.unmount()
   })
@@ -298,10 +385,7 @@ describe('WMS 盘点', () => {
   it('实盘数为负时确认按钮禁用', async () => {
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '-1'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '-1')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
     wrapper.unmount()
@@ -311,10 +395,7 @@ describe('WMS 盘点', () => {
     wmsState.completePending = true
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
     wrapper.unmount()
@@ -323,10 +404,7 @@ describe('WMS 盘点', () => {
   it('完成后显示成功 Result', async () => {
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -343,10 +421,7 @@ describe('WMS 盘点', () => {
     })
     const wrapper = mount(CountPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const countInput = document.querySelector<HTMLInputElement>('[data-testid="counted-quantity"]')!
-    countInput.value = '8'
-    countInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
+    await enterCount(wrapper, '8')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
@@ -360,6 +435,15 @@ describe('WMS 盘点', () => {
     wmsState.error = new Error('boom')
     const wrapper = mount(CountPage)
     expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
+  })
+
+  it('下拉刷新同时刷新任务与作业候选', async () => {
+    const wrapper = mount(CountPage)
+    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
+    await flushPromises()
+
+    expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
   })
 
   it('无盘点任务且无错误时显示空态', () => {

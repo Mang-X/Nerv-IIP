@@ -4367,6 +4367,21 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/operational-candidates",
+      "operationId": "listWmsOperationalCandidates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsReceiptOperationalCandidates",
+        "listBusinessConsoleWmsShipmentOperationalCandidates",
+        "listBusinessConsoleWmsCountOperationalCandidates"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/count-executions",
       "operationId": "listWmsCountExecutions",
       "classification": "exposed",
@@ -4388,6 +4403,19 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleWmsCountExecution"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/count-executions/{countExecutionId}/assignment",
+      "operationId": "assignWmsCountExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsCountExecution"
       ]
     },
     {
@@ -4436,6 +4464,19 @@
       "operationId": "cancelWmsInboundOrdersForSource",
       "classification": "internal",
       "rationale": "Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; it is not a direct console action."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment",
+      "operationId": "assignWmsInboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsInboundOrder"
+      ]
     },
     {
       "service": "Wms",
@@ -4516,6 +4557,19 @@
     {
       "service": "Wms",
       "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/assignment",
+      "operationId": "assignWmsOutboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsOutboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
       "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel",
       "operationId": "cancelWmsOutboundOrder",
       "classification": "deferred",
@@ -4575,6 +4629,71 @@
     },
     {
       "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/assignment",
+      "operationId": "assignWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPickingTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPickingTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPickingTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPickingTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/replenishment-tasks",
       "operationId": "listWmsReplenishmentTasks",
@@ -4592,6 +4711,71 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleWmsPutawayTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment",
+      "operationId": "assignWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPutawayTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPutawayTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPutawayTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPutawayTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPutawayTask"
       ]
     },
     {
@@ -4618,6 +4802,45 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleWmsSupplierReturnRequests"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/receipts",
+      "operationId": "getWmsReceiptWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsReceiptWorkScopes"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/shipments",
+      "operationId": "getWmsShipmentWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsShipmentWorkScopes"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/counts",
+      "operationId": "getWmsCountWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsCountWorkScopes"
       ]
     },
     {

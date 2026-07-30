@@ -2,7 +2,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 
-import { HOME_PERMISSIONS, usePendingInspectionSummary } from './useWorkbenchHome'
+import {
+  HOME_PERMISSIONS,
+  usePendingInspectionSummary,
+  useWarehouseSummary,
+} from './useWorkbenchHome'
 
 const coladaState = vi.hoisted(() => ({
   optionsById: new Map<string, { enabled?: boolean }>(),
@@ -68,6 +72,58 @@ vi.mock('@/stores/auth', () => ({
     },
   })),
 }))
+
+describe('useWarehouseSummary', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    coladaState.optionsById.clear()
+    coladaState.refetchById.clear()
+    coladaState.dataById.clear()
+    coladaState.dataRefById.clear()
+    coladaState.loadingById.clear()
+  })
+
+  it('does not request or expose count work when the principal only has receipts read', () => {
+    authState.principal = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      permissionCodes: [HOME_PERMISSIONS.wmsReceipts],
+    }
+
+    const warehouse = useWarehouseSummary()
+
+    expect(warehouse.enabled.value).toBe(true)
+    expect(coladaState.optionsById.get('inbound')?.enabled).toBe(true)
+    expect(coladaState.optionsById.get('putaway')?.enabled).toBe(true)
+    expect(coladaState.optionsById.get('picking')?.enabled).toBe(false)
+    expect(coladaState.optionsById.get('count')?.enabled).toBe(false)
+    expect(warehouse.entries.value.map((entry) => entry.key)).toEqual(['inbound', 'putaway'])
+  })
+
+  it('requests and exposes only count work for a counts-read principal', () => {
+    coladaState.dataById.set('count', {
+      success: true,
+      data: { items: [], total: 7 },
+    })
+    authState.principal = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      permissionCodes: [HOME_PERMISSIONS.wmsCounts],
+    }
+
+    const warehouse = useWarehouseSummary()
+
+    expect(warehouse.enabled.value).toBe(true)
+    expect(coladaState.optionsById.get('inbound')?.enabled).toBe(false)
+    expect(coladaState.optionsById.get('putaway')?.enabled).toBe(false)
+    expect(coladaState.optionsById.get('picking')?.enabled).toBe(false)
+    expect(coladaState.optionsById.get('count')?.enabled).toBe(true)
+    expect(warehouse.entries.value).toEqual([
+      { key: 'count', label: '待盘点', route: '/wms/count', count: 7 },
+    ])
+  })
+})
 
 describe('usePendingInspectionSummary', () => {
   afterEach(() => {

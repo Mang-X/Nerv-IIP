@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
+import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
+import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useWmsCount } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { useAuthStore } from '@/stores/auth'
+import { PDA_COUNT_EXECUTION_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   countExecutionFlow,
   countExecutionStatusLabel,
@@ -14,10 +20,12 @@ import {
 import {
   NvAppShellMobile,
   NvBottomSheet,
+  NvCell,
   NvListRow,
+  NvMobileButton,
   NvMobileResult,
   NvMobileToast,
-  NvScanBar,
+  NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -30,26 +38,50 @@ definePage({
 })
 
 const router = useRouter()
+const auth = useAuthStore()
+const canManageCounts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.inventory.counts.manage'),
+)
 const {
   filters,
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
   executions,
   total,
   pending,
+  refreshing,
+  loadingMore,
   error,
   refresh,
+  loadMore,
   completeCount,
   completePending,
   organizationId,
   environmentId,
+  scopeKind,
+  scopeId,
   scopeReady,
   lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
-} = useWmsCount()
+} = useWmsCount({ status: 'Open' })
+const candidates = useWmsOperationalCandidates('count', {
+  organizationId,
+  environmentId,
+  scopeKind,
+  scopeId,
+  scopeReady,
+  filters,
+})
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
 const countScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+  scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
 )
 const countTotal = computed(() => total.value)
+const countStatusOptions = PDA_COUNT_EXECUTION_STATUS_OPTIONS
 
 // 选中的盘点号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedExecutionId = ref('')
@@ -67,8 +99,9 @@ const intent = useIdempotentWriteIntent<{
 const intentLocked = intent.locked
 usePendingWriteLeaveGuard(intentLocked)
 
-// 实盘数量录入。type=number 下 v-model 解包可能是 number 或 ''，统一按字符串校验。
-const countedQuantityText = ref<string | number>('')
+// 数量只通过移动端大键盘录入，触发单元格保持只读，避免系统软键盘抢占扫码焦点。
+const countedQuantityText = ref('')
+const numberKeyboardOpen = ref(false)
 const countedQuantity = computed(() => Number(countedQuantityText.value))
 watch(countedQuantityText, () => {
   intent.inputChanged()
@@ -96,7 +129,7 @@ const countStepHint = computed(() =>
 )
 
 // 抽屉或结果展示时停止扫码焦点抢夺，避免破坏浮层 focus-trap。
-const scanActive = computed(() => !sheetOpen.value && !completed.value)
+const scanActive = computed(() => !sheetOpen.value && !completed.value && !numberKeyboardOpen.value)
 
 const submitError = ref('')
 
@@ -115,8 +148,15 @@ function displayCountStatus(status?: string) {
   return countExecutionStatusLabel(status)
 }
 
-function onScan(value: string) {
-  filters.locationCode = value
+function canComplete(status?: string) {
+  return (
+    canManageCounts.value &&
+    statusActionGate({
+      domain: 'wms-count',
+      action: 'complete',
+      facts: { status },
+    }).executable
+  )
 }
 
 function selectExecution(
@@ -126,15 +166,7 @@ function selectExecution(
   status?: string,
 ) {
   if (!countExecutionId) return
-  if (
-    !statusActionGate({
-      domain: 'wms-count',
-      action: 'complete',
-      facts: { status },
-    }).executable
-  ) {
-    return
-  }
+  if (!canComplete(status)) return
   selectedExecutionId.value = countExecutionId
   selectedCountNo.value = countNo ?? ''
   expectedQuantity.value = expected ?? 0
@@ -145,13 +177,20 @@ function selectExecution(
   sheetOpen.value = true
 }
 
+function openCountKeyboard() {
+  if (intentLocked.value) return
+  numberKeyboardOpen.value = true
+}
+
 function closeSheet() {
   if (intentLocked.value) return
+  numberKeyboardOpen.value = false
   sheetOpen.value = false
 }
 
 function onSheetOpenChange(open: boolean) {
   if (!open && intentLocked.value) return
+  if (!open) numberKeyboardOpen.value = false
   sheetOpen.value = open
 }
 
@@ -161,8 +200,10 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function confirmComplete() {
+  if (!canManageCounts.value) return
   // 防重：pending 中或实盘数无效直接早退（按钮也已禁用，UI 守双道）。
   if (completePending.value || !validCount.value) return
+  numberKeyboardOpen.value = false
   submitError.value = ''
   try {
     const payload = intent.payload((idempotencyKey) => ({
@@ -187,6 +228,7 @@ async function confirmComplete() {
 }
 
 function resetFlow() {
+  numberKeyboardOpen.value = false
   sheetOpen.value = false
   completed.value = false
   selectedExecutionId.value = ''
@@ -223,73 +265,101 @@ function goHome() {
       :description="selectedCountNo ? `盘点 ${selectedCountNo}` : undefined"
     >
       <template #actions>
-        <button
-          type="button"
-          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="backToList"
-        >
+        <NvMobileButton block size="lg" variant="primary" @click="backToList">
           继续
-        </button>
-        <button
-          type="button"
-          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
-          @click="goHome"
-        >
-          返回
-        </button>
+        </NvMobileButton>
+        <NvMobileButton block size="lg" variant="outline" @click="goHome"> 返回 </NvMobileButton>
       </template>
     </NvMobileResult>
 
-    <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描库位" :active="scanActive" @scan="onScan" />
-      <ListScopeMeta
-        :scope="countScope"
-        source="仓储盘点任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
-        :loaded="executions.length"
-        :total="countTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="盘点任务服务未成功返回，请刷新重试。"
-        :empty="!scopeReady || showEmpty"
-        :empty-explanation="
-          scopeReady
-            ? '当前组织/环境范围没有盘点任务；暂不支持按操作员归属筛选，空态不代表个人任务。'
-            : '缺少组织或环境范围，未发起查询。'
-        "
-      />
-
-      <RetryableListError
-        v-if="error || hasFailedResponse"
-        :error="error ?? '盘点任务服务未成功返回'"
-        :pending="pending"
-        fallback="盘点任务加载失败，请下拉重试或检查网络。"
-        test-id="error-banner"
-        @retry="() => refresh()"
-      />
-
-      <div
-        v-if="showEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-      >
-        当前组织/环境范围暂无盘点任务；暂不支持按操作员归属筛选
-      </div>
-
-      <div v-else class="overflow-hidden rounded-lg border border-border">
-        <NvListRow
-          v-for="execution in executions"
-          :key="execution.countExecutionId"
-          :title="`盘点 ${execution.countNo ?? ''}`"
-          :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
-          @select="
-            selectExecution(
-              execution.countExecutionId,
-              execution.countNo,
-              execution.expectedQuantity,
-              execution.status,
-            )
+    <div v-else class="flex h-full min-h-0 flex-col">
+      <div class="space-y-3 border-b border-border bg-card px-4 py-3">
+        <WmsScopeStatusFilter
+          v-model:scope-key="scopeKey"
+          v-model:status="filters.status"
+          :scope-options="scopeOptions"
+          :status-options="countStatusOptions"
+        />
+        <WmsOperationalCandidatePicker
+          v-model:location-code="filters.locationCode"
+          v-model:search-keyword="candidates.searchKeyword.value"
+          :location-options="candidates.locationOptions.value"
+          :lot-options="candidates.lotOptions.value"
+          :ready="candidates.ready.value"
+          :source-label="candidates.sourceLabel.value"
+          :as-of-utc="candidates.asOfUtc.value"
+          :freshness-utc="candidates.freshnessUtc.value"
+          :truncated="candidates.truncated.value"
+          :pending="candidates.pending.value"
+          :error="candidates.error.value"
+          :scan-overrides="candidates.scanOverrides.value"
+          :active="scanActive"
+          :show-lot="false"
+          @scan-override-change="candidates.setScanOverride"
+          @retry="candidates.refresh"
+        />
+        <ListScopeMeta
+          :scope="countScope"
+          source="WMS 盘点作业范围目录"
+          :loaded="executions.length"
+          :total="countTotal"
+          :updated-at="lastUpdatedAt"
+          :failed="hasFailedResponse"
+          failure-explanation="盘点任务服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showEmpty"
+          :empty-explanation="
+            scopeReady
+              ? `“${countScope}”在当前状态下没有盘点任务。`
+              : 'WMS 未返回可用作业范围，未发起列表查询。'
           "
         />
+
+        <RetryableListError
+          v-if="error || hasFailedResponse"
+          :error="error ?? '盘点任务服务未成功返回'"
+          :pending="pending"
+          fallback="盘点任务加载失败，请下拉重试或检查网络。"
+          test-id="error-banner"
+          @retry="refreshAll"
+        />
       </div>
+
+      <WmsPagedListFrame
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :pending="pending"
+        :loaded="executions.length"
+        :total="countTotal"
+        @refresh="refreshAll"
+        @load-more="loadMore"
+      >
+        <div class="space-y-4 px-4 py-3">
+          <div
+            v-if="showEmpty"
+            class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            “{{ countScope }}”在当前状态下暂无盘点任务；数据来自 WMS 派工
+          </div>
+
+          <div v-else class="overflow-hidden rounded-lg border border-border">
+            <NvListRow
+              v-for="execution in executions"
+              :key="execution.countExecutionId"
+              :title="`盘点 ${execution.countNo ?? ''}`"
+              :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
+              :interactive="canComplete(execution.status)"
+              @select="
+                selectExecution(
+                  execution.countExecutionId,
+                  execution.countNo,
+                  execution.expectedQuantity,
+                  execution.status,
+                )
+              "
+            />
+          </div>
+        </div>
+      </WmsPagedListFrame>
     </div>
 
     <!-- 完成盘点确认抽屉 -->
@@ -300,30 +370,17 @@ function goHome() {
         </p>
         <p class="text-xs text-muted-foreground">{{ countStepHint }}</p>
 
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-foreground">预期数量</span>
-          <input
-            :value="expectedQuantity"
-            data-testid="expected-quantity"
-            type="number"
-            readonly
-            class="min-h-touch w-full rounded-lg border border-border bg-muted px-3 text-base text-muted-foreground"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-foreground">实盘数量</span>
-          <input
-            v-model="countedQuantityText"
+        <div class="overflow-hidden rounded-xl border border-border">
+          <NvCell data-testid="expected-quantity" title="预期数量" :value="expectedQuantity" />
+          <NvCell
             data-testid="counted-quantity"
-            type="number"
-            inputmode="numeric"
-            min="0"
-            :disabled="intentLocked"
-            placeholder="请输入实盘数量"
-            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
+            title="实盘数量"
+            :value="countedQuantityText || '点击录入'"
+            :arrow="!intentLocked"
+            :aria-disabled="intentLocked"
+            @click="openCountKeyboard"
           />
-        </label>
+        </div>
 
         <p v-if="validCount" class="text-sm text-muted-foreground">
           差异 {{ variance > 0 ? `+${variance}` : variance }}
@@ -332,26 +389,35 @@ function goHome() {
         <p v-if="submitError" class="text-sm text-destructive">{{ submitError }}</p>
 
         <div class="space-y-2 pt-2">
-          <button
-            type="button"
+          <NvMobileButton
+            block
+            size="lg"
+            variant="primary"
             data-testid="confirm-complete"
-            :disabled="completePending || !validCount"
-            class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
+            :disabled="!canManageCounts || completePending || !validCount"
             @click="confirmComplete"
           >
             {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
-          </button>
-          <button
-            type="button"
+          </NvMobileButton>
+          <NvMobileButton
+            block
+            size="lg"
+            variant="outline"
             :disabled="intentLocked"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
             @click="closeSheet"
           >
             取消
-          </button>
+          </NvMobileButton>
         </div>
       </div>
     </NvBottomSheet>
+
+    <NvNumberKeyboard
+      v-model="countedQuantityText"
+      v-model:show="numberKeyboardOpen"
+      title="录入实盘数量"
+      extra-key="."
+    />
 
     <NvMobileToast
       :show="lifecycleRecovery.toast.value.show"

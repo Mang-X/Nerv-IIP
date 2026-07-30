@@ -59,8 +59,10 @@ const state = vi.hoisted(() => ({
     create: '1',
   } as Record<string, unknown>,
   createPutaway: vi.fn(),
+  refreshPutawayTasks: vi.fn(async () => undefined),
   permissionCodes: ['business.wms.receipts.read', 'business.wms.receipts.manage'] as string[],
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: state.routeQuery }),
@@ -69,6 +71,26 @@ vi.mock('vue-router', () => ({
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
+
+vi.mock('@/composables/useWmsWorkScope', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+      filters.scopeKind = 'self'
+      filters.scopeId = 'emp049'
+      filters.skip = 0
+      return {
+        scopeKey: shallowRef('self:emp049'),
+        scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+        selectedScopeLabel: computed(() => '我的任务'),
+        hasSelection: computed(() => true),
+        pending: shallowRef(false),
+        error: shallowRef(undefined),
+        refresh: vi.fn(async () => undefined),
+      }
+    },
+  }
+})
 
 vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
@@ -85,7 +107,7 @@ vi.mock('@/composables/useBusinessWms', async () => {
       putawayTasksPending: shallowRef(false),
       putawayTasksTotal: computed(() => 0),
       putawayTasksLastUpdatedAt: shallowRef('2026-07-28T10:20:30.000Z'),
-      refreshPutawayTasks: vi.fn(),
+      refreshPutawayTasks: state.refreshPutawayTasks,
       createPutaway: state.createPutaway,
       createPutawayPending: shallowRef(false),
       createPutawayError: shallowRef(undefined),
@@ -203,6 +225,19 @@ describe('WMS putaway route handoff', () => {
     expect(wrapper.text()).not.toContain('新建上架任务')
     wrapper.unmount()
   })
+
+  it('刷新任务时同步刷新当前范围候选', async () => {
+    const wrapper = mountPutaway()
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(state.refreshPutawayTasks).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
 })
 
 function mountPutaway() {
@@ -245,3 +280,21 @@ async function setInput(selector: string, value: string) {
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await flushPromises()
 }
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
+})

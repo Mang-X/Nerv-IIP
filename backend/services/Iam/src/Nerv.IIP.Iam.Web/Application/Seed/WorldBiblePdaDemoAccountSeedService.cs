@@ -36,6 +36,8 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
     /// <summary>PDA 质量检验员角色：检验任务执行与记录/NCR 查看。</summary>
     public const string InspectorRoleId = "role-pda-inspector";
 
+    private const string WarehouseCountsReadPermission = "business.wms.counts.read";
+
     public static readonly (string RoleId, string RoleName, string[] PermissionCodes)[] Roles =
     [
         (OperatorRoleId, "产线操作工（PDA）",
@@ -64,6 +66,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             "business.wms.receipts.manage",
             "business.wms.shipments.read",
             "business.wms.shipments.manage",
+            WarehouseCountsReadPermission,
             "business.inventory.ledger.read",
             "business.inventory.counts.manage",
             "business.inventory.movements.create",
@@ -105,6 +108,13 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         var principalScopeBackfillManifestId = new SeedManifestId("iam-pda-principal-scope-backfill:v1");
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
+        var warehouseSiteScopeManifestId = new SeedManifestId("iam-pda-warehouse-site-scope:v2");
+        var warehouseSiteScopeApplied = await dbContext.SeedManifests
+            .FindAsync([warehouseSiteScopeManifestId], cancellationToken) is not null;
+        var warehouseCountsReadManifestId =
+            new SeedManifestId("iam-pda-warehouse-counts-read-permission:v1");
+        var warehouseCountsReadApplied = await dbContext.SeedManifests
+            .FindAsync([warehouseCountsReadManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
         var rolesById = new Dictionary<string, Role>(StringComparer.Ordinal);
 
@@ -113,6 +123,7 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             var typedRoleId = new RoleId(roleId);
             var role = await dbContext.Roles
                 .Include(x => x.Permissions)
+                .Include(x => x.DataScopes)
                 .SingleOrDefaultAsync(x => x.Id == typedRoleId, cancellationToken);
             if (role is null)
             {
@@ -121,6 +132,46 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             }
 
             rolesById.Add(roleId, role);
+        }
+
+        if (!warehouseCountsReadApplied)
+        {
+            var warehouseRole = rolesById[WarehouseRoleId];
+            if (IsLegacyWarehouseRoleBeforeCountsRead(
+                    warehouseRole,
+                    warehouseSiteScopeApplied))
+            {
+                warehouseRole.ReplacePermissions([
+                    .. warehouseRole.Permissions.Select(permission => permission.PermissionCode),
+                    WarehouseCountsReadPermission,
+                ]);
+            }
+
+            dbContext.SeedManifests.Add(new SeedManifest(
+                warehouseCountsReadManifestId,
+                "iam-pda-warehouse-counts-read-permission",
+                "v1",
+                "iam",
+                now));
+        }
+
+        if (!warehouseSiteScopeApplied)
+        {
+            var warehouseRole = rolesById[WarehouseRoleId];
+            if (warehouseRole.DataScopes.Count == 0
+                && IsLegacyBaselineRole(warehouseRole, WarehouseRoleId))
+            {
+                warehouseRole.ReplaceDataScopes([
+                    new DataScopeBinding(DataScopeBinding.Site, "SITE-001"),
+                ]);
+            }
+
+            dbContext.SeedManifests.Add(new SeedManifest(
+                warehouseSiteScopeManifestId,
+                "iam-pda-warehouse-site-scope",
+                "v2",
+                "iam",
+                now));
         }
 
         foreach (var (userId, roleId) in Accounts)
@@ -188,5 +239,52 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
                 .Select(x => x.PermissionCode)
                 .ToHashSet(StringComparer.Ordinal)
                 .SetEquals(baseline.PermissionCodes);
+    }
+
+    private static bool IsLegacyWarehouseRoleBeforeCountsRead(
+        Role role,
+        bool warehouseSiteScopeApplied)
+    {
+        var baseline = Roles.Single(x => x.RoleId == WarehouseRoleId);
+        var previousPermissionCodes = baseline.PermissionCodes
+            .Where(permissionCode =>
+                !string.Equals(
+                    permissionCode,
+                    WarehouseCountsReadPermission,
+                    StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        return role.RoleName == baseline.RoleName
+            && role.Permissions
+                .Select(permission => permission.PermissionCode)
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(previousPermissionCodes)
+            && IsManagedLegacyWarehouseScope(
+                role,
+                warehouseSiteScopeApplied);
+    }
+
+    private static bool IsManagedLegacyWarehouseScope(
+        Role role,
+        bool warehouseSiteScopeApplied)
+    {
+        if (role.DataScopes.Count == 0)
+        {
+            return true;
+        }
+
+        if (!warehouseSiteScopeApplied || role.DataScopes.Count != 1)
+        {
+            return false;
+        }
+
+        var scope = role.DataScopes.Single();
+        return string.Equals(
+                scope.ScopeType,
+                DataScopeBinding.Site,
+                StringComparison.Ordinal)
+            && string.Equals(
+                scope.ScopeCode,
+                "SITE-001",
+                StringComparison.Ordinal);
     }
 }

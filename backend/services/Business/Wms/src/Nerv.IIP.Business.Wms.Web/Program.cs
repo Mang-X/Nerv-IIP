@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
@@ -69,6 +70,8 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
+    builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
+    builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,
@@ -106,10 +109,47 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
+            .AddOpenBehavior(typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteCountExecutionCommand>, CompleteCountExecutionCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<StartWarehouseTaskCommand>,
+        WarehouseTaskActionCommandLock<StartWarehouseTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<RecordWarehouseTaskProgressActionCommand>,
+        WarehouseTaskActionCommandLock<RecordWarehouseTaskProgressActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<ReportWarehouseTaskExceptionCommand>,
+        WarehouseTaskActionCommandLock<ReportWarehouseTaskExceptionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWarehouseTaskActionCommand>,
+        WarehouseTaskActionCommandLock<CompleteWarehouseTaskActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<DispatchWcsTaskCommand>,
+        DispatchWcsTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<CompleteWcsTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<FailWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<FailWcsTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignInboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignInboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPutawayTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPutawayTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignOutboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignOutboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPickingTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPickingTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignCountExecutionCommand>,
+        WarehouseAssignmentCommandLock<AssignCountExecutionCommand>>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = WmsFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
@@ -174,11 +214,24 @@ try
             WorldHistoryConfiguration.ResolveScale(builder.Configuration));
         app.Logger.LogInformation(
             "World-history WMS operations seed completed: {Counts} count executions, {Returns} supplier returns, " +
+            "current queue {QueueInbound} inbound / {QueuePutaway} putaway / {QueueOutbound} outbound / " +
+            "{QueuePicking} picking ({QueueReviewReady} review-ready), " +
+            "{Pools} work pools, {Memberships} memberships, {Assignments} controlled assignments, " +
             "{WcsTasks} WCS tasks, {Circuits} dispatch circuits; validator checked {CheckedCounts} counts " +
             "({CompletedCounts} completed, {VarianceCounts} with variance) / {CheckedWcs} WCS tasks " +
-            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns.",
+            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns / " +
+            "{CheckedPools} pools / {CheckedMemberships} memberships / assignments " +
+            "{CheckedInbound}/{CheckedPutaway}/{CheckedPicking}/{CheckedOutbound}/{CheckedCount}.",
             opsReport.CountExecutionsWritten,
             opsReport.SupplierReturnRequestsWritten,
+            opsReport.CurrentQueue.InboundOrdersWritten,
+            opsReport.CurrentQueue.PutawayTasksWritten,
+            opsReport.CurrentQueue.OutboundOrdersWritten,
+            opsReport.CurrentQueue.PickingTasksWritten,
+            opsReport.CurrentQueue.ReviewReadyOrdersWritten,
+            opsReport.WorkPoolsWritten,
+            opsReport.WorkPoolMembershipsWritten,
+            opsReport.Assignments.TotalAssignments,
             opsReport.WcsTasksWritten,
             opsReport.WcsDispatchCircuitsWritten,
             opsReport.Validation.CountExecutionsChecked,
@@ -188,12 +241,20 @@ try
             opsReport.Validation.CompletedWcsTasksChecked,
             opsReport.Validation.FailedWcsTasksChecked,
             opsReport.Validation.WcsDispatchCircuitsChecked,
-            opsReport.Validation.SupplierReturnRequestsChecked);
+            opsReport.Validation.SupplierReturnRequestsChecked,
+            opsReport.Validation.WorkPoolsChecked,
+            opsReport.Validation.WorkPoolMembershipsChecked,
+            opsReport.Validation.AssignedInboundOrdersChecked,
+            opsReport.Validation.AssignedPutawayTasksChecked,
+            opsReport.Validation.AssignedPickingTasksChecked,
+            opsReport.Validation.AssignedOutboundOrdersChecked,
+            opsReport.Validation.AssignedCountExecutionsChecked);
     }
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
     app.UseMiddleware<WmsLifecycleConflictMiddleware>();
+    app.UseMiddleware<WarehouseTaskActionPersistenceConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();

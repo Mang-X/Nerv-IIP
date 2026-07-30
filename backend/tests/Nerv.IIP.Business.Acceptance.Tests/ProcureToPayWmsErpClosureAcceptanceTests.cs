@@ -25,6 +25,11 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         await using var wmsDb = CreateWmsContext();
         await using var erpDb = CreateErpContext();
         await ReleasePurchaseOrderAsync(erpDb);
+        await WmsTrustedCompletionAcceptanceFixture.SeedAsync(
+            wmsDb,
+            "org-001",
+            "env-dev",
+            "SITE-01");
         var inbound = InboundOrder.Create(
             "org-001",
             "env-dev",
@@ -32,12 +37,23 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
             "purchase-order",
             "PO-P2P-WMS-001",
             "SITE-01",
-            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, "RAW-A-01", "LOT-001", null, "qualified", "company", null)]);
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, "RAW-A-01", "LOT-001", null, "qualified", "company", null)],
+            WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+            WmsTrustedCompletionAcceptanceFixture.PoolCode);
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
-            new CompleteInboundOrderCommand(inbound.Id, "wms-complete:p2p:001"),
+            new CompleteInboundOrderCommand(
+                inbound.Id,
+                "wms-complete:p2p:001",
+                OrganizationId: inbound.OrganizationId,
+                EnvironmentId: inbound.EnvironmentId,
+                ActorPrincipalId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                AuthorizedSiteCodes: [inbound.SiteCode],
+                ScopeKind: "self",
+                ScopeId: WmsTrustedCompletionAcceptanceFixture.ActorPrincipalId,
+                ExpectedVersion: inbound.Version),
             CancellationToken.None);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 

@@ -5,11 +5,12 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// <summary>
 /// 《工厂世界观设定集》L1 背景历史 **仓储自动化与来料退货**侧的确定性规格。
 ///
-/// 覆盖三张此前恒为 0 行、导致「WCS 任务」「盘点执行」「入库 · 退货」三页全空的表：
+/// 覆盖此前缺失的自动化、盘点、退货事实，以及库管现场作业池与当前可执行队列：
 /// <list type="bullet">
 /// <item><c>wcs_tasks</c> / <c>wcs_dispatch_circuits</c>：设备下发任务与每设备的下发熔断状态；</item>
 /// <item><c>supplier_return_requests</c>：来料复检不合格的退供申请；</item>
 /// <item><c>count_executions</c>：循环盘点执行（计划来自共享的 <see cref="WorldHistoryCountSpec"/>）。</item>
+/// <item>WMS 作业池、emp049 资格，以及收货 / 上架 / 拣货 / 复核的受控当前队列。</item>
 /// </list>
 ///
 /// <para>
@@ -34,6 +35,173 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// </summary>
 public static class WorldHistoryWarehouseOpsSpec
 {
+    #region 现场作业池与演示人员
+
+    /// <summary>库管吴桂芳在 IAM 中的稳定 principal id。</summary>
+    public const string DemoWarehousePrincipalId = "user-emp-049";
+
+    public const string ReceivingPoolCode = "POOL-WMS-RECEIVING";
+    public const string ShippingPoolCode = "POOL-WMS-SHIPPING";
+    public const string CountPoolCode = "POOL-WMS-COUNT";
+    public const string CurrentInboundOrderPrefix = "IB-WQ-";
+    public const string CurrentOutboundOrderPrefix = "OB-WQ-";
+    public const string CurrentInboundTaskPrefix = "WT-IB-WQ-";
+    public const string CurrentOutboundTaskPrefix = "WT-OB-WQ-";
+
+    /// <summary>
+    /// SITE-001 的三类现场作业池。它们属于 WMS 资格边界，不复用 MasterData 班组。
+    /// </summary>
+    public static readonly IReadOnlyList<WorldHistoryWarehouseWorkPoolSpec> WorkPools =
+    [
+        new(ReceivingPoolCode, "收货与上架", WorldHistorySpec.SiteCode),
+        new(ShippingPoolCode, "拣货与发运", WorldHistorySpec.SiteCode),
+        new(CountPoolCode, "循环盘点", WorldHistorySpec.SiteCode),
+    ];
+
+    /// <summary>
+    /// 一部分开放任务直接派给 emp049，其余留在作业池供现场认领。
+    /// 判定只依赖业务号，缩放和写入顺序不会改变同一资源的归属。
+    /// </summary>
+    public static bool IsDirectDemoAssignment(string resourceReference)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceReference);
+        return new WorldHistoryRandom($"wms-direct-assignment:{resourceReference}")
+            .Chance(0.35d);
+    }
+
+    /// <summary>
+    /// 构造演示日现场尚未闭环的真实作业队列。
+    /// 每类两条是验收下限：第一条可直派 emp049，第二条留在池内待领。
+    /// 所有业务字段来自世界观 SKU / 库位 / 批次规则，时间只依赖 as-of 日期。
+    /// </summary>
+    public static WorldHistoryWarehouseCurrentQueueSpec BuildCurrentQueue(DateOnly asOfDate)
+    {
+        var queueDate = WorldHistoryWmsSpec.ClampToHistory(
+            asOfDate < WorldHistoryCalendar.GoLiveDate
+                ? WorldHistoryCalendar.GoLiveDate
+                : asOfDate,
+            asOfDate < WorldHistoryCalendar.GoLiveDate
+                ? WorldHistoryCalendar.GoLiveDate
+                : asOfDate);
+        var dateSegment = queueDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var inventoryDimensions = WorldHistoryCountSpec.Dimensions.Take(6).ToArray();
+
+        var receiptOrders = inventoryDimensions
+            .Take(2)
+            .Select((dimension, index) =>
+            {
+                var sourceDocumentId = $"WQ-A-RECEIPT-PR-{dateSegment}-{index + 1:D2}";
+                return new WorldHistoryCurrentInboundQueueDraft(
+                    InboundOrderNo: WorldHistoryPhase2Spec.InboundOrderNo(sourceDocumentId),
+                    SourceDocumentType: WorldHistoryWmsSpec.PurchaseReceiptSourceType,
+                    SourceDocumentId: sourceDocumentId,
+                    SkuCode: dimension.SkuCode,
+                    UomCode: dimension.UomCode,
+                    Quantity: QueueQuantity(sourceDocumentId),
+                    StagingLocationCode: WorldHistoryPhase2Spec.ReceivingStagingLocationCode,
+                    LotNo: $"LOT-{sourceDocumentId}",
+                    QualityStatus: WorldHistoryWmsSpec.QualityInspection,
+                    WarehouseTaskNo: null,
+                    PutawayFromLocationCode: null,
+                    PutawayToLocationCode: null,
+                    CreatedAtUtc: QueueMoment(queueDate, sourceDocumentId));
+            })
+            .ToArray();
+
+        var putawayOrders = WorldHistorySpec.FinishedGoodSkus
+            .Take(2)
+            .Select((skuCode, index) =>
+            {
+                var sourceDocumentId = $"WQ-B-PUTAWAY-FGR-{dateSegment}-{index + 1:D2}";
+                var inboundOrderNo = WorldHistoryPhase2Spec.InboundOrderNo(sourceDocumentId);
+                return new WorldHistoryCurrentInboundQueueDraft(
+                    InboundOrderNo: inboundOrderNo,
+                    SourceDocumentType: WorldHistoryWmsSpec.ProductionReceiptSourceType,
+                    SourceDocumentId: sourceDocumentId,
+                    SkuCode: skuCode,
+                    UomCode: WorldHistorySpec.UomCode,
+                    Quantity: QueueQuantity(sourceDocumentId),
+                    StagingLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
+                    LotNo: $"LOT-{sourceDocumentId}",
+                    QualityStatus: WorldHistoryWmsSpec.Unrestricted,
+                    WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(inboundOrderNo, 1),
+                    PutawayFromLocationCode: WorldHistoryPhase2Spec.LineSideLocationCode,
+                    PutawayToLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
+                    CreatedAtUtc: QueueMoment(queueDate, sourceDocumentId));
+            })
+            .ToArray();
+
+        var reviewOrders = inventoryDimensions
+            .Skip(2)
+            .Take(2)
+            .Select((dimension, index) =>
+                BuildOutboundQueueDraft(
+                    dimension,
+                    $"WQ-A-REVIEW-MIR-{dateSegment}-{index + 1:D2}",
+                    reviewReady: true,
+                    queueDate))
+            .ToArray();
+        var pickingOrders = inventoryDimensions
+            .Skip(4)
+            .Take(2)
+            .Select((dimension, index) =>
+                BuildOutboundQueueDraft(
+                    dimension,
+                    $"WQ-B-PICK-MIR-{dateSegment}-{index + 1:D2}",
+                    reviewReady: false,
+                    queueDate))
+            .ToArray();
+
+        return new WorldHistoryWarehouseCurrentQueueSpec(
+            receiptOrders,
+            putawayOrders,
+            [.. reviewOrders, .. pickingOrders]);
+    }
+
+    public static bool IsCurrentQueueInboundOrder(string inboundOrderNo) =>
+        inboundOrderNo.StartsWith(CurrentInboundOrderPrefix, StringComparison.Ordinal);
+
+    public static bool IsCurrentQueueOutboundOrder(string outboundOrderNo) =>
+        outboundOrderNo.StartsWith(CurrentOutboundOrderPrefix, StringComparison.Ordinal);
+
+    public static bool IsCurrentQueueTask(string taskNo) =>
+        taskNo.StartsWith(CurrentInboundTaskPrefix, StringComparison.Ordinal)
+        || taskNo.StartsWith(CurrentOutboundTaskPrefix, StringComparison.Ordinal);
+
+    private static WorldHistoryCurrentOutboundQueueDraft BuildOutboundQueueDraft(
+        WorldHistoryCountDimension dimension,
+        string sourceDocumentId,
+        bool reviewReady,
+        DateOnly queueDate)
+    {
+        var outboundOrderNo = WorldHistoryPhase2Spec.OutboundOrderNo(sourceDocumentId);
+        return new WorldHistoryCurrentOutboundQueueDraft(
+            OutboundOrderNo: outboundOrderNo,
+            SourceDocumentType: WorldHistoryWmsSpec.MaterialIssueSourceType,
+            SourceDocumentId: sourceDocumentId,
+            SkuCode: dimension.SkuCode,
+            UomCode: dimension.UomCode,
+            Quantity: QueueQuantity(sourceDocumentId),
+            PickFromLocationCode: dimension.LocationCode,
+            PickToLocationCode: WorldHistoryPhase2Spec.LineSideLocationCode,
+            LotNo: dimension.LotNo,
+            WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(outboundOrderNo, 1),
+            ReviewReady: reviewReady,
+            CreatedAtUtc: QueueMoment(queueDate, sourceDocumentId));
+    }
+
+    private static decimal QueueQuantity(string sourceDocumentId) =>
+        new WorldHistoryRandom($"wms-current-queue-quantity:{sourceDocumentId}")
+            .NextQuantity(20, 100, 10);
+
+    private static DateTimeOffset QueueMoment(DateOnly queueDate, string sourceDocumentId) =>
+        WorldHistoryPhase2Spec.MomentOn(
+            queueDate,
+            sourceDocumentId,
+            "warehouse-current-queue");
+
+    #endregion
+
     #region WCS 设备与下发
 
     /// <summary>下发熔断阈值：连续失败达到该次数即打开链路（与 WMS 运行期默认口径同量级）。</summary>
@@ -173,6 +341,45 @@ public static class WorldHistoryWarehouseOpsSpec
 
     #endregion
 }
+
+public sealed record WorldHistoryWarehouseWorkPoolSpec(
+    string PoolCode,
+    string DisplayName,
+    string SiteCode);
+
+public sealed record WorldHistoryWarehouseCurrentQueueSpec(
+    IReadOnlyList<WorldHistoryCurrentInboundQueueDraft> ReceiptOrders,
+    IReadOnlyList<WorldHistoryCurrentInboundQueueDraft> PutawayOrders,
+    IReadOnlyList<WorldHistoryCurrentOutboundQueueDraft> OutboundOrders);
+
+public sealed record WorldHistoryCurrentInboundQueueDraft(
+    string InboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    string StagingLocationCode,
+    string LotNo,
+    string QualityStatus,
+    string? WarehouseTaskNo,
+    string? PutawayFromLocationCode,
+    string? PutawayToLocationCode,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record WorldHistoryCurrentOutboundQueueDraft(
+    string OutboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    string PickFromLocationCode,
+    string PickToLocationCode,
+    string LotNo,
+    string WarehouseTaskNo,
+    bool ReviewReady,
+    DateTimeOffset CreatedAtUtc);
 
 /// <summary>一条 WCS 自动化链路。</summary>
 public sealed record WorldHistoryWcsDevice(string AdapterType, string DeviceId, string DisplayName);

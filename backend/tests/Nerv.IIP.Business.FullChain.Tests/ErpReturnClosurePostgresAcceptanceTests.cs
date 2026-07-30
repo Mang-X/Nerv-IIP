@@ -53,7 +53,9 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             [new InboundOrderLineDraft("LINE-001", "SKU-RETURN-PG-001", "EA", 1m, "LOC-QA", null, null, "quality", "company", null)]);
         wmsDb.InboundOrders.Add(purchaseInbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
-        purchaseInbound.Complete("wms-complete:return:purchase:001");
+        purchaseInbound.Complete(
+            "wms-complete:return:purchase:001",
+            purchaseInbound.Version);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         var rejectedQualityEvent = QualityEvent(
@@ -65,7 +67,11 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
         await qualityGateHandler.HandleAsync(rejectedQualityEvent, CancellationToken.None);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
         var supplierReturnOutbound = await wmsDb.OutboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.PurchaseReceiptReturn);
-        supplierReturnOutbound.CompletePackReview("PACK-RETURN-PG-001", true, "wms-complete:return:purchase:outbound:001");
+        supplierReturnOutbound.CompletePackReview(
+            "PACK-RETURN-PG-001",
+            true,
+            "wms-complete:return:purchase:outbound:001",
+            supplierReturnOutbound.Version);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         var purchaseReturnEvent = new OutboundOrderCompletedIntegrationEventConverter()
@@ -109,7 +115,9 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
         var rmaInbound = await wmsDb.InboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.SalesReturnRma);
-        rmaInbound.Complete("wms-complete:return:sales:001");
+        rmaInbound.Complete(
+            "wms-complete:return:sales:001",
+            rmaInbound.Version);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
         var inboundEvent = new InboundOrderCompletedIntegrationEventConverter()
             .Convert(new WmsInboundOrderCompletedDomainEvent(rmaInbound));

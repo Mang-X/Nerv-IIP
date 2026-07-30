@@ -8,6 +8,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
@@ -25,13 +26,17 @@ import {
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import {
-  wmsWarehouseTaskStatusFilterOptions,
-  wmsWarehouseTaskStatusLabel,
+  wmsCountExecutionStatusFilterOptions,
+  wmsCountExecutionStatusLabel,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -67,7 +72,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '盘点执行',
-    requiredPermissions: ['business.wms.receipts.read'],
+    requiredPermissions: ['business.wms.counts.read'],
   },
 })
 
@@ -85,15 +90,29 @@ const {
   countExecutionsLastUpdatedAt,
   countExecutionsHasSuccessfulResponse,
   countExecutionsHasFailedResponse,
-} = useWmsCountExecutions()
-const countScopeReady = computed(
-  () => filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0,
+} = useWmsCountExecutions({ workScopeRequired: true })
+const auth = useAuthStore()
+const canManageCounts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.inventoryCountsManage),
 )
-const countScope = computed(() =>
-  countScopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: countScopeReady,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'counts')
+const operationalCandidates = useWmsOperationalCandidates('count', filters)
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.locationCode],
+  resetOn: [
+    () => filters.keyword,
+    () => filters.locationCode,
+    () => filters.status,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
 })
 // 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
@@ -133,7 +152,7 @@ const varianceCount = computed(() => countExecutions.value.filter(hasVariance).l
  * `varianceCount` 恒为 0，直接渲染就会告诉仓管「账实一致」——把故障说成绿灯。
  * 非就绪一律值显 `—`、状态说取不到、脚注说清无法判断。
  */
-const contextReady = computed(() => hasBusinessContext(filters))
+const contextReady = computed(() => hasBusinessContext(filters) && countScopeReady.value)
 const varianceCardReady = computed(
   () => contextReady.value && !countExecutionsError.value && !countExecutionsPending.value,
 )
@@ -207,7 +226,7 @@ function locationLabel(row: { siteCode?: string | null; locationCode?: string | 
   return [row.siteCode, location].filter(Boolean).join(' / ') || '—'
 }
 function statusLabel(value?: string | null) {
-  return wmsWarehouseTaskStatusLabel(value)
+  return wmsCountExecutionStatusLabel(value)
 }
 
 type CountRow = BusinessConsoleWmsCountExecutionItem
@@ -262,6 +281,7 @@ function varianceLabel(value?: number | null) {
 }
 
 function openCreate() {
+  if (!canManageCounts.value) return
   createForm.countNo = ''
   createForm.skuCode = ''
   createForm.uomCode = 'EA'
@@ -272,6 +292,7 @@ function openCreate() {
   createOpen.value = true
 }
 async function submitCreate() {
+  if (!canManageCounts.value) return
   if (
     !createForm.countNo.trim() ||
     !createForm.skuCode.trim() ||
@@ -307,6 +328,7 @@ async function submitCreate() {
 }
 
 function openComplete(row: CountRow) {
+  if (!canManageCounts.value) return
   completeTarget.value = row
   completeIntentKey.value = createWmsIdempotencyKey()
   completeIntentAttempted.value = false
@@ -341,6 +363,7 @@ const completeContextItems = computed(() => {
   ]
 })
 async function submitComplete() {
+  if (!canManageCounts.value) return
   const target = completeTarget.value
   if (!target?.countExecutionId) return
   if (completeForm.countedQuantity === '') {
@@ -403,6 +426,12 @@ async function submitComplete() {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshCountExecutions()
+  void operationalCandidates.refresh()
+}
 </script>
 
 <template>
@@ -418,12 +447,12 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="countExecutionsPending"
-          @click="refreshCountExecutions"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageCounts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建盘点单
         </NvButton>
@@ -431,8 +460,8 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <ListScopeMeta
-      :scope="countScope"
-      source="仓储盘点任务服务（组织/环境范围，暂不支持按操作员归属筛选）"
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 盘点作业范围目录"
       :loaded="countExecutions.length"
       :total="countExecutionsTotal"
       :updated-at="countExecutionsLastUpdatedAt"
@@ -441,12 +470,12 @@ function formatError(error: unknown) {
         !countExecutionsError &&
         countExecutions.length === 0
       "
-      :failed="countExecutionsHasFailedResponse || Boolean(countExecutionsError)"
-      failure-explanation="仓储盘点任务服务未成功返回，请重试。"
+      :failed="
+        countExecutionsHasFailedResponse || Boolean(countExecutionsError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 盘点作业范围或盘点任务未成功返回，请重试。"
       :empty-explanation="
-        countScopeReady
-          ? '当前组织/环境范围没有盘点任务；后端未提供操作员归属过滤，空态不代表个人任务。'
-          : '缺少组织或环境范围，未发起查询。'
+        countScopeReady ? '当前作业范围没有盘点任务。' : '作业范围目录未就绪，未发起查询。'
       "
     />
 
@@ -477,22 +506,38 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvEntityPicker
-          v-model="filters.locationCode"
-          class="w-36"
-          :options="locationOptions"
-          title="选择库位"
-          placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
-          clearable
-          aria-label="库位"
+        <NvInput
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索盘点单号或物料"
+          aria-label="关键字搜索"
+        />
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          :location-options="operationalCandidates.locationOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :ready="operationalCandidates.ready.value"
+          :error="operationalCandidates.error.value"
+          v-model:search-keyword="operationalCandidates.searchKeyword.value"
+          :show-lot="false"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
+          @retry="operationalCandidates.refresh"
         />
         <NvSearchSelect
           v-model="statusFilter"
           class="w-32"
-          :options="wmsWarehouseTaskStatusFilterOptions"
+          :options="wmsCountExecutionStatusFilterOptions"
           placeholder="全部状态"
           aria-label="盘点状态"
         />
@@ -524,7 +569,7 @@ function formatError(error: unknown) {
         <p class="max-w-md text-sm text-muted-foreground">
           盘点单由仓管按库位 × 物料发起；日常收发货不会自动产生盘点单。
         </p>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageCounts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建盘点单
         </NvButton>
@@ -557,7 +602,7 @@ function formatError(error: unknown) {
           :tone="wmsStatusTone(row.status)"
       /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
+        <NvRowActions v-if="canManageCounts" :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
           <NvDropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
@@ -566,7 +611,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="createOpen">
+    <NvDialog v-if="canManageCounts" v-model:open="createOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建盘点单</NvDialogTitle>
@@ -669,7 +714,7 @@ function formatError(error: unknown) {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog :open="completeOpen" @update:open="onCompleteOpenChange">
+    <NvDialog v-if="canManageCounts" :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>完成盘点</NvDialogTitle>

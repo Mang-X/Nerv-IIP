@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 388-row registry with
+- The `exposed` rows are summarised by count here; the full 396-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -101,11 +101,11 @@ declaration against what actually shipped (facade + codegen + barrel for
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 38 | 26 | 12 | 0 |
 | Scheduling | 15 | 13 | 1 | 1 |
-| Wms | 30 | 20 | 5 | 5 |
-| **Total** | **388** | **317** | **48** | **23** |
+| Wms | 47 | 37 | 5 | 5 |
+| **Total** | **405** | **334** | **48** | **23** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (317) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (334) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
@@ -116,6 +116,20 @@ is `exposed` through Gateway operation
 `getBusinessConsoleTelemetryConnectorTagCoverage`. Coverage starts from the
 current manifest rather than from samples, so the facade must preserve
 `current` versus `unavailable` and nullable sample timestamps.
+
+For MAN-629 WMS operational candidates, the exposed declaration is intentionally
+one service operation to three Gateway operations:
+`listWmsOperationalCandidates` maps to
+`listBusinessConsoleWmsReceiptOperationalCandidates`,
+`listBusinessConsoleWmsShipmentOperationalCandidates`, and
+`listBusinessConsoleWmsCountOperationalCandidates`. Each Gateway facade fixes the
+candidate domain and checks its own receipts, shipments, or counts read
+permission before forwarding trusted principal, scope, and authorized site
+facts. The response preserves `sourceKind`, `asOfUtc`, nullable `freshnessUtc`,
+and `truncated`; it is a bounded view of WMS operational facts, not a
+MasterData/Inventory location catalog or a complete lot catalog. This row is the
+two-hop evidence for all three public operations; the service endpoint is not
+three separate public contracts.
 
 ### Deferred endpoints (facade tracked, not yet exposed)
 

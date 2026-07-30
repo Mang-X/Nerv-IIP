@@ -297,6 +297,9 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.erp.finance.manage"
             && item.Domain == "business"
             && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.wms.counts.read"
+            && item.Domain == "business"
+            && item.Seeded);
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.foundation.read"
             && item.Domain == "business"
             && item.Seeded);

@@ -254,13 +254,21 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 failures.Add($"作业任务 {task.TaskNo} 类型为 {task.TaskType}，期望 {expectedType}。");
             }
 
-            if (task.Status != WarehouseTaskStatus.Completed)
+            // The operations seed owns the lifecycle of WCS-claimed tasks and validates
+            // their parent/child state together. A base-seed restart must not rewrite
+            // an active or cancelled automation fact back to a synthetic completion.
+            var wcsOwned = task.ExecutionChannel == WarehouseTaskExecutionChannel.Wcs;
+            if (!wcsOwned && task.Status != WarehouseTaskStatus.Completed)
             {
                 failures.Add($"作业任务 {task.TaskNo} 状态为 {task.Status}，历史任务必须已完成。");
             }
 
-            if (Math.Abs(task.PlannedQuantity - expectedQuantity) > QuantityTolerance ||
-                Math.Abs(task.ExecutedQuantity - expectedQuantity) > QuantityTolerance)
+            if (Math.Abs(task.PlannedQuantity - expectedQuantity) > QuantityTolerance
+                || (!wcsOwned
+                    && Math.Abs(task.ExecutedQuantity - expectedQuantity) > QuantityTolerance)
+                || (wcsOwned
+                    && (task.ExecutedQuantity < 0m
+                        || task.ExecutedQuantity - expectedQuantity > QuantityTolerance)))
             {
                 failures.Add(
                     $"作业任务 {task.TaskNo} 计划 {task.PlannedQuantity} / 执行 {task.ExecutedQuantity}，与单据行数量 {expectedQuantity} 不平。");
@@ -278,7 +286,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 CheckMoment($"作业任务 {task.TaskNo} 完成", completedAtUtc, lowerBound, upperBound, failures);
             }
-            else
+            else if (!wcsOwned)
             {
                 failures.Add($"作业任务 {task.TaskNo} 没有完成时间。");
             }
@@ -343,7 +351,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .AsNoTracking()
                 .Include(x => x.Lines)
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    x.InboundOrderNo.StartsWith("IB-"))
+                    x.InboundOrderNo.StartsWith("IB-") &&
+                    !x.InboundOrderNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentInboundOrderPrefix))
                 .ToArrayAsync(cancellationToken))
             .Select(x => new InboundProjection(
                 x.InboundOrderNo,
@@ -364,7 +373,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .AsNoTracking()
                 .Include(x => x.Lines)
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    x.OutboundOrderNo.StartsWith("OB-"))
+                    x.OutboundOrderNo.StartsWith("OB-") &&
+                    !x.OutboundOrderNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentOutboundOrderPrefix))
                 .ToArrayAsync(cancellationToken))
             .Select(x => new OutboundProjection(
                 x.OutboundOrderNo,
@@ -387,12 +397,15 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         await dbContext.WarehouseTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.TaskNo.StartsWith("WT-"))
+                x.TaskNo.StartsWith("WT-") &&
+                !x.TaskNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentInboundTaskPrefix) &&
+                !x.TaskNo.StartsWith(WorldHistoryWarehouseOpsSpec.CurrentOutboundTaskPrefix))
             .Select(x => new TaskProjection(
                 x.TaskNo,
                 x.SourceOrderNo,
                 x.TaskType,
                 x.Status,
+                x.ExecutionChannel,
                 x.FromLocationCode,
                 x.ToLocationCode,
                 x.PlannedQuantity,
@@ -482,6 +495,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         string SourceOrderNo,
         WarehouseTaskType TaskType,
         WarehouseTaskStatus Status,
+        WarehouseTaskExecutionChannel ExecutionChannel,
         string FromLocationCode,
         string ToLocationCode,
         decimal PlannedQuantity,
