@@ -447,6 +447,44 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('工序待排池')
     expect(wrapper.text()).toContain('锁定重预览')
     expect(wrapper.text()).toContain('发布新版')
+    // 排程窗口不再写死「现在起 7 天」，工作台上必须有可改的窗口控件（MAN-694 / #1262）。
+    expect(wrapper.find('[data-testid="scheduling-horizon-fields"]').exists()).toBe(true)
+  })
+
+  it('按用户指定的窗口生成首版，而不是提交时现算的固定 7 天', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+
+    // 把窗口换成 1 天：生成请求必须跟着变。
+    const horizon = wrapper.findComponent({ name: 'SchedulingHorizonFields' })
+    horizon.vm.$emit('update:modelValue', {
+      ...(horizon.props('modelValue') as Record<string, unknown>),
+      mode: 'preset',
+      days: 1,
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+
+    const body = stub.generatePlan.mock.calls.at(-1)?.[0] as {
+      horizonStartUtc: string
+      horizonEndUtc: string
+    }
+    const span =
+      (new Date(body.horizonEndUtc).getTime() - new Date(body.horizonStartUtc).getTime()) /
+      86_400_000
+    expect(span).toBe(1)
   })
 
   it('uses a single-page table while the facade does not return a total count', async () => {
@@ -625,6 +663,33 @@ describe('APS scheduling workbench page', () => {
     expect(detailSelection.planId).toBe('plan-001')
     expect(wrapper.find('[data-targeted-order="true"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('已定位订单 WO-20260701-001')
+  })
+
+  it('单单排产落点：带 planId 进入页面直接打开该方案明细（MAN-694 / #1262）', async () => {
+    // 不用列表首个方案（plan-001），特意点名一个靠后的方案，证明是路由说了算。
+    routeStub.query = { planId: 'plan-invalid', orderReference: 'WO-20260701-004' }
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    // 明细查询锁定路由点名的方案，抽屉已打开（而不是停在列表让用户自己找）。
+    expect(detailSelection.planId).toBe('plan-invalid')
+    expect(wrapper.text()).toContain('排程方案明细')
+    expect(wrapper.text()).toContain('已定位订单 WO-20260701-004')
+    expect(wrapper.find('[data-targeted-order="true"]').exists()).toBe(true)
+  })
+
+  it('带 planId 时不再走「逐个方案找订单」的兜底，方案选择保持路由点名的那个', async () => {
+    // 明细里没有这张工单：没有 planId 时页面会翻下一个方案；点名了就不该改选。
+    routeStub.query = { planId: 'plan-invalid', orderReference: 'WO-NOT-IN-PLAN' }
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-invalid')
+    expect(wrapper.text()).toContain('正在定位订单 WO-NOT-IN-PLAN')
   })
 
   it('marks invalidated plans with their reason and blocks release', async () => {
@@ -843,7 +908,41 @@ describe('APS scheduling workbench page', () => {
       .findAll('button')
       .find((button) => button.text().includes('生成首版'))!
     expect(enabledGenerate.attributes('disabled')).toBeUndefined()
-    expect(enabledGenerate.attributes('title')).toBe('按当前勾选的工单生成首版排程方案')
+    // 「这一步会做什么」现在还带上当前排程窗口（MAN-694 / #1262）：窗口可改之后，
+    // 只说"生成首版方案"不足以让人确认排到哪一天。
+    expect(enabledGenerate.attributes('title')).toContain('按当前勾选的工单生成首版排程方案')
+    expect(enabledGenerate.attributes('title')).toContain('至')
+  })
+
+  it('排程窗口非法时并入禁用原因表：按钮直接灰掉并说清改哪里（MAN-694 / #1262）', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+
+    // 自定义窗口但起止倒置：#1278 的 firstBlockingReason 要认这条新原因。
+    const horizon = wrapper.findComponent({ name: 'SchedulingHorizonFields' })
+    horizon.vm.$emit('update:modelValue', {
+      ...(horizon.props('modelValue') as Record<string, unknown>),
+      mode: 'custom',
+      startLocal: '2026-08-05T08:00',
+      endLocal: '2026-08-04T08:00',
+    })
+    await flushPromises()
+
+    const generate = wrapper.findAll('button').find((button) => button.text().includes('生成首版'))!
+    expect(generate.attributes('disabled')).toBeDefined()
+    expect(generate.attributes('title')).toBe('排程窗口不可用：排程窗口结束时间必须晚于开始时间。')
+
+    // 灰按钮点下去也不能发请求（disabled 与动作函数同一处事实）。
+    await generate.trigger('click')
+    await flushPromises()
+    expect(stub.generatePlan).not.toHaveBeenCalled()
   })
 
   it('surfaces the service message when generating the first plan fails', async () => {
