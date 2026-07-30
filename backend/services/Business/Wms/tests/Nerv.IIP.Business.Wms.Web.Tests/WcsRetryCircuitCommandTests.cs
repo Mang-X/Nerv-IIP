@@ -105,6 +105,71 @@ public sealed class WcsRetryCircuitCommandTests
         Assert.False(circuit.IsOpen);
     }
 
+    [Theory]
+    [InlineData("""{"actualQuantity":3,"executedQuantity":2}""")]
+    [InlineData("""{"actualQuantity":"3","executedQuantity":3}""")]
+    [InlineData("""{"actualQuantity":3,"executedQuantity":"3"}""")]
+    public async Task Completion_rejects_disagreeing_or_non_numeric_dual_quantity_fields_without_mutation(
+        string completionPayloadJson)
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-DUAL-QUANTITY-REJECT-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            DispatchCommand(warehouseTask, "EXT-DUAL-QUANTITY-REJECT-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext).Handle(
+                new CompleteWcsTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "EXT-DUAL-QUANTITY-REJECT-001",
+                    completionPayloadJson),
+                CancellationToken.None));
+
+        Assert.Equal(0m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+    }
+
+    [Fact]
+    public async Task Completion_accepts_matching_numeric_dual_quantity_fields()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-DUAL-QUANTITY-ACCEPT-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            DispatchCommand(warehouseTask, "EXT-DUAL-QUANTITY-ACCEPT-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new CompleteWcsTaskCommand(
+                "org-001",
+                "env-dev",
+                "EXT-DUAL-QUANTITY-ACCEPT-001",
+                """{"actualQuantity":3,"executedQuantity":3}"""),
+            CancellationToken.None);
+
+        Assert.Equal(3m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
+    }
+
     [Fact]
     public async Task Repeated_failure_callback_does_not_increment_the_device_circuit_twice()
     {

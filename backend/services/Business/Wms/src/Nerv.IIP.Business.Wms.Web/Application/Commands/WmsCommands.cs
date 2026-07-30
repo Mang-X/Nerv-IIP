@@ -2540,22 +2540,49 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
                     "WCS completion payload must be a JSON object.");
             }
 
-            foreach (var propertyName in new[] { "actualQuantity", "executedQuantity" })
+            var hasActualQuantity = root.TryGetProperty("actualQuantity", out var actualQuantityProperty);
+            var hasExecutedQuantity = root.TryGetProperty("executedQuantity", out var executedQuantityProperty);
+            if (!hasActualQuantity && !hasExecutedQuantity)
             {
-                if (root.TryGetProperty(propertyName, out var property) && property.TryGetDecimal(out var quantity))
-                {
-                    return quantity;
-                }
+                throw new WmsUnprocessableException(
+                    "WCS completion payload must include an explicit numeric executed quantity in 'actualQuantity' or 'executedQuantity'.");
             }
+
+            decimal? actualQuantity = hasActualQuantity
+                ? ReadQuantity(actualQuantityProperty, "actualQuantity")
+                : null;
+            decimal? executedQuantity = hasExecutedQuantity
+                ? ReadQuantity(executedQuantityProperty, "executedQuantity")
+                : null;
+            if (actualQuantity.HasValue
+                && executedQuantity.HasValue
+                && actualQuantity.Value != executedQuantity.Value)
+            {
+                throw new WmsUnprocessableException(
+                    "WCS completion payload quantity fields 'actualQuantity' and 'executedQuantity' must agree.");
+            }
+
+            return actualQuantity
+                ?? executedQuantity
+                ?? throw new WmsUnprocessableException(
+                    "WCS completion payload must include an explicit numeric executed quantity in 'actualQuantity' or 'executedQuantity'.");
         }
         catch (JsonException exception)
         {
             throw new WmsUnprocessableException(
                 $"WCS completion payload is not valid JSON: {exception.Message}");
         }
+    }
 
-        throw new WmsUnprocessableException(
-            "WCS completion payload must include an explicit numeric executed quantity in 'actualQuantity' or 'executedQuantity'.");
+    private static decimal ReadQuantity(JsonElement property, string propertyName)
+    {
+        if (property.ValueKind != JsonValueKind.Number || !property.TryGetDecimal(out var quantity))
+        {
+            throw new WmsUnprocessableException(
+                $"WCS completion payload field '{propertyName}' must be numeric.");
+        }
+
+        return quantity;
     }
 }
 
