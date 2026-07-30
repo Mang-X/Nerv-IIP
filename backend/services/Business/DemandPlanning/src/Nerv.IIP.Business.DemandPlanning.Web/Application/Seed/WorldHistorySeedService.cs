@@ -312,14 +312,16 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             organizationId,
             environmentId,
             runId,
-            suggestionType: "planned-work-order",
+            fact.SuggestionType,
             fact.SkuCode,
-            WorldHistoryPlanningSpec.UomCode,
+            fact.UomCode,
             WorldHistoryPlanningSpec.SiteCode,
             fact.PlannedQuantity,
             fact.RequiredDate,
             fact.ReleaseDate,
-            reasonCode: "net-requirement",
+            reasonCode: fact.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType
+                ? "component-net-requirement"
+                : "net-requirement",
             suggestionId: new PlanningSuggestionId(fact.SuggestionId));
         suggestion.SetNetRequirementExplanation(
             grossDemandQuantity: fact.GrossQuantity,
@@ -338,8 +340,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         suggestion.AddPeggingLink(
             peggingType: "demand",
             demandSourceReference: fact.DemandSourceReference,
-            parentSkuCode: fact.SkuCode,
-            componentSkuCode: null,
+            parentSkuCode: fact.ParentSkuCode ?? fact.SkuCode,
+            componentSkuCode: fact.ParentSkuCode is null ? null : fact.SkuCode,
             quantity: fact.GrossQuantity,
             productionVersionReference: null,
             manufacturingBomReference: null,
