@@ -72,6 +72,10 @@ export function useSchedulingWorkbench() {
     candidates: mes.workOrders,
     candidatesError: mes.workOrdersError,
     candidatesPending: mes.workOrdersPending,
+    // 待排池的候选查询与 MES 工单同一 scope gate：范围未就绪时查询不发（enabled=false），
+    // 页面必须以此区分「没查」与「查了确实没有」，否则渲染成假空态（#1288）。
+    candidatesScopeMessage: mes.workOrderReadScopeMessage,
+    candidatesScopeReady: mes.workOrderReadScopeReady,
     filters: mes.filters,
     generatePending: generateMutation.isLoading,
     generatePlan: async (body: BusinessConsoleCreateSchedulingWorkbenchPlanRequest) =>
