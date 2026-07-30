@@ -26,6 +26,8 @@ import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSel
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -57,6 +59,7 @@ import {
   NvTabsTrigger,
 } from '@nerv-iip/ui'
 import {
+  CalendarCogIcon,
   CheckIcon,
   CornerDownRightIcon,
   ExternalLinkIcon,
@@ -585,6 +588,21 @@ function downstreamLabel(service?: string | null, type?: string | null) {
   if (service === 'BusinessMes' && type === 'WorkOrder') return 'MES 工单'
   if (service === 'BusinessErp' && type === 'PurchaseRequisition') return 'ERP 采购申请'
   return '下游单据'
+}
+// —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
+// 排程的最小单位是 MES 工单。生产建议只有**被接受、承接成 MES 工单之后**才有可排的单，
+// 承接单据 id 就是工单 id（同一个值也被 downstreamRoute 拿去下钻 /mes/work-orders/{id}）。
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
+
+function suggestionWorkOrderId(row: BusinessConsolePlanningSuggestionItem) {
+  return row.downstreamService === 'BusinessMes' && row.downstreamDocumentType === 'WorkOrder'
+    ? (row.downstreamDocumentId ?? '')
+    : ''
+}
+function suggestionScheduleHint(row: BusinessConsolePlanningSuggestionItem) {
+  // 排产的最小单位是工单：没承接成工单就没有可排的单，说清楚而不是给个点不动的按钮。
+  return row.suggestionType === 'planned-work-order' ? '未承接工单，暂不能排产' : ''
 }
 function downstreamRoute(
   service: string | null | undefined,
@@ -1511,8 +1529,43 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               拒绝
             </NvButton>
           </div>
+          <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
+          <div v-else class="flex items-center justify-end gap-2">
+            <NvButton
+              v-if="suggestionWorkOrderId(row)"
+              size="sm"
+              type="button"
+              variant="outline"
+              data-testid="planning-suggestion-schedule-single"
+              :disabled="!canScheduleSingleOrder"
+              :title="
+                canScheduleSingleOrder
+                  ? `对工单 ${suggestionWorkOrderId(row)} 排产（新建只含该单的方案）`
+                  : '当前账号没有排产管理权限'
+              "
+              @click="scheduleTarget = row"
+            >
+              <CalendarCogIcon aria-hidden="true" />
+              对该单排产
+            </NvButton>
+            <span v-else-if="suggestionScheduleHint(row)" class="text-sm text-muted-foreground">
+              {{ suggestionScheduleHint(row) }}
+            </span>
+          </div>
         </template>
       </NvDataTable>
+
+      <SingleOrderSchedulingDialog
+        v-if="scheduleTarget"
+        :open="true"
+        :work-order-id="suggestionWorkOrderId(scheduleTarget)"
+        :context-label="`计划建议 · ${skuLabel(scheduleTarget.skuCode)}`"
+        @update:open="
+          (value: boolean) => {
+            if (!value) scheduleTarget = null
+          }
+        "
+      />
 
       <NvDialog
         :open="!!rejectTarget"

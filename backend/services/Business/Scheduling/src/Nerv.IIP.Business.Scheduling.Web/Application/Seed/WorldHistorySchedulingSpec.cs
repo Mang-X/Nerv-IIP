@@ -585,6 +585,69 @@ public static class WorldHistorySchedulingSpec
 
     #region 问题快照（必须能被 CreateSchedulePlanRevisionCommandHandler 反序列化重建）
 
+    /// <summary>
+    /// 资源不可用窗口（换型 / 换线 / 设备维护 / 计划停机）：按确定性规则塞进每台设备**已排工序之间的空档**，
+    /// 不与任何已排工序重叠——真实工厂的换型和保养就发生在两批活之间。
+    /// 甘特读面据此画出可辨识的底纹，图例也只列真正出现过的那几类。
+    /// </summary>
+    private static IReadOnlyList<SchedulingUnavailabilityWindowContract> BuildUnavailabilityWindows(
+        IReadOnlyList<GeneratedScheduleAssignmentSnapshot> assignments,
+        DateTimeOffset horizonEndUtc)
+    {
+        // (语义, 原因码, 目标时长分钟)。按资源轮换，保证四类语义在一版方案里都能出现。
+        (string ReasonCode, int Minutes)[] kinds =
+        [
+            ("changeover.setup", 30),
+            ("line-change", 45),
+            ("maintenance.preventive", 90),
+            ("downtime.planned", 60),
+        ];
+        const int MinGapMinutes = 40;
+        const int MaxWindowsPerResource = 2;
+        const int MaxWindows = 32;
+
+        var windows = new List<SchedulingUnavailabilityWindowContract>();
+        var resourceIndex = 0;
+        foreach (var group in assignments
+                     .GroupBy(x => x.ResourceId, StringComparer.Ordinal)
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var kind = kinds[resourceIndex++ % kinds.Length];
+            var ordered = group.OrderBy(x => x.StartUtc).ToArray();
+            var placed = 0;
+            for (var i = 1; i < ordered.Length && placed < MaxWindowsPerResource && windows.Count < MaxWindows; i++)
+            {
+                var gapStart = ordered[i - 1].EndUtc;
+                var gapEnd = ordered[i].StartUtc;
+                var gapMinutes = (gapEnd - gapStart).TotalMinutes;
+                if (gapMinutes < MinGapMinutes)
+                {
+                    continue;
+                }
+
+                var minutes = (int)Math.Min(kind.Minutes, gapMinutes - 10);
+                var end = gapStart.AddMinutes(minutes);
+                if (end > horizonEndUtc)
+                {
+                    break;
+                }
+
+                windows.Add(new SchedulingUnavailabilityWindowContract(
+                    ResourceId: group.Key,
+                    WorkCenterId: ordered[i - 1].WorkCenterId,
+                    StartUtc: gapStart,
+                    EndUtc: end,
+                    ReasonCode: kind.ReasonCode));
+                placed++;
+            }
+        }
+
+        return windows
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static SchedulingProblemContract BuildProblem(
         string problemId,
         IReadOnlyList<WorldHistoryOrderPlan> orders,
@@ -711,7 +774,7 @@ public static class WorldHistorySchedulingSpec
             Orders: orderContracts,
             Resources: resources,
             Calendars: [new SchedulingCalendarContract(WorldHistoryMesSpec.CalendarId, shiftWindows)],
-            UnavailabilityWindows: [],
+            UnavailabilityWindows: BuildUnavailabilityWindows(assignments, horizonEndUtc),
             MaterialReadiness: materialReadiness,
             QualityBlocks: [],
             LockedAssignments: lockedAssignments);

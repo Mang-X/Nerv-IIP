@@ -24,6 +24,12 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
+import {
+  createSchedulingHorizonInput,
+  describeSchedulingHorizon,
+  resolveSchedulingHorizon,
+} from '@/composables/schedulingHorizon'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
@@ -64,7 +70,7 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { EyeIcon, RefreshCwIcon, SendIcon, Undo2Icon } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
@@ -126,6 +132,15 @@ const targetedOrderReference = computed(() => {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
 })
 const routeLookupVisited = new Set<string>()
+// 单单排产（MAN-694 / #1262）落点：带 planId 直接定位到刚生成的方案，不必在列表里翻。
+const targetedPlanId = computed(() => {
+  const value = route.query.planId
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
+})
+// 排程窗口由用户指定（不再写死 7 天）；与单单排产弹窗共用同一份解析口径。
+const horizonInput = ref(createSchedulingHorizonInput())
+// 解析结果既进「生成首版」的禁用原因表，也是真正发给后端的窗口——只算一次，不会两处漂移。
+const resolvedWorkbenchHorizon = computed(() => resolveSchedulingHorizon(horizonInput.value))
 
 watch(workbench.schedulableCandidates, (candidates) => draft.setOrders(candidates), {
   immediate: true,
@@ -201,10 +216,21 @@ const targetedAssignmentFound = computed(() =>
 )
 
 watch(targetedOrderReference, () => routeLookupVisited.clear())
+// 已经点名了具体方案（单单排产刚生成的那份）就直接打开，不再走「逐个方案找订单」的兜底。
+watch(
+  targetedPlanId,
+  (planId) => {
+    if (!planId) return
+    detailSelection.planId = planId
+    detailOpen.value = true
+  },
+  { immediate: true },
+)
 watch(
   [targetedOrderReference, actionablePlans, planDetail, planDetailPending],
   ([target, availablePlans, detail, pending]) => {
     if (!target || availablePlans.length === 0 || pending) return
+    if (targetedPlanId.value) return
     if (!detailSelection.planId) {
       detailSelection.planId = availablePlans[0]?.planId ?? ''
       detailOpen.value = Boolean(detailSelection.planId)
@@ -292,17 +318,17 @@ async function publish(planId: string | undefined) {
 // 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
   // 与按钮 disabled 同一处事实：命中任一禁用原因就不发请求。
+  // 「排程窗口非法」也是其中一条原因，所以这里不再单独 toast——按钮本身就是灰的。
   if (generateBlockedReason.value) return
-  const horizonStart = new Date()
-  horizonStart.setMinutes(0, 0, 0)
-  const horizonEnd = new Date(horizonStart)
-  horizonEnd.setDate(horizonEnd.getDate() + 7)
+  const resolvedHorizon = resolvedWorkbenchHorizon.value
+  // 类型收窄；能走到这里说明窗口原因没有命中。
+  if (!resolvedHorizon.ok) return
   try {
     const plan = await workbench.generatePlan({
       organizationId: schedulingFilters.organizationId,
       environmentId: schedulingFilters.environmentId,
-      horizonStartUtc: horizonStart.toISOString(),
-      horizonEndUtc: horizonEnd.toISOString(),
+      horizonStartUtc: resolvedHorizon.horizonStartUtc,
+      horizonEndUtc: resolvedHorizon.horizonEndUtc,
       orders: draft.includedOrders.value.map((order) => ({
         workOrderId: order.workOrderId,
         priority: order.priority,
@@ -453,11 +479,21 @@ const generateBlockedReason = computed(() =>
       blocked: draft.includedOrders.value.length === 0,
       reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
     },
+    // 窗口非法（起止倒置 / 缺值 / 跨度超上限）按 #1278 的口径并进原因表：
+    // 按钮直接灰掉并说明改哪里，而不是点下去才弹一句 toast（MAN-694 / #1262）。
+    {
+      blocked: !resolvedWorkbenchHorizon.value.ok,
+      reason: resolvedWorkbenchHorizon.value.ok
+        ? ''
+        : `排程窗口不可用：${resolvedWorkbenchHorizon.value.message}`,
+    },
     { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
   ]),
 )
 const generateDisabledReason = computed(
-  () => generateBlockedReason.value ?? '按当前勾选的工单生成首版排程方案',
+  () =>
+    generateBlockedReason.value ??
+    `按当前勾选的工单生成首版排程方案（${describeSchedulingHorizon(resolvedWorkbenchHorizon.value)}）`,
 )
 
 const repreviewBlockedReason = computed(() =>
@@ -572,65 +608,72 @@ function reasonLabel(reason?: string | null) {
       </NvTabsList>
 
       <NvTabsContent value="workbench" class="grid gap-4">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
-        >
-          <div>
-            <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
-            <p class="text-sm text-muted-foreground">
-              已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
-              {{ draft.lockedAssignments.value.length }} 道工序。
-            </p>
+        <div class="grid gap-4 rounded-lg border bg-card p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
+              <p class="text-sm text-muted-foreground">
+                已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
+                {{ draft.lockedAssignments.value.length }} 道工序。
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canUndo.value"
+                :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
+                @click="draft.undo"
+                >撤销</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canRedo.value"
+                :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
+                @click="draft.redo"
+                >重做</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(generateBlockedReason)"
+                :title="generateDisabledReason"
+                @click="generateWorkbenchPlan"
+              >
+                <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
+              </NvButton>
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(repreviewBlockedReason)"
+                :title="repreviewDisabledReason"
+                @click="repreviewLockedDraft"
+              >
+                <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+              </NvButton>
+              <NvButton
+                size="sm"
+                type="button"
+                :disabled="Boolean(publishCandidateBlockedReason)"
+                :title="publishCandidateDisabledReason"
+                @click="publishCandidate"
+              >
+                <SendIcon aria-hidden="true" />发布新版
+              </NvButton>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canUndo.value"
-              :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
-              @click="draft.undo"
-              >撤销</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canRedo.value"
-              :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
-              @click="draft.redo"
-              >重做</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="Boolean(generateBlockedReason)"
-              :title="generateDisabledReason"
-              @click="generateWorkbenchPlan"
-            >
-              <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
-            </NvButton>
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="Boolean(repreviewBlockedReason)"
-              :title="repreviewDisabledReason"
-              @click="repreviewLockedDraft"
-            >
-              <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
-            </NvButton>
-            <NvButton
-              size="sm"
-              type="button"
-              :disabled="Boolean(publishCandidateBlockedReason)"
-              :title="publishCandidateDisabledReason"
-              @click="publishCandidate"
-            >
-              <SendIcon aria-hidden="true" />发布新版
-            </NvButton>
-          </div>
+
+          <!-- 排程窗口由排产员指定（MAN-694 / #1262）；「生成首版」按这个窗口求解。 -->
+          <SchedulingHorizonFields
+            v-model="horizonInput"
+            id-prefix="workbench-horizon"
+            :disabled="!canManage"
+          />
         </div>
 
         <p

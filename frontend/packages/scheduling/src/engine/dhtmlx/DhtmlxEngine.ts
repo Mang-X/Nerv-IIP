@@ -353,6 +353,15 @@ export class DhtmlxEngine implements SchedulingEngine {
   private resizeRaf = 0
   /** 资源时间块:泳道 id → 时段窗口列表,供 timeline_cell_class 给单元格上底纹(块不作任务条)。 */
   private blockCells = new Map<string, { start: number; end: number; kind: string }[]>()
+  /** 工序 id → 该工序所属资源/工作中心(工单甘特里按行找它对应的时间块)。 */
+  private taskLane = new Map<string, string[]>()
+  /**
+   * 工作日历:资源/工作中心 id → 工作窗口(排序后)。`__all__` 是全局并集,
+   * 用于「日历没覆盖到这条泳道」时的回退。为空表示后端没带日历,引擎退回通用作息假设。
+   */
+  private workingWindows = new Map<string, { start: number; end: number }[]>()
+  /** 班次起点(毫秒),用于在单元格左侧画班次边界线。 */
+  private shiftStarts = new Set<number>()
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -787,24 +796,35 @@ export class DhtmlxEngine implements SchedulingEngine {
       const lock = t.locked ? `<span class="nerv-card-lock">${LOCK_SVG}</span>` : ''
       return `<span class="nerv-bar-label">${task.text ?? ''}${lock}</span>`
     }
-    // 时间线底纹:只两态——工作(原色,无 class)/ 非工作(周末或 20:00–08:00 夜间,统一 nerv-offwork)。
-    // 资源时间块(维护/停机/换线/换型)也走单元格底纹:该泳道在此时段有块 → 叠加 nerv-cell-block(与
-    // 日历同实现,恒在卡片之下、与格子融为一体、绝不覆盖)。
+    // 时间线底纹讲三件事:
+    // ① 工作 / 非工作——有后端工作日历时按日历判定(休息日、班次之外都算非工作),
+    //    没有日历时才退回「周末 + 20:00–08:00 夜间」的通用作息假设;
+    // ② 班次边界——单元格正好落在某个班次起点上时加一条竖线(nerv-shift-start);
+    // ③ 资源时间块(维护/停机/换线/换型)——该行对应的资源在此时段有块 → 叠加斜纹底纹。
+    // 三者都走单元格,恒在卡片之下、与格子融为一体、绝不覆盖卡片。
     inst.templates.timeline_cell_class = (task: { id?: string | number }, date: Date) => {
       const classes: string[] = []
-      const day = date.getDay()
-      const h = date.getHours()
-      if (day === 0 || day === 6 || h < 8 || h >= 20) classes.push('nerv-offwork')
-      if (this.options.view === 'resource' && this.blockCells.size) {
-        const laneId = typeof task?.id === 'string' ? task.id.replace(/^lane:/, '') : ''
-        const wins = this.blockCells.get(laneId)
-        if (wins) {
-          const ts = date.getTime()
-          for (const w of wins) {
-            if (ts >= w.start && ts < w.end) {
-              classes.push('nerv-cell-block', `nerv-cell-block-${w.kind}`)
-              break
-            }
+      const ts = date.getTime()
+      const lanes = this.lanesOf(task?.id)
+      if (this.workingWindows.size) {
+        if (!this.isWorkingAt(lanes, ts)) {
+          const day = date.getDay()
+          classes.push(day === 0 || day === 6 ? 'nerv-weekend' : 'nerv-offwork')
+        }
+        if (this.shiftStarts.has(ts)) classes.push('nerv-shift-start')
+      } else {
+        const day = date.getDay()
+        const h = date.getHours()
+        if (day === 0 || day === 6 || h < 8 || h >= 20) classes.push('nerv-offwork')
+      }
+      if (this.blockCells.size) {
+        for (const lane of lanes) {
+          const wins = this.blockCells.get(lane)
+          if (!wins) continue
+          const hit = wins.find((w) => ts >= w.start && ts < w.end)
+          if (hit) {
+            classes.push('nerv-cell-block', `nerv-cell-block-${hit.kind}`)
+            break
           }
         }
       }
@@ -1186,9 +1206,89 @@ export class DhtmlxEngine implements SchedulingEngine {
     })
   }
 
+  /** 一行(泳道或工序行)对应的资源 / 工作中心键;工单甘特按工序自身的资源找块。 */
+  private lanesOf(rowId?: string | number): string[] {
+    if (typeof rowId !== 'string' && typeof rowId !== 'number') return []
+    const id = String(rowId)
+    if (this.options.view === 'resource') return [id.replace(/^lane:/, '')]
+    return this.taskLane.get(id) ?? []
+  }
+
+  private isWorkingAt(lanes: string[], ts: number): boolean {
+    for (const lane of lanes) {
+      const wins = this.workingWindows.get(lane)
+      if (wins) return wins.some((w) => ts >= w.start && ts < w.end)
+    }
+    // 该行不在任何一份日历的适用范围内(或行本身没有资源归属):用全局并集判定,
+    // 这样至少休息日/夜间仍然是灰的,而不是整片当成工作时间。
+    const all = this.workingWindows.get('__all__')
+    return all ? all.some((w) => ts >= w.start && ts < w.end) : true
+  }
+
+  /** 从模型的工作日历建索引:每个资源/工作中心一份工作窗口表 + 全局并集 + 班次起点集合。 */
+  private buildCalendarIndex(model: ScheduleModel): void {
+    this.workingWindows = new Map()
+    this.shiftStarts = new Set()
+    const calendars = model.calendars ?? []
+    if (!calendars.length) return
+
+    const all: { start: number; end: number }[] = []
+    for (const calendar of calendars) {
+      const windows = calendar.shiftWindows
+        .map((w) => ({ start: Date.parse(w.startUtc), end: Date.parse(w.endUtc) }))
+        .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
+        .sort((a, b) => a.start - b.start)
+      if (!windows.length) continue
+      for (const w of windows) {
+        all.push(w)
+        this.shiftStarts.add(w.start)
+      }
+      for (const key of [...calendar.resourceIds, ...calendar.workCenterIds]) {
+        if (!key) continue
+        const existing = this.workingWindows.get(key)
+        this.workingWindows.set(
+          key,
+          existing ? [...existing, ...windows].sort((a, b) => a.start - b.start) : windows,
+        )
+      }
+    }
+    if (all.length)
+      this.workingWindows.set(
+        '__all__',
+        all.sort((a, b) => a.start - b.start),
+      )
+  }
+
+  /** 时间块索引:泳道键(资源 + 工作中心都登记)→ 时段窗口,供单元格底纹查表。 */
+  private buildBlockIndex(blocks: ScheduleTask[], laneOf: (t: ScheduleTask) => string): void {
+    this.blockCells = new Map()
+    for (const b of blocks) {
+      const start = Date.parse(b.startUtc)
+      const end = Date.parse(b.endUtc)
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue
+      const keys = new Set([laneOf(b), b.resourceId ?? '', b.workCenterId ?? ''])
+      for (const key of keys) {
+        if (!key) continue
+        const arr = this.blockCells.get(key) ?? []
+        arr.push({ start, end, kind: b.blockKind! })
+        this.blockCells.set(key, arr)
+      }
+    }
+  }
+
   private toGanttData(model: ScheduleModel): { data: unknown[]; links: unknown[] } {
     const toDate = (isoVal: string) => (isoVal ? new Date(isoVal) : undefined)
     const data: unknown[] = []
+    this.buildCalendarIndex(model)
+    // 工序行 → 资源/工作中心(工单甘特用:某道工序所在设备在此时段维护/停机,那一行就该有底纹)。
+    this.taskLane = new Map(
+      model.tasks
+        .filter((t) => !t.blockKind)
+        .map((t) => [
+          t.id,
+          [t.resourceId, t.workCenterId, t.dimensions?.workCenter?.id].filter(Boolean) as string[],
+        ]),
+    )
 
     if (this.options.view === 'resource') {
       // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。里程碑不入资源板。
@@ -1244,16 +1344,10 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
       // 时间块:按当前维度算出所属泳道 + 时段窗口,供 timeline_cell_class 给单元格上底纹;
       // 同时播种泳道(块所在资源即使没工序,泳道也要在)。
-      this.blockCells = new Map()
+      this.buildBlockIndex(blocks, laneOf)
       for (const b of blocks) {
         const id = laneOf(b)
         if (!groups.has(id)) groups.set(id, b.dimensions?.[dim]?.label ?? b.resourceId ?? '未分配')
-        const s = Date.parse(b.startUtc)
-        const e = Date.parse(b.endUtc)
-        if (!Number.isFinite(s) || !Number.isFinite(e)) continue
-        const arr = this.blockCells.get(id) ?? []
-        arr.push({ start: s, end: e, kind: b.blockKind! })
-        this.blockCells.set(id, arr)
       }
       // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
       const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))
@@ -1314,8 +1408,14 @@ export class DhtmlxEngine implements SchedulingEngine {
       return { data, links: [] }
     }
 
+    // 工单甘特里块同样不作任务条,但要能看见:按「这道工序所在设备/工作中心在此时段不可用」
+    // 给该工序行的单元格上底纹(见 timeline_cell_class + taskLane)。
+    this.buildBlockIndex(
+      model.tasks.filter((t) => !!t.blockKind),
+      (t) => t.workCenterId ?? t.resourceId ?? '__none__',
+    )
     for (const t of model.tasks) {
-      if (t.blockKind) continue // 资源时间块只属于资源排产板,不进工单甘特
+      if (t.blockKind) continue // 资源时间块不作任务条
       const parent = t.type === 'operation' ? (t.parentId ?? 0) : 0
       data.push(this.toGanttTask(t, parent, toDate))
     }
