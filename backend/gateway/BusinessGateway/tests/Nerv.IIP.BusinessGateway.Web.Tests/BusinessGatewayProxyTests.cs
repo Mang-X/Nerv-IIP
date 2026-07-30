@@ -1221,6 +1221,47 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_list_rejects_an_authorized_site_scope_without_calling_mes()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-site-lead",
+                    "site",
+                    "SITE-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "site",
+                    "SITE-A",
+                    "工厂 A",
+                    "resolved-site",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastWorkOrderListRequest);
+    }
+
+    [Fact]
     public async Task Mes_operation_task_list_projects_an_authorized_team_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -1814,6 +1855,63 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_action_rejects_an_authorized_site_scope_without_calling_mes()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-site-lead",
+                    "site",
+                    "SITE-A",
+                    [BusinessGatewayPermissions.MesWorkOrdersManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-SITE",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "site",
+                    "SITE-A",
+                    "工厂 A",
+                    "resolved-site",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-SITE/release?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A",
+            new { confirmWarnings = false, idempotencyKey = "release-site-001" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastWorkOrderListRequest);
+        Assert.Equal(0, mes.ReleaseWorkOrderCallCount);
+    }
+
+    [Fact]
     public async Task Mes_operation_action_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -1872,6 +1970,67 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(0, mes.StartOperationCallCount);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Mes_operation_action_rejects_an_authorized_site_scope_without_calling_mes()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-site-lead",
+                    "site",
+                    "SITE-A",
+                    [BusinessGatewayPermissions.MesOperationsManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            OperationTasks =
+            [
+                new BusinessConsoleMesOperationTaskRow(
+                    "OP-SITE",
+                    "WO-SITE",
+                    "Queued",
+                    10,
+                    "WC-A",
+                    null,
+                    null,
+                    "user-other",
+                    "其他人员",
+                    null,
+                    null,
+                    "Ready"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "site",
+                    "SITE-A",
+                    "工厂 A",
+                    "resolved-site",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/operation-tasks/OP-SITE/start?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A",
+            new { reasonCode = "start", idempotencyKey = "start-site-001" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastOperationTaskListRequest);
+        Assert.Equal(0, mes.StartOperationCallCount);
     }
 
     [Fact]
