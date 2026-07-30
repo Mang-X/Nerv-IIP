@@ -316,7 +316,9 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
                 .GreaterThan(0)
                 .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
                 .WithMessage("Spare part quantity must fit numeric(18,6).");
-            x.RuleFor(p => p.UomCode).MaximumLength(50);
+            // The spare part's unit drives the inventory issue posting; it must come from the part's
+            // master data. Reject the write instead of letting the integration event converter guess.
+            x.RuleFor(p => p.UomCode).NotEmpty().MaximumLength(50);
         });
     }
 }
@@ -782,7 +784,8 @@ public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidat
         RuleFor(x => x.WorkOrderId).NotEmpty();
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
-        RuleFor(x => x.UomCode).MaximumLength(50);
+        // Same rule as the completion path: no unit, no inventory issue — do not fabricate one downstream.
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
     }
 }
 
