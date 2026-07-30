@@ -37,7 +37,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { friendlyErrorMessage, notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -193,7 +193,7 @@ async function submitForm() {
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存员工失败', error, '保存员工失败，请稍后重试。')
   }
 }
 
@@ -213,7 +213,7 @@ async function confirmDisable() {
     disableOpen.value = false
     disableTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用员工失败', error, '停用员工失败，请稍后重试。')
   }
 }
 async function restore(row: BusinessConsoleWorkerDirectoryItem) {
@@ -222,7 +222,7 @@ async function restore(row: BusinessConsoleWorkerDirectoryItem) {
     await enable(row.employeeNo)
     notifySuccess(`员工「${row.displayName}」已恢复。`)
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('恢复员工失败', error, '恢复员工失败，请稍后重试。')
   }
 }
 </script>

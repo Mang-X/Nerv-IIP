@@ -362,7 +362,7 @@ describe('master-data facilities tree page', () => {
 
     expect(stub.createSite).toHaveBeenCalledTimes(1)
     expect(stub.toastError).toHaveBeenCalledWith(
-      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+      '创建工厂失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 对话框仍开、输入保留。

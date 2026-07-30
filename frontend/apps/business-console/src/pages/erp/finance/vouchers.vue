@@ -26,7 +26,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate } from '../shared'
 
 definePage({
@@ -176,7 +176,11 @@ async function submit() {
     open.value = false
     notifySuccess('会计凭证已过账')
   } catch (error) {
-    notifyError(vouchers.postVoucherError.value ?? error, '过账凭证失败，请稍后重试。')
+    notifyOperationFailure(
+      '过账凭证失败',
+      vouchers.postVoucherError.value ?? error,
+      '过账凭证失败，请稍后重试。',
+    )
   }
 }
 </script>

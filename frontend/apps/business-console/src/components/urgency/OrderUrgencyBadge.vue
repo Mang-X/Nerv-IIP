@@ -36,6 +36,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 const props = withDefaults(
   defineProps<{
@@ -145,7 +146,7 @@ function toIsoOrError(value: string): string | null | typeof INVALID_EXPIRY {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function reasonLabel(code: string) {

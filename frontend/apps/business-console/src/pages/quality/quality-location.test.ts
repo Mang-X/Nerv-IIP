@@ -57,15 +57,21 @@ const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
 
-const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+const notifySpies = vi.hoisted(() => ({
+  error: vi.fn(),
+  operationFailure: vi.fn(),
+  success: vi.fn(),
+}))
 const taskActionSpies = vi.hoisted(() => ({
   startInspection: vi.fn(),
   refreshInspectionTasks: vi.fn(),
 }))
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
-vi.mock('@/utils/notify', () => ({
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifyError: notifySpies.error,
+  notifyOperationFailure: notifySpies.operationFailure,
   notifySuccess: notifySpies.success,
 }))
 

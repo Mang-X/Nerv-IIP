@@ -31,7 +31,12 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvCheckbox,
@@ -246,7 +251,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('出库单已创建')
   } catch (error) {
-    notifyError(error, '创建出库单失败，请稍后重试。')
+    notifyOperationFailure('创建出库单失败', error, '创建出库单失败，请稍后重试。')
   }
 }
 
@@ -340,7 +345,7 @@ async function submitReview() {
     formError.value = reviewIntentLocked.value
       ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
       : ''
-    notifyError(error, '提交出库复核失败，请稍后重试。')
+    notifyOperationFailure('提交出库复核失败', error, '提交出库复核失败，请稍后重试。')
   }
 }
 
@@ -430,7 +435,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function refreshAll() {

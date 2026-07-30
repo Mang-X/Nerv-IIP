@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -111,9 +111,7 @@ watch(pageSize, () => {
   page.value = 1
 })
 
-const errorMessage = computed(() =>
-  templatesError.value instanceof Error ? templatesError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(templatesError.value))
 // 编辑态由所选行带出的只读上下文（模板编码是身份，不可改）。
 const carriedItems = computed(() => [{ label: '模板编码', value: editingTemplateCode.value }])
 const canSubmit = computed(
@@ -254,7 +252,7 @@ async function submitTemplate() {
     open.value = false
     resetForm()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存标签模板失败', error, '保存标签模板失败，请稍后重试。')
   }
 }
 </script>

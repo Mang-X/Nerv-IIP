@@ -14,7 +14,7 @@ import {
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/useBusinessTelemetry'
-import { notifyError } from '@/utils/notify'
+import { notifyOperationFailure } from '@/utils/notify'
 import {
   NvBadge,
   NvButton,
@@ -210,7 +210,7 @@ async function submit() {
       phase.value = 'tracking'
     }
   } catch (error) {
-    notifyError(error, '设备控制命令下发失败，请稍后重试。')
+    notifyOperationFailure('下发控制命令失败', error, '设备控制命令下发失败，请稍后重试。')
   }
 }
 

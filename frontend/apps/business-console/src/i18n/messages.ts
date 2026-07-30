@@ -117,4 +117,4 @@ export const messages = {
   },
 } as const
 
-export type MessageSchema = typeof messages['zh-CN']
+export type MessageSchema = (typeof messages)['zh-CN']

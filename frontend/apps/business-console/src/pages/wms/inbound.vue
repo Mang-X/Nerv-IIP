@@ -33,7 +33,12 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogCancel,
@@ -249,7 +254,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('入库单已创建')
   } catch (error) {
-    notifyError(error, '创建入库单失败，请稍后重试。')
+    notifyOperationFailure('创建入库单失败', error, '创建入库单失败，请稍后重试。')
   }
 }
 
@@ -305,7 +310,7 @@ async function confirmComplete() {
     }
     completeIntentLocked.value =
       completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
-    notifyError(error, '完成入库失败，请稍后重试。')
+    notifyOperationFailure('完成入库失败', error, '完成入库失败，请稍后重试。')
   }
 }
 
@@ -412,7 +417,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

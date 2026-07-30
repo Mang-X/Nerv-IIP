@@ -23,6 +23,7 @@ import {
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -289,7 +290,7 @@ function countValue(key: string) {
   return counts.value.find((item) => normalizeCountKey(item.key) === wanted)?.count ?? 0
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

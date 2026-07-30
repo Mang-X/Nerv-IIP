@@ -20,6 +20,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -85,9 +86,7 @@ interface ReadinessArea {
 const areas = computed(() => (readiness.value?.areas ?? []) as ReadinessArea[])
 const blockingIssues = computed(() => readiness.value?.blockingIssues ?? [])
 const warningIssues = computed(() => readiness.value?.warningIssues ?? [])
-const errorMessage = computed(() =>
-  readinessError.value instanceof Error ? readinessError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(readinessError.value))
 
 // 区域码 → 中文（开工前各就绪来源）；未知码回退原值，不暴露裸码占位。
 // 词表与生产驾驶舱共用一份（`@/data/businessLabels`），两页说法不会漂移。

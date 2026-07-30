@@ -49,7 +49,12 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -371,7 +376,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布制造 BOM 失败', error, '发布制造 BOM 失败，请稍后重试。')
   }
 }
 
@@ -399,7 +404,7 @@ async function openView(row: BusinessConsoleManufacturingBomItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function formatScrap(rate?: number | null) {
   if (rate == null) return '—'

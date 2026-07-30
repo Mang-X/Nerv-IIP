@@ -10,7 +10,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 /**
  * 报工上下文：**只能**由工单列表行 / 工序任务行带出，弹窗自身不提供任何挑选入口。
@@ -191,7 +191,11 @@ export function useProductionReportForm(
         return false
       }
       intentLocked.value = intentAttempted.value && isIndeterminateLifecycleWriteError(error)
-      notifyError(recordProductionReportError.value ?? error, '报工提交失败，请稍后重试。')
+      notifyOperationFailure(
+        '报工提交失败',
+        recordProductionReportError.value ?? error,
+        '报工提交失败，请稍后重试。',
+      )
       return false
     }
   }

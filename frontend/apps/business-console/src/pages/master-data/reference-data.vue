@@ -32,7 +32,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -248,7 +248,7 @@ async function submitCode() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存字典条目失败', error, '保存字典条目失败，请稍后重试。')
   }
 }
 function syncFormOnOpen(open: boolean) {
@@ -259,7 +259,7 @@ function syncFormOnOpen(open: boolean) {
   createForm.codeSet = selectedCodeSet.value
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

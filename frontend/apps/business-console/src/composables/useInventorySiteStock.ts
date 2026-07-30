@@ -139,9 +139,10 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
   /** 汇总口径：只统计真正有货的物料，零库存物料不占表格行（可用「显示零库存」放开）。 */
   const nonEmptyRows = computed(() => rows.value.filter((row) => row.lineCount > 0))
 
-  async function scanOne(
-    option: { value: string; label: string },
-  ): Promise<{ row: SiteStockRow; lines: SiteStockLine[] } | null> {
+  async function scanOne(option: {
+    value: string
+    label: string
+  }): Promise<{ row: SiteStockRow; lines: SiteStockLine[] } | null> {
     const uomCode = catalog.resolveUomCode(option.value)
     const { data } = await getBusinessConsoleInventoryAvailability({
       query: {

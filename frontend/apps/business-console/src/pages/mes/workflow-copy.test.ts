@@ -38,7 +38,12 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
-vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({

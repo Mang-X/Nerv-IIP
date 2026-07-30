@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeRules } from '@/composables/useBusinessBarcode'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -185,9 +185,7 @@ watch(statusFilter, (value) => {
   page.value = 1
 })
 
-const errorMessage = computed(() =>
-  rulesError.value instanceof Error ? rulesError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(rulesError.value))
 const isGs1 = computed(() => form.barcodeType.toLowerCase().includes('gs1'))
 // 编辑态由所选行带出的只读上下文（规则编码是身份，不可改）。
 const carriedItems = computed(() => [{ label: '规则编码', value: editingRuleCode.value }])
@@ -298,7 +296,7 @@ async function submitRule() {
     open.value = false
     resetForm()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存条码规则失败', error, '保存条码规则失败，请稍后重试。')
   }
 }
 </script>

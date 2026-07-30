@@ -156,12 +156,45 @@ export function notifyOperationFailure(action: string, error: unknown, fallback:
   toast.error(message ? `${action}：${message}` : fallback)
 }
 
+/**
+ * **行内错误态**（列表加载失败条、弹窗内 `submitError` 之类）的统一文案。
+ *
+ * 与 toast 走**同一条分层透传链**，避免「toast 说人话、行内条却是 `Internal Server Error`」的
+ * 两套口径：中文领域消息原样显示，英文 HTTP / 5xx 文案映射成人话（原文进 `console.error`）。
+ *
+ * 无错误时返回空串，模板可直接 `v-if` 判空。
+ */
+export function inlineErrorMessage(error: unknown, fallback = '请求失败，请稍后重试。'): string {
+  if (!error) return ''
+  const raw = serverErrorMessage(error)
+  const message = friendlyErrorMessage(raw || error, fallback)
+  if (raw && message !== raw) {
+    console.error('[加载失败] 服务端原始错误：', raw, error)
+  }
+  return message
+}
+
 /** 成功反馈。 */
 export function notifySuccess(message: string): void {
   toast.success(message)
 }
 
-/** 失败反馈：toast.error（友好文案），不在页面留常驻错误条。 */
+/**
+ * 失败反馈：toast.error（友好文案），不在页面留常驻错误条。
+ *
+ * 与 `notifyOperationFailure` **同一条分层透传链**（只是不带动作前缀）：先取服务端真正说的那句话
+ * （信封 `message` → RFC7807 `detail`/`title` → 字段校验 `errors`），中文领域消息原样上屏，
+ * 英文 HTTP / 5xx 文案走 `friendlyErrorMessage` 映射、原文只进 `console.error`。
+ *
+ * 为什么不能只写 `friendlyErrorMessage(error, fallback)`：generated client 在 `throwOnError`
+ * 下抛的是**解析后的响应体对象**，`rawMessage` 只认 `Error`/字符串/顶层 `message`，
+ * 于是 `{ detail: '报价单已过期，不能转订单' }` 这类 400 全被吞成兜底文案（MAN-700 / #1289）。
+ */
 export function notifyError(error: unknown, fallback?: string): void {
-  toast.error(friendlyErrorMessage(error, fallback))
+  const raw = serverErrorMessage(error)
+  const message = friendlyErrorMessage(raw || error, fallback)
+  if (raw && message !== raw) {
+    console.error('[操作失败] 服务端原始错误：', raw, error)
+  }
+  toast.error(message)
 }

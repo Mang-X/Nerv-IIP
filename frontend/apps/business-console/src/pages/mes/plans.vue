@@ -10,7 +10,7 @@ import { describeMesReadinessReason, useMesProductionPlans } from '@/composables
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -208,7 +208,7 @@ async function submitConvertPlan() {
     convertOpen.value = false
     refreshProductionPlans()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('下达工单失败', error, '下达工单失败，请稍后重试。')
   }
 }
 function resetFilters() {
@@ -308,7 +308,7 @@ function newPlanIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

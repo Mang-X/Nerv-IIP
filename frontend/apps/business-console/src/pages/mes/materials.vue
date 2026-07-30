@@ -24,6 +24,7 @@ import {
 import { ArrowUpRightIcon, ClipboardListIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -98,7 +99,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

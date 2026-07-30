@@ -19,7 +19,7 @@ import {
 } from '@/composables/useWarehouseCodeCatalog'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -229,7 +229,7 @@ async function submitMovement() {
   try {
     response = await postMovement(body)
   } catch (error) {
-    notifyError(error, '提交库存移动失败，请稍后重试。')
+    notifyOperationFailure('提交库存移动失败', error, '提交库存移动失败，请稍后重试。')
     return
   }
   // 列表来自服务端读面：过账成功后失效查询即可，新过账的流水刷新之后仍然在。

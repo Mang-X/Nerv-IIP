@@ -4,7 +4,7 @@ import { messages } from './messages'
 export const DEFAULT_LOCALE = 'zh-CN'
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 
-export type SupportedLocale = typeof SUPPORTED_LOCALES[number]
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
 
 export function isSupportedLocale(locale: string): locale is SupportedLocale {
   return SUPPORTED_LOCALES.includes(locale as SupportedLocale)
@@ -16,8 +16,10 @@ export function normalizeLocale(locale?: string): SupportedLocale {
   if (isSupportedLocale(locale)) return locale
 
   const language = locale.split('-')[0]
-  return SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale.startsWith(`${language}-`))
-    ?? DEFAULT_LOCALE
+  return (
+    SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale.startsWith(`${language}-`)) ??
+    DEFAULT_LOCALE
+  )
 }
 
 export function createBusinessConsoleI18n(options: { locale?: string } = {}) {

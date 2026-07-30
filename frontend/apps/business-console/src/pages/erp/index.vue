@@ -11,7 +11,7 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -232,7 +232,11 @@ async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisition
     }
     toast.warning('缺少有效价源，请先发起 RFQ')
   } catch (error) {
-    notifyError(requisitions.convertToPurchaseOrderError.value ?? error, '转单失败，请稍后重试。')
+    notifyOperationFailure(
+      '转单失败',
+      requisitions.convertToPurchaseOrderError.value ?? error,
+      '转单失败，请稍后重试。',
+    )
   }
 }
 
@@ -285,7 +289,8 @@ async function submitRfq() {
 
     toast.warning('缺少有效价源，请检查供应商候选')
   } catch (error) {
-    notifyError(
+    notifyOperationFailure(
+      '发起 RFQ 失败',
       requisitions.convertToPurchaseOrderError.value ?? error,
       '发起 RFQ 失败，请稍后重试。',
     )

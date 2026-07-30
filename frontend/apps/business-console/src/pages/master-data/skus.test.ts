@@ -260,7 +260,7 @@ describe('master-data skus page', () => {
     expect(stub.createSku).toHaveBeenCalledTimes(1)
     // 失败走 toast.error 的人话映射，不暴露技术串
     expect(stub.toastError).toHaveBeenCalledWith(
-      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+      '保存物料失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置（仍可重试）：名称保留

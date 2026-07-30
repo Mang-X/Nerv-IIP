@@ -19,7 +19,7 @@ import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -537,7 +537,7 @@ async function quickResolveTask(row: BusinessConsoleApprovalTaskItem, decision: 
     })
     notifySuccess(`${documentLabel(row)} 已${decisionLabel(decision)}`)
   } catch (error) {
-    notifyError(error, '审批处理失败，请稍后重试。')
+    notifyOperationFailure('审批处理失败', error, '审批处理失败，请稍后重试。')
   }
 }
 
@@ -548,7 +548,7 @@ async function submitTaskDecision() {
     taskDecisionOpen.value = false
     notifySuccess(`审批任务已${decisionLabel(decisionForm.decision)}`)
   } catch (error) {
-    notifyError(error, '审批处理失败，请稍后重试。')
+    notifyOperationFailure('审批处理失败', error, '审批处理失败，请稍后重试。')
   }
 }
 
@@ -600,7 +600,7 @@ async function submitDelegation() {
     delegationOpen.value = false
     notifySuccess('审批委托已生效')
   } catch (error) {
-    notifyError(error, '委托保存失败，请稍后重试。')
+    notifyOperationFailure('委托保存失败', error, '委托保存失败，请稍后重试。')
   }
 }
 
@@ -610,7 +610,7 @@ async function revokeDelegation(row: BusinessConsoleApprovalDelegationItem) {
     await approval.revokeDelegation(row.delegationId)
     notifySuccess('审批委托已撤销')
   } catch (error) {
-    notifyError(error, '委托撤销失败，请稍后重试。')
+    notifyOperationFailure('委托撤销失败', error, '委托撤销失败，请稍后重试。')
   }
 }
 
@@ -666,7 +666,7 @@ async function submitTemplate() {
     templateOpen.value = false
     notifySuccess('审批模板已保存')
   } catch (error) {
-    notifyError(error, '模板保存失败，请稍后重试。')
+    notifyOperationFailure('模板保存失败', error, '模板保存失败，请稍后重试。')
   }
 }
 

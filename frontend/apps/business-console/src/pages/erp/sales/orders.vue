@@ -40,7 +40,7 @@ import {
 import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
   erpReadState,
@@ -190,7 +190,11 @@ async function submit() {
     open.value = false
     notifySuccess('销售订单已创建')
   } catch (error) {
-    notifyError(orders.createSalesOrderError.value ?? error, '创建销售订单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建销售订单失败',
+      orders.createSalesOrderError.value ?? error,
+      '创建销售订单失败，请稍后重试。',
+    )
   }
 }
 </script>

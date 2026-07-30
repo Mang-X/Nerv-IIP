@@ -71,6 +71,19 @@ const state = vi.hoisted(() => ({
   quotations: [] as Array<Record<string, unknown>>,
   deliveries: [] as Array<Record<string, unknown>>,
   salesOrders: [] as Array<Record<string, unknown>>,
+  approveQuotation: vi.fn(async (_no: string) => undefined),
+  createSalesOrder: vi.fn(async (_body: unknown) => undefined),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
+
+// 反馈走真实 notify 分层透传，只把 toast 换成 spy：断言的是「用户最终看到的那句话」。
+vi.mock('@nerv-iip/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/ui')>()),
+  toast: {
+    error: (...args: unknown[]) => state.toastError(...args),
+    success: (...args: unknown[]) => state.toastSuccess(...args),
+  },
 }))
 
 vi.mock('vue-router', () => ({
@@ -99,7 +112,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
 vi.mock('@/composables/useBusinessErp', () => ({
   useErpQuotations: () => ({
     ...listShape(() => state.quotations),
-    approveQuotation: vi.fn(),
+    approveQuotation: state.approveQuotation,
     approveQuotationPending: shallowRef(false),
     approveQuotationError: shallowRef(undefined),
     createQuotation: vi.fn(),
@@ -116,7 +129,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
       salesOrdersError: shallowRef(undefined),
       salesOrdersPending: shallowRef(false),
       refreshSalesOrders: vi.fn(),
-      createSalesOrder: vi.fn(),
+      createSalesOrder: state.createSalesOrder,
       createSalesOrderPending: shallowRef(false),
       createSalesOrderError: shallowRef(undefined),
     }
@@ -185,7 +198,21 @@ beforeEach(() => {
   state.salesOrders = []
   state.deliveries = []
   state.quotations = []
+  state.approveQuotation = vi.fn(async () => undefined)
+  state.createSalesOrder = vi.fn(async () => undefined)
+  state.toastError.mockReset()
+  state.toastSuccess.mockReset()
 })
+
+function draftQuotation() {
+  return {
+    quotationNo: 'QUO-DRAFT-1',
+    customerCode: 'CUST-A',
+    status: 'Draft',
+    totalAmount: 1000,
+    expiresOn: '2026-12-31',
+  }
+}
 
 describe('ERP sales quotation page', () => {
   it('keeps quotation status filter aligned with backend values', async () => {
@@ -224,6 +251,50 @@ describe('ERP sales quotation page', () => {
     expect(wrapper.findAll('[data-testid="row-actions"]')).toHaveLength(1)
     expect(wrapper.findAll('button').filter((b) => b.text().includes('审批通过'))).toHaveLength(1)
     expect(wrapper.text()).toMatch(/待审报价[^0-9]*1/)
+  })
+
+  // MAN-700 / #1289：generated client 抛的是响应体对象，旧写法只判 instanceof Error，
+  // 后端 400 的领域拒绝理由全被吞成「审批报价失败，请稍后重试。」，用户不知道哪儿不满足。
+  it('surfaces the service domain message when approving a quotation fails', async () => {
+    state.quotations = [draftQuotation()]
+    state.approveQuotation = vi.fn(async () => {
+      throw { title: 'Bad Request', status: 400, detail: '报价单已过期，不能审批' }
+    })
+    const wrapper = mount(QuotationsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('审批通过'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(state.toastError).toHaveBeenCalledWith('审批报价失败：报价单已过期，不能审批')
+    expect(state.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('never puts an English 500 body on screen — falls back to the domain hint', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    state.quotations = [draftQuotation()]
+    state.approveQuotation = vi.fn(async () => {
+      throw { title: 'Internal Server Error', status: 500 }
+    })
+    const wrapper = mount(QuotationsPage, {
+      global: { stubs: { ...layoutStub, ...rowActionStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('审批通过'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(state.toastError).toHaveBeenCalledWith('审批报价失败，请稍后重试。')
+    expect(state.toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server'))
+    consoleError.mockRestore()
   })
 })
 

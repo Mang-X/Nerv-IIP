@@ -276,7 +276,7 @@ describe('master-data reference-data page', () => {
 
     expect(stub.createCode).toHaveBeenCalledTimes(1)
     expect(stub.toastError).toHaveBeenCalledWith(
-      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+      '保存字典条目失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置：名称保留。

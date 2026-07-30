@@ -37,7 +37,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -172,7 +172,7 @@ function ruleStatusLabel(rule: BusinessConsoleCodeRuleItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 const listErrorMessage = computed(() => formatError(rulesError.value))
 
@@ -244,7 +244,7 @@ async function previewViewSample() {
     const sample = await previewCode(rule.ruleKey, rule.segments ?? [])
     viewPreview.value = sample ?? '（无返回）'
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('生成编码预览失败', error, '生成编码预览失败，请稍后重试。')
   } finally {
     viewPreviewPending.value = false
   }
@@ -460,7 +460,7 @@ async function previewFormSample() {
     const sample = await previewCode(editingRuleKey.value, segments)
     formPreview.value = sample ?? '（无返回）'
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('生成编码预览失败', error, '生成编码预览失败，请稍后重试。')
   } finally {
     formPreviewPending.value = false
   }
@@ -493,7 +493,7 @@ async function submitForm() {
     formOpen.value = false
     editingRuleKey.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布编码规则失败', error, '发布编码规则失败，请稍后重试。')
   }
 }
 </script>

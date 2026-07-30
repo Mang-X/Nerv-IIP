@@ -37,7 +37,7 @@ import {
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
   erpReadState,
@@ -185,7 +185,11 @@ async function submit() {
     open.value = false
     notifySuccess('销售报价已创建')
   } catch (error) {
-    notifyError(quotations.createQuotationError.value ?? error, '创建报价失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建报价失败',
+      quotations.createQuotationError.value ?? error,
+      '创建报价失败，请稍后重试。',
+    )
   }
 }
 
@@ -199,7 +203,11 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
     await quotations.approveQuotation(row.quotationNo)
     notifySuccess(`报价单 ${row.quotationNo} 已审批`)
   } catch (error) {
-    notifyError(quotations.approveQuotationError.value ?? error, '审批报价失败，请稍后重试。')
+    notifyOperationFailure(
+      '审批报价失败',
+      quotations.approveQuotationError.value ?? error,
+      '审批报价失败，请稍后重试。',
+    )
   }
 }
 </script>

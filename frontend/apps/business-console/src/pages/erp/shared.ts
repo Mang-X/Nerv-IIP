@@ -1,4 +1,5 @@
 import type { ComputedRef } from 'vue'
+import { inlineErrorMessage } from '@/utils/notify'
 
 /** 取不到数时的统一占位。财务页尤其不许拿 0 顶上——「¥0.00 余额」是会被当真的。 */
 export const UNAVAILABLE_TEXT = '—'
@@ -38,7 +39,7 @@ export function formatQuantity(value?: number | null) {
 }
 
 export function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 export function firstQueryParam(value: unknown) {

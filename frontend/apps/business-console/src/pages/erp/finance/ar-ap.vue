@@ -42,7 +42,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
 
 definePage({
@@ -236,7 +236,11 @@ async function submitReceivable() {
     receivableOpen.value = false
     notifySuccess('应收已登记')
   } catch (error) {
-    notifyError(receivables.createReceivableError.value ?? error, '登记应收失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记应收失败',
+      receivables.createReceivableError.value ?? error,
+      '登记应收失败，请稍后重试。',
+    )
   }
 }
 
@@ -253,7 +257,11 @@ async function submitPayable() {
     payableOpen.value = false
     notifySuccess('应付已登记')
   } catch (error) {
-    notifyError(payables.createPayableError.value ?? error, '登记应付失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记应付失败',
+      payables.createPayableError.value ?? error,
+      '登记应付失败，请稍后重试。',
+    )
   }
 }
 </script>

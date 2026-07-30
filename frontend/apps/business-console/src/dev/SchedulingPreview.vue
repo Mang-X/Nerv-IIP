@@ -14,11 +14,30 @@ const WC_LABEL: Record<string, string> = {
   '焊接-01': '焊装中心',
   '加工中心-03': '机加中心',
 }
-const WC_DIMS: Record<string, { device: [string, string]; team: [string, string]; line: [string, string] }> = {
-  '激光切割-01': { device: ['DEV-L1', '激光切割机 L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '折弯-02': { device: ['DEV-B2', '数控折弯机 B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '焊接-01': { device: ['DEV-W1', '焊接机器人 W1'], team: ['T-B', '乙班'], line: ['LN-WELD', '焊装线'] },
-  '加工中心-03': { device: ['DEV-C3', '数控机床 M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
+const WC_DIMS: Record<
+  string,
+  { device: [string, string]; team: [string, string]; line: [string, string] }
+> = {
+  '激光切割-01': {
+    device: ['DEV-L1', '激光切割机 L1'],
+    team: ['T-A', '甲班'],
+    line: ['LN-SHEET', '钣金线'],
+  },
+  '折弯-02': {
+    device: ['DEV-B2', '数控折弯机 B2'],
+    team: ['T-A', '甲班'],
+    line: ['LN-SHEET', '钣金线'],
+  },
+  '焊接-01': {
+    device: ['DEV-W1', '焊接机器人 W1'],
+    team: ['T-B', '乙班'],
+    line: ['LN-WELD', '焊装线'],
+  },
+  '加工中心-03': {
+    device: ['DEV-C3', '数控机床 M3'],
+    team: ['T-B', '乙班'],
+    line: ['LN-MACH', '机加线'],
+  },
 }
 
 const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']
@@ -88,7 +107,13 @@ const model = computed(() => {
     i += 1
   }
   // 标准甘特里程碑:独立一行 + 菱形(零时长)。
-  const milestone = (id: string, orderId: string, text: string, whenUtc: string, colorKey: string) => ({
+  const milestone = (
+    id: string,
+    orderId: string,
+    text: string,
+    whenUtc: string,
+    colorKey: string,
+  ) => ({
     id,
     orderId,
     operationId: '',
@@ -141,10 +166,42 @@ const model = computed(() => {
       hasConflict: false,
     }
   }
-  m.tasks.push(block('blk-maint', 'maintenance', '焊接-01', '2026-06-11T03:00:00.000Z', '2026-06-11T04:30:00.000Z'))
-  m.tasks.push(block('blk-down', 'downtime', '加工中心-03', '2026-06-11T08:00:00.000Z', '2026-06-11T10:00:00.000Z'))
-  m.tasks.push(block('blk-line', 'lineChange', '激光切割-01', '2026-06-11T06:00:00.000Z', '2026-06-11T07:00:00.000Z'))
-  m.tasks.push(block('blk-co', 'changeover', '折弯-02', '2026-06-10T22:00:00.000Z', '2026-06-10T22:40:00.000Z'))
+  m.tasks.push(
+    block(
+      'blk-maint',
+      'maintenance',
+      '焊接-01',
+      '2026-06-11T03:00:00.000Z',
+      '2026-06-11T04:30:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-down',
+      'downtime',
+      '加工中心-03',
+      '2026-06-11T08:00:00.000Z',
+      '2026-06-11T10:00:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-line',
+      'lineChange',
+      '激光切割-01',
+      '2026-06-11T06:00:00.000Z',
+      '2026-06-11T07:00:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-co',
+      'changeover',
+      '折弯-02',
+      '2026-06-10T22:00:00.000Z',
+      '2026-06-10T22:40:00.000Z',
+    ),
+  )
 
   // 资源 KPI(排产板左侧泳道头)。
   for (const r of m.resources) {
@@ -178,16 +235,37 @@ const view = ref<'order' | 'resource'>(
       <header class="flex flex-wrap items-center gap-3">
         <div class="mr-auto">
           <h1 class="text-2xl font-semibold tracking-tight">甘特图组件预览</h1>
-          <p class="text-sm text-muted-foreground">@nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染</p>
+          <p class="text-sm text-muted-foreground">
+            @nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染
+          </p>
         </div>
-        <NvButton size="sm" :variant="view === 'order' ? 'default' : 'outline'" @click="view = 'order'">工单甘特图</NvButton>
-        <NvButton size="sm" :variant="view === 'resource' ? 'default' : 'outline'" @click="view = 'resource'">资源甘特图</NvButton>
-        <NvButton size="sm" variant="outline" @click="toggle()">{{ isDark ? '切到亮色' : '切到暗色' }}</NvButton>
-        <NvButton size="sm" variant="outline" @click="readOnly = !readOnly">{{ readOnly ? '允许编辑' : '设为只读' }}</NvButton>
+        <NvButton
+          size="sm"
+          :variant="view === 'order' ? 'default' : 'outline'"
+          @click="view = 'order'"
+          >工单甘特图</NvButton
+        >
+        <NvButton
+          size="sm"
+          :variant="view === 'resource' ? 'default' : 'outline'"
+          @click="view = 'resource'"
+          >资源甘特图</NvButton
+        >
+        <NvButton size="sm" variant="outline" @click="toggle()">{{
+          isDark ? '切到亮色' : '切到暗色'
+        }}</NvButton>
+        <NvButton size="sm" variant="outline" @click="readOnly = !readOnly">{{
+          readOnly ? '允许编辑' : '设为只读'
+        }}</NvButton>
       </header>
 
       <div class="h-[calc(100vh-9rem)] min-h-[520px]">
-        <GanttChart v-if="view === 'order'" :model="model" :read-only="readOnly" engine-kind="auto" />
+        <GanttChart
+          v-if="view === 'order'"
+          :model="model"
+          :read-only="readOnly"
+          engine-kind="auto"
+        />
         <ResourceSchedulerBoard v-else :model="model" :read-only="readOnly" engine-kind="auto" />
       </div>
     </div>

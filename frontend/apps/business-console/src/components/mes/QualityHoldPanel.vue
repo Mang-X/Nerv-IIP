@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useMesQualityHold } from '@/composables/useBusinessMes'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -130,7 +130,7 @@ async function confirmRelease() {
     void refreshTimeline()
     emit('released')
   } catch (error) {
-    notifyError(error, '强制释放质量保留失败，请稍后重试。')
+    notifyOperationFailure('强制释放质量保留失败', error, '强制释放质量保留失败，请稍后重试。')
   }
 }
 </script>

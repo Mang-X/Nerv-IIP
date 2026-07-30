@@ -30,7 +30,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
   erpReadState,
@@ -183,7 +183,11 @@ async function submit() {
     open.value = false
     notifySuccess('RFQ 已创建')
   } catch (error) {
-    notifyError(rfqs.createRequestForQuotationError.value ?? error, '发起询价失败，请稍后重试。')
+    notifyOperationFailure(
+      '发起询价失败',
+      rfqs.createRequestForQuotationError.value ?? error,
+      '发起询价失败，请稍后重试。',
+    )
   }
 }
 </script>

@@ -39,6 +39,11 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
 }))
 
 const routerPush = vi.hoisted(() => vi.fn())
+const planningSpies = vi.hoisted(() => ({
+  runMrp: vi.fn(async () => undefined),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
 
 vi.mock('@/composables/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
@@ -137,7 +142,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       rejectSuggestion: vi.fn(),
       rejectSuggestionError: shallowRef(null),
       rejectSuggestionPending: shallowRef(false),
-      runMrp: vi.fn(),
+      runMrp: planningSpies.runMrp,
       runMrpError: shallowRef(null),
       runMrpPending: shallowRef(false),
       runRequest: reactive({
@@ -257,9 +262,10 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush }),
 }))
 
-vi.mock('@/utils/notify', () => ({
+// 反馈走真实分层透传（notifyOperationFailure / inlineErrorMessage），只把 toast 换成 spy。
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifyError: vi.fn(),
-  notifySuccess: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/ui', async () => {
@@ -293,6 +299,10 @@ vi.mock('@nerv-iip/ui', async () => {
   })
 
   return {
+    toast: {
+      error: (...args: unknown[]) => planningSpies.toastError(...args),
+      success: (...args: unknown[]) => planningSpies.toastSuccess(...args),
+    },
     NvButton: Button,
     NvDataTable: DataTable,
     NvDatePicker: Shell,
@@ -327,6 +337,9 @@ describe('PlanningWorkbench', () => {
   // 计划建议行的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   beforeEach(() => {
     setActivePinia(createPinia())
+    planningSpies.runMrp = vi.fn(async () => undefined)
+    planningSpies.toastError.mockReset()
+    planningSpies.toastSuccess.mockReset()
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
@@ -408,5 +421,40 @@ describe('PlanningWorkbench', () => {
     // 3 条 Open 行走接受/拒绝分支，不出现排产入口，也不出现「未承接工单」说明。
     expect(wrapper.findAll('[data-testid="planning-suggestion-schedule-single"]')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('未承接工单，暂不能排产')
+  })
+
+  // MAN-700 / #1289：RunMrp 500 曾把英文 `Internal Server Error` 常驻在页面上，
+  // 且 submitMrpRun 没有 try/catch，异常逃逸后弹框永远关不掉。
+  it('RunMrp 500 只走 toast 人话，英文原文既不上屏也不留常驻错误条', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    planningSpies.runMrp = vi.fn(async () => {
+      throw { title: 'Internal Server Error', status: 500 }
+    })
+    const wrapper = mount(PlanningWorkbench)
+
+    // 未捕获就会变成 unhandled rejection（vitest 直接判错），本用例同时守住「弹框不卡死」。
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await Promise.resolve()
+
+    expect(planningSpies.toastError).toHaveBeenCalledWith('运行 MRP 失败，请稍后重试。')
+    expect(planningSpies.toastError).not.toHaveBeenCalledWith(
+      expect.stringContaining('Internal Server'),
+    )
+    expect(wrapper.text()).not.toContain('Internal Server Error')
+    consoleError.mockRestore()
+  })
+
+  it('RunMrp 被后端按领域理由拒绝时原样透传那句中文', async () => {
+    planningSpies.runMrp = vi.fn(async () => {
+      throw { status: 400, detail: '计划期内没有已发布的主计划行' }
+    })
+    const wrapper = mount(PlanningWorkbench)
+
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await Promise.resolve()
+
+    expect(planningSpies.toastError).toHaveBeenCalledWith(
+      '运行 MRP 失败：计划期内没有已发布的主计划行',
+    )
   })
 })

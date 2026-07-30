@@ -7,10 +7,7 @@ import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/u
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import {
-  useBomRevisionSuggestions,
-  useEngineeringEboms,
-} from '@/composables/useProductEngineering'
+import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -47,7 +44,12 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -304,7 +306,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布设计 BOM 失败', error, '发布设计 BOM 失败，请稍后重试。')
   }
 }
 
@@ -330,7 +332,7 @@ async function openView(row: BusinessConsoleEngineeringBomItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function uomLabel(code?: string | null) {
   if (!code) return '—'
@@ -420,7 +422,9 @@ function uomLabel(code?: string | null) {
                     v-model="form.revision"
                     :suggestions="takenRevisions"
                     :disabled="!form.parentItemCode || takenRevisionsPending"
-                    :placeholder="form.parentItemCode ? '填写新修订号，如 A、B、001' : '请先选父项物料'"
+                    :placeholder="
+                      form.parentItemCode ? '填写新修订号，如 A、B、001' : '请先选父项物料'
+                    "
                     empty-text="该物料还没有历史修订"
                   />
                   <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">

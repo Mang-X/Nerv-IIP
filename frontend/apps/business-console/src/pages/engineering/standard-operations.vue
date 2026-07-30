@@ -45,7 +45,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { friendlyErrorMessage, notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -307,7 +307,7 @@ async function submitForm() {
     editingCode.value = null
     editingRow.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存标准工序失败', error, '保存标准工序失败，请稍后重试。')
   }
 }
 
@@ -328,7 +328,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用工序失败', error, '停用工序失败，请稍后重试。')
   }
 }
 </script>
