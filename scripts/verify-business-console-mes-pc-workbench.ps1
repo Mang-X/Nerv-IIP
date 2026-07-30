@@ -44,7 +44,9 @@ function Invoke-PnpmInteractive {
     # 最新 pnpm 与 frontend/ 锁定版本冲突。
     $invocation = Resolve-PnpmInvocation -Arguments $Arguments -WorkingDirectory $root
 
-    $result = Invoke-NativeCommandInteractive -Command "cmd.exe" -Name $Name -WorkingDirectory $invocation.WorkingDirectory -Arguments (@(
+    $result = Invoke-NativeCommandInteractive -Command "cmd" -Name $Name -WorkingDirectory $invocation.WorkingDirectory -Arguments (@(
+        "/d",
+        "/s",
         "/c",
         "pnpm"
     ) + $invocation.Arguments)

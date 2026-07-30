@@ -925,7 +925,9 @@ function Resolve-PnpmInvocation {
         到最新 pnpm，并因与 frontend/ 锁定版本不一致直接失败（pnpm -C 切目录发生在
         corepack 解析之后，救不回来）。本函数集中处理两件事：
         1. 参数中出现 -C/--dir <path> 时，把进程 cwd 对齐到该目标目录并剔除该参数对
-           （行为等价：pnpm -C 的语义就是“切到该目录再执行”）。
+           （行为等价：pnpm -C 的语义就是“切到该目录再执行”）。-C 大小写敏感（小写
+           -c 是下游命令常见参数，不消费）；多次出现时各自基于原始 cwd 解析、末者胜；
+           遇到 -- 分隔符后停止扫描，其后参数原样透传给下游命令。
         2. 未显式传 WorkingDirectory 时，默认以 <repoRoot>/frontend 为 cwd。
     #>
     param(
@@ -939,17 +941,27 @@ function Resolve-PnpmInvocation {
         $WorkingDirectory = Join-Path (Get-ScriptAutomationRepoRoot) 'frontend'
     }
 
+    $baseDirectory = $WorkingDirectory
     $normalizedArguments = [System.Collections.Generic.List[string]]::new()
     $index = 0
     while ($index -lt $Arguments.Count) {
         $argument = $Arguments[$index]
-        if (($argument -eq '-C' -or $argument -eq '--dir') -and ($index + 1) -lt $Arguments.Count) {
-            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $WorkingDirectory -Target $Arguments[$index + 1]
+        if ($argument -eq '--') {
+            # -- 之后的参数属于下游命令（pnpm run/exec 透传），原样保留、停止扫描。
+            while ($index -lt $Arguments.Count) {
+                $normalizedArguments.Add($Arguments[$index])
+                $index += 1
+            }
+            break
+        }
+        # -C 必须大小写敏感：小写 -c 是下游命令（如 playwright test -c）常见参数。
+        if (($argument -ceq '-C' -or $argument -eq '--dir') -and ($index + 1) -lt $Arguments.Count) {
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $baseDirectory -Target $Arguments[$index + 1]
             $index += 2
             continue
         }
         if ($argument -like '--dir=*') {
-            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $WorkingDirectory -Target $argument.Substring('--dir='.Length)
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $baseDirectory -Target $argument.Substring('--dir='.Length)
             $index += 1
             continue
         }
