@@ -151,7 +151,40 @@ public sealed class BusinessGatewayWmsTests
                 data = request.RequestUri!.AbsolutePath switch
                 {
                     "/api/business/v1/wms/inbound-orders" => new { items = Array.Empty<object>(), total = 23 },
-                    "/api/business/v1/wms/putaway-tasks" => new { items = Array.Empty<object>(), total = 19 },
+                    "/api/business/v1/wms/putaway-tasks" => new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                warehouseTaskId = "warehouse-task-putaway-http-001",
+                                organizationId = "org-001",
+                                environmentId = "env-dev",
+                                taskType = "Putaway",
+                                taskNo = "PUT-HTTP-001",
+                                sourceOrderNo = "IN-HTTP-001",
+                                sourceOrderLineNo = "10",
+                                skuCode = "SKU-001",
+                                uomCode = "EA",
+                                siteCode = "SITE-A",
+                                fromLocationCode = "RECV-01",
+                                toLocationCode = "BIN-01",
+                                plannedQuantity = 3,
+                                executedQuantity = 0,
+                                status = "Open",
+                                version = 3,
+                                createdAtUtc = "2026-06-01T09:30:00Z",
+                                completedAtUtc = (string?)null,
+                                assignedOperatorUserId = "user-001",
+                                assignedPoolCode = "POOL-A",
+                                lotNo = "LOT-001",
+                                serialNo = (string?)null,
+                                allowedActions = new[] { "start" },
+                                blockReasons = Array.Empty<string>(),
+                            },
+                        },
+                        total = 19,
+                    },
                     "/api/business/v1/wms/outbound-orders" => new
                     {
                         items = new[]
@@ -191,7 +224,40 @@ public sealed class BusinessGatewayWmsTests
                         },
                         total = 17,
                     },
-                    "/api/business/v1/wms/picking-tasks" => new { items = Array.Empty<object>(), total = 13 },
+                    "/api/business/v1/wms/picking-tasks" => new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                warehouseTaskId = "warehouse-task-picking-http-001",
+                                organizationId = "org-001",
+                                environmentId = "env-dev",
+                                taskType = "Picking",
+                                taskNo = "PICK-HTTP-001",
+                                sourceOrderNo = "OUT-HTTP-001",
+                                sourceOrderLineNo = "10",
+                                skuCode = "SKU-001",
+                                uomCode = "EA",
+                                siteCode = "SITE-A",
+                                fromLocationCode = "BIN-01",
+                                toLocationCode = "PACK-01",
+                                plannedQuantity = 2,
+                                executedQuantity = 0,
+                                status = "Open",
+                                version = 4,
+                                createdAtUtc = "2026-06-01T09:40:00Z",
+                                completedAtUtc = (string?)null,
+                                assignedOperatorUserId = "user-other",
+                                assignedPoolCode = "POOL-B",
+                                lotNo = (string?)null,
+                                serialNo = (string?)null,
+                                allowedActions = Array.Empty<string>(),
+                                blockReasons = new[] { "TASK_ASSIGNED_TO_ANOTHER_OPERATOR" },
+                            },
+                        },
+                        total = 13,
+                    },
                     "/api/business/v1/wms/count-executions" => new { items = Array.Empty<object>(), total = 11 },
                     "/api/business/v1/wms/wcs-tasks" => new { items = Array.Empty<object>(), total = 9 },
                     "/api/business/v1/wms/receiving-quality-gates" => (object)new
@@ -327,6 +393,10 @@ public sealed class BusinessGatewayWmsTests
 
         Assert.Equal(23, inbound.Total);
         Assert.Equal(19, putaway.Total);
+        var putawayTask = Assert.Single(putaway.Items);
+        Assert.Equal(["start"], putawayTask.AllowedActions);
+        Assert.Empty(putawayTask.BlockReasons!);
+        Assert.Equal(3, putawayTask.Version);
         Assert.Equal(17, outbound.Total);
         var failedOutbound = Assert.Single(outbound.Items);
         Assert.Equal("finished-goods", failedOutbound.SiteCode);
@@ -334,6 +404,12 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("NEGATIVE_ON_HAND", failedOutbound.FailureCode);
         Assert.Equal("receiving", Assert.Single(failedOutbound.Lines).LocationCode);
         Assert.Equal(13, picking.Total);
+        var pickingTask = Assert.Single(picking.Items);
+        Assert.Empty(pickingTask.AllowedActions!);
+        Assert.Equal(
+            ["TASK_ASSIGNED_TO_ANOTHER_OPERATOR"],
+            pickingTask.BlockReasons);
+        Assert.Equal(4, pickingTask.Version);
         Assert.Equal(11, count.Total);
         Assert.Equal(9, wcs.Total);
         Assert.Equal(7, gates.Total);
@@ -1279,8 +1355,21 @@ public sealed class BusinessGatewayWmsTests
         using var putawayDocument = JsonDocument.Parse(await putaway.Content.ReadAsStringAsync());
         using var pickingDocument = JsonDocument.Parse(await picking.Content.ReadAsStringAsync());
         using var countDocument = JsonDocument.Parse(await count.Content.ReadAsStringAsync());
-        Assert.Equal("PUT-001", putawayDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("taskNo").GetString());
-        Assert.Equal("PICK-001", pickingDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("taskNo").GetString());
+        var putawayItem = putawayDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("PUT-001", putawayItem.GetProperty("taskNo").GetString());
+        Assert.Equal(
+            ["start"],
+            putawayItem.GetProperty("allowedActions").EnumerateArray().Select(item => item.GetString()!).ToArray());
+        Assert.Empty(putawayItem.GetProperty("blockReasons").EnumerateArray());
+        Assert.Equal(3, putawayItem.GetProperty("version").GetInt64());
+
+        var pickingItem = pickingDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("PICK-001", pickingItem.GetProperty("taskNo").GetString());
+        Assert.Empty(pickingItem.GetProperty("allowedActions").EnumerateArray());
+        Assert.Equal(
+            ["TASK_ASSIGNED_TO_ANOTHER_OPERATOR"],
+            pickingItem.GetProperty("blockReasons").EnumerateArray().Select(item => item.GetString()!).ToArray());
+        Assert.Equal(4, pickingItem.GetProperty("version").GetInt64());
         Assert.Equal("COUNT-001", countDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("countNo").GetString());
         var countItem = countDocument.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("Failed", countItem.GetProperty("inventoryPostingStatus").GetString());
@@ -2404,7 +2493,14 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 0,
                 "Open",
                 DateTime.Parse("2026-06-01T09:30:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
-                null),
+                null,
+                AssignedOperatorUserId: "user-admin",
+                AssignedPoolCode: "POOL-WAREHOUSE",
+                LotNo: "LOT-001",
+                SerialNo: null,
+                Version: 3,
+                AllowedActions: ["start"],
+                BlockReasons: []),
         ],
         29));
     }
@@ -2435,7 +2531,14 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 0,
                 "Open",
                 DateTime.Parse("2026-06-01T09:40:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
-                null),
+                null,
+                AssignedOperatorUserId: "user-other",
+                AssignedPoolCode: "POOL-WAREHOUSE",
+                LotNo: null,
+                SerialNo: null,
+                Version: 4,
+                AllowedActions: [],
+                BlockReasons: ["TASK_ASSIGNED_TO_ANOTHER_OPERATOR"]),
         ],
         23));
     }
