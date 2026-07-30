@@ -16,6 +16,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 DO $migration$
                 DECLARE
                     conflicting_task_ids text;
+                    invalid_wcs_lifecycle text;
+                    legacy record;
+                    completion_document jsonb;
+                    executed_quantity numeric;
+                    quantity_key text;
                 BEGIN
                     SELECT string_agg(
                         conflict."warehouse_task_id"::text,
@@ -34,6 +39,174 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                                 'WMS work-assignment migration blocked: legacy wcs_tasks contains multiple adapter rows for warehouse_task_id(s): %s.',
                                 conflicting_task_ids),
                             HINT = 'Resolve each conflict to one auditable WCS record before retrying the migration.';
+                    END IF;
+
+                    FOR legacy IN
+                        SELECT
+                            wcs."id" AS wcs_task_id,
+                            wcs."status" AS wcs_status,
+                            wcs."organization_id" AS wcs_organization_id,
+                            wcs."environment_id" AS wcs_environment_id,
+                            wcs."dispatched_at_utc",
+                            wcs."completed_at_utc" AS wcs_completed_at_utc,
+                            wcs."completion_payload_json",
+                            task."id" AS warehouse_task_id,
+                            task."status" AS warehouse_task_status,
+                            task."organization_id" AS task_organization_id,
+                            task."environment_id" AS task_environment_id,
+                            task."planned_quantity",
+                            task."executed_quantity",
+                            task."completed_at_utc" AS task_completed_at_utc
+                        FROM "wms"."wcs_tasks" AS wcs
+                        INNER JOIN "wms"."warehouse_tasks" AS task
+                            ON task."id" = wcs."warehouse_task_id"
+                    LOOP
+                        IF legacy.wcs_status NOT IN ('Dispatched', 'Completed', 'Failed', 'Cancelled') THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format('%s: unsupported WCS status %s', legacy.wcs_task_id, legacy.wcs_status));
+                            CONTINUE;
+                        END IF;
+
+                        IF legacy.wcs_organization_id <> legacy.task_organization_id
+                            OR legacy.wcs_environment_id <> legacy.task_environment_id THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format('%s: WCS and warehouse task tenant mismatch', legacy.wcs_task_id));
+                            CONTINUE;
+                        END IF;
+
+                        IF legacy.planned_quantity <= 0
+                            OR legacy.executed_quantity < 0
+                            OR legacy.executed_quantity > legacy.planned_quantity THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format('%s: warehouse task quantity is outside the legal range', legacy.wcs_task_id));
+                            CONTINUE;
+                        END IF;
+
+                        IF legacy.wcs_status IN ('Dispatched', 'Failed') THEN
+                            IF legacy.warehouse_task_status NOT IN ('Open', 'InProgress')
+                                OR legacy.executed_quantity >= legacy.planned_quantity
+                                OR legacy.task_completed_at_utc IS NOT NULL THEN
+                                invalid_wcs_lifecycle := concat_ws(
+                                    ', ',
+                                    invalid_wcs_lifecycle,
+                                    format(
+                                        '%s: active or retryable WCS task conflicts with parent status %s',
+                                        legacy.wcs_task_id,
+                                        legacy.warehouse_task_status));
+                            END IF;
+                            CONTINUE;
+                        END IF;
+
+                        IF legacy.wcs_status = 'Cancelled' THEN
+                            IF legacy.warehouse_task_status NOT IN ('Open', 'InProgress', 'Cancelled')
+                                OR legacy.executed_quantity >= legacy.planned_quantity
+                                OR legacy.task_completed_at_utc IS NOT NULL THEN
+                                invalid_wcs_lifecycle := concat_ws(
+                                    ', ',
+                                    invalid_wcs_lifecycle,
+                                    format(
+                                        '%s: cancelled WCS task conflicts with parent status %s',
+                                        legacy.wcs_task_id,
+                                        legacy.warehouse_task_status));
+                            END IF;
+                            CONTINUE;
+                        END IF;
+
+                        IF legacy.warehouse_task_status NOT IN ('Open', 'InProgress', 'Completed')
+                            OR legacy.wcs_completed_at_utc IS NULL THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format(
+                                    '%s: completed WCS task conflicts with parent status %s or lacks completion time',
+                                    legacy.wcs_task_id,
+                                    legacy.warehouse_task_status));
+                            CONTINUE;
+                        END IF;
+
+                        completion_document := NULL;
+                        executed_quantity := NULL;
+                        quantity_key := NULL;
+                        BEGIN
+                            completion_document := legacy.completion_payload_json::jsonb;
+                        EXCEPTION WHEN others THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format('%s: completion payload is not valid JSON', legacy.wcs_task_id));
+                            CONTINUE;
+                        END;
+
+                        IF jsonb_typeof(completion_document) <> 'object' THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format('%s: completion payload is not an object', legacy.wcs_task_id));
+                            CONTINUE;
+                        END IF;
+
+                        quantity_key := CASE
+                            WHEN completion_document ? 'actualQuantity' THEN 'actualQuantity'
+                            WHEN completion_document ? 'executedQuantity' THEN 'executedQuantity'
+                            ELSE NULL
+                        END;
+                        IF quantity_key IS NULL
+                            OR jsonb_typeof(completion_document -> quantity_key) <> 'number' THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format(
+                                    '%s: completion payload lacks an authoritative numeric executed quantity',
+                                    legacy.wcs_task_id));
+                            CONTINUE;
+                        END IF;
+
+                        executed_quantity := (completion_document ->> quantity_key)::numeric;
+                        IF completion_document ? 'actualQuantity'
+                            AND completion_document ? 'executedQuantity' THEN
+                            IF jsonb_typeof(completion_document -> 'actualQuantity') <> 'number'
+                                OR jsonb_typeof(completion_document -> 'executedQuantity') <> 'number' THEN
+                                invalid_wcs_lifecycle := concat_ws(
+                                    ', ',
+                                    invalid_wcs_lifecycle,
+                                    format('%s: completion quantity fields are not numeric', legacy.wcs_task_id));
+                                CONTINUE;
+                            END IF;
+
+                            IF (completion_document ->> 'actualQuantity')::numeric
+                                <> (completion_document ->> 'executedQuantity')::numeric THEN
+                                invalid_wcs_lifecycle := concat_ws(
+                                    ', ',
+                                    invalid_wcs_lifecycle,
+                                    format('%s: completion quantity fields disagree', legacy.wcs_task_id));
+                                CONTINUE;
+                            END IF;
+                        END IF;
+
+                        IF executed_quantity <> legacy.planned_quantity THEN
+                            invalid_wcs_lifecycle := concat_ws(
+                                ', ',
+                                invalid_wcs_lifecycle,
+                                format(
+                                    '%s: completed WCS quantity %s does not close planned quantity %s',
+                                    legacy.wcs_task_id,
+                                    executed_quantity,
+                                    legacy.planned_quantity));
+                        END IF;
+                    END LOOP;
+
+                    IF invalid_wcs_lifecycle IS NOT NULL THEN
+                        RAISE EXCEPTION USING
+                            MESSAGE = format(
+                                'WMS work-assignment migration blocked: legacy WCS/task lifecycle cannot be reconciled: %s.',
+                                invalid_wcs_lifecycle),
+                            HINT = 'Repair each legacy Completed WCS payload to contain an authoritative full executed quantity and reconcile its parent lifecycle, or remove the invalid WCS row with an audit record before retrying. Missing, invalid, or partial quantities must not be guessed.';
                     END IF;
                 END
                 $migration$;
@@ -193,7 +366,37 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 table: "warehouse_tasks",
                 type: "timestamp with time zone",
                 nullable: true,
-                comment: "UTC time when manual execution started.");
+                comment: "UTC time when manual or WCS execution started.");
+
+            migrationBuilder.Sql(
+                """
+                UPDATE "wms"."warehouse_tasks" AS task
+                SET "status" = CASE
+                        WHEN wcs."status" = 'Completed' THEN 'Completed'
+                        WHEN wcs."status" = 'Cancelled' THEN 'Cancelled'
+                        ELSE 'InProgress'
+                    END,
+                    "started_at_utc" = wcs."dispatched_at_utc",
+                    "executed_quantity" = CASE
+                        WHEN wcs."status" = 'Completed' THEN
+                            CASE
+                                WHEN wcs."completion_payload_json"::jsonb ? 'actualQuantity'
+                                    THEN (wcs."completion_payload_json"::jsonb ->> 'actualQuantity')::numeric
+                                ELSE (wcs."completion_payload_json"::jsonb ->> 'executedQuantity')::numeric
+                            END
+                        ELSE task."executed_quantity"
+                    END,
+                    "completed_at_utc" = CASE
+                        WHEN wcs."status" = 'Completed' THEN wcs."completed_at_utc"
+                        ELSE NULL
+                    END,
+                    "completed_by" = CASE
+                        WHEN wcs."status" = 'Completed' THEN 'system:wcs:' || wcs."id"::text
+                        ELSE NULL
+                    END
+                FROM "wms"."wcs_tasks" AS wcs
+                WHERE wcs."warehouse_task_id" = task."id";
+                """);
 
             migrationBuilder.AddColumn<long>(
                 name: "version",
