@@ -115,7 +115,9 @@ function Invoke-Man517JsonRequest {
         [string]$Method,
         [string]$Uri,
         [hashtable]$Headers,
-        [AllowNull()][hashtable]$Body
+        [AllowNull()][hashtable]$Body,
+        [ValidateRange(1, 30)]
+        [int]$TimeoutSeconds = 5
     )
 
     $safeMethod = Protect-Man517DiagnosticText -Text $Method.ToUpperInvariant()
@@ -125,6 +127,8 @@ function Invoke-Man517JsonRequest {
         Uri = $Uri
         Headers = $Headers
         SkipHttpErrorCheck = $true
+        ConnectionTimeoutSeconds = $TimeoutSeconds
+        OperationTimeoutSeconds = $TimeoutSeconds
     }
     if ($PSBoundParameters.ContainsKey('Body')) {
         $request.ContentType = 'application/json'
@@ -166,6 +170,20 @@ function Invoke-Man517JsonRequest {
     return $response
 }
 
+function Get-Man517RemainingRequestTimeoutSeconds {
+    param(
+        [datetime]$Deadline,
+        [ValidateRange(1, 30)]
+        [int]$MaximumSeconds = 5
+    )
+
+    $remainingSeconds = [int][Math]::Floor(($Deadline - (Get-Date)).TotalSeconds)
+    if ($remainingSeconds -lt 1) {
+        return 0
+    }
+    return [Math]::Min($MaximumSeconds, $remainingSeconds)
+}
+
 function Invoke-JsonPost {
     param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
     Invoke-Man517JsonRequest -Method Post -Uri $Uri -Headers $Headers -Body $Body
@@ -184,7 +202,11 @@ function Wait-ErpSalesOrderReady {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastObservedOrder = $null
     do {
-        $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers
+        $requestTimeoutSeconds = Get-Man517RemainingRequestTimeoutSeconds -Deadline $deadline
+        if ($requestTimeoutSeconds -eq 0) {
+            break
+        }
+        $response = Invoke-Man517JsonRequest -Method Get -Uri $uri -Headers $Headers -TimeoutSeconds $requestTimeoutSeconds
         $rows = @($response.data.items | Where-Object { $_.salesOrderNo -ceq 'SO-DEMO-001' })
         $lastObservedOrder = if ($rows.Count -eq 1) {
             [ordered]@{
@@ -200,7 +222,10 @@ function Wait-ErpSalesOrderReady {
             [decimal]$rows[0].totalAmount -eq 200) {
             return $rows[0]
         }
-        Start-Sleep -Milliseconds $PollIntervalMilliseconds
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min($PollIntervalMilliseconds, $remainingMilliseconds))
+        }
     } while ((Get-Date) -lt $deadline)
 
     $safeObservation = Protect-Man517DiagnosticText -Text ($lastObservedOrder | ConvertTo-Json -Depth 4 -Compress)
@@ -217,7 +242,11 @@ function Wait-Demand {
     $lastRequestException = $null
     $lastObservedDemand = $null
     do {
-        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        $requestTimeoutSeconds = Get-Man517RemainingRequestTimeoutSeconds -Deadline $deadline
+        if ($requestTimeoutSeconds -eq 0) {
+            break
+        }
+        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -TimeoutSeconds $requestTimeoutSeconds
         $lastHttpStatus = 200
         $fullResponseBody = $response | ConvertTo-Json -Depth 12 -Compress
         $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
@@ -231,7 +260,10 @@ function Wait-Demand {
         if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
             return $rows[0]
         }
-        Start-Sleep -Milliseconds 500
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+        }
     } while ((Get-Date) -lt $deadline)
     $lastObservation = [ordered]@{
         lastHttpStatus = $lastHttpStatus
@@ -247,13 +279,20 @@ function Assert-DemandStable {
     param([string]$DemandPlanningUrl, [hashtable]$Headers, [int]$Version, [decimal]$Quantity, [string]$Status, [int]$Seconds = 5)
     $deadline = (Get-Date).AddSeconds($Seconds)
     do {
-        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers
+        $requestTimeoutSeconds = Get-Man517RemainingRequestTimeoutSeconds -Deadline $deadline
+        if ($requestTimeoutSeconds -eq 0) {
+            break
+        }
+        $response = Invoke-Man517JsonRequest -Method Get -Uri "$DemandPlanningUrl/api/business/v1/planning/demands?organizationId=org-001&environmentId=env-dev" -Headers $Headers -TimeoutSeconds $requestTimeoutSeconds
         $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
         if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
             throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."
         }
         $row = $rows[0]
-        Start-Sleep -Milliseconds 500
+        $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+        if ($remainingMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds ([Math]::Min(500, $remainingMilliseconds))
+        }
     } while ((Get-Date) -lt $deadline)
     return $row
 }

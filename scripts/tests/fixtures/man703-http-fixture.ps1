@@ -96,6 +96,10 @@ try {
             elseif ($target.StartsWith('/missing-success', [StringComparison]::Ordinal)) {
                 $body = '{"code":200,"message":"OK","data":{}}'
             }
+            elseif ($target.StartsWith('/half-open', [StringComparison]::Ordinal)) {
+                Start-Sleep -Seconds 30
+                continue
+            }
 
             $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
             $responseHeaders = "HTTP/1.1 $statusCode $reason`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: $($bodyBytes.Length)`r`nConnection: close`r`n`r`n"

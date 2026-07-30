@@ -74,7 +74,12 @@ foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStab
     $functionText = Get-FunctionContractText -Name $functionName
     Assert-Contract ($functionText.Contains('Invoke-Man517JsonRequest')) "$functionName must use the shared fail-closed JSON request path."
 }
+foreach ($functionName in @('Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
+    Assert-Contract ((Get-FunctionContractText -Name $functionName).Contains('-TimeoutSeconds $requestTimeoutSeconds')) "$functionName must bound each request by its remaining deadline."
+}
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SkipHttpErrorCheck')) 'The shared JSON request path must inspect non-success HTTP responses itself.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ConnectionTimeoutSeconds')) 'The shared JSON request path must set an explicit connection timeout.'
+Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('OperationTimeoutSeconds')) 'The shared JSON request path must set an explicit operation timeout.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
 Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200')) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)

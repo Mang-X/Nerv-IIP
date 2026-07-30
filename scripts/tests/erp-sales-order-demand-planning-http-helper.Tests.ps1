@@ -24,6 +24,36 @@ function Assert-Helper {
     }
 }
 
+function Assert-RequestFailure {
+    param(
+        [scriptblock]$Request,
+        [string[]]$ExpectedFragments,
+        [string[]]$ForbiddenFragments = @(),
+        [double]$MaximumSeconds = 5
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $failure = $null
+    try {
+        & $Request | Out-Null
+    }
+    catch {
+        $failure = $_.Exception.Message
+    }
+    finally {
+        $stopwatch.Stop()
+    }
+
+    Assert-Helper (-not [string]::IsNullOrWhiteSpace($failure)) 'The request must fail.'
+    Assert-Helper ($stopwatch.Elapsed.TotalSeconds -lt $MaximumSeconds) "The request failure exceeded $MaximumSeconds seconds."
+    foreach ($fragment in $ExpectedFragments) {
+        Assert-Helper ($failure.Contains($fragment)) "Request failure must contain '$fragment'. Actual: $failure"
+    }
+    foreach ($fragment in $ForbiddenFragments) {
+        Assert-Helper (-not $failure.Contains($fragment)) "Request failure must redact '$fragment'."
+    }
+}
+
 function Import-VerifyFunction {
     param(
         [System.Management.Automation.Language.ScriptBlockAst]$Ast,
@@ -62,6 +92,7 @@ Assert-Helper ($parseErrors.Count -eq 0) 'Verify script must parse before helper
 foreach ($functionName in @(
         'Protect-Man517DiagnosticText',
         'Invoke-Man517JsonRequest',
+        'Get-Man517RemainingRequestTimeoutSeconds',
         'Wait-ErpSalesOrderReady'
     )) {
     Import-VerifyFunction -Ast $ast -Name $functionName
@@ -74,6 +105,7 @@ $counterFile = Join-Path $testRoot 'sales-order-request-count.txt'
 $port = Get-TestFreeTcpPort
 $baseUrl = "http://127.0.0.1:$port"
 $fixtureProcess = $null
+$cleanupError = $null
 $script:internalToken = 'test-internal-token-value'
 
 try {
@@ -114,53 +146,39 @@ try {
     Assert-Helper ([decimal]$order.totalAmount -eq [decimal]200) 'ERP readiness must require the seeded total amount.'
     Assert-Helper ((Get-Content -LiteralPath $counterFile -Raw).Trim() -eq '2') 'ERP readiness must poll after an initially empty successful response.'
 
-    $errorStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $businessError = $null
-    try {
+    Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `
             -Method Post `
             -Uri "$baseUrl/business-error?token=uri-secret-value" `
             -Headers @{} `
-            -Body @{ value = 'ignored' } | Out-Null
-    }
-    catch {
-        $businessError = $_.Exception.Message
-    }
-    $errorStopwatch.Stop()
-    Assert-Helper (-not [string]::IsNullOrWhiteSpace($businessError)) 'HTTP 200 with success=false must throw.'
-    Assert-Helper ($errorStopwatch.Elapsed.TotalSeconds -lt 2) 'HTTP 200 with success=false must fail immediately instead of entering a convergence timeout.'
-    Assert-Helper ($businessError.Contains('method=POST')) 'Business-envelope failure must identify the HTTP method.'
-    Assert-Helper ($businessError.Contains('code=404')) 'Business-envelope failure must expose the ResponseData code.'
-    Assert-Helper ($businessError.Contains('message=')) 'Business-envelope failure must expose the redacted ResponseData message.'
-    Assert-Helper (-not $businessError.Contains('uri-secret-value')) 'Business-envelope failure must redact sensitive URI query values.'
-    Assert-Helper (-not $businessError.Contains('message-secret-value')) 'Business-envelope failure must redact sensitive message values.'
+            -Body @{ value = 'ignored' }
+    } `
+        -ExpectedFragments @('method=POST', 'code=404', 'message=') `
+        -ForbiddenFragments @('uri-secret-value', 'message-secret-value') `
+        -MaximumSeconds 2
 
-    $httpError = $null
-    try {
-        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/http-error" -Headers @{} | Out-Null
-    }
-    catch {
-        $httpError = $_.Exception.Message
-    }
-    Assert-Helper ($httpError.Contains('httpStatus=503')) 'Non-success HTTP must fail through the shared request path.'
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/http-error" -Headers @{}
+    } -ExpectedFragments @('httpStatus=503')
 
-    $jsonError = $null
-    try {
-        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/invalid-json" -Headers @{} | Out-Null
-    }
-    catch {
-        $jsonError = $_.Exception.Message
-    }
-    Assert-Helper ($jsonError.Contains('valid JSON')) 'Malformed JSON must fail through the shared request path.'
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/invalid-json" -Headers @{}
+    } -ExpectedFragments @('valid JSON')
 
-    $missingSuccessError = $null
-    try {
-        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/missing-success" -Headers @{} | Out-Null
-    }
-    catch {
-        $missingSuccessError = $_.Exception.Message
-    }
-    Assert-Helper ($missingSuccessError.Contains("missing boolean 'success'")) 'A JSON object without ResponseData success=true must fail closed.'
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/missing-success" -Headers @{}
+    } -ExpectedFragments @("missing boolean 'success'")
+
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest `
+            -Method Get `
+            -Uri "$baseUrl/half-open?token=half-open-uri-secret" `
+            -Headers @{} `
+            -TimeoutSeconds 1
+    } `
+        -ExpectedFragments @('transport failed', 'method=GET', 'uri=') `
+        -ForbiddenFragments @('half-open-uri-secret') `
+        -MaximumSeconds 3
 }
 finally {
     if ($null -ne $fixtureProcess) {
@@ -168,11 +186,24 @@ finally {
             $fixtureProcess.Stop.Invoke('MAN-703 helper test cleanup') | Out-Null
         }
         catch {
-            Write-Warning "Could not stop MAN-703 HTTP fixture cleanly: $($_.Exception.Message)"
+            $cleanupError = "Could not stop MAN-703 HTTP fixture cleanly: $($_.Exception.Message)"
         }
     }
     if (Test-Path -LiteralPath $testRoot) {
-        Remove-Item -LiteralPath $testRoot -Recurse -Force
+        try {
+            Remove-Item -LiteralPath $testRoot -Recurse -Force
+        }
+        catch {
+            $directoryCleanupError = "Could not remove MAN-703 HTTP fixture directory: $($_.Exception.Message)"
+            $cleanupError = if ([string]::IsNullOrWhiteSpace($cleanupError)) {
+                $directoryCleanupError
+            } else {
+                "$cleanupError; $directoryCleanupError"
+            }
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($cleanupError)) {
+        throw $cleanupError
     }
 }
 
