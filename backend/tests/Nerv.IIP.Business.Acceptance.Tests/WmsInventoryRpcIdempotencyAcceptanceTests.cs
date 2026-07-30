@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
@@ -16,6 +17,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
 using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
@@ -114,6 +116,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             new CreateCountExecutionCommandHandler(wmsDb, client).Handle(command, CancellationToken.None));
 
         Assert.Empty(wmsDb.CountExecutions);
+        string committedIdempotencyKey;
+        await using (var committedScope = inventoryProvider.CreateAsyncScope())
+        {
+            var committedInventoryDb = committedScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            committedIdempotencyKey = (await committedInventoryDb.StockCountTasks.SingleAsync()).IdempotencyKey;
+        }
+
         var inventoryRequest = new WmsInventoryCountTaskRequest(
             "org-001",
             "env-dev",
@@ -127,7 +136,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             "qualified",
             "company",
             null,
-            "wms-count-freeze:postgres-concurrent");
+            committedIdempotencyKey);
         var concurrentResults = await Task.WhenAll(
             client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None),
             client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None));
@@ -269,8 +278,11 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             .AddKnownExceptionValidationBehavior()
             .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
+        services.AddIntegrationEvents(typeof(StockAvailabilityChangedIntegrationEventConverter));
         services.AddInventoryPostgreSqlPersistence(connectionString, interceptors: interceptors);
         services.AddInMemoryDistributedLock();
+        services.AddSingleton<IInventoryIntegrationEventContextAccessor, FixedInventoryIntegrationEventContextAccessor>();
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
         return services.BuildServiceProvider();
     }
@@ -410,6 +422,24 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not confirm count adjustments.");
+        }
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FixedInventoryIntegrationEventContextAccessor : IInventoryIntegrationEventContextAccessor
+    {
+        public InventoryIntegrationEventContext GetContext()
+        {
+            return new InventoryIntegrationEventContext("corr-man629-acceptance", "cause-man629-acceptance", "system:test");
         }
     }
 
