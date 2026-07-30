@@ -6,28 +6,55 @@ import { conflictReasonLabel } from '../../model/labels'
 import type { ScheduleTask } from '../../model/types'
 
 // 选中工序/工单的完整详情(取代弹出抽屉,常驻右侧栏顶部)。
-const props = defineProps<{ task?: ScheduleTask }>()
+// readOnly:只读视图(已发布方案的甘特查阅面)不提供锁定/解锁交互,只呈现锁定状态。
+const props = defineProps<{ task?: ScheduleTask; readOnly?: boolean }>()
 const emit = defineEmits<{ 'toggle-lock': [taskId: string, locked: boolean] }>()
 
 const isOrder = computed(() => props.task?.type === 'order')
 const isBlock = computed(() => !!props.task?.blockKind)
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
 const BLOCK = {
-  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'var(--nv-scheduling-block-maintenance)' },
-  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--nv-scheduling-block-downtime)' },
-  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'var(--nv-scheduling-block-linechange)' },
-  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'var(--nv-scheduling-block-changeover)' },
+  maintenance: {
+    label: '设备维护',
+    desc: '设备保养期,该时段不排产',
+    tone: 'var(--nv-scheduling-block-maintenance)',
+  },
+  downtime: {
+    label: '计划停机',
+    desc: '计划性停机,资源不可用',
+    tone: 'var(--nv-scheduling-block-downtime)',
+  },
+  lineChange: {
+    label: '换线窗口',
+    desc: '产线切换准备,占用资源',
+    tone: 'var(--nv-scheduling-block-linechange)',
+  },
+  changeover: {
+    label: '换型窗口',
+    desc: '工装/模具换型,占用资源',
+    tone: 'var(--nv-scheduling-block-changeover)',
+  },
 } as const
 
 function fmt(iso?: string) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('zh-CN', {
+        hour12: false,
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
 }
 function fmtDate(iso?: string) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 const durationH = computed(() => {
   const t = props.task
@@ -47,22 +74,41 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
     <!-- 资源时间块:专有信息(不套工单模板) -->
     <div v-else-if="isBlock && task" class="px-4 py-3.5">
       <div class="flex items-center gap-2">
-        <span class="nerv-blk-dot size-2.5 rounded-[2px]" :style="{ '--bk': BLOCK[task.blockKind!].tone }"></span>
-        <span class="text-sm font-semibold text-foreground">{{ BLOCK[task.blockKind!].label }}</span>
+        <span
+          class="nerv-blk-dot size-2.5 rounded-[2px]"
+          :style="{ '--bk': BLOCK[task.blockKind!].tone }"
+        ></span>
+        <span class="text-sm font-semibold text-foreground">{{
+          BLOCK[task.blockKind!].label
+        }}</span>
       </div>
       <p class="mt-1 text-xs text-muted-foreground">{{ BLOCK[task.blockKind!].desc }}</p>
       <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
-        <div class="col-span-2 flex justify-between"><dt class="text-muted-foreground">资源</dt><dd class="font-medium text-foreground">{{ task.resourceId || '—' }}</dd></div>
-        <div class="flex justify-between"><dt class="text-muted-foreground">开始</dt><dd class="font-medium text-foreground">{{ fmt(task.startUtc) }}</dd></div>
-        <div class="flex justify-between"><dt class="text-muted-foreground">结束</dt><dd class="font-medium text-foreground">{{ fmt(task.endUtc) }}</dd></div>
-        <div class="col-span-2 flex justify-between"><dt class="text-muted-foreground">时长</dt><dd class="font-medium text-foreground">{{ durationH }}</dd></div>
+        <div class="col-span-2 flex justify-between">
+          <dt class="text-muted-foreground">资源</dt>
+          <dd class="font-medium text-foreground">{{ task.resourceId || '—' }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted-foreground">开始</dt>
+          <dd class="font-medium text-foreground">{{ fmt(task.startUtc) }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted-foreground">结束</dt>
+          <dd class="font-medium text-foreground">{{ fmt(task.endUtc) }}</dd>
+        </div>
+        <div class="col-span-2 flex justify-between">
+          <dt class="text-muted-foreground">时长</dt>
+          <dd class="font-medium text-foreground">{{ durationH }}</dd>
+        </div>
       </dl>
     </div>
 
     <div v-else class="px-4 py-3.5">
       <!-- 标题行:WO + 优先级 + 插单 + 锁 -->
       <div class="flex flex-wrap items-center gap-1.5">
-        <span class="font-mono text-sm font-semibold tracking-tight text-foreground">{{ task.orderId || '—' }}</span>
+        <span class="font-mono text-sm font-semibold tracking-tight text-foreground">{{
+          task.orderId || '—'
+        }}</span>
         <span
           v-if="task.priority"
           class="rounded px-1.5 py-px text-[0.65rem] font-bold"
@@ -71,9 +117,22 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
             'bg-warning/15 text-warning': task.priority === 'medium',
             'bg-muted text-muted-foreground': task.priority === 'low',
           }"
-        >{{ PRIO[task.priority][0] }}优先</span>
-        <span v-if="task.isRush" class="inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[0.65rem] font-semibold" style="color: var(--nv-scheduling-rush); background: color-mix(in oklch, var(--nv-scheduling-rush), transparent 85%)">⚡ 插单</span>
-        <span v-if="task.locked" class="inline-flex items-center gap-0.5 rounded bg-brand/12 px-1.5 py-px text-[0.65rem] font-semibold text-brand">已锁定</span>
+          >{{ PRIO[task.priority][0] }}优先</span
+        >
+        <span
+          v-if="task.isRush"
+          class="inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[0.65rem] font-semibold"
+          style="
+            color: var(--nv-scheduling-rush);
+            background: color-mix(in oklch, var(--nv-scheduling-rush), transparent 85%);
+          "
+          >⚡ 插单</span
+        >
+        <span
+          v-if="task.locked"
+          class="inline-flex items-center gap-0.5 rounded bg-brand/12 px-1.5 py-px text-[0.65rem] font-semibold text-brand"
+          >已锁定</span
+        >
       </div>
       <p class="mt-1 text-[0.82rem] text-foreground">
         {{ task.product || (isOrder ? '工单' : '工序') }}
@@ -82,7 +141,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 
       <!-- 锁定/解锁:锁定后不可拖拽,这里提供解锁交互 -->
       <NvButton
-        v-if="!isOrder"
+        v-if="!isOrder && !readOnly"
         size="sm"
         :variant="task.locked ? 'secondary' : 'outline'"
         class="mt-2.5 h-7 w-full gap-1.5 text-xs"
@@ -106,23 +165,66 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
           <dt class="text-muted-foreground">资源</dt>
           <dd class="font-medium text-foreground">{{ task.resourceId || '—' }}</dd>
         </div>
-        <div class="flex justify-between"><dt class="text-muted-foreground">开始</dt><dd class="font-medium text-foreground">{{ fmt(task.startUtc) }}</dd></div>
-        <div class="flex justify-between"><dt class="text-muted-foreground">结束</dt><dd class="font-medium text-foreground">{{ fmt(task.endUtc) }}</dd></div>
-        <div class="flex justify-between"><dt class="text-muted-foreground">工时</dt><dd class="font-medium text-foreground">{{ durationH }}</dd></div>
-        <div v-if="task.quantity != null" class="flex justify-between"><dt class="text-muted-foreground">数量</dt><dd class="font-medium tabular-nums text-foreground">{{ task.quantity }}</dd></div>
-        <div v-if="task.dueUtc" class="flex justify-between"><dt class="text-muted-foreground">交期</dt><dd class="font-medium text-foreground">{{ fmtDate(task.dueUtc) }}</dd></div>
-        <div v-if="task.owner" class="flex justify-between"><dt class="text-muted-foreground">负责人</dt><dd class="font-medium text-foreground">{{ task.owner }}</dd></div>
+        <div class="flex justify-between">
+          <dt class="text-muted-foreground">开始</dt>
+          <dd class="font-medium text-foreground">{{ fmt(task.startUtc) }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted-foreground">结束</dt>
+          <dd class="font-medium text-foreground">{{ fmt(task.endUtc) }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted-foreground">工时</dt>
+          <dd class="font-medium text-foreground">{{ durationH }}</dd>
+        </div>
+        <div v-if="task.quantity != null" class="flex justify-between">
+          <dt class="text-muted-foreground">数量</dt>
+          <dd class="font-medium tabular-nums text-foreground">{{ task.quantity }}</dd>
+        </div>
+        <div v-if="task.dueUtc" class="flex justify-between">
+          <dt class="text-muted-foreground">交期</dt>
+          <dd class="font-medium text-foreground">{{ fmtDate(task.dueUtc) }}</dd>
+        </div>
+        <div v-if="task.owner" class="flex justify-between">
+          <dt class="text-muted-foreground">负责人</dt>
+          <dd class="font-medium text-foreground">{{ task.owner }}</dd>
+        </div>
         <div v-if="task.kitting != null" class="flex justify-between">
           <dt class="text-muted-foreground">齐套</dt>
-          <dd class="font-medium tabular-nums" :class="task.kitting >= 1 ? 'text-success' : task.kitting >= 0.8 ? 'text-warning' : 'text-destructive'">{{ pct(task.kitting) }}</dd>
+          <dd
+            class="font-medium tabular-nums"
+            :class="
+              task.kitting >= 1
+                ? 'text-success'
+                : task.kitting >= 0.8
+                  ? 'text-warning'
+                  : 'text-destructive'
+            "
+          >
+            {{ pct(task.kitting) }}
+          </dd>
         </div>
-        <div v-if="task.changeoverMin" class="flex justify-between"><dt class="text-muted-foreground">换型</dt><dd class="font-medium text-foreground">{{ task.changeoverMin }} 分钟</dd></div>
+        <div v-if="task.changeoverMin" class="flex justify-between">
+          <dt class="text-muted-foreground">换型</dt>
+          <dd class="font-medium text-foreground">{{ task.changeoverMin }} 分钟</dd>
+        </div>
         <div v-if="task.load != null" class="flex justify-between">
           <dt class="text-muted-foreground">占用</dt>
-          <dd class="font-medium tabular-nums" :class="task.load > 1 ? 'text-destructive' : 'text-foreground'">{{ pct(task.load) }}</dd>
+          <dd
+            class="font-medium tabular-nums"
+            :class="task.load > 1 ? 'text-destructive' : 'text-foreground'"
+          >
+            {{ pct(task.load) }}
+          </dd>
         </div>
-        <div v-if="task.progress != null" class="flex justify-between"><dt class="text-muted-foreground">进度</dt><dd class="font-medium tabular-nums text-foreground">{{ pct(task.progress) }}</dd></div>
-        <div v-if="task.status" class="flex justify-between"><dt class="text-muted-foreground">状态</dt><dd class="font-medium text-foreground">{{ task.status.label }}</dd></div>
+        <div v-if="task.progress != null" class="flex justify-between">
+          <dt class="text-muted-foreground">进度</dt>
+          <dd class="font-medium tabular-nums text-foreground">{{ pct(task.progress) }}</dd>
+        </div>
+        <div v-if="task.status" class="flex justify-between">
+          <dt class="text-muted-foreground">状态</dt>
+          <dd class="font-medium text-foreground">{{ task.status.label }}</dd>
+        </div>
       </dl>
     </div>
   </div>
@@ -130,16 +232,16 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 
 <style scoped>
 @layer nv-components {
-.nerv-blk-dot {
-  background-color: color-mix(in srgb, var(--bk) 18%, transparent);
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent 0,
-    transparent 2px,
-    color-mix(in srgb, var(--bk) 60%, transparent) 2px,
-    color-mix(in srgb, var(--bk) 60%, transparent) 3px
-  );
-  border: 1px solid color-mix(in srgb, var(--bk) 55%, transparent);
-}
+  .nerv-blk-dot {
+    background-color: color-mix(in srgb, var(--bk) 18%, transparent);
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent 0,
+      transparent 2px,
+      color-mix(in srgb, var(--bk) 60%, transparent) 2px,
+      color-mix(in srgb, var(--bk) 60%, transparent) 3px
+    );
+    border: 1px solid color-mix(in srgb, var(--bk) 55%, transparent);
+  }
 }
 </style>

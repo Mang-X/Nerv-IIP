@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 /// <summary>
@@ -30,6 +33,20 @@ public static class WorldHistorySpec
     public static string CollectionVoucherNo(int index) => $"JV-2026-C{index:D5}";
     public static string PurchaseOrderNo(int index) => $"PO-2026-{index:D4}";
     public static string PurchaseReceiptNo(int index) => $"PR-2026-{index:D4}";
+
+    /// <summary>
+    /// 与 DemandPlanning 世界历史规格逐字一致的销售订单计划建议公共 ID。
+    /// DemandPlanning 种子会实际落库该建议；MES 只引用这个已由同一事实流保证的 ID。
+    /// </summary>
+    public static Guid PlanningSuggestionIdForSalesOrder(string salesOrderNo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(salesOrderNo);
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes($"nerv-iip:world-history:planning-suggestion:{salesOrderNo}"));
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes.AsSpan(0, 16));
+    }
 
     /// <summary>本引擎产出的全部单据号前缀，供隔离性回归测试断言不与固定演示事实/规模块相交。</summary>
     public static readonly string[] NumberSegmentPrefixes =

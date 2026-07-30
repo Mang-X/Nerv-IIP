@@ -806,7 +806,7 @@ async function submitDevice() {
                   class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2"
                 >
                   <NvFieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</NvFieldLabel>
-                  <NvCheckbox id="dev-maintainable" v-model:checked="createForm.maintainable" />
+                  <NvCheckbox id="dev-maintainable" v-model="createForm.maintainable" />
                 </NvField>
               </NvFieldGroup>
               <div class="grid gap-3">
@@ -865,7 +865,7 @@ async function submitDevice() {
                   <NvField orientation="horizontal" class="items-center gap-2 self-end pb-2">
                     <NvCheckbox
                       :id="`dev-component-critical-${index}`"
-                      v-model:checked="component.critical"
+                      v-model="component.critical"
                     />
                     <NvFieldLabel :for="`dev-component-critical-${index}`" class="mb-0"
                       >关键</NvFieldLabel
