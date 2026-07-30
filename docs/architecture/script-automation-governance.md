@@ -54,7 +54,7 @@
 `scripts/lib/ScriptAutomation.ps1` 负责把长耗时和高风险命令包装成可诊断动作：
 
 1. `Invoke-NativeCommandWithTimeout`：启动原生命令，记录命令名、参数摘要、cwd、timeout、exit code、duration、stdout/stderr 日志和 root PID。
-2. `Invoke-DotNet`、`Invoke-Pnpm`、`Invoke-DockerCompose`、`Invoke-PwshScript`、`Invoke-Aspire`：领域化包装常用命令，避免脚本直接调用 `dotnet`、`pnpm`、`docker`、`pwsh` 或 Aspire CLI。
+2. `Invoke-DotNet`、`Invoke-Pnpm`、`Invoke-DockerCompose`、`Invoke-PwshScript`、`Invoke-Aspire`：领域化包装常用命令，避免脚本直接调用 `dotnet`、`pnpm`、`docker`、`pwsh` 或 Aspire CLI。其中 `Invoke-Pnpm` 统一经 `Resolve-PnpmInvocation` 规约进程 cwd：参数中的 `-C`/`--dir` 会被对齐为进程工作目录（行为等价），未显式传 `WorkingDirectory` 时默认以 `<repoRoot>/frontend` 为 cwd——corepack 按“进程 cwd 就近 `package.json` 的 `packageManager` 字段”解析 pnpm 版本，仓库根目录没有 `package.json`，从根目录 cwd 调用会拉取最新 pnpm 并因与 `frontend/` 锁定版本不一致直接失败。
 3. `Start-ManagedBackgroundProcess`：启动本地 Web 服务或长运行进程，返回 root PID、日志路径和 stop handle。
 4. `Stop-ProcessTree`：基于 root PID 清理自有进程树；失败时输出残留 PID 和进程名。
 5. `Use-ScopedEnvironmentVariable`：设置环境变量并在脚本结束时恢复原始状态，包括原本不存在、原本为空字符串和原本有值三种情况。

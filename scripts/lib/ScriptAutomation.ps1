@@ -899,23 +899,89 @@ function Invoke-AspireInteractive {
     Invoke-NativeCommandInteractive -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
 }
 
+function Resolve-PnpmDirArgument {
+    param(
+        [Parameter(Mandatory)]
+        [string] $BaseDirectory,
+
+        [Parameter(Mandatory)]
+        [string] $Target
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Target)) {
+        return [System.IO.Path]::GetFullPath($Target)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $BaseDirectory $Target))
+}
+
+function Resolve-PnpmInvocation {
+    <#
+    .SYNOPSIS
+        规约 pnpm 调用的进程工作目录，根除 corepack 版本解析坑。
+    .DESCRIPTION
+        corepack 按“进程 cwd 就近 package.json 的 packageManager 字段”决定 pnpm 版本；
+        仓库根目录没有 package.json，从根目录（或其他无 package.json 的目录）调用会解析
+        到最新 pnpm，并因与 frontend/ 锁定版本不一致直接失败（pnpm -C 切目录发生在
+        corepack 解析之后，救不回来）。本函数集中处理两件事：
+        1. 参数中出现 -C/--dir <path> 时，把进程 cwd 对齐到该目标目录并剔除该参数对
+           （行为等价：pnpm -C 的语义就是“切到该目录再执行”）。
+        2. 未显式传 WorkingDirectory 时，默认以 <repoRoot>/frontend 为 cwd。
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $WorkingDirectory = Join-Path (Get-ScriptAutomationRepoRoot) 'frontend'
+    }
+
+    $normalizedArguments = [System.Collections.Generic.List[string]]::new()
+    $index = 0
+    while ($index -lt $Arguments.Count) {
+        $argument = $Arguments[$index]
+        if (($argument -eq '-C' -or $argument -eq '--dir') -and ($index + 1) -lt $Arguments.Count) {
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $WorkingDirectory -Target $Arguments[$index + 1]
+            $index += 2
+            continue
+        }
+        if ($argument -like '--dir=*') {
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $WorkingDirectory -Target $argument.Substring('--dir='.Length)
+            $index += 1
+            continue
+        }
+        $normalizedArguments.Add($argument)
+        $index += 1
+    }
+
+    return [pscustomobject]@{
+        Arguments        = [string[]] $normalizedArguments.ToArray()
+        WorkingDirectory = $WorkingDirectory
+    }
+}
+
 function Invoke-Pnpm {
     param(
         [Parameter(Mandatory)]
         [string[]] $Arguments,
 
-        [string] $WorkingDirectory = (Get-Location).Path,
+        [string] $WorkingDirectory,
 
         [int] $TimeoutSeconds = 600,
 
         [string] $Name = 'pnpm'
     )
 
+    $invocation = Resolve-PnpmInvocation -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+
     if ($IsWindows) {
-        return Invoke-NativeCommandWithTimeout -Command 'cmd' -Arguments (@('/d', '/s', '/c', 'pnpm') + $Arguments) -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+        return Invoke-NativeCommandWithTimeout -Command 'cmd' -Arguments (@('/d', '/s', '/c', 'pnpm') + $invocation.Arguments) -WorkingDirectory $invocation.WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
     }
 
-    Invoke-NativeCommandWithTimeout -Command 'pnpm' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+    Invoke-NativeCommandWithTimeout -Command 'pnpm' -Arguments $invocation.Arguments -WorkingDirectory $invocation.WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
 function Invoke-DockerCompose {
