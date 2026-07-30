@@ -420,6 +420,7 @@ function formatError(error: unknown) {
 function refreshAll() {
   void refreshWorkScopes()
   void refreshCountExecutions()
+  void operationalCandidates.refresh()
 }
 </script>
 
@@ -513,12 +514,15 @@ function refreshAll() {
           v-model:location-code="filters.locationCode"
           :location-options="operationalCandidates.locationOptions.value"
           :pending="operationalCandidates.pending.value"
+          :ready="operationalCandidates.ready.value"
+          :error="operationalCandidates.error.value"
+          v-model:search-keyword="operationalCandidates.searchKeyword.value"
           :show-lot="false"
           :source-label="operationalCandidates.sourceLabel.value"
-          :source-kind="operationalCandidates.sourceKind.value"
           :as-of-utc="operationalCandidates.asOfUtc.value"
           :freshness-utc="operationalCandidates.freshnessUtc.value"
           :truncated="operationalCandidates.truncated.value"
+          @retry="operationalCandidates.refresh"
         />
         <NvSearchSelect
           v-model="statusFilter"

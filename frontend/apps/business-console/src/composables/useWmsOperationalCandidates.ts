@@ -5,7 +5,8 @@ import {
   type BusinessConsoleWmsOperationalCandidatesEnvelope,
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
-import { computed, watch } from 'vue'
+import { refDebounced } from '@vueuse/core'
+import { computed, shallowRef, watch } from 'vue'
 
 export type WmsOperationalCandidateKind = 'receipt' | 'shipment' | 'count'
 
@@ -16,6 +17,7 @@ export interface WmsOperationalCandidateFilters {
   scopeId?: string
   status?: string
   skuCode?: string
+  siteCode?: string
   locationCode?: string
   lotNo?: string
 }
@@ -24,6 +26,8 @@ export function useWmsOperationalCandidates(
   kind: WmsOperationalCandidateKind,
   filters: WmsOperationalCandidateFilters,
 ) {
+  const searchKeyword = shallowRef('')
+  const debouncedKeyword = refDebounced(searchKeyword, 300)
   const ready = computed(
     () =>
       Boolean(filters.organizationId.trim()) &&
@@ -38,7 +42,9 @@ export function useWmsOperationalCandidates(
       scopeKind: filters.scopeKind!,
       scopeId: filters.scopeId!,
       take: 100,
+      ...(debouncedKeyword.value.trim() ? { keyword: debouncedKeyword.value.trim() } : {}),
       ...(filters.skuCode?.trim() ? { skuCode: filters.skuCode.trim() } : {}),
+      ...(filters.siteCode?.trim() ? { siteCode: filters.siteCode.trim() } : {}),
       ...(filters.locationCode?.trim() ? { locationCode: filters.locationCode.trim() } : {}),
     },
   })
@@ -53,14 +59,44 @@ export function useWmsOperationalCandidates(
   const envelope = computed(
     () => candidatesQuery.data.value as BusinessConsoleWmsOperationalCandidatesEnvelope | undefined,
   )
-  const response = computed(() =>
-    envelope.value?.success === true ? envelope.value.data : undefined,
-  )
+  const response = computed(() => {
+    const data = envelope.value?.success === true ? envelope.value.data : undefined
+    if (
+      !ready.value ||
+      data?.scopeKind !== filters.scopeKind?.trim() ||
+      data?.scopeId !== filters.scopeId?.trim()
+    ) {
+      return undefined
+    }
+    return data
+  })
 
   watch(
-    [() => filters.scopeKind, () => filters.scopeId, () => filters.status],
+    [
+      () => filters.organizationId,
+      () => filters.environmentId,
+      () => filters.scopeKind,
+      () => filters.scopeId,
+      () => filters.status,
+    ],
     () => {
       filters.locationCode = undefined
+      filters.lotNo = undefined
+      searchKeyword.value = ''
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => filters.siteCode,
+    () => {
+      filters.locationCode = undefined
+      filters.lotNo = undefined
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => filters.skuCode,
+    () => {
       filters.lotNo = undefined
     },
     { flush: 'sync' },
@@ -98,17 +134,40 @@ export function useWmsOperationalCandidates(
       ]
     })
   })
+  watch(
+    response,
+    (current) => {
+      if (!current || candidatesQuery.isLoading.value || candidatesQuery.error.value) return
+      if (
+        filters.locationCode &&
+        !locationOptions.value.some((option) => option.value === filters.locationCode)
+      ) {
+        filters.locationCode = undefined
+        filters.lotNo = undefined
+        return
+      }
+      if (
+        kind !== 'count' &&
+        filters.lotNo &&
+        !lotOptions.value.some((option) => option.value === filters.lotNo)
+      ) {
+        filters.lotNo = undefined
+      }
+    },
+    { flush: 'sync' },
+  )
 
   return {
+    ready,
+    searchKeyword,
     locationOptions,
     lotOptions,
     sourceLabel: computed(() => '当前范围仓储作业记录候选'),
-    sourceKind: computed(() => response.value?.sourceKind),
     asOfUtc: computed(() => response.value?.asOfUtc),
     freshnessUtc: computed(() => response.value?.freshnessUtc),
     truncated: computed(() => response.value?.truncated === true),
     pending: candidatesQuery.isLoading,
-    error: candidatesQuery.error,
+    error: computed(() => (ready.value ? candidatesQuery.error.value : undefined)),
     refresh: () => (ready.value ? candidatesQuery.refetch() : Promise.resolve()),
   }
 }

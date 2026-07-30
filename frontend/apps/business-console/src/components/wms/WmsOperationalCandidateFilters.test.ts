@@ -12,6 +12,7 @@ describe('WmsOperationalCandidateFilters', () => {
         locationOptions: [{ value: 'B-02', label: 'B-02' }],
         lotOptions: [{ value: 'LOT-B', label: 'LOT-B' }],
         sourceLabel: '当前范围仓储作业记录候选',
+        ready: true,
       },
     })
 
@@ -27,15 +28,50 @@ describe('WmsOperationalCandidateFilters', () => {
       props: {
         locationOptions: [],
         sourceLabel: '当前范围仓储作业记录候选',
-        sourceKind: 'warehouse-operational-records',
+        ready: true,
         asOfUtc: '2026-07-30T01:00:00Z',
         freshnessUtc: '2026-07-30T00:59:00Z',
         truncated: true,
       },
     })
 
-    expect(wrapper.text()).toContain('warehouse-operational-records')
+    expect(wrapper.text()).toContain('当前范围仓储作业记录候选')
     expect(wrapper.text()).toContain('候选已截断')
     expect(wrapper.text()).not.toContain('主数据')
+    expect(wrapper.text()).not.toContain('warehouse-operational-records')
+    expect(wrapper.text()).not.toContain('2026-07-30T01:00:00Z')
+  })
+
+  it('debounces through a controlled search model and exposes retryable errors', async () => {
+    const wrapper = mount(WmsOperationalCandidateFilters, {
+      props: {
+        locationOptions: [],
+        sourceLabel: '当前范围仓储作业记录候选',
+        ready: true,
+        searchKeyword: '',
+        error: new Error('network'),
+      },
+    })
+
+    expect(wrapper.text()).toContain('候选加载失败')
+    await wrapper.get('[data-testid="candidate-retry"]').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('暂无库位候选')
+  })
+
+  it('keeps selectors and search disabled until authorized scope is ready', () => {
+    const wrapper = mount(WmsOperationalCandidateFilters, {
+      props: {
+        locationOptions: [],
+        sourceLabel: '当前范围仓储作业记录候选',
+        ready: false,
+      },
+    })
+
+    expect(wrapper.text()).toContain('请先选择可用作业范围')
+    expect(
+      wrapper.findAllComponents(NvSearchSelect).every((select) => select.props('disabled')),
+    ).toBe(true)
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
   })
 })

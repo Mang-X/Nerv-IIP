@@ -1,5 +1,5 @@
 import { nextTick, reactive, shallowRef } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   listBusinessConsoleWmsCountOperationalCandidatesQueryOptions,
@@ -11,7 +11,12 @@ import { useWmsOperationalCandidates } from './useWmsOperationalCandidates'
 const queryState = vi.hoisted(() => ({
   response: undefined as unknown,
   options: undefined as undefined | { enabled?: boolean },
+  factory: undefined as undefined | (() => Record<string, unknown>),
 }))
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions: vi.fn((options) => ({
@@ -27,6 +32,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 
 vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((factory) => {
+    queryState.factory = factory
     queryState.options = factory()
     return {
       data: shallowRef(queryState.response),
@@ -39,6 +45,7 @@ vi.mock('@pinia/colada', () => ({
 
 describe('PC WMS operational candidates', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.clearAllMocks()
     queryState.response = {
       success: true,
@@ -56,6 +63,91 @@ describe('PC WMS operational candidates', () => {
         ],
       },
     }
+  })
+
+  it('debounces remote keyword into the stable candidates request', async () => {
+    const filters = reactive({
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      scopeKind: 'self',
+      scopeId: 'worker-1',
+      siteCode: 'SITE-1',
+    })
+    const result = useWmsOperationalCandidates('receipt', filters)
+
+    result.searchKeyword.value = '  remote-lot  '
+    await vi.advanceTimersByTimeAsync(299)
+    queryState.factory?.()
+    expect(
+      listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions,
+    ).not.toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ keyword: 'remote-lot' }),
+      }),
+    )
+
+    await vi.advanceTimersByTimeAsync(1)
+    queryState.factory?.()
+    expect(listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions).toHaveBeenLastCalledWith(
+      {
+        query: expect.objectContaining({
+          keyword: 'remote-lot',
+          siteCode: 'SITE-1',
+          take: 100,
+        }),
+      },
+    )
+  })
+
+  it('rejects stale data whose envelope scope differs from the selected scope', () => {
+    queryState.response = {
+      success: true,
+      data: {
+        sourceKind: 'warehouse-operational-records',
+        scopeKind: 'self',
+        scopeId: 'old-worker',
+        locations: [{ locationCode: 'STALE-01' }],
+        lots: [{ lotNo: 'STALE-LOT' }],
+      },
+    }
+
+    const result = useWmsOperationalCandidates(
+      'shipment',
+      reactive({
+        organizationId: 'org-1',
+        environmentId: 'env-1',
+        scopeKind: 'self',
+        scopeId: 'worker-1',
+      }),
+    )
+
+    expect(result.locationOptions.value).toEqual([])
+    expect(result.lotOptions.value).toEqual([])
+  })
+
+  it('clears dependent filters when sku or site changes', async () => {
+    const filters = reactive({
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      scopeKind: 'site',
+      scopeId: 'SITE-1',
+      siteCode: 'SITE-1',
+      skuCode: 'SKU-1',
+      locationCode: 'A-01' as string | undefined,
+      lotNo: 'LOT-A' as string | undefined,
+    })
+    useWmsOperationalCandidates('receipt', filters)
+
+    filters.skuCode = 'SKU-2'
+    await nextTick()
+    expect(filters.locationCode).toBe('A-01')
+    expect(filters.lotNo).toBeUndefined()
+
+    filters.lotNo = 'LOT-B'
+    filters.siteCode = 'SITE-2'
+    await nextTick()
+    expect(filters.locationCode).toBeUndefined()
+    expect(filters.lotNo).toBeUndefined()
   })
 
   it.each([
@@ -93,8 +185,7 @@ describe('PC WMS operational candidates', () => {
     expect(result.lotOptions.value).toEqual(
       kind === 'count' ? [] : [expect.objectContaining({ value: 'LOT-A', label: 'LOT-A' })],
     )
-    expect(result.sourceLabel.value).toContain('当前范围仓储作业记录候选')
-    expect(result.sourceKind.value).toBe('warehouse-operational-records')
+    expect(result.sourceLabel.value).toBe('当前范围仓储作业记录候选')
     expect(result.truncated.value).toBe(true)
   })
 

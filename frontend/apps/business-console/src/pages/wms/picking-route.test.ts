@@ -59,7 +59,9 @@ const routeState = vi.hoisted(() => ({
 
 const wmsState = vi.hoisted(() => ({
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
+  refreshPickingTasks: vi.fn(async () => undefined),
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -162,7 +164,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       pickingTasksError: shallowRef(undefined),
       pickingTasksPending: shallowRef(false),
       pickingTasksTotal: computed(() => 0),
-      refreshPickingTasks: vi.fn(),
+      refreshPickingTasks: wmsState.refreshPickingTasks,
     }
   },
 }))
@@ -205,6 +207,7 @@ const uiStubs = {
 
 describe('WMS picking route context', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     routeState.query = {}
     wmsState.filters = undefined
   })
@@ -253,6 +256,18 @@ describe('WMS picking route context', () => {
     ).toBe(true)
     expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
+
+  it('刷新任务时同步刷新当前范围候选', async () => {
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(wmsState.refreshPickingTasks).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+  })
 })
 vi.mock('@/composables/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
@@ -260,14 +275,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
       error: shallowRef(),
-      refresh: vi.fn(),
+      refresh: candidateState.refresh,
     }),
   }
 })

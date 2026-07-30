@@ -335,6 +335,7 @@ function formatError(error: unknown) {
 function refreshAll() {
   void refreshWorkScopes()
   void refreshPutawayTasks()
+  void operationalCandidates.refresh()
 }
 function firstQuery(value: unknown) {
   return Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' ? value : ''
@@ -400,11 +401,14 @@ function firstQuery(value: unknown) {
           :location-options="operationalCandidates.locationOptions.value"
           :lot-options="operationalCandidates.lotOptions.value"
           :pending="operationalCandidates.pending.value"
+          :ready="operationalCandidates.ready.value"
+          :error="operationalCandidates.error.value"
+          v-model:search-keyword="operationalCandidates.searchKeyword.value"
           :source-label="operationalCandidates.sourceLabel.value"
-          :source-kind="operationalCandidates.sourceKind.value"
           :as-of-utc="operationalCandidates.asOfUtc.value"
           :freshness-utc="operationalCandidates.freshnessUtc.value"
           :truncated="operationalCandidates.truncated.value"
+          @retry="operationalCandidates.refresh"
         />
         <NvSearchSelect
           v-model="statusFilter"

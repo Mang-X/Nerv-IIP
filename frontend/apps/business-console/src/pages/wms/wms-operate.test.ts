@@ -78,8 +78,10 @@ const wms = vi.hoisted(() => ({
   ] as string[],
   refreshReceivingQuality: vi.fn(),
   refreshInboundOrders: vi.fn(async () => undefined),
+  refreshOutboundOrders: vi.fn(async () => undefined),
   refreshCountExecutions: vi.fn(async () => undefined),
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
@@ -205,7 +207,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     outboundOrdersError: shallowRef(undefined),
     outboundOrdersPending: shallowRef(false),
     outboundOrdersTotal: computed(() => 1),
-    refreshOutboundOrders: vi.fn(),
+    refreshOutboundOrders: wms.refreshOutboundOrders,
     completeOutbound: wms.completeOutbound,
     completeOutboundPending: shallowRef(false),
     completeOutboundError: shallowRef(undefined),
@@ -344,6 +346,23 @@ describe('WMS operate actions', () => {
     el.value = value
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
+
+  it.each([
+    ['收货入库', InboundPage, wms.refreshInboundOrders],
+    ['复核发货', OutboundPage, wms.refreshOutboundOrders],
+    ['盘点执行', CountsPage, wms.refreshCountExecutions],
+  ])('%s 刷新列表时同步刷新当前范围候选', async (_title, Page, refreshList) => {
+    const wrapper = mount(Page, { global: { stubs: layoutStub } })
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(refreshList).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
 
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
@@ -1032,14 +1051,15 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
     useWmsOperationalCandidates: () => ({
       locationOptions: shallowRef([]),
       lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
       sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      sourceKind: shallowRef(),
       asOfUtc: shallowRef(),
       freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
       error: shallowRef(),
-      refresh: vi.fn(),
+      refresh: candidateState.refresh,
     }),
   }
 })
