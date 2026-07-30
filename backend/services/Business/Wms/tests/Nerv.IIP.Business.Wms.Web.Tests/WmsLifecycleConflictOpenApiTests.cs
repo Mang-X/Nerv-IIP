@@ -1,9 +1,12 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
@@ -34,6 +37,47 @@ public sealed class WmsLifecycleConflictOpenApiTests
         Assert.False(WmsIdempotencyPersistenceConflicts.IsTargetConflict(
             UniqueConflict("ux_unrelated_wms_constraint"),
             dbContext));
+    }
+
+    [Fact]
+    public async Task Wcs_dispatch_backstop_only_maps_its_owned_unique_constraint_to_lifecycle_conflict()
+    {
+        using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        await using var dbContext =
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var constraintName = dbContext.Model.FindEntityType(typeof(WcsTask))!
+            .GetIndexes()
+            .Single(index =>
+                index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(
+                    [nameof(WcsTask.WarehouseTaskId)]))
+            .GetDatabaseName()!;
+        Assert.True(WmsWcsDispatchPersistenceConflicts.IsTargetConflict(
+            UniqueConflict(constraintName),
+            dbContext));
+        Assert.False(WmsWcsDispatchPersistenceConflicts.IsTargetConflict(
+            UniqueConflict("ux_unrelated_wms_constraint"),
+            dbContext));
+
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var middleware = new WmsLifecycleConflictMiddleware(
+            _ => throw UniqueConflict(constraintName),
+            NullLogger<WmsLifecycleConflictMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context, dbContext);
+
+        Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        var response = await JsonSerializer.DeserializeAsync<WmsLifecycleConflictResponse>(
+            context.Response.Body,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(
+            new WmsLifecycleConflictResponse(
+                false,
+                WmsLifecycleConflictException.SafeCode),
+            response);
     }
 
     [Fact]
@@ -106,6 +150,7 @@ public sealed class WmsLifecycleConflictOpenApiTests
         "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress",
         "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception",
         "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
+        "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch",
     ];
 
     private static DbUpdateException UniqueConflict(string constraintName) =>
