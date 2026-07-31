@@ -4,6 +4,7 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
 import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
@@ -288,6 +289,46 @@ const recordPlanModel = computed({
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
+const inspectionTaskSubmissionAllowed = shallowRef(false)
+let inspectionTaskGateEpoch = 0
+watch(
+  [
+    () => firstQuery(route.query.inspectionTaskId),
+    () => filters.organizationId,
+    () => filters.environmentId,
+  ],
+  async ([inspectionTaskId, organizationId, environmentId]) => {
+    const epoch = ++inspectionTaskGateEpoch
+    if (!inspectionTaskId) {
+      inspectionTaskSubmissionAllowed.value = true
+      return
+    }
+    inspectionTaskSubmissionAllowed.value = false
+    if (!organizationId.trim() || !environmentId.trim()) return
+    try {
+      const { data } = await listBusinessConsoleQualityInspectionTasks({
+        query: {
+          organizationId,
+          environmentId,
+          inspectionTaskId,
+          skip: 0,
+          take: 2,
+        },
+        throwOnError: true,
+      })
+      if (epoch !== inspectionTaskGateEpoch) return
+      const exactTasks = (data?.success ? (data.data?.items ?? []) : []).filter(
+        (task) => task.inspectionTaskId === inspectionTaskId,
+      )
+      inspectionTaskSubmissionAllowed.value =
+        exactTasks.length === 1 &&
+        Boolean(exactTasks[0]?.allowedActions?.includes('submit-inspection'))
+    } catch {
+      if (epoch === inspectionTaskGateEpoch) inspectionTaskSubmissionAllowed.value = false
+    }
+  },
+  { immediate: true },
+)
 // 从待检任务行进入时来源字段全部由任务带出——只读呈现，不给用户改的错觉。
 const recordContextItems = computed(() => [
   { label: '检验方案', value: recordForm.inspectionPlanId },
@@ -318,6 +359,7 @@ const validResultLines = computed(() =>
 const canCreateRecord = computed(
   () =>
     hasBusinessContext(filters) &&
+    (!isInspectionTaskFlow.value || inspectionTaskSubmissionAllowed.value) &&
     (isInspectionTaskFlow.value ||
       (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
     isNonEmpty(recordForm.sourceType) &&

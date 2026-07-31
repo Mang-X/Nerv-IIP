@@ -1235,6 +1235,111 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Empty(dbContext.InspectionRecords);
     }
 
+    [Fact]
+    public async Task Task_submission_rejects_pending_task_before_record_creation()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_submission_rejects_pending_task_before_record_creation));
+        var plan = ActivePlan("PLAN-PENDING-SUBMIT", "operation", "SKU-FG-1000");
+        var task = NewTask(
+            "WO-PENDING-SUBMIT",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+        task.Assign(
+            "qa-user-001",
+            null,
+            task.Version,
+            DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
+            CreateTaskSubmissionHandler(dbContext, prepareUnassignedTasks: false).Handle(
+                new CreateInspectionRecordFromTaskCommand(
+                    task.Id,
+                    "qa-user-001",
+                    [new InspectionResultLineCommandInput(
+                        "appearance",
+                        "ok",
+                        null,
+                        InspectionLineResults.Passed,
+                        null,
+                        null,
+                        [])],
+                    null,
+                    [],
+                    "pending-submit",
+                    "org-001",
+                    "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(InspectionTaskStatuses.Pending, exception.CurrentStatus);
+        Assert.Empty(dbContext.InspectionRecords);
+    }
+
+    [Fact]
+    public async Task Task_submission_accepts_claimed_in_progress_task()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_submission_accepts_claimed_in_progress_task));
+        var plan = ActivePlan("PLAN-CLAIMED-SUBMIT", "operation", "SKU-FG-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "operation",
+            "mes",
+            "WO-CLAIMED-SUBMIT",
+            "OP-10",
+            "SKU-FG-1000",
+            5m,
+            "pcs",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "mes:claimed-submit");
+        task.Assign(
+            "qa-user-001",
+            null,
+            task.Version,
+            DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+        task.Claim(
+            "qa-user-001",
+            [],
+            task.Version,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateTaskSubmissionHandler(
+            dbContext,
+            prepareUnassignedTasks: false).Handle(
+            new CreateInspectionRecordFromTaskCommand(
+                task.Id,
+                "qa-user-001",
+                [new InspectionResultLineCommandInput(
+                    "appearance",
+                    "ok",
+                    null,
+                    InspectionLineResults.Passed,
+                    null,
+                    null,
+                    [])],
+                null,
+                [],
+                "claimed-submit",
+                "org-001",
+                "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(result.InspectionRecordId, task.InspectionRecordId);
+        Assert.Equal(InspectionTaskStatuses.Completed, task.Status);
+        Assert.Single(dbContext.InspectionRecords);
+    }
+
     [Theory]
     [InlineData("org-other", "env-dev")]
     [InlineData("org-001", "env-other")]
@@ -1555,15 +1660,92 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(["task-assigned-to-another-team"], result.Task.BlockReasons);
     }
 
-    private static CreateInspectionRecordFromTaskCommandHandler CreateTaskSubmissionHandler(ApplicationDbContext dbContext)
+    [Fact]
+    public async Task Explicit_user_assignment_is_claimable_from_list_and_detail_even_when_team_differs()
     {
-        foreach (var task in dbContext.InspectionTasks.Local.Where(task =>
-                     task.Status == InspectionTaskStatuses.Pending
-                     && task.AssignedUserId is null
-                     && task.AssignedTeamId is null))
+        await using var dbContext = CreateDbContext(
+            nameof(Explicit_user_assignment_is_claimable_from_list_and_detail_even_when_team_differs));
+        var plan = ActivePlan("PLAN-EXPLICIT-USER", "receiving", "SKU-RM-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-EXPLICIT-USER",
+            "LINE-001",
+            "SKU-RM-1000",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T07:00:00Z"),
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            "wms:explicit-user:IN-EXPLICIT-USER");
+        task.Assign(
+            "qa-user-001",
+            "TEAM-QA-02",
+            task.Version,
+            DateTimeOffset.Parse("2026-07-05T07:10:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var list = await new ListInspectionTasksQueryHandler(dbContext).Handle(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                InspectionTaskStatuses.Pending,
+                null,
+                0,
+                20,
+                ScopeKind: "organization",
+                PrincipalId: "qa-user-001",
+                AuthorizedTeamIds: ["TEAM-QA-01"]),
+            CancellationToken.None);
+        var detail = await new GetInspectionTaskQueryHandler(dbContext).Handle(
+            new GetInspectionTaskQuery(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "organization",
+                "qa-user-001",
+                ["TEAM-QA-01"]),
+            CancellationToken.None);
+
+        Assert.Equal(["claim"], Assert.Single(list.Items).AllowedActions);
+        Assert.Empty(Assert.Single(list.Items).BlockReasons);
+        Assert.Equal(["claim"], detail.Task.AllowedActions);
+        Assert.Empty(detail.Task.BlockReasons);
+
+        var claimed = await new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+            new ClaimInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "qa-user-001",
+                ["TEAM-QA-01"],
+                "claim-explicit-user",
+                task.Version),
+            CancellationToken.None);
+
+        Assert.Equal(InspectionTaskStatuses.InProgress, claimed.Status);
+        Assert.Equal("qa-user-001", claimed.AssignedInspectorUserId);
+    }
+
+    private static CreateInspectionRecordFromTaskCommandHandler CreateTaskSubmissionHandler(
+        ApplicationDbContext dbContext,
+        bool prepareUnassignedTasks = true)
+    {
+        if (prepareUnassignedTasks)
         {
-            task.Assign("qa-user-001", null, task.Version, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
-            task.Claim("qa-user-001", [], task.Version, DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+            foreach (var task in dbContext.InspectionTasks.Local.Where(task =>
+                         task.Status == InspectionTaskStatuses.Pending
+                         && task.AssignedUserId is null
+                         && task.AssignedTeamId is null))
+            {
+                task.Assign("qa-user-001", null, task.Version, DateTimeOffset.Parse("2026-07-05T08:10:00Z"));
+                task.Claim("qa-user-001", [], task.Version, DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+            }
         }
 
         return new(

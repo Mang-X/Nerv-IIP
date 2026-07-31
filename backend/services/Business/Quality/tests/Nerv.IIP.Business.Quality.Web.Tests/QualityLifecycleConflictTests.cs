@@ -370,6 +370,50 @@ public sealed class QualityLifecycleConflictTests
         Assert.DoesNotContain(InspectionTaskStatuses.InProgress, body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Concurrency_exception_endpoint_returns_409_with_safe_lifecycle_code()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_concurrency;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "test-internal-service-token",
+                    }));
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(
+                        new ExceptionSender(new DbUpdateConcurrencyException("forced concurrency conflict")));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var taskId = Guid.CreateVersion7();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/quality/inspection-tasks/{taskId}/inspection-record",
+            new
+            {
+                inspectionTaskId = taskId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                inspectorUserId = "inspector-001",
+                resultLines = Array.Empty<object>(),
+                idempotencyKey = "quality-concurrency-http",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("forced concurrency conflict", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("authorization", 403, "task-outside-selected-work-scope")]
     [InlineData("lifecycle", 409, "lifecycle-conflict")]

@@ -685,7 +685,11 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
                 RequireAuthorizedPrincipalId(),
                 scope.TeamIds),
             cancellationToken);
-        await EnsureAssignmentTargetsAsync(request, cancellationToken);
+        await EnsureAssignmentTargetsAsync(
+            request,
+            scope,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
         return await quality.AssignInspectionTaskAsync(
             tokenProvider.BearerToken,
             inspectionTaskId,
@@ -703,8 +707,12 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
 
     private async Task EnsureAssignmentTargetsAsync(
         BusinessConsoleAssignQualityInspectionTaskRequest request,
+        PrincipalWorkScopeSelection scope,
+        string principalId,
         CancellationToken cancellationToken)
     {
+        EnsureTargetWithinSelectedScope(request, scope, principalId);
+
         if (!string.IsNullOrWhiteSpace(request.AssignedInspectorUserId))
         {
             var workers = await masterData.ListWorkersAsync(
@@ -755,7 +763,65 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
                     "assigned-team-not-found");
             }
         }
+
+        if (scope.Kind == "team" && !string.IsNullOrWhiteSpace(request.AssignedInspectorUserId))
+        {
+            var members = await masterData.ListTeamMembersAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleListTeamMembersRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    scope.Id),
+                cancellationToken);
+            if (!members.Members.Any(member =>
+                    member.Active
+                    && string.Equals(member.TeamCode, scope.Id, StringComparison.Ordinal)
+                    && string.Equals(
+                        member.UserId,
+                        request.AssignedInspectorUserId,
+                        StringComparison.Ordinal)))
+            {
+                throw ForbiddenAssignmentTarget();
+            }
+        }
     }
+
+    private static void EnsureTargetWithinSelectedScope(
+        BusinessConsoleAssignQualityInspectionTaskRequest request,
+        PrincipalWorkScopeSelection scope,
+        string principalId)
+    {
+        if (scope.Kind == "organization")
+        {
+            return;
+        }
+
+        if (scope.Kind == "self")
+        {
+            if (!string.Equals(
+                    request.AssignedInspectorUserId,
+                    principalId,
+                    StringComparison.Ordinal)
+                || !string.IsNullOrWhiteSpace(request.AssignedTeamId))
+            {
+                throw ForbiddenAssignmentTarget();
+            }
+            return;
+        }
+
+        if (scope.Kind == "team"
+            && string.Equals(request.AssignedTeamId, scope.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw ForbiddenAssignmentTarget();
+    }
+
+    private static BusinessServiceProxyException ForbiddenAssignmentTarget() =>
+        new(
+            HttpStatusCode.Forbidden,
+            "assignment-target-outside-selected-scope");
 }
 
 [Tags("Business Console Quality")]

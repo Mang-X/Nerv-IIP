@@ -363,7 +363,9 @@ export function useBusinessQualityInspectionTasks() {
         domain: 'quality-inspection-task',
         action: 'create-record',
         facts: {
-          status: authoritative?.status,
+          status: authoritative?.allowedActions?.includes('submit-inspection')
+            ? authoritative.status
+            : undefined,
           inspectionRecordId: authoritative?.inspectionRecordId,
           idempotentReplay: isReplay,
         },
@@ -451,11 +453,35 @@ export function useBusinessQualityInspectionTasks() {
     if (envelope.success !== true || !envelope.data) {
       throw new Error(envelope.message?.trim() || '领取检验任务失败，请重试。')
     }
+    const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        scopeKind: 'self',
+        scopeId: inspectorUserId.value,
+        inspectionTaskId,
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
+      authoritativeEnvelope,
+    ).filter((candidate) => candidate.inspectionTaskId === inspectionTaskId)
+    const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+    assertLifecycleActionExecutable({
+      domain: 'quality-inspection-task',
+      action: 'create-record',
+      facts: {
+        status: authoritative?.allowedActions?.includes('submit-inspection')
+          ? authoritative.status
+          : undefined,
+        inspectionRecordId: authoritative?.inspectionRecordId,
+      },
+    })
     return {
       ...task,
-      ...envelope.data,
-      allowedActions: ['submit-inspection'],
-      blockReasons: [],
+      ...authoritative,
     }
   }
 

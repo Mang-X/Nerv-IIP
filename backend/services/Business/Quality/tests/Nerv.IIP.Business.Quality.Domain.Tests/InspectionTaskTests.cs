@@ -108,6 +108,28 @@ public sealed class InspectionTaskTests
     }
 
     [Fact]
+    public void Claim_ShouldTreatExplicitUserMatchAsSufficientWhenTeamAlsoDiffers()
+    {
+        var task = NewTask();
+        task.Assign(
+            "qa-user-001",
+            "TEAM-QA-02",
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+
+        task.Claim(
+            "qa-user-001",
+            ["TEAM-QA-01"],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+        Assert.Equal("TEAM-QA-02", task.AssignedTeamId);
+        Assert.Equal(InspectionTaskStatuses.InProgress, task.Status);
+        Assert.Equal(3, task.Version);
+    }
+
+    [Fact]
     public void Claim_ShouldRejectPendingAssignmentOutsideActorAndPreserveVersionAndLifecycleConflicts()
     {
         var task = NewTask();

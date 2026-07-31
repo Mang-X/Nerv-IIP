@@ -185,7 +185,8 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         }
 
         EnsureExpectedVersion(expectedVersion);
-        if (AssignedTeamId is not null
+        if (AssignedUserId is null
+            && AssignedTeamId is not null
             && !authorizedTeamIds.Any(teamId =>
                 string.Equals(Optional(teamId), AssignedTeamId, StringComparison.Ordinal)))
         {

@@ -66,6 +66,16 @@ public sealed class QualityLifecycleConflictMiddleware(
                 new QualityLifecycleConflictResponse(false, exception.Reason),
                 context.RequestAborted);
         }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogInformation(
+                exception,
+                "Quality persistence concurrency conflict.");
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, QualityLifecycleConflictException.SafeCode),
+                context.RequestAborted);
+        }
         catch (DbUpdateException exception) when (
             QualityIdempotencyPersistenceConflicts.IsTargetConflict(exception, dbContext))
         {

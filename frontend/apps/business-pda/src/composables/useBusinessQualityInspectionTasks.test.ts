@@ -124,7 +124,15 @@ describe('useBusinessQualityInspectionTasks', () => {
           success: true,
           data: {
             items: query.inspectionTaskId
-              ? [{ inspectionTaskId: query.inspectionTaskId, status: 'pending' }]
+              ? [
+                  {
+                    inspectionTaskId: query.inspectionTaskId,
+                    status: 'in-progress',
+                    assignedInspectorUserId: 'user-admin',
+                    version: 3,
+                    allowedActions: ['submit-inspection'],
+                  },
+                ]
               : [],
             total: query.inspectionTaskId ? 1 : 0,
           },
@@ -192,6 +200,78 @@ describe('useBusinessQualityInspectionTasks', () => {
       assignedInspectorUserId: 'user-admin',
       version: 3,
     })
+  })
+
+  it('round-trips claim through the exact in-progress readback before allowing submit', async () => {
+    seedPrincipal()
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-1',
+                status: 'in-progress',
+                assignedInspectorUserId: 'user-admin',
+                version: 4,
+                allowedActions: ['submit-inspection'],
+                blockReasons: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-1',
+                status: 'in-progress',
+                assignedInspectorUserId: 'user-admin',
+                version: 4,
+                allowedActions: ['submit-inspection'],
+                blockReasons: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+    const { claimTask, submitInspection } = useBusinessQualityInspectionTasks()
+
+    const claimed = await claimTask({
+      inspectionTaskId: 'TASK-1',
+      status: 'pending',
+      version: 2,
+      allowedActions: ['claim'],
+    })
+    await submitInspection('TASK-1', LINES)
+
+    expect(claimed).toMatchObject({
+      inspectionTaskId: 'TASK-1',
+      status: 'in-progress',
+      assignedInspectorUserId: 'user-admin',
+      version: 4,
+      allowedActions: ['submit-inspection'],
+    })
+    expect(coladaState.listPlain).toHaveBeenCalledTimes(2)
+    expect(coladaState.listPlain).toHaveBeenNthCalledWith(1, {
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+        inspectionTaskId: 'TASK-1',
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    expect(coladaState.submit).toHaveBeenCalledTimes(1)
   })
 
   it.each([

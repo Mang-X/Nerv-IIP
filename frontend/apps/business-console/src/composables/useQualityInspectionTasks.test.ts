@@ -37,7 +37,16 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleQualityInspectionTasks: vi.fn(async () => ({
     data: {
       success: true,
-      data: { items: [{ inspectionTaskId: 'TASK-1', status: 'pending' }], total: 1 },
+      data: {
+        items: [
+          {
+            inspectionTaskId: 'TASK-1',
+            status: 'in-progress',
+            allowedActions: ['submit-inspection'],
+          },
+        ],
+        total: 1,
+      },
     },
   })),
 }))
@@ -251,12 +260,48 @@ describe('quality inspection task workbench', () => {
     expect(filters.organizationId).toBe('org-001')
   })
 
+  it('does not submit a pending task when backend allowedActions only permits claim', async () => {
+    vi.mocked(listBusinessConsoleQualityInspectionTasks).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-PENDING',
+              status: 'pending',
+              allowedActions: ['claim'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const { startInspection } = useQualityInspectionTasks()
+
+    await expect(
+      startInspection('TASK-PENDING', {
+        resultLines: [],
+      }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(createBusinessConsoleQualityInspectionRecordFromTask).not.toHaveBeenCalled()
+  })
+
   it('rotates the quality submission key after an explicit 422 rejection', async () => {
     const { startInspection } = useQualityInspectionTasks()
     vi.mocked(listBusinessConsoleQualityInspectionTasks).mockResolvedValue({
       data: {
         success: true,
-        data: { items: [{ inspectionTaskId: 'TASK-422', status: 'pending' }], total: 1 },
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-422',
+              status: 'in-progress',
+              allowedActions: ['submit-inspection'],
+            },
+          ],
+          total: 1,
+        },
       },
     } as never)
     const intent = {

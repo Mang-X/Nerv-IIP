@@ -10,6 +10,7 @@ vi.mock('vue-router', () => ({
 }))
 
 const claimTask = vi.fn()
+const submitInspection = vi.fn()
 const refresh = vi.fn(async () => {})
 const tasks = ref<BusinessConsoleQualityInspectionTaskItem[]>([])
 
@@ -25,7 +26,7 @@ vi.mock('@/composables/useBusinessQualityInspectionTasks', () => ({
     error: shallowRef(null),
     refresh,
     reasonCodes: shallowRef([]),
-    submitInspection: vi.fn(),
+    submitInspection,
     submitPending: shallowRef(false),
     claimTask,
     lastUpdatedAt: shallowRef('2026-07-31T08:00:00.000Z'),
@@ -79,6 +80,41 @@ describe('PDA quality tasks page claim recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     tasks.value = [claimableTask()]
+  })
+
+  it('continues from the claimed authoritative task into the submit mutation', async () => {
+    claimTask.mockResolvedValueOnce({
+      ...claimableTask(),
+      status: 'in-progress',
+      assignedInspectorUserId: 'user-admin',
+      version: 3,
+      allowedActions: ['submit-inspection'],
+      blockReasons: [],
+    })
+    submitInspection.mockResolvedValueOnce({
+      inspectionRecordId: 'RECORD-1',
+      result: 'passed',
+    })
+    const wrapper = mount(TasksPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          QualityExecuteStep: {
+            props: ['task', 'submitInspection'],
+            template:
+              '<button data-testid="submit-claimed" @click="submitInspection(task.inspectionTaskId, [])">提交</button>',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="task-row"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="submit-claimed"]').trigger('click')
+    await flushPromises()
+
+    expect(claimTask).toHaveBeenCalledWith(expect.objectContaining({ inspectionTaskId: 'TASK-1' }))
+    expect(submitInspection).toHaveBeenCalledWith('TASK-1', [])
   })
 
   it.each([

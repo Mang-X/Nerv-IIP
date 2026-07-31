@@ -1193,6 +1193,62 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
+    [InlineData("self", "user-admin", "user-op-001", null)]
+    [InlineData("team", "TEAM-QA", null, "TEAM-OTHER")]
+    [InlineData("team", "TEAM-QA", "user-op-001", "TEAM-QA")]
+    public async Task Quality_inspection_task_assignment_rejects_target_outside_selected_scope_after_source_read(
+        string scopeKind,
+        string scopeId,
+        string? assignedInspectorUserId,
+        string? assignedTeamId)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "assignment-target-scope",
+                    scopeKind,
+                    scopeId,
+                    [BusinessGatewayPermissions.QualityInspectionPlansManage]),
+            ]);
+        var quality = new RecordingQualityClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    scopeKind,
+                    scopeId,
+                    "派工范围",
+                    "active-membership",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/quality/inspection-tasks/task-target/assignment?organizationId=org-001&environmentId=env-dev&scopeKind={scopeKind}&scopeId={scopeId}",
+            new
+            {
+                assignedInspectorUserId,
+                assignedTeamId,
+                idempotencyKey = $"assign-target-{scopeKind}-{assignedInspectorUserId}-{assignedTeamId}",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("task-target", quality.LastGetInspectionTaskId);
+        Assert.Null(quality.LastAssignInspectionTaskId);
+    }
+
+    [Theory]
     [InlineData("team", "TEAM-QA")]
     [InlineData("self", "user-admin")]
     public async Task Quality_inspection_task_assignment_rejects_target_outside_selected_scope(
