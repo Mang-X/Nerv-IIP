@@ -84,6 +84,8 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
     {
         if (inventoryClient is null)
         {
+            // 仅在没有接入 Inventory 客户端的装配下成立（单测/离线夹具）：退回配置里的首选来源库位。
+            // 运行时 Program.cs 一定注入 MesInventoryHttpClient，因此真实链路永远走下面的实时持仓查询。
             return candidates[0];
         }
 

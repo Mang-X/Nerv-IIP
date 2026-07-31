@@ -113,10 +113,13 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// <summary>本次在途尝试的跨腿归一化键；为 null 表示当前没有在途过账。</summary>
     public string? PendingPostingToken { get; private set; }
 
-    /// <summary>仓库出库腿是否已回执。</summary>
+    /// <summary>
+    /// 仓库出库腿是否已回执。**跨尝试保留**：一腿成功一腿失败时，重试只会重发未过账的那条腿，
+    /// 否则已经在库存实扣过的出库腿会被再扣一次（#1322 二轮审核）。
+    /// </summary>
     public bool PendingIssueLegPosted { get; private set; }
 
-    /// <summary>线边入库腿是否已回执。</summary>
+    /// <summary>线边入库腿是否已回执，语义同 <see cref="PendingIssueLegPosted"/>。</summary>
     public bool PendingReceiptLegPosted { get; private set; }
 
     /// <summary>发料来源站点（库存实际持仓站点），由应用层从领料来源/库存查询解析后落库。</summary>
@@ -171,13 +174,24 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             throw new InvalidOperationException("已失效的领料预留不能确认收料。");
         }
 
-        if (PendingPostingToken is not null)
+        if (PendingPostingToken is not null && InventoryPostingFailureCode is null)
         {
             throw new InvalidOperationException("上一次收料过账尚未回执，不能重复提交收料。");
         }
 
-        var quantity = receivedQuantity ?? RequestedQuantity - ReceivedQuantity;
+        // 上一次尝试里已经有一条腿过账成功（另一条被拒），这次只是补发失败的那条腿：
+        // 数量必须与在途的那一笔一致，否则两条腿会记到不同数量上。
+        var hasSettledLeg = PendingReceiptQuantity > 0m && (PendingIssueLegPosted || PendingReceiptLegPosted);
+        var quantity = receivedQuantity ?? (hasSettledLeg
+            ? PendingReceiptQuantity
+            : RequestedQuantity - ReceivedQuantity);
         DomainGuard.Positive(quantity, nameof(receivedQuantity));
+        if (hasSettledLeg && quantity != PendingReceiptQuantity)
+        {
+            throw new InvalidOperationException(
+                $"上一次收料已有库存腿过账成功，重试数量必须为 {PendingReceiptQuantity:0.######}。");
+        }
+
         if (ReceivedQuantity + quantity > RequestedQuantity)
         {
             throw new ArgumentOutOfRangeException(nameof(receivedQuantity), "Received quantity cannot exceed requested quantity.");
@@ -198,8 +212,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         MaterialLotId = normalizedMaterialLotId ?? MaterialLotId;
         ReceiptAttempt += 1;
         PendingReceiptQuantity = quantity;
-        PendingIssueLegPosted = false;
-        PendingReceiptLegPosted = false;
+        if (!hasSettledLeg)
+        {
+            PendingIssueLegPosted = false;
+            PendingReceiptLegPosted = false;
+        }
+
         PendingPostingToken = BuildTransferToken(quantity);
         ReceivedAtUtc = receivedAtUtc;
         Status = ReceiptPostingStatus;
@@ -207,8 +225,17 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailureMessage = null;
         InventoryPostingFailedAtUtc = null;
         InventoryPostingRollbackKey = null;
-        AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
-        AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
+
+        // 只重发尚未过账的腿：已经在库存实扣过的腿不再发第二次请求。
+        if (!PendingIssueLegPosted)
+        {
+            AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
+        }
+
+        if (!PendingReceiptLegPosted)
+        {
+            AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
+        }
     }
 
     /// <summary>
@@ -233,8 +260,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// </summary>
     public void MarkInventoryPosted(string postingToken, MaterialTransferLeg leg, DateTimeOffset postedAtUtc)
     {
-        if (PendingPostingToken is null ||
-            !string.Equals(PendingPostingToken, NormalizeToken(postingToken), StringComparison.OrdinalIgnoreCase))
+        // 按「收料步」匹配而非整键匹配：失败后重试会换尝试序号，旧尝试迟到的成功回执仍然必须记账，
+        // 否则那条腿会被当成没过账、重试时再扣一次库存。
+        if (!MatchesCurrentReceiptStep(postingToken))
         {
             return;
         }
@@ -275,37 +303,58 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         DateTimeOffset failedAtUtc,
         string? postingToken = null)
     {
-        var normalizedToken = string.IsNullOrWhiteSpace(postingToken) ? null : NormalizeToken(postingToken);
-        if (normalizedToken is not null &&
+        if (postingToken is not null &&
             PendingPostingToken is not null &&
-            !string.Equals(PendingPostingToken, normalizedToken, StringComparison.OrdinalIgnoreCase))
+            !MatchesCurrentReceiptStep(postingToken))
         {
-            // 旧尝试的迟到失败回执不得推翻当前在途尝试。
+            // 别的收料步的失败回执不得推翻当前在途尝试。
             return;
         }
 
         if (PendingPostingToken is not null)
         {
             InventoryPostingRollbackKey = PendingPostingToken;
-            PendingReceiptQuantity = 0m;
-            PendingPostingToken = null;
-            PendingIssueLegPosted = false;
-            PendingReceiptLegPosted = false;
-            if (ReceivedQuantity == 0m)
+            if (!PendingIssueLegPosted && !PendingReceiptLegPosted)
             {
-                ReceivedAtUtc = null;
-                MaterialLotId = null;
-                Status = RequestedStatus;
+                // 两条腿都没落账：整笔在途作废，回到「还没收料」的形态。
+                PendingReceiptQuantity = 0m;
+                PendingPostingToken = null;
+                if (ReceivedQuantity == 0m)
+                {
+                    ReceivedAtUtc = null;
+                    MaterialLotId = null;
+                }
             }
-            else
-            {
-                Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
-            }
+
+            // 有腿已落账时保留在途数量与该腿的完成标记，等重试补发剩下那条腿。
+            Status = ReceivedQuantity == 0m
+                ? RequestedStatus
+                : (ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus);
         }
 
         InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
         InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
         InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    /// <summary>同一「收料步」判定：忽略尝试序号后缀 <c>:aN</c>，只比对作用域 + 单号 + 批次 + 累计量。</summary>
+    private bool MatchesCurrentReceiptStep(string postingToken)
+    {
+        if (PendingPostingToken is null || string.IsNullOrWhiteSpace(postingToken))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            ReceiptStepOf(PendingPostingToken),
+            ReceiptStepOf(NormalizeToken(postingToken)),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ReceiptStepOf(string token)
+    {
+        var separatorIndex = token.LastIndexOf(":a", StringComparison.Ordinal);
+        return separatorIndex < 0 ? token : token[..separatorIndex];
     }
 
     /// <summary>

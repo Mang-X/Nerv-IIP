@@ -18,8 +18,7 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
     : IIntegrationEventHandler<StockMovementPostingFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.stock-movement-posting-failed";
-    private const string MaterialIssueIdempotencyPrefix = "mes:material-issue:";
-    private const string LineSideReceiptIdempotencyPrefix = "mes:line-side-receipt:";
+    // 两条调拨腿的键前缀由领域拥有（MaterialIssueRequest），这里只引用，避免双份维护漂移。
     private const string ProductionConsumptionIdempotencyPrefix = "mes:production-consumption:";
     private const string FinishedGoodsReceiptIdempotencyPrefix = "mes:finished-goods-receipt:";
 
@@ -154,8 +153,7 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
 
     private static bool IsMaterialTransferLeg(StockMovementPostingFailedPayload payload)
     {
-        return payload.IdempotencyKey.StartsWith(MaterialIssueIdempotencyPrefix, StringComparison.OrdinalIgnoreCase) ||
-            payload.IdempotencyKey.StartsWith(LineSideReceiptIdempotencyPrefix, StringComparison.OrdinalIgnoreCase);
+        return MaterialIssueRequest.TryParseLegIdempotencyKey(payload.IdempotencyKey, out _, out _);
     }
 
     private static bool IsProductionConsumption(StockMovementPostingFailedPayload payload)

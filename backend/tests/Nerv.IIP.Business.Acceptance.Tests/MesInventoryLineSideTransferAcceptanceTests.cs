@@ -862,6 +862,103 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     }
 
     /// <summary>
+    /// #1322 二轮审核：一腿成功一腿失败时，重试**只重发未过账的那条腿** ——
+    /// 已经在库存实扣过的出库腿不得被再提交一次，否则库存重复扣减且无冲销。
+    /// </summary>
+    [Fact]
+    public async Task Mes_line_side_receipt_retry_only_reposts_the_leg_that_failed()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var postedConsumer = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var issuedAtUtc = DateTimeOffset.Parse("2026-06-18T08:00:00Z");
+        await inventoryHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10)), CancellationToken.None);
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001", "env-dev", "WO-446", "OP-10", "MAT-OIL", "L", 5m, issuedAtUtc, "issue-1322-partial-leg"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(20), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var firstAttempt = issueRequest.GetDomainEvents().ToArray();
+        var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(firstAttempt[0]));
+        var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(firstAttempt[1]));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        // 出库腿真过账成功（库存已实扣 5），入库腿被拒。
+        await inventoryHandler.HandleAsync(firstIssueEvent, CancellationToken.None);
+        await postedConsumer.HandleAsync(
+            CreatePostedEvent(firstIssueEvent, "evt-posted-1322-partial-issue-leg"),
+            CancellationToken.None);
+        await failedConsumer.HandleAsync(
+            CreateFailedEvent(firstReceiptEvent, "evt-failed-1322-partial-receipt-leg"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        Assert.Equal(0m, issueRequest.ReceivedQuantity);
+        Assert.True(issueRequest.PendingIssueLegPosted);
+        Assert.Equal(5m, issueRequest.PendingReceiptQuantity);
+        Assert.Equal(MaterialIssueRequest.RequestedStatus, issueRequest.Status);
+        var movementsAfterFirstAttempt = inventoryDb.StockMovements.Count();
+
+        // 重试：只应该发出线边入库腿一条事件。
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(40), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var retryEvents = issueRequest.GetDomainEvents().ToArray();
+        var retryDomainEvent = Assert.Single(retryEvents);
+        var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(retryDomainEvent));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(retryReceiptEvent, CancellationToken.None);
+        await postedConsumer.HandleAsync(
+            CreatePostedEvent(retryReceiptEvent, "evt-posted-1322-partial-retry-receipt-leg"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        // 终态正确：已收 5、状态 Received、失败诊断清空。
+        var persisted = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, persisted.Status);
+        Assert.Equal(5m, persisted.ReceivedQuantity);
+        Assert.Equal(0m, persisted.PendingReceiptQuantity);
+        Assert.Null(persisted.PendingPostingToken);
+        Assert.Null(persisted.InventoryPostingFailureCode);
+
+        // 总扣减不翻倍：出库腿只提交过一次，来源库位扣到 0 而不是 -5。
+        Assert.Equal(movementsAfterFirstAttempt + 1, inventoryDb.StockMovements.Count());
+        Assert.Single(inventoryDb.StockMovements.Where(x =>
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode && x.Quantity == -5m));
+        Assert.Equal(0m, inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode &&
+            x.SkuCode == "MAT-OIL").OnHandQuantity);
+        Assert.Equal(5m, inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
+            x.SkuCode == "MAT-OIL").OnHandQuantity);
+    }
+
+    /// <summary>
     /// 模拟 Inventory 过账成功后的 StockMovementPosted 回执，驱动 MES 真正的消费者。
     /// 只有两条腿都回执，领料单的已收数量才会增加 —— 这是 #1322 里「齐套不得先于库存实扣翻绿」的验收点。
     /// </summary>

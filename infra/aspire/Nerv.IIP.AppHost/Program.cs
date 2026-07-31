@@ -417,8 +417,8 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     // 站点/库位必须与库存种子事实一致（SITE-001 + WH-WB-*）：MES 过去按 warehouse/production +
     // line-side 臆造位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。
-    .WithEnvironment("Inventory__DefaultSiteCode", "SITE-001")
-    .WithEnvironment("Inventory__SiteCodes__0", "SITE-001")
+    // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
+    // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
     .WithEnvironment("Inventory__SiteCode", "SITE-001")
     .WithEnvironment("Inventory__SourceLocationCodes__0", "WH-WB-RM-01")
     .WithEnvironment("Inventory__SourceLocationCodes__1", "WH-WB-SF-01")
