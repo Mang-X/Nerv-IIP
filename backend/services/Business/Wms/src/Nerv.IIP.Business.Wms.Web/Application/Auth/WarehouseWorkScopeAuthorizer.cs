@@ -19,7 +19,8 @@ public sealed record WarehouseWorkScopeSelection(
     string ScopeId,
     string? AssignedOperatorUserId,
     IReadOnlyList<string> PoolCodes,
-    IReadOnlyList<string> SiteCodes);
+    IReadOnlyList<string> SiteCodes,
+    bool SiteWide = false);
 
 public sealed record WarehouseAssignmentAuthorizationRequest(
     string OrganizationId,
@@ -98,21 +99,17 @@ public sealed class WarehouseWorkScopeAuthorizer(
                 pool.SiteCode))
             .Distinct()
             .ToListAsync(cancellationToken);
-        if (memberships.Count == 0)
+        var items = new List<WarehouseWorkScopeCatalogItem>();
+        if (memberships.Count > 0)
         {
-            throw WmsAuthorizationException.Forbidden(
-                "no-effective-work-pool-membership");
-        }
-
-        var items = new List<WarehouseWorkScopeCatalogItem>
-        {
-            new(
+            items.Add(new WarehouseWorkScopeCatalogItem(
                 "self",
                 normalizedActorPrincipalId,
                 "我的任务",
                 SiteCode: null,
-                PoolCode: null),
-        };
+                PoolCode: null));
+        }
+
         items.AddRange(memberships
             .OrderBy(membership => membership.SiteCode, StringComparer.Ordinal)
             .ThenBy(membership => membership.DisplayName, StringComparer.Ordinal)
@@ -122,9 +119,9 @@ public sealed class WarehouseWorkScopeAuthorizer(
                 membership.DisplayName,
                 membership.SiteCode,
                 membership.PoolCode)));
-        items.AddRange(memberships
-            .Select(membership => membership.SiteCode)
-            .Distinct(StringComparer.Ordinal)
+        // 站点范围由 IAM 精确站点授权直接成立（与 BusinessGateway 组织级授权自动补候选同族），
+        // 不再要求作业池成员资格：主管/管理员只有站点授权时也应有可选范围。
+        items.AddRange(authorizedSites
             .Order(StringComparer.Ordinal)
             .Select(siteCode => new WarehouseWorkScopeCatalogItem(
                 "site",
@@ -183,7 +180,9 @@ public sealed class WarehouseWorkScopeAuthorizer(
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        if (effectiveMemberships.Count == 0)
+        // site 范围由 IAM 精确站点授权成立；self / work-pool 仍以作业池成员资格为准。
+        if (effectiveMemberships.Count == 0
+            && !string.Equals(scopeKind, "site", StringComparison.Ordinal))
         {
             throw WmsAuthorizationException.Forbidden("no-effective-work-pool-membership");
         }
@@ -192,7 +191,7 @@ public sealed class WarehouseWorkScopeAuthorizer(
         {
             "self" => ResolveSelf(actorPrincipalId, scopeId, effectiveMemberships),
             "work-pool" => ResolvePool(actorPrincipalId, scopeId, effectiveMemberships),
-            "site" => ResolveSite(actorPrincipalId, scopeId, effectiveMemberships, authorizedSites),
+            "site" => ResolveSite(actorPrincipalId, scopeId, authorizedSites),
             _ => throw WmsAuthorizationException.Forbidden("unsupported-work-scope"),
         };
     }
@@ -300,7 +299,6 @@ public sealed class WarehouseWorkScopeAuthorizer(
     private static WarehouseWorkScopeSelection ResolveSite(
         string actorPrincipalId,
         string scopeId,
-        IReadOnlyCollection<EffectiveMembership> memberships,
         IReadOnlySet<string> authorizedSites)
     {
         if (!authorizedSites.Contains(scopeId))
@@ -308,21 +306,15 @@ public sealed class WarehouseWorkScopeAuthorizer(
             throw WmsAuthorizationException.Forbidden("site-outside-exact-grant");
         }
 
-        var selected = memberships
-            .Where(membership =>
-                string.Equals(membership.SiteCode, scopeId, StringComparison.Ordinal))
-            .ToArray();
-        if (selected.Length == 0)
-        {
-            throw WmsAuthorizationException.Forbidden("site-membership-mismatch");
-        }
-
-        return Selection(
+        // 站点范围＝该站点整站作业面（不按作业池/操作人再收窄），边界仍是 IAM 精确站点授权。
+        return new WarehouseWorkScopeSelection(
             actorPrincipalId,
             "site",
             scopeId,
             AssignedOperatorUserId: null,
-            selected);
+            PoolCodes: [],
+            SiteCodes: [scopeId],
+            SiteWide: true);
     }
 
     private static WarehouseWorkScopeSelection Selection(

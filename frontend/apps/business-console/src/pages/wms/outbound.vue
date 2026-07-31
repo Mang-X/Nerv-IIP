@@ -97,6 +97,7 @@ const {
   scopeOptions,
   selectedScopeLabel,
   hasSelection: outboundScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   error: workScopeError,
   refresh: refreshWorkScopes,
@@ -479,9 +480,7 @@ function refreshAll() {
         outboundOrdersHasFailedResponse || Boolean(outboundOrdersError) || Boolean(workScopeError)
       "
       failure-explanation="WMS 发货作业范围或出库单未成功返回，请重试。"
-      :empty-explanation="
-        outboundScopeReady ? '当前作业范围没有出库单。' : '作业范围目录未就绪，未发起查询。'
-      "
+      :empty-explanation="outboundScopeReady ? '当前作业范围没有出库单。' : workScopeUnreadyMessage"
     />
 
     <NvMetricStrip :cells="metricCells" />
@@ -547,7 +546,7 @@ function refreshAll() {
       :error="outboundOrdersError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择业务范围，再查看出库单。"
+      :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看出库单。'"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"

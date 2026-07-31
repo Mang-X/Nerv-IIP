@@ -77,6 +77,7 @@ const {
   scopeOptions,
   selectedScopeLabel,
   hasSelection: pickingScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   error: workScopeError,
   refresh: refreshWorkScopes,
@@ -354,7 +355,7 @@ function firstQuery(value: unknown) {
       "
       failure-explanation="WMS 发货作业范围或拣货任务未成功返回，请重试。"
       :empty-explanation="
-        pickingScopeReady ? '当前作业范围没有拣货任务。' : '作业范围目录未就绪，未发起查询。'
+        pickingScopeReady ? '当前作业范围没有拣货任务。' : workScopeUnreadyMessage
       "
     />
 
@@ -414,7 +415,9 @@ function firstQuery(value: unknown) {
       :error="pickingTasksError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择业务范围，再查看拣货任务。"
+      :awaiting-scope-message="
+        workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看拣货任务。'
+      "
       :searchable="false"
       :column-settings="false"
       empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"

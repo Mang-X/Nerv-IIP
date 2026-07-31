@@ -117,6 +117,17 @@ Gateway 证据：
 PDA 证据：
 [`useBusinessWms.ts`](../../frontend/apps/business-pda/src/composables/useBusinessWms.ts)。
 
+作业范围三档的判定边界（[#1343](https://github.com/Mang-X/Nerv-IIP/issues/1343)，实现见
+[`WarehouseWorkScopeAuthorizer.cs`](../../backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WarehouseWorkScopeAuthorizer.cs)）：
+
+- `self` / `work-pool`：以 WMS 作业池成员资格为准（现场事实），无有效成员资格 fail closed；
+  只返回已派工给本人 / 本作业池的记录。
+- `site`：由 IAM **精确站点授权**直接成立，不再要求作业池成员资格——主管 / 管理员只有站点
+  授权时也必须有可选范围，否则整域 403 全空。选中后是**整站作业面**（含站内尚未派工的记录），
+  边界仍是精确站点授权，绝不跨站、绝不组织全量。
+- 作业范围目录（`/wms/work-scopes/*`）返回空清单时，前端说「没有已授权的仓储作业范围」，
+  403 透传服务端结论，不含糊成「请稍后重试」，也不伪装成「暂无数据」。
+
 | 页面 / 业务对象                                  | 当前公开 operation 与强 ID                                                                                                                                            | 当前范围 / assignment                                                                             | 服务端筛选与分页                                                                                                | 权限码                                                                 | 动作、终态、未知态事实                                                                                                                                                     | 结论 / 归属                                                                                                                                                            |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PDA `/wms/inbound`；PC `/wms/inbound`；收货单    | `listBusinessConsoleWmsInboundOrders`、`assignBusinessConsoleWmsInboundOrder`、`completeBusinessConsoleWmsInboundOrder`；`inboundOrderId + inboundOrderNo`，完成回执 `requestId + inventoryMovementId` | Gateway 以当前 principal、permission-aware grants 与 MasterData 启用 site 目录校验 `self/work-pool/site`；聚合持久 `assignedOperatorUserId/assignedPoolCode/version` | `status,keyword,skuCode,uomCode,siteCode,locationCode,lotNo,serialNo,qualityStatus,ownerType,ownerId,scopeKind,scopeId,skip,take` | 读 `business.wms.receipts.read`；派工/完成 `business.wms.receipts.manage` | 受控派工需 `expectedVersion + idempotencyKey`；仅 Open 可完成，完成后可能进入 PendingQualityCheck 或 Completed，质量/库存失败仍由业务状态和回读回执表达 | **MAN-629 已交付主体范围与派工**；收货终态/回执按服务端状态和权威回读执行，不由 PDA 猜测 |

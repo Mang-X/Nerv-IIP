@@ -18,6 +18,14 @@ vi.mock('@/stores/businessContext', () => ({
   useBusinessContextStore: () => contextState,
 }))
 
+// 记住的范围选择按 principal/org/env/作业域 归档，需要登录主体身份。
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { principalId: 'emp049' },
+    sessionId: 'session-1',
+  }),
+}))
+
 vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleWmsReceiptWorkScopesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'receiptWorkScopes' }],
