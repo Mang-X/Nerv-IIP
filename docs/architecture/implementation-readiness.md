@@ -125,8 +125,9 @@ BusinessGateway 使用当前认证 principal 和 `PrincipalWorkScopeResolver` �
 不接受客户端伪造 inspector；派工目标人员/班组须经 MasterData 活跃目录校验。Quality 的
 detail/assignment/claim 三个新增 endpoint 已在 facade coverage 登记为 `exposed`，并同步
 BusinessGateway OpenAPI、generated client 与 stable barrel。PDA `/quality/tasks` 现在显式请求
-Self scope，待领取行先原子 claim 再进入录入，状态和不可操作原因保持可见；本变更未修改 PC 页面。
-世界观历史 seed 对既有 pending 未归属任务做幂等回填，新任务沿用事实检验员归属。
+Self scope，待领取行先原子 claim 再进入录入，状态和不可操作原因保持可见；本变更不新增 PC UI，
+PC 既有提交路径只删除旧 `inspectorUserId` / principal gate 契约残留。世界观历史 seed 对既有
+pending 未归属任务做幂等回填，新任务沿用事实检验员归属。
 
 ## Quality 报工待检计划主链前置（MAN-578 / #1046）
 
