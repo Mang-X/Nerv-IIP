@@ -46,13 +46,46 @@ describe('business workbench summary composable', () => {
     coladaState.queryData = {
       success: true,
       data: {
-        kpis: [{ key: 'releasedWorkOrders', label: 'Released work orders', value: 4, source: 'BusinessMES', status: 'available' }],
-        todos: { status: 'available', total: 2, items: [{ source: 'BusinessApproval', itemType: 'purchase-order', status: 'pending' }] },
-        messages: { status: 'available', total: 3, unread: 1, items: [{ messageId: 'msg-1', status: 'unread', severity: 'warning' }] },
-        alerts: { status: 'available', total: 1, critical: 1, items: [{ alarmEventId: 'alarm-1', deviceAssetId: 'DEV-01', alarmCode: 'TEMP_HIGH', severity: 'critical' }] },
+        kpis: [
+          {
+            key: 'releasedWorkOrders',
+            label: 'Released work orders',
+            value: 4,
+            source: 'BusinessMES',
+            status: 'available',
+          },
+        ],
+        todos: {
+          status: 'available',
+          total: 2,
+          items: [{ source: 'BusinessApproval', itemType: 'purchase-order', status: 'pending' }],
+        },
+        messages: {
+          status: 'available',
+          total: 3,
+          unread: 1,
+          items: [{ messageId: 'msg-1', status: 'unread', severity: 'warning' }],
+        },
+        alerts: {
+          status: 'available',
+          total: 1,
+          critical: 1,
+          items: [
+            {
+              alarmEventId: 'alarm-1',
+              deviceAssetId: 'DEV-01',
+              alarmCode: 'TEMP_HIGH',
+              severity: 'critical',
+            },
+          ],
+        },
         sourceStatuses: [
           { source: 'BusinessMES', status: 'available' },
-          { source: 'BusinessInventory', status: 'unsupported', permissionCode: 'business.inventory.ledger.read' },
+          {
+            source: 'BusinessInventory',
+            status: 'unsupported',
+            permissionCode: 'business.inventory.ledger.read',
+          },
         ],
       },
     }
@@ -71,7 +104,10 @@ describe('business workbench summary composable', () => {
     expect(workbench.todoItems.value).toHaveLength(1)
     expect(workbench.messageItems.value).toHaveLength(1)
     expect(workbench.alertItems.value).toHaveLength(1)
-    expect(workbench.sourceStatuses.value.map((status) => status.status)).toEqual(['available', 'unsupported'])
+    expect(workbench.sourceStatuses.value.map((status) => status.status)).toEqual([
+      'available',
+      'unsupported',
+    ])
   })
 
   it('rebuilds the query with the latest business context values', () => {

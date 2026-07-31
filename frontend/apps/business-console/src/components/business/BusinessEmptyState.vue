@@ -14,13 +14,13 @@ const props = withDefaults(
   },
 )
 
-const markerClass = computed(() =>
-  props.tone === 'attention' ? 'bg-warning/80' : 'bg-primary/80',
-)
+const markerClass = computed(() => (props.tone === 'attention' ? 'bg-warning/80' : 'bg-primary/80'))
 </script>
 
 <template>
-  <div class="grid min-h-44 place-items-center rounded-md border border-dashed bg-muted/20 px-4 py-10 text-center">
+  <div
+    class="grid min-h-44 place-items-center rounded-md border border-dashed bg-muted/20 px-4 py-10 text-center"
+  >
     <div class="grid max-w-xl gap-2">
       <div class="mx-auto h-1.5 w-10 rounded-sm" :class="markerClass" aria-hidden="true" />
       <p class="break-words text-sm font-medium text-foreground">{{ title }}</p>

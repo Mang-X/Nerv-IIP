@@ -7,7 +7,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBarcodePrintBatches, useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -222,7 +222,7 @@ async function submitCreate() {
     notifySuccess('打印批次已提交。')
     open.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('提交打印批次失败', error, '提交打印批次失败，请稍后重试。')
   }
 }
 
@@ -296,7 +296,7 @@ function firstQuery(value: unknown) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

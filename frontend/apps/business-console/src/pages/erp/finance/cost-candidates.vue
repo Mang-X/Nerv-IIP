@@ -31,7 +31,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
 
 definePage({
@@ -153,7 +153,11 @@ async function submit() {
     open.value = false
     notifySuccess('成本候选已登记')
   } catch (error) {
-    notifyError(costs.createCostCandidateError.value ?? error, '登记成本失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记成本失败',
+      costs.createCostCandidateError.value ?? error,
+      '登记成本失败，请稍后重试。',
+    )
   }
 }
 </script>

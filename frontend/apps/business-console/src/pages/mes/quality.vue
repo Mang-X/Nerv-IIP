@@ -29,6 +29,7 @@ import {
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -119,7 +120,7 @@ function firstQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

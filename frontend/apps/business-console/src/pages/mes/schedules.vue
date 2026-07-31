@@ -10,7 +10,7 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { labelFor, RULE_SCHEDULE_REASON_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -187,7 +187,11 @@ async function submitScheduleRun() {
     scheduleSheetOpen.value = false
     notifySuccess(`规则排程已完成（版本 ${response?.data?.scheduleVersion ?? body.trigger}）。`)
   } catch (error) {
-    notifyError(error ?? runScheduleError.value, '运行规则排程失败，请稍后重试。')
+    notifyOperationFailure(
+      '运行规则排程失败',
+      error ?? runScheduleError.value,
+      '运行规则排程失败，请稍后重试。',
+    )
   }
 }
 

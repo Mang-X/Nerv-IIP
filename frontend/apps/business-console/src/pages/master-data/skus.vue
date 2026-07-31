@@ -42,7 +42,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   BARCODE_RULE_OPTIONS,
   BATCH_TRACKING_OPTIONS,
@@ -422,7 +422,7 @@ async function submitSku() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存物料失败', error, '保存物料失败，请稍后重试。')
   }
 }
 function openCreate() {
@@ -468,7 +468,7 @@ function syncContextFromFilters(open: boolean) {
   createForm.environmentId = filters.environmentId
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

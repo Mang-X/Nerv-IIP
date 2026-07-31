@@ -46,7 +46,7 @@ import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -208,7 +208,7 @@ const treeListError = computed(() => {
     workshops.workshopsError.value ??
     lines.error.value ??
     workCenters.error.value
-  return e instanceof Error ? e.message : e ? '层级数据加载失败，请刷新重试。' : ''
+  return inlineErrorMessage(e, '层级数据加载失败，请刷新重试。')
 })
 
 // ---- 渲染森林：始终以工厂为根（含单一工厂——藏根会导致无法选中/编辑该工厂）。
@@ -616,7 +616,11 @@ async function submitCreate() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure(
+      `创建${NODE_LABEL[createType.value]}失败`,
+      error,
+      `创建${NODE_LABEL[createType.value]}失败，请稍后重试。`,
+    )
   }
 }
 
@@ -797,7 +801,11 @@ async function submitEdit() {
     editShowErrors.value = false
     editOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure(
+      `更新${NODE_LABEL[editType.value]}失败`,
+      error,
+      `更新${NODE_LABEL[editType.value]}失败，请稍后重试。`,
+    )
   }
 }
 

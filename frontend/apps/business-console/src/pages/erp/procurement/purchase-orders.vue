@@ -40,7 +40,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
   erpReadState,
@@ -213,7 +213,11 @@ async function submit() {
     open.value = false
     notifySuccess('采购订单已创建')
   } catch (error) {
-    notifyError(orders.createPurchaseOrderError.value ?? error, '创建采购单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建采购单失败',
+      orders.createPurchaseOrderError.value ?? error,
+      '创建采购单失败，请稍后重试。',
+    )
   }
 }
 </script>

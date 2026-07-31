@@ -458,7 +458,7 @@ describe('master-data devices page', () => {
 
     expect(stub.create).toHaveBeenCalledTimes(1)
     expect(stub.toastError).toHaveBeenCalledWith(
-      '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+      '保存设备失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置（仍可重试）：型号保留。

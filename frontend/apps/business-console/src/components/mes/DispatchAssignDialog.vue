@@ -8,7 +8,7 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import { labelFor, SKILL_LEVEL_LABELS } from '@/data/businessLabels'
 import { resolveDispatchAffordance } from '@/composables/mes/useMesTaskSemantics'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvBadge,
   NvButton,
@@ -234,7 +234,7 @@ async function submit() {
     open.value = false
     emit('assigned')
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('派工失败', error, '派工失败，请稍后重试。')
   }
 }
 

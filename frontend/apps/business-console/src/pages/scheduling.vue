@@ -30,6 +30,7 @@ import {
   describeSchedulingHorizon,
   resolveSchedulingHorizon,
 } from '@/composables/schedulingHorizon'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
@@ -711,11 +712,17 @@ function reasonLabel(reason?: string | null) {
           :draft-orders="draft.orders.value"
           :loading="workbench.candidatesPending.value"
           :error="workbench.candidatesError.value"
+          :scope-ready="workbench.candidatesScopeReady.value"
+          :scope-message="workbench.candidatesScopeMessage.value"
           :read-only="!canManage"
           @include="draft.setIncluded"
           @update="draft.updateOrder"
           @retry="workbench.refreshCandidates"
-        />
+        >
+          <template #scope>
+            <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+          </template>
+        </SchedulingOrderPool>
         <SchedulingDraftBoard
           :model="draft.model.value"
           :pending-operations="draft.pendingOperations.value"

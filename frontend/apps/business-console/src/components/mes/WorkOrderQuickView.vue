@@ -19,6 +19,7 @@ import {
 import { ExternalLinkIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 // 当前要速览的工单（null = 关闭）。任何页面只要 v-model:work-order-id 一个 ref 即可就地速览，不跳页。
 const workOrderId = defineModel<string | null>('workOrderId', { default: null })
@@ -42,9 +43,7 @@ const open = computed({
   },
 })
 
-const errorMessage = computed(() =>
-  detailError.value instanceof Error ? detailError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(detailError.value))
 
 const operations = computed(() =>
   [...(detail.value?.operationTasks ?? [])].sort(

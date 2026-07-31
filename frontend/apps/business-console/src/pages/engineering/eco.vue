@@ -49,7 +49,12 @@ import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -293,7 +298,7 @@ async function previewFormImpact() {
       })),
     })
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('预览变更影响失败', error, '预览变更影响失败，请稍后重试。')
   }
 }
 
@@ -319,7 +324,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布工程变更失败', error, '发布工程变更失败，请稍后重试。')
   }
 }
 
@@ -345,7 +350,7 @@ async function openView(row: BusinessConsoleEngineeringChangeItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function impactNodeTypeLabel(type?: string | null) {

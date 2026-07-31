@@ -39,10 +39,17 @@ function Invoke-PnpmInteractive {
         [string[]] $Arguments
     )
 
-    $result = Invoke-NativeCommandInteractive -Command "cmd.exe" -Name $Name -WorkingDirectory $root -Arguments (@(
+    # corepack 按“进程 cwd 就近 package.json 的 packageManager 字段”解析 pnpm 版本，
+    # 统一经 Resolve-PnpmInvocation 把 -C/--dir 对齐为进程 cwd，避免根目录 cwd 拉取
+    # 最新 pnpm 与 frontend/ 锁定版本冲突。
+    $invocation = Resolve-PnpmInvocation -Arguments $Arguments -WorkingDirectory $root
+
+    $result = Invoke-NativeCommandInteractive -Command "cmd" -Name $Name -WorkingDirectory $invocation.WorkingDirectory -Arguments (@(
+        "/d",
+        "/s",
         "/c",
         "pnpm"
-    ) + $Arguments)
+    ) + $invocation.Arguments)
 
     if ($result.ExitCode -ne 0) {
         throw "$Name failed with exit code $($result.ExitCode)."

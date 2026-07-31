@@ -5,7 +5,7 @@ import { useBarcodeScans } from '@/composables/useBusinessBarcode'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -196,7 +196,7 @@ async function submitScan() {
     notifySuccess('扫码审计已记录。')
     open.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('记录扫码审计失败', error, '记录扫码审计失败，请稍后重试。')
   }
 }
 
@@ -258,7 +258,7 @@ function firstQuery(value: unknown) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

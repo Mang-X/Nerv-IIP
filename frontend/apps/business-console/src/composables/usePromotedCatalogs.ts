@@ -35,7 +35,11 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, type UseMutationOptions } from '@pinia/colada'
 import { computed, reactive, ref } from 'vue'
-import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -63,11 +67,15 @@ export interface PromotedListFilters {
 function optionalQuery<T>(key: string, value: T | undefined): Record<string, T> {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
-function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
+function unwrapItems<T>(
+  envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined,
+): T[] {
   if (!envelope?.success) return []
   return envelope.data?.items ?? []
 }
-function unwrapTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined): number {
+function unwrapTotal(
+  envelope: { success?: boolean; data?: { total?: number } | null } | undefined,
+): number {
   if (!envelope?.success) return 0
   return envelope.data?.total ?? 0
 }
@@ -76,39 +84,56 @@ const asVars = (fn: unknown) => fn as unknown as (vars: unknown) => Promise<unkn
 // ── 产品分类（分类树）────────────────────────────────────────────
 export function useProductCategories() {
   const context = useBusinessContextStore()
-  const filters = bindBusinessContext(reactive<PromotedListFilters>({
-    organizationId: context.organizationId,
-    environmentId: context.environmentId,
-    enabled: undefined,
-    search: undefined,
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  const filters = bindBusinessContext(
+    reactive<PromotedListFilters>({
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      enabled: undefined,
+      search: undefined,
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
   const listQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleProductCategoriesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('enabled', filters.enabled),
-        ...optionalQuery('search', filters.search),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleProductCategoriesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('enabled', filters.enabled),
+          ...optionalQuery('search', filters.search),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
-  const createMutation = useMutation({ ...createBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh })
-  const updateMutation = useMutation({ ...updateBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
-  const archiveMutation = useMutation({ ...archiveBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
+  const createMutation = useMutation({
+    ...createBusinessConsoleProductCategoryMutationOptions(),
+    onSuccess: refresh,
+  })
+  const updateMutation = useMutation({
+    ...updateBusinessConsoleProductCategoryMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
+  const archiveMutation = useMutation({
+    ...archiveBusinessConsoleProductCategoryMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
   return {
     backendReady: true as boolean,
     filters,
-    categories: computed<BusinessConsoleProductCategoryItem[]>(() => unwrapItems(listQuery.data.value)),
+    categories: computed<BusinessConsoleProductCategoryItem[]>(() =>
+      unwrapItems(listQuery.data.value),
+    ),
     categoriesError: listQuery.error,
     categoriesPending: listQuery.isLoading,
     categoriesTotal: computed(() => unwrapTotal(listQuery.data.value)),
     refresh,
-    createCategory: (body: BusinessConsoleCreateProductCategoryRequest) => createMutation.mutateAsync({ body }),
+    createCategory: (body: BusinessConsoleCreateProductCategoryRequest) =>
+      createMutation.mutateAsync({ body }),
     createPending: createMutation.isLoading,
     updateCategory: (categoryCode: string, body: BusinessConsoleUpdateProductCategoryRequest) =>
       asVars(updateMutation.mutateAsync)({
@@ -130,32 +155,46 @@ export function useProductCategories() {
 // ── 质量原因（分组目录）──────────────────────────────────────────
 export function useQualityReasonCodes() {
   const context = useBusinessContextStore()
-  const filters = bindBusinessContext(reactive<PromotedListFilters>({
-    organizationId: context.organizationId,
-    environmentId: context.environmentId,
-    enabled: undefined,
-    search: undefined,
-    groupName: undefined,
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  const filters = bindBusinessContext(
+    reactive<PromotedListFilters>({
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      enabled: undefined,
+      search: undefined,
+      groupName: undefined,
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
   const listQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleQualityReasonCodesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('enabled', filters.enabled),
-        ...optionalQuery('search', filters.search),
-        ...optionalQuery('groupName', filters.groupName),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleQualityReasonCodesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('enabled', filters.enabled),
+          ...optionalQuery('search', filters.search),
+          ...optionalQuery('groupName', filters.groupName),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
-  const createMutation = useMutation({ ...createBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh })
-  const updateMutation = useMutation({ ...updateBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
-  const archiveMutation = useMutation({ ...archiveBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
+  const createMutation = useMutation({
+    ...createBusinessConsoleQualityReasonCodeMutationOptions(),
+    onSuccess: refresh,
+  })
+  const updateMutation = useMutation({
+    ...updateBusinessConsoleQualityReasonCodeMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
+  const archiveMutation = useMutation({
+    ...archiveBusinessConsoleQualityReasonCodeMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
   return {
     backendReady: true as boolean,
     filters,
@@ -164,7 +203,8 @@ export function useQualityReasonCodes() {
     reasonsPending: listQuery.isLoading,
     reasonsTotal: computed(() => unwrapTotal(listQuery.data.value)),
     refresh,
-    createReason: (body: BusinessConsoleCreateQualityReasonRequest) => createMutation.mutateAsync({ body }),
+    createReason: (body: BusinessConsoleCreateQualityReasonRequest) =>
+      createMutation.mutateAsync({ body }),
     createPending: createMutation.isLoading,
     updateReason: (reasonCode: string, body: BusinessConsoleUpdateQualityReasonRequest) =>
       asVars(updateMutation.mutateAsync)({
@@ -185,32 +225,46 @@ export function useQualityReasonCodes() {
 // ── 技能（分组目录）──────────────────────────────────────────────
 export function useSkillCatalog() {
   const context = useBusinessContextStore()
-  const filters = bindBusinessContext(reactive<PromotedListFilters>({
-    organizationId: context.organizationId,
-    environmentId: context.environmentId,
-    enabled: undefined,
-    search: undefined,
-    groupName: undefined,
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  const filters = bindBusinessContext(
+    reactive<PromotedListFilters>({
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      enabled: undefined,
+      search: undefined,
+      groupName: undefined,
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
   const listQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleSkillsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('enabled', filters.enabled),
-        ...optionalQuery('search', filters.search),
-        ...optionalQuery('groupName', filters.groupName),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleSkillsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('enabled', filters.enabled),
+          ...optionalQuery('search', filters.search),
+          ...optionalQuery('groupName', filters.groupName),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
-  const createMutation = useMutation({ ...createBusinessConsoleSkillMutationOptions(), onSuccess: refresh })
-  const updateMutation = useMutation({ ...updateBusinessConsoleSkillMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
-  const archiveMutation = useMutation({ ...archiveBusinessConsoleSkillMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
+  const createMutation = useMutation({
+    ...createBusinessConsoleSkillMutationOptions(),
+    onSuccess: refresh,
+  })
+  const updateMutation = useMutation({
+    ...updateBusinessConsoleSkillMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
+  const archiveMutation = useMutation({
+    ...archiveBusinessConsoleSkillMutationOptions(),
+    onSuccess: refresh,
+  } as unknown as UseMutationOptions)
   return {
     backendReady: true as boolean,
     filters,

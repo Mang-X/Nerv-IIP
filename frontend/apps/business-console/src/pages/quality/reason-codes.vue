@@ -48,7 +48,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -113,9 +113,7 @@ watch(
   { immediate: true },
 )
 
-const listErrorMessage = computed(() =>
-  reasonsError.value instanceof Error ? reasonsError.value.message : '',
-)
+const listErrorMessage = computed(() => inlineErrorMessage(reasonsError.value))
 
 const columns: NvDataTableColumn<QualityReasonItem>[] = [
   { key: 'reasonCode', header: '编码', width: 'w-32' },
@@ -209,7 +207,7 @@ async function submitForm() {
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存质量原因失败', error, '保存质量原因失败，请稍后重试。')
   }
 }
 
@@ -230,7 +228,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用质量原因失败', error, '停用质量原因失败，请稍后重试。')
   }
 }
 </script>

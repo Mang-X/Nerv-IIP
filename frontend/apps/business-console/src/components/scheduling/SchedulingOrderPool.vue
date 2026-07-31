@@ -7,18 +7,30 @@ import { AlertTriangleIcon, RefreshCwIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
-const props = defineProps<{
-  candidates: BusinessConsoleMesWorkOrderItem[]
-  draftOrders: WorkingScheduleOrder[]
-  loading?: boolean
-  readOnly?: boolean
-  /**
-   * MES 工单读取失败（非空即失败）。曾踩坑：这里只有加载态和表体，空数组直接渲染
-   * 一个空 tbody——「MES 接口挂了」和「今天真的没有待排工单」长得一模一样，
-   * 排产员会据此认为"没活要排"。失败必须自己出形态。
-   */
-  error?: unknown
-}>()
+const props = withDefaults(
+  defineProps<{
+    candidates: BusinessConsoleMesWorkOrderItem[]
+    draftOrders: WorkingScheduleOrder[]
+    loading?: boolean
+    readOnly?: boolean
+    /**
+     * MES 工单读取失败（非空即失败）。曾踩坑：这里只有加载态和表体，空数组直接渲染
+     * 一个空 tbody——「MES 接口挂了」和「今天真的没有待排工单」长得一模一样，
+     * 排产员会据此认为"没活要排"。失败必须自己出形态。
+     */
+    error?: unknown
+    /**
+     * 主体授权作业范围是否就绪（#1288）。未就绪时候选查询根本没发（enabled=false），
+     * candidates 为空是「没查」而不是「没有」——必须自己出形态，不许下「没有待排产的工单」结论。
+     * 不传（undefined）视为不启用该门禁，保持向后兼容；默认 undefined 用 withDefaults
+     * 显式声明，避免 Vue 把缺省布尔 prop 铸成 false 误触发未就绪形态。
+     */
+    scopeReady?: boolean
+    /** 作业范围未就绪时的原因说明（缺什么、去哪配）。 */
+    scopeMessage?: string
+  }>(),
+  { scopeReady: undefined },
+)
 
 const emit = defineEmits<{
   include: [workOrderIds: string[], included: boolean]
@@ -26,8 +38,11 @@ const emit = defineEmits<{
   retry: []
 }>()
 
-const failed = computed(() => !props.loading && props.error != null)
-const isEmpty = computed(() => !props.loading && !failed.value && props.candidates.length === 0)
+const scopeBlocked = computed(() => !props.loading && props.scopeReady === false)
+const failed = computed(() => !props.loading && !scopeBlocked.value && props.error != null)
+const isEmpty = computed(
+  () => !props.loading && !scopeBlocked.value && !failed.value && props.candidates.length === 0,
+)
 
 // 工单池只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
@@ -50,12 +65,14 @@ function setPriority(workOrderId: string, value: string | number) {
         <h2 class="font-semibold">待排工单池</h2>
         <p class="text-sm text-muted-foreground">从 MES 权威工单中一次选择最多 500 条。</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 作业范围选择入口由宿主页面注入（与 MES 工单页共享同一份选择）。 -->
+        <slot name="scope" />
         <NvButton
           size="sm"
           variant="outline"
           type="button"
-          :disabled="readOnly || failed || candidateIds.length === 0"
+          :disabled="readOnly || scopeBlocked || failed || candidateIds.length === 0"
           @click="emit('include', candidateIds, true)"
           >全部加入</NvButton
         >
@@ -75,6 +92,25 @@ function setPriority(workOrderId: string, value: string | number) {
       class="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"
     >
       <Spinner aria-hidden="true" />正在读取 MES 工单
+    </div>
+
+    <!-- 作业范围未就绪：候选查询根本没发，不许下「没有待排产的工单」结论（#1288） -->
+    <div
+      v-else-if="scopeBlocked"
+      class="flex min-h-32 flex-col items-center justify-center gap-2 rounded-md border border-warning/40 bg-warning/[0.06] px-6 py-6 text-center"
+      role="alert"
+      data-testid="scheduling-order-pool-scope-blocked"
+    >
+      <span class="grid size-10 place-items-center rounded-full bg-warning/15">
+        <AlertTriangleIcon class="size-5 text-warning" aria-hidden="true" />
+      </span>
+      <p class="text-sm font-medium text-foreground">作业范围未就绪，尚未读取待排工单</p>
+      <p class="text-sm leading-6 text-muted-foreground">
+        {{
+          scopeMessage ||
+          '请先在上方选择已授权的作业范围；若没有可选项，请联系管理员在 IAM 为账号配置数据范围。'
+        }}
+      </p>
     </div>
 
     <!-- 失败态：说清取不到、无法判断，并给重试；绝不退化成一张空表 -->

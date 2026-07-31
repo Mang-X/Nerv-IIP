@@ -71,10 +71,16 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-const notifySpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
-vi.mock('@/utils/notify', () => ({
+const notifySpies = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  operationFailure: vi.fn(),
+}))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: notifySpies.success,
   notifyError: notifySpies.error,
+  notifyOperationFailure: notifySpies.operationFailure,
 }))
 
 const receiptState = vi.hoisted(() => ({
@@ -197,6 +203,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     routerState.replace.mockReset()
     notifySpies.success.mockReset()
     notifySpies.error.mockReset()
+    notifySpies.operationFailure.mockReset()
     receiptState.createReceiptRequest = vi.fn(async (_body: unknown) => undefined)
     receiptState.createReceiptRequestError = { value: undefined }
     receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
@@ -359,7 +366,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     // 数量超剩余 → 不发请求，内联标红提示（不是禁用按钮、不是 toast）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('不超过该批次剩余可入库量')
-    expect(notifySpies.error).not.toHaveBeenCalled()
+    expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
   it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
@@ -391,7 +398,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     expect(notifySpies.success).toHaveBeenCalledTimes(1)
     // 登记已成功：刷新失败不得再提示「登记失败」，避免矛盾反馈诱导重复提交。
-    expect(notifySpies.error).not.toHaveBeenCalled()
+    expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
   it('maps the over-quantity backend error to the business copy even for short work order ids', async () => {
@@ -399,7 +406,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     receiptState.createReceiptRequest = vi.fn(async () => {
       throw new Error('mutation rejected')
     })
-    // 短工单号：后端原文为 ≤60 字中文，notifyError 会优先透传原文；映射必须作为「实际错误消息」传入才生效。
+    // 短工单号：后端原文为 ≤60 字中文，分层透传会优先带出原文；映射必须作为「实际错误消息」传入才生效。
     receiptState.createReceiptRequestError = {
       value: new Error('累计完工入库申请数量超过工单完工数量，WorkOrderId = WO-1'),
     }
@@ -408,8 +415,8 @@ describe('MES receipts — failed inventory posting retry', () => {
 
     await fillCostAndSubmit(wrapper)
 
-    expect(notifySpies.error).toHaveBeenCalledTimes(1)
-    const [arg] = notifySpies.error.mock.calls[0]!
+    expect(notifySpies.operationFailure).toHaveBeenCalledTimes(1)
+    const [, arg] = notifySpies.operationFailure.mock.calls[0]!
     expect((arg as Error).message).toBe(
       '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。',
     )

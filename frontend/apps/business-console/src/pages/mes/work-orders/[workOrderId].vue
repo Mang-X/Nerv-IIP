@@ -2,6 +2,7 @@
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
@@ -21,7 +22,12 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -160,11 +166,17 @@ const workOrderTone = computed<NvMetricTone>(() => {
   if (status === 'hold' || status === 'cancelled') return 'warning'
   return 'neutral'
 })
-const workOrderStatusPill = computed<NvMetricStatus>(() =>
-  blockingReasons.value.length
-    ? { label: `${blockingReasons.value.length} 项阻塞`, tone: 'danger' }
-    : { label: '无阻塞', tone: 'success' },
-)
+// 「无阻塞」是一个安全结论：工单详情或用料齐套任一读面没取到，都不许下这个结论
+// （作业范围未就绪整页拒载时曾反显「无阻塞」假文案，#1288）。
+const workOrderStatusPill = computed<NvMetricStatus>(() => {
+  if (blockingReasons.value.length) {
+    return { label: `${blockingReasons.value.length} 项阻塞`, tone: 'danger' }
+  }
+  if (!detail.value || !materialReadiness.value) {
+    return { label: '结论未取得', tone: 'neutral' }
+  }
+  return { label: '无阻塞', tone: 'success' }
+})
 const materialShortageCount = computed(
   () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
 )
@@ -422,7 +434,7 @@ async function submitCancel() {
     ) {
       return
     }
-    notifyError(error, '取消工单失败，请稍后重试。')
+    notifyOperationFailure('取消工单失败', error, '取消工单失败，请稍后重试。')
   }
 }
 
@@ -465,7 +477,7 @@ function formatStatus(value?: string | null) {
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -569,14 +581,16 @@ function formatError(error: unknown) {
       :context-label="`MES 工单 ${detail?.workOrderId ?? filters.workOrderId}`"
     />
 
-    <p
+    <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->
+    <div
       v-if="workOrderReadScopeMessage"
-      class="text-sm text-destructive"
+      class="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/[0.04] p-3"
       role="alert"
       data-testid="work-order-read-scope-message"
     >
-      {{ workOrderReadScopeMessage }}
-    </p>
+      <p class="text-sm text-destructive">{{ workOrderReadScopeMessage }}</p>
+      <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+    </div>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -598,20 +612,25 @@ function formatError(error: unknown) {
         :progress="taskProgress"
         :target-label="`共 ${operationTasks.length} 道`"
       />
+      <!-- 「已齐套」同样是安全结论：齐套读面没取到时只说未取得，不反显齐套假文案（#1288）。 -->
       <NvMetricCard
         variant="alert"
         label="用料齐套"
-        :value="formatStatus(materialReadiness?.readinessStatus)"
+        :value="materialReadiness ? formatStatus(materialReadiness.readinessStatus) : '未取得'"
         :tone="materialTone"
         :status="
-          materialShortageCount > 0
-            ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
-            : { label: '已齐套', tone: 'success' }
+          materialReadiness
+            ? materialShortageCount > 0
+              ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
+              : { label: '已齐套', tone: 'success' }
+            : { label: '结论未取得', tone: 'neutral' }
         "
         :foot-start="
-          materialShortageCount > 0
-            ? '缺料项需先由仓库补发，否则无法开工。'
-            : '用料已备齐，可按工序顺序开工。'
+          materialReadiness
+            ? materialShortageCount > 0
+              ? '缺料项需先由仓库补发，否则无法开工。'
+              : '用料已备齐，可按工序顺序开工。'
+            : '尚未取得用料齐套结论，先解决上方读取阻塞后刷新。'
         "
       />
     </div>

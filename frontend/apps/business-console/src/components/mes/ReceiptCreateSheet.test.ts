@@ -58,7 +58,12 @@ const state = vi.hoisted(() => ({
   keyCounter: 0,
 }))
 
-vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-key-${++state.keyCounter}`,

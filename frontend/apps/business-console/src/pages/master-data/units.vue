@@ -46,7 +46,7 @@ import {
 import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { mergeReferenceOptions } from '@/data/masterDataReference'
 
 definePage({
@@ -379,7 +379,7 @@ function offsetNumber(value: string | number): number | undefined {
   return asText(value).trim() === '' ? undefined : Number(value)
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function resetCreateForm() {
   Object.assign(createForm, {
@@ -448,7 +448,7 @@ async function submitUom() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存计量单位失败', error, '保存计量单位失败，请稍后重试。')
   }
 }
 
@@ -493,7 +493,7 @@ async function submitConversion() {
     conversionShowErrors.value = false
     conversionOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('创建换算关系失败', error, '创建换算关系失败，请稍后重试。')
   }
 }
 </script>

@@ -27,7 +27,7 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -228,7 +228,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('上架任务已创建')
   } catch (error) {
-    notifyError(error, '创建上架任务失败，请稍后重试。')
+    notifyOperationFailure('创建上架任务失败', error, '创建上架任务失败，请稍后重试。')
   }
 }
 
@@ -329,7 +329,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function refreshAll() {

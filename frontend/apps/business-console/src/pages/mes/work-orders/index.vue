@@ -19,6 +19,7 @@ import {
   orderRowsByUrgency,
   type UrgencyDisplayMode,
 } from '@/composables/useUrgencyDisplayMode'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -26,7 +27,7 @@ import type { ProductionReportContext } from '@/composables/mes/useProductionRep
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -383,7 +384,11 @@ async function submitRushWorkOrder() {
     rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
     rushSheetOpen.value = false
   } catch (error) {
-    notifyError(createRushWorkOrderError.value ?? error, '创建急单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建急单失败',
+      createRushWorkOrderError.value ?? error,
+      '创建急单失败，请稍后重试。',
+    )
   }
 }
 
@@ -446,7 +451,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
     }))
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -507,6 +512,7 @@ function isNonEmpty(value: string) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
+        <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工单状态"
             ><NvSelectValue

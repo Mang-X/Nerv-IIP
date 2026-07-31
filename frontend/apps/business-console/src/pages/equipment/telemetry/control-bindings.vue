@@ -12,7 +12,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -178,7 +178,7 @@ async function submit() {
     )
     dialogOpen.value = false
   } catch (error) {
-    notifyError(error, '保存控制通道绑定失败，请稍后重试。')
+    notifyOperationFailure('保存控制通道绑定失败', error, '保存控制通道绑定失败，请稍后重试。')
   }
 }
 
@@ -195,7 +195,7 @@ async function confirmDisable() {
     notifySuccess(`控制通道绑定已停用：${target.deviceAssetId}`)
     disableOpen.value = false
   } catch (error) {
-    notifyError(error, '停用控制通道绑定失败，请稍后重试。')
+    notifyOperationFailure('停用控制通道绑定失败', error, '停用控制通道绑定失败，请稍后重试。')
   }
 }
 
@@ -208,7 +208,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 

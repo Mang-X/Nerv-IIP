@@ -46,7 +46,7 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -335,7 +335,7 @@ function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function formatMoney(value?: number | null, currency?: string | null) {
   if (value == null) return '无'
@@ -537,7 +537,7 @@ async function submitDevice() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存设备失败', error, '保存设备失败，请稍后重试。')
   }
 }
 </script>

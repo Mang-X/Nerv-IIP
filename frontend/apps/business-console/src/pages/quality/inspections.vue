@@ -22,7 +22,12 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
@@ -482,7 +487,7 @@ async function submitInspectionRecord() {
       ) {
         return
       }
-      notifyError(error, '检验记录提交失败，请稍后重试。')
+      notifyOperationFailure('检验记录提交失败', error, '检验记录提交失败，请稍后重试。')
       return
     }
     recordSheetOpen.value = false
@@ -513,7 +518,7 @@ async function submitInspectionRecord() {
   try {
     response = await createInspectionRecord(body)
   } catch (error) {
-    notifyError(error, '检验记录提交失败，请稍后重试。')
+    notifyOperationFailure('检验记录提交失败', error, '检验记录提交失败，请稍后重试。')
     return
   }
   recordSheetOpen.value = false
@@ -593,7 +598,7 @@ function firstQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0

@@ -38,7 +38,12 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
-vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({
@@ -71,6 +76,18 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
+  // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: ref([]),
+    scopeSelectionValue: ref(undefined),
+    scopeReady: ref(true),
+    scopeMessage: ref(''),
+    scopePending: ref(false),
+    scopeUnavailable: ref(false),
+    selectedScope: ref(undefined),
+    principalIdentity: ref('principal-test'),
+    requireSelectedScope: vi.fn(),
+  }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),

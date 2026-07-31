@@ -8,7 +8,7 @@ import { useErpRequestsForQuotation, useErpSupplierQuotations } from '@/composab
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -258,7 +258,11 @@ async function submit() {
     open.value = false
     notifySuccess(`${row.rfqNo} 的供应商报价已录入`)
   } catch (error) {
-    notifyError(quotes.receiveSupplierQuotationError.value ?? error, '录入报价失败，请稍后重试。')
+    notifyOperationFailure(
+      '录入报价失败',
+      quotes.receiveSupplierQuotationError.value ?? error,
+      '录入报价失败，请稍后重试。',
+    )
   }
 }
 </script>

@@ -95,6 +95,14 @@ const stub = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
 }))
 
+// #1288 作业范围选择入口是独立组件（自带 work-context 查询），页面测试不铺网络桩，整件打桩。
+vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
+  default: {
+    name: 'MesWorkScopeSelect',
+    template: '<div data-testid="mes-work-scope-select" />',
+  },
+}))
+
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
@@ -110,6 +118,9 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     ]),
     candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
+    // #1288 待排池 scope gate 事实：本文件不测未就绪分支，按就绪打桩。
+    candidatesScopeMessage: computed(() => ''),
+    candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
     generatePlan: stub.generatePlan,

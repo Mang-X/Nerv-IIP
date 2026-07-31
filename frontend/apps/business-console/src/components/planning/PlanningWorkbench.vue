@@ -28,7 +28,7 @@ import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPan
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -194,26 +194,18 @@ const canSubmitMps = computed(
     (mpsForm.quantity ?? 0) > 0,
 )
 
+// 页内这条只留给「读数据取不到」这一类区域状态。
+// 曾踩坑（MAN-700 / #1289）：写操作的 error ref 也被并进来，于是 RunMrp 一个 500 就把
+// `Internal Server Error` 常驻在页面上，且弹框不会关——操作结果必须走 toast，见
+// `frontend/DESIGN/patterns/feedback-and-notifications.md`。
 const errorMessage = computed(
   () =>
-    [
-      demandsError,
-      mpsBucketsError,
-      mrpRunsError,
-      suggestionsError,
-      createDemandError,
-      createMpsBucketError,
-      reviewMpsBucketError,
-      releaseMpsBucketError,
-      runMrpError,
-      acceptSuggestionError,
-      rejectSuggestionError,
-    ]
+    [demandsError, mpsBucketsError, mrpRunsError, suggestionsError]
       .map((ref) => formatError(ref.value))
       .find(Boolean) ?? '',
 )
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 // 时段视图只关心三份读数据的加载/失败态（不掺入各写操作的错误）。
@@ -252,7 +244,7 @@ async function submitRejectSuggestion() {
     rejectTarget.value = null
   } catch (error) {
     // 诚实失败：透传服务端 message（composable 已把软失败转成异常）。
-    notifyError(error, '计划建议拒绝失败，请稍后重试。')
+    notifyOperationFailure('拒绝计划建议失败', error, '计划建议拒绝失败，请稍后重试。')
   }
 }
 
@@ -446,27 +438,49 @@ const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem
   { key: 'actions', header: '', align: 'end', width: 'w-48' },
 ]
 
+// 五个写操作此前都没有 try/catch：一次 500 就是「未处理拒绝 + 弹框永远关不掉」（MAN-700 / #1289）。
+// 现在一律 toast 分层透传，失败时弹框保持打开可改可重试，成功才关。
 async function submitDemand() {
-  await createOrUpdateDemand()
-  demandOpen.value = false
+  try {
+    await createOrUpdateDemand()
+    demandOpen.value = false
+  } catch (error) {
+    notifyOperationFailure('保存需求失败', error, '保存需求失败，请稍后重试。')
+  }
 }
 async function submitMpsBucket() {
-  await createMpsBucket()
-  mpsOpen.value = false
+  try {
+    await createMpsBucket()
+    mpsOpen.value = false
+  } catch (error) {
+    notifyOperationFailure('保存主计划行失败', error, '保存主计划行失败，请稍后重试。')
+  }
 }
 async function submitMrpRun() {
-  await runMrp()
-  mrpOpen.value = false
+  try {
+    await runMrp()
+    mrpOpen.value = false
+  } catch (error) {
+    notifyOperationFailure('运行 MRP 失败', error, '运行 MRP 失败，请稍后重试。')
+  }
 }
 async function reviewMps(row: BusinessConsoleMpsBucketItem) {
   if (!row.mpsId) return
-  await reviewMpsBucket(row.mpsId)
-  notifySuccess('主计划行已完成评审。')
+  try {
+    await reviewMpsBucket(row.mpsId)
+    notifySuccess('主计划行已完成评审。')
+  } catch (error) {
+    notifyOperationFailure('评审主计划行失败', error, '评审主计划行失败，请稍后重试。')
+  }
 }
 async function releaseMps(row: BusinessConsoleMpsBucketItem) {
   if (!row.mpsId) return
-  await releaseMpsBucket(row.mpsId)
-  notifySuccess('主计划行已发布，可作为 MRP 输入。')
+  try {
+    await releaseMpsBucket(row.mpsId)
+    notifySuccess('主计划行已发布，可作为 MRP 输入。')
+  } catch (error) {
+    notifyOperationFailure('发布主计划行失败', error, '发布主计划行失败，请稍后重试。')
+  }
 }
 async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.suggestionType) return
@@ -494,7 +508,11 @@ async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionIt
       )
     }
   } catch (error) {
-    notifyError(error, '计划建议接受失败，请检查生产版本、供应商、库存或权限状态。')
+    notifyOperationFailure(
+      '接受计划建议失败',
+      error,
+      '计划建议接受失败，请检查生产版本、供应商、库存或权限状态。',
+    )
   } finally {
     acceptingSuggestionId.value = null
   }

@@ -30,7 +30,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { erpReadState, formatDateTime, pickerInvalidClass, readCount } from '../shared'
 
 definePage({
@@ -134,7 +134,11 @@ async function submit() {
     open.value = false
     notifySuccess('销售机会已开立')
   } catch (error) {
-    notifyError(opportunities.openOpportunityError.value ?? error, '开立机会失败，请稍后重试。')
+    notifyOperationFailure(
+      '开立机会失败',
+      opportunities.openOpportunityError.value ?? error,
+      '开立机会失败，请稍后重试。',
+    )
   }
 }
 </script>

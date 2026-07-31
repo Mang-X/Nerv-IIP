@@ -27,7 +27,10 @@ const coladaState = vi.hoisted(() => ({
 
 vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleApprovalDelegationMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { delegationId: 'delegation-1', vars } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { delegationId: 'delegation-1', vars },
+    })),
   })),
   createOrUpdateBusinessConsoleApprovalTemplateMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: { templateId: 'template-1', vars } })),
@@ -63,7 +66,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars })),
   })),
   startBusinessConsoleApprovalChainMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { chainId: 'chain-started-1', vars } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { chainId: 'chain-started-1', vars },
+    })),
   })),
 }))
 
@@ -182,7 +188,9 @@ describe('business approval composable', () => {
       documentType: '采购订单',
       version: 3,
       isActive: true,
-      steps: [{ stepNo: 10, stepName: '采购经理', approverType: 'role', approverRef: 'buyer-manager' }],
+      steps: [
+        { stepNo: 10, stepName: '采购经理', approverType: 'role', approverRef: 'buyer-manager' },
+      ],
     })
     await approval.startChain({
       templateCode: 'ncr-disposition-default',
@@ -201,55 +209,63 @@ describe('business approval composable', () => {
     })
     await approval.revokeDelegation('delegation-1')
 
-    expect(vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        path: { chainId: 'chain-1', stepNo: 20 },
-        body: {
-          organizationId: 'org-001',
-          environmentId: 'env-dev',
-          actorType: 'user',
-          actorRef: 'approver-a',
-          decision: 'Reject',
-          comment: '缺少采购合同附件',
-        },
-      })
-    expect(vi.mocked(createOrUpdateBusinessConsoleApprovalTemplateMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        body: expect.objectContaining({
-          organizationId: 'org-001',
-          environmentId: 'env-dev',
-          templateCode: 'purchase-order',
-          version: 3,
-        }),
-      })
-    expect(vi.mocked(startBusinessConsoleApprovalChainMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        body: {
-          organizationId: 'org-001',
-          environmentId: 'env-dev',
-          templateCode: 'ncr-disposition-default',
-          sourceService: 'quality',
-          documentType: 'quality-ncr',
-          documentId: 'NCR-260701-001',
-          documentLineId: null,
-          startedBy: 'approver-a',
-        },
-      })
-    expect(vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        body: expect.objectContaining({
-          organizationId: 'org-001',
-          environmentId: 'env-dev',
-          createdBy: 'approver-a',
-          delegateActorRef: 'approver-b',
-        }),
-      })
-    expect(vi.mocked(revokeBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        path: { delegationId: 'delegation-1' },
-        query: { organizationId: 'org-001', environmentId: 'env-dev' },
-        body: { revokedBy: 'approver-a' },
-      })
+    expect(
+      vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { chainId: 'chain-1', stepNo: 20 },
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        actorType: 'user',
+        actorRef: 'approver-a',
+        decision: 'Reject',
+        comment: '缺少采购合同附件',
+      },
+    })
+    expect(
+      vi.mocked(createOrUpdateBusinessConsoleApprovalTemplateMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        templateCode: 'purchase-order',
+        version: 3,
+      }),
+    })
+    expect(
+      vi.mocked(startBusinessConsoleApprovalChainMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        templateCode: 'ncr-disposition-default',
+        sourceService: 'quality',
+        documentType: 'quality-ncr',
+        documentId: 'NCR-260701-001',
+        documentLineId: null,
+        startedBy: 'approver-a',
+      },
+    })
+    expect(
+      vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        createdBy: 'approver-a',
+        delegateActorRef: 'approver-b',
+      }),
+    })
+    expect(
+      vi.mocked(revokeBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { delegationId: 'delegation-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { revokedBy: 'approver-a' },
+    })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 
@@ -271,18 +287,29 @@ describe('business approval composable', () => {
     })
     await approval.revokeDelegation('delegation-2')
 
-    expect(vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith(expect.objectContaining({
+    expect(
+      vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
         body: expect.objectContaining({ actorRef: 'approver-b' }),
-      }))
-    expect(vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith(expect.objectContaining({
+      }),
+    )
+    expect(
+      vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
         body: expect.objectContaining({ createdBy: 'approver-b' }),
-      }))
-    expect(vi.mocked(revokeBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith(expect.objectContaining({
+      }),
+    )
+    expect(
+      vi.mocked(revokeBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
         body: { revokedBy: 'approver-b' },
-      }))
+      }),
+    )
   })
 
   it('does not refresh approval lists when business context is empty', async () => {
@@ -291,10 +318,16 @@ describe('business approval composable', () => {
 
     await approval.refreshAll()
 
-    expect(coladaState.refetchById.get('listBusinessConsoleApprovalTemplates')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleApprovalTemplates'),
+    ).not.toHaveBeenCalled()
     expect(coladaState.refetchById.get('listBusinessConsoleApprovalChains')).not.toHaveBeenCalled()
     expect(coladaState.refetchById.get('listBusinessConsoleApprovalTasks')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('listBusinessConsoleApprovalDecisions')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('listBusinessConsoleApprovalDelegations')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleApprovalDecisions'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleApprovalDelegations'),
+    ).not.toHaveBeenCalled()
   })
 })

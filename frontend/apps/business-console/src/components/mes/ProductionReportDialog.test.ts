@@ -16,6 +16,7 @@ const spies = vi.hoisted(() => ({
   makeIdempotencyKey: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
 }))
 const scopeState = vi.hoisted(() => ({
   message: '',
@@ -36,9 +37,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: spies.notifySuccess,
   notifyError: spies.notifyError,
+  notifyOperationFailure: spies.notifyOperationFailure,
 }))
 
 const stubs = {
