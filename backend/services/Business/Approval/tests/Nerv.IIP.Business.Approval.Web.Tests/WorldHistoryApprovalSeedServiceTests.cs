@@ -150,7 +150,8 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
             output.WriteLine($"small-scale-sample: {line}");
         }
 
-        Assert.Equal(3, first.TemplatesWritten);
+        // 采购 / NCR / 信用解冻 / 盘点差异（#1344 扩修补齐）四张模板。
+        Assert.Equal(4, first.TemplatesWritten);
         Assert.Equal(facts.Count, first.ChainsWritten);
         Assert.Equal(
             facts.Count(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode),
