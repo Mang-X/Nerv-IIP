@@ -1440,7 +1440,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
             .ToArrayAsync(cancellationToken);
         if (blockingOperations.Length > 0)
         {
-            throw new KnownException($"前序工序尚未完成，OperationTaskId = {task.OperationTaskIdValue}, BlockingOperations = {string.Join(',', blockingOperations)}");
+            // 这条会经分层透传直接上屏，而前端只原样透传 60 字以内的中文短消息（超了会被截断）——
+            // 所以只说「哪几道工序还没完工」，不带 OperationTaskId = 这类内部字段名；
+            // 前序太多时只点前三道，剩下的给个数（MAN-698 台账 #35 同批）。
+            var named = blockingOperations.Take(3).ToArray();
+            var more = blockingOperations.Length > named.Length
+                ? $" 等 {blockingOperations.Length} 道"
+                : string.Empty;
+            throw new KnownException($"前序工序尚未完成：{string.Join('、', named)}{more}。");
         }
     }
 }
@@ -1471,11 +1478,16 @@ internal static class MaterialReadinessGuards
     }
 
     /// <summary>
-    /// 缺料阻塞原因的**唯一措辞**：<c>MATERIAL_SHORTAGE: 物料 X（批次 Y）缺口 N</c>。
+    /// 缺料阻塞原因在 **MES 服务内**的唯一措辞：<c>MATERIAL_SHORTAGE: 物料 X（批次 Y）缺口 N</c>，
     /// 与 <see cref="MissingRequirementSnapshotReason"/> 同一形态（<c>英文码: 中文说明</c>）——
     /// 前端按冒号前的码取标签与下一步动作，冒号后的中文原样作为明细上屏。
-    /// 曾经三处各写一套、其中两处直出英文生码「物料编码 + shortage + 数量」，
-    /// 界面上既读不懂又被徽标截断（MAN-698 台账 #35）。新增缺料产出点一律走这里。
+    /// 本服务内新增缺料产出点一律走这里（曾经三处各写一套、其中两处直出英文生码
+    /// 「物料编码 + shortage + 数量」，界面上既读不懂又被徽标截断；MAN-698 台账 #35）。
+    ///
+    /// ⚠️ 这个形态是**跨服务约定**，但实现有意重复三份：本处、Scheduling 的
+    /// <c>SchedulingMaterialReasonText</c>、前端的 <c>describeMesReadinessReason</c>。
+    /// 服务边界不共享库、前端更不可能引用后端代码，所以**共享的是断言不是代码**：
+    /// 本处与 Scheduling 侧各有一条逐字一致的格式用例互相钉住，改措辞两边一起红。
     /// </summary>
     public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
     {

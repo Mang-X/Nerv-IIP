@@ -78,7 +78,7 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"文档号 {allocation.Code} 的修订 {request.Revision} 已登记，请换修订号或留空由系统取号。");
+            throw new KnownException($"文档号 {allocation.Code} 的修订 {request.Revision} 已登记，请换修订号或留空取号。");
         }
 
         var document = EngineeringDocument.Register(
@@ -169,7 +169,7 @@ public sealed class PublishSopDocumentCommandHandler(IEngineeringDocumentReposit
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"SOP 文档号 {allocation.Code} 的修订 {request.Revision} 已发布，请换修订号或留空由系统取号。");
+            throw new KnownException($"SOP {allocation.Code} 的修订 {request.Revision} 已发布，请换修订号或留空取号。");
         }
 
         var document = EngineeringDocument.PublishSop(

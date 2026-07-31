@@ -157,6 +157,15 @@ export function errorStatusCode(error: unknown): number | undefined {
   return readStatusCode(error, new Set<object>(), 0)
 }
 
+/**
+ * `status` 是个很常见的**业务字段名**（工单状态、任务状态…），响应体里出现数值 `status`
+ * 完全可能与 HTTP 无关。只认合法 HTTP 状态码区间，避免把领域状态误当成 HTTP 码
+ * ——否则一个 `status: 403` 语义的业务枚举就能把页面骗进「无权限」空态。
+ */
+function isHttpStatusCode(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+}
+
 function readStatusCode(error: unknown, seen: Set<object>, depth: number): number | undefined {
   if (error == null || typeof error !== 'object' || depth > 4) return undefined
   if (seen.has(error)) return undefined
@@ -165,7 +174,7 @@ function readStatusCode(error: unknown, seen: Set<object>, depth: number): numbe
   const record = error as Record<string, unknown>
   for (const field of STATUS_FIELDS) {
     const value = record[field]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (isHttpStatusCode(value)) return value
   }
 
   for (const container of ['response', 'error', 'data', 'body', 'cause'] as const) {
@@ -183,7 +192,11 @@ function readStatusCode(error: unknown, seen: Set<object>, depth: number): numbe
 export function isForbiddenError(error: unknown): boolean {
   const status = errorStatusCode(error)
   if (status !== undefined) return status === 403
+  // 兜底只认**技术串**（`403 Forbidden` 这类）。中文领域消息里出现的 403 是业务数字
+  // （「任务状态为 403 号工序」），不是状态码——那种情况下宁可不认，把领域消息原样上屏，
+  // 也好过把一次普通失败误判成「无权限」。
   const raw = `${serverErrorMessage(error)} ${rawMessage(error)}`
+  if (/[一-龥]/.test(raw)) return false
   return /\b403\b|forbidden/i.test(raw)
 }
 

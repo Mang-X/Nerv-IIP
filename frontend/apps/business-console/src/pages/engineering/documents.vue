@@ -170,6 +170,30 @@ function blankForm(): DocumentForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<DocumentForm>(blankForm())
+const submitting = ref(false)
+
+/**
+ * 本次登记的幂等键。**文档号改可选后，「撞号 400」这道天然去重就没了**——自动取号每次都能
+ * 取到新号，双击提交会产出两份只是号码不同的文档。后端 coding allocator 只按
+ * idempotencyKey 去重（同键 + 同内容指纹 → 原样回放既有号；同键 + 不同指纹 → 幂等冲突），
+ * 所以键必须**同一次提交内容稳定、内容改了就换新**：
+ * 「打开弹窗时的一次性 nonce」+「本次提交内容的指纹」。
+ *
+ * 为什么不用纯内容键（如 `doc-...-${类型}-${修订}`）：同一物料同一修订下登记第二份不同文件
+ * 是合法操作，纯内容键会把它撞成幂等回放或幂等冲突，等于把用户挡在门外。
+ */
+const formNonce = ref(newNonce())
+function newNonce() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+/** 只求稳定短串（用于幂等键去重），不做密码学用途。 */
+function hashPayload(payload: string) {
+  let hash = 0
+  for (let i = 0; i < payload.length; i += 1) {
+    hash = (Math.imul(31, hash) + payload.charCodeAt(i)) | 0
+  }
+  return (hash >>> 0).toString(36)
+}
 
 const itemPickerOptions = computed(() => {
   const byCode = new Map<string, { value: string; label: string; hint?: string }>()
@@ -209,6 +233,8 @@ const canSubmit = computed(
 function openCreate() {
   Object.assign(form, blankForm())
   showErrors.value = false
+  // 新的一次登记 = 新的幂等作用域，不能沿用上一单的键（否则第二份文档会被回放成第一份）。
+  formNonce.value = newNonce()
   formOpen.value = true
 }
 
@@ -232,32 +258,50 @@ async function submitForm() {
     showErrors.value = true
     return
   }
+  // 双击的第一道闸：mutation 的 pending 是异步翻起来的，两次同步进入的提交拦不住。
+  if (submitting.value) return
   const documentNumber = form.documentNumber.trim()
-  const body: BusinessConsoleRegisterEngineeringDocumentRequest = {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    // 留空 = 交给后端 coding allocator 取号（契约上 documentNumber 本就可选）。
-    documentNumber: documentNumber || undefined,
-    revision: form.revision.trim(),
+  const revision = form.revision.trim()
+  const payload = {
+    documentNumber,
+    revision,
     fileId: form.fileId.trim(),
     fileName: form.fileName.trim(),
     contentType: form.contentType.trim(),
     documentType: form.documentType.trim(),
-    itemCode: form.itemCode.trim() || undefined,
+    itemCode: form.itemCode.trim(),
   }
+  const body: BusinessConsoleRegisterEngineeringDocumentRequest = {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    // 留空 = 交给后端 coding allocator 取号（契约上 documentNumber 本就可选）。
+    documentNumber: payload.documentNumber || undefined,
+    revision: payload.revision,
+    fileId: payload.fileId,
+    fileName: payload.fileName,
+    contentType: payload.contentType,
+    documentType: payload.documentType,
+    itemCode: payload.itemCode || undefined,
+    // 第二道闸（真正的去重）：同一弹窗内同一份内容重复提交拿到同一个键，
+    // 后端 allocator 原样回放既有号，不会再取一个新号产出第二份文档。
+    idempotencyKey: `doc-register-${formNonce.value}-${hashPayload(Object.values(payload).join('|'))}`,
+  }
+  submitting.value = true
   try {
     const result = (await registerDocument(body)) as { data?: { id?: string | null } } | undefined
     // 自动取号时号码只有后端知道：从回执里取出来告诉用户，别让他去列表里猜哪条是新的。
     const registeredNumber = documentNumber || (result?.data?.id ?? '').trim()
     notifySuccess(
       registeredNumber
-        ? `已登记文档「${registeredNumber}」修订 ${form.revision.trim()}。`
-        : `已登记文档修订 ${form.revision.trim()}。`,
+        ? `已登记文档「${registeredNumber}」修订 ${revision}。`
+        : `已登记文档修订 ${revision}。`,
     )
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
     notifyOperationFailure('登记文档修订失败', error, '登记文档修订失败，请稍后重试。')
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -419,8 +463,8 @@ function formatError(error: unknown) {
 
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton type="submit" :disabled="registerPending">
-                  <Spinner v-if="registerPending" aria-hidden="true" />
+                <NvButton type="submit" :disabled="registerPending || submitting">
+                  <Spinner v-if="registerPending || submitting" aria-hidden="true" />
                   登记文档
                 </NvButton>
               </NvDialogFooter>

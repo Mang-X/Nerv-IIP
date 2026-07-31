@@ -243,6 +243,11 @@ const mesReadinessReasonDisplays: Record<string, Omit<MesReadinessReasonDisplay,
  *
  * 曾踩坑（MAN-698 台账 #35）：整条原文直接当 label 塞进徽标，而 MES 齐套读面当时给的还是
  * 英文生码「物料编码 + shortage + 数量」——用户既读不懂又只看得见前半截。
+ *
+ * ⚠️ `CODE: 中文` 这个形态是**跨服务约定**，实现有意重复三份：本处、MES 的
+ * `MaterialReadinessGuards.FormatShortageReason`、Scheduling 的 `SchedulingMaterialReasonText`。
+ * 前端不可能引用后端代码，服务之间也不共享库，所以**共享的是断言不是代码**——
+ * 三处各有格式用例钉住同一形态，谁改措辞谁那边先红。
  */
 export function describeMesReadinessReason(reason: string): MesReadinessReasonDisplay {
   const trimmedReason = reason.trim()

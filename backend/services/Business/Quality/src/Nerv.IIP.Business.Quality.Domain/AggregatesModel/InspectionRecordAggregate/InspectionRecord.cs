@@ -201,7 +201,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         var normalizedSourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         if (!string.Equals(inspectionPlan.Category, normalizedSourceType, StringComparison.Ordinal))
         {
-            throw new KnownException($"检验方案适用环节为“{inspectionPlan.Category}”，与本次检验环节“{normalizedSourceType}”不一致。");
+            throw new KnownException($"检验方案适用环节“{inspectionPlan.Category}”与本次“{normalizedSourceType}”不一致。");
         }
 
         if (!string.IsNullOrWhiteSpace(inspectionPlan.SkuCode)
@@ -441,7 +441,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             {
                 // 送检数量不够抽样量是录入/送检问题而非系统故障：抛 KnownException 走领域 400，
                 // 中文点名特性与要求的抽样量，前端分层透传（#1298）可原样上屏，不再落成 500（#1338 同型）。
-                throw new KnownException($"特性“{characteristic.CharacteristicCode}”按抽样方案需检验 {resolvedSamplingPlan.SampleSize} 件，当前送检数量不足。");
+                throw new KnownException($"特性“{characteristic.CharacteristicCode}”按抽样方案需检验 {resolvedSamplingPlan.SampleSize} 件，送检数量不足。");
             }
         }
 

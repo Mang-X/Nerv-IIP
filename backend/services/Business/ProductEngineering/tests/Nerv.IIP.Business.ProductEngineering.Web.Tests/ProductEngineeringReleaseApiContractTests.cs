@@ -2488,7 +2488,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Contains("EDOC-MANUAL-001", exception.Message, StringComparison.Ordinal);
         Assert.Contains("修订 A", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("留空由系统取号", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("留空取号", exception.Message, StringComparison.Ordinal);
+        // 上屏文案受 serverErrorMessage 的 60 字截断限制：超了尾部的「怎么办」会被吃掉，
+        // 而「怎么办」正是这条消息存在的意义（MAN-698 批次 A 复审第 5 条）。
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
         Assert.DoesNotContain("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Single(dbContext.EngineeringDocuments);
     }

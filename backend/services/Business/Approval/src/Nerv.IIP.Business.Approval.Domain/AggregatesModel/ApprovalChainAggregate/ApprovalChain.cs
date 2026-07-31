@@ -810,7 +810,7 @@ public static class ApprovalConditionMatcher
         {
             "documenttype" => string.Equals(documentReference.DocumentType, value, StringComparison.OrdinalIgnoreCase),
             "sourceservice" => string.Equals(documentReference.SourceService, value, StringComparison.OrdinalIgnoreCase),
-            _ => throw new InvalidOperationException($"审批步骤条件不支持条件键“{key}”，只能用 documentType 或 sourceService。"),
+            _ => throw new InvalidOperationException($"条件键“{key}”不受支持，只能用 documentType 或 sourceService。"),
         };
     }
 
@@ -853,7 +853,7 @@ public static class ApprovalConditionMatcher
         return key switch
         {
             "documenttype" or "sourceservice" => (key, parts[1]),
-            _ => throw new InvalidOperationException($"审批步骤条件不支持条件键“{parts[0]}”，只能用 documentType 或 sourceService。"),
+            _ => throw new InvalidOperationException($"条件键“{parts[0]}”不受支持，只能用 documentType 或 sourceService。"),
         };
     }
 }
