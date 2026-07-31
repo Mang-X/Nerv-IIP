@@ -162,13 +162,21 @@ public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbCo
             request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
             "account payable voucher",
             cancellationToken);
+        // 来源单据与供应商必须真实存在且一致，否则财务账可凭空生成垃圾应付单。
+        var authoritativeSupplierCode = await AccountPayableSourceDocumentGuard.EnsureSourceDocumentAndSupplierAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceDocumentNo,
+            request.SupplierCode,
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-payable", request.PayableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.AccountPayables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PayableNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var payable = AccountPayable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
+        var payable = AccountPayable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, authoritativeSupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
         return payable.Id;
@@ -218,7 +226,7 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
             "account receivable voucher",
             cancellationToken);
         // 来源单据与客户必须真实存在且一致，否则财务账可凭空生成垃圾应收单。
-        await AccountReceivableSourceDocumentGuard.EnsureSourceDocumentAndCustomerAsync(
+        var authoritativeCustomerCode = await AccountReceivableSourceDocumentGuard.EnsureSourceDocumentAndCustomerAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -231,7 +239,7 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
             return (await dbContext.AccountReceivables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.ReceivableNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var receivable = AccountReceivable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
+        var receivable = AccountReceivable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, authoritativeCustomerCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate);
         dbContext.AccountReceivables.Add(receivable);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountReceivable(receivable));
         return receivable.Id;
