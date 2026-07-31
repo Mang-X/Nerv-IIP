@@ -75,6 +75,7 @@ const state = vi.hoisted(() => ({
   salesOrders: [] as Array<Record<string, unknown>>,
   approveQuotation: vi.fn(async (_no: string) => undefined),
   createSalesOrder: vi.fn(async (_body: unknown) => undefined),
+  releaseCreditHold: undefined as unknown as ReturnType<typeof vi.fn>,
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
@@ -134,6 +135,9 @@ vi.mock('@/composables/useBusinessErp', () => ({
       createSalesOrder: state.createSalesOrder,
       createSalesOrderPending: shallowRef(false),
       createSalesOrderError: shallowRef(undefined),
+      releaseCreditHold: state.releaseCreditHold,
+      releaseCreditHoldPending: shallowRef(false),
+      releaseCreditHoldError: shallowRef(undefined),
     }
   },
   useErpDeliveryOrders: () => ({
@@ -248,6 +252,9 @@ const rowActionStubs = {
   },
 }
 
+// 解冻复核弹窗用例：沿用弹框外壳桩（内联渲染 slot，避免 teleport 干扰按钮断言）。
+const creditDialogStubs = dialogShellStubs
+
 beforeEach(() => {
   // 履约追踪 Sheet 里的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   setActivePinia(createPinia())
@@ -257,6 +264,7 @@ beforeEach(() => {
   state.quotations = []
   state.approveQuotation = vi.fn(async () => undefined)
   state.createSalesOrder = vi.fn(async () => undefined)
+  state.releaseCreditHold = vi.fn().mockResolvedValue('credit-release-approval-started')
   state.toastError.mockReset()
   state.toastSuccess.mockReset()
 })
@@ -467,6 +475,60 @@ describe('ERP sales order and delivery pages', () => {
     const badge = wrapper.get('[data-testid="order-urgency"]')
     expect(badge.attributes('data-ref')).toBe('SO-2026-0007')
     expect(badge.attributes('data-mode')).toBe('level')
+  })
+
+  it('shows the credit-hold release entry only on credit-held rows', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-HELD-001',
+        customerCode: 'CUST-A',
+        status: 'credit-held',
+        totalAmount: 900_000,
+      },
+      { salesOrderNo: 'SO-REL-001', customerCode: 'CUST-B', status: 'released', totalAmount: 100 },
+    ]
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...creditDialogStubs } },
+    })
+    await flushPromises()
+
+    // 行内入口精确匹配「解冻复核」；弹窗提交按钮是「提交解冻复核」，不计入行入口。
+    const releaseButtons = wrapper.findAll('button').filter((b) => b.text().trim() === '解冻复核')
+    expect(releaseButtons).toHaveLength(1)
+  })
+
+  it('submits credit-hold release for the held order and states the approval semantics', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-HELD-001',
+        customerCode: 'CUST-A',
+        status: 'credit-held',
+        totalAmount: 900_000,
+      },
+    ]
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...creditDialogStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('解冻复核'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 语义在界面明确：谁发起、谁裁决、通过后订单回到什么状态。
+    expect(wrapper.text()).toContain('提交信用解冻复核')
+    expect(wrapper.text()).toContain('审批')
+    expect(wrapper.text()).toContain('已下达（released）')
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('提交解冻复核'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(state.releaseCreditHold).toHaveBeenCalledWith({ salesOrderNo: 'SO-HELD-001' })
   })
 
   it('deliveries keep keyword search and no status select', async () => {

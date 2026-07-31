@@ -540,6 +540,49 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public async Task Rejected_sales_credit_release_resubmission_starts_a_new_chain_instead_of_being_swallowed()
+    {
+        // #1290 实证：ERP 解冻幂等键 sales-credit:{org}:{env}:{so} 不含轮次成分，但 HTTP 客户端根本不传它；
+        // 审批侧真正的去重是 PendingIdentityKey，链一旦被驳回即置空（ApprovalChain.ResolveStep 的 Reject 分支），
+        // 因此「驳回后再次提交解冻」必须开出一条新链，而不是被去重吞掉。待审中的重复提交仍复用同一条链（预期语义）。
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
+            "org-001",
+            "env-dev",
+            "erp-sales-credit-release",
+            "sales-order-credit-release",
+            1,
+            true,
+            [new ApprovalTemplateStepDefinition(1, "信用解冻复核", null, "user", "user-admin", 24)]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StartApprovalChainCommandHandler(dbContext);
+        var command = new StartApprovalChainCommand(
+            "org-001", "env-dev", "erp-sales-credit-release", "business-erp", "sales-order-credit-release", "SO-HELD-001", null, "user:sales-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 待审中重复提交：复用同一条链（不重复打扰审批人）。
+        var pendingDuplicate = await handler.Handle(command, CancellationToken.None);
+        Assert.Equal(first, pendingDuplicate);
+
+        var firstChain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == first);
+        firstChain.ResolveStep(1, "user", "user-admin", "reject", "额度维持冻结，先催收应收");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 驳回后再次提交：必须开新链。
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEqual(first, second);
+        Assert.Equal(2, await dbContext.ApprovalChains.CountAsync());
+        Assert.Equal(ApprovalChainStatuses.Rejected, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == first)).Status);
+        Assert.Equal(ApprovalChainStatuses.Pending, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == second)).Status);
+    }
+
+    [Fact]
     public async Task Concurrent_start_chain_loser_returns_persisted_winner_after_unique_conflict()
     {
         const string connectionString = "Data Source=approval-start-race;Mode=Memory;Cache=Shared";

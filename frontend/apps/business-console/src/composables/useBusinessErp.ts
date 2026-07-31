@@ -26,6 +26,7 @@ import {
   receiveBusinessConsoleErpSupplierQuotationMutationOptions,
   recordBusinessConsoleErpPurchaseReceiptMutationOptions,
   releaseBusinessConsoleErpDeliveryOrderMutationOptions,
+  releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
   type BusinessConsoleErpDeliveryOrderItem,
@@ -496,6 +497,14 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     },
   })
 
+  // 信用冻结解冻复核：提交后走审批中心，审批通过订单才恢复 released，因此这里只刷新列表不改本地状态。
+  const releaseCreditHoldMutation = useMutation({
+    ...releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions(),
+    onSuccess() {
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
+    },
+  })
+
   return {
     filters,
     ready: computed(() => hasBusinessContext(businessContext)),
@@ -525,6 +534,17 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
       }),
     createSalesOrderPending: createMutation.isLoading,
     createSalesOrderError: createMutation.error,
+    // salesOrderNo 走路由参数；请求体只带组织范围（StartedBy 由 Gateway 从 principal 注入）。
+    releaseCreditHold: (payload: { salesOrderNo: string }) =>
+      releaseCreditHoldMutation.mutateAsync({
+        path: { salesOrderNo: payload.salesOrderNo },
+        body: {
+          organizationId: businessContext.organizationId,
+          environmentId: businessContext.environmentId,
+        },
+      }),
+    releaseCreditHoldPending: releaseCreditHoldMutation.isLoading,
+    releaseCreditHoldError: releaseCreditHoldMutation.error,
   }
 }
 

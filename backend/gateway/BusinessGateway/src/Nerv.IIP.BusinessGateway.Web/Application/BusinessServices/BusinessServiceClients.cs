@@ -959,6 +959,11 @@ public interface IBusinessErpClient
         BusinessConsoleCreateErpSalesOrderRequest request,
         CancellationToken cancellationToken);
 
+    Task<string> ReleaseSalesOrderCreditHoldAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleReleaseErpDeliveryOrderResponse> ReleaseDeliveryOrderAsync(
         string internalBearerToken,
         BusinessConsoleReleaseErpDeliveryOrderRequest request,
@@ -6847,6 +6852,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/sales-orders",
+            request,
+            cancellationToken);
+
+    public Task<string> ReleaseSalesOrderCreditHoldAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/erp/sales-orders/{Uri.EscapeDataString(request.SalesOrderNo)}/release-credit-hold",
             request,
             cancellationToken);
 

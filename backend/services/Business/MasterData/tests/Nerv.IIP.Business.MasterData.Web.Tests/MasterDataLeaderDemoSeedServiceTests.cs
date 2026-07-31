@@ -22,7 +22,10 @@ public sealed class MasterDataLeaderDemoSeedServiceTests
         Assert.Single(await db.WorkCenters.Where(x => x.Code == "WC-CNC-DEMO").ToArrayAsync());
         Assert.Single(await db.Skus.Where(x => x.Code == "SKU-DEMO-001").ToArrayAsync());
         Assert.Single(await db.Skus.Where(x => x.Code == "SKU-DEMO-RM-001").ToArrayAsync());
-        Assert.Single(await db.BusinessPartners.Where(x => x.Code == "CUST-DEMO-001").ToArrayAsync());
+        var customer = Assert.Single(await db.BusinessPartners.Where(x => x.Code == "CUST-DEMO-001").ToArrayAsync());
+        // #1290：主力演示客户必须带信用额度档案，否则转订单在信用检查处 400。
+        Assert.Equal(20_000_000m, customer.CreditLimit);
+        Assert.Equal("CNY", customer.CreditCurrencyCode);
         var device = Assert.Single(await db.DeviceAssets.Where(x => x.Code == "DEV-CNC-DEMO").ToArrayAsync());
         Assert.Equal("LINE-DEMO-01", device.LineCode);
         Assert.Equal("WC-CNC-DEMO", device.WorkCenterCode);

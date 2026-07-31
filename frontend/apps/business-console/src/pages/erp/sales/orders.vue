@@ -37,7 +37,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
+import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -170,6 +170,35 @@ function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
   timelineOpen.value = true
 }
 
+// 信用解冻复核：仅 credit-held 行出现入口；提交后走审批中心，审批通过订单恢复「已下达」。
+const creditHoldOpen = shallowRef(false)
+const creditHoldOrder = shallowRef<BusinessConsoleErpSalesOrderItem | null>(null)
+
+function isCreditHeld(row: BusinessConsoleErpSalesOrderItem) {
+  return (row.status ?? '').toLowerCase() === 'credit-held'
+}
+
+function openCreditHoldDialog(row: BusinessConsoleErpSalesOrderItem) {
+  creditHoldOrder.value = row
+  creditHoldOpen.value = true
+}
+
+async function submitCreditHoldRelease() {
+  const salesOrderNo = creditHoldOrder.value?.salesOrderNo
+  if (!salesOrderNo) return
+  try {
+    await orders.releaseCreditHold({ salesOrderNo })
+    creditHoldOpen.value = false
+    notifySuccess('已提交信用解冻复核，审批通过后订单将恢复为已下达（released）')
+  } catch (error) {
+    notifyOperationFailure(
+      '提交信用解冻复核失败',
+      orders.releaseCreditHoldError.value ?? error,
+      '提交信用解冻复核失败，请稍后重试。',
+    )
+  }
+}
+
 function openDialog() {
   form.quotationNo = ''
   form.salesOrderNo = ''
@@ -278,20 +307,64 @@ async function submit() {
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
       <template #cell-fulfillment="{ row }">
-        <NvButton
-          size="sm"
-          variant="ghost"
-          type="button"
-          :disabled="!row.salesOrderNo"
-          @click="openTimeline(row)"
-        >
-          <RouteIcon aria-hidden="true" />
-          履约追踪
-        </NvButton>
+        <div class="flex items-center justify-end gap-1">
+          <NvButton
+            v-if="isCreditHeld(row)"
+            size="sm"
+            variant="ghost"
+            type="button"
+            :disabled="!row.salesOrderNo"
+            @click="openCreditHoldDialog(row)"
+          >
+            <LockOpenIcon aria-hidden="true" />
+            解冻复核
+          </NvButton>
+          <NvButton
+            size="sm"
+            variant="ghost"
+            type="button"
+            :disabled="!row.salesOrderNo"
+            @click="openTimeline(row)"
+          >
+            <RouteIcon aria-hidden="true" />
+            履约追踪
+          </NvButton>
+        </div>
       </template>
     </NvDataTable>
 
     <FulfillmentTimelineSheet v-model:open="timelineOpen" :order="timelineOrder" />
+
+    <NvDialog v-model:open="creditHoldOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>提交信用解冻复核</NvDialogTitle>
+          <NvDialogDescription>
+            订单 {{ creditHoldOrder?.salesOrderNo ?? '-' }}（客户
+            {{
+              resolvePartner(creditHoldOrder?.customerCode) ?? creditHoldOrder?.customerCode ?? '-'
+            }}）因超出客户信用额度被冻结。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <p class="text-sm text-muted-foreground">
+          提交后将以你的账号发起「信用解冻」审批，由审批中心的信用复核人（厂长/管理员）裁决；
+          审批通过后订单自动恢复为「已下达（released）」，可继续发货履约。
+        </p>
+        <NvDialogFooter>
+          <NvDialogClose as-child>
+            <NvButton type="button" variant="outline">取消</NvButton>
+          </NvDialogClose>
+          <NvButton
+            type="button"
+            :disabled="orders.releaseCreditHoldPending.value"
+            @click="submitCreditHoldRelease"
+          >
+            <Spinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
+            提交解冻复核
+          </NvButton>
+        </NvDialogFooter>
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog v-model:open="open">
       <NvDialogContent>

@@ -3836,6 +3836,39 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_sales_order_release_credit_hold_injects_principal_actor_and_route_order_no()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/sales/sales-orders/SO-HELD-001/release-credit-hold",
+            new BusinessConsoleReleaseErpSalesOrderCreditHoldRequest(
+                "org-001",
+                "env-dev",
+                "SO-SPOOFED-999",
+                // 审计身份防伪：请求体里的 StartedBy 必须被 principal 覆盖。
+                StartedBy: "user:spoofed"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("SO-HELD-001", erp.LastReleaseSalesOrderCreditHoldRequest?.SalesOrderNo);
+        // 与同文件 MES reverse 的防伪基线一致：precise 断言 principal actorRef，而不是只排除伪造值。
+        Assert.Equal("user-admin", erp.LastReleaseSalesOrderCreditHoldRequest?.StartedBy);
+        Assert.NotEqual("user:spoofed", erp.LastReleaseSalesOrderCreditHoldRequest!.StartedBy);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("credit-release-approval-started", document.RootElement.GetProperty("data").GetString());
+    }
+
+    [Fact]
     public async Task Erp_finance_lists_use_internal_service_token_and_pass_server_paging_filters()
     {
         var erp = new RecordingErpClient();
@@ -11994,6 +12027,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleCreateErpSalesOrderRequest? LastCreateSalesOrderRequest { get; private set; }
 
+    public BusinessConsoleReleaseErpSalesOrderCreditHoldRequest? LastReleaseSalesOrderCreditHoldRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastOpportunityListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastQuotationListRequest { get; private set; }
@@ -12444,6 +12479,16 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         LastInternalToken = internalBearerToken;
         LastCreateSalesOrderRequest = request;
         return Task.FromResult(new BusinessConsoleCreateErpSalesOrderResponse("so-id-001"));
+    }
+
+    public Task<string> ReleaseSalesOrderCreditHoldAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReleaseSalesOrderCreditHoldRequest = request;
+        return Task.FromResult("credit-release-approval-started");
     }
 
     public Task<BusinessConsoleReleaseErpDeliveryOrderResponse> ReleaseDeliveryOrderAsync(

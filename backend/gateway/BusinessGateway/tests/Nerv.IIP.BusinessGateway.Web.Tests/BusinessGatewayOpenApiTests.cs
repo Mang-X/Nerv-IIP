@@ -303,6 +303,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations", "post", "createBusinessConsoleErpQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations/{quotationNo}/approve", "post", "approveBusinessConsoleErpQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "post", "createBusinessConsoleErpSalesOrder");
+        AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders/{salesOrderNo}/release-credit-hold", "post", "releaseBusinessConsoleErpSalesOrderCreditHold");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/delivery-orders", "get", "listBusinessConsoleErpDeliveryOrders");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/delivery-orders", "post", "releaseBusinessConsoleErpDeliveryOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables", "post", "createBusinessConsoleErpAccountPayable");
