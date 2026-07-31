@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using WorkCenterUnavailabilityId = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailabilityId;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -1920,12 +1921,24 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
 {
     public async Task<MesAcceptedResponse> Handle(ConfirmDowntimeRecoveryCommand request, CancellationToken cancellationToken)
     {
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id.ToString() 无法被 EF 翻译（真机 500）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
         var downtime = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                (x.Id.Id.ToString() == request.DowntimeEventId ||
-                    x.DowntimeEventNo == request.DowntimeEventId),
-            cancellationToken)
+                x.DowntimeEventNo == request.DowntimeEventId,
+            cancellationToken);
+        if (downtime is null && Guid.TryParse(request.DowntimeEventId, out var downtimeEventGuid))
+        {
+            var downtimeEventId = new WorkCenterUnavailabilityId(downtimeEventGuid);
+            downtime = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.Id == downtimeEventId,
+                cancellationToken);
+        }
+
+        downtime = downtime
             ?? throw new KnownException($"未找到停机事件，DowntimeEventId = {request.DowntimeEventId}");
 
         downtime.Close(request.RecoveredAtUtc);
