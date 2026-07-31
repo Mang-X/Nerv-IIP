@@ -796,10 +796,15 @@ describe('PDA MES production reporting page', () => {
 
   it.each([
     ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单 ID'],
+    // Not "工单不存在": with no error and no bound response the client holds no
+    // verdict on the work order at all. The gateway returns the same 403
+    // `work-scope-not-authorized` whether the work order is missing or merely
+    // out of scope, so a nonexistent id can only ever reach the page as an
+    // error — never as this state.
     [
-      '工单不存在',
+      '工单详情未取到',
       { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' },
-      '未找到工单 WO-MISSING',
+      '工单 WO-MISSING 的详情尚未取到',
     ],
     [
       '工序任务不存在',
@@ -818,6 +823,40 @@ describe('PDA MES production reporting page', () => {
 
     expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(message)
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
+    expect(recordReport).not.toHaveBeenCalled()
+  })
+
+  it('「详情未取到」与「详情被拒」是两种可区分的事实，且都不谎称工单不存在', async () => {
+    // Fact 1: nothing failed, we just hold no detail — retryable, and explicitly
+    // agnostic about whether the work order exists.
+    route.query = { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' }
+    const unavailable = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    const unavailablePanel = unavailable.get('[data-testid="work-order-detail-unavailable"]')
+    expect(unavailablePanel.text()).toContain('尚未取到')
+    expect(unavailablePanel.text()).toContain('无法判断该工单是否存在')
+    expect(unavailable.get('[data-testid="report-route-issue"]').text()).toContain('尚未取到')
+    expect(document.body.querySelector('[data-testid="work-order-detail-error"]')).toBeNull()
+    expect(unavailable.text()).not.toContain('未找到工单')
+    unavailable.unmount()
+
+    // Fact 2: the gateway refused the work order (403 covers both "missing" and
+    // "out of scope"). Different panel, different copy — and still no fabricated
+    // not-found verdict.
+    workOrderDetailErrorRef.value = Object.assign(new Error('work-scope-not-authorized'), {
+      status: 403,
+    })
+    workOrderDetailHasFailedResponseRef.value = true
+    const refused = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(refused.get('[data-testid="report-route-issue"]').text()).toContain('详情加载失败')
+    expect(refused.get('[data-testid="work-order-detail-error"]').text()).toContain(
+      '当前账号无此操作权限',
+    )
+    expect(document.body.querySelector('[data-testid="work-order-detail-unavailable"]')).toBeNull()
+    expect(refused.text()).not.toContain('未找到工单')
     expect(recordReport).not.toHaveBeenCalled()
   })
 

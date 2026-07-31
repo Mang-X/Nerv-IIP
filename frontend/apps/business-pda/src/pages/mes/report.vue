@@ -18,6 +18,7 @@ import {
   NvListRow,
   NvMobileResult,
   NvMobileButton,
+  NvMobileErrorRetry,
   NvMobileInput,
   NvMobileToast,
   NvScanBar,
@@ -114,6 +115,21 @@ const {
   exactOperationTaskScopeReady,
   exactOperationTaskScopeMessage,
 })
+
+/**
+ * A requested work order whose detail we simply do not hold: not loading, nothing
+ * failed, no response bound. Kept separate from the failure branch because the two
+ * are different facts — "the read did not come back" versus "the gateway refused
+ * this work order" — and only the operator can tell which one matters.
+ */
+const workOrderDetailUnavailable = computed(
+  () =>
+    Boolean(routeWorkOrderId.value) &&
+    !workOrderDetailPending.value &&
+    !workOrderDetailError.value &&
+    !workOrderDetailHasFailedResponse.value &&
+    !selectedWorkOrder.value,
+)
 
 const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
   useMesProductionReports()
@@ -524,6 +540,22 @@ function onScanWorkOrder(value: string) {
           :pending="workOrderDetailPending"
           fallback="加载工单详情失败，请重试。"
           test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
+      </section>
+      <!--
+        Distinct from the failure branch above: nothing failed, we simply hold no
+        detail response for this work order. The page must not dress that up as a
+        verdict on the work order itself — it offers a refetch instead.
+      -->
+      <section
+        v-else-if="currentStep === 'selectWorkOrder' && workOrderDetailUnavailable"
+        class="space-y-2"
+      >
+        <NvMobileErrorRetry
+          message="工单详情尚未取到，无法判断该工单是否存在或是否在当前授权作业范围内，请重试。"
+          :pending="workOrderDetailPending"
+          test-id="work-order-detail-unavailable"
           @retry="() => refreshWorkOrderDetail()"
         />
       </section>

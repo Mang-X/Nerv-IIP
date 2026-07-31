@@ -94,8 +94,15 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (workOrderId && options.workOrderDetailError.value) {
       return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
     }
+    // No detail response is bound to this work order — and that is *all* we know.
+    // The gateway answers a non-existent work order with exactly the same
+    // 403 `work-scope-not-authorized` it uses for one that exists but is outside
+    // the principal's authorized work scope, so the client never receives a
+    // "this work order does not exist" fact and must not invent one. Claiming
+    // 未找到 here sent operators hunting for a work order that may be perfectly
+    // real and merely unfetched.
     if (workOrderId && !options.workOrderDetailPending.value && !selectedWorkOrder.value) {
-      return `未找到工单 ${workOrderId}，已阻止报工。`
+      return `工单 ${workOrderId} 的详情尚未取到，已阻止报工，请重试。`
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
       if (!options.exactOperationTaskScopeReady.value) {

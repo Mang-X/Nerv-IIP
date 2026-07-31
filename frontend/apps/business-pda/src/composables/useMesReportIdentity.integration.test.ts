@@ -273,12 +273,28 @@ describe('MES report identity real router + Colada integration', () => {
       workOrderId: 'WO-A',
       operationTaskId: 'OP-1',
     })
+    // WO-A's first response was discarded with its cancelled request, so going
+    // back refetches; the identity must follow the URL once that lands.
+    const backRequestA = sdkState.detailRequests
+      .filter((request) => request.options.path.workOrderId === 'WO-A')
+      .at(-1)!
+    expect(backRequestA).not.toBe(requestA)
+    backRequestA.resolve(detail('WO-A', [task('WO-A', 1)]))
+    await flushPromises()
+    expect(wrapper.text()).toBe('WO-A/OP-1')
+
     router.forward()
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({
       workOrderId: 'WO-B',
       operationTaskId: 'OP-2',
     })
+    // WO-B is served straight from the query cache — no second request is made,
+    // so the identity has to rebind from the cached response alone.
+    expect(
+      sdkState.detailRequests.filter((request) => request.options.path.workOrderId === 'WO-B'),
+    ).toHaveLength(1)
+    expect(wrapper.text()).toBe('WO-B/OP-2')
   })
 
   it('resolves task 501 with bounded pages and cancels old exact keys on route/scope changes', async () => {

@@ -16,6 +16,14 @@ function isSuccessfulEnvelope(value: unknown) {
  * Disabling or changing scope invalidates the public projection immediately.
  * A restored/new scope stays empty until the query publishes a new response,
  * while same-scope refreshes may keep rendering the previously bound response.
+ *
+ * Invalidation is identity-based, never transition-based: both watchers below
+ * run with `flush: 'sync'`, and the data watcher can legitimately observe the
+ * new scope's response *before* the invalidation watcher runs — that is exactly
+ * what happens on browser back/forward, where the query key returns to an entry
+ * the cache already holds. Discarding a projection that is already stamped with
+ * the incoming scope key would freeze it forever, because a cache hit never
+ * emits a second `data` change to republish from.
  */
 export function useScopeBoundListResponse<TResponse>(
   data: MaybeRefOrGetter<TResponse | undefined>,
@@ -28,6 +36,9 @@ export function useScopeBoundListResponse<TResponse>(
   watch(
     [() => toValue(scopeKey), () => toValue(enabled)],
     ([nextScopeKey, ready], [previousScopeKey, wasReady]) => {
+      const alreadyBoundToCurrentScope =
+        responseScopeKey.value !== null && responseScopeKey.value === nextScopeKey
+      if (ready && alreadyBoundToCurrentScope) return
       if (!ready || !wasReady || nextScopeKey !== previousScopeKey) {
         response.value = undefined
         responseScopeKey.value = null
