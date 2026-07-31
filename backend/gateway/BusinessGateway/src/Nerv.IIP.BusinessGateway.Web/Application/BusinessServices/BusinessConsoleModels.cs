@@ -1213,12 +1213,17 @@ public sealed record BusinessConsolePostStockMovementRequest(
     string OwnerType,
     string? OwnerId,
     decimal Quantity,
-    bool AllowExpiredStock = false);
+    bool AllowExpiredStock = false,
+    string? TransferInSiteCode = null,
+    string? TransferInLocationCode = null,
+    decimal? TransferInQuantity = null);
 
 public sealed record BusinessConsolePostStockMovementResponse(
     string MovementId,
     decimal OnHandQuantity,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    string? TransferInMovementId = null,
+    decimal? TransferInOnHandQuantity = null);
 
 public sealed record BusinessConsoleCreateStockCountTaskRequest(
     string OrganizationId,

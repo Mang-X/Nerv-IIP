@@ -217,6 +217,14 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
             request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
             "account receivable voucher",
             cancellationToken);
+        // 来源单据与客户必须真实存在且一致，否则财务账可凭空生成垃圾应收单。
+        await AccountReceivableSourceDocumentGuard.EnsureSourceDocumentAndCustomerAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceDocumentNo,
+            request.CustomerCode,
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-receivable", request.ReceivableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
