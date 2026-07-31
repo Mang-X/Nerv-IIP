@@ -87,7 +87,7 @@ describe('leader demo main-chain public prerequisites', () => {
 
   it('establishes raw material through public ERP, approval, WMS, and Inventory facts', () => {
     const supplyFlow = sourceBetween(
-      "const approvalTemplateCode = 'erp-purchase-order-release'",
+      "const approvalTemplateCode = 'APT-WB-PO-001'",
       'let salesOrderCreated = false',
     )
 
@@ -106,7 +106,7 @@ describe('leader demo main-chain public prerequisites', () => {
 
   it('replays stable procurement and receiving requests without multiplying facts', () => {
     const supplyFlow = sourceBetween(
-      "const approvalTemplateCode = 'erp-purchase-order-release'",
+      "const approvalTemplateCode = 'APT-WB-PO-001'",
       'let salesOrderCreated = false',
     )
 

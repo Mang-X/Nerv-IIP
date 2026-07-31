@@ -864,7 +864,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       )
       productionVersionId = textOf(productionVersion.productionVersionId ?? productionVersion)
 
-      const approvalTemplateCode = 'erp-purchase-order-release'
+      const approvalTemplateCode = 'APT-WB-PO-001'
       await create('/api/business-console/v1/approval/templates', {
         organizationId,
         environmentId,

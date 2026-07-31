@@ -1,0 +1,130 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
+using Nerv.IIP.Business.Approval.Infrastructure;
+using Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
+using Nerv.IIP.Business.Approval.Web.Application.Seed;
+using Nerv.IIP.Contracts.Approval;
+using NetCorePal.Extensions.Primitives;
+
+namespace Nerv.IIP.Business.Approval.Web.Tests;
+
+/// <summary>
+/// #1344 三方漂移契约（审批 / 种子侧）：采购订单审批模板码的唯一事实来源是
+/// <see cref="ApprovalTemplateCodes.PurchaseOrderRelease"/>，种子模板、ERP 发起侧、界面侧共用。
+/// 此前 ERP 硬编码 <c>erp-purchase-order-release</c> 而种子落库 <c>APT-WB-PO-001</c>，
+/// 种子态转采购订单 / 发起 RFQ 必 400「Approval template was not found」（第六例词表错配）。
+/// </summary>
+public sealed class PurchaseOrderReleaseTemplateContractTests
+{
+    /// <summary>任何一侧改动常量或种子字面量，本用例必红：权威码值 = 落库事实 APT-WB-PO-001。</summary>
+    [Fact]
+    public void Seed_spec_and_contract_pin_the_same_purchase_template_vocabulary()
+    {
+        Assert.Equal("APT-WB-PO-001", ApprovalTemplateCodes.PurchaseOrderRelease);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
+        Assert.Equal("purchase-order", WorldHistoryApprovalSpec.PurchaseDocumentType);
+
+        Assert.Equal("erp-sales-credit-release", ApprovalTemplateCodes.SalesCreditRelease);
+        Assert.Equal(ApprovalTemplateCodes.SalesCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode);
+
+        // 旧字面量只作为读侧别名保留，权威码值必须在受理集合内。
+        Assert.Contains(ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalTemplateCodes.PurchaseOrderReleaseAliases);
+        Assert.Contains("erp-purchase-order-release", ApprovalTemplateCodes.PurchaseOrderReleaseAliases);
+        Assert.Contains("erp-purchase-order-change", ApprovalTemplateCodes.PurchaseOrderReleaseAliases);
+    }
+
+    /// <summary>
+    /// 种子态全链：种子形状的采购模板 + ERP 发起元组（模板码 / business-erp / purchase-order）
+    /// 必须能开链，并由厂长（user-admin）一步审批通过——不新建任何模板。
+    /// </summary>
+    [Fact]
+    public async Task Erp_start_tuple_reaches_the_seeded_template_and_can_be_approved()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(NewSeedShapedPurchaseTemplate());
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StartApprovalChainCommandHandler(dbContext);
+
+        var chainId = await handler.Handle(
+            new StartApprovalChainCommand(
+                "org-001",
+                "env-dev",
+                ApprovalTemplateCodes.PurchaseOrderRelease,
+                "business-erp",
+                WorldHistoryApprovalSpec.PurchaseDocumentType,
+                "PO-20260731-000001",
+                null,
+                "system:erp",
+                Amount: 84m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
+        chain.ResolveStep(1, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, "approve", "同意下达");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(ApprovalChainStatuses.Approved, chain.Status);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, chain.TemplateCode);
+    }
+
+    /// <summary>旧字面量从未有模板落库：谁再把发起侧改回去，这里就是它在种子态得到的 400。</summary>
+    [Fact]
+    public async Task Legacy_erp_literal_still_finds_no_template_in_seed_state()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(NewSeedShapedPurchaseTemplate());
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StartApprovalChainCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new StartApprovalChainCommand(
+                "org-001",
+                "env-dev",
+                "erp-purchase-order-release",
+                "business-erp",
+                WorldHistoryApprovalSpec.PurchaseDocumentType,
+                "PO-20260731-000002",
+                null,
+                "system:erp"),
+            CancellationToken.None));
+
+        Assert.Contains("template was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>与 <c>WorldHistoryApprovalSeedService.SeedTemplatesAsync</c> 同形状的采购模板（不落任何演示专属字段）。</summary>
+    private static ApprovalTemplate NewSeedShapedPurchaseTemplate()
+    {
+        return ApprovalTemplate.Create(
+            "org-001",
+            "env-dev",
+            WorldHistoryApprovalSpec.PurchaseTemplateCode,
+            WorldHistoryApprovalSpec.PurchaseDocumentType,
+            version: 1,
+            isActive: true,
+            [
+                new ApprovalTemplateStepDefinition(
+                    StepNo: 1,
+                    StepName: "总经理审批",
+                    ParallelGroupKey: null,
+                    ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
+                    ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                    DueInHours: 24),
+            ]);
+    }
+
+    private static ServiceProvider CreateInMemoryProvider()
+    {
+        var services = new ServiceCollection();
+        var databaseName = $"approval-po-template-{Guid.CreateVersion7():N}";
+        var databaseRoot = new Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName, databaseRoot));
+        return services.BuildServiceProvider();
+    }
+}

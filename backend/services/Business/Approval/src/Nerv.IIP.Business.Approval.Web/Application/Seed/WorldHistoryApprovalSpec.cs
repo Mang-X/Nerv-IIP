@@ -21,7 +21,11 @@ public static class WorldHistoryApprovalSpec
 {
     #region 模板（世界观历史专用，与 *-DEMO-* 固定演示事实隔离）
 
-    public const string PurchaseTemplateCode = "APT-WB-PO-001";
+    /// <summary>
+    /// 采购订单下达审批模板码：取自审批契约的唯一事实来源，ERP 发起侧 / 种子 / 界面三方共用
+    /// （#1344：ERP 此前硬编码 <c>erp-purchase-order-release</c>，种子态转单 / RFQ 必 400）。
+    /// </summary>
+    public const string PurchaseTemplateCode = ApprovalTemplateCodes.PurchaseOrderRelease;
     public const string PurchaseDocumentType = ApprovalDocumentTypes.PurchaseOrder;
     public const string PurchaseSourceService = "erp";
 
@@ -39,7 +43,7 @@ public static class WorldHistoryApprovalSpec
     /// 而是让 ERP <c>ReleaseSalesOrderCreditHoldCommand</c> 硬编码引用的当前流程模板开箱存在——
     /// 编码必须与 ERP 侧字面量逐字一致，因此不落在 <c>APT-WB-</c> 号段。
     /// </summary>
-    public const string SalesCreditReleaseTemplateCode = "erp-sales-credit-release";
+    public const string SalesCreditReleaseTemplateCode = ApprovalTemplateCodes.SalesCreditRelease;
     public const string SalesCreditReleaseDocumentType = "sales-order-credit-release";
 
     /// <summary>本引擎产出/引用的全部号段前缀，供隔离性回归测试断言不与固定演示事实相交。</summary>
