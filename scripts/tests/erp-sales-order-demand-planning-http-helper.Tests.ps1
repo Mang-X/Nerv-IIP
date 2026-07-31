@@ -164,21 +164,25 @@ try {
             -Headers @{} `
             -Body @{ value = 'ignored' }
     } `
-        -ExpectedFragments @('method=POST', 'code=404', 'message=') `
+        -ExpectedFragments @('stage=business-envelope', 'method=POST', 'code=404', 'message=') `
         -ForbiddenFragments @('uri-secret-value', 'message-secret-value') `
         -MaximumSeconds 2
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/http-error" -Headers @{}
-    } -ExpectedFragments @('httpStatus=503')
+    } -ExpectedFragments @('stage=server-response', 'httpStatus=503')
+
+    Assert-RequestFailure -Request {
+        Invoke-Man517JsonRequest -Method Post -Uri "$baseUrl/server-cancelled" -Headers @{} -Body @{ value = 'once' }
+    } -ExpectedFragments @('stage=server-response', 'method=POST', 'httpStatus=499')
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/invalid-json" -Headers @{}
-    } -ExpectedFragments @('valid JSON')
+    } -ExpectedFragments @('stage=response-json', 'valid JSON')
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest -Method Get -Uri "$baseUrl/missing-success" -Headers @{}
-    } -ExpectedFragments @("missing boolean 'success'")
+    } -ExpectedFragments @('stage=business-envelope', "missing boolean 'success'")
 
     $stableStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $stableDemand = Assert-DemandStable `
@@ -200,7 +204,7 @@ try {
             -Headers @{} `
             -TimeoutSeconds 1
     } `
-        -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
+        -ExpectedFragments @('deadline exceeded', 'stage=response-body', 'method=GET', 'uri=') `
         -ForbiddenFragments @('slow-trickle-uri-secret') `
         -MaximumSeconds 3 `
         -ExpectedExceptionType ([System.TimeoutException])
@@ -212,7 +216,7 @@ try {
             -Headers @{} `
             -TimeoutSeconds 10
     } `
-        -ExpectedFragments @('request transport failed', 'method=GET', 'uri=') `
+        -ExpectedFragments @('request transport failed', 'stage=connect', 'method=GET', 'uri=') `
         -ForbiddenFragments @('deadline exceeded', 'connect-timeout-uri-secret') `
         -MaximumSeconds 8
 
@@ -224,7 +228,7 @@ try {
             -Headers @{} `
             -TimeoutSeconds 2
     } `
-        -ExpectedFragments @('request HTTP failure', 'httpStatus=503') `
+        -ExpectedFragments @('request HTTP failure', 'stage=server-response', 'httpStatus=503') `
         -ForbiddenFragments @('deadline exceeded', 'stalled-http-uri-secret') `
         -MaximumSeconds 1
     $stalledHttpStopwatch.Stop()
@@ -232,13 +236,14 @@ try {
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `
-            -Method Get `
-            -Uri "$baseUrl/half-open?token=half-open-uri-secret" `
+            -Method Post `
+            -Uri "$baseUrl/awaiting-server-response?token=awaiting-response-uri-secret" `
             -Headers @{} `
+            -Body @{ proof = 'body-reached-fixture' } `
             -TimeoutSeconds 1
     } `
-        -ExpectedFragments @('deadline exceeded', 'method=GET', 'uri=') `
-        -ForbiddenFragments @('half-open-uri-secret') `
+        -ExpectedFragments @('deadline exceeded', 'stage=awaiting-server-response', 'method=POST', 'uri=') `
+        -ForbiddenFragments @('stage=send', 'awaiting-response-uri-secret') `
         -MaximumSeconds 3 `
         -ExpectedExceptionType ([System.TimeoutException])
 }

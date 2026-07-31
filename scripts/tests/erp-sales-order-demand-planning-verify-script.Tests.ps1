@@ -93,6 +93,41 @@ $httpStatusFailureIndex = $requestFunctionText.IndexOf('$httpStatus -lt 200', [S
 $responseReadIndex = $requestFunctionText.IndexOf('ReadAsStringAsync', [StringComparison]::Ordinal)
 Assert-Contract ($httpStatusFailureIndex -ge 0 -and $responseReadIndex -gt $httpStatusFailureIndex) 'Non-success HTTP status must fail immediately after headers, before response body reading.'
 Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']")) 'The shared JSON request path must require a ResponseData success field.'
+$mutationFunction = $scriptAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Invoke-JsonPost'
+}, $true)
+$mutationFunctionText = $mutationFunction.Extent.Text
+$mutationRequestCalls = @($mutationFunction.Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $node.GetCommandName() -eq 'Invoke-Man517JsonRequest'
+}, $true))
+$mutationLoops = @($mutationFunction.Body.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.LoopStatementAst]
+}, $true))
+$scenarioMutationCalls = @($scriptAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and
+    $node.GetCommandName() -eq 'Invoke-JsonPost'
+}, $true))
+Assert-Contract ($content.Contains('$mutationRequestTimeoutSeconds = 30')) 'MAN-517 mutations must use a bounded 30-second budget for cold CI runners.'
+Assert-Contract ($mutationFunctionText.Contains('[ValidateRange(10, 60)]')) 'The mutation helper must keep its explicit deadline within a bounded range.'
+Assert-Contract ($mutationFunctionText.Contains('-TimeoutSeconds $TimeoutSeconds')) 'The mutation helper must pass its explicit deadline to the shared request path.'
+Assert-Contract ($mutationRequestCalls.Count -eq 1 -and $mutationLoops.Count -eq 0) 'A mutation must be sent exactly once without a retry loop because timeout leaves commit state ambiguous.'
+Assert-Contract ($scenarioMutationCalls.Count -eq 3) 'The MAN-517 scenario must retain exactly the v2, v3, and cancellation mutations.'
+foreach ($mutationCall in $scenarioMutationCalls) {
+    Assert-Contract ($mutationCall.Extent.Text.Contains('-TimeoutSeconds $mutationRequestTimeoutSeconds')) 'Every MAN-517 mutation call must opt into the explicit 30-second deadline.'
+}
+foreach ($stage in @('deadline-before-send', 'connect', 'awaiting-server-response', 'server-response', 'response-body', 'response-json', 'business-envelope')) {
+    Assert-Contract (
+        $requestFunctionText.Contains("stage=$stage") -or
+        $requestFunctionText.Contains("'$stage'")
+    ) "MAN-517 request diagnostics must distinguish the '$stage' stage."
+}
+Assert-Contract (-not $requestFunctionText.Contains('$requestStage = ''send''')) 'SendAsync(ResponseHeadersRead) must not label response-header waiting as send.'
 foreach ($functionName in @('Wait-Demand', 'Wait-ErpSalesOrderReady', 'Assert-DemandStable')) {
     $functionText = Get-FunctionContractText -Name $functionName
     Assert-Contract ($functionText.Contains('catch [System.TimeoutException]')) "$functionName must handle typed request deadline expiry explicitly."
