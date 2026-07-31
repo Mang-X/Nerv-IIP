@@ -21,8 +21,10 @@ public sealed class BusinessMesMaterialIssueClientTests
         var response = await client.CreateMaterialIssueRequestAsync("token", "WO-001", request, CancellationToken.None);
 
         Assert.True(response.Accepted);
-        Assert.Equal("business-mes", response.DownstreamService);
-        Assert.Equal("mes-material-issue-request", response.DownstreamDocumentType);
+        // #1341: downstreamService / downstreamDocumentType 与全仓 PascalCase 词表对齐
+        // （BusinessMes / WorkOrder / MaterialIssueRequest…），前端按精确等值判断。
+        Assert.Equal("BusinessMes", response.DownstreamService);
+        Assert.Equal("MaterialIssueRequest", response.DownstreamDocumentType);
         Assert.Equal("MIR-000123", response.DownstreamDocumentId);
     }
 
