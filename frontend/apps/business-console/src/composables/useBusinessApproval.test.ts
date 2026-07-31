@@ -132,7 +132,7 @@ describe('business approval composable', () => {
     })
     coladaState.queryDataById.set('listBusinessConsoleApprovalDecisions', {
       success: true,
-      data: { items: [{ decisionId: 'decision-1', decision: 'Approve' }], total: 1 },
+      data: { items: [{ decisionId: 'decision-1', decision: 'approve' }], total: 1 },
     })
     coladaState.queryDataById.set('listBusinessConsoleApprovalDelegations', {
       success: true,
@@ -170,7 +170,7 @@ describe('business approval composable', () => {
     expect(approval.templates.value[0]?.templateCode).toBe('purchase-order')
     expect(approval.chains.value[0]?.chainId).toBe('chain-1')
     expect(approval.tasks.value[0]?.documentId).toBe('PO-260701-001')
-    expect(approval.decisions.value[0]?.decision).toBe('Approve')
+    expect(approval.decisions.value[0]?.decision).toBe('approve')
     expect(approval.delegations.value[0]?.delegationId).toBe('delegation-1')
   })
 
@@ -180,7 +180,7 @@ describe('business approval composable', () => {
     await approval.resolveTask({
       chainId: 'chain-1',
       stepNo: 20,
-      decision: 'Reject',
+      decision: 'reject',
       comment: '缺少采购合同附件',
     })
     await approval.saveTemplate({
@@ -218,7 +218,7 @@ describe('business approval composable', () => {
         environmentId: 'env-dev',
         actorType: 'user',
         actorRef: 'approver-a',
-        decision: 'Reject',
+        decision: 'reject',
         comment: '缺少采购合同附件',
       },
     })
@@ -277,7 +277,7 @@ describe('business approval composable', () => {
     await approval.resolveTask({
       chainId: 'chain-2',
       stepNo: 10,
-      decision: 'Approve',
+      decision: 'approve',
     })
     await approval.createDelegation({
       delegatorActorType: 'user',
@@ -291,7 +291,8 @@ describe('business approval composable', () => {
       vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ actorRef: 'approver-b' }),
+        // decision 原样进请求体（不再有任何大小写改写），权威取值由 ApprovalDecisionValue 在类型层守住（#1311）。
+        body: expect.objectContaining({ actorRef: 'approver-b', decision: 'approve' }),
       }),
     )
     expect(
