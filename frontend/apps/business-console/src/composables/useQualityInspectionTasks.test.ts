@@ -236,7 +236,6 @@ describe('quality inspection task workbench', () => {
     const { startInspection, filters } = useQualityInspectionTasks()
 
     await startInspection('TASK-1', {
-      inspectorUserId: 'user-qa',
       resultLines: [],
     })
 
@@ -244,7 +243,6 @@ describe('quality inspection task workbench', () => {
       path: { inspectionTaskId: 'TASK-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: {
-        inspectorUserId: 'user-qa',
         resultLines: [],
         idempotencyKey: expect.stringMatching(/^quality-submit-/),
       },
@@ -262,7 +260,6 @@ describe('quality inspection task workbench', () => {
       },
     } as never)
     const intent = {
-      inspectorUserId: 'user-qa',
       resultLines: [],
     }
     state.confirmOperation

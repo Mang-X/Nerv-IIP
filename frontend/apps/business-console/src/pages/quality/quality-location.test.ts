@@ -75,10 +75,6 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifySuccess: notifySpies.success,
 }))
 
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
-}))
-
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
     startInspection: taskActionSpies.startInspection,
@@ -601,6 +597,9 @@ describe('quality route location behavior', () => {
     await nextRenderTick()
 
     expect(vm.canCreateRecord).toBe(true)
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledOnce()
+    expect(taskActionSpies.startInspection.mock.calls[0]?.[1]).not.toHaveProperty('inspectorUserId')
   })
 
   it('preserves inspector input when plan characteristics arrive asynchronously', async () => {
