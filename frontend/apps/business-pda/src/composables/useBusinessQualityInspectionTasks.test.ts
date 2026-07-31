@@ -369,6 +369,59 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(coladaState.submit.mock.calls[2][0].body.idempotencyKey).not.toBe(firstKey)
   })
 
+  it('replays the same submit key after a lost committed response when self readback is completed', async () => {
+    seedPrincipal()
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-LOST-COMMIT',
+                status: 'in-progress',
+                inspectionRecordId: null,
+                allowedActions: ['submit-inspection'],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-LOST-COMMIT',
+                status: 'completed',
+                inspectionRecordId: 'RECORD-COMMITTED',
+                allowedActions: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+    coladaState.submit
+      .mockRejectedValueOnce(new TypeError('response lost after commit'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: { inspectionRecordId: 'RECORD-COMMITTED' },
+      })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-LOST-COMMIT', LINES)).rejects.toThrow(
+      'response lost after commit',
+    )
+    await submitInspection('TASK-LOST-COMMIT', LINES)
+
+    expect(coladaState.submit).toHaveBeenCalledTimes(2)
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
+  })
+
   it('clears the submit intent after a determinate 422 so the next attempt uses a new key', async () => {
     seedPrincipal()
     coladaState.submit
@@ -405,7 +458,14 @@ describe('useBusinessQualityInspectionTasks', () => {
       data: {
         success: true,
         data: {
-          items: [{ inspectionTaskId: 'TASK-1', status: 'completed' }],
+          items: [
+            {
+              inspectionTaskId: 'TASK-1',
+              status: 'completed',
+              inspectionRecordId: 'RECORD-OTHER',
+              allowedActions: [],
+            },
+          ],
           total: 1,
         },
       },

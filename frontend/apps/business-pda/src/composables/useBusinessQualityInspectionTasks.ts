@@ -359,13 +359,20 @@ export function useBusinessQualityInspectionTasks() {
         authoritativeEnvelope,
       ).filter((task) => task.inspectionTaskId === inspectionTaskId)
       const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+      const hasAuthoritativeSubmitAction =
+        authoritative?.allowedActions?.includes('submit-inspection') === true
+      const canReplayCommittedSubmit =
+        isReplay &&
+        authoritative?.status?.trim().toLowerCase() === 'completed' &&
+        Boolean(authoritative.inspectionRecordId?.trim())
       assertLifecycleActionExecutable({
         domain: 'quality-inspection-task',
         action: 'create-record',
         facts: {
-          status: authoritative?.allowedActions?.includes('submit-inspection')
-            ? authoritative.status
-            : undefined,
+          status:
+            hasAuthoritativeSubmitAction || canReplayCommittedSubmit
+              ? authoritative?.status
+              : undefined,
           inspectionRecordId: authoritative?.inspectionRecordId,
           idempotentReplay: isReplay,
         },

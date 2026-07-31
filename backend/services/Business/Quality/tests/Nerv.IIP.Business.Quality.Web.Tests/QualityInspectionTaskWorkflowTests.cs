@@ -1481,6 +1481,47 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public void Task_list_validator_requires_a_principal_for_self_scope()
+    {
+        var result = new ListInspectionTasksQueryValidator().Validate(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                ScopeKind: "self",
+                PrincipalId: null));
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public async Task Task_list_fails_closed_when_self_scope_has_no_principal()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Task_list_fails_closed_when_self_scope_has_no_principal));
+        dbContext.InspectionTasks.Add(NewTask(
+            "WO-UNASSIGNED-001",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
+            new ListInspectionTasksQueryHandler(dbContext).Handle(
+                new ListInspectionTasksQuery(
+                    "org-001",
+                    "env-dev",
+                    null,
+                    null,
+                    ScopeKind: "self",
+                    PrincipalId: null),
+                CancellationToken.None));
+
+        Assert.Equal("task-outside-selected-work-scope", exception.Reason);
+    }
+
+    [Fact]
     public async Task Task_detail_rejects_a_task_outside_the_selected_self_scope()
     {
         await using var dbContext = CreateDbContext(

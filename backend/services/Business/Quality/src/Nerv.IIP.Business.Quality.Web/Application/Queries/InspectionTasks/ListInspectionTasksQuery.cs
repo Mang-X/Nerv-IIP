@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 
@@ -99,6 +100,10 @@ public sealed class ListInspectionTasksQueryValidator : AbstractValidator<ListIn
                 || value.Equals("team", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("organization", StringComparison.OrdinalIgnoreCase))
             .WithMessage("Scope kind must be self, team or organization.");
+        RuleFor(x => x.PrincipalId)
+            .NotEmpty()
+            .MaximumLength(150)
+            .When(x => string.Equals(x.ScopeKind?.Trim(), "self", StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -127,6 +132,11 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
         var principalId = request.PrincipalId?.Trim();
         if (scopeKind == "self")
         {
+            if (string.IsNullOrWhiteSpace(principalId))
+            {
+                throw QualityAuthorizationException.Forbidden("task-outside-selected-work-scope");
+            }
+
             query = query.Where(x => x.AssignedUserId == principalId);
         }
         else if (scopeKind == "team")

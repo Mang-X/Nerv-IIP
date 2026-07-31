@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
@@ -350,6 +351,7 @@ function mountQualityPage(component: unknown) {
 
 describe('quality route location behavior', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.inspectionContextInitiallyEmpty = false
