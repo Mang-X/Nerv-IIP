@@ -23,6 +23,7 @@ export {
   FULL_LEGEND_SEMANTICS,
   type SchedulingLegendSemantics,
 } from './model/legend'
+export { resolveTimeScale, shiftBoundaryRendersAt, type ResolvedTimeScale } from './model/scale'
 export {
   conflictReasonLabel,
   changeTypeLabel,

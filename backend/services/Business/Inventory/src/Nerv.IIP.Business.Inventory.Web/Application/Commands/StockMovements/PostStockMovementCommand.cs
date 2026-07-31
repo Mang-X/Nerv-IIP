@@ -177,6 +177,10 @@ public sealed class PostStockMovementCommandHandler(
 
         if (ReferenceEquals(applied, movement))
         {
+            if (dbContext.Entry(ledger).State == EntityState.Detached)
+            {
+                dbContext.StockLedgers.Add(ledger);
+            }
             dbContext.StockMovements.Add(movement);
         }
 
@@ -199,6 +203,10 @@ public sealed class PostStockMovementCommandHandler(
 
         if (ReferenceEquals(appliedInbound, inboundMovement))
         {
+            if (dbContext.Entry(inboundLedger).State == EntityState.Detached)
+            {
+                dbContext.StockLedgers.Add(inboundLedger);
+            }
             dbContext.StockMovements.Add(inboundMovement);
         }
 
@@ -305,7 +313,6 @@ public sealed class PostStockMovementCommandHandler(
             movement.ExpiryDate,
             shelfLifeDays,
             expiryDateSource);
-        dbContext.StockLedgers.Add(ledger);
         return ledger;
     }
 
