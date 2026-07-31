@@ -187,16 +187,29 @@ type MesListStatus = NonNullable<
 
 export interface MesReadinessReasonDisplay {
   code: string
+  /** 短标签，进徽标（不能长，长了会被截断读不出）。 */
   label: string
+  /** 这条阻塞的具体事实（缺哪个物料、缺多少），可为空。徽标旁的说明行显示。 */
+  detail: string
   nextStep: string
 }
 
-const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
+const mesReadinessReasonDisplays: Record<string, Omit<MesReadinessReasonDisplay, 'detail'>> = {
   // 缺料是三道开工拦截之一，下一步动作必须落到 PC 上真实存在的入口（#1324）。
   MATERIAL_SHORTAGE: {
     code: 'MATERIAL_SHORTAGE',
     label: '物料缺料',
     nextStep: '在工单详情「用料齐套」发起领料；物料到线边后确认收料',
+  },
+  MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: {
+    code: 'MATERIAL_REQUIREMENT_SNAPSHOT_MISSING',
+    label: '齐套快照缺失',
+    nextStep: '确认工单已绑定生产版本，重新下达以生成齐套需求快照',
+  },
+  PREVIOUS_OPERATION_INCOMPLETE: {
+    code: 'PREVIOUS_OPERATION_INCOMPLETE',
+    label: '前序工序未完工',
+    nextStep: '先完成前道工序再开工本工序',
   },
   QUALITY_PLAN_MISSING: {
     code: 'QUALITY_PLAN_MISSING',
@@ -225,20 +238,36 @@ const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
   },
 }
 
+/**
+ * 阻塞原因的呈现口径。后端读面给的是 `CODE: 中文说明`（如
+ * `MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-A 缺口 2`）——**码进标签、中文进明细**：
+ * 徽标只放短标签（长串会被截断读不出），具体缺什么缺多少放说明行。
+ *
+ * 曾踩坑（MAN-698 台账 #35）：整条原文直接当 label 塞进徽标，而 MES 齐套读面当时给的还是
+ * 英文生码「物料编码 + shortage + 数量」——用户既读不懂又只看得见前半截。
+ *
+ * ⚠️ `CODE: 中文` 这个形态是**跨服务约定**，实现有意重复三份：本处、MES 的
+ * `MaterialReadinessGuards.FormatShortageReason`、Scheduling 的 `SchedulingMaterialReasonText`。
+ * 前端不可能引用后端代码，服务之间也不共享库，所以**共享的是断言不是代码**——
+ * 三处各有格式用例钉住同一形态，谁改措辞谁那边先红。
+ */
 export function describeMesReadinessReason(reason: string): MesReadinessReasonDisplay {
   const trimmedReason = reason.trim()
-  const separatorIndex = trimmedReason.indexOf(':')
-  const code = separatorIndex > 0 ? trimmedReason.slice(0, separatorIndex).trim() : trimmedReason
-  // 分层透传（#1298）：编码后面的服务端说明（缺哪个物料、缺多少）是操作员唯一能据以行动的事实，
-  // 不能被固定文案吞掉——已知编码给「怎么办」，服务端说明给「缺什么」。
-  const detail = separatorIndex > 0 ? trimmedReason.slice(separatorIndex + 1).trim() : ''
+  const separator = trimmedReason.indexOf(':')
+  // 只认「全大写下划线」形态的码，别把中文说明里的冒号误当分隔符。
+  const head = separator > 0 ? trimmedReason.slice(0, separator) : ''
+  const isCode = head.length > 0 && /^[A-Z0-9_]+$/.test(head)
+  const code = isCode ? head : trimmedReason
+  // 分层透传（#1298）：码后面的服务端说明（缺哪个物料、缺多少）是操作员唯一能据以行动的事实，
+  // 不能被固定文案吞掉——已知码给「怎么办」（label/nextStep），服务端说明给「缺什么」（detail）。
+  const detail = isCode ? trimmedReason.slice(separator + 1).trim() : ''
   const known = mesReadinessReasonDisplays[code]
-  if (known) {
-    return detail ? { ...known, label: `${known.label}：${detail}` } : known
-  }
+  if (known) return { ...known, detail }
   return {
     code,
-    label: trimmedReason,
+    // 未登记的码：中文说明本身就是人话，直接当标签；连说明都没有才退回原文。
+    label: detail || trimmedReason,
+    detail: '',
     nextStep: '查看阻塞详情并按来源业务页面处理',
   }
 }

@@ -139,6 +139,67 @@ function clampServerMessage(raw: string): string {
     : text
 }
 
+/** 状态码可能藏在这些字段上：拦截器挂的 `response`、RFC7807 的 `status`、包装后的 `statusCode`。 */
+const STATUS_FIELDS = ['status', 'statusCode'] as const
+
+/**
+ * 取出这次失败的 **HTTP 状态码**。
+ *
+ * 为什么必须有它：generated client 在 `throwOnError` 下抛的是**解析后的响应体对象**，
+ * 不是 `Error` 实例——靠 `error instanceof Error && error.message.includes('403')` 判权限
+ * 永远不成立，真实 403 会退化成普通失败态（MAN-698 台账 / #1298 规格轴）。
+ * 本仓库的 error 拦截器（`@nerv-iip/api-client` 的 `configureApiClient`）会把原始
+ * `Response` 以非枚举属性挂到 error 上，所以 `error.response.status` 一定拿得到。
+ *
+ * 取不到返回 `undefined`——调用方据此走「未知失败」，不要猜。
+ */
+export function errorStatusCode(error: unknown): number | undefined {
+  return readStatusCode(error, new Set<object>(), 0)
+}
+
+/**
+ * `status` 是个很常见的**业务字段名**（工单状态、任务状态…），响应体里出现数值 `status`
+ * 完全可能与 HTTP 无关。只认合法 HTTP 状态码区间，避免把领域状态误当成 HTTP 码
+ * ——否则一个 `status: 403` 语义的业务枚举就能把页面骗进「无权限」空态。
+ */
+function isHttpStatusCode(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+}
+
+function readStatusCode(error: unknown, seen: Set<object>, depth: number): number | undefined {
+  if (error == null || typeof error !== 'object' || depth > 4) return undefined
+  if (seen.has(error)) return undefined
+  seen.add(error)
+
+  const record = error as Record<string, unknown>
+  for (const field of STATUS_FIELDS) {
+    const value = record[field]
+    if (isHttpStatusCode(value)) return value
+  }
+
+  for (const container of ['response', 'error', 'data', 'body', 'cause'] as const) {
+    const nested = readStatusCode(record[container], seen, depth + 1)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+/**
+ * 这次失败是不是「没有权限」（403）？——按状态码判，取不到状态码才退回消息文本匹配
+ * （少数场景 error 只是一个带 403 字样的字符串/Error）。
+ * 页面据此渲染「无权限」空态，而不是把 403 当成普通加载失败。
+ */
+export function isForbiddenError(error: unknown): boolean {
+  const status = errorStatusCode(error)
+  if (status !== undefined) return status === 403
+  // 兜底只认**技术串**（`403 Forbidden` 这类）。中文领域消息里出现的 403 是业务数字
+  // （「任务状态为 403 号工序」），不是状态码——那种情况下宁可不认，把领域消息原样上屏，
+  // 也好过把一次普通失败误判成「无权限」。
+  const raw = `${serverErrorMessage(error)} ${rawMessage(error)}`
+  if (/[一-龥]/.test(raw)) return false
+  return /\b403\b|forbidden/i.test(raw)
+}
+
 /**
  * **分层透传链的唯一实现**：三个入口（`notifyOperationFailure` / `inlineErrorMessage` /
  * `notifyError`）走的是同一条链，差别只在动作前缀、兜底文案与排障日志的标签。

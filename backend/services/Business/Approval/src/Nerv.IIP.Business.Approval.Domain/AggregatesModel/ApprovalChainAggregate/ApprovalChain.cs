@@ -48,7 +48,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
 
         if (steps.Count == 0)
         {
-            throw new InvalidOperationException("Approval chain must contain at least one active step after condition routing.");
+            throw new InvalidOperationException("按当前单据条件路由后没有匹配到任何审批步骤，请检查审批模板。");
         }
 
         this.AddDomainEvent(new ApprovalStartedDomainEvent(this));
@@ -205,7 +205,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         var normalizedReason = ApprovalText.Optional(reason);
         if (Status is not ApprovalChainStatuses.Pending)
         {
-            throw new InvalidOperationException("Only pending approval chains can be withdrawn.");
+            throw new InvalidOperationException("只有审批中的单据可以撤回，该审批链已结束。");
         }
 
         var affectedSteps = steps.Where(x => x.Status == ApprovalStepStatuses.Pending).ToArray();
@@ -236,7 +236,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         var normalizedReason = ApprovalText.Optional(reason);
         if (Status is not (ApprovalChainStatuses.Returned or ApprovalChainStatuses.Withdrawn))
         {
-            throw new InvalidOperationException("Only returned or withdrawn approval chains can be resubmitted.");
+            throw new InvalidOperationException("只有已退回或已撤回的审批链可以重新提交。");
         }
 
         var previousStartedAtUtc = StartedAtUtc;
@@ -289,7 +289,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
                 && x.ApproverRef == normalizedApproverRef
                 && x.Status == ApprovalStepStatuses.Pending))
         {
-            throw new InvalidOperationException("Approval signer already exists on the pending step.");
+            throw new InvalidOperationException("该审批人已在当前步骤的待办中，无需重复加签。");
         }
 
         var baseStep = steps
@@ -340,14 +340,14 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
                 && x.ApproverRef == normalizedToActorRef
                 && x.Status == ApprovalStepStatuses.Pending))
         {
-            throw new InvalidOperationException("Transfer target is already assigned to the pending step.");
+            throw new InvalidOperationException("转交目标已经是当前步骤的审批人，无需转交。");
         }
 
         var step = steps.SingleOrDefault(x => x.StepNo == stepNo
                 && x.ApproverType == normalizedFromActorType
                 && x.ApproverRef == normalizedFromActorRef
                 && x.Status == ApprovalStepStatuses.Pending)
-            ?? throw new InvalidOperationException("No pending approval step is assigned to the transfer source actor.");
+            ?? throw new InvalidOperationException("当前步骤没有分配给转出人的待办，无法转交。");
         step.TransferTo(normalizedToActorType, normalizedToActorRef);
         IncrementRowVersion();
         var decision = RecordActionDecision(
@@ -396,27 +396,27 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     {
         if (Status is not ApprovalChainStatuses.Pending)
         {
-            throw new InvalidOperationException("Approval chain is terminal.");
+            throw new InvalidOperationException("该审批链已结束（通过 / 驳回 / 退回 / 撤回），不能再操作。");
         }
 
         if (stepNo <= 0)
         {
-            throw new InvalidOperationException("Approval step number must be positive.");
+            throw new InvalidOperationException("审批步骤号必须大于 0。");
         }
 
         if (steps.All(x => x.StepNo != stepNo))
         {
-            throw new InvalidOperationException("Approval step was not found.");
+            throw new InvalidOperationException("该审批链上不存在这一步骤。");
         }
 
         if (CanActOnStepNo(stepNo) is false)
         {
-            throw new InvalidOperationException("Approval steps must be changed in sequence.");
+            throw new InvalidOperationException("审批必须按步骤顺序处理，前序步骤尚未办结。");
         }
 
         if (steps.All(x => x.StepNo != stepNo || x.Status != ApprovalStepStatuses.Pending))
         {
-            throw new InvalidOperationException("Approval step is already resolved.");
+            throw new InvalidOperationException("该审批步骤已办结，不能重复处理。");
         }
     }
 
@@ -542,7 +542,7 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     {
         if (Status != ApprovalStepStatuses.Pending)
         {
-            throw new InvalidOperationException("Approval step is already resolved.");
+            throw new InvalidOperationException("该审批步骤已办结，不能重复处理。");
         }
 
         ResolvedByActorType = actorType;
@@ -568,7 +568,7 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
 
         Status = ApprovalStepStatuses.Skipped;
         ResolvedDecision = ApprovalDecisions.Approve;
-        ResolvedComment = "Skipped because another approver satisfied the any policy.";
+        ResolvedComment = "或签策略下已有其他审批人通过，本步骤自动跳过。";
         ResolvedAtUtc = decidedAtUtc;
     }
 
@@ -576,7 +576,7 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     {
         if (Status != ApprovalStepStatuses.Pending)
         {
-            throw new InvalidOperationException("Only pending approval steps can be marked overdue.");
+            throw new InvalidOperationException("只有待办中的审批步骤才能标记超时。");
         }
 
         OverdueNotifiedAtUtc ??= nowUtc;
@@ -624,7 +624,7 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     {
         if (Status != ApprovalStepStatuses.Pending)
         {
-            throw new InvalidOperationException("Only pending approval steps can be transferred.");
+            throw new InvalidOperationException("只有待办中的审批步骤可以转交。");
         }
 
         ApproverType = approverType;
@@ -810,7 +810,7 @@ public static class ApprovalConditionMatcher
         {
             "documenttype" => string.Equals(documentReference.DocumentType, value, StringComparison.OrdinalIgnoreCase),
             "sourceservice" => string.Equals(documentReference.SourceService, value, StringComparison.OrdinalIgnoreCase),
-            _ => throw new InvalidOperationException($"Unsupported approval step condition key '{key}'."),
+            _ => throw new InvalidOperationException($"条件键“{key}”不受支持，只能用 documentType 或 sourceService。"),
         };
     }
 
@@ -846,14 +846,14 @@ public static class ApprovalConditionMatcher
         var parts = conditionExpression.Split('=', 2, StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
         {
-            throw new InvalidOperationException("Approval step condition must use key=value syntax.");
+            throw new InvalidOperationException("审批步骤条件必须写成 key=value，例如 documentType=purchase-order。");
         }
 
         var key = parts[0].ToLowerInvariant();
         return key switch
         {
             "documenttype" or "sourceservice" => (key, parts[1]),
-            _ => throw new InvalidOperationException($"Unsupported approval step condition key '{parts[0]}'."),
+            _ => throw new InvalidOperationException($"条件键“{parts[0]}”不受支持，只能用 documentType 或 sourceService。"),
         };
     }
 }

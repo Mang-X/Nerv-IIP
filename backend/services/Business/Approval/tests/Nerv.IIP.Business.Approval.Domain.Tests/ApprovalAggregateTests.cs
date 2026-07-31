@@ -194,7 +194,7 @@ public sealed class ApprovalAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             chain.Resubmit("user", "u-requester", "retry", DateTimeOffset.Parse("2026-06-21T09:00:00Z")));
 
-        Assert.Contains("returned or withdrawn", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已退回或已撤回", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -382,6 +382,78 @@ public sealed class ApprovalAggregateTests
         Assert.Equal(1, first);
         Assert.Equal(0, second);
         Assert.Contains(chain.GetDomainEvents(), x => x is ApprovalStepOverdueDomainEvent);
+    }
+
+    /// <summary>
+    /// MAN-698 台账 #33：审批域的拒绝理由此前大半是英文生码，经 <c>KnownException(exception.Message)</c>
+    /// 原样上抛后，前端分层透传（#1298）只透传中文短消息，英文一律被兜底吞成「请稍后重试」——
+    /// 用户看到的失败没有任何可行动信息。这里逐条钉住「用户能读懂、能据以行动」这条线。
+    /// </summary>
+    [Theory]
+    [InlineData("withdraw", "只有审批中的单据可以撤回")]
+    [InlineData("resubmit", "已退回或已撤回")]
+    [InlineData("add-signer", "无需重复加签")]
+    [InlineData("transfer-target", "无需转交")]
+    [InlineData("transfer-source", "无法转交")]
+    [InlineData("terminal", "该审批链已结束")]
+    [InlineData("unknown-step", "不存在这一步骤")]
+    public void Approval_refusals_speak_actionable_chinese(string scenario, string expectedFragment)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => Provoke(scenario));
+
+        Assert.Contains(expectedFragment, exception.Message, StringComparison.Ordinal);
+        // 英文生码是本条要根除的形态：中文里不该再混进 approval/step/pending 这类裸英文。
+        Assert.DoesNotContain("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pending", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void Provoke(string scenario)
+    {
+        var chain = NewChain();
+        var now = DateTimeOffset.Parse("2026-06-21T09:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        switch (scenario)
+        {
+            case "withdraw":
+                chain.ResolveStep(1, "user", "u-engineering", "reject", "no");
+                chain.Withdraw("user", "u-requester", null, now);
+                break;
+            case "resubmit":
+                chain.Resubmit("user", "u-requester", "retry", now);
+                break;
+            case "add-signer":
+                chain.AddSigner(1, "user", "u-engineering", "user", "u-requester", null, now);
+                break;
+            case "transfer-target":
+                chain.Transfer(1, "user", "u-engineering", "user", "u-engineering", "user", "u-requester", null, now);
+                break;
+            case "transfer-source":
+                chain.Transfer(1, "user", "u-outsider", "user", "u-backup", "user", "u-requester", null, now);
+                break;
+            case "terminal":
+                chain.ResolveStep(1, "user", "u-engineering", "reject", "no");
+                chain.AddSigner(1, "user", "u-backup", "user", "u-requester", null, now);
+                break;
+            case "unknown-step":
+                chain.ResolveStep(99, "user", "u-engineering", "approve", "ok");
+                break;
+            default:
+                throw new InvalidOperationException($"未覆盖的场景 {scenario}");
+        }
+    }
+
+    /// <summary>步骤条件写错是配置问题：消息要点名合法写法，且必须是中文（同上，英文会被吞）。</summary>
+    [Fact]
+    public void Step_condition_syntax_errors_name_the_supported_form_in_chinese()
+    {
+        var badSyntax = Assert.Throws<InvalidOperationException>(() =>
+            ApprovalConditionMatcher.Matches("documentType", NewDocument()));
+        var badKey = Assert.Throws<InvalidOperationException>(() =>
+            ApprovalConditionMatcher.Matches("approverType=user", NewDocument()));
+
+        Assert.Contains("key=value", badSyntax.Message, StringComparison.Ordinal);
+        Assert.Contains("审批步骤条件", badSyntax.Message, StringComparison.Ordinal);
+        Assert.Contains("documentType", badKey.Message, StringComparison.Ordinal);
+        Assert.Contains("sourceService", badKey.Message, StringComparison.Ordinal);
     }
 
     private static ApprovalChain NewChain()

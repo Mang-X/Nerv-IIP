@@ -79,12 +79,12 @@ public sealed class ApprovalTemplate : Entity<ApprovalTemplateId>, IAggregateRoo
     {
         if (!IsActive)
         {
-            throw new InvalidOperationException("Approval template is not active.");
+            throw new InvalidOperationException("审批模板未启用，无法用于发起审批。");
         }
 
         if (steps.Count == 0)
         {
-            throw new InvalidOperationException("Approval template must contain at least one step.");
+            throw new InvalidOperationException("审批模板至少要配置一个审批步骤。");
         }
     }
 
@@ -97,7 +97,7 @@ public sealed class ApprovalTemplate : Entity<ApprovalTemplateId>, IAggregateRoo
             .ToArray();
         if (materializedSteps.Length == 0)
         {
-            throw new ArgumentException("Approval template must contain at least one step.", nameof(stepDefinitions));
+            throw new ArgumentException("审批模板至少要配置一个审批步骤。", nameof(stepDefinitions));
         }
 
         var stepNos = materializedSteps.Select(x => Positive(x.StepNo, nameof(x.StepNo))).Distinct().Order().ToArray();
@@ -198,7 +198,7 @@ public sealed record ApprovalRoutingCondition(
     public static ApprovalRoutingCondition Deserialize(string value)
     {
         var condition = JsonSerializer.Deserialize<ApprovalRoutingCondition>(value, SerializerOptions)
-            ?? throw new InvalidOperationException("Structured approval condition is required.");
+            ?? throw new InvalidOperationException("结构化审批条件不能为空。");
         condition.Validate();
         return condition;
     }
@@ -207,7 +207,7 @@ public sealed record ApprovalRoutingCondition(
     {
         if (MinimumAmount is < 0 || MaximumAmount is < 0 || (MinimumAmount.HasValue && MaximumAmount.HasValue && MinimumAmount > MaximumAmount))
         {
-            throw new InvalidOperationException("Approval amount condition requires a non-negative range with minimum not greater than maximum.");
+            throw new InvalidOperationException("审批金额条件区间非法：下限不能为负，且不能大于上限。");
         }
 
         ValidateDimension(DocumentTypes, nameof(DocumentTypes));
@@ -219,7 +219,7 @@ public sealed record ApprovalRoutingCondition(
     {
         if (values?.Any(string.IsNullOrWhiteSpace) is true)
         {
-            throw new InvalidOperationException($"Approval condition {name} cannot contain empty values.");
+            throw new InvalidOperationException($"审批条件“{name}”不能包含空值。");
         }
     }
 }
@@ -229,13 +229,19 @@ public static class ApprovalCompletionPolicies
     public const string All = "all";
     public const string Any = "any";
 
-    private static readonly HashSet<string> Supported = [All, Any];
+    /// <summary>
+    /// 步骤完成策略的允许取值（all 会签 / any 或签）——**唯一权威**，应用层校验器共用这一份。
+    /// 大小写不敏感：<see cref="Normalize"/> 本就先归一化成小写再落库，校验器若自己写死小写字面量
+    /// 就会比领域更严，"All" 这类大小写差异被拦成没有线索的 400（同 #1313 的裁决取值坑）。
+    /// </summary>
+    public static readonly IReadOnlySet<string> Supported =
+        new HashSet<string>([All, Any], StringComparer.OrdinalIgnoreCase);
 
     public static string Normalize(string? value)
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? All : value.Trim().ToLowerInvariant();
         return Supported.Contains(normalized)
             ? normalized
-            : throw new ArgumentException("Approval completion policy must be all or any.", nameof(value));
+            : throw new ArgumentException("步骤完成策略只能是 all（会签）或 any（或签）。", nameof(value));
     }
 }

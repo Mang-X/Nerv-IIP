@@ -76,7 +76,7 @@ public sealed class CreateStandardOperationCommandHandler(
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
-            throw new KnownException($"Standard operation '{allocation.Code}' already exists.");
+            throw new KnownException($"标准工序 {allocation.Code} 已存在，请换一个工序编码或留空由系统取号。");
         }
 
         var operation = ProductEngineeringReleaseValidation.AsKnownException(() => StandardOperation.Create(

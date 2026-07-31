@@ -10,8 +10,10 @@ vi.mock('@nerv-iip/ui', () => ({
 }))
 
 const {
+  errorStatusCode,
   friendlyErrorMessage,
   inlineErrorMessage,
+  isForbiddenError,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
@@ -243,5 +245,66 @@ describe('inlineErrorMessage', () => {
       '库存台账读取失败。',
     )
     consoleError.mockRestore()
+  })
+})
+
+/**
+ * MAN-698 批次 A（#1298 规格轴）：页面靠 `error instanceof Error && message.includes('403')`
+ * 判权限，而 generated client 在 `throwOnError` 下抛的是**解析后的响应体对象**——
+ * 判定永远不成立，真实 403 退化成普通失败态。状态码要从对象上取。
+ */
+describe('errorStatusCode / isForbiddenError', () => {
+  it('从拦截器挂的 response 上取状态码（响应体对象不是 Error 实例）', () => {
+    const error: Record<string, unknown> = { title: 'Forbidden' }
+    Object.defineProperty(error, 'response', { value: { status: 403 }, enumerable: false })
+
+    expect(error instanceof Error).toBe(false)
+    expect(errorStatusCode(error)).toBe(403)
+    expect(isForbiddenError(error)).toBe(true)
+  })
+
+  it('RFC7807 直接带 status / 包装后的 statusCode 都认', () => {
+    expect(errorStatusCode({ status: 403, detail: 'forbidden' })).toBe(403)
+    expect(errorStatusCode({ error: { statusCode: 404 } })).toBe(404)
+  })
+
+  it('取不到状态码时返回 undefined，不猜', () => {
+    expect(errorStatusCode(undefined)).toBeUndefined()
+    expect(errorStatusCode('boom')).toBeUndefined()
+    expect(errorStatusCode({ message: '库存不足' })).toBeUndefined()
+  })
+
+  it('取不到状态码才退回文本匹配；其他状态码一律不是「无权限」', () => {
+    expect(isForbiddenError(new Error('403 Forbidden'))).toBe(true)
+    expect(isForbiddenError({ status: 500, detail: 'forbidden zone' })).toBe(false)
+    expect(isForbiddenError({ message: '物料缺料' })).toBe(false)
+  })
+
+  // `status` 也是很常见的业务字段名：领域状态值不能被当成 HTTP 码，
+  // 否则一个业务枚举就能把页面骗进「无权限」空态。
+  it('只认合法 HTTP 状态码区间，业务响应体里的数值 status 不当 HTTP 码', () => {
+    expect(errorStatusCode({ status: 3 })).toBeUndefined()
+    expect(errorStatusCode({ status: 0 })).toBeUndefined()
+    expect(errorStatusCode({ status: 99 })).toBeUndefined()
+    expect(errorStatusCode({ status: 600 })).toBeUndefined()
+    expect(errorStatusCode({ status: 403.5 })).toBeUndefined()
+    expect(errorStatusCode({ status: 100 })).toBe(100)
+    expect(errorStatusCode({ status: 599 })).toBe(599)
+    // 业务体里 status 是领域状态时，继续往下层找真正的 HTTP 码。
+    expect(errorStatusCode({ status: 3, response: { status: 403 } })).toBe(403)
+  })
+
+  // 文本兜底只认技术串：中文领域消息里的 403 是业务数字，不是状态码。
+  it('中文领域消息里的 403 不被文本兜底误判成无权限', () => {
+    expect(isForbiddenError({ status: 3, message: '任务状态为 403 号工序' })).toBe(false)
+    expect(isForbiddenError({ message: '第 403 号检验方案已停用。' })).toBe(false)
+    expect(isForbiddenError('403 Forbidden')).toBe(true)
+    expect(isForbiddenError(new Error('Request failed with status code 403'))).toBe(true)
+  })
+
+  it('循环引用不会把递归拖死（拦截器把 response 挂回 error 很常见）', () => {
+    const error: Record<string, unknown> = { detail: 'boom' }
+    error.cause = error
+    expect(errorStatusCode(error)).toBeUndefined()
   })
 })

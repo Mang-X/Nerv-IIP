@@ -197,6 +197,7 @@ function formatError(error: unknown) {
             class="grid gap-0.5"
           >
             <NvStatusBadge :label="reason.label" tone="warning" />
+            <p v-if="reason.detail" class="text-xs text-foreground">{{ reason.detail }}</p>
             <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
           </div>
         </div>

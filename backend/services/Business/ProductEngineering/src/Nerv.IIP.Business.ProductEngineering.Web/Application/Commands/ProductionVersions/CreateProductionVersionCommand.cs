@@ -49,7 +49,7 @@ public sealed class CreateProductionVersionCommandHandler(
             request.ValidTo,
             cancellationToken: cancellationToken))
         {
-            throw new KnownException($"Production version effective window already exists for SKU '{request.SkuCode}'. Archive or close the current version before creating an overlapping one.");
+            throw new KnownException($"物料 {request.SkuCode} 在该生效区间已有生产版本，请先归档或关闭现有版本。");
         }
 
         var binding = await ProductionVersionBindingValidator.ResolveAsync(
