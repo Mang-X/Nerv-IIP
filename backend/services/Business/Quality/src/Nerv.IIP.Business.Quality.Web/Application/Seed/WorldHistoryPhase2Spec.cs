@@ -72,6 +72,18 @@ public static class WorldHistoryPhase2Spec
     /// <summary>车间线边库：领料后物料的去向。</summary>
     public const string LineSideLocationCode = "WH-WB-LINE-01";
 
+    /// <summary>
+    /// 发货暂存区（#1374 / 审计 W-9）。
+    ///
+    /// 发货拣货此前拣到**收货暂存区** <c>WH-WB-STG-01</c>——收发共用一个暂存区在真实仓库里
+    /// 恰恰是被禁止的（混料风险），仓储人一眼能看出反常。
+    ///
+    /// 只影响仓储作业任务的搬运目的地：出库的库存过账只发生在 pick-from 那一腿
+    /// （出库单行只带 <c>PickLocationCode</c>），pick-to 是作业任务内部字段、不产生任何库存流水，
+    /// 因此本库位不牵动台账、恒等式与校验器。
+    /// </summary>
+    public const string ShippingStagingLocationCode = "WH-WB-SHIP-01";
+
     public static readonly IReadOnlyList<WorldHistoryStockLocation> StockLocations =
     [
         new(ReceivingStagingLocationCode, "收货暂存区", "staging"),
@@ -80,6 +92,7 @@ public static class WorldHistoryPhase2Spec
         new(FinishedGoodsLocationCode, "成品库", "storage"),
         new(QualityHoldLocationCode, "不合格品隔离区", "quality-hold"),
         new(LineSideLocationCode, "车间线边库", "line-side"),
+        new(ShippingStagingLocationCode, "发货暂存区", "staging"),
     ];
 
     /// <summary>某物料的常驻库位：半成品进半成品库，成品进成品库，其余进原料库。</summary>
@@ -148,8 +161,10 @@ public static class WorldHistoryPhase2Spec
                 IsRework: false));
         }
 
-        // 补产工单：与 MES 侧同一挑选公式（只挂在已发货/已结案的订单之后）。
-        var candidates = plans.Where(plan => plan.HasDelivery).ToArray();
+        // 补产工单：与 MES 侧同一挑选公式（只挂在已完工入库的订单之后）。
+        // #1374：判据是「生产已完工」而不是「已发运」——挑选按下标切片，
+        // 候选池少三张会把每一张补产工单的来源单整体挪位。
+        var candidates = plans.Where(plan => plan.IsProductionClosed).ToArray();
         var reworkCount = (int)Math.Round(plans.Length * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         if (candidates.Length == 0 || reworkCount == 0)
         {
@@ -176,7 +191,10 @@ public static class WorldHistoryPhase2Spec
     /// <summary>销售订单阶段 → 工单执行深度（与 MES 一期 <c>ResolveExecution</c> 同字面量）。</summary>
     public static WorldHistoryExecutionDepth ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecutionDepth.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecutionDepth.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecutionDepth.Partial,
         _ => WorldHistoryExecutionDepth.ReleasedOnly,
     };

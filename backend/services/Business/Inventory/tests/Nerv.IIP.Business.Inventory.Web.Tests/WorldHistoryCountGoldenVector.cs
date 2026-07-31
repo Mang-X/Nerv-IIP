@@ -21,7 +21,7 @@ internal static class WorldHistoryCountGoldenVector
     public const int PlanCount = 162;
 
     /// <summary>全量计划的内容摘要。</summary>
-    public const string Digest = "C2AB25C0977044D4";
+    public const string Digest = "11352FA2FAE09E8C";
 
     public static string DigestOf(IReadOnlyList<WorldHistoryCountPlan> plans)
     {

@@ -114,7 +114,10 @@ public sealed class WorldHistorySeedService(
     /// <summary>销售订单阶段 → 工单执行深度。</summary>
     private static WorldHistoryExecution ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecution.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecution.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecution.Partial,
         _ => WorldHistoryExecution.ReleasedOnly,
     };
@@ -131,8 +134,14 @@ public sealed class WorldHistorySeedService(
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
-        // 补产只挂在已结案/已发货的订单后面：补的是已交付批次里的不良件。
-        var candidates = plans.Where(plan => plan.HasDelivery).ToArray();
+        // 补产只挂在已完工入库的订单后面：补的是已产出批次里的不良件。
+        //
+        // #1374 · 判据必须与四份 `WorldHistoryPhase2Spec` 的候选池**逐字一致**（同为 IsProductionClosed）。
+        // 挑选公式 `candidates[(seq-1) * candidates.Length / reworkCount]` 是按下标切片的：
+        // 两侧 candidates.Length 只要差一个，从某个 seq 起下标就整体错位，同一个 WO-2026-R####
+        // 会在 MES 与 Inventory/Wms/Quality/BarcodeLabel 之间取到**不同的来源订单**，
+        // SKU、数量、时间线全不一致——而两侧测试都只断言条数，谁也发现不了（审计 T2 复制圈外零保障）。
+        var candidates = plans.Where(plan => plan.IsProductionClosed).ToArray();
         var reworkCount = (int)Math.Round(plans.Count * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         if (candidates.Length == 0 || reworkCount == 0)
         {
