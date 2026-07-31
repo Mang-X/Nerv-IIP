@@ -255,6 +255,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
@@ -565,6 +566,8 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-002", "SUP-002");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
@@ -604,6 +607,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
