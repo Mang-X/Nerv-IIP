@@ -115,12 +115,14 @@ const receiptCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-// 质检状态是收货时的真实业务决策点（#1345）：ERP 命令必填，决定后续是否触发来料检验。
-// 合法值与 ERP 域 ErpQualityStatusNormalizer 归一化结果对齐：unrestricted / quality / blocked。
+// 质检状态是收货时的真实业务决策点（#1345）：ERP 命令必填，决定是否触发来料检验与是否计提应付。
+// 合法值与 ERP 域 ErpReceiptQualityStatuses 对齐：unrestricted / quality / blocked。
+// 文案如实说明后果：只有 unrestricted 免检（在 WmsReceivingQualityStatuses 跳检表内），
+// quality 与 blocked 都会转来料检验；应付只计 unrestricted 与 quality，blocked 不计。
 const qualityStatusOptions = [
-  { value: 'quality', label: '待检（先收货，转来料检验）' },
-  { value: 'unrestricted', label: '合格（免检，直接可用）' },
-  { value: 'blocked', label: '冻结（暂扣，待处理）' },
+  { value: 'quality', label: '待检（转来料检验，计应付）' },
+  { value: 'unrestricted', label: '合格（免检直接可用，计应付）' },
+  { value: 'blocked', label: '冻结（暂扣不计应付，仍转检验）' },
 ] as const
 
 // 「带出式录入」：收货对象只能由所选采购行带入，弹窗自身不提供采购单/行号的挑选或补填入口。

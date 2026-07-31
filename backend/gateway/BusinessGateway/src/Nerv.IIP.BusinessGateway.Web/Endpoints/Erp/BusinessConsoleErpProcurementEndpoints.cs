@@ -3,6 +3,7 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
@@ -203,6 +204,37 @@ public sealed class RecordBusinessConsoleErpPurchaseReceiptEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.RecordPurchaseReceiptAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// #1345：收货契约把 qualityStatus 声明为必填并做值域收敛，避免非法值穿透到 ERP 后静默丢失应付计提。
+public sealed class BusinessConsoleRecordErpPurchaseReceiptRequestValidator
+    : Validator<BusinessConsoleRecordErpPurchaseReceiptRequest>
+{
+    public BusinessConsoleRecordErpPurchaseReceiptRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseReceiptNo).MaximumLength(100);
+        RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).SetValidator(new BusinessConsoleErpPurchaseReceiptLineValidator());
+    }
+}
+
+public sealed class BusinessConsoleErpPurchaseReceiptLineValidator
+    : Validator<BusinessConsoleErpPurchaseReceiptLine>
+{
+    public BusinessConsoleErpPurchaseReceiptLineValidator()
+    {
+        RuleFor(x => x.PurchaseOrderLineNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReceivedQuantity).GreaterThan(0);
+        RuleFor(x => x.QualityStatus)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(ErpReceiptQualityStatuses.IsSupported)
+            .WithMessage("质检状态只能是 unrestricted（合格）、quality（待检）、blocked（冻结）之一或其已知别名。");
+    }
 }
 
 public sealed class BusinessConsoleCreateErpPurchaseRequisitionRequestValidator : Validator<BusinessConsoleCreateErpPurchaseRequisitionRequest>

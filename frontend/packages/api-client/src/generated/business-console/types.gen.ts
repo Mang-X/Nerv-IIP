@@ -6403,18 +6403,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     purchaseReceiptNo?: string | null;
-    purchaseOrderNo?: string;
-    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
+    purchaseOrderNo: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
     idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine = {
-    purchaseOrderLineNo?: string;
+    purchaseOrderLineNo: string;
     receivedQuantity?: number;
-    qualityStatus?: string;
+    qualityStatus: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -18458,6 +18458,10 @@ export type RecordBusinessConsoleErpPurchaseReceiptData = {
 
 export type RecordBusinessConsoleErpPurchaseReceiptErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18466,6 +18470,8 @@ export type RecordBusinessConsoleErpPurchaseReceiptErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleErpPurchaseReceiptError = RecordBusinessConsoleErpPurchaseReceiptErrors[keyof RecordBusinessConsoleErpPurchaseReceiptErrors];
 
 export type RecordBusinessConsoleErpPurchaseReceiptResponses = {
     /**

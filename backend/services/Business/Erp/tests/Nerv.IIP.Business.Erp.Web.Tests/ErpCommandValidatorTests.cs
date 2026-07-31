@@ -27,8 +27,22 @@ public sealed class ErpCommandValidatorTests
 
         AssertInvalid(validator.Validate(new RecordPurchaseReceiptCommand(
             "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, "")])));
-        Assert.True(validator.Validate(new RecordPurchaseReceiptCommand(
-            "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, "quality")])).IsValid);
+        foreach (var accepted in new[] { "quality", "unrestricted", "blocked", "accepted", "inspection", "rejected" })
+        {
+            Assert.True(validator.Validate(new RecordPurchaseReceiptCommand(
+                "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, accepted)])).IsValid);
+        }
+    }
+
+    [Fact]
+    public void Purchase_receipt_rejects_unknown_quality_status_with_chinese_message()
+    {
+        // #1345：未知值原样落库会让应付计提（unrestricted/quality 才计）被静默跳过，必须在服务端白名单拦掉。
+        var result = new RecordPurchaseReceiptCommandValidator().Validate(new RecordPurchaseReceiptCommand(
+            "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, "not-a-status")]));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("质检状态只能是", StringComparison.Ordinal));
     }
 
     [Fact]

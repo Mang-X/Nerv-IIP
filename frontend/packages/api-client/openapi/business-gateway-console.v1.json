@@ -24418,6 +24418,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -52367,28 +52377,49 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "purchaseOrderNo",
+          "lines"
+        ],
         "properties": {
           "organizationId": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "environmentId": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "purchaseReceiptNo": {
             "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
             "nullable": true
           },
           "purchaseOrderNo": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "lines": {
             "type": "array",
+            "minLength": 1,
+            "nullable": false,
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine"
             }
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -52396,16 +52427,28 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "purchaseOrderLineNo",
+          "qualityStatus"
+        ],
         "properties": {
           "purchaseOrderLineNo": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "receivedQuantity": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "qualityStatus": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
