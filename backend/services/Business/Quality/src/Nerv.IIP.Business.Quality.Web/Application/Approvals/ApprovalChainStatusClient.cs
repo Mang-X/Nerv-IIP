@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.Quality.Domain;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Approvals;
@@ -28,8 +29,14 @@ public sealed class HttpApprovalChainStatusClient(
     IInternalServiceTokenProvider tokenProvider) : IApprovalChainStatusClient
 {
     private static readonly string[] QualitySourceServices = [QualityFacts.ServiceName, "business-quality", "quality"];
-    private static readonly string[] NcrDispositionDocumentTypes = ["nonconformance-report-disposition", "nonconformance-report", "quality-ncr"];
-    private static readonly string[] CapaClosureDocumentTypes = ["corrective-action-closure", "quality-capa-closure", "quality-capa"];
+
+    /// <summary>
+    /// 受理的 NCR 处置审批单据类型：权威码值 <c>ncr-disposition</c> + 历史别名，
+    /// 取值来自审批契约的唯一事实来源（#1327：此处曾漏掉种子模板真正在用的 <c>ncr-disposition</c>，
+    /// 于是种子态下处置审批永远判不通过）。
+    /// </summary>
+    private static readonly IReadOnlySet<string> NcrDispositionDocumentTypes = ApprovalDocumentTypes.NcrDispositionAliases;
+    private static readonly IReadOnlySet<string> CapaClosureDocumentTypes = ApprovalDocumentTypes.CapaClosureAliases;
 
     public async Task<bool> IsApprovedForNcrDispositionAsync(
         string chainId,
@@ -44,7 +51,7 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
             && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
-            && NcrDispositionDocumentTypes.Contains(chain.DocumentType, StringComparer.OrdinalIgnoreCase)
+            && NcrDispositionDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, ncrCode, StringComparison.Ordinal);
     }
 
@@ -61,7 +68,7 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
             && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
-            && CapaClosureDocumentTypes.Contains(chain.DocumentType, StringComparer.OrdinalIgnoreCase)
+            && CapaClosureDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, capaCode, StringComparison.Ordinal);
     }
 

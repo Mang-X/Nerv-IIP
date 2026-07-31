@@ -265,6 +265,30 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal("u-engineering", decision.OnBehalfOfActorRef);
     }
 
+    /// <summary>
+    /// #1327：非审批人点「裁决」曾抛未捕获的 InvalidOperationException → 500 英文生码。
+    /// 现在必须是 KnownException（400）+ 中文可读说明。
+    /// </summary>
+    [Fact]
+    public async Task Resolve_step_by_non_approver_fails_with_chinese_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = NewTemplate();
+        dbContext.ApprovalTemplates.Add(template);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+        dbContext.ApprovalChains.Add(chain);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ResolveApprovalStepCommandHandler(dbContext).Handle(
+                new ResolveApprovalStepCommand(chain.Id, 1, "user", "u-outsider", "approve", "ok"),
+                CancellationToken.None));
+
+        Assert.Contains("不是该步骤的审批人", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Concurrent_approval_decisions_on_same_chain_are_rejected()
     {

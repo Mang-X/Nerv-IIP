@@ -43,7 +43,20 @@ public sealed class ApprovalAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             chain.ResolveStep(2, "user", "u-quality", "approve", "ok"));
 
-        Assert.Contains("sequence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("按步骤顺序裁决", exception.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>#1327：非审批人裁决是业务约束，必须给出中文可读拒绝，而不是英文生码（更不该 500）。</summary>
+    [Fact]
+    public void Non_approver_is_rejected_with_a_readable_chinese_message()
+    {
+        var chain = NewChain();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            chain.ResolveStep(1, "user", "u-outsider", "approve", "ok"));
+
+        Assert.Contains("不是该步骤的审批人", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("approval step", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -67,7 +80,7 @@ public sealed class ApprovalAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             chain.ResolveStep(1, "user", "u-engineering", "reject", "no"));
 
-        Assert.Contains("conflict", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("不能再次提交", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -80,7 +93,7 @@ public sealed class ApprovalAggregateTests
             chain.ResolveStep(2, "user", "u-quality", "approve", "ok"));
 
         Assert.Equal("rejected", chain.Status);
-        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("审批链已结束", exception.Message, StringComparison.Ordinal);
         Assert.Contains(chain.GetDomainEvents(), x => x is ApprovalRejectedDomainEvent);
     }
 
@@ -94,7 +107,7 @@ public sealed class ApprovalAggregateTests
             chain.ResolveStep(2, "user", "u-quality", "approve", "ok"));
 
         Assert.Equal("returned", chain.Status);
-        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("审批链已结束", exception.Message, StringComparison.Ordinal);
         Assert.Contains(chain.GetDomainEvents(), x => x is ApprovalReturnedDomainEvent);
     }
 
@@ -119,7 +132,7 @@ public sealed class ApprovalAggregateTests
             && x.ActorRef == "u-requester"
             && x.Comment == "duplicate request");
         Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
-        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("审批链已结束", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -202,7 +215,7 @@ public sealed class ApprovalAggregateTests
             && x.ActorRef == "u-engineering"
             && x.Comment == "amount threshold");
         Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
-        Assert.Contains("sequence", premature.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("按步骤顺序裁决", premature.Message, StringComparison.Ordinal);
         Assert.Equal("approved", chain.Status);
     }
 
@@ -217,7 +230,7 @@ public sealed class ApprovalAggregateTests
             chain.ResolveStep(1, "user", "u-engineering", "approve", "ok"));
         chain.ResolveStep(1, "user", "u-backup", "approve", "ok");
 
-        Assert.Contains("assigned", previousActor.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("不是该步骤的审批人", previousActor.Message, StringComparison.Ordinal);
         Assert.Contains(chain.Steps, x => x.StepNo == 1 && x.ApproverRef == "u-backup");
         Assert.Contains(chain.Decisions, x => x.Decision == ApprovalDecisions.Transfer
             && x.ActorRef == "u-manager"
@@ -261,7 +274,7 @@ public sealed class ApprovalAggregateTests
         chain.ResolveStep(1, "user", "u-quality", "approve", "ok");
         chain.ResolveStep(2, "user", "u-manager", "approve", "ok");
 
-        Assert.Contains("sequence", premature.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("按步骤顺序裁决", premature.Message, StringComparison.Ordinal);
         Assert.Equal("approved", chain.Status);
     }
 
