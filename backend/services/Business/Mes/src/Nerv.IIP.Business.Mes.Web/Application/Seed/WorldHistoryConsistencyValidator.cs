@@ -420,6 +420,34 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"{workOrderId} 缺少齐套需求快照。");
         }
 
+        // 齐套需求行本身不构成开工资格：开工门禁认的是**工单上的证明位**
+        // （状态 + 与工单生产版本一致的版本印章）。种子直写聚合、绕过下达命令，
+        // 这一位曾经全世界恒 null，读面显示「缺料 0」而逐工序开工按钮全被拦（#1373）。
+        // 数一数需求行数只能证明「造了数据」，证明不了「开得了工」，故这里连证明位一起校验。
+        var expectedSnapshotStatus = kittingCount > 0
+            ? WorkOrder.MaterialRequirementSnapshotCapturedStatus
+            : WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus;
+        if (!string.Equals(workOrder.MaterialRequirementSnapshotStatus, expectedSnapshotStatus, StringComparison.Ordinal))
+        {
+            failures.Add(
+                $"{workOrderId} 齐套证明位为 '{workOrder.MaterialRequirementSnapshotStatus ?? "<null>"}'，" +
+                $"按 {kittingCount} 条齐套需求应为 '{expectedSnapshotStatus}'（开工门禁据此放行）。");
+        }
+
+        if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        {
+            failures.Add($"{workOrderId} 缺少生产版本，齐套证明位无从落章。");
+        }
+        else if (!string.Equals(
+            workOrder.MaterialRequirementSnapshotProductionVersionId,
+            workOrder.ProductionVersionId,
+            StringComparison.Ordinal))
+        {
+            failures.Add(
+                $"{workOrderId} 齐套证明位的生产版本 '{workOrder.MaterialRequirementSnapshotProductionVersionId ?? "<null>"}' " +
+                $"与工单生产版本 '{workOrder.ProductionVersionId}' 不一致（开工门禁要求逐字相等）。");
+        }
+
         reports.TryGetValue(workOrderId, out var reported);
         var reportedGood = reported?.GoodQuantity ?? 0m;
         var reportedScrap = reported?.ScrapQuantity ?? 0m;
@@ -553,7 +581,10 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 x.CompletedQuantity,
                 x.ScrapQuantity,
                 x.CreatedAtUtc,
-                x.ClosedAtUtc))
+                x.ClosedAtUtc,
+                x.ProductionVersionId,
+                x.MaterialRequirementSnapshotStatus,
+                x.MaterialRequirementSnapshotProductionVersionId))
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
 
@@ -673,7 +704,10 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         decimal CompletedQuantity,
         decimal ScrapQuantity,
         DateTimeOffset CreatedAtUtc,
-        DateTimeOffset? ClosedAtUtc);
+        DateTimeOffset? ClosedAtUtc,
+        string? ProductionVersionId,
+        string? MaterialRequirementSnapshotStatus,
+        string? MaterialRequirementSnapshotProductionVersionId);
 
     private sealed record TaskCounts(string WorkOrderId, int Total, int Completed, int DispatchGaps);
 
