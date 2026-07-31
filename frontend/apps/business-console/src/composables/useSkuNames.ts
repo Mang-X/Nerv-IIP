@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { toBaseUomBySku } from '@/composables/skuBaseUom'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 
 /**
@@ -25,20 +26,8 @@ export function useSkuNames() {
     return map
   })
 
-  /**
-   * 物料编码 → 基本计量单位。
-   * 单据上的单位是**物料主档的事实**，不是界面常量：钢材按 kg、油品按 l、计件件号才是 pcs，
-   * 写死一个通用单位会让后端单位换算找不到换算关系而整单失败。
-   */
-  const baseUomBySku = computed(() => {
-    const map = new Map<string, string>()
-    for (const sku of skus.value) {
-      const code = sku.code?.trim()
-      const uom = sku.baseUomCode?.trim()
-      if (code && uom) map.set(code, uom)
-    }
-    return map
-  })
+  /** 物料编码 → 基本计量单位（口径见 `toBaseUomBySku`）。 */
+  const baseUomBySku = toBaseUomBySku(skus)
 
   /** 物料名称；名录里查不到返回 undefined，由调用方决定说法（不编造名字）。 */
   function resolveSkuName(code?: string | null): string | undefined {
