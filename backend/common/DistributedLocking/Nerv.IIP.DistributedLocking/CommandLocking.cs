@@ -84,25 +84,31 @@ public sealed class NervIipCommandLockBehavior<TRequest, TResponse>(
         }
 
         var handles = new List<ILockSynchronizationHandler>();
-        var acquiredKeys = new HashSet<string>(StringComparer.Ordinal);
         try
         {
+            var lockSettingsByKey = new Dictionary<string, TimeSpan>(StringComparer.Ordinal);
             foreach (var lockProvider in lockProviders)
             {
                 var settings = await lockProvider.GetLockKeysAsync(request, cancellationToken);
                 foreach (var key in EnumerateKeys(settings))
                 {
-                    if (acquiredKeys.Add(key))
+                    if (!lockSettingsByKey.TryGetValue(key, out var existingTimeout)
+                        || settings.AcquireTimeout < existingTimeout)
                     {
-                        handles.Add(await distributedLock.AcquireAsync(key, settings.AcquireTimeout, cancellationToken));
+                        lockSettingsByKey[key] = settings.AcquireTimeout;
                     }
                 }
             }
 
-            if (handles.Count == 0)
+            if (lockSettingsByKey.Count == 0)
             {
                 throw new InvalidOperationException(
                     $"Command lock configuration for {typeof(TRequest).Name} did not provide a lock key.");
+            }
+
+            foreach (var (key, acquireTimeout) in lockSettingsByKey.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                handles.Add(await distributedLock.AcquireAsync(key, acquireTimeout, cancellationToken));
             }
 
             var linkedTokens = new CancellationToken[handles.Count + 1];

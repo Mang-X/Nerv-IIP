@@ -131,8 +131,68 @@ public sealed class MaintenanceCommandLockTests
                 "accepted", "accept-001", 0),
             CancellationToken.None);
 
-        Assert.Equal(assign.LockKey, complete.LockKey);
-        Assert.Equal(assign.LockKey, transition.LockKey);
+        Assert.Contains(complete.LockKey!, assign.LockKeys!);
+        Assert.Contains(complete.LockKey!, transition.LockKeys!);
+    }
+
+    [Fact]
+    public async Task Assignment_and_transition_lock_the_aggregate_and_the_normalized_scope_idempotency_key()
+    {
+        var workOrderId = new MaintenanceWorkOrderId(Guid.CreateVersion7());
+        var assign = await new AssignMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new AssignMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, "dispatcher-001", "tech-001", null,
+                "on-duty", " shared-key ", 0),
+            CancellationToken.None);
+        var transition = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, MaintenanceWorkOrderAction.Accept, "tech-001",
+                "accepted", "shared-key", 0),
+            CancellationToken.None);
+        var expectedKeys = new[]
+        {
+            $"business-maintenance:lifecycle-idempotency:org-001:env-dev:shared-key",
+            $"business-maintenance:work-order:{workOrderId}",
+        };
+
+        Assert.Equal(expectedKeys, assign.LockKeys);
+        Assert.Equal(expectedKeys, transition.LockKeys);
+        Assert.Equal(TimeSpan.FromSeconds(30), assign.AcquireTimeout);
+        Assert.Equal(assign.AcquireTimeout, transition.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Different_scope_or_idempotency_key_does_not_share_lifecycle_locks_for_different_work_orders()
+    {
+        var baseline = await LifecycleLockKeysAsync(
+            "org-001", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "shared-key");
+        var differentScope = await LifecycleLockKeysAsync(
+            "org-002", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "shared-key");
+        var differentKey = await LifecycleLockKeysAsync(
+            "org-001", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "other-key");
+
+        Assert.Empty(baseline.Intersect(differentScope, StringComparer.Ordinal));
+        Assert.Empty(baseline.Intersect(differentKey, StringComparer.Ordinal));
+    }
+
+    private static async Task<IReadOnlyList<string>> LifecycleLockKeysAsync(
+        string organizationId,
+        string environmentId,
+        MaintenanceWorkOrderId workOrderId,
+        string idempotencyKey)
+    {
+        var settings = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                organizationId,
+                environmentId,
+                workOrderId,
+                MaintenanceWorkOrderAction.Accept,
+                "tech-001",
+                "accepted",
+                idempotencyKey,
+                0),
+            CancellationToken.None);
+        return settings.LockKeys!;
     }
 
     [Fact]
@@ -280,6 +340,80 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Command_lock_behavior_acquires_distinct_keys_in_ordinal_order_and_releases_in_reverse()
+    {
+        var distributedLock = new RecordingDistributedLock();
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [
+                new MultiKeyLockedCommandLock(["z-key"]),
+                new MultiKeyLockedCommandLock(["a-key"]),
+                new MultiKeyLockedCommandLock(["z-key"]),
+            ],
+            distributedLock);
+
+        await behavior.Handle(
+            new MultiKeyLockedCommand(),
+            cancellationToken =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                distributedLock.Events.Add("handler");
+                return Task.FromResult(Unit.Value);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["acquire:a-key", "acquire:z-key", "handler", "release:z-key", "release:a-key"],
+            distributedLock.Events);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Command_lock_behavior_releases_partially_acquired_keys_when_later_acquisition_fails(
+        bool cancellation)
+    {
+        var distributedLock = new RecordingDistributedLock("z-key", cancellation);
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key"]), new MultiKeyLockedCommandLock(["a-key"])],
+            distributedLock);
+
+        var exception = await Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ => Task.FromResult(Unit.Value),
+            CancellationToken.None));
+
+        if (cancellation)
+        {
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+        }
+        else
+        {
+            Assert.IsType<InvalidOperationException>(exception);
+        }
+        Assert.Equal(["acquire:a-key", "acquire:z-key", "release:a-key"], distributedLock.Events);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_keeps_the_single_key_command_contract()
+    {
+        var distributedLock = new RecordingDistributedLock();
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["only-key"])],
+            distributedLock);
+
+        await behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ =>
+            {
+                distributedLock.Events.Add("handler");
+                return Task.FromResult(Unit.Value);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["acquire:only-key", "handler", "release:only-key"], distributedLock.Events);
+    }
+
+    [Fact]
     public async Task Maintenance_command_lock_behavior_cancels_handler_when_lease_is_lost()
     {
         var services = new ServiceCollection();
@@ -319,6 +453,21 @@ public sealed class MaintenanceCommandLockTests
     public sealed record ThrowingLockedCommand(string LockKey) : ICommand;
 
     public sealed record CancellableLockedCommand : ICommand;
+
+    public sealed record MultiKeyLockedCommand : ICommand;
+
+    public sealed class MultiKeyLockedCommandLock(IReadOnlyCollection<string> keys)
+        : ICommandLock<MultiKeyLockedCommand>
+    {
+        public Task<CommandLockSettings> GetLockKeysAsync(
+            MultiKeyLockedCommand command,
+            CancellationToken cancellationToken)
+        {
+            _ = command;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new CommandLockSettings(keys, 30));
+        }
+    }
 
     public sealed class CancellableLockedCommandLock : ICommandLock<CancellableLockedCommand>
     {
@@ -388,6 +537,63 @@ public sealed class MaintenanceCommandLockTests
         public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingDistributedLock(
+        string? failOnKey = null,
+        bool cancelOnFailure = false) : IDistributedLock
+    {
+        public List<string> Events { get; } = [];
+
+        public ILockSynchronizationHandler? TryAcquire(
+            string key,
+            TimeSpan timeout,
+            CancellationToken cancellationToken) =>
+            TryAcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+
+        public ILockSynchronizationHandler Acquire(
+            string key,
+            TimeSpan? timeout,
+            CancellationToken cancellationToken) =>
+            AcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+
+        public ValueTask<ILockSynchronizationHandler?> TryAcquireAsync(
+            string key,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Events.Add($"acquire:{key}");
+            if (string.Equals(key, failOnKey, StringComparison.Ordinal))
+            {
+                if (cancelOnFailure)
+                {
+                    throw new OperationCanceledException("synthetic lock cancellation", cancellationToken);
+                }
+                throw new InvalidOperationException("synthetic lock acquisition failure");
+            }
+            return ValueTask.FromResult<ILockSynchronizationHandler?>(new RecordingHandle(key, Events));
+        }
+
+        public async ValueTask<ILockSynchronizationHandler> AcquireAsync(
+            string key,
+            TimeSpan? timeout,
+            CancellationToken cancellationToken) =>
+            await TryAcquireAsync(key, timeout ?? TimeSpan.FromSeconds(30), cancellationToken)
+                ?? throw new TimeoutException($"Could not acquire {key}.");
+
+        private sealed class RecordingHandle(string key, List<string> events) : ILockSynchronizationHandler
+        {
+            public CancellationToken HandleLostToken => CancellationToken.None;
+
+            public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            public ValueTask DisposeAsync()
+            {
+                events.Add($"release:{key}");
+                return ValueTask.CompletedTask;
+            }
         }
     }
 

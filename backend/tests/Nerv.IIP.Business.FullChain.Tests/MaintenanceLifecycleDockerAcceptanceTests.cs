@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
@@ -98,6 +99,118 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
     }
 
     [Fact]
+    public async Task Same_scope_idempotency_key_across_work_orders_returns_stable_conflict_without_state_crossover()
+    {
+        await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();
+        await using var provider = await CreateMaintenanceProviderAsync(dependencies.PostgresConnectionString);
+        await using var redisConnection = await ConnectionMultiplexer.ConnectAsync(dependencies.RedisConnectionString);
+        var distributedLock = CreateDistributedLock(redisConnection);
+        var organizationId = $"org-man631-cross-work-order-{Guid.CreateVersion7():N}";
+        var first = await SeedWorkOrderAsync(provider, "cross-a", assigned: true, organizationId: organizationId);
+        var second = await SeedWorkOrderAsync(provider, "cross-b", assigned: true, organizationId: organizationId);
+        var saveGate = new ConcurrentLifecycleSaveGate(2, TimeSpan.FromSeconds(2));
+        const string idempotencyKey = "cross-work-order-shared-key";
+
+        var outcomes = await Task.WhenAll(
+            CaptureTransitionThroughBehaviorAsync(
+                provider,
+                distributedLock,
+                Accept(first, idempotencyKey, "accept-first"),
+                saveGate),
+            CaptureTransitionThroughBehaviorAsync(
+                provider,
+                distributedLock,
+                Accept(second, idempotencyKey, "accept-second"),
+                saveGate));
+
+        var winner = Assert.Single(outcomes, outcome => outcome.Result is not null).Result!;
+        var loser = Assert.Single(outcomes, outcome => outcome.Exception is not null).Exception!;
+        Assert.IsType<MaintenanceIdempotencyConflictException>(loser);
+        Assert.Equal("idempotency-conflict", MaintenanceIdempotencyConflictException.SafeCode);
+        Assert.DoesNotContain(outcomes, outcome => outcome.Exception is DbUpdateException);
+
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await db.MaintenanceWorkOrders.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == "env-man631")
+            .ToArrayAsync();
+        Assert.Equal(2, persisted.Length);
+        Assert.Single(persisted, workOrder =>
+            workOrder.Id == winner.WorkOrderId
+            && workOrder.Status == MaintenanceWorkOrderStatus.Accepted
+            && workOrder.Version == 1);
+        Assert.Single(persisted, workOrder =>
+            workOrder.Id != winner.WorkOrderId
+            && workOrder.Status == MaintenanceWorkOrderStatus.Open
+            && workOrder.Version == 0);
+        var receipt = Assert.Single(await db.MaintenanceWorkOrderLifecycleEvents.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == "env-man631"
+                && x.IdempotencyKey == idempotencyKey)
+            .ToArrayAsync());
+        Assert.Equal(winner.WorkOrderId, receipt.WorkOrderId);
+    }
+
+    [Fact]
+    public async Task Parallel_dependency_instances_use_distinct_owned_resources_and_cleanup_only_their_run()
+    {
+        var firstStart = MaintenanceLifecycleDockerDependencies.StartAsync();
+        var secondStart = MaintenanceLifecycleDockerDependencies.StartAsync();
+        MaintenanceLifecycleDockerDependencies? first = null;
+        MaintenanceLifecycleDockerDependencies? second = null;
+        var firstDisposed = false;
+        var secondDisposed = false;
+        try
+        {
+            var dependencies = await Task.WhenAll(firstStart, secondStart);
+            first = dependencies[0];
+            second = dependencies[1];
+
+            Assert.NotEqual(first.Identity.RunId, second.Identity.RunId);
+            Assert.NotEqual(first.Identity.PostgresContainerName, second.Identity.PostgresContainerName);
+            Assert.NotEqual(first.Identity.RedisContainerName, second.Identity.RedisContainerName);
+            Assert.NotEqual(first.Identity.PostgresVolumeName, second.Identity.PostgresVolumeName);
+            Assert.NotEqual(first.Identity.RedisVolumeName, second.Identity.RedisVolumeName);
+            Assert.NotEqual(first.Identity.OwnershipLabel, second.Identity.OwnershipLabel);
+            Assert.Equal(4, (await MaintenanceLifecycleDockerDependencies.ListOwnedResourcesAsync(
+                first.Identity.OwnershipLabel)).Count);
+            Assert.Equal(4, (await MaintenanceLifecycleDockerDependencies.ListOwnedResourcesAsync(
+                second.Identity.OwnershipLabel)).Count);
+
+            var firstOwnershipLabel = first.Identity.OwnershipLabel;
+            await first.DisposeAsync();
+            firstDisposed = true;
+            Assert.Empty(await MaintenanceLifecycleDockerDependencies.ListOwnedResourcesAsync(firstOwnershipLabel));
+            Assert.Equal(4, (await MaintenanceLifecycleDockerDependencies.ListOwnedResourcesAsync(
+                second.Identity.OwnershipLabel)).Count);
+
+            var secondOwnershipLabel = second.Identity.OwnershipLabel;
+            await second.DisposeAsync();
+            secondDisposed = true;
+            Assert.Empty(await MaintenanceLifecycleDockerDependencies.ListOwnedResourcesAsync(secondOwnershipLabel));
+        }
+        finally
+        {
+            if (!firstDisposed && first is null && firstStart.IsCompletedSuccessfully)
+            {
+                first = await firstStart;
+            }
+            if (!secondDisposed && second is null && secondStart.IsCompletedSuccessfully)
+            {
+                second = await secondStart;
+            }
+            if (!firstDisposed && first is not null)
+            {
+                await first.DisposeAsync();
+            }
+            if (!secondDisposed && second is not null)
+            {
+                await second.DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Legacy_complete_and_lifecycle_accept_share_the_real_redis_aggregate_lock()
     {
         await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();
@@ -148,12 +261,13 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         ServiceProvider provider,
         string scenario,
         bool assigned,
-        bool includeDowntimeReason = false)
+        bool includeDowntimeReason = false,
+        string? organizationId = null)
     {
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var suffix = Guid.CreateVersion7().ToString("N");
-        var organizationId = $"org-man631-{scenario}-{suffix}";
+        organizationId ??= $"org-man631-{scenario}-{suffix}";
         var workOrder = MaintenanceWorkOrder.OpenManual(
             organizationId,
             "env-man631",
@@ -194,16 +308,23 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         IDistributedLock distributedLock,
         TransitionMaintenanceWorkOrderCommand command)
     {
-        var settings = await new TransitionMaintenanceWorkOrderCommandLock()
-            .GetLockKeysAsync(command, CancellationToken.None);
-        await using var handle = await distributedLock.AcquireAsync(
-            settings.LockKey!, settings.AcquireTimeout, CancellationToken.None);
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var result = await new TransitionMaintenanceWorkOrderCommandHandler(db)
-            .Handle(command, CancellationToken.None);
-        await db.SaveChangesAsync();
-        return result;
+        var behavior = new NervIipCommandLockBehavior<
+            TransitionMaintenanceWorkOrderCommand,
+            MaintenanceWorkOrderCommandResult>(
+            [new TransitionMaintenanceWorkOrderCommandLock()],
+            distributedLock);
+        return await behavior.Handle(
+            command,
+            async cancellationToken =>
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var result = await new TransitionMaintenanceWorkOrderCommandHandler(db)
+                    .Handle(command, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+                return result;
+            },
+            CancellationToken.None);
     }
 
     private static async Task<(MaintenanceWorkOrderCommandResult? Result, Exception? Exception)> CaptureTransitionAsync(
@@ -214,6 +335,41 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         try
         {
             return (await ExecuteTransitionAsync(provider, distributedLock, command), null);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception);
+        }
+    }
+
+    private static async Task<(MaintenanceWorkOrderCommandResult? Result, Exception? Exception)>
+        CaptureTransitionThroughBehaviorAsync(
+            ServiceProvider provider,
+            IDistributedLock distributedLock,
+            TransitionMaintenanceWorkOrderCommand command,
+            ConcurrentLifecycleSaveGate saveGate)
+    {
+        try
+        {
+            var behavior = new NervIipCommandLockBehavior<
+                TransitionMaintenanceWorkOrderCommand,
+                MaintenanceWorkOrderCommandResult>(
+                [new TransitionMaintenanceWorkOrderCommandLock()],
+                distributedLock);
+            var result = await behavior.Handle(
+                command,
+                async cancellationToken =>
+                {
+                    await using var scope = provider.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    var staged = await new TransitionMaintenanceWorkOrderCommandHandler(db)
+                        .Handle(command, cancellationToken);
+                    await saveGate.SignalAndWaitAsync(cancellationToken);
+                    await db.SaveChangesAsync(cancellationToken);
+                    return staged;
+                },
+                CancellationToken.None);
+            return (result, null);
         }
         catch (Exception exception)
         {
@@ -270,25 +426,37 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
     }
 
     private sealed record SeededLifecycleWorkOrder(MaintenanceWorkOrderId Id, string OrganizationId);
+
+    private sealed class ConcurrentLifecycleSaveGate(int participants, TimeSpan maximumWait)
+    {
+        private readonly TaskCompletionSource allArrived =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivals;
+
+        public async Task SignalAndWaitAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref arrivals) == participants)
+            {
+                allArrived.TrySetResult();
+            }
+
+            await Task.WhenAny(allArrived.Task, Task.Delay(maximumWait, cancellationToken));
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
 }
 
 internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 {
     private const string OwnershipLabelKey = "com.nerv-iip.test.run";
-    private readonly string postgresContainerName;
-    private readonly string redisContainerName;
-    private readonly string ownershipLabel;
+    private readonly MaintenanceLifecycleDockerRunIdentity identity;
 
     private MaintenanceLifecycleDockerDependencies(
-        string postgresContainerName,
-        string redisContainerName,
-        string ownershipLabel,
+        MaintenanceLifecycleDockerRunIdentity identity,
         string postgresConnectionString,
         string redisConnectionString)
     {
-        this.postgresContainerName = postgresContainerName;
-        this.redisContainerName = redisContainerName;
-        this.ownershipLabel = ownershipLabel;
+        this.identity = identity;
         PostgresConnectionString = postgresConnectionString;
         RedisConnectionString = redisConnectionString;
     }
@@ -297,27 +465,28 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 
     public string RedisConnectionString { get; }
 
+    internal MaintenanceLifecycleDockerRunIdentity Identity => identity;
+
     public static async Task<MaintenanceLifecycleDockerDependencies> StartAsync()
     {
         await DockerAsync(["version", "--format", "{{.Server.Version}}"], "Docker daemon probe", TimeSpan.FromSeconds(30));
 
-        var suffix = Guid.CreateVersion7().ToString("N")[..12];
-        var postgresName = $"nerv-iip-man631-postgres-{suffix}";
-        var redisName = $"nerv-iip-man631-redis-{suffix}";
-        var ownershipLabel = $"man-631-{suffix}";
-        var databaseName = $"maintenance_man631_{suffix}";
+        var identity = MaintenanceLifecycleDockerRunIdentity.Create();
         var password = $"man631-{Guid.CreateVersion7():N}";
         MaintenanceLifecycleDockerDependencies? dependencies = null;
         try
         {
+            await CreateOwnedVolumeAsync(identity.PostgresVolumeName, identity.OwnershipLabel);
+            await CreateOwnedVolumeAsync(identity.RedisVolumeName, identity.OwnershipLabel);
             await DockerAsync(
                 [
-                    "run", "-d", "--rm", "--name", postgresName,
+                    "run", "-d", "--rm", "--name", identity.PostgresContainerName,
                     "--label", "com.nerv-iip.test=man-631",
-                    "--label", $"{OwnershipLabelKey}={ownershipLabel}",
+                    "--label", $"{OwnershipLabelKey}={identity.OwnershipLabel}",
+                    "--mount", $"type=volume,source={identity.PostgresVolumeName},target=/var/lib/postgresql",
                     "-e", "POSTGRES_USER=nerv_test",
                     "-e", $"POSTGRES_PASSWORD={password}",
-                    "-e", $"POSTGRES_DB={databaseName}",
+                    "-e", $"POSTGRES_DB={identity.DatabaseName}",
                     "-p", "127.0.0.1::5432",
                     "postgres:18",
                 ],
@@ -325,9 +494,10 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 TimeSpan.FromMinutes(5));
             await DockerAsync(
                 [
-                    "run", "-d", "--rm", "--name", redisName,
+                    "run", "-d", "--rm", "--name", identity.RedisContainerName,
                     "--label", "com.nerv-iip.test=man-631",
-                    "--label", $"{OwnershipLabelKey}={ownershipLabel}",
+                    "--label", $"{OwnershipLabelKey}={identity.OwnershipLabel}",
+                    "--mount", $"type=volume,source={identity.RedisVolumeName},target=/data",
                     "-p", "127.0.0.1::6379",
                     "redis:8", "redis-server", "--save", "", "--appendonly", "no",
                 ],
@@ -335,11 +505,11 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 TimeSpan.FromMinutes(5));
 
             var postgresPort = ParsePublishedPort(await DockerAsync(
-                ["port", postgresName, "5432/tcp"],
+                ["port", identity.PostgresContainerName, "5432/tcp"],
                 "resolve PostgreSQL test port",
                 TimeSpan.FromSeconds(30)));
             var redisPort = ParsePublishedPort(await DockerAsync(
-                ["port", redisName, "6379/tcp"],
+                ["port", identity.RedisContainerName, "6379/tcp"],
                 "resolve Redis test port",
                 TimeSpan.FromSeconds(30)));
             var postgresConnectionString = new NpgsqlConnectionStringBuilder
@@ -348,15 +518,13 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 Port = postgresPort,
                 Username = "nerv_test",
                 Password = password,
-                Database = databaseName,
+                Database = identity.DatabaseName,
                 Pooling = false,
                 IncludeErrorDetail = false,
             }.ConnectionString;
             var redisConnectionString = $"127.0.0.1:{redisPort},abortConnect=false,connectTimeout=1000,syncTimeout=1000";
             dependencies = new MaintenanceLifecycleDockerDependencies(
-                postgresName,
-                redisName,
-                ownershipLabel,
+                identity,
                 postgresConnectionString,
                 redisConnectionString);
             await WaitForPostgresAsync(postgresConnectionString);
@@ -373,7 +541,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 }
                 else
                 {
-                    await CleanupOwnedResourcesAsync(redisName, postgresName, ownershipLabel);
+                    await CleanupOwnedResourcesAsync(identity);
                 }
             }
             catch (Exception cleanupException)
@@ -390,17 +558,32 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await CleanupOwnedResourcesAsync(redisContainerName, postgresContainerName, ownershipLabel);
+        await CleanupOwnedResourcesAsync(identity);
     }
 
-    private static Task CleanupOwnedResourcesAsync(
-        string redisName,
-        string postgresName,
-        string expectedOwnershipLabel) =>
+    private static Task CleanupOwnedResourcesAsync(MaintenanceLifecycleDockerRunIdentity runIdentity) =>
         DockerOwnedResourceCleanup.CleanupAsync(
-            [redisName, postgresName],
-            name => RemoveContainerAsync(name, expectedOwnershipLabel),
-            () => AssertNoOwnedContainersAsync(expectedOwnershipLabel));
+            [
+                $"container:{runIdentity.RedisContainerName}",
+                $"container:{runIdentity.PostgresContainerName}",
+                $"volume:{runIdentity.RedisVolumeName}",
+                $"volume:{runIdentity.PostgresVolumeName}",
+            ],
+            resource => resource.StartsWith("container:", StringComparison.Ordinal)
+                ? RemoveContainerAsync(resource["container:".Length..], runIdentity.OwnershipLabel)
+                : RemoveVolumeAsync(resource["volume:".Length..], runIdentity.OwnershipLabel),
+            () => AssertNoOwnedResourcesAsync(runIdentity.OwnershipLabel));
+
+    private static Task CreateOwnedVolumeAsync(string name, string ownershipLabel) =>
+        DockerAsync(
+            [
+                "volume", "create",
+                "--label", "com.nerv-iip.test=man-631",
+                "--label", $"{OwnershipLabelKey}={ownershipLabel}",
+                name,
+            ],
+            "create MAN-631 test volume",
+            TimeSpan.FromSeconds(30));
 
     private static async Task WaitForPostgresAsync(string connectionString)
     {
@@ -490,16 +673,61 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
         }
     }
 
-    private static async Task AssertNoOwnedContainersAsync(string expectedOwnershipLabel)
+    private static async Task RemoveVolumeAsync(string name, string expectedOwnershipLabel)
     {
-        var residue = (await DockerAsync(
-            ["ps", "-a", "--filter", $"label={OwnershipLabelKey}={expectedOwnershipLabel}", "--format", "{{.Names}}"],
-            "verify MAN-631 test container cleanup",
-            TimeSpan.FromSeconds(30))).Trim();
-        if (!string.IsNullOrWhiteSpace(residue))
+        string actualOwnershipLabel;
+        try
+        {
+            actualOwnershipLabel = (await DockerAsync(
+                ["volume", "inspect", "--format", $"{{{{ index .Labels \"{OwnershipLabelKey}\" }}}}", name],
+                "inspect MAN-631 test volume ownership",
+                TimeSpan.FromSeconds(30))).Trim();
+        }
+        catch (DockerCommandException exception) when (exception.IsResourceNotFound)
+        {
+            return;
+        }
+
+        if (!string.Equals(actualOwnershipLabel, expectedOwnershipLabel, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"MAN-631 Docker cleanup left owned containers behind: {residue.Replace(Environment.NewLine, ", ", StringComparison.Ordinal)}");
+                $"Refusing to remove Docker volume '{name}' because ownership label '{OwnershipLabelKey}' was '{actualOwnershipLabel}', expected '{expectedOwnershipLabel}'.");
+        }
+
+        try
+        {
+            await DockerAsync(["volume", "rm", name], "remove MAN-631 test volume", TimeSpan.FromSeconds(30));
+        }
+        catch (DockerCommandException exception) when (exception.IsResourceNotFound)
+        {
+        }
+    }
+
+    internal static async Task<IReadOnlyCollection<string>> ListOwnedResourcesAsync(string expectedOwnershipLabel)
+    {
+        var containers = (await DockerAsync(
+            ["ps", "-a", "--filter", $"label={OwnershipLabelKey}={expectedOwnershipLabel}", "--format", "{{.Names}}"],
+            "list MAN-631 owned test containers",
+            TimeSpan.FromSeconds(30))).Trim();
+        var volumes = (await DockerAsync(
+            ["volume", "ls", "--filter", $"label={OwnershipLabelKey}={expectedOwnershipLabel}", "--format", "{{.Name}}"],
+            "list MAN-631 owned test volumes",
+            TimeSpan.FromSeconds(30))).Trim();
+        return containers.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(name => $"container:{name.Trim()}")
+            .Concat(volumes.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(name => $"volume:{name.Trim()}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static async Task AssertNoOwnedResourcesAsync(string expectedOwnershipLabel)
+    {
+        var residue = await ListOwnedResourcesAsync(expectedOwnershipLabel);
+        if (residue.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"MAN-631 Docker cleanup left owned resources behind: {string.Join(", ", residue)}");
         }
     }
 
@@ -563,8 +791,34 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
     private sealed class DockerCommandException(string operation, int exitCode, string diagnostic)
         : InvalidOperationException($"Docker failed during {operation} (exit={exitCode}): {diagnostic}")
     {
-        public bool IsContainerNotFound =>
+        public bool IsResourceNotFound =>
             Message.Contains("No such container", StringComparison.OrdinalIgnoreCase)
-            || Message.Contains("No such object", StringComparison.OrdinalIgnoreCase);
+            || Message.Contains("No such object", StringComparison.OrdinalIgnoreCase)
+            || Message.Contains("No such volume", StringComparison.OrdinalIgnoreCase);
+
+        public bool IsContainerNotFound => IsResourceNotFound;
+    }
+}
+
+internal sealed record MaintenanceLifecycleDockerRunIdentity(
+    string RunId,
+    string PostgresContainerName,
+    string RedisContainerName,
+    string PostgresVolumeName,
+    string RedisVolumeName,
+    string OwnershipLabel,
+    string DatabaseName)
+{
+    public static MaintenanceLifecycleDockerRunIdentity Create()
+    {
+        var runId = Guid.CreateVersion7().ToString("N");
+        return new MaintenanceLifecycleDockerRunIdentity(
+            runId,
+            $"nerv-iip-man631-postgres-{runId}",
+            $"nerv-iip-man631-redis-{runId}",
+            $"nerv-iip-man631-postgres-data-{runId}",
+            $"nerv-iip-man631-redis-data-{runId}",
+            $"man-631-{runId}",
+            $"maintenance_man631_{runId}");
     }
 }

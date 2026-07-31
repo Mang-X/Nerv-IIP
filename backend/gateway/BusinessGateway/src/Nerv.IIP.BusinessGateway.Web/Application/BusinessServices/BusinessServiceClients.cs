@@ -1817,7 +1817,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         object? body,
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions = null,
-        Action<HttpRequestMessage>? configureRequest = null)
+        Action<HttpRequestMessage>? configureRequest = null,
+        bool failClosedOnFailureEnvelope = false)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
@@ -1873,7 +1874,11 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
             try
             {
-                return await ReadResponseDataAsync<TResponse>(response, jsonOptions ?? JsonOptions, cancellationToken);
+                return await ReadResponseDataAsync<TResponse>(
+                    response,
+                    jsonOptions ?? JsonOptions,
+                    cancellationToken,
+                    failClosedOnFailureEnvelope);
             }
             catch (JsonException ex)
             {
@@ -1895,7 +1900,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
     private static async Task<TResponse> ReadResponseDataAsync<TResponse>(
         HttpResponseMessage response,
         JsonSerializerOptions jsonOptions,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool failClosedOnFailureEnvelope)
     {
         var content = response.Content
             ?? throw new InvalidOperationException("Platform API returned an empty response.");
@@ -1913,6 +1919,10 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             root.TryGetProperty("success", out var success) &&
             success.ValueKind == JsonValueKind.False)
         {
+            if (failClosedOnFailureEnvelope)
+            {
+                throw new InvalidOperationException("Platform API returned a failure envelope for an authoritative read.");
+            }
             throw BusinessServiceProxyException.FromDownstreamBusinessMessage(DownstreamEnvelopeMessage(root));
         }
 
@@ -6286,7 +6296,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             HttpMethod.Get,
             $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+        EnsureMaintenanceWorkOrderDetailMatchesRoute(workOrderId, detail.WorkOrder.WorkOrderId);
         return MapWorkOrder(detail.WorkOrder) with
         {
             AllowedActions = detail.AllowedActions,
@@ -6421,6 +6433,25 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             || requestedId != responseId
             || authoritativeBefore.Version < 0
             || !KnownMaintenanceStatuses.Contains(authoritativeBefore.Status))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+    }
+
+    private static void EnsureMaintenanceWorkOrderDetailMatchesRoute(
+        string workOrderId,
+        JsonElement downstreamWorkOrderId)
+    {
+        if (!Guid.TryParse(workOrderId, out var requestedId)
+            || requestedId == Guid.Empty
+            || downstreamWorkOrderId.ValueKind != JsonValueKind.Object
+            || !downstreamWorkOrderId.TryGetProperty("id", out var id)
+            || id.ValueKind != JsonValueKind.String
+            || !Guid.TryParse(id.GetString(), out var responseId)
+            || responseId == Guid.Empty
+            || responseId != requestedId)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,

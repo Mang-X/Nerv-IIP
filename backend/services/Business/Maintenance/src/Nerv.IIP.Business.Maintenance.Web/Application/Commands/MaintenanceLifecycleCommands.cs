@@ -356,11 +356,40 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
 public sealed class AssignMaintenanceWorkOrderCommandLock : ICommandLock<AssignMaintenanceWorkOrderCommand>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(AssignMaintenanceWorkOrderCommand command, CancellationToken cancellationToken) =>
-        Task.FromResult(new CommandLockSettings(MaintenanceWorkOrderCommandLockKeys.For(command.WorkOrderId), 30));
+        Task.FromResult(MaintenanceLifecycleCommandLockKeys.For(
+            command.OrganizationId,
+            command.EnvironmentId,
+            command.WorkOrderId,
+            command.IdempotencyKey));
 }
 
 public sealed class TransitionMaintenanceWorkOrderCommandLock : ICommandLock<TransitionMaintenanceWorkOrderCommand>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(TransitionMaintenanceWorkOrderCommand command, CancellationToken cancellationToken) =>
-        Task.FromResult(new CommandLockSettings(MaintenanceWorkOrderCommandLockKeys.For(command.WorkOrderId), 30));
+        Task.FromResult(MaintenanceLifecycleCommandLockKeys.For(
+            command.OrganizationId,
+            command.EnvironmentId,
+            command.WorkOrderId,
+            command.IdempotencyKey));
+}
+
+internal static class MaintenanceLifecycleCommandLockKeys
+{
+    public static CommandLockSettings For(
+        string organizationId,
+        string environmentId,
+        MaintenanceWorkOrderId workOrderId,
+        string idempotencyKey)
+    {
+        var intentKey = string.Join(
+            ':',
+            "business-maintenance:lifecycle-idempotency",
+            Uri.EscapeDataString(MaintenanceText.Required(organizationId, nameof(organizationId))),
+            Uri.EscapeDataString(MaintenanceText.Required(environmentId, nameof(environmentId))),
+            Uri.EscapeDataString(MaintenanceText.Required(idempotencyKey, nameof(idempotencyKey))));
+        return new CommandLockSettings(
+            new[] { MaintenanceWorkOrderCommandLockKeys.For(workOrderId), intentKey }
+                .Order(StringComparer.Ordinal),
+            30);
+    }
 }

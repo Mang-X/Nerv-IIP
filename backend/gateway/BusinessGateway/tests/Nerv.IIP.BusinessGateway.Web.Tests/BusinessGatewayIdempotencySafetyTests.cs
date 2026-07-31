@@ -250,6 +250,74 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Maintenance_detail_accepts_the_matching_authoritative_strong_work_order_id(bool enveloped)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        using var httpClient = Client(MaintenanceDetailBody($$"""{"id":"{{workOrderId}}"}"""), enveloped);
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var response = await client.GetWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(workOrderId, response.WorkOrderId);
+        Assert.Equal("Open", response.Status);
+        Assert.Equal(0, response.Version);
+    }
+
+    [Theory]
+    [InlineData(false, "malformed")]
+    [InlineData(true, "malformed")]
+    [InlineData(false, "blank")]
+    [InlineData(true, "blank")]
+    [InlineData(false, "mismatch")]
+    [InlineData(true, "mismatch")]
+    public async Task Maintenance_detail_rejects_malformed_blank_or_mismatched_strong_work_order_id(
+        bool enveloped,
+        string scenario)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        var downstreamId = scenario switch
+        {
+            "malformed" => $$"""{"value":"{{workOrderId}}"}""",
+            "blank" => """{"id":""}""",
+            "mismatch" => $$"""{"id":"{{Guid.CreateVersion7()}}"}""",
+            _ => throw new InvalidOperationException($"Unknown scenario: {scenario}"),
+        };
+        using var httpClient = Client(MaintenanceDetailBody(downstreamId), enveloped);
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await AssertInvalidResponseAsync(() => client.GetWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Maintenance_detail_fails_closed_when_the_downstream_envelope_reports_failure()
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        using var httpClient = new HttpClient(new StaticResponseHandler(
+            """{"success":false,"message":"downstream-declined","code":409,"errorData":[]}""",
+            HttpStatusCode.OK))
+        {
+            BaseAddress = new Uri("http://downstream.local"),
+        };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await AssertInvalidResponseAsync(() => client.GetWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None));
+    }
+
+    [Theory]
     [InlineData(false, "Accepted", 1, "2026-08-01T08:00:00Z")]
     [InlineData(true, "Completed", -1, "2026-08-01T08:00:00Z")]
     [InlineData(false, "Completed", 2, "2026-08-01T08:00:00Z")]
@@ -355,6 +423,22 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         };
     }
 
+    private static string MaintenanceDetailBody(string workOrderIdJson) =>
+        $$"""
+        {
+          "workOrder": {
+            "workOrderId": {{workOrderIdJson}},
+            "deviceAssetId": "DEV-001",
+            "priority": "high",
+            "status": "Open",
+            "openedAtUtc": "2026-08-01T08:00:00Z",
+            "version": 0
+          },
+          "lifecycle": [],
+          "allowedActions": ["assign"]
+        }
+        """;
+
     private static async Task AssertInvalidResponseAsync(Func<Task> action)
     {
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(action);
@@ -387,7 +471,7 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             var raw = request.Method == HttpMethod.Get
-                ? $$"""{"workOrder":{"workOrderId":"{{workOrderId}}","deviceAssetId":"DEV-001","priority":"high","status":"Open","openedAtUtc":"2026-08-01T08:00:00Z","version":0},"lifecycle":[],"allowedActions":["assign"]}"""
+                ? $$"""{"workOrder":{"workOrderId":{"id":"{{workOrderId}}"},"deviceAssetId":"DEV-001","priority":"high","status":"Open","openedAtUtc":"2026-08-01T08:00:00Z","version":0},"lifecycle":[],"allowedActions":["assign"]}"""
                 : $$"""{"workOrderId":"{{workOrderId}}","status":"Accepted","version":1,"changedAtUtc":"2026-08-01T08:01:00Z"}""";
             var body = enveloped ? $$"""{"success":true,"data":{{raw}},"message":"","code":0}""" : raw;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
