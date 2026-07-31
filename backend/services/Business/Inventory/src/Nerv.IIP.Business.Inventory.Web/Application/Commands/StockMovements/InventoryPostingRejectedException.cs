@@ -12,6 +12,9 @@ public static class InventoryPostingFailureCodes
     public const string ReservationNotFound = "RESERVATION_NOT_FOUND";
     public const string ReservationAllocationRejected = "RESERVATION_ALLOCATION_REJECTED";
     public const string InvalidReservationId = "INVALID_RESERVATION_ID";
+
+    /// <summary>调拨（transfer）两腿缺腿或数量不配平：整笔拒绝，避免单腿过账凭空增减库存。</summary>
+    public const string TransferLegsUnbalanced = "TRANSFER_LEGS_UNBALANCED";
 }
 
 public sealed class InventoryPostingRejectedException : KnownException

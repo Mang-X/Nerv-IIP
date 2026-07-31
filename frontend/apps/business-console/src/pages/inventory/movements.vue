@@ -93,7 +93,12 @@ const form = reactive({
   ownerType: 'owned',
   ownerId: '',
   quantity: '1',
+  // 调拨专用：入库库位。调拨必须两腿配平，缺腿后端整笔拒绝。
+  transferInLocationCode: '',
 })
+
+/** 调拨是两腿业务：出库位减、入库位增、数量等额，单腿会凭空增减库存。 */
+const isTransfer = computed(() => form.movementType === 'transfer')
 
 // 移动类型码值 → 中文标签：界面说人话，下发仍是后端码值。
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
@@ -139,6 +144,7 @@ const stableSubmissionKey = computed(() =>
     form.skuCode,
     form.siteCode,
     form.locationCode,
+    form.transferInLocationCode,
     form.quantity,
   ]
     .map((part) => String(part || '').trim() || 'none')
@@ -154,7 +160,11 @@ const canSubmit = computed(
     isNonEmpty(form.uomCode) &&
     isNonEmpty(form.siteCode) &&
     isNonEmpty(form.locationCode) &&
-    toOptionalNumber(form.quantity) !== undefined,
+    toOptionalNumber(form.quantity) !== undefined &&
+    (!isTransfer.value ||
+      (isNonEmpty(form.transferInLocationCode) &&
+        form.transferInLocationCode.trim() !== form.locationCode.trim() &&
+        (toOptionalNumber(form.quantity) ?? 0) > 0)),
 )
 
 // 读面只回编码，名称在主数据里，按编码 join 出中文名。
@@ -207,6 +217,9 @@ function formatDateTime(value: string | undefined) {
 
 async function submitMovement() {
   if (!canSubmit.value) return
+  const quantity = toOptionalNumber(form.quantity)
+  // 调拨提交的是配平两腿：出库腿取负、入库腿取正，等额相消。
+  const transferQuantity = isTransfer.value ? Math.abs(quantity ?? 0) : undefined
   const body: BusinessConsolePostStockMovementRequest = {
     organizationId: businessContext.organizationId.trim(),
     environmentId: businessContext.environmentId.trim(),
@@ -224,7 +237,9 @@ async function submitMovement() {
     qualityStatus: form.qualityStatus.trim(),
     ownerType: form.ownerType.trim(),
     ownerId: optionalText(form.ownerId),
-    quantity: toOptionalNumber(form.quantity),
+    quantity: transferQuantity === undefined ? quantity : -transferQuantity,
+    transferInLocationCode: isTransfer.value ? form.transferInLocationCode.trim() : undefined,
+    transferInQuantity: transferQuantity,
   }
   let response
   try {
@@ -368,7 +383,9 @@ function isNonEmpty(value: string) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="movement-location">库位</NvFieldLabel>
+              <NvFieldLabel for="movement-location">{{
+                isTransfer ? '出库库位' : '库位'
+              }}</NvFieldLabel>
               <NvEntityPicker
                 id="movement-location"
                 v-model="form.locationCode"
@@ -379,11 +396,29 @@ function isNonEmpty(value: string) {
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable
-                aria-label="库位"
+                :aria-label="isTransfer ? '出库库位' : '库位'"
+              />
+            </NvField>
+            <!-- 调拨两腿配平：入库库位必填且不能与出库库位相同，否则整笔拒绝。 -->
+            <NvField v-if="isTransfer">
+              <NvFieldLabel for="movement-transfer-in-location">入库库位</NvFieldLabel>
+              <NvEntityPicker
+                id="movement-transfer-in-location"
+                v-model="form.transferInLocationCode"
+                :options="locationOptions"
+                title="选择入库库位"
+                placeholder="选择入库库位"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
+                aria-label="入库库位"
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="movement-quantity">数量</NvFieldLabel>
+              <NvFieldLabel for="movement-quantity">{{
+                isTransfer ? '调拨数量' : '数量'
+              }}</NvFieldLabel>
               <NvInput
                 id="movement-quantity"
                 v-model="form.quantity"
