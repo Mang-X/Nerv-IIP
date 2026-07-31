@@ -23,6 +23,8 @@ public sealed class AccountPayableSourceDocumentGuardTests
             CancellationToken.None));
 
         Assert.Contains("在 ERP 中不存在", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("财务 › 会计凭证 › 过账凭证", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("供应商发票", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
         Assert.Empty(dbContext.JournalVouchers);
@@ -73,7 +75,7 @@ public sealed class AccountPayableSourceDocumentGuardTests
         await ErpFinanceSourceDocumentFixtures.SeedPurchaseReceiptAsync(dbContext, "RCV-GUARD-002", "SUP-REAL");
 
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
-            new CreateAccountPayableCommand("org-001", "env-dev", "AP-GUARD-002", "RCV-GUARD-002", "SUP-REAL", 120m, "CNY"),
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-GUARD-002", " RCV-GUARD-002 ", "SUP-REAL", 120m, "CNY"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -96,7 +98,27 @@ public sealed class AccountPayableSourceDocumentGuardTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal(60m, Assert.Single(dbContext.AccountPayables).Amount);
+        var payable = Assert.Single(dbContext.AccountPayables);
+        Assert.Equal(60m, payable.Amount);
+        Assert.Equal("SUP-REAL", payable.SupplierCode);
+    }
+
+    [Fact]
+    public async Task Payable_can_reference_a_supplier_invoice_and_stores_its_authoritative_supplier_code()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-GUARD-001", "SUP-REAL");
+
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-INV-GUARD-001", "INV-GUARD-001", "sup-real", 60m, "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payable = Assert.Single(dbContext.AccountPayables);
+        Assert.Equal("INV-GUARD-001", payable.SourceDocumentNo);
+        Assert.Equal("SUP-REAL", payable.SupplierCode);
     }
 
     [Fact]

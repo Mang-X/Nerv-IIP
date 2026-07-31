@@ -623,7 +623,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
@@ -708,7 +708,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
@@ -747,7 +747,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-2STAGE-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-2STAGE-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-2STAGE-001", "INV-2STAGE-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
@@ -821,7 +821,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
@@ -871,8 +871,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-SUP-001", "SUP-001");
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-SUP-002", "SUP-002");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-SUP-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-SUP-002", "SUP-002");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-SUP-001", "INV-SUP-001", "SUP-001", 100m, "CNY"),
             CancellationToken.None);
@@ -906,8 +906,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-USD-001", "SUP-001");
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-USD-002", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-002", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-USD-001", "INV-USD-001", "SUP-001", 100m, "USD", ExchangeRate: 7.1m),
             CancellationToken.None);
@@ -954,8 +954,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-CNY-001", "SUP-001");
-        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "INV-USD-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-CNY-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-CNY-001", "INV-CNY-001", "SUP-001", 100m, "CNY"),
             CancellationToken.None);

@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -58,6 +59,54 @@ internal static class ErpFinanceSourceDocumentFixtures
                 purchaseOrder.PurchaseOrderNo,
                 [new PurchaseReceiptCommandLine("L1", 1m, "accepted")]),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    public static async Task SeedSupplierInvoiceAsync(
+        Infrastructure.ApplicationDbContext dbContext,
+        string invoiceNo,
+        string supplierCode,
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
+    {
+        var purchaseOrder = PurchaseOrder.Create(
+            organizationId,
+            environmentId,
+            $"PO-SRC-{invoiceNo}",
+            supplierCode,
+            "SITE-001",
+            [new PurchaseOrderLineDraft("L1", "SKU-RM-SRC", "EA", 1m, 1m, new DateOnly(2026, 8, 1))]);
+        purchaseOrder.MarkApprovalRequested($"chain-{invoiceNo}");
+        purchaseOrder.ReleaseAfterApproval($"chain-{invoiceNo}");
+        dbContext.PurchaseOrders.Add(purchaseOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                organizationId,
+                environmentId,
+                $"RCV-SRC-{invoiceNo}",
+                purchaseOrder.PurchaseOrderNo,
+                [new PurchaseReceiptCommandLine("L1", 1m, "accepted")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receipt = (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            dbContext.PurchaseReceipts.Where(x =>
+                x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PurchaseReceiptNo == $"RCV-SRC-{invoiceNo}"),
+            CancellationToken.None)).Single();
+        dbContext.SupplierInvoices.Add(SupplierInvoice.Match(
+            purchaseOrder,
+            receipt,
+            invoiceNo,
+            new DateOnly(2026, 8, 1),
+            new DateOnly(2026, 9, 1),
+            "CNY",
+            0m,
+            0m,
+            [new SupplierInvoiceLineDraft("L1", "L1", 1m, 1m)]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 
