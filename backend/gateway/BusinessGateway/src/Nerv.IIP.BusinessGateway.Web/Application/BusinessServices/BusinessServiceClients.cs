@@ -7279,15 +7279,20 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
 public sealed class HttpBusinessMesClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesClient
 {
-    private const string MesDownstreamService = "business-mes";
-    private const string MesMaterialIssueRequestDocumentType = "mes-material-issue-request";
-    private const string MesWorkOrderDocumentType = "mes-work-order";
-    private const string MesQualityHoldDocumentType = "mes-quality-hold";
-    private const string MesDispatchTaskDocumentType = "mes-dispatch-task";
-    private const string MesTelemetryCandidateDocumentType = "mes-telemetry-production-report-candidate";
-    private const string MesDefectDocumentType = "mes-defect";
-    private const string MesDowntimeEventDocumentType = "mes-downtime-event";
-    private const string MesShiftHandoverDocumentType = "mes-shift-handover";
+    // #1341: downstreamService / downstreamDocumentType 是全仓共用的一张词表（PascalCase），
+    // 由 DemandPlanningDownstreamReferences（BusinessErp/PurchaseRequisition/BusinessMes/WorkOrder）
+    // 定下口径，网关既有读面（BusinessConsoleMesEndpoints 的 "BusinessMes"/"ProductionPlan"）与前端
+    // 精确等值判断（PlanningWorkbench 的 service === 'BusinessMes' && type === 'WorkOrder'）都按它匹配。
+    // MES 受理回执没有理由另起一套编码，因此这里沿用同一词表，新单据类型按同样构词法扩展。
+    private const string MesDownstreamService = "BusinessMes";
+    private const string MesMaterialIssueRequestDocumentType = "MaterialIssueRequest";
+    private const string MesWorkOrderDocumentType = "WorkOrder";
+    private const string MesQualityHoldDocumentType = "QualityHold";
+    private const string MesDispatchTaskDocumentType = "DispatchTask";
+    private const string MesTelemetryCandidateDocumentType = "TelemetryProductionReportCandidate";
+    private const string MesDefectDocumentType = "Defect";
+    private const string MesDowntimeEventDocumentType = "DowntimeEvent";
+    private const string MesShiftHandoverDocumentType = "ShiftHandover";
 
     /// <summary>MES accepted-receipt body as returned by the service endpoints.</summary>
     private sealed record MesServiceAcceptedResponse(string? Status, string? ReferenceId, DateTimeOffset? AcceptedAtUtc);
