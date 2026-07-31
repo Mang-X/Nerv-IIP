@@ -26,21 +26,6 @@ const worker = ref<
     }
   | undefined
 >(undefined)
-const openTasks = ref<
-  Array<{
-    operationTaskId?: string
-    workOrderNo?: string
-    workOrderId?: string
-    status?: string
-    operationCode?: string | null
-    workCenterName?: string | null
-    workCenterCode?: string | null
-    workCenterId?: string
-    deviceAssetName?: string | null
-    deviceAssetCode?: string | null
-  }>
->([])
-const myTasksPending = ref(false)
 const warehouseEntries = ref<Array<{ key: string; label: string; route: string; count: number }>>(
   [],
 )
@@ -64,7 +49,6 @@ const inspectionHasFailedResponse = ref(false)
 
 vi.mock('@/composables/useWorkbenchHome', () => {
   const HOME_PERMISSIONS = {
-    myTasks: 'business.mes.dispatch.read',
     workerProfile: 'business.masterdata.resources.read',
     wmsReceipts: 'business.wms.receipts.read',
     wmsShipments: 'business.wms.shipments.read',
@@ -83,17 +67,6 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       can: (code: string) => permissions.value.has(code),
       worker,
       displayName: computed(() => worker.value?.displayName || 'emp010'),
-    }),
-    useMyDispatchTasks: () => ({
-      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.myTasks)),
-      openTasks,
-      queuedCount: computed(() => openTasks.value.filter((t) => t.status === 'Queued').length),
-      inProgressCount: computed(
-        () => openTasks.value.filter((t) => t.status === 'InProgress').length,
-      ),
-      pending: myTasksPending,
-      error: ref(null),
-      refresh: vi.fn(),
     }),
     useWarehouseSummary: () => ({
       enabled: computed(
@@ -125,7 +98,6 @@ vi.mock('@/composables/useWorkbenchHome', () => {
 import HomePage from './index.vue'
 
 const ALL_PERMISSIONS = [
-  'business.mes.dispatch.read',
   'business.masterdata.resources.read',
   'business.wms.receipts.read',
   'business.wms.shipments.read',
@@ -153,8 +125,6 @@ describe('PDA home', () => {
     unacknowledgedCount.value = 0
     permissions.value = new Set(ALL_PERMISSIONS)
     worker.value = undefined
-    openTasks.value = []
-    myTasksPending.value = false
     warehouseEntries.value = []
     inspectionTasks.value = []
     organizationId.value = 'org-001'
@@ -188,6 +158,8 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('报修')
     expect(wrapper.text()).toContain('点检')
     expect(wrapper.text()).toContain('查看报警')
+    expect(wrapper.text()).not.toContain('我的任务')
+    expect(wrapper.text()).not.toContain('暂无派给我的任务')
   })
 
   it('tailors the app wall and sections to the principal permissions（仓储角色不见 MES 入口）', () => {
@@ -295,27 +267,6 @@ describe('PDA home', () => {
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshInspection).toHaveBeenCalledTimes(1)
-  })
-
-  it('renders my dispatch tasks with status tags, and an empty state without tasks', async () => {
-    openTasks.value = [
-      {
-        operationTaskId: 'OT-001',
-        workOrderNo: 'WO-2026-00001',
-        status: 'InProgress',
-        operationCode: 'OP-30',
-        workCenterName: '装配一线',
-      },
-      { operationTaskId: 'OT-002', workOrderNo: 'WO-2026-00002', status: 'Queued' },
-    ]
-    const wrapper = mount(HomePage)
-    expect(wrapper.text()).toContain('WO-2026-00001')
-    expect(wrapper.text()).toContain('进行中')
-    expect(wrapper.text()).toContain('工序 OP-30')
-
-    openTasks.value = []
-    await wrapper.vm.$nextTick()
-    expect(wrapper.text()).toContain('暂无派给我的任务')
   })
 
   it('shows the worker identity in the header when the directory profile is available', () => {
