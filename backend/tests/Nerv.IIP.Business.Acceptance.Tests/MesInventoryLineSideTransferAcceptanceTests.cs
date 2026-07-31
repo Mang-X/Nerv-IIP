@@ -585,9 +585,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var firstAttemptEvents = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(firstAttemptEvents[0]));
+            firstAttemptEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(firstAttemptEvents[1]));
+            firstAttemptEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
         await failedConsumer.HandleAsync(
@@ -606,9 +606,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var retryEvents = issueRequest.GetDomainEvents().ToArray();
         var retryIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(retryEvents[0]));
+            retryEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(retryEvents[1]));
+            retryEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -896,9 +896,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var firstAttempt = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(firstAttempt[0]));
+            firstAttempt.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(firstAttempt[1]));
+            firstAttempt.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
