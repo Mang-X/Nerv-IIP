@@ -1487,6 +1487,7 @@ public sealed class MaintenanceEndpointContractTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             });
         using var client = factory.CreateClient();

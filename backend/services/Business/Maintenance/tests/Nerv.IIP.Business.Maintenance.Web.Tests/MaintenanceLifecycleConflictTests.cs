@@ -283,6 +283,7 @@ public sealed class MaintenanceLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
                 builder.ConfigureTestServices(services =>
                 {

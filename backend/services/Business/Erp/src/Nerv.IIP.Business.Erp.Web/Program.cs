@@ -44,7 +44,7 @@ try
     {
         client.BaseAddress = masterDataBaseAddress;
     }).UseHttpClientMetrics();
-    var wmsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5118");
+    var wmsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5115");
     builder.Services.AddHttpClient<IWmsOutboundCancellationClient, HttpWmsOutboundCancellationClient>(client =>
     {
         client.BaseAddress = wmsBaseAddress;
