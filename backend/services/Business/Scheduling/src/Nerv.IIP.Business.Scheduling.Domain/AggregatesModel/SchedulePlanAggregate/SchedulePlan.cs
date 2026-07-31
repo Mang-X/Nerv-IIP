@@ -77,7 +77,9 @@ public sealed record GeneratedSchedulePlanSnapshot(
     IReadOnlyList<GeneratedScheduleAssignmentSnapshot> Assignments,
     IReadOnlyList<GeneratedScheduleResourceLoadSnapshot> ResourceLoads,
     IReadOnlyList<GeneratedScheduleConflictSnapshot> Conflicts,
-    IReadOnlyList<GeneratedUnscheduledOperationSnapshot> UnscheduledOperations);
+    IReadOnlyList<GeneratedUnscheduledOperationSnapshot> UnscheduledOperations,
+    string MaterialRisksJson = "[]",
+    string EquipmentRisksJson = "[]");
 
 public sealed record GeneratedSchedulePlanMetricsSnapshot(
     int ScheduledOperationCount,
@@ -262,6 +264,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
         Status = SchedulePlanLifecycleStatus.Generated;
+        MaterialRisksJson = NormalizeJsonArray(plan.MaterialRisksJson);
+        EquipmentRisksJson = NormalizeJsonArray(plan.EquipmentRisksJson);
         ApplyMetrics(plan.Metrics);
 
         foreach (var assignment in plan.Assignments)
@@ -316,6 +320,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public int LateOperationCount { get; private set; }
     public decimal OnTimeRate { get; private set; }
     public decimal AverageResourceUtilization { get; private set; }
+    public string MaterialRisksJson { get; private set; } = "[]";
+    public string EquipmentRisksJson { get; private set; } = "[]";
     public IReadOnlyCollection<SchedulePlanAssignment> Assignments => assignments;
     public IReadOnlyCollection<SchedulePlanResourceLoad> ResourceLoads => resourceLoads;
     public IReadOnlyCollection<SchedulePlanConflict> Conflicts => conflicts;
@@ -416,6 +422,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
+        MaterialRisksJson = NormalizeJsonArray(plan.MaterialRisksJson);
+        EquipmentRisksJson = NormalizeJsonArray(plan.EquipmentRisksJson);
         ApplyMetrics(plan.Metrics);
         assignments.Clear();
         resourceLoads.Clear();
@@ -490,6 +498,11 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         }
 
         return value.Trim();
+    }
+
+    private static string NormalizeJsonArray(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "[]" : value.Trim();
     }
 }
 

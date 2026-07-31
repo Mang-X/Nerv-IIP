@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Infrastructure.Repositories;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -100,6 +102,144 @@ public sealed class SchedulingPersistenceTests
             Assert.Contains(persisted.UnscheduledOperations, x => x.WorkOrderId == "wo-new" && x.OperationId == "op-unscheduled-new");
             Assert.DoesNotContain(persisted.UnscheduledOperations, x => x.WorkOrderId == "wo-unscheduled-old");
         }
+    }
+
+    [Fact]
+    public async Task Generated_plan_risks_survive_persistence_round_trip()
+    {
+        var problem = CreateRiskRoundTripProblem();
+        var generated = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(
+                problem,
+                "plan-risk-round-trip-001",
+                problem.HorizonStartUtc),
+            SchedulePlanStatusContract.Generated);
+
+        Assert.Single(generated.MaterialRisks ?? []);
+        Assert.Single(generated.EquipmentRisks ?? []);
+        Assert.Equal(1, generated.Metrics.MaterialRiskOperationCount);
+        Assert.Equal(1, generated.Metrics.EquipmentRiskOperationCount);
+        Assert.Contains(generated.GanttItems, x => x.HasMaterialRisk && x.HasEquipmentRisk);
+
+        await using var provider = CreateInMemoryProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                SchedulePlanContractMapper.ToDomainSnapshot(generated)));
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        SchedulePlanContract reloaded;
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var persisted = await dbContext.SchedulePlans
+                .AsNoTracking()
+                .Include(x => x.Assignments)
+                .Include(x => x.ResourceLoads)
+                .Include(x => x.Conflicts)
+                .Include(x => x.UnscheduledOperations)
+                .SingleAsync(x => x.PlanId == generated.PlanId, CancellationToken.None);
+
+            reloaded = SchedulePlanContractMapper.ToContract(persisted);
+        }
+
+        Assert.Equal(
+            JsonSerializer.Serialize(generated.MaterialRisks, SchedulingJson.Options),
+            JsonSerializer.Serialize(reloaded.MaterialRisks, SchedulingJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(generated.EquipmentRisks, SchedulingJson.Options),
+            JsonSerializer.Serialize(reloaded.EquipmentRisks, SchedulingJson.Options));
+        Assert.Equal(generated.Metrics.MaterialRiskOperationCount, reloaded.Metrics.MaterialRiskOperationCount);
+        Assert.Equal(generated.Metrics.EquipmentRiskOperationCount, reloaded.Metrics.EquipmentRiskOperationCount);
+        Assert.Equal(
+            generated.GanttItems.Select(x => (x.OperationId, x.HasMaterialRisk, x.HasEquipmentRisk)),
+            reloaded.GanttItems.Select(x => (x.OperationId, x.HasMaterialRisk, x.HasEquipmentRisk)));
+    }
+
+    private static SchedulingProblemContract CreateRiskRoundTripProblem()
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.Zero);
+
+        return new SchedulingProblemContract(
+            ContractVersion: 1,
+            ProblemId: "problem-risk-round-trip-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-dev",
+            HorizonStartUtc: horizonStart,
+            HorizonEndUtc: horizonEnd,
+            Orders:
+            [
+                new SchedulingOrderContract(
+                    OrderId: "WO-RISK-001",
+                    SkuCode: "FG-RISK",
+                    Quantity: 1,
+                    DueUtc: horizonEnd,
+                    Priority: 1,
+                    IsRush: false,
+                    Operations:
+                    [
+                        new SchedulingOperationContract(
+                            OperationId: "WO-RISK-001-OP10",
+                            OperationSequence: 10,
+                            PredecessorOperationIds: [],
+                            DurationMinutes: 60,
+                            RequiredCapabilityCode: "CAP-RISK",
+                            EligibleResourceIds: ["DEV-RISK-01"],
+                            PrimaryResourceId: "DEV-RISK-01",
+                            EarliestStartUtc: horizonStart,
+                            DueUtc: horizonEnd,
+                            Priority: 1,
+                            IsRush: false,
+                            SplitPolicy: ScheduleSplitPolicyContract.NonSplittable,
+                            MaterialReadyUtc: null,
+                            QualityBlockReason: null,
+                            SourceReference: "TEST:RISK-ROUND-TRIP")
+                    ])
+            ],
+            Resources:
+            [
+                new SchedulingResourceContract(
+                    ResourceId: "DEV-RISK-01",
+                    WorkCenterId: "WC-RISK",
+                    CapabilityCodes: ["CAP-RISK"],
+                    CapacityUnits: 1,
+                    CalendarId: "CAL-RISK",
+                    SortKey: "001")
+            ],
+            Calendars:
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-RISK",
+                    ShiftWindows: [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "day-shift")])
+            ],
+            UnavailabilityWindows: [],
+            MaterialReadiness:
+            [
+                new SchedulingMaterialReadinessContract(
+                    ScopeType: "order",
+                    ScopeId: "WO-RISK-001",
+                    MaterialReadyUtc: null,
+                    IsReady: false,
+                    ReasonCodes: ["material-shortage"],
+                    Shortages: [new SchedulingMaterialShortageContract("RM-RISK-01", "LOT-RISK-01", 10m, 4m, 6m)])
+            ],
+            QualityBlocks: [],
+            LockedAssignments: [],
+            EquipmentDataRisks:
+            [
+                new SchedulingEquipmentDataRiskContract(
+                    ResourceId: "DEV-RISK-01",
+                    WorkCenterId: "WC-RISK",
+                    ReasonCode: "source-stale",
+                    StartUtc: horizonStart,
+                    EndUtc: horizonEnd,
+                    SourceReferenceLabel: "TEST:RISK-ROUND-TRIP")
+            ]);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
