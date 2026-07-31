@@ -102,39 +102,52 @@ public sealed class PostgreSqlIamAuthService(
     {
         var now = DateTimeOffset.UtcNow;
         var refreshTokenHash = tokenService.HashSecret(refreshToken);
-        var session = await userSessionRepository.ConsumeActiveRefreshTokenAsync(
+        var previousSession = await userSessionRepository.GetActiveByRefreshTokenHashAsync(
+            refreshTokenHash,
+            now,
+            cancellationToken);
+        if (previousSession is null)
+        {
+            await RevokeRefreshTokenFamilyOnReplayAsync(refreshTokenHash, now, cancellationToken);
+            throw Unauthorized();
+        }
+
+        var user = await userRepository.GetByIdAsync(previousSession.UserId, cancellationToken);
+        if (user is null || !user.Enabled || user.IsAccountExpired(now))
+        {
+            await userSessionRepository.RevokeFamilyAsync(
+                previousSession.TokenFamilyId,
+                now,
+                "refresh-user-invalid",
+                cancellationToken);
+            throw Unauthorized();
+        }
+
+        var rotatedRefreshToken = tokenService.CreateRefreshToken();
+        var rotatedSession = CreateSession(
+            user,
+            rotatedRefreshToken,
+            DateTimeOffset.UtcNow,
+            clientInfo,
+            ipAddress,
+            previousSession: previousSession);
+        var rotated = await userSessionRepository.RotateActiveRefreshTokenAsync(
             refreshTokenHash,
             now,
             "refresh-rotated",
+            rotatedSession,
             cancellationToken);
-        if (session is null)
+        if (!rotated)
         {
-            var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(refreshTokenHash, cancellationToken);
-            if (replayedSession is not null && replayedSession.RevokedAtUtc is not null)
-            {
-                var revokedCount = await userSessionRepository.RevokeFamilyAsync(
-                    replayedSession.TokenFamilyId,
-                    now,
-                    "refresh-reuse-detected",
-                    cancellationToken);
-                logger.LogWarning(
-                    "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
-                    replayedSession.UserId.Id,
-                    replayedSession.TokenFamilyId,
-                    replayedSession.Id.Id,
-                    revokedCount);
-            }
-
+            await RevokeRefreshTokenFamilyOnReplayAsync(refreshTokenHash, now, cancellationToken);
             throw Unauthorized();
         }
 
-        var user = await userRepository.GetByIdAsync(session.UserId, cancellationToken);
-        if (user is null || !user.Enabled || user.IsAccountExpired(now))
-        {
-            throw Unauthorized();
-        }
-
-        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken, previousSession: session);
+        return await CreateAuthResponseAsync(
+            user,
+            rotatedSession,
+            rotatedRefreshToken,
+            cancellationToken);
     }
 
     public async Task RevokeSessionAsync(
@@ -626,12 +639,40 @@ public sealed class PostgreSqlIamAuthService(
             }
         }
 
-        var session = new UserSession(
+        var session = CreateSession(
+            user,
+            refreshToken,
+            now,
+            clientInfo,
+            ipAddress,
+            authenticationMethod,
+            externalProvider,
+            externalSubject,
+            mfaVerifiedAtUtc,
+            previousSession);
+
+        await userSessionRepository.AddAsync(session, cancellationToken);
+        return await CreateAuthResponseAsync(user, session, refreshToken, cancellationToken);
+    }
+
+    private UserSession CreateSession(
+        User user,
+        string refreshToken,
+        DateTimeOffset issuedAtUtc,
+        string? clientInfo,
+        string? ipAddress,
+        string authenticationMethod = "password",
+        string? externalProvider = null,
+        string? externalSubject = null,
+        DateTimeOffset? mfaVerifiedAtUtc = null,
+        UserSession? previousSession = null)
+    {
+        return new UserSession(
             new UserSessionId($"session-{Guid.CreateVersion7():N}"),
             user.Id,
             tokenService.HashSecret(refreshToken),
-            now,
-            now.AddDays(14),
+            issuedAtUtc,
+            issuedAtUtc.AddDays(14),
             user.PermissionVersion,
             clientInfo,
             ipAddress,
@@ -641,8 +682,14 @@ public sealed class PostgreSqlIamAuthService(
             mfaVerifiedAtUtc,
             previousSession?.TokenFamilyId,
             previousSession?.Id.Id);
+    }
 
-        await userSessionRepository.AddAsync(session, cancellationToken);
+    private async Task<AuthResponse> CreateAuthResponseAsync(
+        User user,
+        UserSession session,
+        string refreshToken,
+        CancellationToken cancellationToken)
+    {
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
         var issuedAtUtc = DateTimeOffset.UtcNow;
         var accessToken = membership is null
@@ -660,6 +707,32 @@ public sealed class PostgreSqlIamAuthService(
             session.Id.Id,
             expiresAtUtc,
             user.PasswordChangeRequired || (user.PasswordExpiresAtUtc is not null && user.PasswordExpiresAtUtc <= issuedAtUtc));
+    }
+
+    private async Task RevokeRefreshTokenFamilyOnReplayAsync(
+        string refreshTokenHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(
+            refreshTokenHash,
+            cancellationToken);
+        if (replayedSession is null || replayedSession.RevokedAtUtc is null)
+        {
+            return;
+        }
+
+        var revokedCount = await userSessionRepository.RevokeFamilyAsync(
+            replayedSession.TokenFamilyId,
+            now,
+            "refresh-reuse-detected",
+            cancellationToken);
+        logger.LogWarning(
+            "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
+            replayedSession.UserId.Id,
+            replayedSession.TokenFamilyId,
+            replayedSession.Id.Id,
+            revokedCount);
     }
 
     private static UnauthorizedAccessException Unauthorized()
