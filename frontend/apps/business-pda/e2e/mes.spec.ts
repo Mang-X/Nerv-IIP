@@ -1,10 +1,40 @@
 import { expect, test } from '@playwright/test'
-import { routeBusinessConsoleApi, routeConsoleApi, seedStoredSession } from './fixtures'
+import {
+  productionReportReceipt,
+  routeBusinessConsoleApi,
+  routeConsoleApi,
+  seedStoredSession,
+} from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
   await seedStoredSession(page)
+})
+
+// #1297：PDA 侧作业范围闭环。后端不带 scopeKind/scopeId 只回授权清单、selectedScope 恒空，
+// 所以「操作工登录后能不能拿到工序/工单数据」完全取决于前端是否走完
+// 「清单 → 选择 → 带参重核验」。这条断言的是范围参数真的进了业务查询，且换范围会重取。
+test('作业范围：授权清单渲染成移动端选择器，切换后按新范围重取工序任务', async ({ page }) => {
+  const requestedScopeIds: string[] = []
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    requestedScopeIds.push(new URL(route.request().url()).searchParams.get('scopeId') ?? '')
+    return routeBusinessConsoleApi(route)
+  })
+
+  await page.goto('/mes/operation')
+  await expect(page.getByRole('heading', { name: '工序执行' })).toBeVisible()
+
+  // 自动兜底选中清单第一项，并且工序任务查询只在带上该范围之后才发出。
+  const scopeTrigger = page.getByTestId('mes-work-scope-select').locator('button').first()
+  await expect(scopeTrigger).toHaveText('精加工一线（工作中心）')
+  await expect.poll(() => requestedScopeIds).toEqual(['WC-A'])
+
+  // 单手可达的下拉面板里换范围 → 重新核验 → 按新范围重取。
+  await scopeTrigger.click()
+  await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
+  await expect(scopeTrigger).toHaveText('精加工二线（工作中心）')
+  await expect.poll(() => requestedScopeIds).toEqual(['WC-A', 'WC-B'])
 })
 
 test('工序执行：列表 → 完成（二次确认）→ 成功结果', async ({ page }) => {
@@ -41,14 +71,20 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
       return routeBusinessConsoleApi(route)
     }
     submittedReport = route.request().postDataJSON() as Record<string, unknown>
+    const productionReportId = '019f-e2e-production-report'
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         success: true,
         data: {
-          productionReportId: '019f-e2e-production-report',
+          productionReportId,
           reportNo: 'RPT-E2E-0001',
+          // 写操作必须带权威回执，否则前端只会判「结果尚未核实」（#1219）。
+          operationReceipt: productionReportReceipt(
+            productionReportId,
+            String(submittedReport.idempotencyKey ?? ''),
+          ),
         },
       }),
     })

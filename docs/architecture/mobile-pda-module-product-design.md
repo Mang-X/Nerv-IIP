@@ -32,6 +32,8 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**我的任务�
 
 权限以 **BusinessGateway per-request enforcement 为唯一权威**：Gateway 按当前 bearer token、组织/环境上下文与 operation permission 做每请求授权。前端按 permission catalog / `me` 上下文 / feature flag 对应用墙与任务入口做裁剪，但这只是 UX 优化，不是授权边界；客户端不得因为入口已隐藏或已显示而跳过 401/403 处理。「我的任务」的个人范围在后端个人过滤端点（见 §5 缺口 4）落地前为客户端按工作中心/状态聚合，仅作展示，最终可见性仍以 Gateway 返回为准。
 
+**作业范围（MES 工序执行 / 报工）**：这两页的读写都由「主体已核验作业范围」把门。后端 `GET /api/business-console/v1/me/work-context` 按设计不替用户选范围——不带 `scopeKind`/`scopeId` 时只回 `authorizedScopes` 候选清单，`selectedScope` 恒空。PDA 因此走三跳闭环：取授权清单 → 选择（记住的选择仍被授权时优先，否则清单第一项）→ 带 `scopeKind`/`scopeId` 重新核验，`selectedScope` 只认服务端回填，越权选择由 Gateway 403 兜底。范围未就绪时 fail closed：不发业务查询，页面直说是「还没选」还是「一个已授权范围都没有（请管理员在 IAM 配数据范围）」，绝不反复发失败请求，也不渲染假空态。页面顶部的「作业范围」整宽下拉筛选条是唯一切换入口（44px 触发行 / 48px 选项行，单手拇指可达）；显式切换按 principal+组织+环境 记住（localStorage），并在工序执行与报工之间共享同一份选择。
+
 ## 4. 分期
 
 里程碑顺序（与 spec §11 一致）：
