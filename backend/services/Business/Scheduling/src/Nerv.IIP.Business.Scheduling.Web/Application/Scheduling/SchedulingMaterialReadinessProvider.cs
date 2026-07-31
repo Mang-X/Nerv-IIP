@@ -190,12 +190,14 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return [];
         }
 
+        // MES 没给原因串时自己兜一条,措辞与 MES 侧对齐(`MATERIAL_SHORTAGE: 中文事实`):
+        // 这些串会进排程读面的「物料风险」说明,直出英文生码用户读不懂(MAN-698 台账 #35)。
         var reasonCodes = response.BlockingReasons.Count == 0
             ? response.Items
                 .Where(x => x.ShortageQuantity > 0)
                 .Select(x => string.IsNullOrWhiteSpace(x.MaterialLotId)
-                    ? $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}"
-                    : $"{x.MaterialId} {x.MaterialLotId} shortage {x.ShortageQuantity:0.######}")
+                    ? $"MATERIAL_SHORTAGE: 物料 {x.MaterialId} 缺口 {x.ShortageQuantity:0.######}"
+                    : $"MATERIAL_SHORTAGE: 物料 {x.MaterialId}，批次 {x.MaterialLotId} 缺口 {x.ShortageQuantity:0.######}")
                 .ToArray()
             : response.BlockingReasons;
         // 结构化缺口:排程读面要能讲清「缺哪个物料、缺多少」,不能只给一串拼好的原因串。

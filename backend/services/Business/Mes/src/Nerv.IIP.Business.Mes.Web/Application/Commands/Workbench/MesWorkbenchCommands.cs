@@ -120,7 +120,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 cancellationToken);
             if (shortages.Count > 0)
             {
-                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+                throw new KnownException($"物料齐套未满足：{MaterialReadinessGuards.DescribeForUser(shortages)}");
             }
         }
 
@@ -1290,7 +1290,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                     cancellationToken);
             if (!readiness.AllowedActions.Contains("start", StringComparer.Ordinal))
             {
-                throw new KnownException(string.Join("; ", readiness.BlockReasons));
+                throw new KnownException(MaterialReadinessGuards.DescribeForUser(readiness.BlockReasons));
             }
 
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -1470,6 +1470,44 @@ internal static class MaterialReadinessGuards
             && ActiveIssueRequestStatuses.Contains(status, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// 缺料阻塞原因的**唯一措辞**：<c>MATERIAL_SHORTAGE: 物料 X（批次 Y）缺口 N</c>。
+    /// 与 <see cref="MissingRequirementSnapshotReason"/> 同一形态（<c>英文码: 中文说明</c>）——
+    /// 前端按冒号前的码取标签与下一步动作，冒号后的中文原样作为明细上屏。
+    /// 曾经三处各写一套、其中两处直出英文生码「物料编码 + shortage + 数量」，
+    /// 界面上既读不懂又被徽标截断（MAN-698 台账 #35）。新增缺料产出点一律走这里。
+    /// </summary>
+    public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
+    {
+        var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
+        return $"MATERIAL_SHORTAGE: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
+    }
+
+    /// <summary>
+    /// 把阻塞原因串成**给用户看的一句话**：读面保留 <c>CODE: 中文</c>（前端按码取标签与下一步动作），
+    /// 但写操作被拒时的 <see cref="KnownException"/> 文案要去掉英文码——它经分层透传直接上屏，
+    /// 反馈规范禁止界面出现英文错误码（`frontend/DESIGN/patterns/feedback-and-notifications.md`）。
+    /// </summary>
+    public static string DescribeForUser(IEnumerable<string> reasons)
+    {
+        return string.Join("；", reasons.Select(StripReasonCode).Where(x => x.Length > 0));
+    }
+
+    private static string StripReasonCode(string reason)
+    {
+        var separator = reason.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0)
+        {
+            return reason.Trim();
+        }
+
+        var code = reason[..separator];
+        // 只剥「全大写下划线」形态的码，别把中文说明里的冒号误当分隔符。
+        return code.All(x => char.IsAsciiLetterUpper(x) || char.IsAsciiDigit(x) || x == '_')
+            ? reason[(separator + 1)..].Trim()
+            : reason.Trim();
+    }
+
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
         ApplicationDbContext dbContext,
         IMesMaterialRequirementSnapshotProvider? snapshotProvider,
@@ -1616,9 +1654,7 @@ internal static class MaterialReadinessGuards
                 return (x.Key.MaterialId, MaterialLotId: (string?)x.Key.MaterialLotId, Shortage: shortage);
             })
             .Where(x => x.Shortage > 0)
-            .Select(x => x.MaterialLotId is null
-                ? $"{x.MaterialId} shortage {x.Shortage:0.######}"
-                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.Shortage:0.######}")
+            .Select(x => FormatShortageReason(x.MaterialId, x.MaterialLotId, x.Shortage))
             .ToArray();
     }
 

@@ -1713,9 +1713,31 @@ file sealed class SchedulerState
             return $"物料未齐套:{detail}{more}。{Suffix}";
         }
 
-        return reasonCodes.Count > 0
-            ? $"物料未齐套({string.Join('、', reasonCodes)})。{Suffix}"
+        // 原因串来自 MES,形态是 `CODE: 中文事实`——上屏前把英文码剥掉,
+        // 界面上不该出现 MATERIAL_SHORTAGE 这类码(MAN-698 台账 #35)。
+        var readableReasons = reasonCodes
+            .Select(StripReasonCode)
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return readableReasons.Length > 0
+            ? $"物料未齐套({string.Join('、', readableReasons)})。{Suffix}"
             : $"物料未齐套。{Suffix}";
+    }
+
+    /// <summary>剥掉 `CODE: ` 前缀,只留中文事实;中文说明里自带的冒号不当分隔符。</summary>
+    private static string StripReasonCode(string reason)
+    {
+        var separator = reason.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0)
+        {
+            return reason.Trim();
+        }
+
+        var code = reason[..separator];
+        return code.All(x => char.IsAsciiLetterUpper(x) || char.IsAsciiDigit(x) || x == '_')
+            ? reason[(separator + 1)..].Trim()
+            : reason.Trim();
     }
 
     private void AddConflict(

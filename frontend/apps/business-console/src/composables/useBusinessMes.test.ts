@@ -661,6 +661,39 @@ describe('business MES composables', () => {
     })
   })
 
+  // MAN-698 台账 #35：缺料阻塞原来整条塞进徽标（且后端还是英文生码
+  // 「物料编码 + shortage + 数量」），用户既读不懂又只看得见前半截。
+  // 现在码进短标签、中文事实进 detail。
+  it('缺料阻塞：码取短标签，中文事实单独给 detail，不把整条塞进徽标', () => {
+    expect(
+      describeMesReadinessReason('MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 2'),
+    ).toEqual({
+      code: 'MATERIAL_SHORTAGE',
+      label: '物料缺料',
+      detail: '物料 MAT-OIL，批次 LOT-OIL-A 缺口 2',
+      nextStep: '按缺口发领料单或补齐线边库存后再开工',
+    })
+    expect(
+      describeMesReadinessReason('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照。'),
+    ).toMatchObject({ label: '齐套快照缺失', detail: '工单缺少齐套需求快照。' })
+    expect(
+      describeMesReadinessReason('PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成'),
+    ).toMatchObject({ label: '前序工序未完工', detail: '前序工序尚未完成' })
+  })
+
+  it('未登记的码退回中文说明当标签；中文里的冒号不会被当成码分隔符', () => {
+    expect(describeMesReadinessReason('SOME_NEW_CODE: 这条还没登记')).toMatchObject({
+      code: 'SOME_NEW_CODE',
+      label: '这条还没登记',
+      detail: '',
+      nextStep: '查看阻塞详情并按来源业务页面处理',
+    })
+    expect(describeMesReadinessReason('物料齐套未满足：还差 3 件')).toMatchObject({
+      label: '物料齐套未满足：还差 3 件',
+      detail: '',
+    })
+  })
+
   it('lists work orders with default context and safe items', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesWorkOrders', {
       success: true,

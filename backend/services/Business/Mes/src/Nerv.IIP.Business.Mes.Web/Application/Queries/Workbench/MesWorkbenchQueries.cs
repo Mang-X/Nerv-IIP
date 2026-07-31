@@ -1456,9 +1456,7 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
 
         var blockingReasons = rows
             .Where(x => x.ShortageQuantity > 0)
-            .Select(x => x.MaterialLotId is null
-                ? $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}"
-                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.ShortageQuantity:0.######}")
+            .Select(x => MaterialReadinessGuards.FormatShortageReason(x.MaterialId, x.MaterialLotId, x.ShortageQuantity))
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
         return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
