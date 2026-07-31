@@ -2,10 +2,10 @@
 #   Category: verify
 #   SideEffects:
 #     - Starts local PostgreSQL and Redis compose services when they are not already running
-#     - Builds and starts ERP and WMS as separate managed processes
+#     - Builds and starts ERP, WMS, and Inventory as separate managed processes
 #     - Creates a disposable PostgreSQL database and publishes real Redis CAP integration events
 #   Writes:
-#     - bin/ and obj/ outputs for ERP, WMS, and the full-chain replay probe
+#     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
 #     - artifacts/script-logs/**
 #     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
 #   Cleanup:
@@ -72,18 +72,43 @@ function Wait-Healthy {
     throw "Service did not become healthy at $Uri. Logs: $($ManagedProcess.LogDirectory)"
 }
 
+function Wait-WmsOutboundOrderEvent {
+    param([object]$ManagedProcess, [string]$DeliveryOrderNo)
+    $stdoutPath = Join-Path $ManagedProcess.LogDirectory 'stdout.log'
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        if ($ManagedProcess.Process.HasExited) {
+            throw "WMS exited before consuming the outbound-order event. Logs: $($ManagedProcess.LogDirectory)"
+        }
+        if ((Test-Path -LiteralPath $stdoutPath) -and
+            (Select-String -LiteralPath $stdoutPath -SimpleMatch $DeliveryOrderNo -Quiet)) {
+            Start-Sleep -Seconds 2
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw "WMS did not log the run-scoped outbound-order event for $DeliveryOrderNo. Logs: $($ManagedProcess.LogDirectory)"
+}
+
 function Invoke-JsonPost {
     param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
     Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
 }
 
 function Wait-WmsOutboundOrder {
-    param([string]$WmsUrl, [hashtable]$Headers, [string]$DeliveryOrderNo)
+    param(
+        [string]$WmsUrl,
+        [hashtable]$Headers,
+        [string]$DeliveryOrderNo,
+        [string]$ActorPrincipalId,
+        [string]$SiteCode)
     $keyword = [Uri]::EscapeDataString($DeliveryOrderNo)
+    $actor = [Uri]::EscapeDataString($ActorPrincipalId)
+    $site = [Uri]::EscapeDataString($SiteCode)
     $deadline = (Get-Date).AddSeconds(90)
     do {
         try {
-            $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword=$keyword" -Headers $Headers
+            $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&keyword=$keyword&actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site" -Headers $Headers
             $rows = @($response.data.items | Where-Object { $_.outboundOrderNo -eq $DeliveryOrderNo })
             if ($rows.Count -eq 1) { return $rows[0] }
         }
@@ -91,6 +116,29 @@ function Wait-WmsOutboundOrder {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     throw "WMS outbound order did not converge for ERP delivery $DeliveryOrderNo."
+}
+
+function Wait-WmsPickingTask {
+    param(
+        [string]$WmsUrl,
+        [hashtable]$Headers,
+        [string]$TaskNo,
+        [string]$ActorPrincipalId,
+        [string]$SiteCode)
+    $keyword = [Uri]::EscapeDataString($TaskNo)
+    $actor = [Uri]::EscapeDataString($ActorPrincipalId)
+    $site = [Uri]::EscapeDataString($SiteCode)
+    $deadline = (Get-Date).AddSeconds(90)
+    do {
+        try {
+            $response = Invoke-RestMethod -Method Get -Uri "$WmsUrl/api/business/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&keyword=$keyword&actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site" -Headers $Headers
+            $rows = @($response.data.items | Where-Object { $_.taskNo -eq $TaskNo })
+            if ($rows.Count -eq 1) { return $rows[0] }
+        }
+        catch { }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw "WMS picking task did not converge for task $TaskNo."
 }
 
 function Wait-ErpSalesOrder {
@@ -163,14 +211,20 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 $capVersion = "man527-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $internalToken = "man527-$([Guid]::NewGuid().ToString('N'))"
 $deliveryOrderNo = "DO-MAN527-$([Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant())"
+$wmsActorPrincipalId = 'user-emp-049'
+$wmsSiteCode = 'SITE-001'
+$wmsShippingPoolCode = 'POOL-WMS-SHIPPING'
 $erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $wmsUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
+$inventoryUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $erpProcess = $null
 $wmsProcess = $null
+$inventoryProcess = $null
 $databaseCreated = $false
 
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
 $wmsProject = Join-Path $root 'backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Nerv.IIP.Business.Wms.Web.csproj'
+$inventoryProject = Join-Path $root 'backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj'
 $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
 
 try {
@@ -180,7 +234,7 @@ try {
     $databaseCreated = $true
 
     if (-not $SkipBuild) {
-        foreach ($project in @($erpProject, $wmsProject, $probeProject)) {
+        foreach ($project in @($erpProject, $wmsProject, $inventoryProject, $probeProject)) {
             Invoke-DotNet -Arguments @('build', $project, '-m:1', '-nr:false', '/p:UseSharedCompilation=false') -WorkingDirectory $root -TimeoutSeconds 600 -Name 'man527-build' | Out-Null
         }
     }
@@ -199,7 +253,15 @@ try {
         InternalService__BearerToken = $internalToken
     }
 
-    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $wmsUrl }) -ScriptBlock {
+    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $inventoryUrl }) -ScriptBlock {
+        $script:inventoryProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $inventoryProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-inventory'
+    }
+    Wait-Healthy -Uri "$inventoryUrl/health" -ManagedProcess $inventoryProcess
+
+    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
+        ASPNETCORE_URLS = $wmsUrl
+        Inventory__BaseUrl = $inventoryUrl
+    }) -ScriptBlock {
         $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms'
     }
     Wait-Healthy -Uri "$wmsUrl/health" -ManagedProcess $wmsProcess
@@ -236,13 +298,144 @@ try {
         })
     } | Out-Null
 
-    $outbound = Wait-WmsOutboundOrder -WmsUrl $wmsUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
+    Wait-WmsOutboundOrderEvent -ManagedProcess $wmsProcess -DeliveryOrderNo $deliveryOrderNo
+    $wmsProcess.Stop.Invoke('MAN-527 governed work-scope bootstrap')
+    $wmsProcess = $null
+    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
+        ASPNETCORE_URLS = $wmsUrl
+        Inventory__BaseUrl = $inventoryUrl
+        LeaderDemo__History__Enabled = 'true'
+        LeaderDemo__Seed__OrganizationId = 'org-001'
+        LeaderDemo__Seed__EnvironmentId = 'env-dev'
+    }) -ScriptBlock {
+        $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms-work-scope'
+    }
+    Wait-Healthy -Uri "$wmsUrl/health" -ManagedProcess $wmsProcess
+
+    $outbound = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode
     $outboundOrderId = if ($outbound.outboundOrderId -is [string]) { $outbound.outboundOrderId } elseif ($null -ne $outbound.outboundOrderId.value) { $outbound.outboundOrderId.value } else { "$($outbound.outboundOrderId)" }
+    $assignmentUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/assignment"
+    $assignment = Invoke-JsonPost -Uri $assignmentUri -Headers $headers -Body @{
+        outboundOrderId = $outboundOrderId
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        assignerPrincipalId = $wmsActorPrincipalId
+        authorizedSiteCodes = @($wmsSiteCode)
+        poolCode = $wmsShippingPoolCode
+        operatorPrincipalId = $wmsActorPrincipalId
+        idempotencyKey = "man527-assign-$deliveryOrderNo"
+        expectedVersion = [long]$outbound.version
+    }
+    foreach ($outboundLine in @($outbound.lines)) {
+        Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/movements" -Headers $headers -Body @{
+            organizationId = 'org-001'
+            environmentId = 'env-dev'
+            movementType = 'inbound'
+            sourceService = 'man527-acceptance'
+            sourceDocumentId = $deliveryOrderNo
+            sourceDocumentLineId = "$($outboundLine.lineNo)"
+            idempotencyKey = "man527-stock-$deliveryOrderNo-$($outboundLine.lineNo)"
+            skuCode = "$($outboundLine.skuCode)"
+            uomCode = "$($outboundLine.uomCode)"
+            siteCode = $wmsSiteCode
+            locationCode = "$($outboundLine.locationCode)"
+            lotNo = $outboundLine.lotNo
+            serialNo = $outboundLine.serialNo
+            qualityStatus = "$($outboundLine.qualityStatus)"
+            ownerType = "$($outboundLine.ownerType)"
+            ownerId = $outboundLine.ownerId
+            quantity = [decimal]$outboundLine.requestedQuantity
+        } | Out-Null
+
+        $taskNo = "PICK-$deliveryOrderNo-$($outboundLine.lineNo)"
+        $createTaskUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/picking-tasks"
+        $createdTask = Invoke-JsonPost -Uri $createTaskUri -Headers $headers -Body @{
+            outboundOrderId = $outboundOrderId
+            taskNo = $taskNo
+            lineNo = "$($outboundLine.lineNo)"
+            fromLocationCode = "$($outboundLine.locationCode)"
+            toLocationCode = 'PACK-MAN527'
+            quantity = [decimal]$outboundLine.requestedQuantity
+        }
+        $warehouseTaskId = if ($createdTask.data.warehouseTaskId -is [string]) {
+            $createdTask.data.warehouseTaskId
+        } elseif ($null -ne $createdTask.data.warehouseTaskId.value) {
+            $createdTask.data.warehouseTaskId.value
+        } else {
+            "$($createdTask.data.warehouseTaskId)"
+        }
+        $pickingTask = Wait-WmsPickingTask `
+            -WmsUrl $wmsUrl `
+            -Headers $headers `
+            -TaskNo $taskNo `
+            -ActorPrincipalId $wmsActorPrincipalId `
+            -SiteCode $wmsSiteCode
+
+        $taskAssignmentUri = "$wmsUrl/api/business/v1/wms/picking-tasks/$([Uri]::EscapeDataString($warehouseTaskId))/assignment"
+        $taskAssignment = Invoke-JsonPost -Uri $taskAssignmentUri -Headers $headers -Body @{
+            warehouseTaskId = $warehouseTaskId
+            organizationId = 'org-001'
+            environmentId = 'env-dev'
+            assignerPrincipalId = $wmsActorPrincipalId
+            authorizedSiteCodes = @($wmsSiteCode)
+            poolCode = $wmsShippingPoolCode
+            operatorPrincipalId = $wmsActorPrincipalId
+            idempotencyKey = "man527-assign-task-$deliveryOrderNo-$($outboundLine.lineNo)"
+            expectedVersion = [long]$pickingTask.version
+        }
+
+        $taskActionBody = @{
+            warehouseTaskId = $warehouseTaskId
+            organizationId = 'org-001'
+            environmentId = 'env-dev'
+            actorPrincipalId = $wmsActorPrincipalId
+            authorizedSiteCodes = @($wmsSiteCode)
+            scopeKind = 'site'
+            scopeId = $wmsSiteCode
+        }
+        $taskStartUri = "$wmsUrl/api/business/v1/wms/picking-tasks/$([Uri]::EscapeDataString($warehouseTaskId))/start"
+        $taskStart = Invoke-JsonPost -Uri $taskStartUri -Headers $headers -Body ($taskActionBody + @{
+            idempotencyKey = "man527-start-task-$deliveryOrderNo-$($outboundLine.lineNo)"
+            expectedVersion = [long]$taskAssignment.data.version
+        })
+        $taskProgressUri = "$wmsUrl/api/business/v1/wms/picking-tasks/$([Uri]::EscapeDataString($warehouseTaskId))/progress"
+        $taskProgress = Invoke-JsonPost -Uri $taskProgressUri -Headers $headers -Body ($taskActionBody + @{
+            idempotencyKey = "man527-progress-task-$deliveryOrderNo-$($outboundLine.lineNo)"
+            expectedVersion = [long]$taskStart.data.version
+            executedQuantity = [decimal]$outboundLine.requestedQuantity
+        })
+        $taskCompleteUri = "$wmsUrl/api/business/v1/wms/picking-tasks/$([Uri]::EscapeDataString($warehouseTaskId))/complete"
+        Invoke-JsonPost -Uri $taskCompleteUri -Headers $headers -Body ($taskActionBody + @{
+            idempotencyKey = "man527-complete-task-$deliveryOrderNo-$($outboundLine.lineNo)"
+            expectedVersion = [long]$taskProgress.data.version
+            executedQuantity = [decimal]$outboundLine.requestedQuantity
+            differenceReason = $null
+        }) | Out-Null
+    }
+
+    $outboundAfterPicking = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode
     $completionBody = @{
         outboundOrderId = $outboundOrderId
         packReviewNo = "PACK-$deliveryOrderNo"
         passed = $true
         idempotencyKey = "man527-complete-$deliveryOrderNo"
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        actorPrincipalId = $wmsActorPrincipalId
+        authorizedSiteCodes = @($wmsSiteCode)
+        scopeKind = 'site'
+        scopeId = $wmsSiteCode
+        expectedVersion = [long]$outboundAfterPicking.version
     }
     $completionUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/complete"
     Invoke-JsonPost -Uri $completionUri -Headers $headers -Body $completionBody | Out-Null
@@ -304,6 +497,7 @@ try {
 finally {
     if ($erpProcess) { $erpProcess.Stop.Invoke('MAN-527 verification completed') }
     if ($wmsProcess) { $wmsProcess.Stop.Invoke('MAN-527 verification completed') }
+    if ($inventoryProcess) { $inventoryProcess.Stop.Invoke('MAN-527 verification completed') }
     if ($databaseCreated) {
         Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man527-drop-database' | Out-Null
     }
