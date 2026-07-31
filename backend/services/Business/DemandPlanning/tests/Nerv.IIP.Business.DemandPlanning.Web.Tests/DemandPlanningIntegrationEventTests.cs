@@ -53,6 +53,22 @@ public sealed class DemandPlanningIntegrationEventTests
         Assert.Equal("PR-001", integrationEvent.Payload.DownstreamDocumentId);
     }
 
+    [Fact]
+    public void Planning_suggestion_accepted_event_carries_every_demand_reference_and_excludes_scheduled_receipts()
+    {
+        // #1286：合批建议 peg 到多张需求源单据；事件必须完整携带 demand 引用，主引用不得取到 scheduled-receipt。
+        var suggestion = NewSuggestion("planned-work-order");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-0001", "SKU-RM-1000", null, 5m, null, null, null);
+        suggestion.AddPeggingLink("demand", "SO-2026-00001", "SKU-RM-1000", null, 9m, "PV-001", "MBOM-001", "ROUTING-001");
+        suggestion.AddPeggingLink("demand", "SO-20260730-000005", "SKU-RM-1000", null, 10m, "PV-001", "MBOM-001", "ROUTING-001");
+        suggestion.Accept("business-mes", "work-order", "WO-001");
+
+        var integrationEvent = new PlanningSuggestionAcceptedIntegrationEventConverter().Convert(new PlanningSuggestionAcceptedDomainEvent(suggestion));
+
+        Assert.Equal("SO-2026-00001", integrationEvent.Payload.DemandSourceReference);
+        Assert.Equal(["SO-2026-00001", "SO-20260730-000005"], integrationEvent.Payload.DemandSourceReferences);
+    }
+
     private static PlanningSuggestion NewSuggestion(string suggestionType)
     {
         return PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), suggestionType, "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");

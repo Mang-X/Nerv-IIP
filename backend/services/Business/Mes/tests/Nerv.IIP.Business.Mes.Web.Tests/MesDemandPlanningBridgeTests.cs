@@ -173,6 +173,77 @@ public sealed class MesDemandPlanningBridgeTests
         Assert.Equal("created", productionPlan.Status);
     }
 
+    [Fact]
+    public async Task Accepted_batched_suggestion_persists_every_demand_reference_and_lights_traceability_for_each_order()
+    {
+        // #1286：CAP 消费路径同样必须持久化合批建议的全部需求源引用，追溯读面为每张订单点亮 pegged-to-plan 边。
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+            dbContext,
+            deadLetters,
+            routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
+        var acceptedAtUtc = DateTimeOffset.Parse("2026-07-30T08:00:00Z");
+        var integrationEvent = new PlanningSuggestionAcceptedIntegrationEvent(
+            EventId: "evt-demand-mes-batched-001",
+            EventType: DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
+            EventVersion: DemandPlanningIntegrationEventVersions.V1,
+            OccurredAtUtc: acceptedAtUtc,
+            SourceService: DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            CorrelationId: "corr-demand-mes-batched-001",
+            CausationId: "cmd-accept-suggestion-batched-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-dev",
+            Actor: "user:planner",
+            IdempotencyKey: "demand-planning:planning-suggestion-accepted:org-001:env-dev:SUG-WO-BATCH-001",
+            Payload: new PlanningSuggestionAcceptedPayload(
+                SuggestionId: "SUG-WO-BATCH-001",
+                MrpRunId: "MRP-001",
+                SuggestionType: "planned-work-order",
+                SkuCode: "SKU-FG-1000",
+                UomCode: "PCS",
+                SiteCode: "SITE-A",
+                Quantity: 220m,
+                RequiredDate: new DateOnly(2026, 8, 20),
+                ReleaseDate: new DateOnly(2026, 8, 14),
+                DemandSourceReference: "SO-2026-00001",
+                ProductionVersionReference: "PV-FG-1000",
+                DownstreamService: "BusinessMes",
+                DownstreamDocumentType: "WorkOrder",
+                DownstreamDocumentId: null,
+                DemandSourceReferences: ["SO-2026-00001", "SO-20260730-000005"]));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var workOrder = Assert.Single(await dbContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Equal("SUG-WO-BATCH-001", workOrder.SourcePlanReference?.SourceDocumentId);
+        Assert.Equal("SO-2026-00001", workOrder.SourcePlanReference?.SourceDemandReference);
+        Assert.Equal(
+            new[] { "SO-2026-00001", "SO-20260730-000005" },
+            workOrder.SourcePlanReference?.SourceDemandReferences);
+
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", workOrder.WorkOrderId),
+            CancellationToken.None);
+        foreach (var salesOrderNo in new[] { "SO-2026-00001", "SO-20260730-000005" })
+        {
+            Assert.Contains(traceability.Nodes, node =>
+                node.NodeId == salesOrderNo && node.NodeType == "DemandSource");
+            Assert.Contains(traceability.Edges, edge =>
+                edge.FromNodeId == salesOrderNo &&
+                edge.ToNodeId == "SUG-WO-BATCH-001" &&
+                edge.RelationType == "pegged-to-plan");
+        }
+
+        Assert.Contains(traceability.Edges, edge =>
+            edge.FromNodeId == "SUG-WO-BATCH-001" &&
+            edge.ToNodeId == workOrder.WorkOrderId &&
+            edge.RelationType == "converted-to-work-order");
+    }
+
     private static PlanningSuggestionAcceptedIntegrationEvent NewAcceptedSuggestionEvent(
         DateTimeOffset acceptedAtUtc,
         string suggestionId)

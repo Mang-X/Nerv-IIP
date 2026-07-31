@@ -125,7 +125,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                     DemandPlanningSourceReferences.PlanningSuggestion,
                     payload.SuggestionId,
                     payload.DemandSourceReference,
-                    integrationEvent.IdempotencyKey),
+                    integrationEvent.IdempotencyKey,
+                    payload.DemandSourceReferences),
                 cancellationToken);
         }
         catch (DisabledMesSkuException)
