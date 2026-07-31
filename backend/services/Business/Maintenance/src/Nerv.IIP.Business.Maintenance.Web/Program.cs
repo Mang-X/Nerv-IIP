@@ -38,7 +38,7 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
     builder.Services.AddHttpClient(HttpIndustrialTelemetryAssetRuntimeHoursProvider.ClientName, client =>
     {
         client.BaseAddress = industrialTelemetryBaseAddress;

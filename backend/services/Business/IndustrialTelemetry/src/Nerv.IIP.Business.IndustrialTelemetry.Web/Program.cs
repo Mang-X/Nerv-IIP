@@ -69,7 +69,7 @@ try
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
     builder.Services.AddHostedService<TelemetryHistorianScheduler>();
     builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
-    var opsBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+    var opsBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
     builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
     {
         client.BaseAddress = opsBaseAddress;

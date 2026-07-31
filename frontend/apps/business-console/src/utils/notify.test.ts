@@ -181,15 +181,12 @@ describe('notifyOperationFailure', () => {
     expect(toastError).toHaveBeenCalledWith('撤销失败，请稍后重试')
   })
 
-  // 兜底文案不给时按 action 派生：仍指名道姓，不退化成泛化的「操作失败，请稍后重试。」。
-  it('不给兜底文案时按动作派生，而不是泛化的「操作失败」', () => {
-    notifyOperationFailure('发布', { status: 500 })
-    expect(toastError).toHaveBeenCalledWith('发布失败，请稍后重试。')
-  })
-
-  it('派生兜底不抢服务端领域消息的位置', () => {
-    notifyOperationFailure('发布', { detail: '工单已关闭，不能发布' })
-    expect(toastError).toHaveBeenCalledWith('发布：工单已关闭，不能发布')
+  // action 实参的主流写法已带「失败」后缀（现网 106 处里 103 处形如 '撤销失败'），
+  // 所以兜底文案必须由调用方自己写；若按 action 派生就会拼出「撤销失败失败，请稍后重试」。
+  it('动作前缀原样拼接，不额外补「失败」二字', () => {
+    notifyOperationFailure('撤销失败', { detail: '工单已关闭，不能撤销' }, '撤销失败，请稍后重试')
+    expect(toastError).toHaveBeenCalledWith('撤销失败：工单已关闭，不能撤销')
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('失败失败'))
   })
 })
 

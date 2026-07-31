@@ -167,17 +167,19 @@ function resolveLayeredMessage(error: unknown, fallback: string | undefined, log
  * 2. **通用 HTTP / 英文 problem 文案**（`Internal Server Error`、`502`、`Failed to fetch` …）
  *    → 交给 `friendlyErrorMessage` 映射成人话，**原文只进 `console.error`**：
  *    反馈规范禁止英文错误码 / 5xx 原文上屏（`frontend/DESIGN/patterns/feedback-and-notifications.md`）；
- * 3. 服务端什么都没说 → 用调用方给的领域兜底文案；**`fallback` 不给就按 `action` 派生**
- *    （`发布` → 「发布失败，请稍后重试。」），保证兜底句仍指名道姓，不退化成泛化的「操作失败」。
+ * 3. 服务端什么都没说 → 用调用方给的领域兜底文案。
  *
  * 之所以要它而不是直接 `notifyError`：写操作要让用户知道**是哪个动作**失败了
  * （「发布失败：…」/「生成失败：…」），且服务端的领域拒绝理由必须原样看得见（MAN-691 / #1259）。
+ *
+ * `fallback` **必填，不由 `action` 派生**：`action` 实参的主流写法本身已带「失败」后缀
+ * （现网 106 处里 103 处形如 `'撤销失败'`），派生兜底会拼出「撤销失败失败，请稍后重试」。
+ * 领域兜底句只能由调用方自己写。
  */
-export function notifyOperationFailure(action: string, error: unknown, fallback?: string): void {
-  // 兜底文案未给时按动作派生：调用方不写也能得到「发布失败，请稍后重试。」而不是泛化的「操作失败」。
-  // 第二个参数传 '' 是刻意的——什么都取不到时要落到调用方/派生的领域兜底，而不是通用兜底句。
+export function notifyOperationFailure(action: string, error: unknown, fallback: string): void {
+  // 第二个参数传 '' 是刻意的——什么都取不到时要落到调用方的领域兜底，而不是通用兜底句。
   const message = resolveLayeredMessage(error, '', action)
-  toast.error(message ? `${action}：${message}` : (fallback ?? `${action}失败，请稍后重试。`))
+  toast.error(message ? `${action}：${message}` : fallback)
 }
 
 /**

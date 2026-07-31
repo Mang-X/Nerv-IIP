@@ -134,7 +134,7 @@ try
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
-    var productEngineeringBaseAddress = InternalServiceBaseAddress.Resolve(
+    var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration,
         builder.Environment,
         "ProductEngineering:BaseUrl",

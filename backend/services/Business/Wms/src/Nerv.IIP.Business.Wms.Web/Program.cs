@@ -37,7 +37,7 @@ try
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+    var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
     builder.Services.AddHttpClient<IWmsInventoryReservationClient, HttpWmsInventoryReservationClient>(client =>
     {
         client.BaseAddress = inventoryBaseAddress;

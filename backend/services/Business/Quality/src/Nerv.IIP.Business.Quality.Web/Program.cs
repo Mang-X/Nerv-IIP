@@ -50,8 +50,8 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var approvalBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
-    var erpBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
     builder.Services.AddHttpClient<IApprovalChainStatusClient, HttpApprovalChainStatusClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;

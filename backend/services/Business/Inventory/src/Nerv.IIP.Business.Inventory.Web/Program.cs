@@ -35,7 +35,7 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     builder.Services.AddHttpClient<IInventorySkuExpiryPolicyProvider, HttpInventorySkuExpiryPolicyProvider>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -67,7 +67,7 @@ try
     builder.Services.AddSingleton<InventoryReservationMetrics>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
     builder.Services.AddHostedService<ExpiredStockReservationHostedService>();
-    var approvalBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IStockCountApprovalClient, HttpStockCountApprovalClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;

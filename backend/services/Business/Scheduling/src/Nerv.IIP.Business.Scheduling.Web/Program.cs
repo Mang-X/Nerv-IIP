@@ -39,11 +39,11 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
-    var productEngineeringBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-    var mesBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
-    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
-    var maintenanceBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+    var mesBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var maintenanceBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
     builder.Services.AddHttpClient<ISchedulingProblemMasterDataClient, HttpSchedulingProblemMasterDataClient>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;

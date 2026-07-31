@@ -74,7 +74,7 @@ builder.Services.Configure<OpsConnectorCredentialOptions>(
 builder.Services.Configure<OperationLeaseReaperOptions>(
     builder.Configuration.GetSection("Ops:LeaseReaper"));
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
-var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
 {
     client.BaseAddress = iamBaseAddress;
