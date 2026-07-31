@@ -4779,7 +4779,7 @@ public sealed record BusinessConsoleMesDowntimeEventListResponse(
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string? OperationTaskId,
     string? DeviceAssetId,
     string Status,
@@ -4788,7 +4788,9 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? WorkCenterId = null,
+    string? ReasonCode = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,
