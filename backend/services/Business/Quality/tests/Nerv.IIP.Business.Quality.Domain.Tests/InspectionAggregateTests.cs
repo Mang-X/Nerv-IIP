@@ -101,7 +101,7 @@ public sealed class InspectionAggregateTests
             dispositionReason: null,
             dispositionAttachmentFileIds: []));
 
-        Assert.Contains("length", exception.Message);
+        Assert.Contains("特性", exception.Message);
         Assert.Contains("测量值", exception.Message);
     }
 
@@ -289,7 +289,7 @@ public sealed class InspectionAggregateTests
             dispositionReason: null,
             dispositionAttachmentFileIds: []));
 
-        Assert.Contains("length", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("必检特性", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

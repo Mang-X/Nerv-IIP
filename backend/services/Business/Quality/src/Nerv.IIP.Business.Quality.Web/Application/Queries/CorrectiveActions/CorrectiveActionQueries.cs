@@ -206,7 +206,7 @@ public sealed class GetCorrectiveActionQueryHandler(ApplicationDbContext dbConte
         }
 
         var capa = await query.SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面刷新并确认编号后重试。");
         var sourceNcrCodes = await CorrectiveActionProjection.ResolveSourceNcrCodesAsync(dbContext, [capa], cancellationToken);
         return CorrectiveActionProjection.ToResponse(capa, timeProvider.GetUtcNow(), sourceNcrCodes);
     }

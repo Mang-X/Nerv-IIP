@@ -31,7 +31,7 @@ public sealed class OpenCorrectiveActionCommandHandler(
         if (request.SourceNcrId is not null)
         {
             var ncr = await nonconformanceReportRepository.GetAsync(request.SourceNcrId, cancellationToken)
-                ?? throw new KnownException($"NCR '{request.SourceNcrId}' was not found.");
+                ?? throw new KnownException($"找不到不合格报告 {request.SourceNcrId}，请在不合格报告页确认单据存在后再创建 CAPA。");
             capa = CorrectiveAction.OpenFromNcr(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -72,7 +72,7 @@ public sealed class AddCorrectiveActionItemCommandHandler(ICorrectiveActionRepos
     public async Task Handle(AddCorrectiveActionItemCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
         capa.AddAction(request.ActionType, request.Description, request.OwnerUserId, request.DueAtUtc);
     }
 }
@@ -89,7 +89,7 @@ public sealed class CompleteCorrectiveActionItemCommandHandler(ICorrectiveAction
     public async Task Handle(CompleteCorrectiveActionItemCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
         capa.CompleteAction(request.CorrectiveActionItemId, request.CompletedByUserId, request.CompletedAtUtc);
     }
 }
@@ -110,7 +110,7 @@ public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
     public async Task Handle(VerifyCorrectiveActionEffectivenessCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
         var (inspectionRecordId, inspectionResult) = await ResolveEffectivenessInspectionAsync(capa, request, cancellationToken);
         capa.VerifyEffectiveness(
             request.VerifiedByUserId,
@@ -129,21 +129,21 @@ public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
         var inspectionRecordId = request.EffectivenessInspectionRecordId;
         if (inspectionRecordId is null)
         {
-            throw new KnownException("CAPA effectiveness verification requires a passed verification inspection.");
+            throw new KnownException($"CAPA {capa.CapaCode} 尚未关联合格的效果验证检验记录，请在检验记录页完成并通过效果验证检验后再验证 CAPA。");
         }
 
         var inspection = await dbContext.InspectionRecords
             .SingleOrDefaultAsync(x => x.Id == inspectionRecordId, cancellationToken)
-            ?? throw new KnownException($"CAPA effectiveness verification inspection '{inspectionRecordId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {capa.CapaCode} 的效果验证检验记录 {inspectionRecordId}，请在检验记录页确认记录编号后重试。");
         if (!string.Equals(inspection.OrganizationId, capa.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(inspection.EnvironmentId, capa.EnvironmentId, StringComparison.Ordinal))
         {
-            throw new KnownException("CAPA effectiveness verification inspection scope does not match the CAPA.");
+            throw new KnownException($"CAPA {capa.CapaCode} 的效果验证检验记录 {inspectionRecordId} 不属于同一组织和环境，请选择对应范围内的检验记录后重试。");
         }
 
         if (!string.Equals(inspection.Result, "passed", StringComparison.OrdinalIgnoreCase))
         {
-            throw new KnownException("CAPA effectiveness verification inspection must be passed.");
+            throw new KnownException($"CAPA {capa.CapaCode} 的效果验证检验记录 {inspectionRecordId} 当前结果不是合格，请先完成检验并达到合格后再验证 CAPA。");
         }
 
         return (inspectionRecordId, inspection.Result);
@@ -170,12 +170,12 @@ public sealed class CloseCorrectiveActionCommandHandler(
     public async Task Handle(CloseCorrectiveActionCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
         if (closeApprovalOptions.Value.Required)
         {
             if (string.IsNullOrWhiteSpace(request.CloseApprovalChainId))
             {
-                throw new KnownException("CAPA close requires an approved closure approval chain.");
+                throw new KnownException($"CAPA {capa.CapaCode} 关闭前需要已批准的审批链，请在审批页面提交并批准关闭审批链后再关闭 CAPA。");
             }
 
             if (!await approvalChainStatusClient.IsApprovedForCapaClosureAsync(
@@ -185,7 +185,7 @@ public sealed class CloseCorrectiveActionCommandHandler(
                     capa.CapaCode,
                     cancellationToken))
             {
-                throw new KnownException("CAPA closure approval chain is not approved.");
+                throw new KnownException($"CAPA {capa.CapaCode} 的关闭审批链 {request.CloseApprovalChainId} 尚未批准，请在审批页面完成审批后再关闭 CAPA。");
             }
         }
 

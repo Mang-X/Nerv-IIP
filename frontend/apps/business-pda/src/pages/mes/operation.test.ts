@@ -74,6 +74,11 @@ const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
 const tasksPendingRef = ref(false)
 const tasksSuccessfulRef = ref(true)
 const currentSopsRef = ref<Array<Record<string, unknown>>>([])
+const workScopeOptionsRef = ref([
+  { label: '精加工一线（工作中心）', value: 'work-center:WC-A' },
+  { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
+])
+const workScopeSelectionRef = ref<string | undefined>('work-center:WC-A')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesOperationTasks: () => ({
@@ -110,6 +115,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: sopsErrorRef,
     refresh: refreshSops,
     createSopFileDownloadGrant,
+  }),
+  // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: computed(() => workScopeOptionsRef.value),
+    scopeSelectionValue: workScopeSelectionRef,
   }),
 }))
 
