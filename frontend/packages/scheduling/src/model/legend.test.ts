@@ -35,11 +35,43 @@ describe('deriveLegendSemantics', () => {
 
   it('状态一组跟着模型走:有冲突有锁定才列', () => {
     const s = deriveLegendSemantics(toModel(samplePlan))
-    expect(s.status).toEqual({ conflict: true, locked: true })
+    expect(s.status).toEqual({ conflict: true, locked: true, materialRisk: false })
 
     const clean = toModel({ ...samplePlan, conflicts: [] })
     for (const task of clean.tasks) task.locked = false
-    expect(deriveLegendSemantics(clean).status).toEqual({ conflict: false, locked: false })
+    expect(deriveLegendSemantics(clean).status).toEqual({
+      conflict: false,
+      locked: false,
+      materialRisk: false,
+    })
+  })
+
+  // 图例一致性铁律(#1274):卡片/tooltip 上的「缺料待备」chip 出现在图上,图例就必须同步出现;
+  // 方案全齐套时它绝不出现。
+  it('物料风险:有缺料工序才列「缺料待备」', () => {
+    expect(deriveLegendSemantics(toModel(samplePlan)).status.materialRisk).toBe(false)
+
+    const risky = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [
+            {
+              materialId: 'RM-OIL-01',
+              materialLotId: null,
+              requiredQuantity: 145.86,
+              availableQuantity: 0,
+              shortageQuantity: 145.86,
+            },
+          ],
+          message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+        },
+      ],
+    })
+    expect(deriveLegendSemantics(risky).status.materialRisk).toBe(true)
   })
 
   it('卡片语义(优先级/插单/齐套/换型/瓶颈)缺省不列', () => {

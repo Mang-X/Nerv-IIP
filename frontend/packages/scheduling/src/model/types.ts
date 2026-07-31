@@ -88,6 +88,30 @@ export interface ScheduleTask {
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null
+  /**
+   * 物料风险（软约束）：工序已排入计划，但开工前必须先备料。
+   * 齐套是开工门槛不是排产门槛——所以它只是标记，不是「未排」。
+   */
+  materialRisk?: MaterialRisk
+}
+
+/** 单项物料缺口：缺哪个物料、需要多少、可用多少、缺口多少。 */
+export interface MaterialShortage {
+  materialId: string
+  materialLotId?: string | null
+  requiredQuantity: number
+  availableQuantity: number
+  shortageQuantity: number
+}
+
+/** 某工序的物料风险：缺口明细 + 已翻译成人话的提示。 */
+export interface MaterialRisk {
+  orderId: string
+  operationId: string
+  reasonCodes: string[]
+  shortages: MaterialShortage[]
+  /** 中文人话提示，读面直接展示（含「需在开工前完成备料」）。 */
+  message: string
 }
 
 export interface ScheduleLink {
@@ -173,6 +197,8 @@ export interface ScheduleModel {
   loads: ResourceLoadBucket[]
   conflicts: ScheduleConflict[]
   unscheduled: UnscheduledItem[]
+  /** 物料风险清单（软约束下已排但缺料的工序）。 */
+  materialRisks?: MaterialRisk[]
   /** 重预览 diff。 */
   changes: ScheduleChange[]
   /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */

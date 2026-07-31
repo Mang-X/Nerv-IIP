@@ -39,6 +39,7 @@ type ItemKind =
   | 'bottleneck'
   | 'conflict'
   | 'locked'
+  | 'materialRisk'
   | 'block'
   | 'nonWorking'
   | 'shift'
@@ -104,6 +105,12 @@ const groups = computed<{ key: GroupKey; label: string; items: LegendItem[] }[]>
       items: [
         s.status.conflict && { key: 'conflict', label: '冲突', kind: 'conflict' },
         s.status.locked && { key: 'locked', label: '锁定', kind: 'locked' },
+        // 物料风险:软约束下已排入但缺料,开工前需备料。与「冲突」分列,因为它不阻断排产。
+        s.status.materialRisk && {
+          key: 'materialRisk',
+          label: '缺料待备',
+          kind: 'materialRisk',
+        },
       ].filter(Boolean) as LegendItem[],
     },
     {
@@ -273,6 +280,12 @@ function toggleVisible(key: GroupKey) {
             v-else-if="item.kind === 'locked'"
             class="h-2.5 w-6 rounded-[3px] border border-dashed border-brand/70"
           ></span>
+          <!-- 物料风险:与卡片/tooltip 上的「缺料待备」chip 共用 kit-warn 预警语义色,
+               外形沿用本图例的 swatch 画法(浅底 + 同色描边),与阻断态的 destructive 明确区分 -->
+          <span
+            v-else-if="item.kind === 'materialRisk'"
+            class="nerv-leg-matrisk h-2.5 w-6 rounded-[3px]"
+          ></span>
           <!-- ⑤ 阻塞:斜纹按块类型着色 -->
           <span
             v-else-if="item.kind === 'block'"
@@ -377,6 +390,12 @@ function toggleVisible(key: GroupKey) {
     gap: 0.375rem 1.25rem;
     min-width: 0;
     padding-top: 0.05rem;
+  }
+
+  /* 物料风险 swatch:kit-warn 预警语义(浅底 + 同色描边),与卡片/tooltip 的「缺料待备」chip 同色 */
+  .nerv-leg-matrisk {
+    background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 85%);
+    border: 1px solid color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 45%);
   }
 
   /* 资源时间块斜纹 swatch(复用原画法) */

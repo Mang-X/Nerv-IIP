@@ -16,9 +16,9 @@ import {
   NvTabsList,
   NvTabsTrigger,
 } from '@nerv-iip/ui'
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   model?: ScheduleModel
   pendingOperations?: WorkingSchedulePendingOperation[]
   readOnly?: boolean
@@ -41,6 +41,8 @@ const emit = defineEmits<{
   persistOverride: [taskId: string]
 }>()
 const view = shallowRef('gantt')
+// 物料风险（软约束）：已排但缺料的工序，开工前必须先备料。
+const materialRisks = computed(() => props.model?.materialRisks ?? [])
 </script>
 
 <template>
@@ -99,6 +101,26 @@ const view = shallowRef('gantt')
         </li>
       </ul>
     </section>
+    <!--
+      物料风险横幅：齐套是开工门槛不是排产门槛。缺料工单照排进方案，
+      这里显式告诉规划员「哪些工序开工前必须先备料」，避免拿着方案去发布却被 MES 齐套门拦下。
+    -->
+    <section
+      v-if="materialRisks.length"
+      class="grid gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm"
+      data-testid="scheduling-material-risks"
+    >
+      <p class="font-semibold">{{ materialRisks.length }} 道工序有物料风险 · 需在开工前完成备料</p>
+      <ul class="grid gap-1 text-xs">
+        <li v-for="risk in materialRisks" :key="`${risk.orderId}:${risk.operationId}`">
+          {{ risk.orderId }} · {{ risk.operationId }} —
+          <template v-if="risk.shortages.length">
+            {{ risk.shortages.map((s) => `${s.materialId} 缺 ${s.shortageQuantity}`).join('、') }}
+          </template>
+          <template v-else>{{ risk.message }}</template>
+        </li>
+      </ul>
+    </section>
     <div
       v-if="!model"
       class="flex min-h-48 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground"
@@ -135,6 +157,7 @@ const view = shallowRef('gantt')
               <th class="p-2">资源</th>
               <th class="p-2">开始</th>
               <th class="p-2">结束</th>
+              <th class="p-2">物料</th>
               <th class="p-2">锁定</th>
               <th class="p-2">待排</th>
             </tr>
@@ -171,6 +194,15 @@ const view = shallowRef('gantt')
                   :model-value="task.endUtc"
                   @update:model-value="emit('update', task.id, { endUtc: String($event) })"
                 />
+              </td>
+              <td class="p-2">
+                <span
+                  v-if="task.materialRisk"
+                  class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
+                  :title="task.materialRisk.message"
+                  >缺料待备</span
+                >
+                <span v-else class="text-xs text-muted-foreground">齐套</span>
               </td>
               <td class="p-2">
                 <div class="flex flex-wrap items-center gap-1.5">

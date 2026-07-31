@@ -950,7 +950,7 @@ function reasonLabel(reason?: string | null) {
                 :tone="schedulingPlanStatusTone(planDetail.status)"
               />
             </div>
-            <div class="grid gap-3 sm:grid-cols-4">
+            <div class="grid gap-3 sm:grid-cols-5">
               <div>
                 <p class="text-xs text-muted-foreground">资源数</p>
                 <p class="text-sm font-medium text-foreground">{{ selectedResourceCount }}</p>
@@ -971,6 +971,16 @@ function reasonLabel(reason?: string | null) {
                   {{
                     planDetail.metrics?.unscheduledOperationCount ??
                     planDetail.unscheduledOperations?.length ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">物料风险工序</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.materialRiskOperationCount ??
+                    planDetail.materialRisks?.length ??
                     0
                   }}
                 </p>
@@ -1044,6 +1054,38 @@ function reasonLabel(reason?: string | null) {
             <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
               暂无资源负荷。
             </p>
+          </section>
+
+          <!--
+            物料风险（软约束）：齐套是开工门槛不是排产门槛 —— 缺料工序照排进方案，
+            这里告诉规划员开工前必须补齐哪些物料，缺口多少。
+          -->
+          <section v-if="planDetail.materialRisks?.length" class="grid gap-3">
+            <h3 class="text-sm font-semibold text-foreground">物料风险 · 需在开工前完成备料</h3>
+            <div class="grid gap-2">
+              <div
+                v-for="risk in planDetail.materialRisks"
+                :key="`${risk.orderId}:${risk.operationId}`"
+                class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+                data-testid="plan-material-risk"
+              >
+                <p class="font-medium">{{ risk.orderId }} · {{ risk.operationId }}</p>
+                <ul v-if="risk.shortages?.length" class="mt-1 grid gap-0.5 text-xs">
+                  <li
+                    v-for="shortage in risk.shortages"
+                    :key="`${shortage.materialId}-${shortage.materialLotId ?? ''}`"
+                    class="flex justify-between gap-3 tabular-nums"
+                  >
+                    <span>{{ shortage.materialId }}</span>
+                    <span
+                      >缺 {{ shortage.shortageQuantity }}（需
+                      {{ shortage.requiredQuantity }}）</span
+                    >
+                  </li>
+                </ul>
+                <p class="mt-1 text-xs">{{ risk.message }}</p>
+              </div>
+            </div>
           </section>
 
           <section class="grid gap-3">

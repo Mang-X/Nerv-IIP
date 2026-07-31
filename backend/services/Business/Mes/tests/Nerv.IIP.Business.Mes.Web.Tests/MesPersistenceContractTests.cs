@@ -292,6 +292,116 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(4m, row.ReceivedQuantity);
         Assert.Equal(2m, row.ShortageQuantity);
         Assert.Equal("Shortage", row.Status);
+        // 齐套口径显式带出(#1291):读面据此写明「线边 + 已备 + 已收」范围,不让用户拿它和 MRP 全厂口径对撞。
+        Assert.Equal(MesMaterialReadinessScopes.LineSideAndStaged, readiness.ReadinessScope);
+        // 已发起的 4 已经全部收齐(requested == received),残余的 2 没有任何在途领料
+        // → 缺口卡在备料环节,下一步是再发一张领料,而不是去仓库跟催。
+        Assert.Equal(MesMaterialShortageStages.AwaitingPreparation, row.ShortageStage);
+    }
+
+    [Fact]
+    // #1291:领料已发起、仓库一件没发 → 缺口卡在配送环节,读面该说「去仓库跟催」。
+    public async Task Material_readiness_reports_awaiting_delivery_while_an_issue_request_is_in_flight()
+    {
+        var services = CreateServices(nameof(Material_readiness_reports_awaiting_delivery_while_an_issue_request_is_in_flight));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-INFLIGHT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-INFLIGHT-001",
+                "OP-INFLIGHT-10",
+                "MAT-OIL",
+                null,
+                requiredQuantity: 10m,
+                availableQuantity: 0m,
+                stagedQuantity: 0m,
+                sourceSystem: "Inventory",
+                sourceSnapshotId: "inv-snap-inflight",
+                capturedAtUtc: now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-INFLIGHT-001",
+                "WO-INFLIGHT-001",
+                "OP-INFLIGHT-10",
+                "MAT-OIL",
+                "L",
+                requestedQuantity: 10m,
+                requestedAtUtc: now.AddMinutes(5)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-INFLIGHT-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal(10m, row.RequestedQuantity);
+        Assert.Equal(0m, row.ReceivedQuantity);
+        Assert.Equal(MesMaterialShortageStages.AwaitingDelivery, row.ShortageStage);
+    }
+
+    [Fact]
+    // #1291:齐套两态区分必须只认「还在数」的领料单。取消掉的单子不代表仓库还在配货,
+    // 把它算进「应领」会把「其实没人在配」误标成「仓库配送中」。
+    public async Task Material_readiness_ignores_cancelled_issue_requests_when_deciding_the_shortage_stage()
+    {
+        var services = CreateServices(nameof(Material_readiness_ignores_cancelled_issue_requests_when_deciding_the_shortage_stage));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CANCELLED-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-CANCELLED-001",
+                "OP-CANCELLED-10",
+                "MAT-OIL",
+                null,
+                requiredQuantity: 10m,
+                availableQuantity: 0m,
+                stagedQuantity: 0m,
+                sourceSystem: "Inventory",
+                sourceSnapshotId: "inv-snap-cancelled",
+                capturedAtUtc: now));
+
+            // 一张已取消的领料单:没有收过任何料,取消后不该再被算成「仓库在配」。
+            var cancelled = MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-CANCELLED-001",
+                "WO-CANCELLED-001",
+                "OP-CANCELLED-10",
+                "MAT-OIL",
+                "L",
+                requestedQuantity: 10m,
+                requestedAtUtc: now.AddMinutes(5));
+            cancelled.CancelForWorkOrderCancellation(now.AddMinutes(30));
+            dbContext.MaterialIssueRequests.Add(cancelled);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-CANCELLED-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal(MaterialIssueRequest.CancelledStatus, (await recreatedDbContext.MaterialIssueRequests.SingleAsync()).Status);
+        Assert.Equal(0m, row.RequestedQuantity);
+        Assert.Equal(10m, row.ShortageQuantity);
+        // 没有任何在途领料 → 缺口卡在备料环节,下一步是发起领料,而不是去仓库跟催。
+        Assert.Equal(MesMaterialShortageStages.AwaitingPreparation, row.ShortageStage);
     }
 
     [Fact]

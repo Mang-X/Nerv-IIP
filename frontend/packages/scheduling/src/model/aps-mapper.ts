@@ -11,6 +11,7 @@ import type {
   ScheduleModel,
   ScheduleTask,
   UnscheduledItem,
+  MaterialRisk,
 } from './types'
 import { BLOCK_LABELS, toBlockKind } from './blocks'
 
@@ -106,6 +107,28 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   }
 
+  // 物料风险（软约束）：这些工序已排入计划，但开工前必须先备料。
+  // 齐套是开工门槛不是排产门槛，所以它标在已排工序上，不进 unscheduled。
+  const materialRisks: MaterialRisk[] = (plan.materialRisks ?? []).map((r) => ({
+    orderId: r.orderId ?? '',
+    operationId: r.operationId ?? '',
+    reasonCodes: [...(r.reasonCodes ?? [])],
+    shortages: (r.shortages ?? []).map((s) => ({
+      materialId: s.materialId ?? '',
+      materialLotId: s.materialLotId,
+      requiredQuantity: s.requiredQuantity ?? 0,
+      availableQuantity: s.availableQuantity ?? 0,
+      shortageQuantity: s.shortageQuantity ?? 0,
+    })),
+    message: r.message ?? '',
+  }))
+  for (const risk of materialRisks) {
+    const t = operations.find(
+      (o) => o.orderId === risk.orderId && o.operationId === risk.operationId,
+    )
+    if (t) t.materialRisk = risk
+  }
+
   const unscheduled: UnscheduledItem[] = (plan.unscheduledOperations ?? []).map((u) => ({
     orderId: u.orderId ?? '',
     operationId: u.operationId ?? '',
@@ -186,6 +209,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     })),
     conflicts,
     unscheduled,
+    materialRisks,
     changes,
     groupDimensions: operations.some((o) => o.dimensions?.workCenter)
       ? [{ key: 'workCenter', label: '工作中心' }]

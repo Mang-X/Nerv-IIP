@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '../../styles/scheduling.css'
 import { NvButton } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from '@lucide/vue'
 import { computed } from 'vue'
@@ -157,6 +158,29 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         class="mt-2.5 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive"
       >
         冲突 · {{ conflictReasonLabel[task.conflictReason] }}
+      </div>
+
+      <!--
+        物料风险横幅：齐套是开工门槛不是排产门槛。工序已排入计划，但开工前必须先备料，
+        否则会被 MES 侧的线边齐套硬门拦住。用 kit-warn 语义（预警而非阻断）。
+      -->
+      <div
+        v-if="task.materialRisk"
+        class="nv-sched-material-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
+        data-testid="task-material-risk"
+      >
+        <p class="font-medium">物料风险 · 需在开工前完成备料</p>
+        <ul v-if="task.materialRisk.shortages.length" class="mt-1 grid gap-0.5">
+          <li
+            v-for="s in task.materialRisk.shortages"
+            :key="`${s.materialId}-${s.materialLotId ?? ''}`"
+            class="flex justify-between gap-3 tabular-nums"
+          >
+            <span>{{ s.materialId }}</span>
+            <span>缺 {{ s.shortageQuantity }}（需 {{ s.requiredQuantity }}）</span>
+          </li>
+        </ul>
+        <p v-else class="mt-1">{{ task.materialRisk.message }}</p>
       </div>
 
       <!-- 明细网格 -->

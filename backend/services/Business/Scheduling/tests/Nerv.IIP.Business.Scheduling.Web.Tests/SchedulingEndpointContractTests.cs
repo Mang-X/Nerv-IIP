@@ -180,7 +180,8 @@ public sealed class SchedulingEndpointContractTests
                     ScopeId: "WO-SNAPSHOT-001",
                     MaterialReadyUtc: null,
                     IsReady: false,
-                    ReasonCodes: ["MAT-A shortage 2"])
+                    ReasonCodes: ["MAT-A shortage 2"],
+                    Shortages: [new SchedulingMaterialShortageContract("MAT-A", null, 5m, 3m, 2m)])
             ]);
         var handler = new PreviewSchedulePlanCommandHandler(
             new FiniteCapacityScheduler(),
@@ -192,9 +193,11 @@ public sealed class SchedulingEndpointContractTests
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
         Assert.True(materialReadinessProvider.WasCalled);
-        Assert.Contains(plan.UnscheduledOperations, x =>
+        // 物料软约束:MES 齐套缺口只作为风险随计划带出,工序照排。
+        Assert.Contains(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Contains(plan.MaterialRisks ?? [], x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+            && x.Shortages.Any(y => y.MaterialId == "MAT-A" && y.ShortageQuantity == 2m));
     }
 
     [Fact]

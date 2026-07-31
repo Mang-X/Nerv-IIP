@@ -1423,6 +1423,24 @@ internal static class MaterialReadinessGuards
     internal const string MissingRequirementSnapshotReason =
         "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
 
+    /// <summary>
+    /// 仍然算数的领料单状态:已发起、部分收料、已收料。
+    /// 取消 / 退料中 / 预留失效的单子不代表仓库还在配货,聚合「应领」时必须排除,
+    /// 否则齐套读面会把「其实没人在配」误标成「仓库配送中」。
+    /// </summary>
+    private static readonly string[] ActiveIssueRequestStatuses =
+    [
+        MaterialIssueRequest.RequestedStatus,
+        MaterialIssueRequest.PartiallyReceivedStatus,
+        MaterialIssueRequest.ReceivedStatus
+    ];
+
+    public static bool IsActiveIssueRequestStatus(string? status)
+    {
+        return !string.IsNullOrWhiteSpace(status)
+            && ActiveIssueRequestStatuses.Contains(status, StringComparer.OrdinalIgnoreCase);
+    }
+
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
         ApplicationDbContext dbContext,
         IMesMaterialRequirementSnapshotProvider? snapshotProvider,
