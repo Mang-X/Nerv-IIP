@@ -3787,6 +3787,73 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_procurement_purchase_receipt_forwards_quality_status_to_downstream_erp()
+    {
+        // #1345：qualityStatus 是 ERP 收货命令必填字段，网关必须原样透传，不得在契约层丢失。
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/procurement/purchase-receipts",
+            new BusinessConsoleRecordErpPurchaseReceiptRequest(
+                "org-001",
+                "env-dev",
+                PurchaseReceiptNo: null,
+                "PO-2026-0001",
+                [new BusinessConsoleErpPurchaseReceiptLine("1", 10m, "quality")],
+                IdempotencyKey: "idem-receipt-001"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.NotNull(erp.LastRecordPurchaseReceiptRequest);
+        Assert.Equal("PO-2026-0001", erp.LastRecordPurchaseReceiptRequest.PurchaseOrderNo);
+        var line = Assert.Single(erp.LastRecordPurchaseReceiptRequest.Lines);
+        Assert.Equal("1", line.PurchaseOrderLineNo);
+        Assert.Equal(10m, line.ReceivedQuantity);
+        Assert.Equal("quality", line.QualityStatus);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("receipt-001", document.RootElement.GetProperty("data").GetProperty("purchaseReceiptId").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_procurement_purchase_receipt_rejects_unknown_quality_status_with_chinese_message()
+    {
+        // #1345：网关不放行未知质检状态，避免非法值穿透到 ERP 后静默丢失应付计提。
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/procurement/purchase-receipts",
+            new BusinessConsoleRecordErpPurchaseReceiptRequest(
+                "org-001",
+                "env-dev",
+                PurchaseReceiptNo: null,
+                "PO-2026-0001",
+                [new BusinessConsoleErpPurchaseReceiptLine("1", 10m, "not-a-status")],
+                IdempotencyKey: "idem-receipt-002"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("质检状态只能是", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Null(erp.LastRecordPurchaseReceiptRequest);
+    }
+
+    [Fact]
     public async Task Erp_sales_and_finance_facades_use_domain_specific_downstream_clients()
     {
         var erp = new RecordingErpClient();
@@ -12019,6 +12086,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleConvertErpPurchaseRequisitionsRequest? LastConvertPurchaseRequisitionRequest { get; private set; }
 
+    public BusinessConsoleRecordErpPurchaseReceiptRequest? LastRecordPurchaseReceiptRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
     public BusinessConsoleErpSupplierQuotationListRequest? LastSupplierQuotationListRequest { get; private set; }
@@ -12279,6 +12348,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastRecordPurchaseReceiptRequest = request;
         return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001"));
     }
 

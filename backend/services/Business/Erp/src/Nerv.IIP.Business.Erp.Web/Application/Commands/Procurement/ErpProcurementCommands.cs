@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -816,7 +817,12 @@ public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<Re
         {
             line.RuleFor(x => x.PurchaseOrderLineNo).NotEmpty().MaximumLength(100);
             line.RuleFor(x => x.ReceivedQuantity).GreaterThan(0);
-            line.RuleFor(x => x.QualityStatus).NotEmpty().MaximumLength(50);
+            // #1345：质检状态必须落在已知值域内。未知值原样落库会让应付计提被静默跳过。
+            line.RuleFor(x => x.QualityStatus)
+                .NotEmpty()
+                .MaximumLength(50)
+                .Must(ErpReceiptQualityStatuses.IsSupported)
+                .WithMessage("质检状态只能是 unrestricted（合格）、quality（待检）、blocked（冻结）之一或其已知别名。");
         });
     }
 }
