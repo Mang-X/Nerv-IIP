@@ -5,6 +5,7 @@ import {
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
+  confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
@@ -57,6 +58,7 @@ import {
   startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleMesCapacityImpactListEnvelope,
   type BusinessConsoleMesCapacityImpactRow,
+  type BusinessConsoleMesConfirmLineSideReceiptRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesDispatchTaskListEnvelope,
@@ -190,6 +192,12 @@ export interface MesReadinessReasonDisplay {
 }
 
 const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
+  // 缺料是三道开工拦截之一，下一步动作必须落到 PC 上真实存在的入口（#1324）。
+  MATERIAL_SHORTAGE: {
+    code: 'MATERIAL_SHORTAGE',
+    label: '物料缺料',
+    nextStep: '在工单详情「用料齐套」发起领料；物料到线边后确认收料',
+  },
   QUALITY_PLAN_MISSING: {
     code: 'QUALITY_PLAN_MISSING',
     label: '检验方案缺失',
@@ -219,14 +227,20 @@ const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
 
 export function describeMesReadinessReason(reason: string): MesReadinessReasonDisplay {
   const trimmedReason = reason.trim()
-  const code = trimmedReason.split(':', 1)[0]?.trim() || trimmedReason
-  return (
-    mesReadinessReasonDisplays[code] ?? {
-      code,
-      label: trimmedReason,
-      nextStep: '查看阻塞详情并按来源业务页面处理',
-    }
-  )
+  const separatorIndex = trimmedReason.indexOf(':')
+  const code = separatorIndex > 0 ? trimmedReason.slice(0, separatorIndex).trim() : trimmedReason
+  // 分层透传（#1298）：编码后面的服务端说明（缺哪个物料、缺多少）是操作员唯一能据以行动的事实，
+  // 不能被固定文案吞掉——已知编码给「怎么办」，服务端说明给「缺什么」。
+  const detail = separatorIndex > 0 ? trimmedReason.slice(separatorIndex + 1).trim() : ''
+  const known = mesReadinessReasonDisplays[code]
+  if (known) {
+    return detail ? { ...known, label: `${known.label}：${detail}` } : known
+  }
+  return {
+    code,
+    label: trimmedReason,
+    nextStep: '查看阻塞详情并按来源业务页面处理',
+  }
 }
 
 export interface MesListFilters {
@@ -1268,9 +1282,24 @@ export function useMesWorkOrderDetail() {
           data: { items, total: items.length },
         } as BusinessConsoleMesMaterialIssueRequestListEnvelope
       },
-      enabled: receiptPreviewEnabled.value,
+      // 领料申请不再只服务取消补偿：工单详情的「领料与收料」区常驻读这份清单（#1324），
+      // 所以随详情读面一起启用，而不是等到打开取消预览才拉。
+      enabled: detailEnabled.value,
     }
   })
+
+  const createMaterialIssueMutation = useMutation(
+    createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
+  )
+  const confirmLineSideReceiptMutation = useMutation(
+    confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
+  )
+  const refreshMaterialIssueQueries = () =>
+    invalidateMesQueries(queryCache, [
+      'listBusinessConsoleMesMaterialIssueRequests',
+      'getBusinessConsoleMesMaterialReadiness',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ])
 
   const cancelWorkOrderPending = shallowRef(false)
   const cancelWorkOrderError = shallowRef<unknown>()
@@ -1412,6 +1441,34 @@ export function useMesWorkOrderDetail() {
     refreshDetail: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
     refreshMaterialReadiness: () =>
       detailEnabled.value ? materialQuery.refetch() : Promise.resolve(),
+    refreshMaterialIssueRequests: () =>
+      detailEnabled.value ? materialIssueQuery.refetch() : Promise.resolve(),
+    materialIssueRequestsPending: materialIssueQuery.isLoading,
+    materialIssueRequestsError: materialIssueQuery.error,
+    // 发起领料 / 线边收料：与 PDA 同一组网关面（#1324），PC 形态放在工单详情的齐套区。
+    createMaterialIssueRequest: async (body: BusinessConsoleMesCreateMaterialIssueRequest) => {
+      const result = await createMaterialIssueMutation.mutateAsync({
+        path: { workOrderId: filters.workOrderId },
+        query: toContextQuery(filters),
+        body,
+      })
+      await refreshMaterialIssueQueries()
+      return result
+    },
+    createMaterialIssueRequestPending: createMaterialIssueMutation.isLoading,
+    confirmLineSideReceipt: async (
+      requestId: string,
+      body: BusinessConsoleMesConfirmLineSideReceiptRequest,
+    ) => {
+      const result = await confirmLineSideReceiptMutation.mutateAsync({
+        path: { requestId },
+        query: toContextQuery(filters),
+        body,
+      })
+      await refreshMaterialIssueQueries()
+      return result
+    },
+    confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,
   }
 }
 

@@ -67,6 +67,12 @@ public sealed record ProductionReportRecordedDomainEvent(
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;
 
+/// <summary>
+/// Raised when a material issue request is first created. Drives the warehouse leg of the 领料 chain
+/// (WMS outbound order + picking task); the inventory movement legs stay on the receipt/return events.
+/// </summary>
+public sealed record MaterialIssueRequestCreatedDomainEvent(MaterialIssueRequest MaterialIssueRequest) : IDomainEvent;
+
 public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal IssuedQuantity) : IDomainEvent;
 
 public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;

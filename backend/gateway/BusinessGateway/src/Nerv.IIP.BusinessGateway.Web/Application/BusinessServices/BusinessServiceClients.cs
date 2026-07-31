@@ -7279,6 +7279,22 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
 public sealed class HttpBusinessMesClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesClient
 {
+    private const string MesDownstreamService = "business-mes";
+    private const string MesMaterialIssueRequestDocumentType = "mes-material-issue-request";
+
+    /// <summary>MES accepted-receipt body as returned by the service endpoints.</summary>
+    private sealed record MesServiceAcceptedResponse(string? Status, string? ReferenceId, DateTimeOffset? AcceptedAtUtc);
+
+    private static BusinessConsoleAcceptedResponse ToAcceptedResponse(
+        MesServiceAcceptedResponse? accepted,
+        string downstreamDocumentType) =>
+        new(
+            // MES only answers 2xx when it accepted the intent, so a parsed body is the acceptance.
+            accepted is not null,
+            MesDownstreamService,
+            downstreamDocumentType,
+            string.IsNullOrWhiteSpace(accepted?.ReferenceId) ? null : accepted.ReferenceId);
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -7517,17 +7533,22 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
+    public async Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesCreateMaterialIssueRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        CancellationToken cancellationToken)
+    {
+        // MES answers with { status, referenceId, acceptedAtUtc }; deserializing that straight into the
+        // console contract left `accepted` false and dropped the allocated 领料单号. Map it explicitly.
+        var accepted = await SendAsync<MesServiceAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-issue-requests",
             request,
             cancellationToken);
+        return ToAcceptedResponse(accepted, MesMaterialIssueRequestDocumentType);
+    }
 
     public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
         string internalBearerToken,
@@ -7540,17 +7561,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
+    public async Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
         string internalBearerToken,
         string requestId,
         BusinessConsoleMesConfirmLineSideReceiptRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        CancellationToken cancellationToken)
+    {
+        var accepted = await SendAsync<MesServiceAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
             request,
             cancellationToken);
+        return ToAcceptedResponse(accepted, MesMaterialIssueRequestDocumentType);
+    }
 
     public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,

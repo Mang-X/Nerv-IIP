@@ -37,6 +37,9 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.SourceLocationCode).HasColumnName("source_location_code").HasMaxLength(100).HasComment("Inventory location code the material is actually issued from, resolved from real stock holdings.");
         builder.Property(x => x.TargetSiteCode).HasColumnName("target_site_code").HasMaxLength(100).HasComment("Inventory site code of the work station line-side destination.");
         builder.Property(x => x.TargetLocationCode).HasColumnName("target_location_code").HasMaxLength(100).HasComment("Inventory location code of the work station line-side destination.");
+        builder.Property(x => x.WmsRequestId).HasColumnName("wms_request_id").HasMaxLength(100).HasComment("WMS outbound order number prepared for this material issue request, reported back by WMS.");
+        builder.Property(x => x.WmsPickingTaskNo).HasColumnName("wms_picking_task_no").HasMaxLength(100).HasComment("WMS picking task number created for this material issue request, when reported.");
+        builder.Property(x => x.WmsPreparedAtUtc).HasColumnName("wms_prepared_at_utc").HasComment("UTC time when WMS acknowledged this material issue request with warehouse work.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

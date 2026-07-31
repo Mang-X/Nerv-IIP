@@ -14,6 +14,7 @@ public static class WmsIntegrationEventTypes
     public const string WcsTaskRetryExhausted = "wms.WcsTaskRetryExhausted";
     public const string WcsTaskCompleted = "wms.WcsTaskCompleted";
     public const string WcsTaskCancelled = "wms.WcsTaskCancelled";
+    public const string MaterialIssueOutboundPrepared = "wms.MaterialIssueOutboundPrepared";
 }
 
 public static class WmsIntegrationEventVersions
@@ -29,6 +30,7 @@ public static class WmsIntegrationEventSources
 
 public static class WmsSourceDocumentTypes
 {
+    public const string MesMaterialIssueRequest = "mes-material-issue-request";
     public const string PurchaseReceipt = "purchase-receipt";
     public const string PurchaseReceiptReturn = "purchase-receipt-return";
     public const string SalesReturnRma = "sales-return-rma";
@@ -145,3 +147,34 @@ public sealed record WmsOutboundOrderRequestedLine(
     string LocationCode,
     string? LotNo,
     decimal Quantity);
+
+/// <summary>
+/// Warehouse acknowledgement for a MES material issue request: the outbound document (and the first
+/// picking task) that MES can quote back to the operator as 出库单.
+/// </summary>
+public sealed record WmsMaterialIssueOutboundPreparedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    WmsMaterialIssueOutboundPreparedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record WmsMaterialIssueOutboundPreparedPayload(
+    string MaterialIssueRequestNo,
+    string OutboundOrderNo,
+    string? PickingTaskNo,
+    string SiteCode,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    DateTimeOffset PreparedAtUtc);
