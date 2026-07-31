@@ -52,6 +52,9 @@ const operationListScopeRef = ref({
   id: 'WC-A',
   displayName: '精加工一线',
 })
+const operationListContextIdentityRef = ref(
+  'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
+)
 
 const defaultTasks = [
   {
@@ -97,6 +100,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     completeTask,
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
+    operationListContextIdentity: operationListContextIdentityRef,
     operationListScopeMessage: ref(''),
     operationListScopeReady: ref(true),
     operationScopeMessage: operationScopeMessageRef,
@@ -137,6 +141,13 @@ describe('PDA MES operation execution page', () => {
     sopsErrorRef.value = null
     operationScopeMessageRef.value = ''
     operationScopeReadyRef.value = true
+    operationListScopeRef.value = {
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }
+    operationListContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
     operationTasksRef.value = defaultTasks
     tasksPendingRef.value = false
     tasksSuccessfulRef.value = true
@@ -226,6 +237,116 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    wrapper.unmount()
+  })
+
+  it('closes a fixed-pair sheet and reopens only from the new scope response', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+
+    tasksPendingRef.value = true
+    tasksSuccessfulRef.value = false
+    operationListScopeRef.value = {
+      kind: 'work-center',
+      id: 'WC-B',
+      displayName: '精加工二线',
+    }
+    operationListContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    await nextTick()
+
+    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[0],
+        operationSequence: 30,
+        workCenterId: 'WC-B',
+      },
+    ]
+    tasksSuccessfulRef.value = true
+    tasksPendingRef.value = false
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 30')
+    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    wrapper.unmount()
+  })
+
+  it('closes a fixed-pair sheet and fails closed when the new scope omits the task', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+
+    tasksPendingRef.value = true
+    tasksSuccessfulRef.value = false
+    operationListScopeRef.value = {
+      kind: 'work-center',
+      id: 'WC-B',
+      displayName: '精加工二线',
+    }
+    operationListContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    await nextTick()
+
+    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+
+    operationTasksRef.value = []
+    tasksSuccessfulRef.value = true
+    tasksPendingRef.value = false
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="operation-deep-link-message"]').text()).toContain(
+      '未在当前主体授权作业范围内找到指定工序任务',
+    )
+    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('does not revive a fixed-pair sheet from a stale response after rapid scope changes', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+
+    tasksPendingRef.value = true
+    tasksSuccessfulRef.value = false
+    operationListContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    await nextTick()
+    operationListContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-C'
+    await nextTick()
+
+    operationTasksRef.value = [defaultTasks[0]]
+    await flushPromises()
+    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[0],
+        operationSequence: 40,
+        workCenterId: 'WC-C',
+      },
+    ]
+    tasksSuccessfulRef.value = true
+    tasksPendingRef.value = false
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 40')
     expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
     wrapper.unmount()
   })

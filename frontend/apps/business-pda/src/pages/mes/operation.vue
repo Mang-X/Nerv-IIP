@@ -54,6 +54,7 @@ const {
   completeTask,
   actionPending,
   operationListScope,
+  operationListContextIdentity,
   operationListScopeMessage,
   operationListScopeReady,
   operationScopeMessage,
@@ -82,7 +83,8 @@ const hasInvalidTaskDeepLink = computed(
   () => hasAnyTaskDeepLink.value && !hasCompleteTaskDeepLink.value,
 )
 const deepLinkIdentity = computed(
-  () => `${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+  () =>
+    `${operationListContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
 )
 const deepLinkMessage = ref('')
 
@@ -239,7 +241,7 @@ function openSheet(task: Task) {
 
 const deepLinkOpenedIdentity = ref('')
 watch(
-  [requestedWorkOrderId, requestedOperationTaskId],
+  [requestedWorkOrderId, requestedOperationTaskId, operationListContextIdentity],
   ([workOrderId, operationTaskId]) => {
     closeSheet()
     if (!operationResultUnknown.value) result.value = null
