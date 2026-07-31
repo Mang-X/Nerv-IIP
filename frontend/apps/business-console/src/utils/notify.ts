@@ -31,6 +31,11 @@ export function friendlyErrorMessage(error: unknown, fallback = '操作失败，
   ) {
     return '操作结果尚未确认，请保留当前操作并刷新列表核实；确认未生效后再重试。'
   }
+  // 网关超时（#1306）：任务可能仍在下游处理，引导用户去列表核实而不是盲目重试。
+  // 必须排在通用网络分支之前，否则 `downstream-timeout` 会被 /timeout/ 吞成泛化文案。
+  if (/downstream-timeout|\b504\b|gateway ?time-?out/i.test(raw)) {
+    return '服务响应超时，任务可能仍在处理；请稍后刷新相关列表查看结果，勿立即重复提交。'
+  }
   if (
     /downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable|\b500\b/i.test(
       raw,

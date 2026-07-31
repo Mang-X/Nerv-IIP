@@ -3401,12 +3401,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse =
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpResponse = {
     runId?: string;
-    suggestionCount?: number;
-    hasInputDegradation?: boolean;
-    inputDegradationSources?: Array<string>;
-    inputSources?: Array<string>;
-    inputCoverageStart?: string | null;
-    inputCoverageEnd?: string | null;
+    status?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpRequest = {
@@ -3439,6 +3434,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputSources?: Array<string>;
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
+    failureReason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {

@@ -104,6 +104,48 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Mrp_run_mark_running_commits_state_before_snapshot_and_rejects_out_of_order_transitions()
+    {
+        var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        // 快照元数据只能写在运行中状态上（worker 两跳时序：先 Running 后计算）。
+        Assert.Throws<InvalidOperationException>(() =>
+            run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2)));
+
+        run.MarkRunning();
+        Assert.Equal(MrpRunStatus.Running, run.Status);
+        Assert.NotNull(run.StartedAtUtc);
+        Assert.Throws<InvalidOperationException>(run.MarkRunning);
+
+        run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        run.Complete(suggestionCount: 0);
+        Assert.Equal(MrpRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
+    public void Mrp_run_fails_from_queued_or_running_with_clamped_reason_and_terminal_states_reject_failure()
+    {
+        var queued = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        queued.Fail("MRP 计算因服务重启被中断，请重新运行。");
+        Assert.Equal(MrpRunStatus.Failed, queued.Status);
+        Assert.Equal("MRP 计算因服务重启被中断，请重新运行。", queued.FailureReason);
+        Assert.NotNull(queued.CompletedAtUtc);
+
+        var running = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        running.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        running.Fail(new string('异', MrpRun.FailureReasonMaxLength + 100));
+        Assert.Equal(MrpRunStatus.Failed, running.Status);
+        Assert.Equal(MrpRun.FailureReasonMaxLength, running.FailureReason!.Length);
+
+        // 终态（已完成/已失败）不可再置失败。
+        Assert.Throws<InvalidOperationException>(() => running.Fail("again"));
+        var completed = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        completed.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        completed.Complete(suggestionCount: 0);
+        Assert.Throws<InvalidOperationException>(() => completed.Fail("late"));
+    }
+
+    [Fact]
     public void Mrp_run_exposes_input_degradation_sources_from_snapshot_metadata()
     {
         var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));

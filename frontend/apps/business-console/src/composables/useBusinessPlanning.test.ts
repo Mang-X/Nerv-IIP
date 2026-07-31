@@ -19,7 +19,11 @@ import {
 } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useBusinessPlanning } from './useBusinessPlanning'
+import {
+  MRP_RUN_POLL_INTERVAL_MS,
+  MRP_RUN_POLL_TIMEOUT_MS,
+  useBusinessPlanning,
+} from './useBusinessPlanning'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
@@ -76,10 +80,11 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsolePlanningSuggestions' }],
     query: vi.fn(),
   })),
+  // #1306 异步受理回执：只回 runId + 排队状态（与 BusinessConsoleRunMrpResponse 契约一致）。
   runBusinessConsolePlanningMrpMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
+    mutation: vi.fn(async () => ({
       success: true,
-      data: { runId: 'run-1', suggestionCount: 2, vars },
+      data: { runId: 'run-1', status: 'Created' },
     })),
   })),
   updateBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
@@ -118,11 +123,15 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
 
-    const refetch = vi.fn()
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    // refetch 时从 map 重新取数，模拟轮询期间服务端状态推进（#1306 MRP 运行跟踪用）。
+    const refetch = vi.fn(async () => {
+      data.value = coladaState.queryDataById.get(id)
+    })
     coladaState.refetchById.set(id, refetch)
 
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch,
@@ -364,6 +373,97 @@ describe('business planning composable', () => {
       }),
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('tracks the accepted MRP run through queued/running to completed and stops polling', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+
+      // 受理即回执：runId + 排队态，不含任何计算结果。
+      expect(activeMrpRun.runId).toBe('run-1')
+      expect(activeMrpRun.status).toBe('queued')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('running')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Completed', suggestionCount: 5 }] },
+      })
+      coladaState.invalidateQueries.mockClear()
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('completed')
+      expect(activeMrpRun.suggestionCount).toBe(5)
+      // 完成后建议/KPI 读面统一失效重取。
+      expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
+        predicate: expect.any(Function),
+      })
+
+      // 终态后停止轮询。
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('exposes the failure reason when the tracked MRP run fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: {
+          items: [
+            {
+              runId: 'run-1',
+              status: 'Failed',
+              failureReason: 'MRP 计算失败：上游库存快照不可用。',
+            },
+          ],
+        },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+
+      expect(activeMrpRun.status).toBe('failed')
+      expect(activeMrpRun.failureReason).toBe('MRP 计算失败：上游库存快照不可用。')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks the tracked MRP run as polling-timeout when no terminal status arrives in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_TIMEOUT_MS + MRP_RUN_POLL_INTERVAL_MS)
+
+      // 轮询超时 ≠ 失败：后台可能仍在计算，只提示去运行列表回看。
+      expect(activeMrpRun.status).toBe('polling-timeout')
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('accepts a planning suggestion through generated mutation and refreshes planning queries', async () => {
