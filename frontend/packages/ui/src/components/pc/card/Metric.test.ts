@@ -798,4 +798,63 @@ describe('NvMetricRing / NvMetricStrip', () => {
     // 向上 meta 出趋势图标（svg）
     expect(cells[0].find('svg').exists()).toBe(true)
   })
+
+  /*
+   * delta 之所以不能用 meta + metaTone 顶替：metaTone 把 up 硬映射成 success，
+   * 表达不了「超期工单 +3」这种「涨了但是坏事」。下面锁的就是这条。
+   */
+  it('strip 的 delta 走 tone 覆盖，能表达「涨了但是坏事」', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: {
+        cells: [
+          { label: '今日产量', value: '12,480', delta: { value: '+4.9%', direction: 'up' } },
+          {
+            label: '超期工单',
+            value: 3,
+            delta: { value: '+3', direction: 'up', tone: 'danger' },
+            meta: '最久超期 3 天',
+          },
+        ],
+      },
+    })
+    const cells = wrapper.findAll('.flex-1')
+    expect(cells[0].html()).toContain('+4.9%')
+    expect(cells[0].html()).toContain('text-success-strong')
+    // 上箭头照旧，但配色是 danger——方向说事实，颜色说好坏
+    expect(cells[1].html()).toContain('text-destructive-strong')
+    // delta 与 meta 同时给出时，注脚跟在 chip 后面而不是被吃掉
+    expect(cells[1].text()).toContain('最久超期 3 天')
+  })
+
+  it('strip 给了 series 就出迷你图，并为没图的格留出等高位置', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: {
+        cells: [
+          {
+            label: '今日产量',
+            value: 12_480,
+            series: [11_020, 11_460, 11_890, 12_480],
+            seriesLabels: ['07-20', '07-21', '07-22', '07-23'],
+            seriesUnit: ' 件',
+          },
+          { label: '报工工单', value: 26 },
+        ],
+      },
+    })
+    const cells = wrapper.findAll('.flex-1')
+    // 文本等价物必须在——十字准线只在 hover 时吐数，读屏用户否则只拿到一个空图
+    const chart = cells[0].find('[role="img"]')
+    expect(chart.exists()).toBe(true)
+    expect(chart.attributes('aria-label')).toContain('07-23: 12480 件')
+    // 没有 series 的那格留占位，避免整行下沿参差
+    expect(cells[1].find('[role="img"]').exists()).toBe(false)
+    expect(cells[1].find('.h-\\[34px\\]').exists()).toBe(true)
+  })
+
+  it('strip 单点 series 不画图（一个点画不出走势）', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: { cells: [{ label: '今日产量', value: 12_480, series: [12_480] }] },
+    })
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
+  })
 })

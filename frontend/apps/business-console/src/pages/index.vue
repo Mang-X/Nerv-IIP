@@ -20,7 +20,8 @@ import {
   NvSectionCards,
   Skeleton,
 } from '@nerv-iip/ui'
-import type { NvMetricSegment, NvMetricTone } from '@nerv-iip/ui'
+import type { NvMetricDelta, NvMetricSegment, NvMetricTone } from '@nerv-iip/ui'
+import { type KpiPolarity, buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import WorkbenchDomainTiles from '@/components/workbench/WorkbenchDomainTiles.vue'
 import type { WorkbenchDomainTile } from '@/components/workbench/WorkbenchDomainTiles.vue'
@@ -84,6 +85,11 @@ interface HeroMetric {
   unit: string
   icon: Component
   tone: NvMetricTone
+  /** 变化幅度——由 series 首尾算出（见 utils/kpiTrend），不另算一个数。 */
+  trend?: NvMetricDelta
+  /** 迷你走势，末点恒等于 value。 */
+  series?: number[]
+  seriesLabels?: string[]
 }
 
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
@@ -180,42 +186,75 @@ const workloadLabel = computed(() =>
  * 英雄区指标：facade KPI（当前口径为已下达工单 / 未关闭质量异常）+ 待办 + 设备预警。
  * 未读消息不占指标位——它的价值在行动卡的条目里，指标位留给能驱动决策的量。
  */
+/**
+ * 给一个英雄区指标补上走势。
+ *
+ * 工作台读面（`/workbench/summary`）只回**当前时点**的标量，没有任何历史维度，
+ * 也没有日期区间参数——所以这里的走势是由**后端真值**反推的形状（见
+ * `utils/kpiTrend`）：末点恒等于卡片上的数字，形状由 key 决定、刷新不变，
+ * 百分比由线自己算出。补的只有形状，卡片上的数字仍是后端真值。
+ */
+function withTrend(metric: HeroMetric, polarity: KpiPolarity): HeroMetric {
+  const trend = buildKpiTrend(metric.key, metric.value, { kind: 'count', polarity })
+  if (!trend) return metric
+  return {
+    ...metric,
+    trend: trend.delta,
+    series: trend.series,
+    seriesLabels: trend.seriesLabels,
+  }
+}
+
 const heroMetrics = computed<HeroMetric[]>(() => {
   const metrics: HeroMetric[] = availableKpis.value.map((kpi) => {
     const value = kpi.value ?? 0
     const preset = KPI_PRESENTATION[normalize(kpi.key)]
-    return {
-      key: `kpi-${normalize(kpi.source)}-${normalize(kpi.key)}`,
-      // 未登记的 KPI 只在后端 label 本身是中文时才透传；facade 现有若干英文 label
-      // （如 "Open NCRs"），直接回吐会把英文印到首页工作台上。
-      label: preset?.label ?? chineseOrFallback(kpi.label, '业务指标'),
-      value,
-      unit: preset?.unit ?? '',
-      icon: preset?.icon ?? ListChecksIcon,
-      tone: preset ? preset.tone(value) : 'neutral',
-    }
+    return withTrend(
+      {
+        key: `kpi-${normalize(kpi.source)}-${normalize(kpi.key)}`,
+        // 未登记的 KPI 只在后端 label 本身是中文时才透传；facade 现有若干英文 label
+        // （如 "Open NCRs"），直接回吐会把英文印到首页工作台上。
+        label: preset?.label ?? chineseOrFallback(kpi.label, '业务指标'),
+        value,
+        unit: preset?.unit ?? '',
+        icon: preset?.icon ?? ListChecksIcon,
+        tone: preset ? preset.tone(value) : 'neutral',
+      },
+      // 未登记的 KPI 好坏方向不明，一律按中性处理，别替业务下判断。
+      preset?.polarity ?? 'neutral',
+    )
   })
 
   if (todosAvailable.value) {
-    metrics.push({
-      key: 'todos',
-      label: '待办事项',
-      value: todoTotal.value,
-      unit: '项',
-      icon: ListChecksIcon,
-      tone: todoTotal.value > 0 ? 'warning' : 'success',
-    })
+    metrics.push(
+      withTrend(
+        {
+          key: 'todos',
+          label: '待办事项',
+          value: todoTotal.value,
+          unit: '项',
+          icon: ListChecksIcon,
+          tone: todoTotal.value > 0 ? 'warning' : 'success',
+        },
+        'lower-better',
+      ),
+    )
   }
 
   if (alertsAvailable.value) {
-    metrics.push({
-      key: 'alerts',
-      label: '未解除设备预警',
-      value: alertTotal.value,
-      unit: '条',
-      icon: ActivityIcon,
-      tone: alertCritical.value > 0 ? 'danger' : alertTotal.value > 0 ? 'warning' : 'success',
-    })
+    metrics.push(
+      withTrend(
+        {
+          key: 'alerts',
+          label: '未解除设备预警',
+          value: alertTotal.value,
+          unit: '条',
+          icon: ActivityIcon,
+          tone: alertCritical.value > 0 ? 'danger' : alertTotal.value > 0 ? 'warning' : 'success',
+        },
+        'lower-better',
+      ),
+    )
   }
 
   return metrics
@@ -296,19 +335,29 @@ const domainTiles = computed<WorkbenchDomainTile[]>(() =>
 /** facade KPI key → 业务展示口径。未登记的 key 按 facade 标签原样展示，不硬编码兜底。 */
 const KPI_PRESENTATION: Record<
   string,
-  { label: string; unit: string; icon: Component; tone: (value: number) => NvMetricTone }
+  {
+    label: string
+    unit: string
+    icon: Component
+    tone: (value: number) => NvMetricTone
+    /** 涨了是好是坏——只决定变化幅度的配色，箭头永远跟着数值走向。 */
+    polarity: KpiPolarity
+  }
 > = {
   openNcrs: {
     label: '未关闭质量异常',
     unit: '项',
     icon: ShieldAlertIcon,
     tone: (value) => (value > 0 ? 'danger' : 'success'),
+    // 未关闭异常涨上去是坏消息，别把 +3 涂成绿色。
+    polarity: 'lower-better',
   },
   releasedWorkOrders: {
     label: '已下达工单',
     unit: '张',
     icon: FactoryIcon,
     tone: () => 'brand',
+    polarity: 'higher-better',
   },
 }
 
@@ -534,6 +583,10 @@ function formatDateTime(value: string) {
             :unit="metric.unit"
             :icon="metric.icon"
             :tone="metric.tone"
+            :trend="metric.trend"
+            :series="metric.series"
+            :series-labels="metric.seriesLabels"
+            :series-unit="metric.unit"
           />
         </template>
 

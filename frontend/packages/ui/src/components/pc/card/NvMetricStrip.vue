@@ -3,14 +3,22 @@ import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
+import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvCard from './NvCard.vue'
-import { metricItemKey, metricToneText, type NvMetricStripCell } from './metric'
+import {
+  metricItemKey,
+  metricToneText,
+  metricToneTint,
+  type NvMetricStripCell,
+  resolveDeltaTone,
+} from './metric'
 
 /**
  * Pro — one card holding a row of related metrics, separators standing in for
  * card gaps. Highest-density KPI surface: sits atop a list page pinning the key
  * figures on one line without competing with the table below. Each cell owns a
- * label, a headline value and an optional toned sub-line (a delta or a note).
+ * label, a headline value, an optional delta / note sub-line, and an optional
+ * mini trend chart.
  */
 const props = withDefaults(
   defineProps<{
@@ -26,13 +34,43 @@ const props = withDefaults(
  * a meta line, hold the line's height open in the others — the reserve costs
  * nothing when no cell has one, and stays out of the accessibility tree.
  */
-const reservesMeta = computed(() => props.cells.some((cell) => Boolean(cell.meta)))
+const reservesMeta = computed(() =>
+  props.cells.some((cell) => Boolean(cell.meta) || Boolean(cell.delta)),
+)
+
+/**
+ * Same ragged-edge argument one level down: a cell with a sparkline is ~34px
+ * taller than one without. Mixed rows are common (a count has history, a
+ * derived ratio doesn't), so reserve the chart band across the row whenever any
+ * cell plots one.
+ */
+const reservesChart = computed(() => props.cells.some((cell) => (cell.series?.length ?? 0) > 1))
 
 const metaIcon = { up: TrendingUpIcon, down: TrendingDownIcon, flat: MinusIcon } as const
 function metaToneClass(tone?: string) {
   if (tone === 'up') return metricToneText.success
   if (tone === 'down') return metricToneText.danger
   return 'text-muted-foreground'
+}
+
+function chartData(cell: NvMetricStripCell) {
+  return (cell.series ?? []).map((value, i) => ({
+    label: cell.seriesLabels?.[i] ?? String(i + 1),
+    value,
+  }))
+}
+
+/**
+ * The crosshair only surfaces the series on hover, so keyboard and
+ * screen-reader users would get a decorative blank. Mirror the points as text
+ * the way NvMetricCard's sparkline zone does.
+ */
+function chartAriaLabel(cell: NvMetricStripCell) {
+  const unit = cell.seriesUnit ?? ''
+  const points = (cell.series ?? []).map(
+    (v, i) => `${cell.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
+  )
+  return `${cell.label} 趋势，${points.length} 期：${points.join('；')}`
 }
 </script>
 
@@ -57,8 +95,26 @@ function metaToneClass(tone?: string) {
           cell.unit
         }}</span>
       </p>
+
+      <span v-if="cell.delta" class="flex min-w-0 items-center gap-1.5 text-xs">
+        <span
+          :class="
+            cn(
+              'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 font-semibold tabular-nums',
+              metricToneTint[resolveDeltaTone(cell.delta)],
+            )
+          "
+        >
+          <component
+            :is="metaIcon[cell.delta.direction ?? 'flat']"
+            class="size-3"
+            aria-hidden="true"
+          />{{ cell.delta.value }}
+        </span>
+        <span v-if="cell.meta" class="truncate text-muted-foreground">{{ cell.meta }}</span>
+      </span>
       <span
-        v-if="cell.meta"
+        v-else-if="cell.meta"
         :class="
           cn('inline-flex items-center gap-1 text-xs tabular-nums', metaToneClass(cell.metaTone))
         "
@@ -71,6 +127,22 @@ function metaToneClass(tone?: string) {
         />{{ cell.meta }}
       </span>
       <span v-else-if="reservesMeta" class="text-xs" aria-hidden="true">&nbsp;</span>
+
+      <div
+        v-if="(cell.series?.length ?? 0) > 1"
+        role="img"
+        :aria-label="chartAriaLabel(cell)"
+        class="mt-1.5"
+      >
+        <NvAreaChart
+          minimal
+          crosshair
+          :data="chartData(cell)"
+          :height="34"
+          :value-suffix="cell.seriesUnit ?? ''"
+        />
+      </div>
+      <div v-else-if="reservesChart" class="mt-1.5 h-[34px]" aria-hidden="true" />
     </div>
   </NvCard>
 </template>

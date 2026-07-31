@@ -126,6 +126,16 @@ const valueToneClass = computed(() =>
 const defaultChartData = computed(() =>
   (props.series ?? []).map((v, i) => ({ label: props.seriesLabels?.[i] ?? String(i), value: v })),
 )
+/** `icon` cards plot the same series inline (no crosshair — the strip is 64px wide). */
+const iconChartData = computed(() => (props.variant === 'icon' ? defaultChartData.value : []))
+/** Text equivalent of the inline sparkline — it has no crosshair to reveal the points. */
+const seriesAriaLabel = computed(() => {
+  const unit = props.seriesUnit ?? ''
+  const points = (props.series ?? []).map(
+    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
+  )
+  return `${props.label} 趋势，${points.length} 期：${points.join('；')}`
+})
 </script>
 
 <template>
@@ -155,17 +165,30 @@ const defaultChartData = computed(() =>
           }}</span>
         </p>
       </div>
-      <span
-        v-if="trend"
-        :class="
-          cn(
-            'nv-metric-chip ml-auto shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
-            metricToneTint[deltaTone],
-          )
-        "
-      >
-        <component :is="deltaIcon" class="size-3" aria-hidden="true" />{{ trend.value }}
-      </span>
+      <div class="ml-auto flex shrink-0 items-center gap-2.5">
+        <!-- An `icon` card is a one-line summary, so its trend rides alongside the
+             number rather than below it: a short sparkline for the shape, the chip
+             for the figure. Both are supplementary and yield on narrow cells. -->
+        <div
+          v-if="iconChartData.length > 1"
+          class="nv-metric-spark w-16"
+          role="img"
+          :aria-label="seriesAriaLabel"
+        >
+          <NvAreaChart minimal :data="iconChartData" :height="30" />
+        </div>
+        <span
+          v-if="trend"
+          :class="
+            cn(
+              'nv-metric-chip shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+              metricToneTint[deltaTone],
+            )
+          "
+        >
+          <component :is="deltaIcon" class="size-3" aria-hidden="true" />{{ trend.value }}
+        </span>
+      </div>
     </div>
 
     <!-- all other variants: vertical, shared header + a bottom-zone part -->
@@ -297,6 +320,17 @@ const defaultChartData = computed(() =>
   }
   .nv-metric-iconbox {
     display: grid;
+  }
+  .nv-metric-spark {
+    display: block;
+  }
+  /* Degrade ladder, widest appetite first: the inline sparkline needs the most
+     room and says the least precisely, so it goes before the chip, which goes
+     before the icon. Label and value never yield. */
+  @container (max-width: 264px) {
+    .nv-metric-spark {
+      display: none;
+    }
   }
   @container (max-width: 208px) {
     .nv-metric-chip {
