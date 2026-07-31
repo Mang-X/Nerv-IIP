@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -320,9 +321,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                "erp-purchase-order-release",
+                ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -753,9 +754,9 @@ public sealed class CreatePurchaseOrderCommandHandler(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                "erp-purchase-order-release",
+                ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -1245,9 +1246,9 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                     new PurchaseOrderApprovalRequest(
                         request.OrganizationId,
                         request.EnvironmentId,
-                        "erp-purchase-order-release",
+                        ApprovalTemplateCodes.PurchaseOrderRelease,
                         "business-erp",
-                        "purchase-order",
+                        ApprovalDocumentTypes.PurchaseOrder,
                         request.PurchaseOrderNo,
                         null,
                         request.StartedBy,
@@ -1264,7 +1265,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
             var approval = await _approvalClient.StartApprovalAsync(
-                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, "erp-purchase-order-change", "business-erp", "purchase-order", request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, "business-erp", ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
             change.AssignApprovalChain(approval.ChainId);
             return approval.ChainId;

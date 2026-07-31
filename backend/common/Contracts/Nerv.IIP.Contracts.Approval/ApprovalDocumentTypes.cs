@@ -23,6 +23,12 @@ public static class ApprovalDocumentTypes
     public const string PurchaseOrder = "purchase-order";
 
     /// <summary>
+    /// 盘点差异审批（#1344）。Inventory 发起侧、审批种子模板、Inventory 回写消费侧三方共用——
+    /// 审批模板按 <c>(templateCode, documentType)</c> 双条件命中，任一漂移即 400 / 回写静默丢事件。
+    /// </summary>
+    public const string StockCountVariance = "inventory-count-variance";
+
+    /// <summary>
     /// NCR 处置审批的**受理集合**：权威码值 + 历史别名。
     ///
     /// 别名只用于「读既有链」的向后兼容（本次收敛前由界面发起的链落的是 <c>quality-ncr</c>），

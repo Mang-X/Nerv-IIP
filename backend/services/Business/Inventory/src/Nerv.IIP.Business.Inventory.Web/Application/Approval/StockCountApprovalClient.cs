@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Approval;
@@ -10,7 +11,15 @@ public sealed class StockCountAdjustmentApprovalOptions
 
     public decimal QuantityThreshold { get; init; } = 10m;
     public decimal AmountThreshold { get; init; } = 1000m;
-    public string TemplateCode { get; init; } = "COUNT-VARIANCE";
+
+    /// <summary>
+    /// 盘点差异审批模板码。默认值必须是**种子里真实存在的模板**（#1344 扩修）：
+    /// 此前默认 <c>COUNT-VARIANCE</c> 而种子无此模板，差异超阈值的盘点确认必 400。
+    /// </summary>
+    public string TemplateCode { get; init; } = ApprovalTemplateCodes.StockCountVariance;
+
+    /// <summary>盘点差异审批的单据类型，与模板一起命中；同样取自审批契约的唯一事实来源。</summary>
+    public string DocumentType { get; init; } = ApprovalDocumentTypes.StockCountVariance;
 
     public bool RequiresApproval(decimal varianceQuantity, decimal varianceAmount) =>
         Math.Abs(varianceQuantity) > QuantityThreshold || Math.Abs(varianceAmount) > AmountThreshold;
