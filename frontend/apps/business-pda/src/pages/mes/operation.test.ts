@@ -200,13 +200,12 @@ describe('PDA MES operation execution page', () => {
       operationTaskId: 'OP-2',
     })
 
-    const wrapper = mount(OperationPage, { attachTo: document.body })
+    mount(OperationPage, { attachTo: document.body })
     await flushPromises()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
     expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
-    wrapper.unmount()
   })
 
   it('closes the old task and waits for the new pair response when the reused route query changes', async () => {
@@ -214,7 +213,7 @@ describe('PDA MES operation execution page', () => {
       workOrderId: 'WO-2026-0001',
       operationTaskId: 'OP-1',
     })
-    const wrapper = mount(OperationPage, { attachTo: document.body })
+    mount(OperationPage, { attachTo: document.body })
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
 
@@ -238,7 +237,6 @@ describe('PDA MES operation execution page', () => {
 
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
     expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
-    wrapper.unmount()
   })
 
   it('closes a fixed-pair sheet and reopens only from the new scope response', async () => {
@@ -246,7 +244,7 @@ describe('PDA MES operation execution page', () => {
       workOrderId: 'WO-2026-0001',
       operationTaskId: 'OP-1',
     })
-    const wrapper = mount(OperationPage, { attachTo: document.body })
+    mount(OperationPage, { attachTo: document.body })
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
 
@@ -276,7 +274,6 @@ describe('PDA MES operation execution page', () => {
 
     expect(document.body.textContent).toContain('WO-2026-0001 · 工序 30')
     expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
-    wrapper.unmount()
   })
 
   it('closes a fixed-pair sheet and fails closed when the new scope omits the task', async () => {
@@ -310,7 +307,6 @@ describe('PDA MES operation execution page', () => {
       '未在当前主体授权作业范围内找到指定工序任务',
     )
     expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
-    wrapper.unmount()
   })
 
   it('does not revive a fixed-pair sheet from a stale response after rapid scope changes', async () => {
@@ -318,7 +314,7 @@ describe('PDA MES operation execution page', () => {
       workOrderId: 'WO-2026-0001',
       operationTaskId: 'OP-1',
     })
-    const wrapper = mount(OperationPage, { attachTo: document.body })
+    mount(OperationPage, { attachTo: document.body })
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
 
@@ -348,7 +344,6 @@ describe('PDA MES operation execution page', () => {
 
     expect(document.body.textContent).toContain('WO-2026-0001 · 工序 40')
     expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
-    wrapper.unmount()
   })
 
   it('fails closed when a reused route changes to an incomplete task identity', async () => {
@@ -361,7 +356,6 @@ describe('PDA MES operation execution page', () => {
     )
     expect(wrapper.findAll('[data-row]')).toHaveLength(0)
     expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
-    wrapper.unmount()
   })
 
   it('fails closed when the exact pair is absent from the authorized response', async () => {
@@ -377,7 +371,6 @@ describe('PDA MES operation execution page', () => {
     )
     expect(wrapper.findAll('[data-row]')).toHaveLength(0)
     expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
-    wrapper.unmount()
   })
 
   it('shows the missing-scope reason and disables lifecycle actions', async () => {
