@@ -141,7 +141,8 @@ public sealed class QualityCapaAutomationTests
                 DateTimeOffset.Parse("2026-07-15T00:00:00Z"),
                 rejectedInspection.Id),
             CancellationToken.None));
-        Assert.Contains("passed", rejectedException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("合格", rejectedException.Message, StringComparison.Ordinal);
+        Assert.Contains(capa.CapaCode, rejectedException.Message, StringComparison.Ordinal);
 
         await verifyHandler.Handle(
             new VerifyCorrectiveActionEffectivenessCommand(
@@ -198,7 +199,8 @@ public sealed class QualityCapaAutomationTests
             new CloseCorrectiveActionCommand(capa.Id, "qa-manager-001", "approval-chain-rejected"),
             CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(capa.CapaCode, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.Equal("effectiveness-verified", capa.Status);
         Assert.Null(capa.ClosedAtUtc);
     }
