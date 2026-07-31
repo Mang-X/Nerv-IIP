@@ -14,6 +14,12 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
   NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   NvInput,
   NvMetricCard,
   NvPageHeader,
@@ -26,8 +32,10 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
-import { inlineErrorMessage } from '@/utils/notify'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES } from '@/permissions'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -43,6 +51,8 @@ const {
   downtimeEventsPending,
   downtimeEventsTotal,
   filters,
+  recoverDowntimeEvent,
+  recoverDowntimeEventPending,
   refreshDowntimeEvents,
 } = useMesDowntimeEvents()
 const { keyword } = useMesKeywordFilter(filters)
@@ -99,14 +109,14 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
     accessor: (r) => r.downtimeEventId ?? '无',
   },
   {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => r.workCenterId ?? '未指定',
+  },
+  {
     key: 'workOrderId',
     header: '工单',
     accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '未关联',
-  },
-  {
-    key: 'operationTaskId',
-    header: '工序任务',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '未关联',
   },
   {
     key: 'deviceAssetId',
@@ -116,7 +126,45 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   { key: 'recoveredAtUtc', header: '恢复', width: 'w-44' },
+  { key: 'actions', header: '操作', width: 'w-24', sortable: false, accessor: () => '' },
 ]
+
+// ── 恢复停机（#1323：恢复通道从只读页断掉，这里补权威入口）──────────────
+const auth = useAuthStore()
+const canRecover = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesDowntimeManage),
+)
+const recoverTarget = ref<DowntimeRow | null>(null)
+const recoverOpen = computed({
+  get: () => recoverTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open) recoverTarget.value = null
+  },
+})
+
+function isOpenRow(row: DowntimeRow) {
+  return row.status?.toLowerCase() === 'open'
+}
+
+async function confirmRecover() {
+  const row = recoverTarget.value
+  if (!row?.downtimeEventId) return
+  try {
+    await recoverDowntimeEvent(row.downtimeEventId, {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      recoveredAtUtc: new Date().toISOString(),
+      // #1219 稳定幂等键：同一停机事件的恢复是同一业务意图，键不掺时间戳，
+      // 重复点击/重试由后端幂等或 KnownException 兜住。
+      idempotencyKey: `downtime-recover-${row.downtimeEventId}`,
+    })
+    notifySuccess('停机已恢复，该工作中心的开工拦截已解除。')
+    recoverTarget.value = null
+    void refreshDowntimeEvents()
+  } catch (error) {
+    notifyOperationFailure('恢复停机失败', error, '恢复停机失败，请稍后重试。')
+  }
+}
 
 function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
@@ -223,6 +271,58 @@ function formatError(error: unknown) {
       </template>
       <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>
       <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
+      <template #cell-actions="{ row }">
+        <NvButton
+          v-if="canRecover && isOpenRow(row)"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="recoverDowntimeEventPending"
+          @click="recoverTarget = row"
+        >
+          恢复
+        </NvButton>
+        <span v-else class="text-muted-foreground">—</span>
+      </template>
     </NvDataTable>
+
+    <NvDialog v-model:open="recoverOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>确认恢复停机</NvDialogTitle>
+          <NvDialogDescription>
+            确认后停机事件立即关闭，工作中心解除停机拦截，受影响工序可重新开工。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <dl v-if="recoverTarget" class="grid gap-2 text-sm">
+          <div class="flex justify-between gap-4">
+            <dt class="text-muted-foreground">停机事件</dt>
+            <dd class="font-medium">{{ recoverTarget.downtimeEventId }}</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-muted-foreground">工作中心</dt>
+            <dd>{{ recoverTarget.workCenterId ?? '未指定' }}</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-muted-foreground">设备</dt>
+            <dd>{{ deviceText(recoverTarget) }}</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-muted-foreground">停机开始</dt>
+            <dd>{{ formatDateTime(recoverTarget.startedAtUtc) }}</dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-muted-foreground">恢复人</dt>
+            <dd>{{ auth.displayName }}</dd>
+          </div>
+        </dl>
+        <NvDialogFooter>
+          <NvButton type="button" variant="outline" @click="recoverOpen = false">取消</NvButton>
+          <NvButton type="button" :disabled="recoverDowntimeEventPending" @click="confirmRecover">
+            {{ recoverDowntimeEventPending ? '恢复中…' : '确认恢复' }}
+          </NvButton>
+        </NvDialogFooter>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>
