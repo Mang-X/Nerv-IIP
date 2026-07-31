@@ -12,6 +12,16 @@ public sealed record OutboundOrderCompletedDomainEvent(OutboundOrder OutboundOrd
 
 public sealed record OutboundOrderCancelledDomainEvent(OutboundOrder OutboundOrder) : IDomainEvent;
 
+/// <summary>
+/// Raised once the warehouse has an outbound document (and picking task) standing behind a MES
+/// material issue request, so MES can show the operator the authoritative 出库单.
+/// </summary>
+public sealed record MaterialIssueOutboundPreparedDomainEvent(
+    OutboundOrder OutboundOrder,
+    string MaterialIssueRequestNo,
+    string? PickingTaskNo,
+    DateTimeOffset PreparedAtUtc) : IDomainEvent;
+
 public sealed record CountExecutionCompletedDomainEvent(CountExecution CountExecution) : IDomainEvent;
 
 public sealed record InventoryMovementRequestCreatedDomainEvent(InventoryMovementRequest InventoryMovementRequest) : IDomainEvent;

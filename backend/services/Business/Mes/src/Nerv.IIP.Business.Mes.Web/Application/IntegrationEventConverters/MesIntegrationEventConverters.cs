@@ -297,6 +297,43 @@ public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
     }
 }
 
+public sealed class MaterialIssueRequestCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<MaterialIssueRequestCreatedDomainEvent, MesMaterialIssueRequestedIntegrationEvent>
+{
+    public MesMaterialIssueRequestedIntegrationEvent Convert(MaterialIssueRequestCreatedDomainEvent domainEvent)
+    {
+        var request = domainEvent.MaterialIssueRequest;
+        // The request number is allocated once per material issue (coding allocator is idempotency-key
+        // driven), so it alone identifies this creation for every downstream replay.
+        var idempotencyKey = EventIds.Idempotency(
+            "material-issue-requested",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.RequestNo);
+        EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        return new MesMaterialIssueRequestedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.MaterialIssueRequested,
+            MesIntegrationEventVersions.V1,
+            request.RequestedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            request.RequestNo,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new MesMaterialIssueRequestedPayload(
+                request.RequestNo,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.MaterialId,
+                request.UomCode,
+                request.RequestedQuantity,
+                request.RequestedAtUtc));
+    }
+}
+
 public sealed class MaterialIssueRequestedIntegrationEventConverter
     : IIntegrationEventConverter<MaterialIssueRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {

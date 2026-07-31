@@ -134,6 +134,16 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// <summary>收料目标库位（工位线边库位）。</summary>
     public string? TargetLocationCode { get; private set; }
 
+    /// <summary>
+    /// Warehouse outbound document number reported back by WMS after it prepared the picking work
+    /// for this material issue request. Null until the WMS side acknowledged the request.
+    /// </summary>
+    public string? WmsRequestId { get; private set; }
+
+    public string? WmsPickingTaskNo { get; private set; }
+
+    public DateTimeOffset? WmsPreparedAtUtc { get; private set; }
+
     public static MaterialIssueRequest Create(
         string organizationId,
         string environmentId,
@@ -155,7 +165,30 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             uomCode,
             requestedQuantity,
             requestedAtUtc);
+        // The warehouse side only learns about a material issue through this event: it is the head of
+        // the 领料 chain (MES -> WMS outbound/picking -> wmsRequestId 回写).
+        request.AddDomainEvent(new MaterialIssueRequestCreatedDomainEvent(request));
         return request;
+    }
+
+    /// <summary>
+    /// Records the WMS outbound document (and optional picking task) prepared for this request.
+    /// Idempotent: replaying the same warehouse acknowledgement is a no-op.
+    /// </summary>
+    public bool LinkWarehouseOutbound(string wmsRequestId, string? pickingTaskNo, DateTimeOffset preparedAtUtc)
+    {
+        var normalized = DomainGuard.Required(wmsRequestId, nameof(wmsRequestId)).Trim();
+        var normalizedTaskNo = string.IsNullOrWhiteSpace(pickingTaskNo) ? null : pickingTaskNo.Trim();
+        if (string.Equals(WmsRequestId, normalized, StringComparison.Ordinal) &&
+            string.Equals(WmsPickingTaskNo, normalizedTaskNo, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        WmsRequestId = normalized;
+        WmsPickingTaskNo = normalizedTaskNo;
+        WmsPreparedAtUtc = preparedAtUtc;
+        return true;
     }
 
     /// <summary>

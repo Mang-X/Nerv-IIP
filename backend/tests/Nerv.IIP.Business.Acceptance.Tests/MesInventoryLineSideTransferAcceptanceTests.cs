@@ -94,9 +94,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
         await inventoryMovementHandler.HandleAsync(issueEvent, CancellationToken.None);
@@ -111,9 +111,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Assert.IsType<WorkOrderCancelledDomainEvent>(mesDb.WorkOrders.Local.Single(x => x.WorkOrderId == "WO-695").GetDomainEvents().Last()));
         var cancellationEvents = issueRequest.GetDomainEvents().ToArray();
         var returnOutEvent = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReturnRequestedDomainEvent>(cancellationEvents[0]));
+            cancellationEvents.OfType<MaterialLineSideReturnRequestedDomainEvent>().Single());
         var returnInEvent = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(cancellationEvents[1]));
+            cancellationEvents.OfType<MaterialReturnedToWarehouseDomainEvent>().Single());
         await mesDb.SaveChangesAsync();
 
         await inventoryReservationHandler.HandleAsync(cancellationEvent, CancellationToken.None);
@@ -195,9 +195,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -234,9 +234,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Assert.IsType<WorkOrderCancelledDomainEvent>(mesDb.WorkOrders.Local.Single(x => x.WorkOrderId == "WO-695-CONSUME").GetDomainEvents().Last()));
         var cancellationEvents = issueRequest.GetDomainEvents().ToArray();
         var returnOutEvent = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReturnRequestedDomainEvent>(cancellationEvents[0]));
+            cancellationEvents.OfType<MaterialLineSideReturnRequestedDomainEvent>().Single());
         var returnInEvent = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(cancellationEvents[1]));
+            cancellationEvents.OfType<MaterialReturnedToWarehouseDomainEvent>().Single());
 
         Assert.Equal(-2m, returnOutEvent.Payload.Quantity);
         Assert.Equal(2m, returnInEvent.Payload.Quantity);
@@ -346,9 +346,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -438,9 +438,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -538,7 +538,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "LOT-OIL-A"),
             CancellationToken.None);
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(issueRequest.GetDomainEvents().First()));
+            issueRequest.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -600,9 +600,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var firstAttemptEvents = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(firstAttemptEvents[0]));
+            firstAttemptEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(firstAttemptEvents[1]));
+            firstAttemptEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
         await failedConsumer.HandleAsync(
@@ -621,9 +621,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var retryEvents = issueRequest.GetDomainEvents().ToArray();
         var retryIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(retryEvents[0]));
+            retryEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(retryEvents[1]));
+            retryEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -686,9 +686,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         issueRequest.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -911,9 +911,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var firstAttempt = issueRequest.GetDomainEvents().ToArray();
         var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(firstAttempt[0]));
+            firstAttempt.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(firstAttempt[1]));
+            firstAttempt.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
