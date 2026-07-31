@@ -718,7 +718,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("requested_unit_cost")
-                        .HasComment("Caller-supplied unit cost exactly as posted, never overwritten by valuation; null means the caller left costing to the ledger. Idempotency payload comparison uses this column instead of unit_cost.");
+                        .HasComment("Unit cost as supplied to the posting call, never overwritten by valuation; null means costing was left to the ledger. Idempotency payload comparison uses this column instead of unit_cost. Exception: the synthesized transfer inbound leg and the status-transfer-in leg are constructed with the source ledger moving-average cost, so those rows carry a derived value here; their payload is not compared today, and any future inbound-leg comparison must first make those two call sites pass the real caller value.");
 
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)

@@ -91,8 +91,16 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
     public decimal Quantity { get; private set; }
 
     /// <summary>
-    /// 调用方随请求提交的单位成本原始事实，落库后永不改写；为 null 表示调用方未指定、由台账派生。
+    /// 过账时传入的单位成本，落库后永不被 <see cref="ApplyValuation"/> 改写；为 null 表示未指定、由台账定价。
     /// 幂等重放的载荷比较只认这一列，<see cref="UnitCost"/> 不参与——后者是派生结果，见 <see cref="ApplyValuation"/>。
+    /// <para>
+    /// 例外：两类由服务端合成的入库腿在构造时就被喂入派生值，本列对它们并非调用方原值——
+    /// 调拨入库腿（<c>PostStockMovementCommand.CreateTransferInMovementOrReject</c>）传
+    /// <c>request.UnitCost ?? sourceMovingAverageUnitCost</c>，<c>status-transfer-in</c> 腿
+    /// （<c>PostStockStatusTransferCommand</c>）恒传源台账移动平均成本（该命令没有 UnitCost 入参）。
+    /// 这两类腿的载荷当前不参与任何幂等比较，故今日无影响；日后若要给入库腿补载荷比较，
+    /// 必须先让这两处传入真正的调用方原值，否则等于拿会漂移的移动平均做比较，制造随机假冲突。
+    /// </para>
     /// </summary>
     public decimal? RequestedUnitCost { get; private set; }
 
@@ -162,9 +170,10 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
 
     /// <summary>
     /// 幂等重放判定：逐字段比较「调用方载荷」，任一字段不同即为 IDEMPOTENCY_CONFLICT。
-    /// 只比较调用方能决定的事实——<see cref="UnitCost"/> 与 <see cref="MovementAmount"/> 是
-    /// <see cref="ApplyValuation"/> 落库前改写的派生结果，拿它跟重放请求比会造成假冲突，因此比较
-    /// <see cref="RequestedUnitCost"/>。反过来也不能整体跳过成本比较：调拨的入库腿由调用方 UnitCost 定价，
+    /// 只比较调用方能决定的事实——成本项从比较 <see cref="UnitCost"/> 改为比较 <see cref="RequestedUnitCost"/>，
+    /// 因为前者是 <see cref="ApplyValuation"/> 落库前改写的派生结果，拿它跟重放请求比会造成假冲突。
+    /// （<see cref="MovementAmount"/> 同为派生结果，但本就不在比较链内。）
+    /// 反过来也不能整体跳过成本比较：调拨的入库腿由调用方 UnitCost 定价，
     /// 而调拨幂等只查出库腿，跳过就会把「改了成本的重放」静默判成幂等成功。
     /// </summary>
     public bool HasSamePayload(StockMovement other)
