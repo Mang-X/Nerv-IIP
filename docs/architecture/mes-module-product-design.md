@@ -94,7 +94,7 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 **统一带参契约**：跨工序操作一律携带 `workOrderId + operationTaskId + workCenterId + skuId`。
 
 ### 3.7 领料闭环可视化（跨域：MES 领料申请 → WMS 出库）
-**事实**：`MaterialIssueRequestRow` 已含 `wmsRequestId`（连 WMS 出库）+ `requestedQuantity`/`receivedQuantity`（收料进度）+ `status` —— **后端闭环已建**。但前端「齐套与物料」页不暴露这条链，用户发起领料后看不到后续 → 体验上"断"。
+**事实（2026-07-31 更正）**：`MaterialIssueRequestRow` 早就含 `wmsRequestId`（连 WMS 出库）+ `requestedQuantity`/`receivedQuantity`（收料进度）+ `status`，但**字段有 ≠ 闭环有**：本文档 v1 据此写下的「后端闭环已建」是失实的 —— 领料申请创建不发任何领域事件，WMS 从不知道有人领料，`wmsRequestId` 恒 `null`。真正的两跳事件链（MES `MaterialIssueRequested` → WMS 建出库单/拣货任务 → `MaterialIssueOutboundPrepared` 回写）由 #1324/PR #1340 才建起来，且拣货完成 → 线边收料目前仍是人工衔接（见该 PR 的 Followup）。同时网关把 MES 回执直接反序列化成控制台契约，`accepted` 恒 `false`、下游单号被丢，已由 #1341 全量改为显式映射。前端「齐套与物料」页此前不暴露这条链，用户发起领料后看不到后续 → 体验上"断"。
 **方案**：领料申请行显式做成「**已收 / 应领 进度 + 状态徽章**」，并把 `wmsRequestId` 做成**跳 WMS 出库**的链接（不显 GUID，显「查看出库」）。让「工单缺料 → 发起领料 → WMS 出库 → 收料回写 → 齐套」整条在 MES 侧一眼可见、可追。**领料是开工前的物料门，必须可发现、可追踪。**
 
 ### 3.8 齐套口径自解释（#1291）
