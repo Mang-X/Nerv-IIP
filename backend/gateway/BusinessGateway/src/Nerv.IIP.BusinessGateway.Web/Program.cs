@@ -48,6 +48,7 @@ builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();

@@ -701,6 +701,167 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("team-disabled", masterData.LastDetailRequest?.Code);
     }
 
+    public static IEnumerable<object?[]> EffectiveMembershipCases()
+    {
+        foreach (var scopeKind in new[] { "organization", "team" })
+        {
+            yield return [scopeKind, "open-ended-current", new DateOnly(2026, 7, 1), null, true, HttpStatusCode.OK];
+            yield return [scopeKind, "starts-today", new DateOnly(2026, 8, 1), null, true, HttpStatusCode.OK];
+            yield return [scopeKind, "ends-today", new DateOnly(2026, 7, 1), new DateOnly(2026, 8, 1), true, HttpStatusCode.OK];
+            yield return [scopeKind, "future", new DateOnly(2026, 8, 2), null, true, HttpStatusCode.Forbidden];
+            yield return [scopeKind, "expired", new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31), true, HttpStatusCode.Forbidden];
+            yield return [scopeKind, "disabled", new DateOnly(2026, 7, 1), null, false, HttpStatusCode.Forbidden];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(EffectiveMembershipCases))]
+    public async Task Assignment_requires_current_effective_team_membership(
+        string scopeKind,
+        string membershipCase,
+        DateOnly effectiveFrom,
+        DateOnly? effectiveTo,
+        bool active,
+        HttpStatusCode expectedStatus)
+    {
+        var grant = scopeKind == "organization"
+            ? new AuthorizationScopeGrant(
+                "membership", "org-001", "organization", "org-001",
+                [BusinessGatewayPermissions.MaintenanceWorkOrdersManage], OrganizationWide: true)
+            : new AuthorizationScopeGrant(
+                "membership", "team-grant", "team", "team-a",
+                [BusinessGatewayPermissions.MaintenanceWorkOrdersManage]);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [grant]);
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem(
+                    "wo-membership", "DEV-001", "high", "Open", null, null,
+                    DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    AssignedTeamId: "team-a"),
+            ],
+        };
+        var candidate = scopeKind == "organization"
+            ? new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])
+            : new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", []);
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(candidate),
+            WorkerDirectory =
+            [
+                new BusinessConsoleWorkerDirectoryItem(
+                    "tech-a", "EMP-001", "Tech A", null, null, null, "active", null, true, [], [], "v1"),
+            ],
+            TeamMembers =
+            [
+                new BusinessConsoleTeamMemberItem(
+                    "team-a", "tech-a", false, effectiveFrom, effectiveTo, active, "v1"),
+            ],
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(DateTimeOffset.Parse(
+                "2026-08-01T12:00:00Z", CultureInfo.InvariantCulture)));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/maintenance/work-orders/wo-membership/assignment",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                technicianUserId = "tech-a",
+                teamId = "team-a",
+                reason = membershipCase,
+                idempotencyKey = $"assign-{scopeKind}-{membershipCase}",
+                expectedVersion = 0,
+                scopeKind,
+                scopeId = scopeKind == "organization" ? "org-001" : "team-a",
+            });
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(expectedStatus == HttpStatusCode.OK ? 1 : 0, maintenance.AssignCallCount);
+    }
+
+    [Fact]
+    public async Task Team_assignment_rejects_enabled_member_with_inactive_employment_status()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant(
+                "membership", "team-grant", "team", "team-a",
+                [BusinessGatewayPermissions.MaintenanceWorkOrdersManage]),
+        ]);
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem(
+                    "wo-team-worker", "DEV-001", "high", "Open", null, null,
+                    DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    AssignedTeamId: "team-a"),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", [])),
+            WorkerDirectory =
+            [
+                new BusinessConsoleWorkerDirectoryItem(
+                    "tech-leave", "EMP-LEAVE", "Tech Leave", null, null, null, "on-leave", null, true, [], [], "v1"),
+            ],
+            TeamMembers =
+            [
+                new BusinessConsoleTeamMemberItem(
+                    "team-a", "tech-leave", false, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 1), true, "v1"),
+            ],
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(DateTimeOffset.Parse(
+                "2026-08-01T12:00:00Z", CultureInfo.InvariantCulture)));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/maintenance/work-orders/wo-team-worker/assignment",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                technicianUserId = "tech-leave",
+                teamId = "team-a",
+                reason = "dispatch",
+                idempotencyKey = "assign-team-inactive-worker",
+                expectedVersion = 0,
+                scopeKind = "team",
+                scopeId = "team-a",
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, maintenance.AssignCallCount);
+        Assert.Equal("active", masterData.LastListWorkersRequest?.EmploymentStatus);
+    }
+
     [Fact]
     public async Task Maintenance_detail_without_scope_fails_closed_for_self_scoped_principal_outside_assignment()
     {
@@ -1664,6 +1825,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     private sealed class RecordingMaintenanceUpdateHandler : HttpMessageHandler
     {

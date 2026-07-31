@@ -270,7 +270,8 @@ public sealed class AssignBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessMaintenanceClient maintenance,
     IBusinessMasterDataClient masterData,
     PrincipalWorkScopeResolver workScopeResolver,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    TimeProvider timeProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleAssignMaintenanceWorkOrderRequest, BusinessConsoleMaintenanceWorkOrderActionResponse>(
         auth,
         BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
@@ -309,6 +310,7 @@ public sealed class AssignBusinessConsoleMaintenanceWorkOrderEndpoint(
             request,
             scope,
             RequireAuthorizedPrincipalId(),
+            timeProvider,
             cancellationToken);
         return await maintenance.AssignWorkOrderAsync(
             tokenProvider.BearerToken,
@@ -443,6 +445,7 @@ internal static class MaintenanceWorkScopeAccess
         BusinessConsoleAssignMaintenanceWorkOrderRequest request,
         PrincipalWorkScopeSelection scope,
         string principalId,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
         if (scope.Kind == "self")
@@ -462,14 +465,22 @@ internal static class MaintenanceWorkScopeAccess
             }
             if (!string.IsNullOrWhiteSpace(request.TechnicianUserId))
             {
-                var members = await masterData.ListTeamMembersAsync(
+                await EnsureCurrentTeamMembershipAsync(
+                    masterData,
                     internalToken,
-                    new BusinessConsoleListTeamMembersRequest(request.OrganizationId, request.EnvironmentId, scope.Id),
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    scope.Id,
+                    request.TechnicianUserId,
+                    UtcToday(timeProvider),
                     cancellationToken);
-                if (!members.Members.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
-                {
-                    throw Forbidden();
-                }
+                await EnsureDispatchableWorkerAsync(
+                    masterData,
+                    internalToken,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.TechnicianUserId,
+                    cancellationToken);
             }
             return;
         }
@@ -480,23 +491,13 @@ internal static class MaintenanceWorkScopeAccess
 
         if (!string.IsNullOrWhiteSpace(request.TechnicianUserId))
         {
-            var workers = await masterData.ListWorkersAsync(
+            await EnsureDispatchableWorkerAsync(
+                masterData,
                 internalToken,
-                new BusinessConsoleWorkerDirectoryRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    UserId: request.TechnicianUserId,
-                    EmploymentStatus: "active",
-                    PageSize: 2,
-                    IncludeDisabled: false),
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.TechnicianUserId,
                 cancellationToken);
-            if (!workers.Items.Any(x =>
-                    x.Active
-                    && string.Equals(x.EmploymentStatus, "active", StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
-            {
-                throw Forbidden();
-            }
         }
 
         if (!string.IsNullOrWhiteSpace(request.TeamId))
@@ -529,19 +530,71 @@ internal static class MaintenanceWorkScopeAccess
         if (!string.IsNullOrWhiteSpace(request.TechnicianUserId)
             && !string.IsNullOrWhiteSpace(request.TeamId))
         {
-            var members = await masterData.ListTeamMembersAsync(
+            await EnsureCurrentTeamMembershipAsync(
+                masterData,
                 internalToken,
-                new BusinessConsoleListTeamMembersRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    request.TeamId),
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.TeamId,
+                request.TechnicianUserId,
+                UtcToday(timeProvider),
                 cancellationToken);
-            if (!members.Members.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
-            {
-                throw Forbidden();
-            }
         }
     }
+
+    private static async Task EnsureDispatchableWorkerAsync(
+        IBusinessMasterDataClient masterData,
+        string internalToken,
+        string organizationId,
+        string environmentId,
+        string technicianUserId,
+        CancellationToken cancellationToken)
+    {
+        var workers = await masterData.ListWorkersAsync(
+            internalToken,
+            new BusinessConsoleWorkerDirectoryRequest(
+                organizationId,
+                environmentId,
+                UserId: technicianUserId,
+                EmploymentStatus: "active",
+                PageSize: 2,
+                IncludeDisabled: false),
+            cancellationToken);
+        if (!workers.Items.Any(x =>
+                x.Active
+                && string.Equals(x.EmploymentStatus, "active", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.UserId, technicianUserId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
+    private static async Task EnsureCurrentTeamMembershipAsync(
+        IBusinessMasterDataClient masterData,
+        string internalToken,
+        string organizationId,
+        string environmentId,
+        string teamId,
+        string technicianUserId,
+        DateOnly today,
+        CancellationToken cancellationToken)
+    {
+        var members = await masterData.ListTeamMembersAsync(
+            internalToken,
+            new BusinessConsoleListTeamMembersRequest(organizationId, environmentId, teamId),
+            cancellationToken);
+        if (!members.Members.Any(x =>
+                x.Active
+                && x.EffectiveFrom <= today
+                && (x.EffectiveTo is null || x.EffectiveTo >= today)
+                && string.Equals(x.UserId, technicianUserId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
+    private static DateOnly UtcToday(TimeProvider timeProvider) =>
+        DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
 
     private static ScopeProjection Apply(
         BusinessConsoleMaintenanceWorkOrderListRequest request,
