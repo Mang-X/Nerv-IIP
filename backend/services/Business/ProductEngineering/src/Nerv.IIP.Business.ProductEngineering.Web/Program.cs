@@ -24,7 +24,6 @@ using Nerv.IIP.ServiceAuth;
 using Newtonsoft.Json;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -38,12 +37,12 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName)
         .UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     builder.Services.AddHttpClient<IProductEngineeringMasterDataReferenceValidator, HttpProductEngineeringMasterDataReferenceValidator>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
     }).UseHttpClientMetrics();
-    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var approvalBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IEngineeringApprovalVerifier, HttpEngineeringApprovalVerifier>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
@@ -253,26 +252,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

@@ -42,9 +42,9 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
-var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
-var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+var productEngineeringBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 // `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
 // —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
 // 未显式配置时它回落到权威键，不再各自留一份默认值。
@@ -271,26 +271,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 static IReadOnlyCollection<string>? ResolveSiteCodes(IConfiguration configuration)

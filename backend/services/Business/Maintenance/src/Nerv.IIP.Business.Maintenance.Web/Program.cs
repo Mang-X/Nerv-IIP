@@ -26,7 +26,6 @@ using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -39,7 +38,7 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
     builder.Services.AddHttpClient(HttpIndustrialTelemetryAssetRuntimeHoursProvider.ClientName, client =>
     {
         client.BaseAddress = industrialTelemetryBaseAddress;
@@ -261,26 +260,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

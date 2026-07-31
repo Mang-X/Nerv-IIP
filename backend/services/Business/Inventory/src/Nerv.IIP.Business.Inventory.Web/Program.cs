@@ -23,7 +23,6 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Newtonsoft.Json;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -36,7 +35,7 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     builder.Services.AddHttpClient<IInventorySkuExpiryPolicyProvider, HttpInventorySkuExpiryPolicyProvider>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -68,7 +67,7 @@ try
     builder.Services.AddSingleton<InventoryReservationMetrics>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
     builder.Services.AddHostedService<ExpiredStockReservationHostedService>();
-    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var approvalBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IStockCountApprovalClient, HttpStockCountApprovalClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
@@ -269,19 +268,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(IConfiguration configuration, IHostEnvironment environment, string key, string developmentDefault)
-{
-    var configured = configuration[key];
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        configured = environment.IsDevelopment() || environment.IsEnvironment("Testing")
-            ? developmentDefault
-            : throw new InvalidOperationException($"{key} is required outside Development.");
-    }
-
-    return new Uri(configured, UriKind.Absolute);
 }
 
 #pragma warning disable S1118

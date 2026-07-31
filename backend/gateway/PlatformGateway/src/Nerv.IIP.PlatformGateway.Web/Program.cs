@@ -44,11 +44,11 @@ builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.Ge
 builder.Services.AddSingleton<GatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
-var appHubBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
-var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
-var fileStorageBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
-var notificationBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
-var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+var appHubBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
+var opsBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+var fileStorageBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
+var notificationBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 {
     client.BaseAddress = appHubBaseAddress;
@@ -128,26 +128,6 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = GatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
-}
 
 // Keep this gateway-local until another gateway shares the same production security policy shape.
 static string[] ResolveGatewayCorsOrigins(IConfiguration configuration, IWebHostEnvironment environment)

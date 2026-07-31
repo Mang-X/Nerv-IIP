@@ -24,7 +24,6 @@ using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -38,7 +37,7 @@ try
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+    var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
     builder.Services.AddHttpClient<IWmsInventoryReservationClient, HttpWmsInventoryReservationClient>(client =>
     {
         client.BaseAddress = inventoryBaseAddress;
@@ -290,26 +289,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

@@ -74,7 +74,7 @@ builder.Services.Configure<OpsConnectorCredentialOptions>(
 builder.Services.Configure<OperationLeaseReaperOptions>(
     builder.Configuration.GetSection("Ops:LeaseReaper"));
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
-var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
 {
     client.BaseAddress = iamBaseAddress;
@@ -117,26 +117,6 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
 app.Run();
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
-}
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
 {
