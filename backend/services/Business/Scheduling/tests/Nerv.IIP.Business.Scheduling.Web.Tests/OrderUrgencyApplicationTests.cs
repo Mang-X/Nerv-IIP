@@ -41,7 +41,8 @@ public sealed class OrderUrgencyApplicationTests
         var handler = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+            new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
 
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
@@ -79,7 +80,8 @@ public sealed class OrderUrgencyApplicationTests
         var handler = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+            new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         var before = await db.OrderUrgencySnapshots.CountAsync();
@@ -108,7 +110,8 @@ public sealed class OrderUrgencyApplicationTests
             var handler = new CreateSchedulePlanCommandHandler(
                 db, new FiniteCapacityScheduler(), clock,
                 new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-                new SchedulingOperationOverrideOverlay(db), service);
+                new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
 
             await handler.Handle(new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()), CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
@@ -201,7 +204,8 @@ public sealed class OrderUrgencyApplicationTests
             var handler = new CreateSchedulePlanCommandHandler(
                 db, new FiniteCapacityScheduler(), clock,
                 new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-                new SchedulingOperationOverrideOverlay(db), service);
+                new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
 
             await handler.Handle(new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()), CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
@@ -243,7 +247,8 @@ public sealed class OrderUrgencyApplicationTests
         var handler = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+            new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
         await handler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         var original = Assert.Single(await service.ListAsync(
@@ -298,7 +303,8 @@ public sealed class OrderUrgencyApplicationTests
         var first = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+            new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
         await first.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
         db.OrderUrgencySnapshots.RemoveRange(await db.OrderUrgencySnapshots.ToArrayAsync());
@@ -308,7 +314,8 @@ public sealed class OrderUrgencyApplicationTests
         var replay = new CreateSchedulePlanCommandHandler(
             db, new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
-            new SchedulingOperationOverrideOverlay(db), service);
+            new SchedulingOperationOverrideOverlay(db), service,
+            SchedulingEquipmentUnknownModeOption.Default);
         await replay.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await db.SaveChangesAsync(CancellationToken.None);
 

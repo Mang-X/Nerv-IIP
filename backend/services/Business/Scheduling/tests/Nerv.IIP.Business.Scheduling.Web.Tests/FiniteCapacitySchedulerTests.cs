@@ -1357,6 +1357,34 @@ public class FiniteCapacitySchedulerTests
         Assert.Contains("Hard", exception.Message);
     }
 
+    [Theory]
+    [InlineData(null, SchedulingEquipmentUnknownModeContract.Soft)]
+    [InlineData("", SchedulingEquipmentUnknownModeContract.Soft)]
+    [InlineData("   ", SchedulingEquipmentUnknownModeContract.Soft)]
+    [InlineData("soft", SchedulingEquipmentUnknownModeContract.Soft)]
+    [InlineData(" Hard ", SchedulingEquipmentUnknownModeContract.Hard)]
+    public void EquipmentUnknownMode_resolves_configured_values(
+        string? configured,
+        SchedulingEquipmentUnknownModeContract expected)
+    {
+        Assert.Equal(expected, SchedulingEquipmentUnknownModeResolver.Resolve(configured));
+    }
+
+    [Theory]
+    [InlineData("strict")]
+    [InlineData("Sofft")]
+    [InlineData("2")]
+    // 与物料口径同规矩:非法值不静默回落到更宽松的一侧。
+    public void EquipmentUnknownMode_rejects_illegal_configuration_instead_of_falling_back(string configured)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => SchedulingEquipmentUnknownModeResolver.Resolve(configured));
+
+        Assert.Contains(configured, exception.Message);
+        Assert.Contains("Soft", exception.Message);
+        Assert.Contains("Hard", exception.Message);
+    }
+
     /// <summary>
     /// 走查场景形状:一张工单 8 道工序、串行前后序,指定序号的工序缺料。
     /// </summary>

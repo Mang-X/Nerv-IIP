@@ -93,6 +93,11 @@ export interface ScheduleTask {
    * 齐套是开工门槛不是排产门槛——所以它只是标记，不是「未排」。
    */
   materialRisk?: MaterialRisk
+  /**
+   * 设备数据风险（软约束）：工序排在了运行时状态未知的设备上（无快照 / 快照过期 /
+   * 采集源不可达）。「不知道」不等于「不可用」——照排，但开工前需人工确认设备可用。
+   */
+  equipmentRisk?: EquipmentRisk
 }
 
 /** 单项物料缺口：缺哪个物料、需要多少、可用多少、缺口多少。 */
@@ -111,6 +116,17 @@ export interface MaterialRisk {
   reasonCodes: string[]
   shortages: MaterialShortage[]
   /** 中文人话提示，读面直接展示（含「需在开工前完成备料」）。 */
+  message: string
+}
+
+/** 某工序的设备数据风险：状态盲区的原因 + 已翻译成人话的提示。 */
+export interface EquipmentRisk {
+  orderId: string
+  operationId: string
+  /** 该工序排到的设备（业务编码，如 DEV-CNC-01）。 */
+  resourceId: string
+  reasonCodes: string[]
+  /** 中文人话提示，读面直接展示（含「开工前请人工确认设备可用」）。 */
   message: string
 }
 
@@ -199,6 +215,8 @@ export interface ScheduleModel {
   unscheduled: UnscheduledItem[]
   /** 物料风险清单（软约束下已排但缺料的工序）。 */
   materialRisks?: MaterialRisk[]
+  /** 设备数据风险清单（软约束下排在状态未知设备上的工序）。 */
+  equipmentRisks?: EquipmentRisk[]
   /** 重预览 diff。 */
   changes: ScheduleChange[]
   /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */

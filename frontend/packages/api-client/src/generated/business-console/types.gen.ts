@@ -1339,6 +1339,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     calendars?: Array<NervIipContractsSchedulingSchedulePlanCalendarContract> | null;
     blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
     materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
+    equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1355,6 +1356,7 @@ export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
     lockedOperationCount?: number;
     optimizableOperationCount?: number;
     materialRiskOperationCount?: number;
+    equipmentRiskOperationCount?: number;
 };
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
@@ -1423,6 +1425,7 @@ export type NervIipContractsSchedulingGanttScheduleItemContract = {
     hasConflict?: boolean;
     conflictReasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract | null;
     hasMaterialRisk?: boolean;
+    hasEquipmentRisk?: boolean;
 };
 
 export type NervIipContractsSchedulingSchedulePlanCalendarContract = {
@@ -1465,6 +1468,14 @@ export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
     shortageQuantity?: number;
 };
 
+export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
+    orderId?: string;
+    operationId?: string;
+    resourceId?: string;
+    reasonCodes?: Array<string>;
+    message?: string;
+};
+
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;
 };
@@ -1483,6 +1494,7 @@ export type NervIipContractsSchedulingSchedulingProblemContract = {
     materialReadiness?: Array<NervIipContractsSchedulingSchedulingMaterialReadinessContract>;
     qualityBlocks?: Array<NervIipContractsSchedulingSchedulingQualityBlockContract>;
     lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
+    equipmentDataRisks?: Array<NervIipContractsSchedulingSchedulingEquipmentDataRiskContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingOrderContract = {
@@ -1574,6 +1586,15 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     startUtc?: string;
     endUtc?: string;
     lockReasonCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingEquipmentDataRiskContract = {
+    resourceId?: string;
+    workCenterId?: string | null;
+    reasonCode?: string;
+    startUtc?: string;
+    endUtc?: string;
+    sourceReferenceLabel?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest = {

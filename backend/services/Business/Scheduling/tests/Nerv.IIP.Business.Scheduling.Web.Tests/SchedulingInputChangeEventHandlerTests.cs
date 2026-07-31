@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
@@ -55,6 +56,95 @@ public sealed class SchedulingInputChangeEventHandlerTests
         });
         Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
             .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
+    }
+
+    /// <summary>
+    /// #1320 命中回证：维护世界发出的 deviceAssetId 是**设备业务编码**（DEV-CNC-01），
+    /// 计划失效必须靠它命中已生成方案。修复前排程侧的 resourceId 存的是 MasterData 聚合主键 GUID，
+    /// 这条链从来命中不了——设备停机不会让在途方案失效，排产员拿着过期方案照发。
+    /// 这里两侧都走真实解析：方案资源标识由 <see cref="SchedulingDeviceAssetKey"/> 从
+    /// (业务编码, GUID 主键) 解析而来，事件带同一个业务编码。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Maintenance_asset_events_invalidate_plans_matched_by_device_business_code(bool unavailable)
+    {
+        const string DeviceCode = "DEV-CNC-01";
+        const string DeviceAggregateId = "0198f0aa-1111-7000-8000-000000000001";
+        // 排程问题构造侧的真实口径：有业务编码就用业务编码。
+        var planResourceId = SchedulingDeviceAssetKey.Resolve(DeviceCode, DeviceAggregateId);
+        Assert.Equal(DeviceCode, planResourceId);
+
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var seedDbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDbContext.SchedulePlans.Add(CreatePlan(
+                "plan-device-code",
+                SchedulePlanStatusContract.Generated,
+                "org-001",
+                "env-dev",
+                resourceId: planResourceId));
+            // 对照：修复前的形状（资源标识存 GUID 主键）。同一事件对它无能为力。
+            seedDbContext.SchedulePlans.Add(CreatePlan(
+                "plan-legacy-guid",
+                SchedulePlanStatusContract.Generated,
+                "org-001",
+                "env-dev",
+                problemId: "problem-legacy",
+                resourceId: DeviceAggregateId));
+            await seedDbContext.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        // 维护世界只持有业务编码，两个事件都用它。
+        if (unavailable)
+        {
+            await new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+                    dbContext,
+                    new InMemoryIntegrationEventDeadLetterStore(),
+                    sender,
+                    new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>())
+                .HandleAsync(
+                    CreateAssetUnavailableEvent() with
+                    {
+                        Payload = new AssetUnavailablePayload(
+                            DeviceCode,
+                            "breakdown",
+                            new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
+                    },
+                    CancellationToken.None);
+        }
+        else
+        {
+            await new AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans(
+                    dbContext,
+                    new InMemoryIntegrationEventDeadLetterStore(),
+                    sender,
+                    new RecordingLogger<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>())
+                .HandleAsync(
+                    CreateAssetRestoredEvent() with
+                    {
+                        Payload = new AssetRestoredPayload(
+                            DeviceCode,
+                            new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero))
+                    },
+                    CancellationToken.None);
+        }
+
+        var invalidation = Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal("plan-device-code", invalidation.PlanId);
+        Assert.Equal(DeviceCode, invalidation.AffectedResourceId);
+        Assert.Equal(
+            unavailable
+                ? SchedulingPlanInvalidationReasons.EquipmentUnavailable
+                : SchedulingPlanInvalidationReasons.EquipmentRestored,
+            invalidation.ReasonCode);
+        Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
     }
 
     [Fact]

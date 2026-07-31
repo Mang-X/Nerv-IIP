@@ -37,7 +37,8 @@ public sealed class CreateSchedulePlanCommandHandler(
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
     ISchedulingOperationOverrideOverlay overrideOverlay,
-    OrderUrgencyService urgencyService) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    OrderUrgencyService urgencyService,
+    SchedulingEquipmentUnknownModeOption equipmentUnknownMode) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
@@ -74,7 +75,7 @@ public sealed class CreateSchedulePlanCommandHandler(
             var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
             var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
             var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
-                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability),
+                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability, equipmentUnknownMode.Mode),
                 currentMaterialReadiness);
             await urgencyService.CapturePlanAsync(
                 currentProblem,
@@ -89,7 +90,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
+            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
             materialReadiness);
         var urgencyInputFingerprint = CalculateProblemFingerprint(schedulingProblem);
         var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
