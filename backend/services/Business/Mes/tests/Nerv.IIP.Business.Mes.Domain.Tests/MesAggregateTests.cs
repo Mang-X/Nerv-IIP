@@ -341,7 +341,10 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
-        Assert.Empty(request.GetDomainEvents());
+        // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
+        Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
     }
 
     [Fact]
@@ -359,7 +362,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         request.ClearDomainEvents();
 
-        request.ConfirmLineSideReceipt(
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, 
             DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
             2m,
             "LOT-001");
@@ -387,7 +390,7 @@ public sealed class MesAggregateTests
             5m,
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         // A line-side receipt may be confirmed without a material lot.
-        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
         request.ClearDomainEvents();
 
         // Received material without a lot cannot be returned to warehouse stock (#557); cancelling
@@ -634,5 +637,23 @@ public sealed class MesAggregateTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => workOrder.MarkReleased());
         Assert.Contains("closed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // 需求源引用是履约追溯链的持久事实。`IReadOnlyList<string>` 只是静态类型上的只读，
+    // 直接交出内部 List 时一个向下转型就能在 EF 变更跟踪背后改掉它。
+    [Fact]
+    public void SourcePlanReference_demand_references_are_not_mutable_through_a_downcast()
+    {
+        var reference = new SourcePlanReference(
+            "demand-planning",
+            "planning-suggestion",
+            "PS-001",
+            "DEMAND-001",
+            ["DEMAND-002"]);
+
+        Assert.Equal(new[] { "DEMAND-001", "DEMAND-002" }, reference.SourceDemandReferences);
+        Assert.Throws<NotSupportedException>(() =>
+            ((IList<string>)reference.SourceDemandReferences!).Add("DEMAND-003"));
+        Assert.Equal(2, reference.SourceDemandReferences!.Count);
     }
 }

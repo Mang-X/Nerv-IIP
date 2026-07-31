@@ -234,7 +234,10 @@ function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
 // 受阻行的一句话原因（取首条），用于禁用入口的说明。
 function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
   const first = plan.blockingReasons?.[0]
-  if (first) return describeMesReadinessReason(first).label
+  if (first) {
+    const reason = describeMesReadinessReason(first)
+    return reason.detail ? `${reason.label}：${reason.detail}` : reason.label
+  }
   if (plan.readinessStatus === 'Warning') return '有预警，建议处理后再转'
   return '尚未就绪，需处理后再转'
 }
@@ -445,7 +448,9 @@ function formatError(error: unknown) {
               v-for="(reason, i) in selectedBlockingReasons"
               :key="i"
               class="text-muted-foreground"
-              >· {{ reason.label }}（{{ reason.nextStep }}）</span
+              >· {{ reason.label }}{{ reason.detail ? `：${reason.detail}` : '' }}（{{
+                reason.nextStep
+              }}）</span
             >
           </div>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

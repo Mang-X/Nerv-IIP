@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Approval;
+
 namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 
 /// <summary>
@@ -19,12 +21,21 @@ public static class WorldHistoryApprovalSpec
 {
     #region 模板（世界观历史专用，与 *-DEMO-* 固定演示事实隔离）
 
-    public const string PurchaseTemplateCode = "APT-WB-PO-001";
-    public const string PurchaseDocumentType = "purchase-order";
+    /// <summary>
+    /// 采购订单下达审批模板码：取自审批契约的唯一事实来源，ERP 发起侧 / 种子 / 界面三方共用
+    /// （#1344：ERP 此前硬编码 <c>erp-purchase-order-release</c>，种子态转单 / RFQ 必 400）。
+    /// </summary>
+    public const string PurchaseTemplateCode = ApprovalTemplateCodes.PurchaseOrderRelease;
+    public const string PurchaseDocumentType = ApprovalDocumentTypes.PurchaseOrder;
     public const string PurchaseSourceService = "erp";
 
     public const string NcrTemplateCode = "APT-WB-NCR-001";
-    public const string NcrDocumentType = "ncr-disposition";
+
+    /// <summary>
+    /// NCR 处置审批的单据类型：取自审批契约的唯一事实来源，种子 / 前端发起面 / Quality 白名单三方共用
+    /// （#1327：三方此前各写各的字面量，种子态处置审批结构性走不通）。
+    /// </summary>
+    public const string NcrDocumentType = ApprovalDocumentTypes.NcrDisposition;
     public const string NcrSourceService = "quality";
 
     /// <summary>
@@ -32,8 +43,17 @@ public static class WorldHistoryApprovalSpec
     /// 而是让 ERP <c>ReleaseSalesOrderCreditHoldCommand</c> 硬编码引用的当前流程模板开箱存在——
     /// 编码必须与 ERP 侧字面量逐字一致，因此不落在 <c>APT-WB-</c> 号段。
     /// </summary>
-    public const string SalesCreditReleaseTemplateCode = "erp-sales-credit-release";
+    public const string SalesCreditReleaseTemplateCode = ApprovalTemplateCodes.SalesCreditRelease;
     public const string SalesCreditReleaseDocumentType = "sales-order-credit-release";
+
+    /// <summary>
+    /// 盘点差异审批模板（#1344 扩修）。同样不挂历史链，只保证 Inventory
+    /// <c>ConfirmStockCountAdjustmentCommand</c>（差异超阈值分支）引用的模板开箱存在——
+    /// 此前发起侧默认 <c>COUNT-VARIANCE</c> 而种子无此模板，盘点确认必 400（走查台账 #66）。
+    /// 审批人取厂长：账实差异有财务影响，由仓储部之外的人核准，且演示 / 走查用的就是该账号。
+    /// </summary>
+    public const string StockCountVarianceTemplateCode = ApprovalTemplateCodes.StockCountVariance;
+    public const string StockCountVarianceDocumentType = ApprovalDocumentTypes.StockCountVariance;
 
     /// <summary>本引擎产出/引用的全部号段前缀，供隔离性回归测试断言不与固定演示事实相交。</summary>
     public static readonly string[] NumberSegmentPrefixes = ["PO-2026-", "NCR-2026-", "APT-WB-"];
@@ -299,6 +319,7 @@ public static class WorldHistoryApprovalSpec
         }
 
         facts.Add(BuildCurrentDelegationFact(asOfDate));
+        facts.Add(BuildCurrentNcrDelegationFact(asOfDate));
         return facts;
     }
 
@@ -362,6 +383,35 @@ public static class WorldHistoryApprovalSpec
             EffectiveFromUtc: effectiveFromUtc,
             EffectiveToUtc: effectiveFromUtc.AddDays(CurrentDelegationDurationDays),
             Reason: "厂长本周赴华中商用车配套客户现场，期间全部审批事项委托计划主管代行",
+            CreatedAtUtc: createdAtUtc,
+            RevokedAtUtc: null);
+    }
+
+    /// <summary>
+    /// 当前生效的第二条：**质量主管休假期间，NCR 处置审批委托厂长（admin）代行**。
+    ///
+    /// 为什么种子里必须有这一条（#1327）：NCR 处置模板的审批人是质量主管 EMP-033，
+    /// 而演示 / 走查用的是厂长账号 <c>user-admin</c>——没有这条委托，种子态下任何一条
+    /// NCR 处置审批链都无人可裁，处置链路在界面上走不到底。委托是审批域已有的一等机制
+    /// （<c>ResolveApprovalStepCommandHandler</c> 按 delegate → delegator 匹配待办步骤），
+    /// 因此这里不改模板步骤、不改历史链结构，只补一条业务上讲得通的生效中委托。
+    /// </summary>
+    private static WorldHistoryDelegationFact BuildCurrentNcrDelegationFact(DateOnly asOfDate)
+    {
+        const string streamKey = "delegation:current-ncr";
+        var startDay = ClampToHistory(asOfDate.AddDays(CurrentDelegationStartOffsetDays), asOfDate);
+        var effectiveFromUtc = MomentOn(startDay, streamKey, "delegation-start");
+        var createdAtUtc = Earlier(
+            MomentOn(ClampToHistory(startDay.AddDays(-1), asOfDate), streamKey, "delegation-created"),
+            effectiveFromUtc);
+
+        return new WorldHistoryDelegationFact(
+            DelegatorUserId: QualitySupervisorUserId,
+            DelegateUserId: AdminUserId,
+            DocumentType: NcrDocumentType,
+            EffectiveFromUtc: effectiveFromUtc,
+            EffectiveToUtc: effectiveFromUtc.AddDays(CurrentDelegationDurationDays),
+            Reason: "质量主管休假，期间不合格品处置审批委托厂长代行",
             CreatedAtUtc: createdAtUtc,
             RevokedAtUtc: null);
     }

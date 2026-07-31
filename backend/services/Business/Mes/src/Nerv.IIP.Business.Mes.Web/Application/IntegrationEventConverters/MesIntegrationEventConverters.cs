@@ -71,6 +71,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             consumption.MaterialId,
             consumption.MaterialLotId);
         EventIds.ThrowIfUnsupportedUom(consumption.UomCode, consumption.MaterialIssueRequestNo);
+        var consumptionLocation = consumption.RequireLocation();
 
         return NewInventoryMovementRequested(
             consumption.OrganizationId,
@@ -81,8 +82,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             consumption.MaterialIssueRequestNo,
             consumption.MaterialId,
             consumption.UomCode,
-            "production",
-            "line-side",
+            consumptionLocation.SiteCode,
+            consumptionLocation.LocationCode,
             consumption.MaterialLotId,
             -consumption.ConsumedQuantity,
             occurredAtUtc);
@@ -142,13 +143,17 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
     }
 }
 
-public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
+public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
+    IMesFinishedGoodsReceiptLocationResolver locationResolver)
     : IIntegrationEventConverter<FinishedGoodsReceiptRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
     public InventoryMovementRequestedIntegrationEvent Convert(FinishedGoodsReceiptRequestedDomainEvent domainEvent)
     {
         var request = domainEvent.FinishedGoodsReceiptRequest;
         var occurredAtUtc = DateTimeOffset.UtcNow;
+        // 完工入库目标位置走配置解析（#1331）：硬编码 finished-goods/receiving 与库存种子
+        // （SITE-001/WH-WB-FG-01）错配，会把成品记进一个不存在的命名空间。
+        var location = locationResolver.Resolve();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -158,8 +163,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             request.WorkOrderId,
             request.SkuId,
             request.UomCode,
-            "finished-goods",
-            "receiving",
+            location.SiteCode,
+            location.LocationCode,
             request.ProducedLotNo,
             domainEvent.Quantity,
             occurredAtUtc,
@@ -292,6 +297,43 @@ public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
     }
 }
 
+public sealed class MaterialIssueRequestCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<MaterialIssueRequestCreatedDomainEvent, MesMaterialIssueRequestedIntegrationEvent>
+{
+    public MesMaterialIssueRequestedIntegrationEvent Convert(MaterialIssueRequestCreatedDomainEvent domainEvent)
+    {
+        var request = domainEvent.MaterialIssueRequest;
+        // The request number is allocated once per material issue (coding allocator is idempotency-key
+        // driven), so it alone identifies this creation for every downstream replay.
+        var idempotencyKey = EventIds.Idempotency(
+            "material-issue-requested",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.RequestNo);
+        EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        return new MesMaterialIssueRequestedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.MaterialIssueRequested,
+            MesIntegrationEventVersions.V1,
+            request.RequestedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            request.RequestNo,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new MesMaterialIssueRequestedPayload(
+                request.RequestNo,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.MaterialId,
+                request.UomCode,
+                request.RequestedQuantity,
+                request.RequestedAtUtc));
+    }
+}
+
 public sealed class MaterialIssueRequestedIntegrationEventConverter
     : IIntegrationEventConverter<MaterialIssueRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
@@ -299,16 +341,14 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
     {
         var request = domainEvent.MaterialIssueRequest;
         var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
-        // Use cumulative received quantity in the idempotency key so repeated partial receipts with
-        // the same delta still produce distinct Inventory movements; movement quantity stays the delta.
-        var idempotencyKey = EventIds.Idempotency(
-            "material-issue",
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.RequestNo,
-            request.MaterialLotId,
-            request.ReceivedQuantity.ToString("0.######", CultureInfo.InvariantCulture));
+        // 幂等键由聚合的跨腿归一化键推导：含累计收料量与「尝试序号」。失败回滚的尝试不再永久占用键，
+        // 重试因此不会被 Inventory 去重当成重放（#1322）。
+        var idempotencyKey = MaterialIssueRequest.BuildLegIdempotencyKey(
+            request.PendingPostingToken ?? throw new InvalidOperationException(
+                $"领料申请没有在途收料尝试，无法发起仓库出库过账，RequestNo = {request.RequestNo}"),
+            MaterialTransferLeg.WarehouseIssue);
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        var locations = request.RequireTransferLocations();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -318,8 +358,8 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
             request.OperationTaskId,
             request.MaterialId,
             request.UomCode,
-            "warehouse",
-            "line-side",
+            locations.SourceSiteCode,
+            locations.SourceLocationCode,
             request.MaterialLotId,
             -Math.Abs(domainEvent.IssuedQuantity),
             occurredAtUtc);
@@ -333,16 +373,13 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
     {
         var request = domainEvent.MaterialIssueRequest;
         var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
-        // Keep this key in lockstep with the warehouse outbound leg: cumulative quantity identifies
-        // the receipt step, while the posted quantity remains this confirmation's delta.
-        var idempotencyKey = EventIds.Idempotency(
-            "line-side-receipt",
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.RequestNo,
-            request.MaterialLotId,
-            request.ReceivedQuantity.ToString("0.######", CultureInfo.InvariantCulture));
+        // 与仓库出库腿共用同一个跨腿归一化键（仅前缀不同），失败/重试语义因此两腿一致。
+        var idempotencyKey = MaterialIssueRequest.BuildLegIdempotencyKey(
+            request.PendingPostingToken ?? throw new InvalidOperationException(
+                $"领料申请没有在途收料尝试，无法发起线边入库过账，RequestNo = {request.RequestNo}"),
+            MaterialTransferLeg.LineSideReceipt);
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        var locations = request.RequireTransferLocations();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -352,8 +389,8 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
             request.OperationTaskId,
             request.MaterialId,
             request.UomCode,
-            "production",
-            "line-side",
+            locations.TargetSiteCode,
+            locations.TargetLocationCode,
             request.MaterialLotId,
             Math.Abs(domainEvent.ReceivedQuantity),
             occurredAtUtc);
@@ -376,6 +413,7 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
             occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        var locations = request.RequireTransferLocations();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -385,8 +423,8 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             request.OperationTaskId,
             request.MaterialId,
             request.UomCode,
-            "production",
-            "line-side",
+            locations.TargetSiteCode,
+            locations.TargetLocationCode,
             domainEvent.MaterialLotId,
             -Math.Abs(domainEvent.ReturnedQuantity),
             occurredAtUtc);
@@ -409,6 +447,7 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
             occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        var locations = request.RequireTransferLocations();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -418,8 +457,8 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             request.OperationTaskId,
             request.MaterialId,
             request.UomCode,
-            "warehouse",
-            "line-side",
+            locations.SourceSiteCode,
+            locations.SourceLocationCode,
             domainEvent.MaterialLotId,
             Math.Abs(domainEvent.ReturnedQuantity),
             occurredAtUtc);

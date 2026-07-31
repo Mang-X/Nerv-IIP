@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using WorkCenterUnavailabilityId = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailabilityId;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -119,7 +120,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 cancellationToken);
             if (shortages.Count > 0)
             {
-                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+                throw new KnownException($"物料齐套未满足：{MaterialReadinessGuards.DescribeForUser(shortages)}");
             }
         }
 
@@ -972,6 +973,12 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         var uomCode = string.IsNullOrWhiteSpace(request.UomCode)
             ? throw new KnownException("领料申请必须指定单位，UomCode 不能为空。")
             : request.UomCode.Trim();
+        // 单位是物料主档的事实，不是界面常量。占位单位会一路带到集成事件转换处才炸（库存腿无法换算），
+        // 那时已经是发布侧异常而非业务拒绝；在受理时就以业务错误回绝，让调用方能看懂并修正。
+        if (string.Equals(uomCode, MaterialIssueRequest.UnspecifiedUomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException("领料申请的单位不能是占位值，请按物料主档的基本计量单位提交。");
+        }
 
         var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
             .AsNoTracking()
@@ -1010,7 +1017,9 @@ public sealed record ConfirmLineSideMaterialReceiptCommand(
     decimal? ReceivedQuantity = null,
     string? MaterialLotId = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbContext dbContext)
+public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialSupplyLocationResolver supplyLocationResolver)
     : ICommandHandler<ConfirmLineSideMaterialReceiptCommand, MesAcceptedResponse>
 {
     public async Task<MesAcceptedResponse> Handle(ConfirmLineSideMaterialReceiptCommand request, CancellationToken cancellationToken)
@@ -1034,8 +1043,26 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
                 materialRequest.Status);
         }
 
+        // 来源库位取库存实际持仓（配置候选库位 + 库存实时查询），目标库位取工位线边：
+        // 过账位置不再由 MES 臆造，Inventory 也就不会再以 NEGATIVE_ON_HAND 全拒（#1322）。
+        var postingQuantity = request.ReceivedQuantity ??
+            materialRequest.RequestedQuantity - materialRequest.ReceivedQuantity;
+        var locations = await supplyLocationResolver.ResolveAsync(
+            new MesMaterialSupplyLocationRequest(
+                materialRequest.OrganizationId,
+                materialRequest.EnvironmentId,
+                materialRequest.MaterialId,
+                materialRequest.UomCode,
+                request.MaterialLotId ?? materialRequest.MaterialLotId,
+                postingQuantity),
+            cancellationToken);
+
         MesDomainRuleGuard.Enforce(() =>
-            materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId));
+            materialRequest.ConfirmLineSideReceipt(
+                locations,
+                request.ReceivedAtUtc,
+                request.ReceivedQuantity,
+                request.MaterialLotId));
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
@@ -1263,7 +1290,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                     cancellationToken);
             if (!readiness.AllowedActions.Contains("start", StringComparer.Ordinal))
             {
-                throw new KnownException(string.Join("; ", readiness.BlockReasons));
+                throw new KnownException(MaterialReadinessGuards.DescribeForUser(readiness.BlockReasons));
             }
 
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -1413,7 +1440,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
             .ToArrayAsync(cancellationToken);
         if (blockingOperations.Length > 0)
         {
-            throw new KnownException($"前序工序尚未完成，OperationTaskId = {task.OperationTaskIdValue}, BlockingOperations = {string.Join(',', blockingOperations)}");
+            // 这条会经分层透传直接上屏，而前端只原样透传 60 字以内的中文短消息（超了会被截断）——
+            // 所以只说「哪几道工序还没完工」，不带 OperationTaskId = 这类内部字段名；
+            // 前序太多时只点前三道，剩下的给个数（MAN-698 台账 #35 同批）。
+            var named = blockingOperations.Take(3).ToArray();
+            var more = blockingOperations.Length > named.Length
+                ? $" 等 {blockingOperations.Length} 道"
+                : string.Empty;
+            throw new KnownException($"前序工序尚未完成：{string.Join('、', named)}{more}。");
         }
     }
 }
@@ -1432,6 +1466,8 @@ internal static class MaterialReadinessGuards
     [
         MaterialIssueRequest.RequestedStatus,
         MaterialIssueRequest.PartiallyReceivedStatus,
+        // 收料已提交、库存过账在途:仓库仍在配货,「应领」要算;但「已收」只认过账成功的量。
+        MaterialIssueRequest.ReceiptPostingStatus,
         MaterialIssueRequest.ReceivedStatus
     ];
 
@@ -1439,6 +1475,49 @@ internal static class MaterialReadinessGuards
     {
         return !string.IsNullOrWhiteSpace(status)
             && ActiveIssueRequestStatuses.Contains(status, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 缺料阻塞原因在 **MES 服务内**的唯一措辞：<c>MATERIAL_SHORTAGE: 物料 X（批次 Y）缺口 N</c>，
+    /// 与 <see cref="MissingRequirementSnapshotReason"/> 同一形态（<c>英文码: 中文说明</c>）——
+    /// 前端按冒号前的码取标签与下一步动作，冒号后的中文原样作为明细上屏。
+    /// 本服务内新增缺料产出点一律走这里（曾经三处各写一套、其中两处直出英文生码
+    /// 「物料编码 + shortage + 数量」，界面上既读不懂又被徽标截断；MAN-698 台账 #35）。
+    ///
+    /// ⚠️ 这个形态是**跨服务约定**，但实现有意重复三份：本处、Scheduling 的
+    /// <c>SchedulingMaterialReasonText</c>、前端的 <c>describeMesReadinessReason</c>。
+    /// 服务边界不共享库、前端更不可能引用后端代码，所以**共享的是断言不是代码**：
+    /// 本处与 Scheduling 侧各有一条逐字一致的格式用例互相钉住，改措辞两边一起红。
+    /// </summary>
+    public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
+    {
+        var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
+        return $"MATERIAL_SHORTAGE: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
+    }
+
+    /// <summary>
+    /// 把阻塞原因串成**给用户看的一句话**：读面保留 <c>CODE: 中文</c>（前端按码取标签与下一步动作），
+    /// 但写操作被拒时的 <see cref="KnownException"/> 文案要去掉英文码——它经分层透传直接上屏，
+    /// 反馈规范禁止界面出现英文错误码（`frontend/DESIGN/patterns/feedback-and-notifications.md`）。
+    /// </summary>
+    public static string DescribeForUser(IEnumerable<string> reasons)
+    {
+        return string.Join("；", reasons.Select(StripReasonCode).Where(x => x.Length > 0));
+    }
+
+    private static string StripReasonCode(string reason)
+    {
+        var separator = reason.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0)
+        {
+            return reason.Trim();
+        }
+
+        var code = reason[..separator];
+        // 只剥「全大写下划线」形态的码，别把中文说明里的冒号误当分隔符。
+        return code.All(x => char.IsAsciiLetterUpper(x) || char.IsAsciiDigit(x) || x == '_')
+            ? reason[(separator + 1)..].Trim()
+            : reason.Trim();
     }
 
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
@@ -1587,9 +1666,7 @@ internal static class MaterialReadinessGuards
                 return (x.Key.MaterialId, MaterialLotId: (string?)x.Key.MaterialLotId, Shortage: shortage);
             })
             .Where(x => x.Shortage > 0)
-            .Select(x => x.MaterialLotId is null
-                ? $"{x.MaterialId} shortage {x.Shortage:0.######}"
-                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.Shortage:0.######}")
+            .Select(x => FormatShortageReason(x.MaterialId, x.MaterialLotId, x.Shortage))
             .ToArray();
     }
 
@@ -1898,12 +1975,24 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
 {
     public async Task<MesAcceptedResponse> Handle(ConfirmDowntimeRecoveryCommand request, CancellationToken cancellationToken)
     {
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id.ToString() 无法被 EF 翻译（真机 500）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
         var downtime = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                (x.Id.Id.ToString() == request.DowntimeEventId ||
-                    x.DowntimeEventNo == request.DowntimeEventId),
-            cancellationToken)
+                x.DowntimeEventNo == request.DowntimeEventId,
+            cancellationToken);
+        if (downtime is null && Guid.TryParse(request.DowntimeEventId, out var downtimeEventGuid))
+        {
+            var downtimeEventId = new WorkCenterUnavailabilityId(downtimeEventGuid);
+            downtime = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.Id == downtimeEventId,
+                cancellationToken);
+        }
+
+        downtime = downtime
             ?? throw new KnownException($"未找到停机事件，DowntimeEventId = {request.DowntimeEventId}");
 
         downtime.Close(request.RecoveredAtUtc);

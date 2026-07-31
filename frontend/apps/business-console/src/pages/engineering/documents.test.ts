@@ -210,6 +210,148 @@ describe('engineering documents page', () => {
     expect(stub.registerDocument).not.toHaveBeenCalled()
   })
 
+  // MAN-698 台账 #34：文档号原来必填，撞号只能靠提交后的 400 才知道（而那条 400 还是英文、
+  // 被兜底吞成「请稍后重试」）。现在留空由后端 coding allocator 取号，号码从回执里回显。
+  it('文档号留空自动取号：不发 documentNumber，成功提示回显后端取到的号', async () => {
+    stub.registerDocument.mockResolvedValueOnce({ data: { id: 'EDOC-20260731-000007' } })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('specification')
+    await wrapper.find('#doc-file-id').setValue('file-xyz')
+    await wrapper.find('#doc-file-name').setValue('spec.pdf')
+    await wrapper.find('#doc-content-type').setValue('application/pdf')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.registerDocument).toHaveBeenCalledTimes(1)
+    const body = stub.registerDocument.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.documentNumber).toBeUndefined()
+    expect(stub.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('EDOC-20260731-000007'))
+  })
+
+  // 文档号改可选后，「撞号 400」这道天然去重就没了：自动取号每次都能取到新号，
+  // 双击提交会产出两份只是号码不同的文档。后端 allocator 只按 idempotencyKey 去重，
+  // 所以前端必须带一个「同一次内容稳定」的键。
+  it('双击提交不产出两份文档：同一次内容带同一个幂等键', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined
+    stub.registerDocument.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve
+        }),
+    )
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('specification')
+    await wrapper.find('#doc-file-id').setValue('file-xyz')
+    await wrapper.find('#doc-file-name').setValue('spec.pdf')
+    await wrapper.find('#doc-content-type').setValue('application/pdf')
+
+    // 第一次还挂在飞行中就再点一次（真实双击）。
+    await wrapper.find('form').trigger('submit')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.registerDocument).toHaveBeenCalledTimes(1)
+
+    resolveFirst?.({ data: { id: 'EDOC-20260731-000009' } })
+    await flushPromises()
+
+    // 提交期按钮禁用，提交完成后恢复。
+    const submitButton = findButton(wrapper, '登记文档')
+    expect(submitButton?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('幂等键：同一弹窗同一份内容稳定；内容改了就换新；重开弹窗必换新', async () => {
+    async function fill(wrapper: ReturnType<typeof mount>, fileName: string) {
+      await wrapper.find('#doc-rev').setValue('A')
+      await wrapper.find('#doc-type').setValue('specification')
+      await wrapper.find('#doc-file-id').setValue('file-xyz')
+      await wrapper.find('#doc-file-name').setValue(fileName)
+      await wrapper.find('#doc-content-type').setValue('application/pdf')
+      await wrapper.find('form').trigger('submit')
+      await flushPromises()
+    }
+    function lastKey() {
+      const calls = stub.registerDocument.mock.calls
+      return (calls[calls.length - 1]![0] as Record<string, unknown>).idempotencyKey as string
+    }
+
+    stub.registerDocument.mockRejectedValue({ message: '登记失败' })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    // 同一弹窗、同一份内容重复提交（第一次失败后原样重试）→ 同一个键。
+    await fill(wrapper, 'spec.pdf')
+    const firstKey = lastKey()
+    await fill(wrapper, 'spec.pdf')
+    expect(lastKey()).toBe(firstKey)
+
+    // 内容改了 → 换新键（否则后端会按同键 + 不同指纹判成幂等冲突，把合法重试挡住）。
+    await fill(wrapper, 'spec-v2.pdf')
+    const editedKey = lastKey()
+    expect(editedKey).not.toBe(firstKey)
+
+    // 重开弹窗 = 新的一次登记 → 必换新键（否则第二份文档会被回放成第一份）。
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+    await fill(wrapper, 'spec-v2.pdf')
+    expect(lastKey()).not.toBe(editedKey)
+  })
+
+  it('占用预检：手填的号 + 修订已在列表中时当场提示换修订或留空', async () => {
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-number').setValue('DOC-1')
+    await wrapper.find('#doc-rev').setValue('A')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已在列表中')
+
+    await wrapper.find('#doc-rev').setValue('B')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('已在列表中')
+  })
+
+  // 撞号的权威判定在后端：中文 400 必须原样上屏，不能被兜底文案吞掉（分层透传 #1298）。
+  it('后端撞号的中文 400 原样上屏，不退化成「请稍后重试」', async () => {
+    stub.registerDocument.mockRejectedValueOnce({
+      message: '文档号 DOC-1 的修订 A 已登记，请换修订号或留空由系统取号。',
+    })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-number').setValue('DOC-1')
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('specification')
+    await wrapper.find('#doc-file-id').setValue('file-xyz')
+    await wrapper.find('#doc-file-name').setValue('spec.pdf')
+    await wrapper.find('#doc-content-type').setValue('application/pdf')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith(
+      expect.stringContaining('文档号 DOC-1 的修订 A 已登记'),
+    )
+    expect(stub.toastError).not.toHaveBeenCalledWith(expect.stringContaining('请稍后重试'))
+  })
+
   it('查看：行「查看」拉 get-by-id 渲染真实文档明细', async () => {
     stub.fetchDocumentDetail.mockResolvedValue({
       documentNumber: 'DOC-1',

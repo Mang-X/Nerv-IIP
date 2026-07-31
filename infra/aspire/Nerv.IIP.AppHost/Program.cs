@@ -351,9 +351,12 @@ if (rabbitmq is not null)
 
 // MasterData 删除防护需要反查 ProductEngineering 的引用占用（HttpProductEngineeringReferenceUsageChecker）。
 // 缺这一行时 MasterData 回退固定端口 5108，在动态端口的 ephemeral 会话上必打错端口。
-// 只注入端点环境变量、不加 WaitFor：ProductEngineering 已 WaitFor(businessMasterData)，反向等待会成环。
+// 与全仓其余「跨服务 BaseUrl」接线同构：WithEnvironment + WithReference 成对出现，
+// 服务发现名与显式基址两条路都通（#1317）。
+// 但**不加 WaitFor**：ProductEngineering 已 WaitFor(businessMasterData)，反向等待会成环。
 businessMasterData = businessMasterData
-    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"));
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithReference(businessProductEngineering);
 
 var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5109, name: "http")
@@ -415,9 +418,18 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
-    .WithEnvironment("Inventory__DefaultSiteCode", "production")
-    .WithEnvironment("Inventory__SiteCodes__0", "warehouse")
-    .WithEnvironment("Inventory__SiteCodes__1", "production")
+    // 站点/库位必须与库存种子事实一致（SITE-001 + WH-WB-*）：MES 过去按 warehouse/production +
+    // line-side 臆造位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。
+    // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
+    // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
+    .WithEnvironment("Inventory__SiteCode", "SITE-001")
+    .WithEnvironment("Inventory__SourceLocationCodes__0", "WH-WB-RM-01")
+    .WithEnvironment("Inventory__SourceLocationCodes__1", "WH-WB-SF-01")
+    .WithEnvironment("Inventory__SourceLocationCodes__2", "WH-WB-FG-01")
+    .WithEnvironment("Inventory__LineSideLocationCode", "WH-WB-LINE-01")
+    // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
+    // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
+    .WithEnvironment("Inventory__FinishedGoodsLocationCode", "WH-WB-FG-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)

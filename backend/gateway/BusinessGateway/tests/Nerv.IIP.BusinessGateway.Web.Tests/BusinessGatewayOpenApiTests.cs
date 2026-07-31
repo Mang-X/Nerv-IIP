@@ -97,7 +97,35 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/reinspections", "post", "createBusinessConsoleQualityReinspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", "post", "openBusinessConsoleQualityNcrFromInspection");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks", "get", "listBusinessConsoleQualityInspectionTasks");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}", "get", "getBusinessConsoleQualityInspectionTask");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment", "post", "assignBusinessConsoleQualityInspectionTask");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/claim", "post", "claimBusinessConsoleQualityInspectionTask");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleAssignQualityInspectionTaskRequest",
+            "expectedVersion");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleClaimQualityInspectionTaskRequest",
+            "expectedVersion");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
+        var submitOperation = paths
+            .GetProperty("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record")
+            .GetProperty("post");
+        var submitSchemaRef = submitOperation
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString()!;
+        var submitSchemaName = submitSchemaRef.Split('/')[^1];
+        var submitProperties = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(submitSchemaName)
+            .GetProperty("properties");
+        Assert.False(submitProperties.TryGetProperty("inspectorUserId", out _));
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");
@@ -296,6 +324,27 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "get", "listBusinessConsoleErpSupplierQuotations");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-receipts", "post", "recordBusinessConsoleErpPurchaseReceipt");
+        // #1345：ERP RecordPurchaseReceiptCommand 的 qualityStatus 为必填，网关契约必须同样声明必填，
+        // 否则 PC 收货结构性 400；字段存在但非必填同样会让前端漏填。
+        AssertSchemaProperties(
+            document,
+            "BusinessConsoleErpPurchaseReceiptLine",
+            "purchaseOrderLineNo",
+            "receivedQuantity",
+            "qualityStatus");
+        // 数量走 GreaterThan(0)（契约层表现为 exclusiveMinimum，而非 required），字符串字段才进 required 表。
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleErpPurchaseReceiptLine",
+            "purchaseOrderLineNo",
+            "qualityStatus");
+        AssertRequiredSchemaProperties(
+            document,
+            "BusinessConsoleRecordErpPurchaseReceiptRequest",
+            "organizationId",
+            "environmentId",
+            "purchaseOrderNo",
+            "lines");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "get", "listBusinessConsoleErpSalesOrders");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "get", "listBusinessConsoleErpOpportunities");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "post", "openBusinessConsoleErpOpportunity");

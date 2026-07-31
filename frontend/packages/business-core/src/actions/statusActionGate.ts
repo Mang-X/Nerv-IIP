@@ -237,8 +237,8 @@ function inspectionTaskGate(facts: LifecycleFacts): StatusActionGate {
   const status = normalizedStatus(facts)
   if (!isKnown(status, new Set(['pending', 'in-progress', 'completed']))) return unknown()
   const hasRecord = Boolean(facts.inspectionRecordId?.trim())
-  if (status === 'pending') return allowed()
-  if (status === 'in-progress') return incompatible()
+  if (status === 'pending') return incompatible()
+  if (status === 'in-progress') return allowed()
   return hasRecord && facts.idempotentReplay ? noop(true) : terminal()
 }
 

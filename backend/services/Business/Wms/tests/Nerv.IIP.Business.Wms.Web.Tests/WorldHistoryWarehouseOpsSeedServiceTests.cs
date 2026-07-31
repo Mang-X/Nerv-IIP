@@ -625,6 +625,70 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Contains(exception.Failures, failure => failure.Contains("未落库", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// #1343：种子只给演示仓储员登记作业池成员资格（这是对的——成员资格是现场事实），
+    /// 但管理员/主管只有 IAM 精确站点授权。这类主体必须仍能拿到站点范围并读到整站真实
+    /// 作业面，否则仓储六页对 admin 整域 403 全空。
+    /// </summary>
+    [Fact]
+    public async Task Seeded_memberships_stay_operator_only_while_site_grant_alone_still_reaches_real_work()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await SeedDocumentChainAsync(db, asOfDate);
+        await new WorldHistoryWarehouseOpsSeedService(db)
+            .SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var memberships = await db.WarehouseWorkPoolMemberships.AsNoTracking().ToArrayAsync();
+        Assert.NotEmpty(memberships);
+        Assert.All(memberships, membership => Assert.Equal(
+            WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
+            membership.PrincipalId));
+
+        var authorizer = new WarehouseWorkScopeAuthorizer(
+            db,
+            new StaticTimeProvider(new DateTime(2026, 7, 27, 12, 0, 0, DateTimeKind.Utc)));
+        var catalog = await authorizer.GetCatalogAsync(
+            "org-001",
+            "env-dev",
+            "user-admin",
+            [WorldHistorySpec.SiteCode],
+            CancellationToken.None);
+        var site = await authorizer.ResolveAsync(
+            new WarehouseWorkScopeRequest(
+                "org-001",
+                "env-dev",
+                "user-admin",
+                [WorldHistorySpec.SiteCode],
+                "site",
+                WorldHistorySpec.SiteCode,
+                WorldHistorySpec.SiteCode),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [("site", WorldHistorySpec.SiteCode)],
+            catalog.Items.Select(item => (item.ScopeKind, item.ScopeId)).ToArray());
+        Assert.True(site.SiteWide);
+
+        var inbound = await new ListInboundOrdersQueryHandler(db)
+            .Handle(InboundQuery(site), CancellationToken.None);
+        var putaway = await new ListWarehouseTasksQueryHandler(db)
+            .Handle(WarehouseTaskQuery(WarehouseTaskType.Putaway, site), CancellationToken.None);
+        var picking = await new ListWarehouseTasksQueryHandler(db)
+            .Handle(WarehouseTaskQuery(WarehouseTaskType.Picking, site), CancellationToken.None);
+        var outbound = await new ListOutboundOrdersQueryHandler(db)
+            .Handle(OutboundQuery(site), CancellationToken.None);
+        var counts = await new ListCountExecutionsQueryHandler(db)
+            .Handle(CountQuery(site), CancellationToken.None);
+
+        Assert.NotEmpty(inbound.Items);
+        Assert.NotEmpty(putaway.Items);
+        Assert.NotEmpty(picking.Items);
+        Assert.NotEmpty(outbound.Items);
+        Assert.NotEmpty(counts.Items);
+        Assert.All(inbound.Items, item => Assert.Equal(WorldHistorySpec.SiteCode, item.SiteCode));
+    }
+
     private static Task<WarehouseWorkScopeSelection> ResolveScopeAsync(
         WarehouseWorkScopeAuthorizer authorizer,
         string scopeKind,
@@ -651,7 +715,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             Keyword: keyword,
             AssignedOperatorUserIds: Operators(selection),
             AssignedPoolCodes: Pools(selection),
-            SiteCodes: selection.SiteCodes);
+            SiteCodes: selection.SiteCodes,
+            SiteWideScope: selection.SiteWide);
 
     private static ListOutboundOrdersQuery OutboundQuery(
         WarehouseWorkScopeSelection selection,
@@ -664,7 +729,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             Keyword: keyword,
             AssignedOperatorUserIds: Operators(selection),
             AssignedPoolCodes: Pools(selection),
-            SiteCodes: selection.SiteCodes);
+            SiteCodes: selection.SiteCodes,
+            SiteWideScope: selection.SiteWide);
 
     private static ListWarehouseTasksQuery WarehouseTaskQuery(
         WarehouseTaskType taskType,
@@ -677,7 +743,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             Status: WarehouseTaskStatus.Open.ToString(),
             AssignedOperatorUserIds: Operators(selection),
             AssignedPoolCodes: Pools(selection),
-            SiteCodes: selection.SiteCodes);
+            SiteCodes: selection.SiteCodes,
+            SiteWideScope: selection.SiteWide);
 
     private static ListCountExecutionsQuery CountQuery(WarehouseWorkScopeSelection selection) =>
         new(
@@ -687,7 +754,8 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             Status: CountExecutionStatus.Open.ToString(),
             AssignedOperatorUserIds: Operators(selection),
             AssignedPoolCodes: Pools(selection),
-            SiteCodes: selection.SiteCodes);
+            SiteCodes: selection.SiteCodes,
+            SiteWideScope: selection.SiteWide);
 
     private static IReadOnlyCollection<string>? Operators(
         WarehouseWorkScopeSelection selection) =>

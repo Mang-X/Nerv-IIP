@@ -96,6 +96,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             WorldHistoryApprovalSpec.PurchaseTemplateCode,
             WorldHistoryApprovalSpec.NcrTemplateCode,
             WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
+            WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
         };
         var existing = (await dbContext.ApprovalTemplates
                 .AsNoTracking()
@@ -172,6 +173,32 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
                     new ApprovalTemplateStepDefinition(
                         StepNo: 1,
                         StepName: "信用解冻复核",
+                        ParallelGroupKey: null,
+                        ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
+                        ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                        DueInHours: StepDueInHours),
+                ]);
+            dbContext.ApprovalTemplates.Add(template);
+            Backdate(template, x => x.CreatedAtUtc, goLiveUtc);
+            Backdate(template, x => x.UpdatedAtUtc, goLiveUtc);
+            written++;
+        }
+
+        // #1344 扩修：盘点差异模板。同样不挂历史链，只保证 Inventory 差异超阈值分支引用的模板
+        // 开箱存在（此前发起侧默认 COUNT-VARIANCE 而种子无此模板，盘点确认必 400）。已存在时一律不动。
+        if (!existing.Contains(WorldHistoryApprovalSpec.StockCountVarianceTemplateCode))
+        {
+            var template = ApprovalTemplate.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
+                WorldHistoryApprovalSpec.StockCountVarianceDocumentType,
+                version: 1,
+                isActive: true,
+                [
+                    new ApprovalTemplateStepDefinition(
+                        StepNo: 1,
+                        StepName: "盘点差异核准",
                         ParallelGroupKey: null,
                         ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
                         ApproverRef: WorldHistoryApprovalSpec.AdminUserId,

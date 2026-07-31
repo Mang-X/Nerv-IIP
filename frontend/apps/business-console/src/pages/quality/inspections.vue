@@ -4,6 +4,7 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
 import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
@@ -21,7 +22,6 @@ import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
-import { useAuthStore } from '@/stores/auth'
 import {
   inlineErrorMessage,
   notifyError,
@@ -75,7 +75,6 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
@@ -261,6 +260,7 @@ watch(
       ...emptyLine(),
       characteristicCode: characteristic.characteristicCode ?? '',
       characteristicName: characteristic.name ?? '',
+      characteristicType: characteristic.characteristicType ?? '',
       unitCode: characteristic.unitCode ?? '',
       specification: formatSpecification(characteristic),
     }))
@@ -289,6 +289,46 @@ const recordPlanModel = computed({
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
+const inspectionTaskSubmissionAllowed = shallowRef(false)
+let inspectionTaskGateEpoch = 0
+watch(
+  [
+    () => firstQuery(route.query.inspectionTaskId),
+    () => filters.organizationId,
+    () => filters.environmentId,
+  ],
+  async ([inspectionTaskId, organizationId, environmentId]) => {
+    const epoch = ++inspectionTaskGateEpoch
+    if (!inspectionTaskId) {
+      inspectionTaskSubmissionAllowed.value = true
+      return
+    }
+    inspectionTaskSubmissionAllowed.value = false
+    if (!organizationId.trim() || !environmentId.trim()) return
+    try {
+      const { data } = await listBusinessConsoleQualityInspectionTasks({
+        query: {
+          organizationId,
+          environmentId,
+          inspectionTaskId,
+          skip: 0,
+          take: 2,
+        },
+        throwOnError: true,
+      })
+      if (epoch !== inspectionTaskGateEpoch) return
+      const exactTasks = (data?.success ? (data.data?.items ?? []) : []).filter(
+        (task) => task.inspectionTaskId === inspectionTaskId,
+      )
+      inspectionTaskSubmissionAllowed.value =
+        exactTasks.length === 1 &&
+        Boolean(exactTasks[0]?.allowedActions?.includes('submit-inspection'))
+    } catch {
+      if (epoch === inspectionTaskGateEpoch) inspectionTaskSubmissionAllowed.value = false
+    }
+  },
+  { immediate: true },
+)
 // 从待检任务行进入时来源字段全部由任务带出——只读呈现，不给用户改的错觉。
 const recordContextItems = computed(() => [
   { label: '检验方案', value: recordForm.inspectionPlanId },
@@ -308,7 +348,10 @@ const validResultLines = computed(() =>
   recordForm.resultLines.filter(
     (line) =>
       isNonEmpty(line.characteristicCode) &&
-      isNonEmpty(line.observedValue) &&
+      // 计量型特性有效性看数值测量值（后端契约必填），计数型仍看实测值文本（#1326）。
+      (isVariableLine(line)
+        ? toMeasuredNumber(line.measuredValue) !== undefined
+        : isNonEmpty(line.observedValue)) &&
       isNonEmpty(line.result) &&
       hasRequiredDefectContext(line),
   ),
@@ -316,6 +359,7 @@ const validResultLines = computed(() =>
 const canCreateRecord = computed(
   () =>
     hasBusinessContext(filters) &&
+    (!isInspectionTaskFlow.value || inspectionTaskSubmissionAllowed.value) &&
     (isInspectionTaskFlow.value ||
       (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
     isNonEmpty(recordForm.sourceType) &&
@@ -350,6 +394,10 @@ function emptyLine() {
     characteristicCode: '',
     result: 'passed',
     observedValue: '',
+    // 计量型（variable）特性提交契约要求数值 measuredValue，缺失后端直接拒（#1326）；
+    // characteristicType 从方案特性清单带出，驱动「数值输入 vs 文本输入」的切换。
+    measuredValue: '',
+    characteristicType: '',
     unitCode: '',
     defectReason: '',
     defectQuantity: '',
@@ -366,6 +414,8 @@ function hasPristineResultLines() {
     [
       line.characteristicCode,
       line.observedValue,
+      line.measuredValue,
+      line.characteristicType,
       line.unitCode,
       line.defectReason,
       line.defectQuantity,
@@ -402,10 +452,26 @@ function onCharacteristicCodeChange(line: ReturnType<typeof emptyLine>, value: s
   const characteristic = planCharacteristics.value.find(
     (item) => (item.characteristicCode ?? '').trim().toLowerCase() === code,
   )
-  if (!characteristic) return
+  if (!characteristic) {
+    // 计划外编码类型未知：清掉类型标记回退文本录入，避免沿用上一个特性的计量模式。
+    line.characteristicType = ''
+    return
+  }
   line.characteristicName = characteristic.name ?? ''
+  line.characteristicType = characteristic.characteristicType ?? ''
   if (characteristic.unitCode) line.unitCode = characteristic.unitCode
   line.specification = formatSpecification(characteristic)
+}
+// 计量型（variable）特性：录数值测量值、提交 measuredValue；计数型（attribute）录文本实测值。
+function isVariableLine(line: { characteristicType: string }) {
+  return line.characteristicType.trim().toLowerCase() === 'variable'
+}
+// 测量值必须显式录入：空串不许被 Number('') === 0 吞成合法的 0（区别于 toOptionalNumber）。
+function toMeasuredNumber(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 function removeCharacteristicRow(index: number) {
   if (recordForm.resultLines.length === 1) {
@@ -464,15 +530,9 @@ async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
   const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
   if (inspectionTaskId) {
-    const inspectorUserId = auth.principal?.principalId?.trim()
-    if (!inspectorUserId) {
-      notifyError('当前账号缺少质检员身份，无法提交检验。')
-      return
-    }
     let response
     try {
       response = await taskActions.startInspection(inspectionTaskId, {
-        inspectorUserId,
         resultLines: toCharacteristicResults(),
         dispositionReason: optionalText(recordForm.dispositionReason),
         dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
@@ -526,14 +586,21 @@ async function submitInspectionRecord() {
 }
 
 function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResult[] {
-  return validResultLines.value.map((line) => ({
-    characteristicCode: line.characteristicCode.trim(),
-    result: line.result.trim(),
-    observedValue: line.observedValue.trim(),
-    unitCode: optionalText(line.unitCode),
-    defectReason: optionalText(line.defectReason),
-    defectQuantity: toOptionalNumber(line.defectQuantity),
-  }))
+  return validResultLines.value.map((line) => {
+    // 计量型特性必须带数值 measuredValue（后端按方案规格判定），observedValue 同步为其字符串形式；
+    // 计数型保持 observedValue 文本、不带 measuredValue（#1326）。
+    const measuredValue = isVariableLine(line) ? toMeasuredNumber(line.measuredValue) : undefined
+    return {
+      characteristicCode: line.characteristicCode.trim(),
+      result: line.result.trim(),
+      observedValue:
+        measuredValue !== undefined ? String(measuredValue) : line.observedValue.trim(),
+      measuredValue,
+      unitCode: optionalText(line.unitCode),
+      defectReason: optionalText(line.defectReason),
+      defectQuantity: toOptionalNumber(line.defectQuantity),
+    }
+  })
 }
 function optionalText(value: string) {
   const trimmed = value.trim()
@@ -876,7 +943,25 @@ function isPresent(value: string | undefined | null): value is string {
                     </NvSelectContent>
                   </NvSelect>
                 </NvField>
-                <NvField>
+                <!-- 计量型特性录数值测量值（提交 measuredValue，语义对齐 PDA 数字键盘）；
+                     计数型仍录文本实测值（observedValue）。 -->
+                <NvField v-if="isVariableLine(line)">
+                  <NvFieldLabel :for="`measured-value-${index}`">
+                    测量值{{ line.unitCode ? `（${line.unitCode}）` : '' }}
+                  </NvFieldLabel>
+                  <NvInput
+                    :id="`measured-value-${index}`"
+                    v-model="line.measuredValue"
+                    type="number"
+                    inputmode="decimal"
+                    step="any"
+                    required
+                  />
+                  <NvFieldDescription v-if="line.specification">
+                    规格：{{ line.specification }}
+                  </NvFieldDescription>
+                </NvField>
+                <NvField v-else>
                   <NvFieldLabel :for="`observed-value-${index}`">实测值</NvFieldLabel>
                   <NvInput :id="`observed-value-${index}`" v-model="line.observedValue" required />
                   <NvFieldDescription v-if="line.specification">

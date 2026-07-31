@@ -139,6 +139,88 @@ function clampServerMessage(raw: string): string {
     : text
 }
 
+/** 状态码可能藏在这些字段上：拦截器挂的 `response`、RFC7807 的 `status`、包装后的 `statusCode`。 */
+const STATUS_FIELDS = ['status', 'statusCode'] as const
+
+/**
+ * 取出这次失败的 **HTTP 状态码**。
+ *
+ * 为什么必须有它：generated client 在 `throwOnError` 下抛的是**解析后的响应体对象**，
+ * 不是 `Error` 实例——靠 `error instanceof Error && error.message.includes('403')` 判权限
+ * 永远不成立，真实 403 会退化成普通失败态（MAN-698 台账 / #1298 规格轴）。
+ * 本仓库的 error 拦截器（`@nerv-iip/api-client` 的 `configureApiClient`）会把原始
+ * `Response` 以非枚举属性挂到 error 上，所以 `error.response.status` 一定拿得到。
+ *
+ * 取不到返回 `undefined`——调用方据此走「未知失败」，不要猜。
+ */
+export function errorStatusCode(error: unknown): number | undefined {
+  return readStatusCode(error, new Set<object>(), 0)
+}
+
+/**
+ * `status` 是个很常见的**业务字段名**（工单状态、任务状态…），响应体里出现数值 `status`
+ * 完全可能与 HTTP 无关。只认合法 HTTP 状态码区间，避免把领域状态误当成 HTTP 码
+ * ——否则一个 `status: 403` 语义的业务枚举就能把页面骗进「无权限」空态。
+ */
+function isHttpStatusCode(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+}
+
+function readStatusCode(error: unknown, seen: Set<object>, depth: number): number | undefined {
+  if (error == null || typeof error !== 'object' || depth > 4) return undefined
+  if (seen.has(error)) return undefined
+  seen.add(error)
+
+  const record = error as Record<string, unknown>
+  for (const field of STATUS_FIELDS) {
+    const value = record[field]
+    if (isHttpStatusCode(value)) return value
+  }
+
+  for (const container of ['response', 'error', 'data', 'body', 'cause'] as const) {
+    const nested = readStatusCode(record[container], seen, depth + 1)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+/**
+ * 这次失败是不是「没有权限」（403）？——按状态码判，取不到状态码才退回消息文本匹配
+ * （少数场景 error 只是一个带 403 字样的字符串/Error）。
+ * 页面据此渲染「无权限」空态，而不是把 403 当成普通加载失败。
+ */
+export function isForbiddenError(error: unknown): boolean {
+  const status = errorStatusCode(error)
+  if (status !== undefined) return status === 403
+  // 兜底只认**技术串**（`403 Forbidden` 这类）。中文领域消息里出现的 403 是业务数字
+  // （「任务状态为 403 号工序」），不是状态码——那种情况下宁可不认，把领域消息原样上屏，
+  // 也好过把一次普通失败误判成「无权限」。
+  const raw = `${serverErrorMessage(error)} ${rawMessage(error)}`
+  if (/[一-龥]/.test(raw)) return false
+  return /\b403\b|forbidden/i.test(raw)
+}
+
+/**
+ * **分层透传链的唯一实现**：三个入口（`notifyOperationFailure` / `inlineErrorMessage` /
+ * `notifyError`）走的是同一条链，差别只在动作前缀、兜底文案与排障日志的标签。
+ *
+ * 链路：先取服务端真正说的那句话（信封 `message` → RFC7807 `detail`/`title` → 校验 `errors`），
+ * 中文领域消息原样上屏；英文 HTTP / 5xx 文案交给 `friendlyErrorMessage` 映射成人话，
+ * **原文只进 `console.error`**（反馈规范禁止英文错误码 / 5xx 原文上屏）。
+ *
+ * 之所以收成一处：三个入口原本各抄一遍这四行，任一处漏掉 `serverErrorMessage` 那步，
+ * 该入口就会把后端的领域拒绝理由吞成猜测性兜底文案（MAN-691 / #1259、MAN-700 / #1289 两次踩过）。
+ */
+function resolveLayeredMessage(error: unknown, fallback: string | undefined, logLabel: string) {
+  const raw = serverErrorMessage(error)
+  const message = friendlyErrorMessage(raw || error, fallback)
+  if (raw && message !== raw) {
+    // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
+    console.error(`[${logLabel}] 服务端原始错误：`, raw, error)
+  }
+  return message
+}
+
 /**
  * 写操作失败的统一反馈：**分层透传**，一句话——「服务端说的人话上屏，通用 HTTP 文案先映射」。
  *
@@ -150,14 +232,14 @@ function clampServerMessage(raw: string): string {
  *
  * 之所以要它而不是直接 `notifyError`：写操作要让用户知道**是哪个动作**失败了
  * （「发布失败：…」/「生成失败：…」），且服务端的领域拒绝理由必须原样看得见（MAN-691 / #1259）。
+ *
+ * `fallback` **必填，不由 `action` 派生**：`action` 实参的主流写法本身已带「失败」后缀
+ * （现网 106 处里 103 处形如 `'撤销失败'`），派生兜底会拼出「撤销失败失败，请稍后重试」。
+ * 领域兜底句只能由调用方自己写。
  */
 export function notifyOperationFailure(action: string, error: unknown, fallback: string): void {
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, '')
-  if (raw && message !== raw) {
-    // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
-    console.error(`[${action}] 服务端原始错误：`, raw, error)
-  }
+  // 第二个参数传 '' 是刻意的——什么都取不到时要落到调用方的领域兜底，而不是通用兜底句。
+  const message = resolveLayeredMessage(error, '', action)
   toast.error(message ? `${action}：${message}` : fallback)
 }
 
@@ -171,12 +253,7 @@ export function notifyOperationFailure(action: string, error: unknown, fallback:
  */
 export function inlineErrorMessage(error: unknown, fallback = '请求失败，请稍后重试。'): string {
   if (!error) return ''
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback)
-  if (raw && message !== raw) {
-    console.error('[加载失败] 服务端原始错误：', raw, error)
-  }
-  return message
+  return resolveLayeredMessage(error, fallback, '加载失败')
 }
 
 /** 成功反馈。 */
@@ -207,10 +284,5 @@ export function notifyWarning(message: string): void {
  * 于是 `{ detail: '报价单已过期，不能转订单' }` 这类 400 全被吞成兜底文案（MAN-700 / #1289）。
  */
 export function notifyError(error: unknown, fallback?: string): void {
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback)
-  if (raw && message !== raw) {
-    console.error('[操作失败] 服务端原始错误：', raw, error)
-  }
-  toast.error(message)
+  toast.error(resolveLayeredMessage(error, fallback, '操作失败'))
 }

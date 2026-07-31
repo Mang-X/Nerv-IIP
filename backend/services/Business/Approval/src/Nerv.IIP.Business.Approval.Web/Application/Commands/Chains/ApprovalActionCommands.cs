@@ -157,7 +157,7 @@ file static class ApprovalActionCommandHelpers
             .Include(x => x.Steps)
             .Include(x => x.Decisions)
             .SingleOrDefaultAsync(x => x.Id == chainId, cancellationToken)
-            ?? throw new KnownException("Approval chain was not found.");
+            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
     }
 
     public static void ExecuteDomainAction(Action action)

@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -17,11 +18,9 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
     : IIntegrationEventHandler<StockMovementPostingFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.stock-movement-posting-failed";
-    private const string MaterialIssueIdempotencyPrefix = "mes:material-issue:";
-    private const string LineSideReceiptIdempotencyPrefix = "mes:line-side-receipt:";
+    // 两条调拨腿的键前缀由领域拥有（MaterialIssueRequest），这里只引用，避免双份维护漂移。
     private const string ProductionConsumptionIdempotencyPrefix = "mes:production-consumption:";
     private const string FinishedGoodsReceiptIdempotencyPrefix = "mes:finished-goods-receipt:";
-    private const string LineSideTransferRollbackPrefix = "mes:line-side-transfer:";
 
     private readonly IntegrationEventConsumerGuard<StockMovementPostingFailedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -142,18 +141,19 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
             return;
         }
 
+        // 两条腿的失败都归一到同一个跨腿键：只丢弃在途数量，账面已收量本就没被这次尝试加过，
+        // 因此不存在「回滚了但键被占用」的窗口（#1322）。
+        MaterialIssueRequest.TryParseLegIdempotencyKey(payload.IdempotencyKey, out var transferToken, out _);
         materialRequest.MarkInventoryPostingFailed(
-            Math.Abs(payload.Quantity),
             payload.FailureCode,
             payload.FailureMessage,
             payload.FailedAtUtc,
-            NormalizeLineSideTransferRollbackKey(payload.IdempotencyKey));
+            transferToken);
     }
 
     private static bool IsMaterialTransferLeg(StockMovementPostingFailedPayload payload)
     {
-        return payload.IdempotencyKey.StartsWith(MaterialIssueIdempotencyPrefix, StringComparison.OrdinalIgnoreCase) ||
-            payload.IdempotencyKey.StartsWith(LineSideReceiptIdempotencyPrefix, StringComparison.OrdinalIgnoreCase);
+        return MaterialIssueRequest.TryParseLegIdempotencyKey(payload.IdempotencyKey, out _, out _);
     }
 
     private static bool IsProductionConsumption(StockMovementPostingFailedPayload payload)
@@ -164,21 +164,6 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
     private static bool IsFinishedGoodsReceipt(StockMovementPostingFailedPayload payload)
     {
         return payload.IdempotencyKey.StartsWith(FinishedGoodsReceiptIdempotencyPrefix, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeLineSideTransferRollbackKey(string idempotencyKey)
-    {
-        if (idempotencyKey.StartsWith(MaterialIssueIdempotencyPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return LineSideTransferRollbackPrefix + idempotencyKey[MaterialIssueIdempotencyPrefix.Length..];
-        }
-
-        if (idempotencyKey.StartsWith(LineSideReceiptIdempotencyPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return LineSideTransferRollbackPrefix + idempotencyKey[LineSideReceiptIdempotencyPrefix.Length..];
-        }
-
-        return idempotencyKey;
     }
 
     private void LogUnmatched(StockMovementPostingFailedIntegrationEvent integrationEvent, string reason)

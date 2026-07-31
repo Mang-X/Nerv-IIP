@@ -912,6 +912,15 @@ public sealed class BusinessGatewayAuthorizationTests
             purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
             purchaseOrderNo = "PO-REQ-001",
         },
+        // #1345：收货契约新增必填 qualityStatus，权限用例必须给合法请求体，否则测的是 400 而不是 403。
+        "/api/business-console/v1/erp/procurement/purchase-receipts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            purchaseOrderNo = "PO-2026-0001",
+            lines = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "quality" } },
+            idempotencyKey = "idem-receipt-authz",
+        },
         "/api/business-console/v1/erp/finance/work-center-cost-rates" => new
         {
             organizationId = "org-001",

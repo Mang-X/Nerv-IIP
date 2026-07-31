@@ -2,6 +2,7 @@
 import QualityExecuteStep from '@/components/quality/QualityExecuteStep.vue'
 import QualityResultStep from '@/components/quality/QualityResultStep.vue'
 import QualityTaskListStep from '@/components/quality/QualityTaskListStep.vue'
+import { InspectionTaskClaimBlockedError } from '@/components/quality/inspectionTaskBlockReasons'
 import type {
   AuthoritativeInspectionResult,
   QualityResultState,
@@ -13,9 +14,8 @@ import {
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { statusActionGate } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
-import { computed, ref, useTemplateRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -43,6 +43,7 @@ const {
   reasonCodes,
   submitInspection,
   submitPending,
+  claimTask,
   lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
@@ -51,7 +52,7 @@ const {
 const identity = usePdaIdentity()
 const qualityScope = computed(() =>
   identity.organizationId.value && identity.environmentId.value
-    ? '当前登录组织 / 当前业务环境'
+    ? '当前登录账号（Self）/ 当前业务环境'
     : '组织/环境范围未就绪',
 )
 
@@ -73,20 +74,20 @@ const inListStep = computed(() => selectedTask.value === null && result.value ==
 // StepFlow 头部指示：选任务(1) → 执行(2) → 结果(3)。
 const stepNumber = computed(() => (result.value ? 3 : selectedTask.value ? 2 : 1))
 
-function selectTask(task: Task) {
-  if (
-    !statusActionGate({
-      domain: 'quality-inspection-task',
-      action: 'create-record',
-      facts: {
-        status: task.status,
-        inspectionRecordId: task.inspectionRecordId,
-      },
-    }).executable
-  ) {
-    return
+async function selectTask(task: Task) {
+  try {
+    selectedTask.value = await claimTask(task)
+  } catch (error) {
+    if (await lifecycleRecovery.handle(error)) return
+    claimToast.value = {
+      show: true,
+      message:
+        error instanceof InspectionTaskClaimBlockedError
+          ? error.message
+          : '任务不可执行，请刷新后重试。',
+      type: 'error',
+    }
   }
-  selectedTask.value = task
 }
 function backToList() {
   selectedTask.value = null
@@ -97,6 +98,14 @@ const lifecycleRecovery = useLifecycleActionRecovery({
   reset: backToList,
   refresh,
 })
+const claimToast = shallowRef({
+  show: false,
+  message: '',
+  type: 'error' as const,
+})
+function setClaimToastOpen(show: boolean) {
+  claimToast.value = { ...claimToast.value, show }
+}
 
 function onSubmitted(authoritative: AuthoritativeInspectionResult) {
   result.value = { phase: 'submitted', authoritative }
@@ -199,6 +208,12 @@ function openNcr() {
       :message="lifecycleRecovery.toast.value.message"
       :type="lifecycleRecovery.toast.value.type"
       @update:show="lifecycleRecovery.setToastOpen"
+    />
+    <NvMobileToast
+      :show="claimToast.show"
+      :message="claimToast.message"
+      :type="claimToast.type"
+      @update:show="setClaimToastOpen"
     />
   </NvAppShellMobile>
 </template>

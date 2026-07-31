@@ -25,6 +25,14 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class MesInventoryLineSideTransferAcceptanceTests
 {
+    /// <summary>完工入库目标位置：对齐库存世界观种子的成品仓事实（SITE-001 / WH-WB-FG-01，#1331）。</summary>
+    private static readonly IMesFinishedGoodsReceiptLocationResolver FinishedGoodsLocationResolver =
+        new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions
+        {
+            SiteCode = "SITE-001",
+            LocationCode = "WH-WB-FG-01",
+        });
+
     [Fact]
     public async Task Mes_work_order_cancel_releases_inventory_reservation_and_returns_received_line_side_material_idempotently()
     {
@@ -63,8 +71,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "reserve:wo-695:mir",
                 "MAT-OIL",
                 "L",
-                "warehouse",
-                "line-side",
+                MaterialSupplyTestFixtures.SiteCode,
+                MaterialSupplyTestFixtures.SourceLocationCode,
                 "LOT-OIL-A",
                 null,
                 "Unrestricted",
@@ -75,7 +83,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await inventoryDb.SaveChangesAsync();
         await mesDb.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand(
                 "org-001",
                 "env-dev",
@@ -86,14 +94,15 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
         await inventoryMovementHandler.HandleAsync(issueEvent, CancellationToken.None);
         await inventoryMovementHandler.HandleAsync(receiptEvent, CancellationToken.None);
-        Assert.Equal(2m, inventoryDb.StockLedgers.Single(x => x.SiteCode == "warehouse" && x.LocationCode == "line-side").AvailableQuantity);
+        await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
+        Assert.Equal(2m, inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode).AvailableQuantity);
 
         var cancelResponse = await new CancelWorkOrderCommandHandler(mesDb).Handle(
             new CancelWorkOrderCommand("org-001", "env-dev", "WO-695", "plan cancelled", cancelledAtUtc),
@@ -102,9 +111,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Assert.IsType<WorkOrderCancelledDomainEvent>(mesDb.WorkOrders.Local.Single(x => x.WorkOrderId == "WO-695").GetDomainEvents().Last()));
         var cancellationEvents = issueRequest.GetDomainEvents().ToArray();
         var returnOutEvent = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReturnRequestedDomainEvent>(cancellationEvents[0]));
+            cancellationEvents.OfType<MaterialLineSideReturnRequestedDomainEvent>().Single());
         var returnInEvent = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(cancellationEvents[1]));
+            cancellationEvents.OfType<MaterialReturnedToWarehouseDomainEvent>().Single());
         await mesDb.SaveChangesAsync();
 
         await inventoryReservationHandler.HandleAsync(cancellationEvent, CancellationToken.None);
@@ -116,8 +125,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal(MaterialIssueRequest.ReturnRequestedStatus, issueRequest.Status);
         Assert.Equal(0m, inventoryDb.StockReservations.Single().OpenQuantity);
         Assert.Equal("released", inventoryDb.StockReservations.Single().Status);
-        var warehouseLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "warehouse" && x.LocationCode == "line-side");
-        var lineSideLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "production" && x.LocationCode == "line-side");
+        var warehouseLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode);
+        var lineSideLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode);
         Assert.Equal(10m, warehouseLedger.OnHandQuantity);
         Assert.Equal(0m, warehouseLedger.ReservedQuantity);
         Assert.Equal(10m, warehouseLedger.AvailableQuantity);
@@ -163,8 +172,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "reserve:wo-695-consume:mir",
                 "MAT-OIL",
                 "L",
-                "warehouse",
-                "line-side",
+                MaterialSupplyTestFixtures.SiteCode,
+                MaterialSupplyTestFixtures.SourceLocationCode,
                 "LOT-OIL-A",
                 null,
                 "Unrestricted",
@@ -175,7 +184,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await inventoryDb.SaveChangesAsync();
         await mesDb.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand(
                 "org-001",
                 "env-dev",
@@ -186,11 +195,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
+
+        await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
         var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
             new RecordProductionReportCommand(
@@ -223,9 +234,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             Assert.IsType<WorkOrderCancelledDomainEvent>(mesDb.WorkOrders.Local.Single(x => x.WorkOrderId == "WO-695-CONSUME").GetDomainEvents().Last()));
         var cancellationEvents = issueRequest.GetDomainEvents().ToArray();
         var returnOutEvent = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReturnRequestedDomainEvent>(cancellationEvents[0]));
+            cancellationEvents.OfType<MaterialLineSideReturnRequestedDomainEvent>().Single());
         var returnInEvent = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(cancellationEvents[1]));
+            cancellationEvents.OfType<MaterialReturnedToWarehouseDomainEvent>().Single());
 
         Assert.Equal(-2m, returnOutEvent.Payload.Quantity);
         Assert.Equal(2m, returnInEvent.Payload.Quantity);
@@ -236,8 +247,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal(MaterialIssueRequest.ReturnRequestedStatus, issueRequest.Status);
         Assert.Equal(4m, issueRequest.ReceivedQuantity);
         Assert.Equal(0m, inventoryDb.StockReservations.Single().OpenQuantity);
-        var warehouseLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "warehouse" && x.LocationCode == "line-side");
-        var lineSideLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "production" && x.LocationCode == "line-side");
+        var warehouseLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode);
+        var lineSideLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == MaterialSupplyTestFixtures.SiteCode && x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode);
         Assert.Equal(0m, warehouseLedger.ReservedQuantity);
         Assert.Equal(warehouseLedger.OnHandQuantity, warehouseLedger.AvailableQuantity);
         Assert.Equal(0m, lineSideLedger.OnHandQuantity);
@@ -269,7 +280,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 ProducedLotNo: "LOT-FG-483"),
             CancellationToken.None);
         var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
-        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
 
         await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
@@ -280,6 +291,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var ledger = Assert.Single(inventoryDb.StockLedgers);
         Assert.Equal("FGR", receiptRequest.RequestNo[..3]);
         Assert.Equal("SKU-FG-483", movement.SkuCode);
+        // 完工入库落到种子成品仓命名空间（#1331），不再是臆造的 finished-goods/receiving。
+        Assert.Equal("SITE-001", ledger.SiteCode);
+        Assert.Equal("WH-WB-FG-01", ledger.LocationCode);
+        // 幂等键遵稳定键约定：来自聚合的 mes:finished-goods-receipt:{org}:{env}:{requestNo}。
+        Assert.Equal(
+            $"mes:finished-goods-receipt:org-001:env-dev:{receiptRequest.RequestNo}",
+            receiptEvent.Payload.IdempotencyKey);
         Assert.Equal(8m, movement.Quantity);
         Assert.Equal(12.34m, movement.UnitCost);
         Assert.Equal(98.72m, movement.MovementAmount);
@@ -317,7 +335,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
         await mesDb.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand(
                 "org-001",
                 "env-dev",
@@ -328,11 +346,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
+
+        await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
         var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
             new RecordProductionReportCommand(
@@ -360,18 +380,18 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         Assert.Empty(inventoryPublisher.Published);
         Assert.Equal(0m, inventoryDb.StockLedgers.Single(x =>
-            x.SiteCode == "warehouse" &&
-            x.LocationCode == "line-side" &&
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode &&
             x.SkuCode == "MAT-OIL" &&
             x.LotNo == "LOT-OIL-A").OnHandQuantity);
         Assert.Equal(3m, inventoryDb.StockLedgers.Single(x =>
-            x.SiteCode == "production" &&
-            x.LocationCode == "line-side" &&
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
             x.SkuCode == "MAT-OIL" &&
             x.LotNo == "LOT-OIL-A").OnHandQuantity);
         Assert.Contains(inventoryDb.StockMovements, x =>
-            x.SiteCode == "warehouse" &&
-            x.LocationCode == "line-side" &&
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode &&
             x.Quantity == -5m);
         Assert.Equal(4, inventoryDb.StockMovements.Count());
     }
@@ -407,7 +427,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
         await mesDb.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand(
                 "org-001",
                 "env-dev",
@@ -418,11 +438,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             CancellationToken.None);
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
+
+        await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
 
         var reportResult = await new RecordProductionReportCommandHandler(mesDb, mesCodingService).Handle(
             new RecordProductionReportCommand(
@@ -447,8 +469,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             await inventoryHandler.HandleAsync(movementEvent, CancellationToken.None);
         }
         Assert.Equal(3m, inventoryDb.StockLedgers.Single(x =>
-            x.SiteCode == "production" &&
-            x.LocationCode == "line-side" &&
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
             x.SkuCode == "MAT-OIL" &&
             x.LotNo == "LOT-OIL-A").OnHandQuantity);
 
@@ -470,8 +492,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         Assert.Equal(2m, reversalEvent.Payload.Quantity);
         var lineSideLedger = inventoryDb.StockLedgers.Single(x =>
-            x.SiteCode == "production" &&
-            x.LocationCode == "line-side" &&
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
             x.SkuCode == "MAT-OIL" &&
             x.LotNo == "LOT-OIL-A");
         Assert.Equal(5m, lineSideLedger.OnHandQuantity);
@@ -506,7 +528,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
         await mesDb.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand(
                 "org-001",
                 "env-dev",
@@ -516,7 +538,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "LOT-OIL-A"),
             CancellationToken.None);
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(issueRequest.GetDomainEvents().First()));
+            issueRequest.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -533,6 +555,103 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
         Assert.Contains("negative", persistedIssue.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(persistedIssue.InventoryPostingFailedAtUtc);
+        // 失败的尝试没有留下在途数量，也没有把幂等键占死。
+        Assert.Equal(0m, persistedIssue.PendingReceiptQuantity);
+        Assert.Null(persistedIssue.PendingPostingToken);
+    }
+
+    /// <summary>
+    /// #1322 台账 #44：首次收料过账失败后重试，必须真正再过一次账（幂等键带尝试序号，不会被库存去重吞掉），
+    /// 且库存只扣一次、齐套只在过账成功后才转绿。
+    /// </summary>
+    [Fact]
+    public async Task Mes_line_side_receipt_retry_after_inventory_failure_posts_once_and_turns_kitting_green()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var issuedAtUtc = DateTimeOffset.Parse("2026-06-18T08:00:00Z");
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                5m,
+                issuedAtUtc,
+                "issue-1322-retry"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        // 第一次：仓库还没有实物库存 —— 库存以 NEGATIVE_ON_HAND 拒绝，MES 必须回到可重试态。
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(20), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var firstAttemptEvents = issueRequest.GetDomainEvents().ToArray();
+        var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            firstAttemptEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
+        var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            firstAttemptEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+        await failedConsumer.HandleAsync(
+            CreateFailedEvent(firstIssueEvent, "evt-failed-1322-first-attempt"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        Assert.Equal(MaterialIssueRequest.RequestedStatus, issueRequest.Status);
+        Assert.Equal(0m, issueRequest.ReceivedQuantity);
+
+        // 仓库到货后重试：幂等键必须与首次不同，否则库存会把重放当重复请求直接吞掉。
+        await inventoryHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(30)), CancellationToken.None);
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(40), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var retryEvents = issueRequest.GetDomainEvents().ToArray();
+        var retryIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            retryEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
+        var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            retryEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        Assert.NotEqual(firstIssueEvent.Payload.IdempotencyKey, retryIssueEvent.Payload.IdempotencyKey);
+        Assert.NotEqual(firstReceiptEvent.Payload.IdempotencyKey, retryReceiptEvent.Payload.IdempotencyKey);
+
+        await inventoryHandler.HandleAsync(retryIssueEvent, CancellationToken.None);
+        await inventoryHandler.HandleAsync(retryReceiptEvent, CancellationToken.None);
+        await PostTransferLegsAsync(mesDb, retryIssueEvent, retryReceiptEvent);
+        // 回执重复投递（CAP 重发）不得二次记账。
+        await PostTransferLegsAsync(mesDb, retryIssueEvent, retryReceiptEvent);
+
+        // 首次失败 + 重试一共只留下 3 笔流水：仓库种子入库、重试出库、重试线边入库 —— 没有重复过账。
+        Assert.Equal(3, inventoryDb.StockMovements.Count());
+        var persistedRetryIssue = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, persistedRetryIssue.Status);
+        Assert.Equal(5m, persistedRetryIssue.ReceivedQuantity);
+        Assert.Null(persistedRetryIssue.InventoryPostingFailureCode);
+        var sourceLedger = inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode &&
+            x.SkuCode == "MAT-OIL");
+        var lineSideLedger = inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
+            x.SkuCode == "MAT-OIL");
+        Assert.Equal(0m, sourceLedger.OnHandQuantity);
+        Assert.Equal(5m, lineSideLedger.OnHandQuantity);
     }
 
     [Fact]
@@ -561,14 +680,15 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "issue-541-double"),
             CancellationToken.None);
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
-        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:10:00Z"), 3m, "LOT-OIL-A");
+        issueRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:10:00Z"), 3m, "LOT-OIL-A");
         issueRequest.ClearDomainEvents();
-        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
+        // 第二笔收料仍在途（两条腿都还没回执），随后被库存双双拒绝。
+        issueRequest.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
         var transferEvents = issueRequest.GetDomainEvents().ToArray();
         var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+            transferEvents.OfType<MaterialIssueRequestedDomainEvent>().Single());
         var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
-            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+            transferEvents.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -588,6 +708,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal(3m, persistedIssue.ReceivedQuantity);
         Assert.Equal(MaterialIssueRequest.PartiallyReceivedStatus, persistedIssue.Status);
         Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
+        // 失败只丢弃在途量，已过账的 3 不受影响，键也没被占死。
+        Assert.Equal(0m, persistedIssue.PendingReceiptQuantity);
+        Assert.Null(persistedIssue.PendingPostingToken);
     }
 
     [Fact]
@@ -616,7 +739,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 "issue-541-consumption"),
             CancellationToken.None);
         var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
-        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
+        issueRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
         issueRequest.ClearDomainEvents();
         await mesDb.SaveChangesAsync();
 
@@ -690,7 +813,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 ProducedLotNo: "LOT-FG-541"),
             CancellationToken.None);
         var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
-        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
         await mesDb.SaveChangesAsync();
 
@@ -742,8 +865,8 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 $"seed:mes:{sourceDocumentId}:warehouse-line-side",
                 "MAT-OIL",
                 "L",
-                "warehouse",
-                "line-side",
+                MaterialSupplyTestFixtures.SiteCode,
+                MaterialSupplyTestFixtures.SourceLocationCode,
                 "LOT-OIL-A",
                 null,
                 "Unrestricted",
@@ -751,6 +874,159 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 null,
                 quantity,
                 occurredAtUtc));
+    }
+
+    /// <summary>
+    /// #1322 二轮审核：一腿成功一腿失败时，重试**只重发未过账的那条腿** ——
+    /// 已经在库存实扣过的出库腿不得被再提交一次，否则库存重复扣减且无冲销。
+    /// </summary>
+    [Fact]
+    public async Task Mes_line_side_receipt_retry_only_reposts_the_leg_that_failed()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var postedConsumer = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var issuedAtUtc = DateTimeOffset.Parse("2026-06-18T08:00:00Z");
+        await inventoryHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10)), CancellationToken.None);
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001", "env-dev", "WO-446", "OP-10", "MAT-OIL", "L", 5m, issuedAtUtc, "issue-1322-partial-leg"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(20), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var firstAttempt = issueRequest.GetDomainEvents().ToArray();
+        var firstIssueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            firstAttempt.OfType<MaterialIssueRequestedDomainEvent>().Single());
+        var firstReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            firstAttempt.OfType<MaterialLineSideReceiptConfirmedDomainEvent>().Single());
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        // 出库腿真过账成功（库存已实扣 5），入库腿被拒。
+        await inventoryHandler.HandleAsync(firstIssueEvent, CancellationToken.None);
+        await postedConsumer.HandleAsync(
+            CreatePostedEvent(firstIssueEvent, "evt-posted-1322-partial-issue-leg"),
+            CancellationToken.None);
+        await failedConsumer.HandleAsync(
+            CreateFailedEvent(firstReceiptEvent, "evt-failed-1322-partial-receipt-leg"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        Assert.Equal(0m, issueRequest.ReceivedQuantity);
+        Assert.True(issueRequest.PendingIssueLegPosted);
+        Assert.Equal(5m, issueRequest.PendingReceiptQuantity);
+        Assert.Equal(MaterialIssueRequest.RequestedStatus, issueRequest.Status);
+        var movementsAfterFirstAttempt = inventoryDb.StockMovements.Count();
+
+        // 重试：只应该发出线边入库腿一条事件。
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001", "env-dev", issueResult.ReferenceId, issuedAtUtc.AddMinutes(40), 5m, "LOT-OIL-A"),
+            CancellationToken.None);
+        var retryEvents = issueRequest.GetDomainEvents().ToArray();
+        var retryDomainEvent = Assert.Single(retryEvents);
+        var retryReceiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(retryDomainEvent));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(retryReceiptEvent, CancellationToken.None);
+        await postedConsumer.HandleAsync(
+            CreatePostedEvent(retryReceiptEvent, "evt-posted-1322-partial-retry-receipt-leg"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        // 终态正确：已收 5、状态 Received、失败诊断清空。
+        var persisted = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, persisted.Status);
+        Assert.Equal(5m, persisted.ReceivedQuantity);
+        Assert.Equal(0m, persisted.PendingReceiptQuantity);
+        Assert.Null(persisted.PendingPostingToken);
+        Assert.Null(persisted.InventoryPostingFailureCode);
+
+        // 总扣减不翻倍：出库腿只提交过一次，来源库位扣到 0 而不是 -5。
+        Assert.Equal(movementsAfterFirstAttempt + 1, inventoryDb.StockMovements.Count());
+        Assert.Single(inventoryDb.StockMovements.Where(x =>
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode && x.Quantity == -5m));
+        Assert.Equal(0m, inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.SourceLocationCode &&
+            x.SkuCode == "MAT-OIL").OnHandQuantity);
+        Assert.Equal(5m, inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == MaterialSupplyTestFixtures.SiteCode &&
+            x.LocationCode == MaterialSupplyTestFixtures.LineSideLocationCode &&
+            x.SkuCode == "MAT-OIL").OnHandQuantity);
+    }
+
+    /// <summary>
+    /// 模拟 Inventory 过账成功后的 StockMovementPosted 回执，驱动 MES 真正的消费者。
+    /// 只有两条腿都回执，领料单的已收数量才会增加 —— 这是 #1322 里「齐套不得先于库存实扣翻绿」的验收点。
+    /// </summary>
+    private static async Task PostTransferLegsAsync(
+        MesDbContext mesDb,
+        InventoryMovementRequestedIntegrationEvent issueEvent,
+        InventoryMovementRequestedIntegrationEvent receiptEvent)
+    {
+        var postedConsumer = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+        await postedConsumer.HandleAsync(CreatePostedEvent(issueEvent, $"evt-posted-{issueEvent.EventId}"), CancellationToken.None);
+        await postedConsumer.HandleAsync(CreatePostedEvent(receiptEvent, $"evt-posted-{receiptEvent.EventId}"), CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+    }
+
+    private static StockMovementPostedIntegrationEvent CreatePostedEvent(
+        InventoryMovementRequestedIntegrationEvent requestedEvent,
+        string eventId)
+    {
+        var payload = requestedEvent.Payload;
+        return new StockMovementPostedIntegrationEvent(
+            eventId,
+            InventoryIntegrationEventTypes.StockMovementPosted,
+            InventoryIntegrationEventVersions.V1,
+            requestedEvent.OccurredAtUtc.AddSeconds(1),
+            InventoryIntegrationEventSources.BusinessInventory,
+            requestedEvent.CorrelationId,
+            requestedEvent.EventId,
+            requestedEvent.OrganizationId,
+            requestedEvent.EnvironmentId,
+            "system:business-inventory",
+            $"inventory:stock-movement-posted:{payload.SourceService}:{payload.SourceDocumentId}:{payload.IdempotencyKey}",
+            new StockMovementPostedPayload(
+                $"mv-{eventId}",
+                payload.MovementType,
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.SourceDocumentLineId,
+                payload.IdempotencyKey,
+                payload.SkuCode,
+                payload.UomCode,
+                payload.SiteCode,
+                payload.LocationCode,
+                payload.LotNo,
+                payload.SerialNo,
+                payload.QualityStatus,
+                payload.OwnerType,
+                payload.OwnerId,
+                payload.Quantity,
+                requestedEvent.OccurredAtUtc.AddSeconds(1),
+                payload.UnitCost,
+                null));
     }
 
     private static StockMovementPostingFailedIntegrationEvent CreateFailedEvent(

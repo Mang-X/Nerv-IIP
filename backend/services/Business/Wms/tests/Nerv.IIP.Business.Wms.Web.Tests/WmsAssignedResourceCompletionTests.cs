@@ -306,6 +306,95 @@ public sealed class WmsAssignedResourceCompletionTests
         Assert.Single(await dbContext.InventoryMovementRequests.ToListAsync());
     }
 
+    /// <summary>
+    /// #1343：站点范围（IAM 精确站点授权）读写口径一致——站内资源可完成，跨站仍 403。
+    /// 写侧闸门若只认作业池成员资格，admin/主管选 site 后每个按钮都会 403。
+    /// </summary>
+    [Fact]
+    public async Task Site_scope_completes_station_wide_resources_without_pool_membership()
+    {
+        await using var dbContext = CreateContext();
+        SeedWorkBoundary(dbContext);
+        // 站点主管不是作业池成员；资源派到作业池但未派给具体操作员。
+        var inbound = CreatePoolOnlyInbound("IN-SITE-SCOPE");
+        var count = CreatePoolOnlyCount("COUNT-SITE-SCOPE");
+        dbContext.InboundOrders.Add(inbound);
+        dbContext.CountExecutions.Add(count);
+        await dbContext.SaveChangesAsync();
+
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            CompleteInbound(
+                inbound,
+                "user-site-supervisor",
+                [SiteCode],
+                "site",
+                SiteCode,
+                "inbound-site-scope"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await new CompleteCountExecutionCommandHandler(dbContext).Handle(
+            new CompleteCountExecutionCommand(
+                count.Id,
+                // 盘点差异非零才会产生库存移动请求；这里验的是授权闸门，不是等量回填。
+                8m,
+                $"complete-{count.CountNo}",
+                OrganizationId,
+                EnvironmentId,
+                "user-site-supervisor",
+                [SiteCode],
+                "site",
+                SiteCode,
+                count.Version),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.NotEqual(InboundOrderStatus.Open, inbound.Status);
+        Assert.Equal(CountExecutionStatus.Completed, count.Status);
+
+        // 站点边界仍强制：授权站点之外一律拒绝。
+        var crossSite = CreatePoolOnlyInbound("IN-SITE-SCOPE-CROSS");
+        dbContext.InboundOrders.Add(crossSite);
+        await dbContext.SaveChangesAsync();
+        var denied = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                CompleteInbound(
+                    crossSite,
+                    "user-site-supervisor",
+                    ["SITE-B"],
+                    "site",
+                    "SITE-B",
+                    "inbound-site-scope-cross"),
+                CancellationToken.None));
+
+        Assert.Equal("site-outside-exact-grant", denied.Reason);
+        Assert.Equal(InboundOrderStatus.Open, crossSite.Status);
+    }
+
+    private static InboundOrder CreatePoolOnlyInbound(string orderNo) =>
+        InboundOrder.Create(
+            OrganizationId,
+            EnvironmentId,
+            orderNo,
+            "purchase-receipt",
+            $"PO-{orderNo}",
+            SiteCode,
+            [InboundLine()],
+            null,
+            PoolCode);
+
+    private static CountExecution CreatePoolOnlyCount(string countNo) =>
+        CountExecution.Create(
+            OrganizationId,
+            EnvironmentId,
+            countNo,
+            "SKU-001",
+            "EA",
+            SiteCode,
+            "BIN-01",
+            10m,
+            null,
+            PoolCode);
+
     private static CompleteInboundOrderCommand CompleteInbound(
         InboundOrder inbound,
         string actorPrincipalId,

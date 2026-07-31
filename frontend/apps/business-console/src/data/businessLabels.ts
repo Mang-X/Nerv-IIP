@@ -243,13 +243,9 @@ export const WCS_ADAPTER_TYPE_LABELS: Readonly<Record<string, string>> = {
   manual: '人工作业',
 }
 
-/** 库存移动类型（`movementType`）。 */
-export const INVENTORY_MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
-  receipt: '入库',
-  issue: '出库',
-  transfer: '调拨',
-  adjustment: '调整',
-}
+// 库存移动类型词表已迁至 `data/inventoryReference.ts`：那里按「读面全集 / 外部命令可写 / 人工补录面」
+// 分三层并与后端逐字对齐。此处旧表含后端从不接受的 receipt / issue（正是走查台账 #49 的幽灵值），
+// 留着同名并存只会让人误 import 把问题捡回来，故删除，不做 re-export。
 
 /**
  * 采集点位的工程单位（`unitCode`）。这是设备侧的物理量单位，与主数据计量单位

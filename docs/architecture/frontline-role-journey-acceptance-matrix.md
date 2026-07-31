@@ -66,7 +66,7 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 | -------- | -------------------------- | -------------------- | ------------------------------------------------ | -------- |
 | `emp010` | `user-emp-010` / `EMP-010` | `role-pda-operator`  | 组织内客户端 assignment 过滤；MES 组织范围执行页 | 部分可验 |
 | `emp012` | `user-emp-012` / `EMP-012` | `role-pda-operator`  | 组织内客户端 assignment 过滤；MES 前序/物料门禁  | 部分可验 |
-| `emp034` | `user-emp-034` / `EMP-034` | `role-pda-inspector` | 组织范围待检和检验提交                           | 部分可验 |
+| `emp034` | `user-emp-034` / `EMP-034` | `role-pda-inspector` | Self 待检、领取和检验提交                        | 可验     |
 | `emp049` | `user-emp-049` / `EMP-049` | `role-pda-warehouse` | 组织范围收货/上架/拣货/复核                      | 部分可验 |
 
 以下人员已有员工目录，但不是本基线的可登录验收账号：
@@ -88,7 +88,7 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 | O4 物料未齐套阻断      | PDA      | `emp012`   | 首页伪“我的任务”；命令按 org/env + task ID | MES start facade              | 可验服务端阻断 |
 | W1 收货并进入上架观察  | PDA      | `emp049`   | Organization                               | WMS inbound/putaway facade    | 阻塞终态守卫   |
 | W2 拣货并复核发货      | PDA      | `emp049`   | Organization                               | WMS picking/outbound facade   | 阻塞终态守卫   |
-| Q1 待检执行与 NCR 支线 | PDA      | `emp034`   | Organization                               | Quality task/record facade    | 部分可验       |
+| Q1 待检执行与 NCR 支线 | PDA      | `emp034`   | Self（当前 principal）                     | Quality task/record facade    | 可验           |
 | M1 维修人员处理工单    | PDA      | 无         | 无 Technician scope                        | Maintenance facade 存在       | 阻塞           |
 | S1 工人固定工位执行    | 工位机   | 无         | 无                                         | `business-workstation` 未实现 | 阻塞           |
 | T1 班组/车间当班处置   | 车间终端 | 无         | 无 Team/Workshop scope                     | 专用工作台未实现              | 阻塞           |
@@ -161,18 +161,17 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 
 | 环节           | 预期结果与证据                                                                                                                                                                                                                                                                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 登录/工作台    | `getConsolePrincipal` 返回 `role-pda-inspector`；首页显示组织范围 pending 待检总量和检验入口。                                                                                                                                                                                                                                                  |
-| 范围           | `listBusinessConsoleQualityInspectionTasks` 当前只带 org/env/status，没有 inspector assignment/filter；因此不是“我的待检”。提交时 `inspectorUserId` 后置注入 `user-emp-034`，只能证明实际执行人，不能证明任务预先派给该人。                                                                                                                     |
-| 筛选/分页/刷新 | 默认服务端 `status=pending`；来源类型、超期排序和扫码匹配是客户端逻辑。页面按不超过 200 的页迭代“加载更多/加载全部”，错误面可刷新。                                                                                                                                                                                                             |
-| 详情/强 ID     | 保存 `inspectionTaskId`、`inspectionPlanId`、`sourceDocumentId`、SKU、批次、数量、到期时间；计划特性来自公开 characteristics 读面。                                                                                                                                                                                                             |
-| 动作/门禁      | 必检特性完整、每行有效，不合格时处置原因必填；提交 `createBusinessConsoleQualityInspectionRecordFromTask`。已 completed 任务重放返回同一记录。                                                                                                                                                                                                  |
+| 登录/工作台    | `getConsolePrincipal` 返回 `role-pda-inspector`；首页和 `/quality/tasks` 显示当前 `principalId` 的 Self pending 待检，不再把组织总量称为个人任务。                                                                                                                                                                                              |
+| 范围           | `listBusinessConsoleQualityInspectionTasks` 显式发送 `scopeKind=self + scopeId=user-emp-034`；Gateway 以认证主体重新解析，Quality 按 `assigned_user_id` 服务端过滤。世界观历史任务按事实检验员归属回填。                                                                                                                                        |
+| 筛选/分页/刷新 | 默认服务端 `status=pending`；来源类型/服务、来源编号或物料关键字、超期均在 Quality 端先过滤再计算 `total`，按完成态、到期、创建时间、强 ID 确定性 offset 排序；页面继续以受限页大小加载更多并支持错误刷新。                                                                                                                                     |
+| 详情/强 ID     | 强 ID 详情返回来源、SKU、批次、数量、到期、assignment/version、`allowedActions/blockReasons`，并包含检验方案类别、抽样规则与特性；Self/Team/Organization 与列表使用同一服务端范围裁决。                                                                                                                                                         |
+| 动作/门禁      | Pending 任务先以 `expectedVersion + idempotencyKey` 原子领取；只有权威动作包含 `submit` 才进入录入。必检特性完整、每行有效，不合格时处置原因必填；提交 `createBusinessConsoleQualityInspectionRecordFromTask` 时 inspector 由认证 principal 注入。无权、生命周期冲突、被他人领取分别 403/409/422，Completed 只读。                              |
 | 权威回执       | 契约与提交 composable 已保留 `inspectionRecordId`、`result` 及可选 NCR ID/code；当前结果组件只消费结论和 NCR 标识，只提供 `openNcr`，没有检验记录 ID 展示或记录详情入口。当前验收须从浏览器网络响应保存回执，再手工调用公开 `getBusinessConsoleQualityInspectionRecord` 按同一 ID 回读；结果页记录跳转由 #1177 跟进，完成前 UI 端到端仍是缺口。 |
 | 终态只读       | 提交后任务转 completed 并退出 pending 列表；检验记录与 NCR 详情作为只读证据，不能再次创建第二条首检。                                                                                                                                                                                                                                           |
 | 退出           | PDA 缺可见退出入口，当前阻塞。                                                                                                                                                                                                                                                                                                                  |
 
-P1 必须新增真实 inspector assignment：任务持久保存被派检验员强 ID，公开列表支持
-`assignedInspectorUserId=principalId` 或等价 current-subject/team scope，Gateway 校验当前主体能处理该任务，
-并保留 assignment/代检审计。仅把 `inspectorUserId` 写进最终记录不满足该要求。
+MAN-630 已新增真实 inspector/team assignment、Self/Team 范围、领取/转派状态机和耐久审计回执。
+目标人员与班组从 MasterData 权威目录校验；转派保留原因；领取和提交共享任务锁及版本裁决。
 
 ## 7. 维修、工位机与班组/车间终端
 

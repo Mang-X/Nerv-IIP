@@ -256,6 +256,38 @@ public sealed class DemandPlanningAggregateTests
         Assert.Equal("MBOM-001", link.ManufacturingBomReference);
     }
 
+    // 「主引用 + 回退」原本在集成事件转换器 / 下游桥接 / 验收测试三处各抄一遍。
+    // 收敛到聚合后，这三条用例是该规则的唯一权威定义。
+    [Fact]
+    public void Primary_demand_source_reference_takes_the_first_demand_pegging()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-9", "SKU-FG-1000", "SKU-RM-1000", 5m, null, null, null);
+        suggestion.AddPeggingLink("demand", "DEMAND-002", "SKU-FG-1000", "SKU-RM-1000", 7m, null, null, null);
+        suggestion.AddPeggingLink("demand", "DEMAND-003", "SKU-FG-1000", "SKU-RM-1000", 7m, null, null, null);
+
+        // scheduled-receipt 排在最前也不能被当成需求源。
+        Assert.Equal("DEMAND-002", suggestion.GetPrimaryDemandSourceReference());
+        Assert.Equal(new[] { "DEMAND-002", "DEMAND-003" }, suggestion.GetDemandSourceReferences());
+    }
+
+    [Fact]
+    public void Primary_demand_source_reference_falls_back_to_any_pegging_when_no_demand_link_exists()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-9", "SKU-FG-1000", "SKU-RM-1000", 5m, null, null, null);
+
+        // 历史数据没有 demand 类型 pegging；回退到任意非空引用，避免整条追溯链断掉。
+        Assert.Empty(suggestion.GetDemandSourceReferences());
+        Assert.Equal("erp:purchase-order:PO-9", suggestion.GetPrimaryDemandSourceReference());
+    }
+
+    [Fact]
+    public void Primary_demand_source_reference_is_null_without_any_pegging()
+    {
+        Assert.Null(NewSuggestion().GetPrimaryDemandSourceReference());
+    }
+
     private static DemandSource NewDemand()
     {
         return DemandSource.Create(

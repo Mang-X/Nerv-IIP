@@ -357,6 +357,41 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<bool>("PendingIssueLegPosted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("pending_issue_leg_posted")
+                        .HasComment("Whether the warehouse outbound leg of the in-flight line-side receipt has been posted by Inventory.");
+
+                    b.Property<string>("PendingPostingToken")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("pending_posting_token")
+                        .HasComment("Normalized cross-leg idempotency token of the in-flight line-side receipt posting; null when nothing is in flight.");
+
+                    b.Property<bool>("PendingReceiptLegPosted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("pending_receipt_leg_posted")
+                        .HasComment("Whether the line-side inbound leg of the in-flight line-side receipt has been posted by Inventory.");
+
+                    b.Property<decimal>("PendingReceiptQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("pending_receipt_quantity")
+                        .HasComment("Line-side receipt quantity submitted to Inventory but not yet posted on both transfer legs; kitting never counts it.");
+
+                    b.Property<int>("ReceiptAttempt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("receipt_attempt")
+                        .HasComment("Monotonic line-side receipt attempt number stamped into the Inventory idempotency key so a failed attempt never blocks the retry.");
+
                     b.Property<DateTimeOffset?>("ReceivedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("received_at_utc")
@@ -386,12 +421,36 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("requested_quantity")
                         .HasComment("Requested material issue quantity.");
 
+                    b.Property<string>("SourceLocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_location_code")
+                        .HasComment("Inventory location code the material is actually issued from, resolved from real stock holdings.");
+
+                    b.Property<string>("SourceSiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_site_code")
+                        .HasComment("Inventory site code the material is actually issued from, resolved from real stock holdings instead of a hardcoded namespace.");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
                         .HasComment("Material issue lifecycle status within MES.");
+
+                    b.Property<string>("TargetLocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("target_location_code")
+                        .HasComment("Inventory location code of the work station line-side destination.");
+
+                    b.Property<string>("TargetSiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("target_site_code")
+                        .HasComment("Inventory site code of the work station line-side destination.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -401,6 +460,23 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDefaultValue("UNSPECIFIED")
                         .HasColumnName("uom_code")
                         .HasComment("Unit of measure code captured for the material issue quantity.");
+
+                    b.Property<string>("WmsPickingTaskNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("wms_picking_task_no")
+                        .HasComment("WMS picking task number created for this material issue request, when reported.");
+
+                    b.Property<DateTimeOffset?>("WmsPreparedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("wms_prepared_at_utc")
+                        .HasComment("UTC time when WMS acknowledged this material issue request with warehouse work.");
+
+                    b.Property<string>("WmsRequestId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("wms_request_id")
+                        .HasComment("WMS outbound order number prepared for this material issue request, reported back by WMS.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -1078,6 +1154,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("inventory_posting_failure_message")
                         .HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
 
+                    b.Property<string>("LocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Inventory location code the material was consumed from, copied from the supplying material issue request line-side target.");
+
                     b.Property<string>("MaterialId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1119,6 +1201,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("report_no")
                         .HasComment("MES production report number that consumed this material lot.");
+
+                    b.Property<string>("SiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Inventory site code the material was consumed from, copied from the supplying material issue request line-side target.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()

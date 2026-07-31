@@ -11,6 +11,7 @@
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useMaintenancePlans, useMaintenanceWorkOrders } from './useBusinessMaintenance'
+import { toBaseUomBySku } from './skuBaseUom'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -307,14 +308,6 @@ export function useEquipmentSkuCatalog() {
     ),
     skusPending: skuCatalog.skusPending,
     /** 所选物料的基本单位，用来在选完物料后自动带出单位。 */
-    baseUomBySku: computed(() => {
-      const map = new Map<string, string>()
-      for (const row of skuCatalog.skus.value) {
-        const code = row.code?.trim()
-        const uom = row.baseUomCode?.trim()
-        if (code && uom) map.set(code, uom)
-      }
-      return map
-    }),
+    baseUomBySku: toBaseUomBySku(skuCatalog.skus),
   }
 }

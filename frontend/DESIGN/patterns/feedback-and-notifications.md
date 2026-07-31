@@ -43,6 +43,15 @@
    `notifyWarning(文案)`（后者用于「请求成功但业务结果不是用户想要的那一档」，如
    「转单成功返回但缺少有效价源」）。五个入口都在
    `apps/business-console/src/utils/notify.ts`——**业务页一律经它们，不直接调 `toast.*`**。
+   1d. **要按「哪一类失败」分叉时用状态码，不要用消息文本**（MAN-698 批次 A）：页面偶尔需要把
+   某一类失败渲染成**语义空态**而非通用失败条（如 403 → 「无权限」空态）。判定一律走
+   `isForbiddenError(error)` / `errorStatusCode(error)`（同在 `utils/notify.ts`）——它们从
+   拦截器挂在 error 上的 `response.status`、RFC7807 `status`、包装后的 `statusCode` 里取码，
+   取不到才退回文本匹配。**别写 `error instanceof Error && error.message.includes('403')`**：
+   generated client 抛的是响应体对象，这条判定对真实 403 永远不成立，「无权限」空态会
+   静默退化成普通失败态（质检待检任务页就这么错了一版）。其余失败仍交给
+   `inlineErrorMessage` / `notifyError` 走同一条透传链，不要在页面里另写一句兜底文案。
+
    门禁：`apps/business-console/src/pages/errorTransparency.contract.test.ts` 扫全仓源码，
    拦①裸 `instanceof Error` 判错误形状 ②直调 `toast.error/success/warning/info`
    ③各业务域必须有页面走 `notifyOperationFailure`。少数例外（`scheduling.vue` 的写死文案等）

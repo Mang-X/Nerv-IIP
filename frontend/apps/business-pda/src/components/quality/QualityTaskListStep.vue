@@ -136,14 +136,14 @@ async function onScan(value: string) {
 
     <ListScopeMeta
       :scope="props.scope ?? '组织/环境范围未就绪'"
-      source="质检待检任务服务（组织/环境范围，状态：待检）"
+      source="质检待检任务服务（当前账号 Self 范围，状态：待检）"
       :loaded="props.loaded"
       :total="props.total"
       :updated-at="props.updatedAt"
       :failed="props.hasFailedResponse"
       failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
       :empty="!props.scopeReady || showEmpty"
-      empty-explanation="当前列表是组织范围待检，不是个人待检；缺少范围时不会发起查询。"
+      empty-explanation="当前账号没有已派工的待检任务；缺少登录主体或组织环境时不会发起查询。"
     />
 
     <QualityTaskListView

@@ -327,13 +327,31 @@ public interface IBusinessQualityClient
 
     Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
-        BusinessConsoleQualityInspectionTaskListRequest request,
+        BusinessQualityInspectionTaskListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskDetailResponse> GetInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityInspectionTaskDetailRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> AssignInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityAssignInspectionTaskRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ClaimInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityClaimInspectionTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
-        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        BusinessQualityCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
@@ -3035,7 +3053,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
-        BusinessConsoleQualityInspectionTaskListRequest request,
+        BusinessQualityInspectionTaskListRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamInspectionTaskListResponse>(
@@ -3048,7 +3066,14 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("skuCode", request.SkuCode),
                 ("skip", request.Skip),
                 ("take", request.Take),
-                ("inspectionTaskId", request.InspectionTaskId)),
+                ("inspectionTaskId", request.InspectionTaskId),
+                ("scopeKind", request.ScopeKind),
+                ("principalId", request.PrincipalId),
+                ("authorizedTeamIds", JoinValues(request.AuthorizedTeamIds)),
+                ("sourceType", request.SourceType),
+                ("sourceService", request.SourceService),
+                ("keyword", request.Keyword),
+                ("overdue", request.Overdue)),
             null,
             cancellationToken);
         return new BusinessConsoleQualityInspectionTaskListResponse(
@@ -3056,10 +3081,69 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Total);
     }
 
+    public async Task<BusinessConsoleQualityInspectionTaskDetailResponse> GetInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityInspectionTaskDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamInspectionTaskDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("scopeKind", request.ScopeKind),
+                ("principalId", request.PrincipalId),
+                ("authorizedTeamIds", JoinValues(request.AuthorizedTeamIds))),
+            null,
+            cancellationToken);
+        return new BusinessConsoleQualityInspectionTaskDetailResponse(
+            ToInspectionTaskItem(response.Task),
+            response.PlanCode,
+            response.Category,
+            response.Characteristics.Select(x => new BusinessConsoleQualityInspectionTaskCharacteristic(
+                x.CharacteristicCode,
+                x.Name,
+                x.Method,
+                x.Severity,
+                x.IsRequired,
+                x.SamplingRule,
+                x.CharacteristicType,
+                x.NominalValue,
+                x.LowerSpecLimit,
+                x.UpperSpecLimit,
+                x.UnitCode)).ToArray());
+    }
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> AssignInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityAssignInspectionTaskRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/assignment",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ClaimInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityClaimInspectionTaskRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/claim",
+            request,
+            cancellationToken);
+
     public async Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
-        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        BusinessQualityCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamCreateInspectionRecordFromTaskResponse>(
@@ -3068,6 +3152,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/inspection-record",
             new DownstreamCreateInspectionRecordFromTaskRequest(
                 inspectionTaskId,
+                request.OrganizationId,
+                request.EnvironmentId,
                 request.InspectorUserId,
                 request.ResultLines?.Select(ToDownstreamLine).ToArray(),
                 request.DispositionReason,
@@ -3588,6 +3674,25 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         IReadOnlyCollection<DownstreamInspectionTaskItem> Items,
         int Total);
 
+    private sealed record DownstreamInspectionTaskDetailResponse(
+        DownstreamInspectionTaskItem Task,
+        string PlanCode,
+        string Category,
+        IReadOnlyCollection<DownstreamInspectionTaskCharacteristic> Characteristics);
+
+    private sealed record DownstreamInspectionTaskCharacteristic(
+        string CharacteristicCode,
+        string Name,
+        string Method,
+        string Severity,
+        bool IsRequired,
+        string SamplingRule,
+        string CharacteristicType,
+        decimal? NominalValue,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit,
+        string? UnitCode);
+
     private sealed record DownstreamCreateInspectionRecordFromTaskResponse(
         string InspectionRecordId,
         string Result,
@@ -3610,10 +3715,18 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Status,
         DateTimeOffset DueAtUtc,
         DateTimeOffset CreatedAtUtc,
-        string? InspectionRecordId);
+        string? InspectionRecordId,
+        string? AssignedInspectorUserId,
+        string? AssignedTeamId,
+        long Version,
+        bool IsOverdue,
+        IReadOnlyCollection<string>? AllowedActions,
+        IReadOnlyCollection<string>? BlockReasons);
 
     private sealed record DownstreamCreateInspectionRecordFromTaskRequest(
         string InspectionTaskId,
+        string OrganizationId,
+        string EnvironmentId,
         string InspectorUserId,
         IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
         string? DispositionReason,
@@ -3650,6 +3763,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             line.AttachmentFileIds ?? [],
             line.MeasuredValue);
 
+    private static string? JoinValues(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? null : string.Join(",", values);
+
     private static BusinessConsoleQualityInspectionTaskItem ToInspectionTaskItem(
         DownstreamInspectionTaskItem item) =>
         new(
@@ -3667,7 +3783,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.Status,
             item.DueAtUtc,
             item.CreatedAtUtc,
-            item.InspectionRecordId);
+            item.InspectionRecordId,
+            item.AssignedInspectorUserId,
+            item.AssignedTeamId,
+            item.Version,
+            item.IsOverdue,
+            item.AllowedActions ?? [],
+            item.BlockReasons ?? []);
 
     private static DownstreamMrbReview ToDownstreamMrbReview(BusinessConsoleMrbReview review) =>
         new(
@@ -7279,6 +7401,56 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
 public sealed class HttpBusinessMesClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesClient
 {
+    // #1341: downstreamService / downstreamDocumentType 是全仓共用的一张词表（PascalCase），
+    // 由 DemandPlanningDownstreamReferences（BusinessErp/PurchaseRequisition/BusinessMes/WorkOrder）
+    // 定下口径，网关既有读面（BusinessConsoleMesEndpoints 的 "BusinessMes"/"ProductionPlan"）与前端
+    // 精确等值判断（PlanningWorkbench 的 service === 'BusinessMes' && type === 'WorkOrder'）都按它匹配。
+    // MES 受理回执没有理由另起一套编码，因此这里沿用同一词表，新单据类型按同样构词法扩展。
+    private const string MesDownstreamService = "BusinessMes";
+    private const string MesMaterialIssueRequestDocumentType = "MaterialIssueRequest";
+    private const string MesWorkOrderDocumentType = "WorkOrder";
+    private const string MesQualityHoldDocumentType = "QualityHold";
+    private const string MesDispatchTaskDocumentType = "DispatchTask";
+    private const string MesTelemetryCandidateDocumentType = "TelemetryProductionReportCandidate";
+    private const string MesDefectDocumentType = "Defect";
+    private const string MesDowntimeEventDocumentType = "DowntimeEvent";
+    private const string MesShiftHandoverDocumentType = "ShiftHandover";
+
+    /// <summary>MES accepted-receipt body as returned by the service endpoints.</summary>
+    private sealed record MesServiceAcceptedResponse(string? Status, string? ReferenceId, DateTimeOffset? AcceptedAtUtc);
+
+    private static BusinessConsoleAcceptedResponse ToAcceptedResponse(
+        MesServiceAcceptedResponse? accepted,
+        string downstreamDocumentType) =>
+        new(
+            // MES only answers 2xx when it accepted the intent, so a parsed body is the acceptance.
+            accepted is not null,
+            MesDownstreamService,
+            downstreamDocumentType,
+            string.IsNullOrWhiteSpace(accepted?.ReferenceId) ? null : accepted.ReferenceId);
+
+    /// <summary>
+    /// #1341: MES 写面统一回 <c>{ status, referenceId, acceptedAtUtc }</c>；直接反序列化成控制台契约
+    /// 会让 <c>accepted</c> 恒 false 并丢掉下游单号，因此所有受理型写面都必须走显式映射。
+    /// </summary>
+    private async Task<BusinessConsoleAcceptedResponse> SendAcceptedAsync(
+        string internalBearerToken,
+        string requestUri,
+        object? body,
+        string downstreamDocumentType,
+        CancellationToken cancellationToken,
+        Action<HttpRequestMessage>? configureRequest = null)
+    {
+        var accepted = await SendAsync<MesServiceAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            requestUri,
+            body,
+            cancellationToken,
+            configureRequest: configureRequest);
+        return ToAcceptedResponse(accepted, downstreamDocumentType);
+    }
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -7330,11 +7502,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string productionPlanId,
         BusinessConsoleMesConvertPlanToWorkOrderRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/production-plans/{Uri.EscapeDataString(productionPlanId)}/work-orders",
             request,
+            MesWorkOrderDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
@@ -7365,11 +7537,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string workOrderId,
         BusinessConsoleMesReleaseWorkOrderRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/release",
             request,
+            MesWorkOrderDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> HoldWorkOrderAsync(
@@ -7377,11 +7549,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string workOrderId,
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/hold",
             request,
+            MesWorkOrderDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CancelWorkOrderAsync(
@@ -7389,11 +7561,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string workOrderId,
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/cancel",
             request,
+            MesWorkOrderDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
@@ -7411,9 +7583,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string actor,
         string correlationId,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/quality-holds/{Uri.EscapeDataString(sourceDocumentId)}/force-release",
             new DownstreamForceReleaseQualityHoldRequest(
                 request.OrganizationId,
@@ -7421,6 +7592,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.Reason,
                 request.SourceService,
                 request.ReleasedAtUtc),
+            MesQualityHoldDocumentType,
             cancellationToken,
             configureRequest: message =>
             {
@@ -7517,16 +7689,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    // MES answers with { status, referenceId, acceptedAtUtc }; deserializing that straight into the
+    // console contract left `accepted` false and dropped the allocated 领料单号. Map it explicitly.
     public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesCreateMaterialIssueRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-issue-requests",
             request,
+            MesMaterialIssueRequestDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
@@ -7545,11 +7719,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string requestId,
         BusinessConsoleMesConfirmLineSideReceiptRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
             request,
+            MesMaterialIssueRequestDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
@@ -7569,11 +7743,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         BusinessConsoleMesAssignDispatchTaskForwardRequest request,
         string actor,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/dispatch-tasks/{Uri.EscapeDataString(operationTaskId)}/assign",
             request,
+            MesDispatchTaskDocumentType,
             cancellationToken,
             configureRequest: message =>
                 message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
@@ -7679,9 +7853,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(internalBearerToken, HttpMethod.Post,
+        SendAcceptedAsync(internalBearerToken,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/dismiss",
-            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor }, cancellationToken);
+            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor },
+            MesTelemetryCandidateDocumentType, cancellationToken);
 
     public async Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,
@@ -7736,11 +7911,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleMesRecordDefectRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             "/api/business/v1/mes/defects",
             request,
+            MesDefectDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
@@ -7807,11 +7982,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleMesRecordDowntimeEventRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             "/api/business/v1/mes/downtime-events",
             request,
+            MesDowntimeEventDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
@@ -7819,11 +7994,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
             request,
+            MesDowntimeEventDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesScheduleResultListResponse> ListScheduleResultsAsync(
@@ -7857,11 +8032,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleMesCreateShiftHandoverRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             "/api/business/v1/mes/shift-handovers",
             request,
+            MesShiftHandoverDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
@@ -7869,11 +8044,11 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string handoverId,
         BusinessConsoleMesAcceptShiftHandoverRequest request,
         CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleAcceptedResponse>(
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}/accept",
             request,
+            MesShiftHandoverDocumentType,
             cancellationToken);
 
     public Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(

@@ -3,7 +3,8 @@
 // 后端没带日历就不谈班次,方案里没有换型窗口就不列换型图例。
 
 import { BLOCK_KINDS, type BlockKind } from './blocks'
-import type { ScheduleModel } from './types'
+import { resolveTimeScale, shiftBoundaryRendersAt } from './scale'
+import type { ScheduleModel, TimeScale } from './types'
 
 export interface SchedulingLegendSemantics {
   /** 甘特语义(工单甘特):计划基线 / 依赖箭头 / 里程碑。 */
@@ -32,7 +33,8 @@ export interface SchedulingLegendSemantics {
   blocks: BlockKind[]
   /**
    * 日历:非工作时段底纹恒在(有日历按日历、无日历按通用作息);
-   * 班次边界只有后端带出日历时才画;「现在」线只在计划期覆盖当下时出现。
+   * 班次边界要后端带出日历**且当前刻度画得出那条线**才列(见 shiftBoundaryRendersAt);
+   * 「现在」线只在计划期覆盖当下时出现。
    */
   calendar: { nonWorking: boolean; shift: boolean; now: boolean }
 }
@@ -57,9 +59,14 @@ export const FULL_LEGEND_SEMANTICS: SchedulingLegendSemantics = {
   calendar: { nonWorking: true, shift: true, now: true },
 }
 
+/**
+ * @param scale 当前图上的时间刻度。班次边界这类**随刻度出现/消失**的语义必须知道刻度才能如实推导;
+ *   不传时按 `'auto'` 处理(与引擎同一套解析)。
+ */
 export function deriveLegendSemantics(
   model?: ScheduleModel,
   now: number = Date.now(),
+  scale?: TimeScale,
 ): SchedulingLegendSemantics {
   if (!model) return EMPTY
   const tasks = model.tasks ?? []
@@ -68,8 +75,11 @@ export function deriveLegendSemantics(
 
   const horizonStart = Date.parse(model.horizon?.startUtc ?? '')
   const horizonEnd = Date.parse(model.horizon?.endUtc ?? '')
-  const shiftCodes = new Set(
-    (model.calendars ?? []).flatMap((c) => c.shiftWindows.map((w) => w.shiftCode)),
+  // 走查台账 #41:此前只看「后端有没有带日历」,于是日级视图下图例照列「班次边界」,
+  // 而图面一条线都没有。改为按当前刻度下**真的画得出来**的班次起点推导。
+  const resolvedScale = resolveTimeScale(scale, model.horizon)
+  const shiftBoundaryVisible = (model.calendars ?? []).some((calendar) =>
+    calendar.shiftWindows.some((window) => shiftBoundaryRendersAt(window.startUtc, resolvedScale)),
   )
 
   return {
@@ -99,7 +109,7 @@ export function deriveLegendSemantics(
     calendar: {
       // 时间线底纹恒在:有日历按日历判定,无日历也会画周末/夜间。
       nonWorking: true,
-      shift: shiftCodes.size > 0,
+      shift: shiftBoundaryVisible,
       now:
         Number.isFinite(horizonStart) &&
         Number.isFinite(horizonEnd) &&

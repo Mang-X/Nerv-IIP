@@ -456,7 +456,8 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
     recordPurchaseReceipt: (payload: {
       purchaseOrderNo: string
       purchaseReceiptNo?: string
-      lines: { purchaseOrderLineNo: string; receivedQuantity: number }[]
+      // qualityStatus 是 ERP 收货命令的必填业务决策点（#1345），缺失会被后端 400 拒绝。
+      lines: { purchaseOrderLineNo: string; receivedQuantity: number; qualityStatus: string }[]
     }) =>
       recordMutation.mutateAsync({
         body: {

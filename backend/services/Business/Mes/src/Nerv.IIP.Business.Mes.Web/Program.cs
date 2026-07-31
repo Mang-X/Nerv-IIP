@@ -2,6 +2,7 @@
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -41,14 +42,27 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
-var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
-var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+// `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
+// —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
+// 未显式配置时它回落到权威键，不再各自留一份默认值。
+var inventorySiteCode = builder.Configuration["Inventory:SiteCode"] ?? string.Empty;
 builder.Services.AddSingleton(new MesMaterialRequirementInventoryOptions
 {
-    DefaultSiteCode = builder.Configuration["Inventory:DefaultSiteCode"] ?? "production",
-    SiteCodes = ResolveSiteCodes(builder.Configuration),
+    DefaultSiteCode = inventorySiteCode,
+    SiteCodes = ResolveSiteCodes(builder.Configuration) ?? (string.IsNullOrWhiteSpace(inventorySiteCode) ? null : [inventorySiteCode]),
 });
+// 完工入库目标位置：配置驱动（#1331），缺失时由 resolver 显式 KnownException，绝不回落到硬编码命名空间。
+// 站点复用上面的权威键 `Inventory:SiteCode`；只有成品仓独立成站点的部署才需要 `Inventory:FinishedGoodsSiteCode`。
+var finishedGoodsSiteCode = builder.Configuration["Inventory:FinishedGoodsSiteCode"];
+builder.Services.AddSingleton(new MesFinishedGoodsReceiptLocationOptions
+{
+    SiteCode = string.IsNullOrWhiteSpace(finishedGoodsSiteCode) ? inventorySiteCode : finishedGoodsSiteCode,
+    LocationCode = builder.Configuration["Inventory:FinishedGoodsLocationCode"] ?? string.Empty,
+});
+builder.Services.AddSingleton<IMesFinishedGoodsReceiptLocationResolver, ConfiguredMesFinishedGoodsReceiptLocationResolver>();
 builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
@@ -61,6 +75,9 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
+builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
+builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<LeaderDemoSeedService>();
@@ -254,26 +271,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 static IReadOnlyCollection<string>? ResolveSiteCodes(IConfiguration configuration)

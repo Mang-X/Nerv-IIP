@@ -143,10 +143,12 @@ public sealed class ErpSalesFinanceAggregateTests
         Assert.NotNull(quotation.ConvertedAtUtc);
 
         // 已转出：不能二次登记，也不能再创建销售订单。
-        Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-002"));
+        var markAgain = Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-002"));
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var exception = Assert.Throws<InvalidOperationException>(() => quotation.EnsureCanCreateSalesOrder(today));
         Assert.Contains("SO-001", exception.Message, StringComparison.Ordinal);
+        // 两道关卡是同一条规则：拒绝理由必须逐字一致，且都要带上既有订单号（#1314）。
+        Assert.Equal(exception.Message, markAgain.Message);
         Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation("SO-002", "SITE-001", quotation));
     }
 

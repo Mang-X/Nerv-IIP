@@ -477,7 +477,10 @@ public sealed class WorldHistorySeedService(
                     component.UomCode,
                     portions[portionIndex],
                     requestedAtUtc);
-                request.ConfirmLineSideReceipt(
+                // 历史领料是「已过账」的既成事实：确认收料后按两条腿补齐库存回执，
+                // 否则单据会停在 ReceiptPosting，齐套快照与历史事实对不上（#1322）。
+                request.ConfirmAndPostLineSideReceipt(
+                    WorldHistoryMesSpec.TransferLocationsFor(component.SkuCode),
                     requestedAtUtc.AddMinutes(25),
                     portions[portionIndex],
                     $"LOT-{component.SkuCode}-{plan.WorkOrderNo}");

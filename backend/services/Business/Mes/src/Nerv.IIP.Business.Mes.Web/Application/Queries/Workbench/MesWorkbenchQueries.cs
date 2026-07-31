@@ -1126,7 +1126,9 @@ public sealed record MesMaterialIssueRequestRow(
     string? MaterialCode = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
-    DateTimeOffset? InventoryPostingFailedAtUtc = null);
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    string? WmsRequestId = null,
+    string? WmsPickingTaskNo = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -1208,7 +1210,9 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.MaterialId,
                 x.InventoryPostingFailureCode,
                 x.InventoryPostingFailureMessage,
-                x.InventoryPostingFailedAtUtc))
+                x.InventoryPostingFailedAtUtc,
+                x.WmsRequestId,
+                x.WmsPickingTaskNo))
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total);
     }
@@ -1452,9 +1456,7 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
 
         var blockingReasons = rows
             .Where(x => x.ShortageQuantity > 0)
-            .Select(x => x.MaterialLotId is null
-                ? $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}"
-                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.ShortageQuantity:0.######}")
+            .Select(x => MaterialReadinessGuards.FormatShortageReason(x.MaterialId, x.MaterialLotId, x.ShortageQuantity))
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
         return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
@@ -1683,7 +1685,7 @@ public sealed record MesDowntimeEventListResponse(
 
 public sealed record MesDowntimeEventRow(
     string DowntimeEventId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string? OperationTaskId,
     string? DeviceAssetId,
     string Status,
@@ -1752,9 +1754,10 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
             .OrderByDescending(x => x.FromUtc)
             .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
+            // #48 字段归位：停机事实不挂工单，WorkOrderId 一律为空；工作中心码只放 WorkCenterId。
             .Select(x => new MesDowntimeEventRow(
                 x.DowntimeEventNo,
-                x.WorkCenterId,
+                null,
                 null,
                 x.DeviceAssetId,
                 x.ToUtc == null ? "Open" : "Recovered",

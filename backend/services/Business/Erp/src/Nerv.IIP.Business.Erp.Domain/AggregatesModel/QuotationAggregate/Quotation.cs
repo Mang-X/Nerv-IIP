@@ -91,12 +91,26 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
         Status = QuotationStatus.Approved;
     }
 
-    public void EnsureCanCreateSalesOrder(DateOnly today)
+    /// <summary>
+    /// 「已转出」守卫：同一条规则，只写一遍。
+    /// </summary>
+    /// <remarks>
+    /// 转订单的两道关卡——前置校验 <see cref="EnsureCanCreateSalesOrder"/> 与登记
+    /// <see cref="MarkConvertedToSalesOrder"/>——原本各维护一份逐字相同的拒绝文案（#1314）。
+    /// 这句话必须带上既有订单号：用户看到的是「已经转成哪一单」而不是干巴巴的「不能重复转」，
+    /// 两处分头改一处忘改，同一个业务拒绝就会说出两种话。
+    /// </remarks>
+    private void EnsureNotConverted()
     {
         if (IsConverted)
         {
             throw new InvalidOperationException($"Quotation has already been converted to sales order '{ConvertedSalesOrderNo}'.");
         }
+    }
+
+    public void EnsureCanCreateSalesOrder(DateOnly today)
+    {
+        EnsureNotConverted();
 
         if (Status != QuotationStatus.Approved)
         {
@@ -112,10 +126,7 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
     /// <summary>登记报价已转出的销售订单引用。仅允许在已批准且未转出时调用一次。</summary>
     public void MarkConvertedToSalesOrder(string salesOrderNo)
     {
-        if (IsConverted)
-        {
-            throw new InvalidOperationException($"Quotation has already been converted to sales order '{ConvertedSalesOrderNo}'.");
-        }
+        EnsureNotConverted();
 
         if (Status != QuotationStatus.Approved)
         {

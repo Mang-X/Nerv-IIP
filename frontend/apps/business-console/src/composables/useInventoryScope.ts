@@ -14,6 +14,7 @@
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 import { useInventoryExpiryAlerts } from './useBusinessInventory'
+import { toBaseUomBySku } from './skuBaseUom'
 import { useBusinessMasterDataResources, useBusinessSkus } from './useBusinessMasterData'
 
 /**
@@ -53,15 +54,7 @@ export function useInventoryScopeCatalog() {
   const siteOptions = computed<EntityPickerOption[]>(() =>
     siteCatalog.resources.value.flatMap((site) => toOption(site.code, site.displayName)),
   )
-  const baseUomBySku = computed(() => {
-    const map = new Map<string, string>()
-    for (const sku of skuCatalog.skus.value) {
-      const code = sku.code?.trim()
-      const uom = sku.baseUomCode?.trim()
-      if (code && uom) map.set(code, uom)
-    }
-    return map
-  })
+  const baseUomBySku = toBaseUomBySku(skuCatalog.skus)
   const defaultSiteCode = computed(
     () => siteOptions.value[0]?.value ?? FALLBACK_INVENTORY_SITE_CODE,
   )

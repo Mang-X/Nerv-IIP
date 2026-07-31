@@ -44,7 +44,7 @@ PDA 仓储作业只使用服务端返回的“本人 / 工作池 / 站点”范�
 3. 在 `/inventory/availability` 查询 SKU 可用量，区分现有量、预留量和可用量。
 4. 在 `/wms/picking` 对出库单创建或查看拣货任务；当前拣货会通过 Inventory 内部服务 API 预留库存。
 5. 在 `/wms/outbound` 完成出库，Inventory 按 reservation id 分配预留并过账。
-6. 在 `/inventory/movements` 查看库存移动结果；失败时根据失败原因重试或修正单据。
+6. 在 `/inventory/movements` 查看库存移动结果；失败时根据失败原因重试或修正单据。手工补录调拨时必须同时填出库库位与入库库位：调拨按两腿等额过账，缺腿会被整笔拒绝。
 7. 在 `/wms/counts` 或 `/inventory/counts` 做盘点，确认差异并形成调整。
 
 ## 业务对象/单据流

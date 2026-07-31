@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { readStateNote, readStateValue } from '@/composables/businessReadState'
-import { describeMesReadinessReason, useMesOverview } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReason,
+  mesWorkScopeKindLabel,
+  useMesOperationTasks,
+  useMesOverview,
+} from '@/composables/useBusinessMes'
 import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -100,9 +105,12 @@ function metricCell(
     metaTone: 'neutral',
   }
 }
+// 口径标注：这一条全是**全厂**总量（overview 读面不带作业范围、也不区分执行状态——
+// 后端就是 WorkOrders / OperationTasks 的整表计数，含已完工已关闭）。
+// 所以不能叫「在制」，也要和上面「我的班组」那块明确区分开，免得被当成同一口径读。
 const overviewCells = computed<NvMetricStripCell[]>(() => [
-  metricCell('work-orders', '在制工单', workOrderCount.value, '张'),
-  metricCell('operation-tasks', '工序任务', operationTaskCount.value, '个'),
+  metricCell('work-orders', '全厂工单', workOrderCount.value, '张'),
+  metricCell('operation-tasks', '全厂工序任务', operationTaskCount.value, '个'),
   metricCell(
     'blockers',
     '阻塞项',
@@ -186,6 +194,67 @@ const commandCards = computed(() => [
     tone: 'border-brand/30 bg-brand/5',
   },
 ])
+/**
+ * 「我的班组」维度（走查台账 #50）。
+ *
+ * 三张行动卡讲的是全厂总量（在制 4760 单 / 工序任务 31554），班组长早上打开驾驶舱看不到
+ * 「我这一摊有多少活」。工序任务读面本身就按登录人的授权作业范围（scopeKind/scopeId）过滤，
+ * 且返回的 total 是过滤后的服务端计数——不新增任何后端读面就能给出真数字。
+ *
+ * 「今天」这一刀切不了：MES 列表读面没有任何日期区间参数，客户端只能对已取回的那一页切，
+ * 而服务端按最早开工时间升序返回、页大小封顶 500，backlog 一大今天的活根本不在这一页里，
+ * 切出来的数会骗人。所以这里只讲**作业范围**这一刀（精确），日期维度另立 followup。
+ */
+/**
+ * 未终态的四个执行状态各给一格，**逐一对应后端状态码，不做归并**：
+ * 曾把「进行中」写成"已开工、等着报工或完工"，实际上把 `paused` 一起讲了进去，而 `paused`
+ * 根本没进任何一格；`scheduleInvalidated`（排程已失效）同样漏在外面——走查里堵住主链的
+ * 533 项正是这一类。少一格就等于让班组长以为"我这摊只有这些活"。
+ */
+const MY_SCOPE_TASK_BUCKETS = [
+  { key: 'queued', label: '待开工', meta: '已排程、尚未开工' },
+  { key: 'inProgress', label: '进行中', meta: '已开工、正在做' },
+  { key: 'paused', label: '已暂停', meta: '开工后被挂起，等着恢复' },
+  { key: 'scheduleInvalidated', label: '排程已失效', meta: '排程作废，需重新排产才能开工' },
+] as const
+
+// 一格一次查询：只要服务端算好的 total，不需要行——页大小取 1，别为一个数字拉回 100 行。
+const myScopeQueries = MY_SCOPE_TASK_BUCKETS.map((bucket) => {
+  const query = useMesOperationTasks()
+  query.filters.status = bucket.key
+  query.filters.take = 1
+  return { bucket, query }
+})
+const myScopeAnchor = myScopeQueries[0].query
+
+const myScope = computed(() => myScopeAnchor.operationListScope.value)
+const myScopeLabel = computed(() => {
+  const scope = myScope.value
+  if (!scope) return ''
+  const kind = mesWorkScopeKindLabel(scope.kind)
+  return scope.displayName ? `${scope.displayName}（${kind}）` : kind
+})
+/** 任一格还没读到就整块显「—」：范围数字宁可说不知道，也不能拿 0 当结论。 */
+const myScopeReady = computed(() =>
+  myScopeQueries.every(({ query }) => query.operationTasksState.value === 'ready'),
+)
+const myScopeNote = computed(() => {
+  if (!myScope.value)
+    return myScopeAnchor.operationListScopeMessage.value || '尚未确定你的作业范围。'
+  if (!myScopeReady.value) return readStateNote(myScopeAnchor.operationTasksState.value)
+  return `作业范围：${myScopeLabel.value}`
+})
+const myScopeCells = computed<NvMetricStripCell[]>(() =>
+  myScopeQueries.map(({ bucket, query }) => ({
+    key: `my-${bucket.key}`,
+    label: `我的范围 · ${bucket.label}`,
+    value: readStateValue(query.operationTasksState.value, query.operationTasksTotal.value),
+    unit: myScopeReady.value ? '个' : undefined,
+    meta: bucket.meta,
+    metaTone: 'neutral',
+  })),
+)
+
 function blockerCountByArea(keywords: string[]) {
   return blockers.value.filter((i) =>
     keywords.some((k) => (i.areaCode ?? '').toLowerCase().includes(k)),
@@ -366,6 +435,27 @@ function formatError(error: unknown) {
         </div>
       </RouterLink>
     </div>
+
+    <!-- 台账 #50：上面三张行动卡是全厂总量；这一块只讲「我这一摊」，
+         数字由工序任务读面按登录人的授权作业范围过滤后由服务端计出，不是本页自算。 -->
+    <NvCard>
+      <NvCardContent class="grid gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="grid gap-0.5">
+            <p class="text-sm font-semibold text-foreground">我的班组 · 现在该干什么</p>
+            <p class="text-sm text-muted-foreground">{{ myScopeNote }}</p>
+          </div>
+          <RouterLink
+            class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            :to="{ path: '/mes/operation-tasks' }"
+          >
+            打开我的工序队列
+            <ArrowRightIcon class="size-4" aria-hidden="true" />
+          </RouterLink>
+        </div>
+        <NvMetricStrip :cells="myScopeCells" />
+      </NvCardContent>
+    </NvCard>
 
     <NvMetricStrip :cells="overviewCells" />
 
