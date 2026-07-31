@@ -406,6 +406,23 @@
       0 4px 14px color-mix(in oklch, var(--nv-brand), transparent 40%) !important;
     z-index: 2;
   }
+  /* 搜索命中 / 未命中(#1399 M5)。
+     ★ 这两条规则里的每一个声明都必须带 !important:scheduling.css 整体在 @layer nv-components
+     里,而 DHTMLX vendor CSS 无 layer——有 layer 的样式永远输给无 layer 的,与选择器特异性
+     无关。忘了 !important 会静默不生效(实测:同一条规则里 background-color !important 赢、
+     旁边没加的 color 输成 vendor 硬编码 #23272A)。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-hit {
+    border-color: var(--nv-warning) !important;
+    box-shadow:
+      0 0 0 2px var(--nv-warning),
+      0 4px 14px color-mix(in oklch, var(--nv-warning), transparent 45%) !important;
+    z-index: 3 !important;
+  }
+  /* 未命中压暗而不是隐藏:调度员要的是"这条在整张图的哪儿、旁边挤着谁",
+     把其余条抽走等于把上下文也抽走。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-miss {
+    opacity: 0.22 !important;
+  }
   /* 冲突(仅工单甘特条):危险色描边 + 内环。资源排产板冲突改用内联 ⚠ 角标,卡片本身不加环,
    故此规则用 :not(:has(.nerv-card)) 排除资源卡,避免压住选中环(选中无效的根因)。 */
   .nerv-gantt-dhx .gantt_task_line.nerv-conflict:not(:has(.nerv-card)) {
