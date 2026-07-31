@@ -43,6 +43,8 @@ const emit = defineEmits<{
 const view = shallowRef('gantt')
 // 物料风险（软约束）：已排但缺料的工序，开工前必须先备料。
 const materialRisks = computed(() => props.model?.materialRisks ?? [])
+// 设备数据风险（软约束）：排在状态未知设备上的工序，开工前需人工确认设备可用。
+const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
 </script>
 
 <template>
@@ -121,6 +123,24 @@ const materialRisks = computed(() => props.model?.materialRisks ?? [])
         </li>
       </ul>
     </section>
+    <!--
+      设备数据风险横幅：「不知道」不等于「不可用」。无快照/快照过期的设备照排，
+      但必须显式告诉规划员哪些工序的设备状态是盲区，开工前要人工确认。
+    -->
+    <section
+      v-if="equipmentRisks.length"
+      class="grid gap-1.5 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm"
+      data-testid="scheduling-equipment-risks"
+    >
+      <p class="font-semibold">
+        {{ equipmentRisks.length }} 道工序的设备状态未知 · 开工前请人工确认设备可用
+      </p>
+      <ul class="grid gap-1 text-xs text-muted-foreground">
+        <li v-for="risk in equipmentRisks" :key="`${risk.orderId}:${risk.operationId}`">
+          {{ risk.orderId }} · {{ risk.operationId }} — {{ risk.message }}
+        </li>
+      </ul>
+    </section>
     <div
       v-if="!model"
       class="flex min-h-48 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground"
@@ -158,6 +178,7 @@ const materialRisks = computed(() => props.model?.materialRisks ?? [])
               <th class="p-2">开始</th>
               <th class="p-2">结束</th>
               <th class="p-2">物料</th>
+              <th class="p-2">设备状态</th>
               <th class="p-2">锁定</th>
               <th class="p-2">待排</th>
             </tr>
@@ -203,6 +224,15 @@ const materialRisks = computed(() => props.model?.materialRisks ?? [])
                   >缺料待备</span
                 >
                 <span v-else class="text-xs text-muted-foreground">齐套</span>
+              </td>
+              <td class="p-2">
+                <span
+                  v-if="task.equipmentRisk"
+                  class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
+                  :title="task.equipmentRisk.message"
+                  >状态未知</span
+                >
+                <span v-else class="text-xs text-muted-foreground">正常</span>
               </td>
               <td class="p-2">
                 <div class="flex flex-wrap items-center gap-1.5">

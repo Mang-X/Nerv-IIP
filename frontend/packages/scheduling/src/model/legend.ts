@@ -21,7 +21,13 @@ export interface SchedulingLegendSemantics {
    * 物料风险是软约束的产物(工序已排入,但开工前必须备料),图上以「缺料待备」chip 呈现,
    * 与「不可排」的冲突分开讲——所以图例也必须单列一项,不能混进冲突。
    */
-  status: { conflict: boolean; locked: boolean; materialRisk: boolean }
+  status: {
+    conflict: boolean
+    locked: boolean
+    materialRisk: boolean
+    /** 设备数据风险:排在状态未知设备上的工序(数据盲区,非阻断)。 */
+    equipmentRisk: boolean
+  }
   /** 阻塞:方案里真实出现过的资源时间块类型(按固定顺序)。 */
   blocks: BlockKind[]
   /**
@@ -34,7 +40,7 @@ export interface SchedulingLegendSemantics {
 const EMPTY: SchedulingLegendSemantics = {
   gantt: { baseline: false, link: false, milestone: false },
   card: { priority: false, rush: false, kitting: false, changeover: false, bottleneck: false },
-  status: { conflict: false, locked: false, materialRisk: false },
+  status: { conflict: false, locked: false, materialRisk: false, equipmentRisk: false },
   blocks: [],
   calendar: { nonWorking: false, shift: false, now: false },
 }
@@ -46,7 +52,7 @@ const EMPTY: SchedulingLegendSemantics = {
 export const FULL_LEGEND_SEMANTICS: SchedulingLegendSemantics = {
   gantt: { baseline: true, link: true, milestone: true },
   card: { priority: true, rush: true, kitting: true, changeover: true, bottleneck: true },
-  status: { conflict: true, locked: true, materialRisk: true },
+  status: { conflict: true, locked: true, materialRisk: true, equipmentRisk: true },
   blocks: [...BLOCK_KINDS],
   calendar: { nonWorking: true, shift: true, now: true },
 }
@@ -86,6 +92,8 @@ export function deriveLegendSemantics(
       locked: operations.some((t) => t.locked),
       // 有工序真的带物料风险才列;方案全齐套时图例里不出现「缺料待备」。
       materialRisk: operations.some((t) => !!t.materialRisk),
+      // 同理:有工序真的排在状态未知设备上才列「设备状态未知」。
+      equipmentRisk: operations.some((t) => !!t.equipmentRisk),
     },
     blocks: BLOCK_KINDS.filter((kind) => blockKinds.has(kind)),
     calendar: {
