@@ -115,7 +115,7 @@ public sealed class CreateQualityReasonCommandHandler(
                 cancellationToken);
             if (persisted is null)
             {
-                throw new KnownException($"Quality reason '{allocation.Code}' idempotency record exists but resource was not found.");
+                throw new KnownException($"质量原因 {allocation.Code} 的幂等记录已存在但对应资源不存在，请在质量原因页面刷新数据；如需创建请更换原因编码后重试。");
             }
 
             return QualityReasonMapper.ToItem(persisted);
@@ -123,7 +123,7 @@ public sealed class CreateQualityReasonCommandHandler(
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
-            throw new KnownException($"Quality reason '{allocation.Code}' already exists.");
+            throw new KnownException($"质量原因编码 {allocation.Code} 已存在，请在质量原因页面更换编码后重新提交。");
         }
 
         var reason = QualityReason.Create(
@@ -162,7 +162,7 @@ public sealed class UpdateQualityReasonCommandHandler(ApplicationDbContext dbCon
             x.EnvironmentId == environmentId &&
             x.ReasonCode == reasonCode,
             cancellationToken)
-            ?? throw new KnownException($"Quality reason '{reasonCode}' was not found.");
+            ?? throw new KnownException($"找不到质量原因 {reasonCode}，请在质量原因页面刷新列表并确认编码后重试。");
     }
 }
 
