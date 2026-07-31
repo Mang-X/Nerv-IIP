@@ -532,6 +532,8 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
           expectedOperationType: 'wms.inbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: inboundOrderId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })
@@ -730,6 +732,8 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
           expectedOperationType: 'wms.outbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: outboundOrderId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })
@@ -1253,6 +1257,8 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
           expectedOperationType: 'wms.count-execution.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: countExecutionId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })
