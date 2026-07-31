@@ -6,6 +6,7 @@ import {
   useMesFinishedGoodsReceipts,
   useMesWorkOrderProducedLots,
 } from '@/composables/useBusinessMes'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { notifyOperationFailure, notifySuccess, serverErrorMessage } from '@/utils/notify'
 
 /** 登记完工入库所需的工单上下文（由路由页编排后传入，表单本身只负责登记态）。 */
@@ -70,11 +71,16 @@ export function useReceiptCreateForm(
   } = useMesFinishedGoodsReceipts()
   const { producedLots, producedLotsPending, producedLotsError, refreshProducedLots } =
     useMesWorkOrderProducedLots(() => context().workOrderId)
+  // 入库单位取工单成品的物料主档基本单位（MES 读面的 skuId 就是人读物料编码）。
+  // 曾踩坑：这里写死一个通用单位，遇到按 kg / l 计量的成品，后端单位换算找不到换算关系直接 500。
+  const { resolveBaseUom } = useSkuNames()
+  const contextBaseUom = computed(() => resolveBaseUom(context().skuId) ?? '')
 
   const form = reactive({
     quantity: '1',
     unitCost: '',
-    uomCode: 'EA',
+    // 物料主档到位前保持空：宁可让操作员显式选单位，也不预填一个假单位。
+    uomCode: '',
     requestedAtUtc: toLocalDateTimeInput(new Date()),
     producedLotNo: '',
     // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；成功后 resetForm 轮换新键→连录产生独立申请。
@@ -94,6 +100,14 @@ export function useReceiptCreateForm(
   watch(producedLotsError, (err) => {
     if (err) form.producedLotNo = ''
   })
+  // 物料主档到位（或工单切换）后带出该成品的基本单位；操作员改成包装单位后不再被主档覆盖。
+  watch(
+    contextBaseUom,
+    (baseUom) => {
+      if (baseUom && !isNonEmpty(form.uomCode)) form.uomCode = baseUom
+    },
+    { immediate: true },
+  )
   // 工单详情/报工带出的建议数量：进入或工单切换时预填（操作员可改；成功后 resetForm 恢复默认）。
   watch(
     () => context().initialQuantity,
@@ -165,7 +179,8 @@ export function useReceiptCreateForm(
   function resetForm() {
     form.quantity = '1'
     form.unitCost = ''
-    form.uomCode = 'EA'
+    // 回到「跟随物料主档」：主档没到就留空，由上面的 watch 在主档到位后补齐。
+    form.uomCode = contextBaseUom.value
     // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
     // applyDefaultProducedLot 自动回填。
     form.producedLotNo = ''

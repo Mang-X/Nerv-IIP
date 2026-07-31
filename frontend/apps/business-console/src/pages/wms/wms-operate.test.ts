@@ -110,11 +110,10 @@ vi.mock('@/composables/useInventoryScope', async () => {
     skuOptions: computed(() => [{ value: 'SKU-001', label: '前减振器总成', hint: 'pcs' }]),
     skusPending: ref(false),
     // 收货行的单位随所选物料的基本单位带出（不再手输）。
-    resolveUomCode: () => 'EA',
+    resolveUomCode: () => 'pcs',
   }
   return {
     FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
-    FALLBACK_INVENTORY_UOM_CODE: 'pcs',
     useInventoryScopeCatalog: () => catalog,
     useInventoryScopeDefaults: () => catalog,
   }
@@ -229,7 +228,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
         countExecutionId: 'count-1',
         countNo: 'CNT-1',
         skuCode: 'SKU-001',
-        uomCode: 'EA',
+        uomCode: 'pcs',
         siteCode: 'SITE-001',
         locationCode: 'RACK-A-01',
         expectedQuantity: 7,
@@ -724,7 +723,7 @@ describe('WMS operate actions', () => {
     expect(body.lines[0]).toMatchObject({
       lineNo: '1',
       skuCode: 'SKU1',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       receivedQuantity: 5,
       stagingLocationCode: 'A-01',
       qualityStatus: 'available',
@@ -752,7 +751,7 @@ describe('WMS operate actions', () => {
       source: 'BusinessInventory',
       status: 'ok',
       skuCode: 'SKU-001',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       siteCode: 'S1',
       locationCode: 'A-01',
       lotNo: 'LOT-001',

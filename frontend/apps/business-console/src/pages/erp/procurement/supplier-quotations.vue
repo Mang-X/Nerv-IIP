@@ -218,6 +218,9 @@ const quoteContextItems = computed(() => {
 
 const invalid = computed(() => ({
   rfqNo: !form.rfqNo.trim(),
+  // 询价行必须带物料与单位，回价才能与询价同口径比价；缺任一项就不让提交，也不替它编一个单位。
+  quotedLine:
+    !(quotedLine.value?.skuCode ?? '').trim() || !(quotedLine.value?.uomCode ?? '').trim(),
   supplierCode: !form.supplierCode.trim(),
   promisedDate: !form.promisedDate,
   unitPrice: !(Number(form.unitPrice) >= 0),
@@ -238,7 +241,7 @@ async function submit() {
   const row = quoteRow.value
   const line = quotedLine.value
   showErrors.value = true
-  if (!canSubmit.value || !row?.rfqNo || !line?.skuCode) return
+  if (!canSubmit.value || !row?.rfqNo || !line?.skuCode || !line.uomCode) return
   try {
     await quotes.receiveSupplierQuotation({
       rfqNo: row.rfqNo,
@@ -248,7 +251,8 @@ async function submit() {
         {
           lineNo: '10',
           skuCode: line.skuCode,
-          uomCode: line.uomCode ?? 'EA',
+          // 单位照抄询价行（RFQ 行的单位来自物料主档），不另起兜底：报价与询价必须同单位可比。
+          uomCode: line.uomCode,
           quantity: line.quantity ?? 1,
           unitPrice: Number(form.unitPrice),
           promisedDate: form.promisedDate,
@@ -407,7 +411,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择回价询价单与供应商，并填写非负单价与承诺交期。
+            请选择带有物料与单位的回价询价单与供应商，并填写非负单价与承诺交期。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

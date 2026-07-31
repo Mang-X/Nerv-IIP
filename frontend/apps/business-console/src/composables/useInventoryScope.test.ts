@@ -3,7 +3,6 @@ import { effectScope, nextTick, reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FALLBACK_INVENTORY_SITE_CODE,
-  FALLBACK_INVENTORY_UOM_CODE,
   useInventoryScopeCatalog,
   useInventoryScopeDefaults,
   useInventorySiteExpiryOverview,
@@ -133,10 +132,10 @@ describe('useInventoryScope', () => {
     await nextTick()
     expect(filters.uomCode).toBe('pcs')
 
-    // 目录里查不到的编码（深链带进来的）仍要给出可查询的单位，不能让查询哑掉。
+    // 目录里查不到的编码（深链带进来的）不猜单位：宁可让查询等主档，也不用假单位查出空结果。
     filters.skuCode = 'SKU-UNKNOWN'
     await nextTick()
-    expect(filters.uomCode).toBe(FALLBACK_INVENTORY_UOM_CODE)
+    expect(filters.uomCode).toBe('')
 
     filters.skuCode = ''
     await nextTick()

@@ -48,7 +48,7 @@ public sealed class MaintenanceIntegrationEventTests
     public void Spare_part_issue_converter_requests_inventory_outbound_movement()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
-        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "EA")]);
+        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "pcs")]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 
         var integrationEvent = new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent);
@@ -60,10 +60,29 @@ public sealed class MaintenanceIntegrationEventTests
         Assert.Equal(workOrder.Id.ToString(), integrationEvent.Payload.SourceDocumentId);
         Assert.Equal(domainEvent.SparePartLine.Id.ToString(), integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("SPARE-001", integrationEvent.Payload.SkuCode);
-        Assert.Equal("EA", integrationEvent.Payload.UomCode);
+        Assert.Equal("pcs", integrationEvent.Payload.UomCode);
         Assert.Equal("maintenance", integrationEvent.Payload.SiteCode);
         Assert.Equal("maintenance-spares", integrationEvent.Payload.LocationCode);
         Assert.Equal(-2m, integrationEvent.Payload.Quantity);
         Assert.Contains(workOrder.Id.ToString(), integrationEvent.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Regression for #1285: the converter used to fall back to a fabricated unit of measure when a spare
+    /// part line carried none. That unit does not exist in the unit master data, so the inventory movement
+    /// either failed downstream or posted against the wrong quantity. A missing unit is a data defect and
+    /// must surface at the source instead.
+    /// </summary>
+    [Fact]
+    public void Spare_part_issue_converter_refuses_to_invent_a_missing_unit_of_measure()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m)]);
+        var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent));
+
+        Assert.Contains("unit of measure", error.Message, StringComparison.Ordinal);
     }
 }
