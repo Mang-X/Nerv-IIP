@@ -43,13 +43,23 @@ const planningSpies = vi.hoisted(() => ({
   runMrp: vi.fn(async () => undefined),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  toastWarning: vi.fn(),
+  // #1306 异步跟踪状态：mock 工厂里包成 reactive，测试直接改字段驱动 watch。
+  activeMrpRun: {
+    runId: '',
+    status: '' as string,
+    failureReason: '',
+    suggestionCount: null as number | null,
+  },
 }))
 
 vi.mock('@/composables/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
+  planningSpies.activeMrpRun = reactive(planningSpies.activeMrpRun)
   return {
     SUGGESTION_REJECT_REASON_MAX_LENGTH: 128,
     useBusinessPlanning: () => ({
+      activeMrpRun: planningSpies.activeMrpRun,
       acceptSuggestion: vi.fn(),
       acceptSuggestionError: shallowRef(null),
       acceptSuggestionPending: shallowRef(false),
@@ -302,6 +312,7 @@ vi.mock('@nerv-iip/ui', async () => {
     toast: {
       error: (...args: unknown[]) => planningSpies.toastError(...args),
       success: (...args: unknown[]) => planningSpies.toastSuccess(...args),
+      warning: (...args: unknown[]) => planningSpies.toastWarning(...args),
     },
     NvButton: Button,
     NvDataTable: DataTable,
@@ -340,6 +351,11 @@ describe('PlanningWorkbench', () => {
     planningSpies.runMrp = vi.fn(async () => undefined)
     planningSpies.toastError.mockReset()
     planningSpies.toastSuccess.mockReset()
+    planningSpies.toastWarning.mockReset()
+    planningSpies.activeMrpRun.runId = ''
+    planningSpies.activeMrpRun.status = ''
+    planningSpies.activeMrpRun.failureReason = ''
+    planningSpies.activeMrpRun.suggestionCount = null
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
@@ -456,5 +472,55 @@ describe('PlanningWorkbench', () => {
     expect(planningSpies.toastError).toHaveBeenCalledWith(
       '运行 MRP 失败：计划期内没有已发布的主计划行',
     )
+  })
+
+  // #1306 异步任务模式：提交=受理，弹框全程可关闭，后台跑完由 watch 统一 toast。
+  it('RunMrp 提交即受理并提示后台计算中', async () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await Promise.resolve()
+
+    expect(planningSpies.runMrp).toHaveBeenCalled()
+    expect(planningSpies.toastSuccess).toHaveBeenCalledWith(
+      'MRP 已受理，正在后台计算，完成后自动刷新。',
+    )
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
+  })
+
+  it('轮询到完成态时 toast 建议数并收起弹框', async () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    planningSpies.activeMrpRun.runId = 'run-async-1'
+    planningSpies.activeMrpRun.status = 'completed'
+    planningSpies.activeMrpRun.suggestionCount = 5
+    await wrapper.vm.$nextTick()
+
+    expect(planningSpies.toastSuccess).toHaveBeenCalledWith('MRP 计算完成，共生成 5 条计划建议。')
+  })
+
+  it('轮询到失败态时把 failureReason 走分层透传上屏', async () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    planningSpies.activeMrpRun.runId = 'run-async-1'
+    planningSpies.activeMrpRun.failureReason = 'MRP 计算失败：上游库存快照不可用。'
+    planningSpies.activeMrpRun.status = 'failed'
+    await wrapper.vm.$nextTick()
+
+    // 后端前缀被去重：不出现「MRP 计算失败：MRP 计算失败：…」的叠层。
+    expect(planningSpies.toastError).toHaveBeenCalledWith('MRP 计算失败：上游库存快照不可用。')
+  })
+
+  it('轮询超时只提醒去运行列表回看，不按失败处理', async () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    planningSpies.activeMrpRun.runId = 'run-async-1'
+    planningSpies.activeMrpRun.status = 'polling-timeout'
+    await wrapper.vm.$nextTick()
+
+    expect(planningSpies.toastWarning).toHaveBeenCalledWith(
+      'MRP 仍在后台计算，可稍后在「MRP 运行」列表查看结果。',
+    )
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
   })
 })

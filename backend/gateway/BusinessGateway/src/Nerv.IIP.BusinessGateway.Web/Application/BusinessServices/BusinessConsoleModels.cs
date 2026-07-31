@@ -2610,14 +2610,13 @@ public sealed record BusinessConsoleRunMrpRequest(
     DateOnly HorizonStart,
     DateOnly HorizonEnd);
 
+/// <summary>
+/// 运行 MRP 的异步受理回执（#1306）：提交即返回排队中的 runId 与状态，
+/// 计算进度与结果通过 MRP 运行列表轮询获取。
+/// </summary>
 public sealed record BusinessConsoleRunMrpResponse(
     string RunId,
-    int SuggestionCount,
-    bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources,
-    IReadOnlyCollection<string> InputSources,
-    DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+    string Status);
 
 public sealed record BusinessConsoleMrpRunItem(
     string RunId,
@@ -2633,7 +2632,8 @@ public sealed record BusinessConsoleMrpRunItem(
     IReadOnlyCollection<string> InputDegradationSources,
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+    DateOnly? InputCoverageEnd,
+    string? FailureReason);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 

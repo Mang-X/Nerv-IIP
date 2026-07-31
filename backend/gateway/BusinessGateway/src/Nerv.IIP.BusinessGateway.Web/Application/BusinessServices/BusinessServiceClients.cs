@@ -1808,6 +1808,15 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 "downstream-timeout",
                 ex);
         }
+        catch (Polly.Timeout.TimeoutRejectedException ex)
+        {
+            // 网关 resilience 管道超时（#1306 修法 3）：不再逃逸成 500/「未知错误」，
+            // 以 504 + downstream-timeout 透传，前端映射为可行动提示（任务可能仍在处理）。
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.GatewayTimeout,
+                "downstream-timeout",
+                ex);
+        }
         catch (HttpRequestException ex)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
@@ -4635,16 +4644,9 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             "/api/business/v1/planning/mrp-runs",
             request,
             cancellationToken);
-        var inputDegradationSources = response.InputDegradationSources ?? [];
-        var inputSources = response.InputSources ?? [];
         return new BusinessConsoleRunMrpResponse(
             response.RunId,
-            response.SuggestionCount,
-            response.HasInputDegradation,
-            inputDegradationSources,
-            inputSources,
-            response.InputCoverageStart,
-            response.InputCoverageEnd);
+            MrpRunStatusName(response.Status));
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -4678,7 +4680,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.InputDegradationSources ?? [],
             x.InputSources ?? [],
             x.InputCoverageStart,
-            x.InputCoverageEnd)).ToArray());
+            x.InputCoverageEnd,
+            x.FailureReason)).ToArray());
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
@@ -4829,6 +4832,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             0 => "Created",
             1 => "Running",
             2 => "Completed",
+            3 => "Failed",
             _ => status.ToString(CultureInfo.InvariantCulture),
         };
 
@@ -4861,12 +4865,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     private sealed record DownstreamRunMrpResponse(
         string RunId,
-        int SuggestionCount,
-        bool HasInputDegradation,
-        IReadOnlyCollection<string>? InputDegradationSources,
-        IReadOnlyCollection<string>? InputSources,
-        DateOnly? InputCoverageStart,
-        DateOnly? InputCoverageEnd);
+        int Status);
 
     private sealed record DownstreamMrpRunItem(
         string RunId,
@@ -4882,7 +4881,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         IReadOnlyCollection<string>? InputDegradationSources,
         IReadOnlyCollection<string>? InputSources,
         DateOnly? InputCoverageStart,
-        DateOnly? InputCoverageEnd);
+        DateOnly? InputCoverageEnd,
+        string? FailureReason);
 
     private sealed record DownstreamPlanningSuggestionItem(
         string SuggestionId,
