@@ -23,6 +23,7 @@ public sealed class AccountReceivableSourceDocumentGuardTests
             CancellationToken.None));
 
         Assert.Contains("在 ERP 中不存在", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("财务 › 会计凭证 › 过账凭证", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountReceivables);
         Assert.Empty(dbContext.JournalVouchers);
@@ -54,7 +55,7 @@ public sealed class AccountReceivableSourceDocumentGuardTests
         await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-GUARD-002", "CUST-REAL");
 
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
-            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-GUARD-002", "DO-GUARD-002", "CUST-REAL", 120m, "CNY"),
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-GUARD-002", " DO-GUARD-002 ", "CUST-REAL", 120m, "CNY"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -77,7 +78,9 @@ public sealed class AccountReceivableSourceDocumentGuardTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal(60m, Assert.Single(dbContext.AccountReceivables).Amount);
+        var receivable = Assert.Single(dbContext.AccountReceivables);
+        Assert.Equal(60m, receivable.Amount);
+        Assert.Equal("CUST-REAL", receivable.CustomerCode);
     }
 
     [Fact]
