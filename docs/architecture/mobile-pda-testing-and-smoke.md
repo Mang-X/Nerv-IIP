@@ -108,7 +108,7 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
   （BusinessGateway/PlatformGateway `HealthEndpoint`），栈不可达时**直接 throw
   报环境阻塞**（先 `nerv.ps1 dev` 起栈），绝不 `test.skip` 静默跳过。
 - **M2 网络/超时韧性**（`e2e-live/network-resilience.spec.ts`，方案 §4.2 / §8 M2）：
-  3 个独立场景，全部只读（载体 = /quality/tasks 列表 + 选中任务触发的检验计划特性 GET；
+  3 个独立场景，业务结果保持只读（载体 = /quality/tasks Self 列表 + 当前已领取任务触发的检验计划特性 GET；
   真实登录、真实数据加载完成后才注入**传输层故障**，不 mock 任何业务数据）——
   1. **离线预检**：`context.setOffline(true)`（只仿真 `navigator.onLine=false`，不代表
      Wi-Fi 抖动/DNS/TLS）→ `OfflineError` 类型化文案「当前离线，请检查网络连接后重试」

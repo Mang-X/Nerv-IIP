@@ -1,6 +1,7 @@
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import QualityTaskListStep from './QualityTaskListStep.vue'
 
@@ -45,7 +46,7 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
     expect(wrapper.text()).toContain('已加载 1 / 共 1')
     expect(wrapper.text()).toContain('更新时间（最近成功响应）：2026/7/28 18:20')
-    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
+    expect(wrapper.text()).toContain('质检待检任务服务（当前账号 Self 范围，状态：待检）')
   })
 
   it('renders a retryable response failure instead of a business empty state', () => {
@@ -161,5 +162,45 @@ describe('QualityTaskListStep', () => {
     expect(rows[0].text()).toContain('RCV-O') // overdue first
     expect(wrapper.find('[data-testid="overdue-OVERDUE"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="overdue-FUTURE"]').exists()).toBe(false)
+  })
+
+  it('shows every stable blocker on real task rows and keeps all blocked rows non-selectable', async () => {
+    const wrapper = mountList([
+      task({
+        inspectionTaskId: 'OTHER-INSPECTOR',
+        allowedActions: [],
+        blockReasons: ['task-assigned-to-another-inspector'],
+      }),
+      task({
+        inspectionTaskId: 'ALREADY-CLAIMED',
+        status: 'in-progress',
+        allowedActions: [],
+        blockReasons: ['task-already-claimed'],
+      }),
+      task({
+        inspectionTaskId: 'OUTSIDE-SCOPE',
+        allowedActions: [],
+        blockReasons: ['task-outside-selected-work-scope'],
+      }),
+      task({
+        inspectionTaskId: 'OTHER-TEAM',
+        allowedActions: [],
+        blockReasons: ['task-assigned-to-another-team'],
+      }),
+    ])
+
+    const text = wrapper.text()
+    expect(text).toContain('任务已派给其他检验员，无法领取。')
+    expect(text).toContain('任务已由其他检验员领取。')
+    expect(text).toContain('任务不在当前工作范围内，无法领取。')
+    expect(text).toContain('任务已派给其他班组，无法领取。')
+    expect(text).toContain('待领取')
+    expect(text).toContain('进行中')
+
+    for (const row of wrapper.findAllComponents(NvListRow)) {
+      row.vm.$emit('select')
+    }
+    await nextTick()
+    expect(wrapper.emitted('select')).toBeUndefined()
   })
 })

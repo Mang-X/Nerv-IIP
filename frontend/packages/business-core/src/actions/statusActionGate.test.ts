@@ -263,9 +263,9 @@ describe('statusActionGate', () => {
   })
 
   it.each([
-    [{ status: 'pending' }, true, false],
-    [{ status: 'in-progress', inspectionRecordId: null }, false, false],
-    [{ status: 'in-progress', inspectionRecordId: 'record-1' }, false, false],
+    [{ status: 'pending' }, false, false],
+    [{ status: 'in-progress', inspectionRecordId: null }, true, false],
+    [{ status: 'in-progress', inspectionRecordId: 'record-1' }, true, false],
     [{ status: 'completed', inspectionRecordId: 'record-1' }, false, false],
     [{ status: 'completed', inspectionRecordId: null }, false, false],
   ] as const)('evaluates quality inspection task facts %j', (facts, executable, legalNoop) => {
@@ -297,7 +297,7 @@ describe('statusActionGate', () => {
     })
   })
 
-  it('does not treat the completed-only task record link as an in-progress retry fact', () => {
+  it('keeps an in-progress task executable when an existing record will be reconciled by the backend', () => {
     expect(
       gate({
         domain: 'quality-inspection-task',
@@ -307,9 +307,9 @@ describe('statusActionGate', () => {
     ).toMatchObject({
       known: true,
       terminal: false,
-      executable: false,
+      executable: true,
       legalNoop: false,
-      reason: 'incompatible-state',
+      reason: 'allowed',
     })
   })
 

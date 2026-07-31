@@ -102,6 +102,14 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
     }
 
+    protected string RequireAuthorizedPrincipalId()
+    {
+        var principalId = AuthorizationResult?.PrincipalId;
+        return string.IsNullOrWhiteSpace(principalId)
+            ? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "principal-unresolved")
+            : principalId;
+    }
+
     protected BusinessServiceAuditContext RequireAuditContext(object? request)
     {
         var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();

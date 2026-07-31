@@ -14,15 +14,8 @@ import { simulateScanGun } from './support/scan-gun'
 // （CreateInspectionRecordFromTaskCommand.cs `EnsureNcrAndBuildResultAsync`），live 走查
 // 不制造 NCR 脏数据。
 //
-// 幂等键代码事实结论（详见下方断言处注释）：该链路**无显式幂等键**，靠任务生命周期守门
-// （first-write-wins keyed on task）——
-// - 前端 `src/composables/useBusinessQualityInspectionTasks.ts` L65-67 注释 + L200-212
-//   submitInspection：body 仅 { inspectorUserId, resultLines, dispositionReason? }，无键字段；
-// - 契约 `packages/api-client/.../types.gen.ts` L1405-1410
-//   BusinessConsoleCreateInspectionRecordFromTaskRequest 四字段，无幂等键；
-// - 后端 `backend/services/Business/Quality/.../Commands/InspectionTasks/
-//   CreateInspectionRecordFromTaskCommand.cs` L52-58：任务已 completed → 回读既有记录返回
-//   同一 inspectionRecordId（幂等重放 no-op）。
+// 提交体不包含检验员身份；网关从认证主体注入内部下游 DTO。幂等键由 PDA 意图账本稳定复用，
+// 后端再以任务生命周期与持久化回执共同守门。
 
 /** 与 support/preflight.ts 同源的网关基址（vite.config.ts 代理 target 同一 env 变量）。 */
 const BUSINESS_GATEWAY_BASE = process.env.NERV_IIP_BUSINESS_GATEWAY_URL ?? 'http://127.0.0.1:5119'
@@ -330,22 +323,18 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
   expect(organizationId).toBeTruthy()
   expect(environmentId).toBeTruthy()
 
-  // 幂等键代码事实断言：**无显式幂等键，靠任务生命周期守门**。
-  // 请求体字段只可能是 { inspectorUserId, resultLines, dispositionReason, dispositionAttachmentFileIds }
-  // （契约 types.gen.ts L1405-1410；前端实际只发前三者，useBusinessQualityInspectionTasks.ts
-  // L200-212），请求头亦无 Idempotency-Key 类头。幂等由后端按任务状态守门：
-  // CreateInspectionRecordFromTaskCommand.cs L52-58 已完成任务回读既有记录。
+  // 公开请求体不得携带 inspectorUserId；身份由网关从认证主体注入内部 DTO。
   const submitBody = submitRequest.postDataJSON() as Record<string, unknown>
   const allowedBodyKeys = new Set([
-    'inspectorUserId',
     'resultLines',
     'dispositionReason',
     'dispositionAttachmentFileIds',
+    'idempotencyKey',
   ])
   for (const key of Object.keys(submitBody)) {
     expect(allowedBodyKeys.has(key), `请求体出现契约外字段：${key}`).toBe(true)
-    expect(key.toLowerCase()).not.toContain('idempotency')
   }
+  expect(submitBody).not.toHaveProperty('inspectorUserId')
   const submitHeaders = await submitRequest.allHeaders()
   for (const headerName of Object.keys(submitHeaders)) {
     expect(headerName.toLowerCase()).not.toContain('idempotency')

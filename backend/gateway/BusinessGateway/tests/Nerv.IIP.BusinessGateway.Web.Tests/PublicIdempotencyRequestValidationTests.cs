@@ -43,7 +43,6 @@ public sealed class PublicIdempotencyRequestValidationTests
                 InspectionTaskId: "IT-001",
                 OrganizationId: "org-001",
                 EnvironmentId: "env-dev",
-                InspectorUserId: "inspector-001",
                 ResultLines: [],
                 DispositionReason: null,
                 DispositionAttachmentFileIds: [],

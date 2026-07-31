@@ -441,7 +441,8 @@ function uomLabel(code?: string | null) {
               发布新版本
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-3xl">
+          <!-- 组件行数不定，弹框高度会超出视口：内部滚动，别让「发布」按钮被挤到屏幕外（GH#1292 第 7 项）。 -->
+          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布制造 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
