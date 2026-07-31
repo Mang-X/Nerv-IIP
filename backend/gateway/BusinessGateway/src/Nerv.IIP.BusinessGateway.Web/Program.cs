@@ -1,5 +1,4 @@
 using System.Net;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -24,11 +23,7 @@ using NetCorePal.Extensions.AspNetCore;
 const string BusinessConsoleCorsPolicy = "business-console-cors";
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
-    .AddFastEndpoints(o =>
-    {
-        o.DisableAutoDiscovery = true;
-        o.Assemblies = [Assembly.GetExecutingAssembly()];
-    })
+    .AddFastEndpoints()
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>

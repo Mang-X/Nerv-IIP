@@ -80,6 +80,44 @@ public sealed class MaintenanceLifecycleCommandTests
     }
 
     [Fact]
+    public async Task Owner_only_action_rejects_a_different_technician_from_the_same_team_at_the_command_boundary()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-a");
+        workOrder.Assign("tech-a", "team-a");
+        workOrder.Accept("tech-a");
+        db.MaintenanceWorkOrders.Add(workOrder);
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<MaintenanceLifecycleConflictException>(() =>
+            new TransitionMaintenanceWorkOrderCommandHandler(db).Handle(
+                Action(workOrder.Id, MaintenanceWorkOrderAction.Start, "tech-b", "start", "start-tech-b", workOrder.Version),
+                CancellationToken.None));
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Accepted, workOrder.Status);
+    }
+
+    [Fact]
+    public async Task Complete_without_spare_parts_preserves_pre_recorded_lines_while_an_explicit_empty_replacement_clears_them()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
+        var preserve = StartedWorkOrder("DEV-001", "tech-001", "SPARE-001");
+        var clear = StartedWorkOrder("DEV-002", "tech-002", "SPARE-002");
+        db.MaintenanceWorkOrders.AddRange(preserve, clear);
+        await db.SaveChangesAsync();
+
+        var handler = new TransitionMaintenanceWorkOrderCommandHandler(db);
+        await handler.Handle(Complete(preserve, "tech-001", "complete-preserve", spareParts: null), CancellationToken.None);
+        await handler.Handle(Complete(clear, "tech-002", "complete-clear", spareParts: []), CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        Assert.Collection(preserve.SparePartLines, line => Assert.Equal("SPARE-001", line.SkuCode));
+        Assert.Empty(clear.SparePartLines);
+    }
+
+    [Fact]
     public async Task Alarm_work_order_walks_through_pause_waiting_completion_verification_and_close_with_audit_history()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
@@ -150,4 +188,27 @@ public sealed class MaintenanceLifecycleCommandTests
         string key,
         int version) =>
         new("org-001", "env-dev", workOrderId, action, actor, reason, key, version);
+
+    private static MaintenanceWorkOrder StartedWorkOrder(string deviceAssetId, string technicianUserId, string spareSku)
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", deviceAssetId, "high", "reporter-001", assignedTechnicianUserId: technicianUserId);
+        workOrder.AddSparePartLine(new SparePartLineDraft(spareSku, 1m, "EA"));
+        workOrder.Accept(technicianUserId);
+        workOrder.StartWork();
+        return workOrder;
+    }
+
+    private static TransitionMaintenanceWorkOrderCommand Complete(
+        MaintenanceWorkOrder workOrder,
+        string technicianUserId,
+        string idempotencyKey,
+        IReadOnlyCollection<MaintenanceSparePartInput>? spareParts) =>
+        Action(workOrder.Id, MaintenanceWorkOrderAction.Complete, technicianUserId, "completed", idempotencyKey, workOrder.Version) with
+        {
+            Result = "restored",
+            DowntimeReasonCode = "failure",
+            DowntimeMinutes = 10,
+            SpareParts = spareParts,
+        };
 }

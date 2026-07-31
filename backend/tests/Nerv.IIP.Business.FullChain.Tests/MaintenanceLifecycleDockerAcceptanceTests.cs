@@ -220,17 +220,21 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
 
 internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 {
+    private const string OwnershipLabelKey = "com.nerv-iip.test.run";
     private readonly string postgresContainerName;
     private readonly string redisContainerName;
+    private readonly string ownershipLabel;
 
     private MaintenanceLifecycleDockerDependencies(
         string postgresContainerName,
         string redisContainerName,
+        string ownershipLabel,
         string postgresConnectionString,
         string redisConnectionString)
     {
         this.postgresContainerName = postgresContainerName;
         this.redisContainerName = redisContainerName;
+        this.ownershipLabel = ownershipLabel;
         PostgresConnectionString = postgresConnectionString;
         RedisConnectionString = redisConnectionString;
     }
@@ -246,6 +250,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
         var suffix = Guid.CreateVersion7().ToString("N")[..12];
         var postgresName = $"nerv-iip-man631-postgres-{suffix}";
         var redisName = $"nerv-iip-man631-redis-{suffix}";
+        var ownershipLabel = $"man-631-{suffix}";
         var databaseName = $"maintenance_man631_{suffix}";
         var password = $"man631-{Guid.CreateVersion7():N}";
         MaintenanceLifecycleDockerDependencies? dependencies = null;
@@ -255,6 +260,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 [
                     "run", "-d", "--rm", "--name", postgresName,
                     "--label", "com.nerv-iip.test=man-631",
+                    "--label", $"{OwnershipLabelKey}={ownershipLabel}",
                     "-e", "POSTGRES_USER=nerv_test",
                     "-e", $"POSTGRES_PASSWORD={password}",
                     "-e", $"POSTGRES_DB={databaseName}",
@@ -267,6 +273,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                 [
                     "run", "-d", "--rm", "--name", redisName,
                     "--label", "com.nerv-iip.test=man-631",
+                    "--label", $"{OwnershipLabelKey}={ownershipLabel}",
                     "-p", "127.0.0.1::6379",
                     "redis:8", "redis-server", "--save", "", "--appendonly", "no",
                 ],
@@ -295,6 +302,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
             dependencies = new MaintenanceLifecycleDockerDependencies(
                 postgresName,
                 redisName,
+                ownershipLabel,
                 postgresConnectionString,
                 redisConnectionString);
             await WaitForPostgresAsync(postgresConnectionString);
@@ -309,8 +317,9 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
             }
             else
             {
-                await RemoveContainerAsync(redisName);
-                await RemoveContainerAsync(postgresName);
+                await RemoveContainerAsync(redisName, ownershipLabel);
+                await RemoveContainerAsync(postgresName, ownershipLabel);
+                await AssertNoOwnedContainersAsync(ownershipLabel);
             }
 
             throw;
@@ -319,8 +328,9 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await RemoveContainerAsync(redisContainerName);
-        await RemoveContainerAsync(postgresContainerName);
+        await RemoveContainerAsync(redisContainerName, ownershipLabel);
+        await RemoveContainerAsync(postgresContainerName, ownershipLabel);
+        await AssertNoOwnedContainersAsync(ownershipLabel);
     }
 
     private static async Task WaitForPostgresAsync(string connectionString)
@@ -380,15 +390,47 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
         return port;
     }
 
-    private static async Task RemoveContainerAsync(string name)
+    private static async Task RemoveContainerAsync(string name, string expectedOwnershipLabel)
     {
+        string actualOwnershipLabel;
+        try
+        {
+            actualOwnershipLabel = (await DockerAsync(
+                ["inspect", "--format", $"{{{{ index .Config.Labels \"{OwnershipLabelKey}\" }}}}", name],
+                "inspect MAN-631 test container ownership",
+                TimeSpan.FromSeconds(30))).Trim();
+        }
+        catch (DockerCommandException exception) when (exception.IsContainerNotFound)
+        {
+            return;
+        }
+
+        if (!string.Equals(actualOwnershipLabel, expectedOwnershipLabel, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to remove Docker container '{name}' because ownership label '{OwnershipLabelKey}' was '{actualOwnershipLabel}', expected '{expectedOwnershipLabel}'.");
+        }
+
         try
         {
             await DockerAsync(["rm", "-f", name], "remove MAN-631 test container", TimeSpan.FromSeconds(30));
         }
-        catch
+        catch (DockerCommandException exception) when (exception.IsContainerNotFound)
         {
-            // The container may already have been removed by --rm after a failed startup.
+            // --rm can win the race after the ownership inspection.
+        }
+    }
+
+    private static async Task AssertNoOwnedContainersAsync(string expectedOwnershipLabel)
+    {
+        var residue = (await DockerAsync(
+            ["ps", "-a", "--filter", $"label={OwnershipLabelKey}={expectedOwnershipLabel}", "--format", "{{.Names}}"],
+            "verify MAN-631 test container cleanup",
+            TimeSpan.FromSeconds(30))).Trim();
+        if (!string.IsNullOrWhiteSpace(residue))
+        {
+            throw new InvalidOperationException(
+                $"MAN-631 Docker cleanup left owned containers behind: {residue.Replace(Environment.NewLine, ", ", StringComparison.Ordinal)}");
         }
     }
 
@@ -443,10 +485,17 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
         if (process.ExitCode != 0)
         {
             var diagnostic = string.IsNullOrWhiteSpace(error) ? "no diagnostic output" : error.Trim();
-            throw new InvalidOperationException(
-                $"Docker failed during {operation} (exit={process.ExitCode}): {diagnostic}");
+            throw new DockerCommandException(operation, process.ExitCode, diagnostic);
         }
 
         return output;
+    }
+
+    private sealed class DockerCommandException(string operation, int exitCode, string diagnostic)
+        : InvalidOperationException($"Docker failed during {operation} (exit={exitCode}): {diagnostic}")
+    {
+        public bool IsContainerNotFound =>
+            Message.Contains("No such container", StringComparison.OrdinalIgnoreCase)
+            || Message.Contains("No such object", StringComparison.OrdinalIgnoreCase);
     }
 }

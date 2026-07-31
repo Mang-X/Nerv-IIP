@@ -1,41 +1,19 @@
-extern alias maintenance;
-
-using System.Net.Http.Headers;
-using MediatR;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-using MaintenanceAction = maintenance::Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate.MaintenanceWorkOrderAction;
-using MaintenanceCommand = maintenance::Nerv.IIP.Business.Maintenance.Web.Application.Commands.TransitionMaintenanceWorkOrderCommand;
-using MaintenanceCommandResult = maintenance::Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceWorkOrderCommandResult;
-using MaintenanceStatus = maintenance::Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate.MaintenanceWorkOrderStatus;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class MaintenanceLifecycleWireRoundTripTests
 {
     [Fact]
-    public async Task Gateway_client_round_trips_every_lifecycle_action_through_real_maintenance_http_wire()
+    public async Task Gateway_client_writes_every_lifecycle_action_as_the_string_wire_contract()
     {
-        var sender = new RecordingLifecycleSender();
-        await using var factory = new WebApplicationFactory<maintenance::Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseSetting("environment", "Testing");
-                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
-                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<ISender>();
-                    services.AddSingleton<ISender>(sender);
-                });
-            });
-        using var httpClient = factory.CreateClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
-        var client = new HttpBusinessMaintenanceClient(httpClient);
         var workOrderId = Guid.CreateVersion7().ToString();
+        var handler = new RecordingWireHandler(workOrderId);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
         var actions = Enum.GetValues<BusinessConsoleMaintenanceWorkOrderAction>();
 
         foreach (var action in actions)
@@ -54,48 +32,43 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             Assert.Equal("Accepted", response.Status);
         }
 
+        Assert.Equal(actions.Length, handler.Requests.Count);
         Assert.Equal(
-            actions.Select(action => Enum.Parse<MaintenanceAction>(action.ToString())).ToArray(),
-            sender.Commands.Select(command => command.Action).ToArray());
+            actions.Select(x => JsonNamingPolicy.CamelCase.ConvertName(x.ToString())),
+            handler.Requests.Select(x => x.GetProperty("action").GetString()));
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(workOrderId, request.GetProperty("workOrderId").GetString());
+            Assert.Equal("tech-001", request.GetProperty("actorPrincipalId").GetString());
+        });
     }
 
-    private sealed class RecordingLifecycleSender : ISender
+    private sealed class RecordingWireHandler(string workOrderId) : HttpMessageHandler
     {
-        public List<MaintenanceCommand> Commands { get; } = [];
+        public List<JsonElement> Requests { get; } = [];
 
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
-            var command = Assert.IsType<MaintenanceCommand>(request);
-            Commands.Add(command);
-            var result = new MaintenanceCommandResult(
-                command.WorkOrderId,
-                MaintenanceStatus.Accepted,
-                DateTimeOffset.UtcNow,
-                1);
-            return Task.FromResult((TResponse)(object)result);
-        }
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest => throw new NotSupportedException();
-
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public async IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public async IAsyncEnumerable<object?> CreateStream(
-            object request,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal($"/api/business/v1/maintenance/work-orders/{workOrderId}/actions", request.RequestUri!.AbsolutePath);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
+            Requests.Add(JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(cancellationToken)));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        workOrderId,
+                        status = "Accepted",
+                        changedAtUtc = DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+                        version = 1,
+                    },
+                }),
+            };
         }
     }
 }

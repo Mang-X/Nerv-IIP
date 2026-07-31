@@ -45,12 +45,7 @@ try
     }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
-        .AddFastEndpoints(o =>
-        {
-            o.IncludeAbstractValidators = true;
-            o.DisableAutoDiscovery = true;
-            o.Assemblies = [Assembly.GetExecutingAssembly()];
-        })
+        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>

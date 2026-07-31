@@ -60,12 +60,22 @@ public sealed class PrincipalWorkScopeResolver(
         }
         else
         {
-            if (resolution.AuthorizedScopes.Count != 1)
+            var organizationScopes = resolution.AuthorizedScopes
+                .Where(x => string.Equals(x.Kind, "organization", StringComparison.Ordinal)
+                    && string.Equals(x.Id, organizationId, StringComparison.Ordinal))
+                .ToArray();
+            if (organizationScopes.Length == 1)
+            {
+                selected = organizationScopes[0];
+            }
+            else if (organizationScopes.Length > 1 || resolution.AuthorizedScopes.Count != 1)
             {
                 throw Forbidden();
             }
-
-            selected = resolution.AuthorizedScopes[0];
+            else
+            {
+                selected = resolution.AuthorizedScopes[0];
+            }
         }
 
         return ProjectSelection(context, resolution.AuthorizedScopes, authorization.PrincipalId, selected);

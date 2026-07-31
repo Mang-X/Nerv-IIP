@@ -310,7 +310,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string result,
         string downtimeReasonCode,
         int downtimeMinutes,
-        IEnumerable<SparePartLineDraft> spareParts,
+        IEnumerable<SparePartLineDraft>? spareParts,
         string technicianUserId,
         int? actualLaborMinutes = null,
         decimal? sparePartCostAmount = null,
@@ -417,7 +417,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string result,
         string downtimeReasonCode,
         int downtimeMinutes,
-        IEnumerable<SparePartLineDraft> spareParts,
+        IEnumerable<SparePartLineDraft>? spareParts,
         int? actualLaborMinutes,
         decimal? sparePartCostAmount,
         decimal? externalServiceCostAmount,
@@ -432,12 +432,15 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         SparePartCostAmount = NonNegative(sparePartCostAmount, nameof(sparePartCostAmount));
         ExternalServiceCostAmount = NonNegative(externalServiceCostAmount, nameof(externalServiceCostAmount));
         CostCurrencyCode = MaintenanceText.Optional(costCurrencyCode);
-        sparePartLines.Clear();
-        foreach (var part in spareParts)
+        if (spareParts is not null)
         {
-            var line = SparePartLine.Create(part);
-            sparePartLines.Add(line);
-            this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
+            sparePartLines.Clear();
+            foreach (var part in spareParts)
+            {
+                var line = SparePartLine.Create(part);
+                sparePartLines.Add(line);
+                this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
+            }
         }
 
         Status = MaintenanceWorkOrderStatus.Completed;

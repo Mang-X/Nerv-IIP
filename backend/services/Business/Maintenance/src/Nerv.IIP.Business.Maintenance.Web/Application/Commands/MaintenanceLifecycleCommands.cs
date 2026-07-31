@@ -153,6 +153,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
         var fromStatus = workOrder.Status;
         try
         {
+            EnsureActorOwnsAction(workOrder, request);
             await ApplyAsync(workOrder, request, cancellationToken);
         }
         catch (InvalidOperationException)
@@ -209,7 +210,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
                     MaintenanceText.Required(request.Result ?? string.Empty, nameof(request.Result)),
                     reasonCode,
                     request.DowntimeMinutes ?? throw new KnownException("Downtime minutes are required."),
-                    (request.SpareParts ?? []).Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)),
+                    request.SpareParts?.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)).ToArray(),
                     request.ActorPrincipalId,
                     request.ActualLaborMinutes,
                     request.SparePartCostAmount,
@@ -230,6 +231,33 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
         }
     }
 
+    private static void EnsureActorOwnsAction(
+        MaintenanceWorkOrder workOrder,
+        TransitionMaintenanceWorkOrderCommand request)
+    {
+        if (request.Action is not (
+                MaintenanceWorkOrderAction.Accept
+                or MaintenanceWorkOrderAction.Start
+                or MaintenanceWorkOrderAction.Pause
+                or MaintenanceWorkOrderAction.WaitForParts
+                or MaintenanceWorkOrderAction.Resume
+                or MaintenanceWorkOrderAction.Complete))
+        {
+            return;
+        }
+
+        if (request.Action == MaintenanceWorkOrderAction.Accept
+            && string.IsNullOrWhiteSpace(workOrder.AssignedTechnicianUserId))
+        {
+            return;
+        }
+
+        if (!string.Equals(workOrder.AssignedTechnicianUserId, request.ActorPrincipalId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The lifecycle action is reserved for the assigned technician.");
+        }
+    }
+
     private static string Fingerprint(TransitionMaintenanceWorkOrderCommand request) =>
         MaintenanceIdempotencyFingerprints.Hash(new
         {
@@ -245,6 +273,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
             SparePartCostAmount = MaintenanceIdempotencyFingerprints.CanonicalDecimal(request.SparePartCostAmount),
             ExternalServiceCostAmount = MaintenanceIdempotencyFingerprints.CanonicalDecimal(request.ExternalServiceCostAmount),
             CostCurrencyCode = request.CostCurrencyCode?.Trim(),
+            SparePartsSpecified = request.SpareParts is not null,
             SpareParts = (request.SpareParts ?? []).Select(x => new
             {
                 SkuCode = x.SkuCode.Trim(),

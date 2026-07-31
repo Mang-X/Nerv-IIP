@@ -190,6 +190,16 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
         {
             workOrder = workOrder with { AllowedActions = [] };
         }
+        else
+        {
+            workOrder = workOrder with
+            {
+                AllowedActions = MaintenanceActionOwnership.FilterAllowedActions(
+                    workOrder.AllowedActions,
+                    workOrder.AssignedTechnicianUserId,
+                    RequireAuthorizedPrincipalId()),
+            };
+        }
         var enriched = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
             [workOrder],
             masterData,
@@ -343,7 +353,7 @@ public sealed class TransitionBusinessConsoleMaintenanceWorkOrderEndpoint(
             request.ScopeKind,
             request.ScopeId,
             cancellationToken);
-        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+        var workOrder = await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
             maintenance,
             tokenProvider.BearerToken,
             request.OrganizationId,
@@ -351,6 +361,10 @@ public sealed class TransitionBusinessConsoleMaintenanceWorkOrderEndpoint(
             scope,
             Route<string>("workOrderId")!,
             cancellationToken);
+        MaintenanceActionOwnership.EnsureAuthorized(
+            request.Action,
+            workOrder.AssignedTechnicianUserId,
+            RequireAuthorizedPrincipalId());
         return await maintenance.TransitionWorkOrderAsync(
             tokenProvider.BearerToken,
             Route<string>("workOrderId")!,
@@ -377,7 +391,7 @@ internal static class MaintenanceWorkScopeAccess
         return Apply(request, scope);
     }
 
-    public static async Task EnsureWorkOrderAccessAsync(
+    public static async Task<BusinessConsoleMaintenanceWorkOrderItem> EnsureWorkOrderAccessAsync(
         PrincipalWorkScopeResolver resolver,
         IBusinessMaintenanceClient maintenance,
         string internalToken,
@@ -392,10 +406,10 @@ internal static class MaintenanceWorkScopeAccess
     {
         var scope = await resolver.ResolveAsync(
             authorization, organizationId, environmentId, permissionCode, scopeKind, scopeId, cancellationToken);
-        await EnsureWorkOrderAccessAsync(maintenance, internalToken, organizationId, environmentId, scope, workOrderId, cancellationToken);
+        return await EnsureWorkOrderAccessAsync(maintenance, internalToken, organizationId, environmentId, scope, workOrderId, cancellationToken);
     }
 
-    public static async Task EnsureWorkOrderAccessAsync(
+    public static async Task<BusinessConsoleMaintenanceWorkOrderItem> EnsureWorkOrderAccessAsync(
         IBusinessMaintenanceClient maintenance,
         string internalToken,
         string organizationId,
@@ -414,10 +428,13 @@ internal static class MaintenanceWorkScopeAccess
             internalToken,
             projection.Request,
             cancellationToken);
-        if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+        var workOrder = response.Items.SingleOrDefault(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal));
+        if (workOrder is null)
         {
             throw Forbidden();
         }
+
+        return workOrder;
     }
 
     public static async Task EnsureAssignmentTargetsAsync(
@@ -459,6 +476,57 @@ internal static class MaintenanceWorkScopeAccess
         if (scope.Kind != "organization")
         {
             throw Forbidden();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TechnicianUserId))
+        {
+            var workers = await masterData.ListWorkersAsync(
+                internalToken,
+                new BusinessConsoleWorkerDirectoryRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    UserId: request.TechnicianUserId,
+                    PageSize: 2,
+                    IncludeDisabled: false),
+                cancellationToken);
+            if (!workers.Items.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
+            {
+                throw Forbidden();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TeamId))
+        {
+            var teams = await masterData.ListResourcesAsync(
+                internalToken,
+                new BusinessConsoleListResourcesRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "team",
+                    IncludeDisabled: false,
+                    Take: 2,
+                    Keyword: request.TeamId),
+                cancellationToken);
+            if (!teams.Resources.Any(x => x.Active && string.Equals(x.Code, request.TeamId, StringComparison.Ordinal)))
+            {
+                throw Forbidden();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TechnicianUserId)
+            && !string.IsNullOrWhiteSpace(request.TeamId))
+        {
+            var members = await masterData.ListTeamMembersAsync(
+                internalToken,
+                new BusinessConsoleListTeamMembersRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.TeamId),
+                cancellationToken);
+            if (!members.Members.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
+            {
+                throw Forbidden();
+            }
         }
     }
 
@@ -512,6 +580,53 @@ internal static class MaintenanceWorkScopeAccess
     }
 
     private static BusinessServiceProxyException Forbidden() => new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+}
+
+internal static class MaintenanceActionOwnership
+{
+    private static readonly HashSet<BusinessConsoleMaintenanceWorkOrderAction> OwnerOnlyActions =
+    [
+        BusinessConsoleMaintenanceWorkOrderAction.Accept,
+        BusinessConsoleMaintenanceWorkOrderAction.Start,
+        BusinessConsoleMaintenanceWorkOrderAction.Pause,
+        BusinessConsoleMaintenanceWorkOrderAction.WaitForParts,
+        BusinessConsoleMaintenanceWorkOrderAction.Resume,
+        BusinessConsoleMaintenanceWorkOrderAction.Complete,
+    ];
+
+    public static IReadOnlyCollection<string> FilterAllowedActions(
+        IReadOnlyCollection<string>? allowedActions,
+        string? assignedTechnicianUserId,
+        string principalId)
+    {
+        allowedActions ??= [];
+        if (string.IsNullOrWhiteSpace(assignedTechnicianUserId)
+            || string.Equals(assignedTechnicianUserId, principalId, StringComparison.Ordinal))
+        {
+            return allowedActions;
+        }
+
+        return allowedActions
+            .Where(action => !Enum.TryParse<BusinessConsoleMaintenanceWorkOrderAction>(action, true, out var parsed)
+                || !OwnerOnlyActions.Contains(parsed))
+            .ToArray();
+    }
+
+    public static void EnsureAuthorized(
+        BusinessConsoleMaintenanceWorkOrderAction action,
+        string? assignedTechnicianUserId,
+        string principalId)
+    {
+        if (!OwnerOnlyActions.Contains(action)
+            || (action == BusinessConsoleMaintenanceWorkOrderAction.Accept
+                && string.IsNullOrWhiteSpace(assignedTechnicianUserId))
+            || string.Equals(assignedTechnicianUserId, principalId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "maintenance-action-owner-required");
+    }
 }
 
 internal static class MaintenanceDeviceAssetWarrantyEnricher

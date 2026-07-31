@@ -10422,6 +10422,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             "2026-01-01T00:00:00.0000000Z"),
     ];
 
+    public IReadOnlyCollection<BusinessConsoleTeamMemberItem> TeamMembers { get; set; } =
+    [
+        new BusinessConsoleTeamMemberItem("team-001", "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1"),
+    ];
+
     public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkerRequest request,
@@ -10513,9 +10518,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastListTeamMembersRequest = request;
+        var members = TeamMembers
+            .Where(x => string.Equals(x.TeamCode, request.TeamCode, StringComparison.Ordinal))
+            .ToArray();
         return Task.FromResult(new BusinessConsoleTeamMemberListResponse(
-            [new BusinessConsoleTeamMemberItem(request.TeamCode, "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1")],
-            1));
+            members,
+            members.Length));
     }
 
     public Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
