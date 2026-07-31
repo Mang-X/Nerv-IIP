@@ -424,6 +424,9 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Inventory__SourceLocationCodes__1", "WH-WB-SF-01")
     .WithEnvironment("Inventory__SourceLocationCodes__2", "WH-WB-FG-01")
     .WithEnvironment("Inventory__LineSideLocationCode", "WH-WB-LINE-01")
+    // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
+    // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
+    .WithEnvironment("Inventory__FinishedGoodsLocationCode", "WH-WB-FG-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
