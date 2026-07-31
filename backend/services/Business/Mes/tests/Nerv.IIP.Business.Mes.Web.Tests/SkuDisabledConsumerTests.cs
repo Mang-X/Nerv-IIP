@@ -257,7 +257,8 @@ public sealed class SkuDisabledConsumerTests
             commandContext,
             deadLetters,
             null,
-            new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext));
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext),
+            SingleOperationRoutingSnapshotProvider.Instance);
         var createTask = suggestionHandler.HandleAsync(
             PlanningSuggestionEvent(DateTimeOffset.Parse("2026-07-18T08:01:00Z")),
             CancellationToken.None);
