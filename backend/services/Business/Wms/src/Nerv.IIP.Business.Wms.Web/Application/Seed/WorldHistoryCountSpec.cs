@@ -116,7 +116,9 @@ public static class WorldHistoryCountSpec
     /// 盘点任务把下发时的 <c>LedgerVersion</c> 存成 <c>ExpectedLedgerVersion</c>，确认差异时逐字比对；
     /// 演示当天只要在同一维度上先拣一次货，<c>LedgerVersion++</c> 就把快照捅穿，
     /// 「先拣货、再确认盘点」这条最自然的演示动线会当场判需复盘。
-    /// 已回单的历史盘点不走确认闸门，因此仍可落在全部 22 条维度上。
+    /// 注意这条承诺**只覆盖 Open 任务**：待审批（PendingApproval）任务的
+    /// <c>ConfirmApprovedAdjustment</c> 同样走版本闸门，它们仍可能落在当前队列维度上而被拣货捅穿。
+    /// 当前该动线多半点不起来（Approval 侧没为 <c>CNT-2026-####</c> 种审批链），故留作跟进而非在此收口。
     /// </summary>
     public static readonly IReadOnlyList<WorldHistoryCountDimension> OpenCountDimensions =
         [.. Dimensions.Skip(CurrentQueueDimensionCount)];

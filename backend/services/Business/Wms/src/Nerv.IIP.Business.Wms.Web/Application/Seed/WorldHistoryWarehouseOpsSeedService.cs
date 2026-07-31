@@ -503,7 +503,7 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
 
     /// <summary>作业池成员资格的唯一键（池 × 主体），供幂等补写与校验器共用。</summary>
     private static string MembershipKey(string poolCode, string principalId) =>
-        $"{poolCode} {principalId}";
+        $"{poolCode}|{principalId}";
 
     private async Task<WorldHistoryWarehouseAssignmentSeedReport> SeedWarehouseAssignmentsAsync(
         string organizationId,
@@ -1167,16 +1167,19 @@ public sealed class WorldHistoryWarehouseOpsValidator(ApplicationDbContext dbCon
                     $"{string.Join("、", missingExecutors)}——账面上干过活的人在系统里没有资格干活。");
             }
 
-            var missingMembers = WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds
-                .Except(effectivePrincipalIds, StringComparer.Ordinal)
-                .Except(historicalExecutorIds, StringComparer.Ordinal)
+            // 反向也要守：成员资格是**现场作业资格**，主管与管理员不该在池里。
+            // 他们一旦入池，「我的任务」会挤进范围目录首位并成为前端默认，而直派对象只有 emp049，
+            // 六个仓储页对管理员就从「整站满数据」变成**空态**——比修复前的 403 更糟
+            // （见 WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds 裁决点二）。
+            var unexpectedMembers = effectivePrincipalIds
+                .Except(WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds, StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
-            if (missingMembers.Length > 0)
+            if (unexpectedMembers.Length > 0)
             {
                 failures.Add(
-                    $"作业池 {spec.PoolCode} 在 {asOfDate:yyyy-MM-dd} 缺少成员 " +
-                    $"{string.Join("、", missingMembers)} 的有效资格。");
+                    $"作业池 {spec.PoolCode} 混进了非现场作业员 {string.Join("、", unexpectedMembers)}" +
+                    "——他们会把「我的任务」顶成默认范围，令仓储页默认空态。");
             }
         }
 

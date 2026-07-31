@@ -120,7 +120,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
         var line = order.Lines.First();
         var status = order.Status.ToString();
         var publicQuantity = PublicOutboundQuantity(line);
-        var publicReference = string.Equals(order.SourceDocumentType, "erp-delivery-order", StringComparison.OrdinalIgnoreCase)
+        var publicReference = string.Equals(order.SourceDocumentType, WmsSourceDocumentTypes.DeliveryOrder, StringComparison.OrdinalIgnoreCase)
             ? order.SourceDocumentId
             : order.OutboundOrderNo;
         return WmsIntegrationEventFactory.NewEvent(

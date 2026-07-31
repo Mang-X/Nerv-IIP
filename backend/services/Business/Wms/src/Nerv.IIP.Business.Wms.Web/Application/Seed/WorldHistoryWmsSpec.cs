@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Wms;
+
 namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 
 /// <summary>
@@ -51,7 +53,14 @@ public static class WorldHistoryWmsSpec
 
     public const string PurchaseReceiptSourceType = "purchase-receipt";
     public const string ProductionReceiptSourceType = "production-receipt";
-    public const string DeliveryOrderSourceType = "delivery-order";
+    /// <summary>
+    /// 发货出库单的源单据类型。**必须与运行期入口同字面量**
+    /// （<c>WmsOutboundOrderRequestedIntegrationEventHandler</c> 建单时写的就是它）：
+    /// 出库完成事件只在类型等于本值时才把发货单号回填进 <c>PublicReference</c>，
+    /// ERP 应收消费者按发货单号反查，查不到就静默 return（#1374）。
+    /// 种子若自造一个 "delivery-order"，历史单据与演示当场新建的单会分成两个世界。
+    /// </summary>
+    public const string DeliveryOrderSourceType = WmsSourceDocumentTypes.DeliveryOrder;
     public const string MaterialIssueSourceType = "material-issue";
 
     #endregion
@@ -253,7 +262,7 @@ public static class WorldHistoryWmsSpec
                 UomCode: WorldHistorySpec.UomCode,
                 Quantity: order.Quantity,
                 PickFromLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
-                PickToLocationCode: WorldHistoryPhase2Spec.ReceivingStagingLocationCode,
+                PickToLocationCode: WorldHistoryPhase2Spec.ShippingStagingLocationCode,
                 LotNo: WorldHistoryMesSpec.ProducedLotNo(order.WorkOrderNo),
                 WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(outboundOrderNo, 1),
                 PackReviewNo: PackReviewNo(outboundOrderNo),

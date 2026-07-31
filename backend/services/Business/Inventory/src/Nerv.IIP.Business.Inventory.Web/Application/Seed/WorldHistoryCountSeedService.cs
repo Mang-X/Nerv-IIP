@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAgg
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using System.Globalization;
 using System.Text;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Seed;
@@ -403,35 +404,50 @@ public sealed class WorldHistoryCountValidator(ApplicationDbContext dbContext)
 
         var skuCodes = confirmable.Select(task => task.SkuCode).Distinct(StringComparer.Ordinal).ToArray();
         var locationCodes = confirmable.Select(task => task.LocationCode).Distinct(StringComparer.Ordinal).ToArray();
-        var ledgers = (await dbContext.StockLedgers
+        // 分组而不是 ToDictionary：台账唯一索引有 13 列，比盘点任务能表达的维度**多出**
+        // ProductionDate / ExpiryDate 两列（FEFO 效期已进模型，见迁移 AddInventoryBatchExpiryFefo）。
+        // 同一盘点维度下因此可能真的存在多条只差效期的台账行，`ToDictionary` 会当场抛
+        // ArgumentException 把启动打挂——那是把领域上的多义性变成崩溃。这里保留候选集按领域语义判定。
+        var ledgersByDimension = (await dbContext.StockLedgers
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                     skuCodes.Contains(x.SkuCode) && locationCodes.Contains(x.LocationCode))
                 .ToArrayAsync(cancellationToken))
-            .ToDictionary(DimensionKeyOf, StringComparer.Ordinal);
+            .GroupBy(DimensionKeyOf, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
 
         foreach (var task in confirmable)
         {
-            if (!ledgers.TryGetValue(DimensionKeyOf(task), out var ledger))
+            if (!ledgersByDimension.TryGetValue(DimensionKeyOf(task), out var candidates))
             {
                 failures.Add($"盘点任务 {task.CountTaskCode} 挂在库里不存在的台账维度上，确认差异必抛维度不匹配。");
                 continue;
             }
 
-            if (ledger.LedgerVersion != task.ExpectedLedgerVersion)
+            // 任务表达不了效期维度，确认时由调用方挑具体台账行：只要有一条对得上版本就不是死单。
+            if (Array.Exists(candidates, ledger => ledger.LedgerVersion == task.ExpectedLedgerVersion))
             {
-                failures.Add(
-                    $"盘点任务 {task.CountTaskCode} 的快照版本 {task.ExpectedLedgerVersion} 与台账当前版本 " +
-                    $"{ledger.LedgerVersion} 不一致——该任务一出生即死单，确认差异会直接判需复盘。");
+                continue;
             }
+
+            var actualVersions = string.Join(
+                "、",
+                candidates.Select(ledger => ledger.LedgerVersion.ToString(CultureInfo.InvariantCulture)));
+            failures.Add(
+                $"盘点任务 {task.CountTaskCode} 的快照版本 {task.ExpectedLedgerVersion} 与台账当前版本（{actualVersions}）" +
+                "均不一致——该任务一出生即死单，确认差异会直接判需复盘。");
         }
     }
 
+    // 与领域的 `StockCountTask.EnsureSameDimension` 逐列一致（org/env 已在查询里过滤）：
+    // 那 11 列才是「任务与台账是否同一维度」的权威口径，效期两列不在其中。
     private static string DimensionKeyOf(StockCountTask task) =>
-        $"{task.SkuCode}|{task.UomCode}|{task.SiteCode}|{task.LocationCode}|{task.LotNo ?? "-"}|{task.QualityStatus}|{task.OwnerType}";
+        $"{task.SkuCode}|{task.UomCode}|{task.SiteCode}|{task.LocationCode}|{task.LotNo ?? "-"}|" +
+        $"{task.SerialNo ?? "-"}|{task.QualityStatus}|{task.OwnerType}|{task.OwnerId ?? "-"}";
 
     private static string DimensionKeyOf(StockLedger ledger) =>
-        $"{ledger.SkuCode}|{ledger.UomCode}|{ledger.SiteCode}|{ledger.LocationCode}|{ledger.LotNo ?? "-"}|{ledger.QualityStatus}|{ledger.OwnerType}";
+        $"{ledger.SkuCode}|{ledger.UomCode}|{ledger.SiteCode}|{ledger.LocationCode}|{ledger.LotNo ?? "-"}|" +
+        $"{ledger.SerialNo ?? "-"}|{ledger.QualityStatus}|{ledger.OwnerType}|{ledger.OwnerId ?? "-"}";
 }
 
 /// <summary>库存盘点块校验器的产出摘要。</summary>

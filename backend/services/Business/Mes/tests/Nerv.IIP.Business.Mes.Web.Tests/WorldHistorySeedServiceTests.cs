@@ -35,6 +35,23 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal("rework-work-order", rework.SourcePlanReference?.SourceDocumentType);
         Assert.Null(rework.SourcePlanReference?.SourceDemandReference);
 
+        // #1374 · 补产工单的**来源订单**必须与 Inventory/Wms/Quality/BarcodeLabel 四侧一致。
+        // 只断言条数是抓不住的：候选池判据变了，条数恰恰不变，变的是每张单指向谁。
+        var reworkPairs = await dbContext.WorkOrders
+            .Where(workOrder => workOrder.WorkOrderIdValue.StartsWith("WO-2026-R", StringComparison.Ordinal))
+            .OrderBy(workOrder => workOrder.WorkOrderIdValue)
+            .Select(workOrder => new
+            {
+                ReworkWorkOrderNo = workOrder.WorkOrderIdValue,
+                SourceWorkOrderNo = workOrder.SourcePlanReference!.SourceDocumentId,
+            })
+            .ToArrayAsync();
+        Assert.Equal(WorldHistoryReworkSourceGoldenVector.ReworkCount, reworkPairs.Length);
+        Assert.Equal(
+            WorldHistoryReworkSourceGoldenVector.Digest,
+            WorldHistoryReworkSourceGoldenVector.DigestOf(
+                reworkPairs.Select(pair => (pair.ReworkWorkOrderNo, pair.SourceWorkOrderNo))));
+
         // 设定集 §7：约 3600 张工单 = 3200 订单工单 + 12.5% 内部补产。
         var expectedRework = (int)Math.Round(plans.Length * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         Assert.Equal(expectedRework, report.ReworkWorkOrdersWritten);

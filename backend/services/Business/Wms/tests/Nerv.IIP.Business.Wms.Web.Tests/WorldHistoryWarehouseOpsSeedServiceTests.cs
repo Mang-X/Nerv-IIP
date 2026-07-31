@@ -25,6 +25,31 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     /// <summary>库写入类用例的规模：足够跑出四档盘点结局与四档 WCS 结局，又不让 InMemory provider 变慢。</summary>
     private const double TestScale = 0.3d;
 
+    /// <summary>
+    /// #1374 · 补产工单「来源订单」配对的跨服务黄金向量，Phase2Spec 侧。
+    ///
+    /// MES 测试工程里有一份逐字相同的用例，读的是 <c>work_orders.source_plan_reference</c>。
+    /// 任一侧把候选池判据改回 <c>HasDelivery</c>，按下标切片的挑选就整体错位、摘要立刻分叉
+    /// ——这正是原有「只断言条数」抓不住的那类漂移。
+    /// </summary>
+    [Fact]
+    public void Rework_work_order_sources_match_the_cross_service_golden_vector()
+    {
+        var reworkPairs = WorldHistoryPhase2Spec
+            .BuildWorkOrderFacts(
+                WorldHistoryReworkSourceGoldenVector.AsOfDate,
+                WorldHistoryReworkSourceGoldenVector.Scale)
+            .Where(fact => fact.IsRework)
+            .OrderBy(fact => fact.Plan.WorkOrderNo, StringComparer.Ordinal)
+            .Select(fact => (fact.Plan.WorkOrderNo, fact.SourceOrder.WorkOrderNo))
+            .ToArray();
+
+        Assert.Equal(WorldHistoryReworkSourceGoldenVector.ReworkCount, reworkPairs.Length);
+        Assert.Equal(
+            WorldHistoryReworkSourceGoldenVector.Digest,
+            WorldHistoryReworkSourceGoldenVector.DigestOf(reworkPairs));
+    }
+
     /// <summary>本 asOfDate 下 ERP 侧「已完工待发货」的订单条数——当前队列据此挂发货出库单（#1374）。</summary>
     private static int PendingShipmentCount(DateOnly asOfDate) =>
         WorldHistorySpec.BuildOrderPlans(asOfDate, TestScale).Count(plan => plan.HasPendingShipment);
@@ -345,13 +370,17 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
                     .Order(StringComparer.Ordinal));
         }
 
-        Assert.Superset(
-            WorldHistoryPhase2Spec.Storekeepers.Select(person => person.UserId).ToHashSet(StringComparer.Ordinal),
-            WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.ToHashSet(StringComparer.Ordinal));
-        Assert.Contains(
+        // 成员集合恰好等于历史执行人（4 名库管），一个不少、一个不多。
+        Assert.Equal(
+            WorldHistoryPhase2Spec.Storekeepers.Select(person => person.UserId).Order(StringComparer.Ordinal),
+            WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.Order(StringComparer.Ordinal));
+
+        // #1374 · 管理员与仓储主管**不得**入池：成员资格是现场作业资格，
+        // 他们一旦入池，「我的任务」会顶成范围目录首项、成为前端默认，六页对管理员默认空态。
+        Assert.DoesNotContain(
             WorldHistoryWarehouseOpsSpec.DemoAdministratorPrincipalId,
             WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds);
-        Assert.Contains(
+        Assert.DoesNotContain(
             WorldHistoryWarehouseOpsSpec.WarehouseSupervisorPrincipalId,
             WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds);
 
@@ -710,16 +739,19 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     }
 
     /// <summary>
-    /// #1343：只有 IAM 精确站点授权、没有任何作业池资格的主体（例如经营部人员）必须仍能
-    /// 拿到站点范围并读到整站真实作业面，否则仓储六页对这类主体整域 403 全空。
+    /// #1343：只有 IAM 精确站点授权、没有任何作业池资格的主体必须仍能拿到站点范围并读到
+    /// 整站真实作业面，否则仓储六页对这类主体整域 403 全空。
     ///
-    /// #1374 后 <c>user-admin</c> 已是三个池的在册成员，因此这条站点旁路要用一个
-    /// **确实不在任何池里**的主体来验，才不会退化成「有池资格所以能读」。
+    /// #1374 追加：这条同时是**目录首项**的回归防线。<c>self</c>（「我的任务」）只在有成员资格时
+    /// 才出现且排在最前，而前端默认取首项——一旦有人把管理员写进作业池，
+    /// 断言里的 `[("site", ...)]` 会立刻变成 `[("self", ...), ...]` 而红。
     /// </summary>
     [Fact]
     public async Task Site_grant_alone_without_any_pool_membership_still_reaches_real_work()
     {
-        const string outsiderPrincipalId = "user-emp-055";
+        // 用演示管理员本人来验：#1374 后他仍**不是**任何池的成员，
+        // 因此目录首项必须还是 site，六个仓储页对他默认满数据而不是「我的任务」空态。
+        const string outsiderPrincipalId = WorldHistoryWarehouseOpsSpec.DemoAdministratorPrincipalId;
         var asOfDate = new DateOnly(2026, 7, 27);
         await using var db = CreateDbContext();
         await SeedDocumentChainAsync(db, asOfDate);

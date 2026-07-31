@@ -67,21 +67,30 @@ public static class WorldHistoryWarehouseOpsSpec
     /// <summary>
     /// 三个作业池的成员：**账面上干过活的人，系统里就必须有资格干活**。
     ///
-    /// 成员集合 = 历史单据的全部执行人（<see cref="WorldHistoryPhase2Spec.Storekeepers"/>，
-    /// 即 <c>user-emp-049..052</c>，见 <c>WorldHistoryWmsSpec</c> / <c>WorldHistoryCountSpec</c>
-    /// 的 <c>ExecutorUserId</c>）+ 仓储主管 + 演示用平台管理员。
+    /// 成员集合 = 历史单据的全部执行人，即 4 名库管
+    /// （<see cref="WorldHistoryPhase2Spec.Storekeepers"/> = <c>user-emp-049..052</c>，
+    /// 正是 <c>WorldHistoryWmsSpec</c> / <c>WorldHistoryCountSpec</c> 里 <c>ExecutorUserId</c> 的取值域）。
+    /// 修复前三个池各只有 emp049 一人，于是「4 个人干了一年的活、系统里 1 个人有资格干活」。
     ///
     /// <para>
-    /// 裁决点 · **不做 admin 旁路，改为把 admin 写成真成员**。
-    /// <c>WarehouseWorkScopeAuthorizer</c> 的 self / work-pool 范围一律以作业池成员资格为准
-    /// （site 范围另由 IAM 精确站点授权成立）。在授权器里给管理员开后门等于把资格判定变成两套规则；
-    /// 演示世界里 admin 本来就该是仓库的在册作业员，因此把他写进池子，授权器保持单一口径。
+    /// 裁决点一 · **成员资格是现场作业资格，不是访问权限**，因此仓储主管与演示管理员
+    /// **刻意不入池**——他们不是现场作业员。两件事让这个取舍既成立又免费：
+    /// ① 读面：<c>site</c> 范围由 IAM 精确站点授权直接成立（#1343），管理员/主管本就能看整站；
+    /// ② 写面：<c>AuthorizeAssignmentAsync</c> 只要求**派工人**有站点授权 + 作业池存在，
+    /// 唯有**被指派人**必须是有效成员——主管派工不需要自己在池里。
+    /// 资格判定因此保持单一口径，不开任何 admin 旁路。
+    /// </para>
+    /// <para>
+    /// 裁决点二 · **把管理员写进池子会帮倒忙**。<c>GetCatalogAsync</c> 里 <c>self</c>（「我的任务」）
+    /// 只在有成员资格时才出现，**且排在目录最前**，而前端默认取首项。管理员一旦入池，
+    /// 六个仓储页的默认范围就从「整站」变成「我的任务」；而当前队列的直派对象只有 emp049，
+    /// 于是 403 被换成了**空态**——比修复前更糟。这条是实测结论，不是推演。
     /// </para>
     /// </summary>
     public static readonly IReadOnlyList<string> WorkPoolPrincipalIds =
     [
-        .. new[] { DemoAdministratorPrincipalId, WarehouseSupervisorPrincipalId }
-            .Concat(WorldHistoryPhase2Spec.Storekeepers.Select(person => person.UserId))
+        .. WorldHistoryPhase2Spec.Storekeepers
+            .Select(person => person.UserId)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal),
     ];
@@ -229,7 +238,7 @@ public static class WorldHistoryWarehouseOpsSpec
                 UomCode: WorldHistorySpec.UomCode,
                 Quantity: order.Quantity,
                 PickFromLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
-                PickToLocationCode: WorldHistoryPhase2Spec.ReceivingStagingLocationCode,
+                PickToLocationCode: WorldHistoryPhase2Spec.ShippingStagingLocationCode,
                 LotNo: WorldHistoryMesSpec.ProducedLotNo(order.WorkOrderNo),
                 WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(outboundOrderNo, 1),
                 // 至少留一张待复核：拣完等复核与还没拣，是发货链上两个不同的可演示切面。

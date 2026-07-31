@@ -72,6 +72,18 @@ public static class WorldHistoryPhase2Spec
     /// <summary>车间线边库：领料后物料的去向。</summary>
     public const string LineSideLocationCode = "WH-WB-LINE-01";
 
+    /// <summary>
+    /// 发货暂存区（#1374 / 审计 W-9）。
+    ///
+    /// 发货拣货此前拣到**收货暂存区** <c>WH-WB-STG-01</c>——收发共用一个暂存区在真实仓库里
+    /// 恰恰是被禁止的（混料风险），仓储人一眼能看出反常。
+    ///
+    /// 只影响仓储作业任务的搬运目的地：出库的库存过账只发生在 pick-from 那一腿
+    /// （出库单行只带 <c>PickLocationCode</c>），pick-to 是作业任务内部字段、不产生任何库存流水，
+    /// 因此本库位不牵动台账、恒等式与校验器。
+    /// </summary>
+    public const string ShippingStagingLocationCode = "WH-WB-SHIP-01";
+
     public static readonly IReadOnlyList<WorldHistoryStockLocation> StockLocations =
     [
         new(ReceivingStagingLocationCode, "收货暂存区", "staging"),
@@ -80,6 +92,7 @@ public static class WorldHistoryPhase2Spec
         new(FinishedGoodsLocationCode, "成品库", "storage"),
         new(QualityHoldLocationCode, "不合格品隔离区", "quality-hold"),
         new(LineSideLocationCode, "车间线边库", "line-side"),
+        new(ShippingStagingLocationCode, "发货暂存区", "staging"),
     ];
 
     /// <summary>某物料的常驻库位：半成品进半成品库，成品进成品库，其余进原料库。</summary>

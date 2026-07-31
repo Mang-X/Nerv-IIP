@@ -513,6 +513,13 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         HashSet<string> voucherNos,
         List<string> failures)
     {
+        // 这里**不**加「计划阶段必须是 PendingShipment」的交叉断言。
+        // 试过，会误杀：同一个库在更晚的日期重跑时，订单总数变大把老单的计划阶段往前推
+        // （待发货 → 已结案），而库里那三行早已写定、不会重写——
+        // `Validator_still_passes_when_the_same_database_is_reseeded_on_a_later_date` 当场变红。
+        // 这正是本文件开头那条原则的适用场景：**按库内既有事实分流，不按计划阶段**。
+        // 「一张本该已发运的单只剩未发运发货单」这个洞改由 CheckLedgerTotals 的**条数上界**兜住，
+        // 那条断言同样只用库内事实，因此不受重跑漂移影响。
         if (!string.Equals(delivery.Status, "released", StringComparison.Ordinal))
         {
             failures.Add(
@@ -718,6 +725,23 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         Dictionary<string, CashReceiptProjection> cashReceipts,
         List<string> failures)
     {
+        // #1374 · 未发运的发货单是**定额留给演示的可操作对象**，不是一种可以随处出现的状态。
+        // 上界卡死之后，「某张本该已发运的单只写出了发货单、丢了应收与凭证」会表现为多出一张
+        // 未发运发货单而被抓住——而这条只用库内事实，因此同一个库在更晚日期重跑时不会误杀
+        // （那三行还是那三行，条数不变）。
+        var unshippedDeliveries = deliveries.Values
+            .Where(delivery => delivery.ShippedAtUtc is null)
+            .Select(delivery => delivery.DeliveryOrderNo)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (unshippedDeliveries.Length > WorldHistorySpec.PendingShipmentOrderCount)
+        {
+            failures.Add(
+                $"未发运的发货单有 {unshippedDeliveries.Length} 张，超过待发货定额 " +
+                $"{WorldHistorySpec.PendingShipmentOrderCount} 张：{string.Join("、", unshippedDeliveries.Take(5))}" +
+                "——多出来的多半是该发运却丢了应收与凭证的单。");
+        }
+
         // 应收总额 = 所有**已发运**订单的金额之和。
         // #1374：已开未发运的发货单不确认收入，因此按 ShippedAtUtc 而不是「有没有发货单」来算。
         var expectedReceivable = deliveries
