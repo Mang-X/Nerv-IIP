@@ -117,6 +117,8 @@ import {
 import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
+  formatWorkScopeKey,
+  parseWorkScopeKey,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
@@ -360,17 +362,6 @@ export function mesWorkScopeKindLabel(kind: string) {
   return MES_WORK_SCOPE_KIND_LABELS[kind] ?? kind
 }
 
-function mesWorkScopeValue(kind: string, id: string) {
-  return `${kind}:${id}`
-}
-
-function parseMesWorkScopeValue(value: string | undefined) {
-  if (!value) return undefined
-  const separator = value.indexOf(':')
-  if (separator <= 0 || separator === value.length - 1) return undefined
-  return { kind: value.slice(0, separator), id: value.slice(separator + 1) }
-}
-
 // 同一 principal/org/env 的作业范围选择在整个 Console 共享（工单列表/详情/工序任务/排产待排池口径一致），
 // 用户显式选择会记住（localStorage）；自动兜底选择不写入，避免把兜底固化成偏好。
 const MES_WORK_SCOPE_STORAGE_PREFIX = 'nerv-iip.business-console.mes-work-scope.v1'
@@ -422,7 +413,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
     const storedValue =
       sharedMesWorkScopeSelections.get(selectionKey.value) ??
       readRememberedMesWorkScope(selectionKey.value)
-    const stored = parseMesWorkScopeValue(storedValue)
+    const stored = parseWorkScopeKey(storedValue)
     const remembered = stored
       ? scopes.find((scope) => scope.kind === stored.kind && scope.id === stored.id)
       : undefined
@@ -467,13 +458,13 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
   const scopeOptions = computed<MesWorkScopeOption[]>(() =>
     knownAuthorizedScopes.value.map((scope) => ({
       label: `${scope.displayName || scope.id}（${mesWorkScopeKindLabel(scope.kind)}）`,
-      value: mesWorkScopeValue(scope.kind, scope.id),
+      value: formatWorkScopeKey(scope.kind, scope.id),
     })),
   )
   const scopeSelectionValue = computed<string | undefined>({
     get: () =>
       requestedScope.value
-        ? mesWorkScopeValue(requestedScope.value.kind, requestedScope.value.id)
+        ? formatWorkScopeKey(requestedScope.value.kind, requestedScope.value.id)
         : undefined,
     set: (value) => {
       if (!value) return

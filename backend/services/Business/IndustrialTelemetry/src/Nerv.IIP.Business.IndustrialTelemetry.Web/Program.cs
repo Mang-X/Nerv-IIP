@@ -25,7 +25,6 @@ using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -70,7 +69,7 @@ try
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
     builder.Services.AddHostedService<TelemetryHistorianScheduler>();
     builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
-    var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+    var opsBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
     builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
     {
         client.BaseAddress = opsBaseAddress;
@@ -251,26 +250,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

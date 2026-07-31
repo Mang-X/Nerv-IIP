@@ -5,6 +5,7 @@ import {
   type BusinessConsoleWmsWorkScopeCatalogEnvelope,
   type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
+import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, watch } from 'vue'
 
@@ -25,17 +26,6 @@ export interface WmsWorkScopeFilters {
   scopeKind?: string
   scopeId?: string
   skip: number
-}
-
-function scopeValue(kind: string, id: string) {
-  return `${kind}:${id}`
-}
-
-function parseScope(value: string | undefined) {
-  if (!value) return undefined
-  const separator = value.indexOf(':')
-  if (separator <= 0 || separator === value.length - 1) return undefined
-  return { kind: value.slice(0, separator), id: value.slice(separator + 1) }
 }
 
 function normalizeScope(
@@ -117,7 +107,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
   const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
     authorizedScopes.value.map((scope) => ({
       label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
-      value: scopeValue(scope.scopeKind, scope.scopeId),
+      value: formatWorkScopeKey(scope.scopeKind, scope.scopeId),
     })),
   )
 
@@ -151,7 +141,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
   })
   const scopeKey = selectedScopeKey
 
-  const parsedSelection = computed(() => parseScope(selectedScopeKey.value))
+  const parsedSelection = computed(() => parseWorkScopeKey(selectedScopeKey.value))
   const hasSelection = computed(
     () =>
       hasTenant.value &&

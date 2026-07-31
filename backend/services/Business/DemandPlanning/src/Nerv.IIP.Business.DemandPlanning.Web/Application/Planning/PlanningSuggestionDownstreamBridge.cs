@@ -51,11 +51,7 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         // 合批建议 peg 到多个需求源：完整携带 demand 类型引用，MES 才能为每张订单持久化可追溯关联键；
         // 无 demand 类型 pegging 时回退旧行为（任意非空引用），避免历史数据丢链。
         var demandReferences = suggestion.GetDemandSourceReferences();
-        var demandReference = demandReferences.Count > 0
-            ? demandReferences[0]
-            : suggestion.PeggingLinks
-                .Select(x => x.DemandSourceReference)
-                .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+        var demandReference = suggestion.GetPrimaryDemandSourceReference();
         var dueUtc = new DateTimeOffset(suggestion.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var body = new MesConvertPlanToWorkOrderRequest(
             suggestion.OrganizationId,

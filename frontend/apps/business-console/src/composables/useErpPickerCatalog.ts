@@ -12,6 +12,7 @@ import type { EntityPickerOption } from '@nerv-iip/ui'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 import { useErpDeliveryOrders, useErpPurchaseOrders, useErpSalesOrders } from './useBusinessErp'
+import { toBaseUomBySku } from './skuBaseUom'
 import {
   useBusinessMasterDataResources,
   useBusinessPartners,
@@ -93,15 +94,7 @@ export function useErpItemCatalog() {
     ),
     uomsPending: uomCatalog.uomsPending,
     /** 所选物料的基本单位，用来在选完物料后自动带出单位，省去二次选择。 */
-    baseUomBySku: computed(() => {
-      const map = new Map<string, string>()
-      for (const row of skuCatalog.skus.value) {
-        const code = row.code?.trim()
-        const uom = row.baseUomCode?.trim()
-        if (code && uom) map.set(code, uom)
-      }
-      return map
-    }),
+    baseUomBySku: toBaseUomBySku(skuCatalog.skus),
   }
 }
 

@@ -48,7 +48,9 @@ public sealed class SourcePlanReference
             references.Add(reference);
         }
 
-        SourceDemandReferences = references;
+        // AsReadOnly：`IReadOnlyList<string>` 只是静态类型上的只读，直接交出 List 实例
+        // 调用方一个向下转型就能绕过聚合、在 EF 变更跟踪背后改掉这条追溯链。
+        SourceDemandReferences = references.AsReadOnly();
     }
 
     public string SourceSystem { get; private set; } = string.Empty;

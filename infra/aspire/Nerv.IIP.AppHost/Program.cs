@@ -351,9 +351,12 @@ if (rabbitmq is not null)
 
 // MasterData 删除防护需要反查 ProductEngineering 的引用占用（HttpProductEngineeringReferenceUsageChecker）。
 // 缺这一行时 MasterData 回退固定端口 5108，在动态端口的 ephemeral 会话上必打错端口。
-// 只注入端点环境变量、不加 WaitFor：ProductEngineering 已 WaitFor(businessMasterData)，反向等待会成环。
+// 与全仓其余「跨服务 BaseUrl」接线同构：WithEnvironment + WithReference 成对出现，
+// 服务发现名与显式基址两条路都通（#1317）。
+// 但**不加 WaitFor**：ProductEngineering 已 WaitFor(businessMasterData)，反向等待会成环。
 businessMasterData = businessMasterData
-    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"));
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithReference(businessProductEngineering);
 
 var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5109, name: "http")
