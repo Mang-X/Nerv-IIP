@@ -6,7 +6,26 @@ namespace Nerv.IIP.Contracts.Scheduling;
 
 public static class SchedulingWorkbenchLimits
 {
-    public const int MaxOrderCount = 500;
+    /// <summary>
+    /// 一次生成方案可选的工单数上限。
+    ///
+    /// **这个值受网关 10 秒超时约束，不是一个可以随手调大的容量参数。**
+    /// 实测：14 张工单耗时 9.61 秒，离 <c>BusinessGatewayHttpClientResilience</c> 的
+    /// 10 秒硬超时只剩 0.4 秒；原值 500 意味着界面在主动邀请用户勾出一个必然 504 的请求。
+    ///
+    /// 调大之前必须先解决其一：放宽网关超时、把生成改成异步任务（参照 MRP 的做法）、
+    /// 或让排程算法的耗时不随工单数线性增长。
+    /// </summary>
+    public const int MaxOrderCount = 10;
+
+    /// <summary>
+    /// 向 MES 拉取权威工单时的翻页页大小。
+    ///
+    /// **与 <see cref="MaxOrderCount"/> 是两个不同的量，不要合并。** 前者约束「用户一次能勾多少张」
+    /// （受网关 10 秒超时约束），后者约束「每次向下游拉多少条」（越大翻页次数越少、越快）。
+    /// 曾经共用一个常量，把选单上限调小会连带把页大小调小，反而让 #1400 的翻页开销成倍上升。
+    /// </summary>
+    public const int AuthoritativePageSize = 500;
 }
 
 public static class SchedulingJson

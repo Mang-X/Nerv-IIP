@@ -66,10 +66,12 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
-    public async Task Source_provider_accepts_one_authoritative_batch_of_100_distinct_work_orders()
+    public async Task Source_provider_accepts_a_batch_up_to_the_selection_limit()
     {
         var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
-        var orders = Enumerable.Range(1, 100).Select(index => new
+        // 跟随选单上限而不是写死数字：上限受网关超时约束、会随性能调整而变，
+        // 写死会让「上限调整」与「本用例」互相牵制。
+        var orders = Enumerable.Range(1, SchedulingWorkbenchLimits.MaxOrderCount).Select(index => new
         {
             workOrderId = $"WO-{index:000}",
             skuId = "SKU-001",
@@ -94,8 +96,10 @@ public sealed class SchedulingWorkbenchTests
             orders.Select((x, index) => new SchedulingWorkbenchOrderSelection(x.workOrderId, index, index == 0)).ToArray(),
             CancellationToken.None);
 
-        Assert.Equal(100, result.Count);
-        Assert.Equal(100, result.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(SchedulingWorkbenchLimits.MaxOrderCount, result.Count);
+        Assert.Equal(
+            SchedulingWorkbenchLimits.MaxOrderCount,
+            result.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal("ROUTE-001:A", result.First().RoutingVersionId);
         Assert.True(result.First().IsRush);
     }

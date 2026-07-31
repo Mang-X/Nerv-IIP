@@ -45,9 +45,9 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         var firstPage = await ListWorkOrdersAsync(organizationId, environmentId, 0, SchedulableStatusesCsv, cancellationToken);
         var byId = firstPage.Items.ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
         var requestedIds = requested.Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
-        for (var skip = SchedulingWorkbenchLimits.MaxOrderCount;
+        for (var skip = SchedulingWorkbenchLimits.AuthoritativePageSize;
              skip < firstPage.Total && !requestedIds.IsSubsetOf(byId.Keys);
-             skip += SchedulingWorkbenchLimits.MaxOrderCount)
+             skip += SchedulingWorkbenchLimits.AuthoritativePageSize)
         {
             var page = await ListWorkOrdersAsync(organizationId, environmentId, skip, SchedulableStatusesCsv, cancellationToken);
             foreach (var item in page.Items)
