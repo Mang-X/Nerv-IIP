@@ -1,5 +1,6 @@
 using FastEndpoints;
 using FluentValidation;
+using System.Net;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -169,8 +170,61 @@ public sealed class BusinessConsoleQualityInspectionTaskListRequestValidator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.ScopeKind).MaximumLength(50);
+        RuleFor(x => x.ScopeId).MaximumLength(150);
+        RuleFor(x => x.SourceType).MaximumLength(100);
+        RuleFor(x => x.SourceService).MaximumLength(100);
+        RuleFor(x => x.Keyword).MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleQualityInspectionTaskDetailRequestValidator
+    : Validator<BusinessConsoleQualityInspectionTaskDetailRequest>
+{
+    public BusinessConsoleQualityInspectionTaskDetailRequestValidator()
+    {
+        RuleFor(x => x.InspectionTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).MaximumLength(50);
+        RuleFor(x => x.ScopeId).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleAssignQualityInspectionTaskRequestValidator
+    : Validator<BusinessConsoleAssignQualityInspectionTaskRequest>
+{
+    public BusinessConsoleAssignQualityInspectionTaskRequestValidator()
+    {
+        RuleFor(x => x.InspectionTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssignedInspectorUserId).MaximumLength(150);
+        RuleFor(x => x.AssignedTeamId).MaximumLength(150);
+        RuleFor(x => x.Reason).MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
+        RuleFor(x => x).Must(x =>
+                !string.IsNullOrWhiteSpace(x.AssignedInspectorUserId)
+                || !string.IsNullOrWhiteSpace(x.AssignedTeamId))
+            .WithMessage("An inspector or team assignment is required.");
+    }
+}
+
+public sealed class BusinessConsoleClaimQualityInspectionTaskRequestValidator
+    : Validator<BusinessConsoleClaimQualityInspectionTaskRequest>
+{
+    public BusinessConsoleClaimQualityInspectionTaskRequestValidator()
+    {
+        RuleFor(x => x.InspectionTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).MaximumLength(50);
+        RuleFor(x => x.ScopeId).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThan(0);
     }
 }
 
@@ -216,7 +270,6 @@ public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidato
         RuleFor(x => x.InspectionTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
@@ -470,20 +523,362 @@ public sealed class OpenBusinessConsoleQualityNcrFromInspectionEndpoint(
 public sealed class ListBusinessConsoleQualityInspectionTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionTaskListRequest, BusinessConsoleQualityInspectionTaskListResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleQualityInspectionTaskListRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleQualityInspectionTaskListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleQualityInspectionTaskListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleQualityInspectionTaskListResponse> ForwardAsync(
         BusinessConsoleQualityInspectionTaskListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        quality.ListInspectionTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.QualityInspectionRecordsRead,
+            request.ScopeKind ?? "organization",
+            request.ScopeId ?? request.OrganizationId,
+            cancellationToken);
+        return await quality.ListInspectionTasksAsync(
+            tokenProvider.BearerToken,
+            new BusinessQualityInspectionTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Status,
+                request.SkuCode,
+                request.Skip,
+                request.Take,
+                request.InspectionTaskId,
+                scope.Kind,
+                RequireAuthorizedPrincipalId(),
+                scope.TeamIds,
+                request.SourceType,
+                request.SourceService,
+                request.Keyword,
+                request.Overdue),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}")]
+[BusinessGatewayOperationId("getBusinessConsoleQualityInspectionTask")]
+public sealed class GetBusinessConsoleQualityInspectionTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionTaskDetailRequest, BusinessConsoleQualityInspectionTaskDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleQualityInspectionTaskDetailRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityInspectionTaskDetailRequest request) =>
+        request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleQualityInspectionTaskDetailRequest request) =>
+        "inspection-task";
+
+    protected override string? ResourceId(BusinessConsoleQualityInspectionTaskDetailRequest request) =>
+        Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+
+    protected override async Task<BusinessConsoleQualityInspectionTaskDetailResponse> ForwardAsync(
+        BusinessConsoleQualityInspectionTaskDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionTaskId = Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.QualityInspectionRecordsRead,
+            request.ScopeKind ?? "organization",
+            request.ScopeId ?? request.OrganizationId,
+            cancellationToken);
+        return await quality.GetInspectionTaskAsync(
+            tokenProvider.BearerToken,
+            inspectionTaskId,
+            new BusinessQualityInspectionTaskDetailRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                scope.Kind,
+                RequireAuthorizedPrincipalId(),
+                scope.TeamIds),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleQualityInspectionTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleAssignQualityInspectionTaskRequest, BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionPlansManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleAssignQualityInspectionTaskRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleAssignQualityInspectionTaskRequest request) =>
+        request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleAssignQualityInspectionTaskRequest request) =>
+        "inspection-task";
+
+    protected override string? ResourceId(BusinessConsoleAssignQualityInspectionTaskRequest request) =>
+        Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+
+    protected override async Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ForwardAsync(
+        BusinessConsoleAssignQualityInspectionTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionTaskId = Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.QualityInspectionPlansManage,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        _ = await quality.GetInspectionTaskAsync(
+            tokenProvider.BearerToken,
+            inspectionTaskId,
+            new BusinessQualityInspectionTaskDetailRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                scope.Kind,
+                RequireAuthorizedPrincipalId(),
+                scope.TeamIds),
+            cancellationToken);
+        await EnsureAssignmentTargetsAsync(
+            request,
+            scope,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+        return await quality.AssignInspectionTaskAsync(
+            tokenProvider.BearerToken,
+            inspectionTaskId,
+            new BusinessQualityAssignInspectionTaskRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                RequireAuthorizedPrincipalId(),
+                request.AssignedInspectorUserId,
+                request.AssignedTeamId,
+                request.Reason,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+    }
+
+    private async Task EnsureAssignmentTargetsAsync(
+        BusinessConsoleAssignQualityInspectionTaskRequest request,
+        PrincipalWorkScopeSelection scope,
+        string principalId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTargetWithinSelectedScope(request, scope, principalId);
+
+        if (!string.IsNullOrWhiteSpace(request.AssignedInspectorUserId))
+        {
+            var workers = await masterData.ListWorkersAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleWorkerDirectoryRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    UserId: request.AssignedInspectorUserId,
+                    PageSize: 2),
+                cancellationToken);
+            if (!workers.Items.Any(x =>
+                    x.Active
+                    && string.Equals(
+                        x.UserId,
+                        request.AssignedInspectorUserId,
+                        StringComparison.Ordinal)))
+            {
+                throw new BusinessServiceProxyException(
+                    HttpStatusCode.UnprocessableEntity,
+                    "assigned-inspector-not-found");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.AssignedTeamId))
+        {
+            try
+            {
+                var team = await masterData.GetResourceDetailAsync(
+                    tokenProvider.BearerToken,
+                    new BusinessConsoleMasterDataResourceRequest(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        "team",
+                        request.AssignedTeamId),
+                    cancellationToken);
+                if (!team.Active)
+                {
+                    throw new BusinessServiceProxyException(
+                        HttpStatusCode.UnprocessableEntity,
+                        "assigned-team-not-active");
+                }
+            }
+            catch (BusinessServiceProxyException exception)
+                when (exception.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new BusinessServiceProxyException(
+                    HttpStatusCode.UnprocessableEntity,
+                    "assigned-team-not-found");
+            }
+        }
+
+        if (scope.Kind == "team" && !string.IsNullOrWhiteSpace(request.AssignedInspectorUserId))
+        {
+            var members = await masterData.ListTeamMembersAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleListTeamMembersRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    scope.Id),
+                cancellationToken);
+            if (!members.Members.Any(member =>
+                    member.Active
+                    && string.Equals(member.TeamCode, scope.Id, StringComparison.Ordinal)
+                    && string.Equals(
+                        member.UserId,
+                        request.AssignedInspectorUserId,
+                        StringComparison.Ordinal)))
+            {
+                throw ForbiddenAssignmentTarget();
+            }
+        }
+    }
+
+    private static void EnsureTargetWithinSelectedScope(
+        BusinessConsoleAssignQualityInspectionTaskRequest request,
+        PrincipalWorkScopeSelection scope,
+        string principalId)
+    {
+        if (scope.Kind == "organization")
+        {
+            return;
+        }
+
+        if (scope.Kind == "self")
+        {
+            if (!string.Equals(
+                    request.AssignedInspectorUserId,
+                    principalId,
+                    StringComparison.Ordinal)
+                || !string.IsNullOrWhiteSpace(request.AssignedTeamId))
+            {
+                throw ForbiddenAssignmentTarget();
+            }
+            return;
+        }
+
+        if (scope.Kind == "team"
+            && string.Equals(request.AssignedTeamId, scope.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw ForbiddenAssignmentTarget();
+    }
+
+    private static BusinessServiceProxyException ForbiddenAssignmentTarget() =>
+        new(
+            HttpStatusCode.Forbidden,
+            "assignment-target-outside-selected-scope");
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/claim")]
+[BusinessGatewayOperationId("claimBusinessConsoleQualityInspectionTask")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status422UnprocessableEntity)]
+public sealed class ClaimBusinessConsoleQualityInspectionTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleClaimQualityInspectionTaskRequest, BusinessConsoleQualityInspectionTaskAssignmentResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsCreate)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override string OrganizationId(BusinessConsoleClaimQualityInspectionTaskRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleClaimQualityInspectionTaskRequest request) =>
+        request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleClaimQualityInspectionTaskRequest request) =>
+        "inspection-task";
+
+    protected override string? ResourceId(BusinessConsoleClaimQualityInspectionTaskRequest request) =>
+        Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+
+    protected override async Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ForwardAsync(
+        BusinessConsoleClaimQualityInspectionTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionTaskId = Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.QualityInspectionRecordsCreate,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        return await quality.ClaimInspectionTaskAsync(
+            tokenProvider.BearerToken,
+            inspectionTaskId,
+            new BusinessQualityClaimInspectionTaskRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                RequireAuthorizedPrincipalId(),
+                scope.TeamIds,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console Quality")]
@@ -498,6 +893,8 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsCreate)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleCreateInspectionRecordFromTaskRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCreateInspectionRecordFromTaskRequest request) => request.EnvironmentId;
@@ -516,11 +913,15 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
         return quality.CreateInspectionRecordFromTaskAsync(
             tokenProvider.BearerToken,
             inspectionTaskId,
-            request with
-            {
-                InspectionTaskId = inspectionTaskId,
-                InspectorUserId = RequireAuthorizedPrincipalActorReference(),
-            },
+            new BusinessQualityCreateInspectionRecordFromTaskRequest(
+                inspectionTaskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                RequireAuthorizedPrincipalId(),
+                request.ResultLines,
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds,
+                request.IdempotencyKey),
             cancellationToken);
     }
 }

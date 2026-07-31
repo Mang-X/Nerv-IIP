@@ -30,6 +30,7 @@ public sealed class QualitySchemaConventionTests
             typeof(InspectionRecord),
             typeof(InspectionResultLine),
             typeof(InspectionTask),
+            typeof(InspectionTaskAssignmentReceipt),
             typeof(QualityReason),
             typeof(SpcControlChart),
         };
@@ -60,6 +61,15 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<InspectionTask>(
             fixture.DbContext,
             [nameof(InspectionTask.OrganizationId), nameof(InspectionTask.EnvironmentId), nameof(InspectionTask.Status), nameof(InspectionTask.DueAtUtc)]);
+        AssertEntityHasIndex<InspectionTask>(
+            fixture.DbContext,
+            [nameof(InspectionTask.OrganizationId), nameof(InspectionTask.EnvironmentId), nameof(InspectionTask.AssignedUserId), nameof(InspectionTask.Status), nameof(InspectionTask.DueAtUtc), nameof(InspectionTask.Id)]);
+        AssertEntityHasIndex<InspectionTask>(
+            fixture.DbContext,
+            [nameof(InspectionTask.OrganizationId), nameof(InspectionTask.EnvironmentId), nameof(InspectionTask.AssignedTeamId), nameof(InspectionTask.Status), nameof(InspectionTask.DueAtUtc), nameof(InspectionTask.Id)]);
+        AssertEntityHasIndex<InspectionTaskAssignmentReceipt>(
+            fixture.DbContext,
+            [nameof(InspectionTaskAssignmentReceipt.OrganizationId), nameof(InspectionTaskAssignmentReceipt.EnvironmentId), nameof(InspectionTaskAssignmentReceipt.InspectionTaskId), nameof(InspectionTaskAssignmentReceipt.Action), nameof(InspectionTaskAssignmentReceipt.IdempotencyKey)]);
         AssertEntityHasIndex<SpcControlChart>(
             fixture.DbContext,
             [nameof(SpcControlChart.OrganizationId), nameof(SpcControlChart.EnvironmentId), nameof(SpcControlChart.SkuCode), nameof(SpcControlChart.CharacteristicCode), nameof(SpcControlChart.WorkCenterId), nameof(SpcControlChart.SubgroupSize)]);

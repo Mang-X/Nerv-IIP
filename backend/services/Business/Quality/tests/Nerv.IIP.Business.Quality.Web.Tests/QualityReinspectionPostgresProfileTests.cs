@@ -14,7 +14,9 @@ public sealed class QualityReinspectionPostgresProfileTests
     [QualityPostgresFact]
     public async Task Postgres_predecessor_conflict_reloads_the_committed_reinspection()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Postgres_predecessor_conflict_reloads_the_committed_reinspection));
+        var connectionString = database.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));

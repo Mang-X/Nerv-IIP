@@ -4,6 +4,7 @@ import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
+  BusinessConsoleAssignQualityInspectionTaskRequest,
   BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleBarcodePrintBatchResponse,
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
@@ -56,6 +57,7 @@ import type {
   BusinessConsoleAssignWmsResourceRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
   BusinessConsoleCreateInspectionRecordFromTaskRequest,
+  BusinessConsoleClaimQualityInspectionTaskRequest,
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMesOperationTaskActionRequest,
   BusinessConsoleRecordProductionReportRequest,
@@ -184,6 +186,15 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('requires optimistic versions for public quality assignment and claim mutations', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleAssignQualityInspectionTaskRequest, 'expectedVersion'>
+    >().toEqualTypeOf<{ expectedVersion: number }>()
+    expectTypeOf<
+      Pick<BusinessConsoleClaimQualityInspectionTaskRequest, 'expectedVersion'>
+    >().toEqualTypeOf<{ expectedVersion: number }>()
+  })
+
   it('requires caller idempotency keys on all governed MAN-625 public write DTOs', () => {
     expectTypeOf<
       Pick<BusinessConsoleMesOperationTaskActionRequest, 'idempotencyKey'>

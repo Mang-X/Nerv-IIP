@@ -3956,6 +3956,45 @@
     },
     {
       "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}",
+      "operationId": "getBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment",
+      "operationId": "assignBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/claim",
+      "operationId": "claimBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record",
       "operationId": "createBusinessQualityInspectionRecordFromTask",

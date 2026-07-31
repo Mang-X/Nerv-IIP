@@ -34,8 +34,8 @@ public sealed record CreateInspectionRecordFromTaskCommand(
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
     string? IdempotencyKey,
-    string? OrganizationId = null,
-    string? EnvironmentId = null) : ICommand<CreateInspectionRecordFromTaskResult>;
+    string OrganizationId,
+    string EnvironmentId) : ICommand<CreateInspectionRecordFromTaskResult>;
 
 public sealed class CreateInspectionRecordFromTaskCommandLock : ICommandLock<CreateInspectionRecordFromTaskCommand>
 {
@@ -44,9 +44,7 @@ public sealed class CreateInspectionRecordFromTaskCommandLock : ICommandLock<Cre
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-quality:inspection-task-submit:{command.InspectionTaskId}",
-            30));
+        return Task.FromResult(InspectionTaskCommandLocks.For(command.InspectionTaskId));
     }
 }
 
@@ -56,6 +54,8 @@ public sealed class CreateInspectionRecordFromTaskCommandValidator : AbstractVal
     {
         RuleFor(x => x.InspectionTaskId).NotEmpty();
         RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ResultLines).NotEmpty();
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
@@ -76,17 +76,25 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
     {
         var task = await inspectionTaskRepository.GetAsync(request.InspectionTaskId, cancellationToken)
             ?? throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
-        if ((request.OrganizationId is not null
-                && !string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal))
-            || (request.EnvironmentId is not null
-                && !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)))
+        if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
-            throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
+            throw QualityAuthorizationException.Forbidden("task-tenant-mismatch");
         }
         var replay = await TryGetReplayAsync(task, request, cancellationToken);
         if (replay is not null)
         {
             return replay;
+        }
+
+        try
+        {
+            task.EnsureAssignedInspector(request.InspectorUserId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw QualityAuthorizationException.Forbidden(
+                "assignment-principal-mismatch");
         }
 
         // 幂等：任务已完成 → 回读既有记录的权威结论。仍走统一收尾（既有 rejected 记录若因常规
@@ -98,7 +106,7 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             return AddIdempotencyRecord(task, request, completedResult);
         }
 
-        if (task.Status is not InspectionTaskStatuses.Pending and not InspectionTaskStatuses.InProgress)
+        if (task.Status != InspectionTaskStatuses.InProgress)
         {
             throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
@@ -113,19 +121,9 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             cancellationToken);
         if (existing is not null)
         {
-            if (task.Status == InspectionTaskStatuses.Pending)
-            {
-                task.Start(request.InspectorUserId, DateTimeOffset.UtcNow);
-            }
-
             task.Complete(existing.Id, DateTimeOffset.UtcNow);
             var existingResult = await EnsureNcrAndBuildResultAsync(existing.Id, existing, cancellationToken);
             return AddIdempotencyRecord(task, request, existingResult);
-        }
-
-        if (task.Status == InspectionTaskStatuses.InProgress)
-        {
-            throw new QualityLifecycleConflictException("create-inspection-record-from-task", task.Status);
         }
 
         var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(
@@ -157,7 +155,6 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             request.DispositionReason,
             request.DispositionAttachmentFileIds);
 
-        task.Start(request.InspectorUserId, DateTimeOffset.UtcNow);
         task.Complete(record.Id, DateTimeOffset.UtcNow);
         await inspectionRecordRepository.AddAsync(record, cancellationToken);
 
