@@ -4501,7 +4501,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
     downtimeEventId?: string;
-    workOrderId?: string;
+    workOrderId?: string | null;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
     status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
@@ -4511,6 +4511,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskNo?: string | null;
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
+    workCenterId?: string | null;
+    reasonCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {

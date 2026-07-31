@@ -44962,7 +44962,8 @@
             "type": "string"
           },
           "workOrderId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "operationTaskId": {
             "type": "string",
@@ -45028,6 +45029,14 @@
             "nullable": true
           },
           "deviceAssetName": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reasonCode": {
             "type": "string",
             "nullable": true
           }
