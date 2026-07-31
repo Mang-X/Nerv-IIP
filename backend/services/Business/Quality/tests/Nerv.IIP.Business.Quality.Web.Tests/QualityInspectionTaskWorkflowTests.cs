@@ -483,7 +483,8 @@ public sealed class QualityInspectionTaskWorkflowTests
                     "env-dev"),
                 CancellationToken.None));
 
-        Assert.Equal("stored-inspection-task-receipt-points-to-missing-record", exception.Message);
+        Assert.Contains(taskId.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("幂等回执指向不存在的检验记录", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

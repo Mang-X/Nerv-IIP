@@ -25,7 +25,8 @@ public sealed class RecordMeasuringDeviceCalibrationCommandHandler(ApplicationDb
 {
     public async Task Handle(RecordMeasuringDeviceCalibrationCommand request, CancellationToken cancellationToken)
     {
-        var device = await dbContext.MeasuringDevices.Include(x => x.CalibrationRecords).SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken) ?? throw new KnownException("Measuring device was not found.");
+        var device = await dbContext.MeasuringDevices.Include(x => x.CalibrationRecords).SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken)
+            ?? throw new KnownException($"找不到测量设备 {request.MeasuringDeviceId}，请在测量设备页确认设备已建档后重试。");
         device.RecordCalibration(request.CalibrationNo, request.CalibratedAtUtc, request.CalibrationProvider, request.CertificateFileId);
     }
 }
@@ -35,13 +36,14 @@ public sealed class ChangeMeasuringDeviceStatusCommandHandler(ApplicationDbConte
 {
     public async Task Handle(ChangeMeasuringDeviceStatusCommand request, CancellationToken cancellationToken)
     {
-        var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken) ?? throw new KnownException("Measuring device was not found.");
+        var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken)
+            ?? throw new KnownException($"找不到测量设备 {request.MeasuringDeviceId}，请在测量设备页确认设备已建档后重试。");
         switch (request.Status.Trim().ToLowerInvariant())
         {
             case MeasuringDeviceStatuses.InUse: device.Enable(); break;
             case MeasuringDeviceStatuses.Disabled: device.Disable(); break;
             case MeasuringDeviceStatuses.Retired: device.Retire(); break;
-            default: throw new KnownException("Measuring device status must be in-use, disabled, or retired.");
+            default: throw new KnownException($"测量设备 {request.MeasuringDeviceId} 的状态“{request.Status}”不受支持，请在测量设备页选择在用、停用或报废后重新提交。");
         }
     }
 }
