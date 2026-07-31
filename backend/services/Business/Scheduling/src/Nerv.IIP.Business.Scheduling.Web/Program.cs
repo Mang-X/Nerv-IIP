@@ -94,6 +94,10 @@ try
     var materialConstraintMode = SchedulingMaterialConstraintModeResolver.Resolve(
         builder.Configuration[SchedulingMaterialConstraintModeResolver.ConfigurationKey]);
     builder.Services.AddSingleton(new FiniteCapacityScheduler(materialConstraintMode));
+    // 设备状态未知口径:默认软约束(无快照/快照过期照排 + 设备数据风险标记),真实停机/维护仍硬阻。
+    builder.Services.AddSingleton(new SchedulingEquipmentUnknownModeOption(
+        SchedulingEquipmentUnknownModeResolver.Resolve(
+            builder.Configuration[SchedulingEquipmentUnknownModeResolver.ConfigurationKey])));
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();

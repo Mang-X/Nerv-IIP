@@ -29,7 +29,8 @@ public sealed class PreviewSchedulePlanCommandHandler(
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay overrideOverlay)
+    ISchedulingOperationOverrideOverlay overrideOverlay,
+    SchedulingEquipmentUnknownModeOption equipmentUnknownMode)
     : ICommandHandler<PreviewSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
@@ -38,7 +39,7 @@ public sealed class PreviewSchedulePlanCommandHandler(
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
+            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
             materialReadiness);
         var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);

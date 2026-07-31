@@ -40,6 +40,7 @@ type ItemKind =
   | 'conflict'
   | 'locked'
   | 'materialRisk'
+  | 'equipmentRisk'
   | 'block'
   | 'nonWorking'
   | 'shift'
@@ -110,6 +111,13 @@ const groups = computed<{ key: GroupKey; label: string; items: LegendItem[] }[]>
           key: 'materialRisk',
           label: '缺料待备',
           kind: 'materialRisk',
+        },
+        // 设备数据风险:排在状态未知设备上(无快照/快照过期/采集源不可达)。
+        // 同样与「冲突」分列 —— 它是数据盲区提示,不阻断排产。
+        s.status.equipmentRisk && {
+          key: 'equipmentRisk',
+          label: '设备状态未知',
+          kind: 'equipmentRisk',
         },
       ].filter(Boolean) as LegendItem[],
     },
@@ -286,6 +294,12 @@ function toggleVisible(key: GroupKey) {
             v-else-if="item.kind === 'materialRisk'"
             class="nerv-leg-matrisk h-2.5 w-6 rounded-[3px]"
           ></span>
+          <!-- 设备数据风险:中性 muted 语义(数据盲区,不是预警更不是阻断),
+               与卡片/tooltip 的「设备状态未知」chip 同色 -->
+          <span
+            v-else-if="item.kind === 'equipmentRisk'"
+            class="nerv-leg-equiprisk h-2.5 w-6 rounded-[3px]"
+          ></span>
           <!-- ⑤ 阻塞:斜纹按块类型着色 -->
           <span
             v-else-if="item.kind === 'block'"
@@ -396,6 +410,12 @@ function toggleVisible(key: GroupKey) {
   .nerv-leg-matrisk {
     background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 85%);
     border: 1px solid color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 45%);
+  }
+
+  /* 设备数据风险 swatch:中性语义(浅底 + 同色描边),与卡片/tooltip 的「设备状态未知」chip 同色 */
+  .nerv-leg-equiprisk {
+    background: color-mix(in oklch, var(--nv-scheduling-equip-unknown), transparent 85%);
+    border: 1px solid color-mix(in oklch, var(--nv-scheduling-equip-unknown), transparent 45%);
   }
 
   /* 资源时间块斜纹 swatch(复用原画法) */

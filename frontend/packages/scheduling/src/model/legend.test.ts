@@ -35,7 +35,12 @@ describe('deriveLegendSemantics', () => {
 
   it('状态一组跟着模型走:有冲突有锁定才列', () => {
     const s = deriveLegendSemantics(toModel(samplePlan))
-    expect(s.status).toEqual({ conflict: true, locked: true, materialRisk: false })
+    expect(s.status).toEqual({
+      conflict: true,
+      locked: true,
+      materialRisk: false,
+      equipmentRisk: false,
+    })
 
     const clean = toModel({ ...samplePlan, conflicts: [] })
     for (const task of clean.tasks) task.locked = false
@@ -43,6 +48,7 @@ describe('deriveLegendSemantics', () => {
       conflict: false,
       locked: false,
       materialRisk: false,
+      equipmentRisk: false,
     })
   })
 
@@ -72,6 +78,26 @@ describe('deriveLegendSemantics', () => {
       ],
     })
     expect(deriveLegendSemantics(risky).status.materialRisk).toBe(true)
+  })
+
+  // 同一条铁律(#1274/#1320):「设备状态未知」chip 上图,图例必须同步出现;设备状态全都清楚时绝不出现。
+  it('设备数据风险:有工序排在状态未知设备上才列「设备状态未知」', () => {
+    expect(deriveLegendSemantics(toModel(samplePlan)).status.equipmentRisk).toBe(false)
+
+    const risky = toModel({
+      ...samplePlan,
+      equipmentRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          resourceId: 'DEV-CNC-01',
+          reasonCodes: ['equipment.sourceStale'],
+          message:
+            '设备 DEV-CNC-01 状态未知(采集数据已过期)。已按计划排入,开工前请人工确认设备可用。',
+        },
+      ],
+    })
+    expect(deriveLegendSemantics(risky).status.equipmentRisk).toBe(true)
   })
 
   it('卡片语义(优先级/插单/齐套/换型/瓶颈)缺省不列', () => {
