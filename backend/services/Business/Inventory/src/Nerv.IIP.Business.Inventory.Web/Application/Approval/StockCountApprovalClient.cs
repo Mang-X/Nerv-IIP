@@ -19,7 +19,7 @@ public sealed class StockCountAdjustmentApprovalOptions
     public string TemplateCode { get; init; } = ApprovalTemplateCodes.StockCountVariance;
 
     /// <summary>盘点差异审批的单据类型，与模板一起命中；同样取自审批契约的唯一事实来源。</summary>
-    public string DocumentType { get; init; } = ApprovalTemplateCodes.StockCountVarianceDocumentType;
+    public string DocumentType { get; init; } = ApprovalDocumentTypes.StockCountVariance;
 
     public bool RequiresApproval(decimal varianceQuantity, decimal varianceAmount) =>
         Math.Abs(varianceQuantity) > QuantityThreshold || Math.Abs(varianceAmount) > AmountThreshold;

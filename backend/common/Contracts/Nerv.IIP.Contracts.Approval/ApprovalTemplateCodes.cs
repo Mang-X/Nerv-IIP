@@ -40,12 +40,6 @@ public static class ApprovalTemplateCodes
     /// 种子无此模板 → 差异超阈值的盘点确认必 400（走查台账 #66 盘点死单成因之一）。
     /// 收敛进 <c>APT-WB-</c> 号段，并由审批种子补齐同码模板。
     /// </summary>
+    /// 配套的单据类型是 <see cref="ApprovalDocumentTypes.StockCountVariance"/>。
     public const string StockCountVariance = "APT-WB-CNT-001";
-
-    /// <summary>
-    /// 盘点差异审批的单据类型：Inventory 发起侧与种子模板必须逐字一致——
-    /// 审批模板查询同时按 <c>templateCode</c> 与 <c>documentType</c> 命中，缺一即 400。
-    /// （待 #1327/#1342 的 <c>ApprovalDocumentTypes</c> 合入后迁进该类型统一收口。）
-    /// </summary>
-    public const string StockCountVarianceDocumentType = "inventory-count-variance";
 }

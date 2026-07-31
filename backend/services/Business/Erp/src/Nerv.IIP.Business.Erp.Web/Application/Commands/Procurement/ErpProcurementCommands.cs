@@ -323,7 +323,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 request.EnvironmentId,
                 ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -756,7 +756,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 request.EnvironmentId,
                 ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -1248,7 +1248,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                         request.EnvironmentId,
                         ApprovalTemplateCodes.PurchaseOrderRelease,
                         "business-erp",
-                        "purchase-order",
+                        ApprovalDocumentTypes.PurchaseOrder,
                         request.PurchaseOrderNo,
                         null,
                         request.StartedBy,
@@ -1265,7 +1265,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
             var approval = await _approvalClient.StartApprovalAsync(
-                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, "business-erp", "purchase-order", request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, "business-erp", ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
             change.AssignApprovalChain(approval.ChainId);
             return approval.ChainId;

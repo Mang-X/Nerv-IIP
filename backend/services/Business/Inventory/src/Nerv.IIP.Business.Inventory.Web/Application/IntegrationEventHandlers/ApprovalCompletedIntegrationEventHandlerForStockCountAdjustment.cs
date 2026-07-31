@@ -50,7 +50,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForStockCountAdjustm
         var document = integrationEvent.Payload.DocumentReference;
         if (!string.Equals(document.SourceService, "inventory", StringComparison.OrdinalIgnoreCase)
             // #1344：回写消费侧与发起侧、种子模板共用同一个单据类型常量（三方任一漂移即回写静默丢事件）。
-            || !string.Equals(document.DocumentType, ApprovalTemplateCodes.StockCountVarianceDocumentType, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(document.DocumentType, ApprovalDocumentTypes.StockCountVariance, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

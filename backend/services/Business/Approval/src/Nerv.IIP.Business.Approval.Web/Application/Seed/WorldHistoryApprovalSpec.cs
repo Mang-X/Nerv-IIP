@@ -53,7 +53,7 @@ public static class WorldHistoryApprovalSpec
     /// 审批人取厂长：账实差异有财务影响，由仓储部之外的人核准，且演示 / 走查用的就是该账号。
     /// </summary>
     public const string StockCountVarianceTemplateCode = ApprovalTemplateCodes.StockCountVariance;
-    public const string StockCountVarianceDocumentType = ApprovalTemplateCodes.StockCountVarianceDocumentType;
+    public const string StockCountVarianceDocumentType = ApprovalDocumentTypes.StockCountVariance;
 
     /// <summary>本引擎产出/引用的全部号段前缀，供隔离性回归测试断言不与固定演示事实相交。</summary>
     public static readonly string[] NumberSegmentPrefixes = ["PO-2026-", "NCR-2026-", "APT-WB-"];

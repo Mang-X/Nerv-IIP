@@ -34,8 +34,8 @@ public sealed class ApprovalTemplateCodeContractTests
         // #1344 扩修：盘点差异（Inventory 发起侧默认值 ↔ 种子模板）。
         Assert.Equal("APT-WB-CNT-001", ApprovalTemplateCodes.StockCountVariance);
         Assert.Equal(ApprovalTemplateCodes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
-        Assert.Equal("inventory-count-variance", ApprovalTemplateCodes.StockCountVarianceDocumentType);
-        Assert.Equal(ApprovalTemplateCodes.StockCountVarianceDocumentType, WorldHistoryApprovalSpec.StockCountVarianceDocumentType);
+        Assert.Equal("inventory-count-variance", ApprovalDocumentTypes.StockCountVariance);
+        Assert.Equal(ApprovalDocumentTypes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceDocumentType);
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ public sealed class ApprovalTemplateCodeContractTests
                 "env-dev",
                 ApprovalTemplateCodes.StockCountVariance,
                 "inventory",
-                ApprovalTemplateCodes.StockCountVarianceDocumentType,
+                ApprovalDocumentTypes.StockCountVariance,
                 "CNT-20260731-000001",
                 null,
                 "system:inventory",
@@ -113,7 +113,7 @@ public sealed class ApprovalTemplateCodeContractTests
                     "env-dev",
                     "COUNT-VARIANCE",
                     "inventory",
-                    ApprovalTemplateCodes.StockCountVarianceDocumentType,
+                    ApprovalDocumentTypes.StockCountVariance,
                     "CNT-20260731-000002",
                     null,
                     "system:inventory"),

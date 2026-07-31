@@ -61,7 +61,7 @@ public sealed class StockCountApprovalTests
         Assert.Equal(ApprovalTemplateCodes.StockCountVariance, approvalClient.Request!.TemplateCode);
         Assert.Equal("APT-WB-CNT-001", approvalClient.Request.TemplateCode);
         Assert.Equal("inventory", approvalClient.Request.SourceService);
-        Assert.Equal(ApprovalTemplateCodes.StockCountVarianceDocumentType, approvalClient.Request.DocumentType);
+        Assert.Equal(ApprovalDocumentTypes.StockCountVariance, approvalClient.Request.DocumentType);
         Assert.Equal("COUNT-001", approvalClient.Request.DocumentId);
     }
 
