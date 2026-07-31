@@ -410,6 +410,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             externalServiceCostAmount,
             costCurrencyCode,
             actualTechnicianUserId);
+        IncrementVersion();
     }
 
     private void CompleteCore(
@@ -508,7 +509,6 @@ public sealed class MaintenanceWorkOrderLifecycleEvent : Entity<MaintenanceWorkO
         string payloadFingerprint,
         DateTimeOffset occurredAtUtc)
     {
-        Id = new MaintenanceWorkOrderLifecycleEventId(Guid.CreateVersion7());
         OrganizationId = workOrder.OrganizationId;
         EnvironmentId = workOrder.EnvironmentId;
         WorkOrderId = workOrder.Id;

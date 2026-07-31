@@ -190,6 +190,42 @@ public sealed class MaintenanceSchemaConventionTests
     }
 
     [Fact]
+    public void Work_order_queue_filters_have_tenant_scoped_query_shaped_indexes()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var workOrder = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MaintenanceWorkOrder))
+            ?? throw new InvalidOperationException("MaintenanceWorkOrder metadata was not found.");
+        var indexShapes = workOrder.GetIndexes()
+            .Select(index => index.Properties.Select(property => property.Name).ToArray())
+            .ToArray();
+
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.Status),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.DeviceAssetId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.AssignedTechnicianUserId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.AssignedTeamId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+    }
+
+    [Fact]
     public void Inspection_measurement_columns_are_mapped_and_documented()
     {
         using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());

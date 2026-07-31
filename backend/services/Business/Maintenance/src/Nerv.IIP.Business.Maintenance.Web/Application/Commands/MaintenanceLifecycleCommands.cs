@@ -104,7 +104,8 @@ public sealed class AssignMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         string idempotencyKey,
         string fingerprint)
     {
-        var changedAtUtc = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        var changedAtUtc = new DateTimeOffset(now.Ticks - (now.Ticks % 10), TimeSpan.Zero);
         dbContext.MaintenanceWorkOrderLifecycleEvents.Add(MaintenanceWorkOrderLifecycleEvent.Record(
             workOrder,
             action,
@@ -326,11 +327,11 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
 public sealed class AssignMaintenanceWorkOrderCommandLock : ICommandLock<AssignMaintenanceWorkOrderCommand>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(AssignMaintenanceWorkOrderCommand command, CancellationToken cancellationToken) =>
-        Task.FromResult(new CommandLockSettings($"business-maintenance:work-order:{command.WorkOrderId}", 30));
+        Task.FromResult(new CommandLockSettings(MaintenanceWorkOrderCommandLockKeys.For(command.WorkOrderId), 30));
 }
 
 public sealed class TransitionMaintenanceWorkOrderCommandLock : ICommandLock<TransitionMaintenanceWorkOrderCommand>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(TransitionMaintenanceWorkOrderCommand command, CancellationToken cancellationToken) =>
-        Task.FromResult(new CommandLockSettings($"business-maintenance:work-order:{command.WorkOrderId}", 30));
+        Task.FromResult(new CommandLockSettings(MaintenanceWorkOrderCommandLockKeys.For(command.WorkOrderId), 30));
 }

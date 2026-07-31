@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260731153227_AddMaintenanceWorkOrderLifecycle")]
+    [Migration("20260731175513_AddMaintenanceWorkOrderLifecycle")]
     partial class AddMaintenanceWorkOrderLifecycle
     {
         /// <inheritdoc />
@@ -546,16 +546,28 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("version")
-                        .HasComment("Optimistic concurrency version advanced by assignment and lifecycle actions.");
+                        .HasComment("Optimistic concurrency version advanced by every state-changing work-order command.");
 
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceAlarmId")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTeamId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTechnicianUserId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_device_opened");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceReferenceId")
                         .IsUnique()
                         .HasDatabaseName("ux_maintenance_work_orders_source_reference");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_status_opened");
 
                     b.ToTable("maintenance_work_orders", "maintenance", t =>
                         {

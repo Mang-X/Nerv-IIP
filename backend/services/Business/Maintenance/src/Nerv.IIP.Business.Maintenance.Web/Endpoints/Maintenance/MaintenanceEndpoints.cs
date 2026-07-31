@@ -187,6 +187,7 @@ public sealed record TransitionMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string OrganizationId,
     string EnvironmentId,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<MaintenanceWorkOrderAction>))]
     MaintenanceWorkOrderAction Action,
     string ActorPrincipalId,
     string Reason,

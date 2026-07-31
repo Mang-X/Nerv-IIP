@@ -47,9 +47,17 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.VerifiedAtUtc).HasColumnName("verified_at_utc").HasComment("UTC time when repair outcome was verified.");
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the verified work order was closed.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the work order was cancelled.");
-        builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken().HasComment("Optimistic concurrency version advanced by assignment and lifecycle actions.");
+        builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken().HasComment("Optimistic concurrency version advanced by every state-changing work-order command.");
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_status_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_device_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTechnicianUserId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTeamId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
         // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })

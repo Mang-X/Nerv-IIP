@@ -129,6 +129,41 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Compatibility_completion_advances_the_shared_lifecycle_version()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter-001");
+
+        workOrder.Complete("fixed", "equipment-failure", 20, []);
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
+        Assert.Equal(1, workOrder.Version);
+    }
+
+    [Fact]
+    public void Lifecycle_event_leaves_persistent_id_for_the_ef_guid_v7_generator()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter-001");
+        var fromStatus = workOrder.Status;
+        workOrder.Assign("technician-001", "team-001");
+
+        var lifecycleEvent = MaintenanceWorkOrderLifecycleEvent.Record(
+            workOrder,
+            MaintenanceWorkOrderAction.Assign,
+            fromStatus,
+            "dispatcher-001",
+            "technician-001",
+            "team-001",
+            "on-duty",
+            "assign-001",
+            new string('a', 64),
+            DateTimeOffset.UtcNow);
+
+        Assert.Null(lifecycleEvent.Id);
+    }
+
+    [Fact]
     public void Lifecycle_rejects_out_of_order_and_terminal_actions()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(

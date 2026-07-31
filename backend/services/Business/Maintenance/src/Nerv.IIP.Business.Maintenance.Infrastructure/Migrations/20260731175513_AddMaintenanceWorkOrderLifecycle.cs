@@ -59,7 +59,7 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0,
-                comment: "Optimistic concurrency version advanced by assignment and lifecycle actions.");
+                comment: "Optimistic concurrency version advanced by every state-changing work-order command.");
 
             migrationBuilder.CreateTable(
                 name: "maintenance_work_order_lifecycle_events",
@@ -96,6 +96,30 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                 comment: "Append-only auditable maintenance assignment and lifecycle action receipts.");
 
             migrationBuilder.CreateIndex(
+                name: "ix_maintenance_work_orders_scope_device_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders",
+                columns: new[] { "organization_id", "environment_id", "device_asset_id", "opened_at_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_maintenance_work_orders_scope_status_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders",
+                columns: new[] { "organization_id", "environment_id", "status", "opened_at_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_maintenance_work_orders_scope_team_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders",
+                columns: new[] { "organization_id", "environment_id", "assigned_team_id", "opened_at_utc" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_maintenance_work_orders_scope_technician_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders",
+                columns: new[] { "organization_id", "environment_id", "assigned_technician_user_id", "opened_at_utc" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_maintenance_work_order_lifecycle_events_maintenance_work_or~",
                 schema: "maintenance",
                 table: "maintenance_work_order_lifecycle_events",
@@ -121,6 +145,26 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "maintenance_work_order_lifecycle_events",
                 schema: "maintenance");
+
+            migrationBuilder.DropIndex(
+                name: "ix_maintenance_work_orders_scope_device_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders");
+
+            migrationBuilder.DropIndex(
+                name: "ix_maintenance_work_orders_scope_status_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders");
+
+            migrationBuilder.DropIndex(
+                name: "ix_maintenance_work_orders_scope_team_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders");
+
+            migrationBuilder.DropIndex(
+                name: "ix_maintenance_work_orders_scope_technician_opened",
+                schema: "maintenance",
+                table: "maintenance_work_orders");
 
             migrationBuilder.DropColumn(
                 name: "accepted_at_utc",

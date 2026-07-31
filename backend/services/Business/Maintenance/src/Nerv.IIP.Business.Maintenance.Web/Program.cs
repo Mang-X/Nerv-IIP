@@ -45,7 +45,12 @@ try
     }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
-        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .AddFastEndpoints(o =>
+        {
+            o.IncludeAbstractValidators = true;
+            o.DisableAutoDiscovery = true;
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+        })
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>
@@ -71,6 +76,8 @@ try
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteMaintenanceWorkOrderCommand>, CompleteMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<AssignMaintenanceWorkOrderCommand>, AssignMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<TransitionMaintenanceWorkOrderCommand>, TransitionMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<ApplyMaintenanceDeviceStateCommand>, ApplyMaintenanceDeviceStateCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenancePlanCommand>, CreateMaintenancePlanCommandLock>();
     builder.Services.AddScoped<ICommandLock<UpdateMaintenancePlanCommand>, UpdateMaintenancePlanCommandLock>();

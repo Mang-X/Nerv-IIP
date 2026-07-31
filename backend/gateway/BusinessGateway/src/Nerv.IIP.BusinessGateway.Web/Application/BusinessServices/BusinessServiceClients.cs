@@ -6136,6 +6136,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMaintenanceClient
 {
+    private static readonly JsonSerializerOptions LifecycleJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+    };
+
     public async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -6360,7 +6365,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}{routeSuffix}",
             request,
-            cancellationToken);
+            cancellationToken,
+            LifecycleJsonOptions);
         var responseId = FormatJsonScalar(response.WorkOrderId);
         if (!Guid.TryParse(responseId, out var parsedResponseId)
             || parsedResponseId == Guid.Empty

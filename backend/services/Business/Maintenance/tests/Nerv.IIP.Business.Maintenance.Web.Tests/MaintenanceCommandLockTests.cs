@@ -8,6 +8,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
@@ -109,6 +111,46 @@ public sealed class MaintenanceCommandLockTests
         Assert.Equal(generateSettings.AcquireTimeout, stateSettings.AcquireTimeout);
         Assert.Equal(generateSettings.AcquireTimeout, createSettings.AcquireTimeout);
         Assert.Equal(generateSettings.AcquireTimeout, updateSettings.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Compatibility_complete_assignment_and_transition_share_one_work_order_lock_key()
+    {
+        var workOrderId = new MaintenanceWorkOrderId(Guid.CreateVersion7());
+        var complete = await new CompleteMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new CompleteMaintenanceWorkOrderCommand(workOrderId, "fixed", "failure", 10, []),
+            CancellationToken.None);
+        var assign = await new AssignMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new AssignMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, "dispatcher-001", "tech-001", null,
+                "on-duty", "assign-001", 0),
+            CancellationToken.None);
+        var transition = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, MaintenanceWorkOrderAction.Accept, "tech-001",
+                "accepted", "accept-001", 0),
+            CancellationToken.None);
+
+        Assert.Equal(assign.LockKey, complete.LockKey);
+        Assert.Equal(assign.LockKey, transition.LockKey);
+    }
+
+    [Fact]
+    public async Task Production_service_provider_registers_assignment_and_transition_command_locks()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        Assert.IsType<AssignMaintenanceWorkOrderCommandLock>(
+            scope.ServiceProvider.GetRequiredService<ICommandLock<AssignMaintenanceWorkOrderCommand>>());
+        Assert.IsType<TransitionMaintenanceWorkOrderCommandLock>(
+            scope.ServiceProvider.GetRequiredService<ICommandLock<TransitionMaintenanceWorkOrderCommand>>());
     }
 
     [Fact]

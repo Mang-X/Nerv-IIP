@@ -202,6 +202,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
 
         Assert.Equal(first, replay);
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, replay.Status);
+        Assert.Equal(1, replay.Version);
     }
 
     [Fact]
@@ -219,7 +220,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             CancellationToken.None);
 
         Assert.Equal(
-            $"business-maintenance:work-order-complete:{workOrderId}",
+            $"business-maintenance:work-order:{workOrderId}",
             settings.LockKey);
         Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
     }
