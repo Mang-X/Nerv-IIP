@@ -144,9 +144,14 @@ describe('useWmsWorkScope', () => {
       scopeId: 'SITE-001',
     })
 
+    // 越权选择（组织全量）被整条忽略：既不会绑上去，也不会把页面卡在无范围状态，
+    // 而是回落到后端授权清单的首项——可信 kind/id 始终来自服务端目录。
     scope.scopeKey.value = 'organization:org-001'
-    expect(filters.scopeKind).toBeUndefined()
-    expect(filters.scopeId).toBeUndefined()
+    expect(filters.scopeKind).not.toBe('organization')
+    expect(filters).toMatchObject({
+      scopeKind: 'work-pool',
+      scopeId: 'WMS-SITE-001-RECEIVING',
+    })
   })
 
   it.each([

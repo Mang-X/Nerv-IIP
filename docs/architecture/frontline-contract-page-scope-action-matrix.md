@@ -125,6 +125,11 @@ PDA 证据：
 - `site`：由 IAM **精确站点授权**直接成立，不再要求作业池成员资格——主管 / 管理员只有站点
   授权时也必须有可选范围，否则整域 403 全空。选中后是**整站作业面**（含站内尚未派工的记录），
   边界仍是精确站点授权，绝不跨站、绝不组织全量。
+- **读写同口径**：站点范围在写侧闸门（`WarehouseAssignedResourceExecutionAuthorizer` 完成
+  入库/出库/盘点、`WmsCommands.EnsureActorCanExecuteAsync` 上架/拣货 start/progress/complete）
+  同样按站点放行，否则 site 范围「能读不能做」。未派工资源仍需先派工
+  （`missing-work-pool-assignment`）、已派给他人的资源仍拒绝
+  （`assignment-principal-mismatch`）——这两条与范围无关，不因 site 放宽。
 - 作业范围目录（`/wms/work-scopes/*`）返回空清单时，前端说「没有已授权的仓储作业范围」，
   403 透传服务端结论，不含糊成「请稍后重试」，也不伪装成「暂无数据」。
 

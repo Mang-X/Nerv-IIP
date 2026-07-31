@@ -100,7 +100,7 @@ function createHarness() {
     global: { plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }]] },
   })
   if (!scope) throw new Error('WMS 作业范围 composable 未初始化')
-  return { wrapper, filters, scope }
+  return { wrapper, filters, scope, auth }
 }
 
 describe('PC WMS 作业范围选择闭环 (#1343)', () => {
@@ -174,7 +174,27 @@ describe('PC WMS 作业范围选择闭环 (#1343)', () => {
     await flushPromises()
 
     expect(scope.hasSelection.value).toBe(false)
-    expect(scope.noAuthorizedScope.value).toBe(true)
-    expect(wrapper.text()).toContain('没有已授权的仓储作业范围')
+    expect(wrapper.text()).toContain('请到 IAM')
+    expect(wrapper.text()).not.toContain('暂无数据')
+  })
+
+  it('换主体后读新 principal 的记忆，不沿用上一个主体的选择', async () => {
+    localStorage.setItem(
+      'nerv-iip.business-console.wms-work-scope.v1:user-admin|org-001|env-dev|receipts',
+      'site:SITE-001',
+    )
+    const { filters, auth } = createHarness()
+
+    resolveCatalog(0, [POOL_SCOPE, SITE_SCOPE])
+    await flushPromises()
+    expect(filters.scopeId).toBe('SITE-001')
+
+    // 换主体：上一个主体的选择即便仍在授权清单里也不能继续沿用——新主体没有记忆，
+    // 应回落清单首项。
+    auth.principal = { principalId: 'user-emp-049' } as never
+    await flushPromises()
+
+    expect(filters.scopeKind).toBe('work-pool')
+    expect(filters.scopeId).toBe('WMS-SITE-001-RECEIVING')
   })
 })

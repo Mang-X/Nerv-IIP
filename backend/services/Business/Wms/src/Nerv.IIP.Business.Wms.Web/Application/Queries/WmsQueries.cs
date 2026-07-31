@@ -114,9 +114,10 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                organizationWideScope: false,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return empty;
         }
@@ -567,9 +568,10 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return new ListInboundOrdersResponse([], 0);
         }
@@ -725,9 +727,10 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return new ListOutboundOrdersResponse([], 0);
         }
@@ -965,9 +968,10 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return new ListWarehouseTasksResponse([], 0);
         }
@@ -1159,49 +1163,71 @@ internal static class WmsOwnershipQueryFilters
             .ToArray()
         ?? [];
 
+    /// <summary>
+    /// 归属模式是三选一，用一个枚举表达，不用两个布尔互相约束——布尔组合能拼出
+    /// 「既组织全量又站点整站」这种无意义状态，读代码的人要靠分支顺序才能反推真实语义。
+    /// </summary>
+    public static WmsOwnershipScopeMode ModeOf(
+        bool organizationWideScope,
+        bool siteWideScope) =>
+        organizationWideScope
+            ? WmsOwnershipScopeMode.OrganizationWide
+            : siteWideScope
+                ? WmsOwnershipScopeMode.SiteWide
+                : WmsOwnershipScopeMode.Assignment;
+
     public static bool TryResolve(
         IEnumerable<string>? operatorUserIds,
         IEnumerable<string>? poolCodes,
         IEnumerable<string>? siteCodes,
-        bool organizationWideScope,
-        out WmsOwnershipScope scope,
-        bool siteWideScope = false)
+        WmsOwnershipScopeMode mode,
+        out WmsOwnershipScope scope)
     {
         var operators = Normalize(operatorUserIds);
         var pools = Normalize(poolCodes);
         var sites = Normalize(siteCodes);
-        var activeModes = (operators.Length > 0 ? 1 : 0)
+        var assignmentModes = (operators.Length > 0 ? 1 : 0)
             + (pools.Length > 0 ? 1 : 0);
-        if (organizationWideScope)
+        switch (mode)
         {
-            scope = default;
-            return false;
-        }
-
-        if (siteWideScope)
-        {
-            // 站点范围：站点内整站作业面，不再按作业池/操作人收窄，但必须有明确站点边界。
-            if (sites.Length == 0 || activeModes != 0)
-            {
+            // 组织全量读面不成立，永远 fail closed。
+            case WmsOwnershipScopeMode.OrganizationWide:
                 scope = default;
                 return false;
-            }
 
-            scope = new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites);
-            return true;
+            // 站点范围：站内整站作业面，不再按作业池/操作人收窄，但必须有明确站点边界。
+            case WmsOwnershipScopeMode.SiteWide when sites.Length > 0 && assignmentModes == 0:
+                scope = new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites);
+                return true;
+
+            case WmsOwnershipScopeMode.SiteWide:
+                scope = default;
+                return false;
+
+            // 归属范围：操作人与作业池二选一，既不能同时给也不能都不给。
+            case WmsOwnershipScopeMode.Assignment when assignmentModes == 1:
+                scope = operators.Length > 0
+                    ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
+                    : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
+                return true;
+
+            default:
+                scope = default;
+                return false;
         }
-
-        if (activeModes != 1)
-        {
-            scope = default;
-            return false;
-        }
-
-        scope = operators.Length > 0
-            ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
-            : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
-        return true;
     }
+}
+
+internal enum WmsOwnershipScopeMode
+{
+    /// <summary>按 self / work-pool 归属收窄。</summary>
+    Assignment,
+
+    /// <summary>按 IAM 精确站点授权覆盖整站。</summary>
+    SiteWide,
+
+    /// <summary>组织全量——不成立，只用于显式拒绝。</summary>
+    OrganizationWide,
 }
 
 internal enum WmsOwnershipScopeKind
@@ -1269,9 +1295,10 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return new ListCountExecutionsResponse([], 0);
         }
@@ -1550,9 +1577,10 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                organizationWideScope: false,
-                out var ownershipScope,
-                request.SiteWideScope))
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
+                out var ownershipScope))
         {
             return new ListReceivingQualityGatesResponse([], 0);
         }
