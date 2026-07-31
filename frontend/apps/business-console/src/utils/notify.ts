@@ -139,6 +139,54 @@ function clampServerMessage(raw: string): string {
     : text
 }
 
+/** 状态码可能藏在这些字段上：拦截器挂的 `response`、RFC7807 的 `status`、包装后的 `statusCode`。 */
+const STATUS_FIELDS = ['status', 'statusCode'] as const
+
+/**
+ * 取出这次失败的 **HTTP 状态码**。
+ *
+ * 为什么必须有它：generated client 在 `throwOnError` 下抛的是**解析后的响应体对象**，
+ * 不是 `Error` 实例——靠 `error instanceof Error && error.message.includes('403')` 判权限
+ * 永远不成立，真实 403 会退化成普通失败态（MAN-698 台账 / #1298 规格轴）。
+ * 本仓库的 error 拦截器（`@nerv-iip/api-client` 的 `configureApiClient`）会把原始
+ * `Response` 以非枚举属性挂到 error 上，所以 `error.response.status` 一定拿得到。
+ *
+ * 取不到返回 `undefined`——调用方据此走「未知失败」，不要猜。
+ */
+export function errorStatusCode(error: unknown): number | undefined {
+  return readStatusCode(error, new Set<object>(), 0)
+}
+
+function readStatusCode(error: unknown, seen: Set<object>, depth: number): number | undefined {
+  if (error == null || typeof error !== 'object' || depth > 4) return undefined
+  if (seen.has(error)) return undefined
+  seen.add(error)
+
+  const record = error as Record<string, unknown>
+  for (const field of STATUS_FIELDS) {
+    const value = record[field]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+
+  for (const container of ['response', 'error', 'data', 'body', 'cause'] as const) {
+    const nested = readStatusCode(record[container], seen, depth + 1)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+/**
+ * 这次失败是不是「没有权限」（403）？——按状态码判，取不到状态码才退回消息文本匹配
+ * （少数场景 error 只是一个带 403 字样的字符串/Error）。
+ * 页面据此渲染「无权限」空态，而不是把 403 当成普通加载失败。
+ */
+export function isForbiddenError(error: unknown): boolean {
+  const status = errorStatusCode(error)
+  if (status !== undefined) return status === 403
+  const raw = `${serverErrorMessage(error)} ${rawMessage(error)}`
+  return /\b403\b|forbidden/i.test(raw)
+}
+
 /**
  * 写操作失败的统一反馈：**分层透传**，一句话——「服务端说的人话上屏，通用 HTTP 文案先映射」。
  *

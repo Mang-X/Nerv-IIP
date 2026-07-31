@@ -10,8 +10,10 @@ vi.mock('@nerv-iip/ui', () => ({
 }))
 
 const {
+  errorStatusCode,
   friendlyErrorMessage,
   inlineErrorMessage,
+  isForbiddenError,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
@@ -235,5 +237,44 @@ describe('inlineErrorMessage', () => {
       '库存台账读取失败。',
     )
     consoleError.mockRestore()
+  })
+})
+
+/**
+ * MAN-698 批次 A（#1298 规格轴）：页面靠 `error instanceof Error && message.includes('403')`
+ * 判权限，而 generated client 在 `throwOnError` 下抛的是**解析后的响应体对象**——
+ * 判定永远不成立，真实 403 退化成普通失败态。状态码要从对象上取。
+ */
+describe('errorStatusCode / isForbiddenError', () => {
+  it('从拦截器挂的 response 上取状态码（响应体对象不是 Error 实例）', () => {
+    const error: Record<string, unknown> = { title: 'Forbidden' }
+    Object.defineProperty(error, 'response', { value: { status: 403 }, enumerable: false })
+
+    expect(error instanceof Error).toBe(false)
+    expect(errorStatusCode(error)).toBe(403)
+    expect(isForbiddenError(error)).toBe(true)
+  })
+
+  it('RFC7807 直接带 status / 包装后的 statusCode 都认', () => {
+    expect(errorStatusCode({ status: 403, detail: 'forbidden' })).toBe(403)
+    expect(errorStatusCode({ error: { statusCode: 404 } })).toBe(404)
+  })
+
+  it('取不到状态码时返回 undefined，不猜', () => {
+    expect(errorStatusCode(undefined)).toBeUndefined()
+    expect(errorStatusCode('boom')).toBeUndefined()
+    expect(errorStatusCode({ message: '库存不足' })).toBeUndefined()
+  })
+
+  it('取不到状态码才退回文本匹配；其他状态码一律不是「无权限」', () => {
+    expect(isForbiddenError(new Error('403 Forbidden'))).toBe(true)
+    expect(isForbiddenError({ status: 500, detail: 'forbidden zone' })).toBe(false)
+    expect(isForbiddenError({ message: '物料缺料' })).toBe(false)
+  })
+
+  it('循环引用不会把递归拖死（拦截器把 response 挂回 error 很常见）', () => {
+    const error: Record<string, unknown> = { detail: 'boom' }
+    error.cause = error
+    expect(errorStatusCode(error)).toBeUndefined()
   })
 })
