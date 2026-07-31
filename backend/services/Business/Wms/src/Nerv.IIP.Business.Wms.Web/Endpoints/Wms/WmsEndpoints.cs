@@ -402,7 +402,8 @@ internal sealed record WmsAuthorizedListScope(
     IReadOnlyCollection<string>? PoolCodes,
     IReadOnlyCollection<string> SiteCodes,
     string ScopeKind,
-    string ScopeId);
+    string ScopeId,
+    bool SiteWide);
 
 internal static class WmsAuthorizedListScopeResolver
 {
@@ -433,13 +434,15 @@ internal static class WmsAuthorizedListScopeResolver
                 PoolCodes: null,
                 selection.SiteCodes,
                 selection.ScopeKind,
-                selection.ScopeId)
+                selection.ScopeId,
+                selection.SiteWide)
             : new WmsAuthorizedListScope(
                 OperatorPrincipalIds: null,
                 selection.PoolCodes,
                 selection.SiteCodes,
                 selection.ScopeKind,
-                selection.ScopeId);
+                selection.ScopeId,
+                selection.SiteWide);
     }
 }
 
@@ -536,7 +539,8 @@ public sealed class ListInboundOrdersEndpoint(
             req.LotNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -638,7 +642,8 @@ public sealed class ListPutawayTasksEndpoint(
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
             scope.SiteCodes,
-            ActorPrincipalId: req.ActorPrincipalId), ct);
+            ActorPrincipalId: req.ActorPrincipalId,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -737,7 +742,8 @@ public sealed class ListOutboundOrdersEndpoint(
             req.LotNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -839,7 +845,8 @@ public sealed class ListPickingTasksEndpoint(
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
             scope.SiteCodes,
-            ActorPrincipalId: req.ActorPrincipalId), ct);
+            ActorPrincipalId: req.ActorPrincipalId,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -875,7 +882,8 @@ public sealed class ListReplenishmentTasksEndpoint(
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
             scope.SiteCodes,
-            ActorPrincipalId: req.ActorPrincipalId), ct);
+            ActorPrincipalId: req.ActorPrincipalId,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -1224,7 +1232,8 @@ public sealed class ListCountExecutionsEndpoint(
             req.CountExecutionId,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -1384,7 +1393,8 @@ public sealed class ListReceivingQualityGatesEndpoint(
             req.InboundOrderNo,
             scope.OperatorPrincipalIds,
             scope.PoolCodes,
-            scope.SiteCodes), ct);
+            scope.SiteCodes,
+            SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -1437,7 +1447,8 @@ public sealed class ListWarehouseOperationalCandidatesEndpoint(
                 req.Keyword,
                 req.SkuCode,
                 req.LocationCode,
-                req.Take),
+                req.Take,
+                SiteWideScope: scope.SiteWide),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
