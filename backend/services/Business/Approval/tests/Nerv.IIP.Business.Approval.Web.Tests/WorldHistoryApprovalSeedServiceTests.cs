@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
 using Nerv.IIP.Business.Approval.Web.Application.Seed;
+using Nerv.IIP.Contracts.Approval;
 using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.Approval.Web.Tests;
@@ -288,6 +289,28 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
 
     #region 审批委托（approval.approval_delegations）
 
+    /// <summary>
+    /// #1327 演示可达性：NCR 处置模板的审批人是质量主管（EMP-033），演示 / 走查用的是厂长账号，
+    /// 种子里必须留一条**生效中**的「质量主管 → 厂长」NCR 处置委托，否则处置审批链无人可裁。
+    /// </summary>
+    [Fact]
+    public void Admin_can_resolve_ncr_disposition_through_an_active_delegation()
+    {
+        var facts = WorldHistoryApprovalSpec.BuildDelegationFacts(AsOfDate);
+        var asOfUtc = new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+
+        var ncrDelegation = Assert.Single(
+            facts,
+            x => x.DelegatorActorRef == WorldHistoryApprovalSpec.QualitySupervisorUserId
+                && x.DelegateActorRef == WorldHistoryApprovalSpec.AdminUserId
+                && x.DocumentType == WorldHistoryApprovalSpec.NcrDocumentType);
+
+        Assert.False(ncrDelegation.IsRevoked);
+        Assert.True(ncrDelegation.EffectiveFromUtc <= asOfUtc, "NCR 处置委托应在 asOfDate 之前生效。");
+        Assert.True(ncrDelegation.EffectiveToUtc > asOfUtc, "NCR 处置委托应跨过 asOfDate 仍然有效。");
+        Assert.Equal(ApprovalDocumentTypes.NcrDisposition, WorldHistoryApprovalSpec.NcrDocumentType);
+    }
+
     [Fact]
     public void Delegation_fact_stream_matches_the_world_bible_shape()
     {
@@ -313,8 +336,14 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
         Assert.True(revoked > 0, "历史委托里应有提前撤销的样本。");
         Assert.True(revoked < facts.Count, "历史委托不应全部被撤销。");
 
-        // 末尾一条跨过 asOfDate 仍在生效——委托区块上「现在谁在代批」讲得通。
-        var current = facts[^1];
+        // 末尾两条跨过 asOfDate 仍在生效——委托区块上「现在谁在代批」讲得通：
+        // 倒数第二条是厂长外出的全类型代批，最后一条是质量主管休假期间把 NCR 处置委托给厂长（#1327）。
+        var currentNcr = facts[^1];
+        Assert.False(currentNcr.IsRevoked);
+        Assert.Equal(WorldHistoryApprovalSpec.NcrDocumentType, currentNcr.DocumentType);
+        Assert.Equal(WorldHistoryApprovalSpec.AdminUserId, currentNcr.DelegateActorRef);
+
+        var current = facts[^2];
         Assert.False(current.IsRevoked);
         Assert.Null(current.DocumentType);
         Assert.True(current.EffectiveFromUtc <= new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero));
