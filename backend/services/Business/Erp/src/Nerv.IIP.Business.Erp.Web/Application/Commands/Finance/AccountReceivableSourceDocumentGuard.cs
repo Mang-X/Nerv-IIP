@@ -43,7 +43,8 @@ internal static class AccountReceivableSourceDocumentGuard
                 $"来源单据『{sourceDocumentNo}』在 ERP 中不存在（既不是发货单，也不是销售订单），应收不能凭空登记。确需无来源手工入账，请改用总账手工凭证。");
         }
 
-        if (!string.Equals(sourceCustomerCode, customerCode, StringComparison.Ordinal))
+        // 客户编码按大小写不敏感比对，与库存侧同类比对一致：编码大小写差异不是不同客户，不能据此误拒。
+        if (!string.Equals(sourceCustomerCode.Trim(), customerCode?.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             throw new KnownException(
                 $"来源单据『{sourceDocumentNo}』的客户是『{sourceCustomerCode}』，与登记的客户『{customerCode}』不一致，应收登记已拒绝。");

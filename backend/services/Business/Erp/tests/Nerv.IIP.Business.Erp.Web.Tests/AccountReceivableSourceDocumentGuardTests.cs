@@ -65,6 +65,22 @@ public sealed class AccountReceivableSourceDocumentGuardTests
     }
 
     [Fact]
+    public async Task Customer_code_case_difference_is_not_treated_as_a_different_customer()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-GUARD-CASE", "CUST-REAL");
+
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-GUARD-CASE", "DO-GUARD-CASE", "cust-real", 60m, "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(60m, Assert.Single(dbContext.AccountReceivables).Amount);
+    }
+
+    [Fact]
     public async Task Receivable_can_also_reference_the_sales_order_behind_the_delivery()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();

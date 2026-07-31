@@ -81,6 +81,67 @@ public sealed class InventoryTransferBalanceTests
     }
 
     [Fact]
+    public async Task Transfer_in_leg_must_be_positive_even_when_both_legs_are_negative()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+
+        // 两腿同为负：合计也不为零，但这里要证明「入库腿必须为正」这条独立生效，不被合计校验遮蔽。
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() => handler.Handle(
+            TransferCommand("idem-transfer-negative-in", quantity: -2m, transferInLocationCode: TargetLocation, transferInQuantity: -2m),
+            CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.TransferLegsUnbalanced, exception.FailureCode);
+        Assert.Contains("入库腿数量必须为正数", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("必须配平", exception.Message, StringComparison.Ordinal);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal(10m, Assert.Single(dbContext.StockLedgers).OnHandQuantity);
+    }
+
+    [Fact]
+    public async Task Transfer_idempotency_key_longer_than_the_leg_budget_is_rejected_instead_of_truncated()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+        var overlongKey = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength + 1);
+
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() => handler.Handle(
+            TransferCommand(overlongKey, quantity: -1m, transferInLocationCode: TargetLocation, transferInQuantity: 1m),
+            CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.TransferLegsUnbalanced, exception.FailureCode);
+        Assert.Contains("调拨幂等键最长", exception.Message, StringComparison.Ordinal);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "transfer"));
+    }
+
+    [Fact]
+    public async Task Two_max_length_keys_differing_only_in_the_tail_stay_two_separate_transfers()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+        var prefix = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength - 4);
+
+        await handler.Handle(
+            TransferCommand($"{prefix}aaaa", quantity: -1m, transferInLocationCode: TargetLocation, transferInQuantity: 1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await handler.Handle(
+            TransferCommand($"{prefix}bbbb", quantity: -2m, transferInLocationCode: TargetLocation, transferInQuantity: 2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 上限长度的两把键仍必须各自成单：拼接不截断，末位差异不会被折叠成同一腿键。
+        Assert.Equal(4, dbContext.StockMovements.Count(x => x.MovementType == "transfer"));
+        Assert.Equal(7m, dbContext.StockLedgers.Single(x => x.LocationCode == SourceLocation).OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.LocationCode == TargetLocation).OnHandQuantity);
+        Assert.Equal(10m, dbContext.StockLedgers.Sum(x => x.OnHandQuantity));
+    }
+
+    [Fact]
     public async Task Balanced_transfer_moves_stock_and_writes_two_offsetting_ledger_movements()
     {
         await using var dbContext = CreateContext();

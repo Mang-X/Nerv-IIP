@@ -82,6 +82,10 @@ public sealed class PostStockMovementCommandHandler(
     private const string TransferOutLegSuffix = ":out";
     private const string TransferInLegSuffix = ":in";
 
+    /// <summary>调拨基础幂等键上限：列宽 128 减去最长腿后缀（:out，4 位），两腿拼接后都不越界。</summary>
+    public const int TransferBaseIdempotencyKeyMaxLength =
+        InventoryValidationRules.IdempotencyKeyMaxLength - 4;
+
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "inbound",
@@ -345,6 +349,15 @@ public sealed class PostStockMovementCommandHandler(
                 "调拨过账必须一次提交两腿：出库腿（当前库位、数量为负）与入库腿（目标库位、等额为正）。单腿调拨会凭空增减库存，已整笔拒绝。");
         }
 
+        // 两腿要在调用方幂等键上各追加 :out / :in，不能截断——截断会让仅末几位不同的两个长键
+        // 落到同一腿键上：payload 不同报假冲突、payload 相同第二笔被当重放静默吞掉。宁可拒绝。
+        if (request.IdempotencyKey.Length > TransferBaseIdempotencyKeyMaxLength)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.TransferLegsUnbalanced,
+                $"调拨幂等键最长 {TransferBaseIdempotencyKeyMaxLength} 位（两腿需分别追加 {TransferOutLegSuffix} / {TransferInLegSuffix} 后缀），当前 {request.IdempotencyKey.Length} 位，请缩短后重试。");
+        }
+
         if (request.Quantity >= 0)
         {
             throw new InventoryPostingRejectedException(
@@ -386,12 +399,13 @@ public sealed class PostStockMovementCommandHandler(
         return string.IsNullOrWhiteSpace(request.TransferInSiteCode) ? request.SiteCode : request.TransferInSiteCode;
     }
 
-    /// <summary>幂等键列上限 128，两腿各自加后缀前先截断，避免越界。</summary>
+    /// <summary>
+    /// 两腿幂等键 = 调用方幂等键 + 后缀。基础键长度已在 <see cref="ValidateTransferLegsOrReject"/> 里先行拒绝，
+    /// 这里只做拼接：绝不截断，截断会把不同的键折叠成同一腿键。
+    /// </summary>
     private static string TransferLegKey(string idempotencyKey, string suffix)
     {
-        var maxBaseLength = InventoryValidationRules.IdempotencyKeyMaxLength - suffix.Length;
-        var baseKey = idempotencyKey.Length <= maxBaseLength ? idempotencyKey : idempotencyKey[..maxBaseLength];
-        return baseKey + suffix;
+        return idempotencyKey + suffix;
     }
 
     private static StockMovement CreateTransferInMovementOrReject(
