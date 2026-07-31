@@ -268,7 +268,10 @@ function tooltipHtml(t: ScheduleTask): string {
     `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
   const badges = [
     prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
-    t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
+    // 插单走 --nv-scheduling-rush,与图例(SchedulingLegend)、工序详情(TaskDetailPanel)同一个
+    // 事实源。此前硬编码 oklch(0.7 0.17 60),与 token 的 oklch(0.68 0.18 45) 不是同一个颜色
+    // ——同语义两色,且裸值进 innerHTML 后暗色主题不跟随(#1399 M6)。
+    t.isRush ? chip('插单', 'var(--nv-scheduling-rush)') : '',
     t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
     t.materialRisk ? chip('缺料待备', 'var(--nv-scheduling-kit-warn)') : '',
