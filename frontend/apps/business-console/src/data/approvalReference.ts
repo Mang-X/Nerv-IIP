@@ -8,9 +8,20 @@
  */
 import type { RefOption } from './masterDataReference'
 
+/**
+ * NCR 处置审批的 `documentType` —— **权威码值**，与后端
+ * `Nerv.IIP.Contracts.Approval/ApprovalDocumentTypes.NcrDisposition` 逐字一致。
+ *
+ * 收敛理由（#1327）：此前处置面发的是 `quality-ncr`，而种子模板挂的是 `ncr-disposition`、
+ * Quality 服务的审批白名单又只认 `quality-ncr`——三方各写各的字面量，种子态下
+ * 处置审批既选不到模板也判不通过。取 `ncr-disposition` 是因为它才是已落库事实
+ * （模板 / 历史链 / 委托）用的码值，且语义就是被审对象「不合格品处置」。
+ */
+export const NCR_DISPOSITION_DOCUMENT_TYPE = 'ncr-disposition'
+
 export const APPROVAL_DOCUMENT_TYPE_OPTIONS: RefOption[] = [
   { value: 'engineering-change-order', label: '工程变更单' },
-  { value: 'quality-ncr', label: '质量不合格单' },
+  { value: NCR_DISPOSITION_DOCUMENT_TYPE, label: '不合格品处置' },
   { value: 'purchase-order', label: '采购订单' },
 ]
 

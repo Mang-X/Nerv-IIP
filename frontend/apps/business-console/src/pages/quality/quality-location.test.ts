@@ -402,12 +402,17 @@ describe('quality route location behavior', () => {
         canCloseNcr: boolean
         canSubmitDisposition: boolean
         closeForm: { reason: string }
+        dispositionForm: { dispositionType: string; attachmentFileIds: string }
         openNcr: (ncr: Record<string, unknown>) => void
         submitCloseNcr: () => Promise<void>
         submitNcrDisposition: () => Promise<void>
       }
       vm.openNcr(qualityState.ncrs[0]!)
       vm.closeForm.reason = '处置结果已核验'
+      // 本用例只考察业务范围这一维门禁：选一个不需要 MRB 评审 / 中央审批链的处置类型，
+      // 免得把 #1327 新增的处置前置条件混进来。
+      vm.dispositionForm.dispositionType = 'sort-and-screen'
+      vm.dispositionForm.attachmentFileIds = 'file-001'
       await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(false)

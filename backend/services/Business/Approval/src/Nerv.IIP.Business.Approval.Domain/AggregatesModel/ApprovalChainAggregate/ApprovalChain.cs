@@ -118,23 +118,23 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
                 return sameActorDecision;
             }
 
-            throw new InvalidOperationException("Approval decision conflicts with an existing decision from the same actor.");
+            throw new InvalidOperationException("同一审批人已对该步骤作出过不同裁决，不能再次提交。");
         }
 
         if (Status is not ApprovalChainStatuses.Pending)
         {
-            throw new InvalidOperationException("Approval chain is terminal.");
+            throw new InvalidOperationException("该审批链已结束（通过 / 驳回 / 退回 / 撤回），不能再裁决。");
         }
 
         var stepGroup = steps.Where(x => x.StepNo == stepNo).ToArray();
         if (stepGroup.Length == 0)
         {
-            throw new InvalidOperationException("Approval step was not found.");
+            throw new InvalidOperationException("该审批链上不存在这一步骤。");
         }
 
         if (CanActOnStepNo(stepNo) is false)
         {
-            throw new InvalidOperationException("Approval steps must be resolved in sequence.");
+            throw new InvalidOperationException("审批必须按步骤顺序裁决，前序步骤尚未办结。");
         }
 
         var step = stepGroup.SingleOrDefault(x =>
@@ -142,7 +142,9 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
                     normalizedOnBehalfOfActorType ?? normalizedActorType,
                     normalizedOnBehalfOfActorRef ?? normalizedActorRef)
                 && x.Status == ApprovalStepStatuses.Pending)
-            ?? throw new InvalidOperationException("No pending approval step is assigned to the actor.");
+            // #1327：非审批人点「裁决」此前抛未捕获的 InvalidOperationException → 500 英文生码。
+            // 这是一条**业务约束**（当前账号不是这一步的审批人 / 受托人），必须是 400 中文。
+            ?? throw new InvalidOperationException("当前账号不是该步骤的审批人，也没有生效中的审批委托，无法裁决。");
         var decidedAtUtc = DateTimeOffset.UtcNow;
         step.Resolve(normalizedActorType, normalizedActorRef, normalizedDecision, normalizedComment, decidedAtUtc);
         var approvalDecision = ApprovalDecision.Record(
