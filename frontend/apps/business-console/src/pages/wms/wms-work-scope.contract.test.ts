@@ -37,4 +37,15 @@ describe('WMS PC 作业范围契约', () => {
     expect(source).not.toContain('暂不支持按操作员归属筛选')
     expect(source).not.toContain('当前登录组织 / 当前业务环境')
   })
+
+  // #1343：范围未就绪的原因（目录 403 / 零授权范围 / 尚未选择）必须原样说给用户，
+  // 不能一律写死成「请先在顶部选择业务范围」——admin 整域 403 时那句话是假的。
+  it.each(cases)('$page 未就绪时说真实原因而不是写死的「请先选择」', ({ page }) => {
+    const source = pageSource(page)
+
+    expect(source).toContain('unreadyMessage: workScopeUnreadyMessage')
+    expect(source).toContain(':awaiting-scope-message="')
+    expect(source).toMatch(/workScopeUnreadyMessage \|\| '请先在顶部选择业务范围/)
+    expect(source).not.toContain("'作业范围目录未就绪，未发起查询。'")
+  })
 })

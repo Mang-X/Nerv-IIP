@@ -69,9 +69,10 @@ public sealed class WarehouseWorkScopeAuthorizationTests
 
         Assert.Equal("user-emp-049", self.AssignedOperatorUserId);
         Assert.Equal(["POOL-RECEIVING"], pool.PoolCodes);
-        Assert.Equal(["POOL-RECEIVING", "POOL-SHIPPING"], site.PoolCodes);
+        // 站点范围＝整站作业面（IAM 精确站点授权即成立），不再按作业池成员资格收窄。
+        Assert.True(site.SiteWide);
+        Assert.Empty(site.PoolCodes);
         Assert.Equal(["SITE-001"], site.SiteCodes);
-        Assert.DoesNotContain("POOL-OTHER-SITE", site.PoolCodes);
     }
 
     [Fact]
@@ -230,7 +231,7 @@ public sealed class WarehouseWorkScopeAuthorizationTests
     }
 
     [Fact]
-    public async Task Self_pool_and_site_queues_use_persisted_assignment_and_never_show_legacy_unassigned()
+    public async Task Self_pool_and_site_queues_use_persisted_assignment_and_respect_scope_boundaries()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -290,11 +291,79 @@ public sealed class WarehouseWorkScopeAuthorizationTests
         Assert.Equal(
             ["POOL-OTHER-OP", "POOL-UNCLAIMED", "SELF"],
             pool.Items.Select(item => item.TaskNo).Order(StringComparer.Ordinal));
+        // 站点范围＝整站作业面：站内未派工的任务也必须可见（主管的待派工作量），
+        // 但绝不跨越 IAM 精确站点授权。
         Assert.Equal(
-            ["POOL-OTHER-OP", "POOL-UNCLAIMED", "SELF", "SITE-OTHER-POOL"],
+            ["LEGACY-UNASSIGNED", "POOL-OTHER-OP", "POOL-UNCLAIMED", "SELF", "SITE-OTHER-POOL"],
             site.Items.Select(item => item.TaskNo).Order(StringComparer.Ordinal));
-        Assert.DoesNotContain(site.Items, item => item.TaskNo == "LEGACY-UNASSIGNED");
         Assert.DoesNotContain(site.Items, item => item.TaskNo == "OTHER-SITE");
+    }
+
+    [Fact]
+    public async Task Grant_only_principal_without_membership_gets_site_scope_but_not_self_or_pool()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedPool(
+            dbContext,
+            "POOL-RECEIVING",
+            "收货上架组",
+            "SITE-001",
+            "user-emp-049",
+            Now.AddDays(-1),
+            Now.AddDays(1));
+        dbContext.WarehouseTasks.AddRange(
+            CreateTask("POOL-TASK", "SITE-001", "POOL-RECEIVING", "user-emp-049"),
+            CreateTask("UNASSIGNED-TASK", "SITE-001", null, null),
+            CreateTask("OTHER-SITE-TASK", "SITE-002", null, null));
+        await dbContext.SaveChangesAsync();
+        var authorizer = new WarehouseWorkScopeAuthorizer(
+            dbContext,
+            new StaticTimeProvider(Now));
+
+        var catalog = await authorizer.GetCatalogAsync(
+            "org-001",
+            "env-dev",
+            "user-admin",
+            ["SITE-001"],
+            CancellationToken.None);
+        var site = await authorizer.ResolveAsync(
+            WorkScope("site", "SITE-001", actor: "user-admin", authorizedSites: ["SITE-001"]),
+            CancellationToken.None);
+        var tasks = await Query(new ListWarehouseTasksQueryHandler(dbContext), site);
+
+        // 无作业池成员资格也必须有可选范围：站点范围由 IAM 精确站点授权直接成立。
+        Assert.Equal(
+            [("site", "SITE-001")],
+            catalog.Items.Select(item => (item.ScopeKind, item.ScopeId)).ToArray());
+        Assert.True(site.SiteWide);
+        Assert.Equal(
+            ["POOL-TASK", "UNASSIGNED-TASK"],
+            tasks.Items.Select(item => item.TaskNo).Order(StringComparer.Ordinal));
+
+        // self / work-pool 仍然以成员资格为准，越界继续 fail closed。
+        var selfFailure = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            authorizer.ResolveAsync(
+                WorkScope("self", "user-admin", actor: "user-admin", authorizedSites: ["SITE-001"]),
+                CancellationToken.None));
+        Assert.Equal("no-effective-work-pool-membership", selfFailure.Reason);
+        await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            authorizer.ResolveAsync(
+                WorkScope(
+                    "work-pool",
+                    "POOL-RECEIVING",
+                    actor: "user-admin",
+                    authorizedSites: ["SITE-001"]),
+                CancellationToken.None));
+        await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            authorizer.ResolveAsync(
+                WorkScope(
+                    "site",
+                    "SITE-002",
+                    actor: "user-admin",
+                    authorizedSites: ["SITE-001"]),
+                CancellationToken.None));
     }
 
     private static WarehouseWorkScopeRequest WorkScope(
@@ -369,7 +438,8 @@ public sealed class WarehouseWorkScopeAuthorizationTests
                 AssignedPoolCodes: selection.AssignedOperatorUserId is null
                     ? selection.PoolCodes
                     : null,
-                SiteCodes: selection.SiteCodes),
+                SiteCodes: selection.SiteCodes,
+                SiteWideScope: selection.SiteWide),
             CancellationToken.None);
 
     private sealed class StaticTimeProvider(DateTime utcNow) : TimeProvider

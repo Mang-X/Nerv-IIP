@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 
@@ -320,7 +321,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
             await approvalClient.StartApprovalAsync(new PurchaseOrderApprovalRequest(
                 order.OrganizationId,
                 order.EnvironmentId,
-                "erp-sales-credit-release",
+                ApprovalTemplateCodes.SalesCreditRelease,
                 "business-erp",
                 "sales-order-credit-release",
                 order.SalesOrderNo,

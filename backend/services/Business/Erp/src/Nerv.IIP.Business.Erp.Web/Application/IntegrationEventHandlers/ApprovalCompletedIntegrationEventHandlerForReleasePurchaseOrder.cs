@@ -94,7 +94,8 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         }
 
         if (!string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "purchase-order", StringComparison.OrdinalIgnoreCase))
+            // #1344：回写消费侧与发起侧共用审批契约的单据类型常量（漂移即回写静默丢事件）。
+            || !string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, ApprovalDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

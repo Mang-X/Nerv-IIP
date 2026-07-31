@@ -358,6 +358,105 @@ public sealed class WmsWarehouseTaskManualExecutionTests
         Assert.Equal(WarehouseTaskStatus.Open, task.Status);
     }
 
+    /// <summary>
+    /// #1343：站点范围（IAM 精确站点授权）读写口径必须一致。写侧闸门若仍按作业池成员资格
+    /// 判定，站点范围就是「能读不能做」——六页每个按钮 403。站点边界仍强制。
+    /// </summary>
+    [Fact]
+    public async Task Site_scope_executes_station_wide_tasks_without_pool_membership_but_never_cross_site()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var putaway = CreateTask(
+            WarehouseTaskType.Putaway,
+            taskNo: "PUT-SITE-001",
+            assignedPoolCode: "POOL-A");
+        var picking = CreateTask(
+            WarehouseTaskType.Picking,
+            taskNo: "PICK-SITE-001",
+            assignedPoolCode: "POOL-A");
+        // 站点主管不是任何作业池成员，只有 SITE-01 的精确站点授权。
+        GrantPoolAccess(dbContext, "user-operator");
+        dbContext.WarehouseTasks.AddRange(putaway, picking);
+        await dbContext.SaveChangesAsync();
+
+        var startedPutaway = await new StartWarehouseTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            new StartWarehouseTaskCommand(
+                putaway.Id,
+                "org-001",
+                "env-dev",
+                "user-site-supervisor",
+                "start-put-site-001",
+                1,
+                WarehouseTaskType.Putaway,
+                ["SITE-01"],
+                "site",
+                "SITE-01"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var completedPutaway = await new CompleteWarehouseTaskActionCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            new CompleteWarehouseTaskActionCommand(
+                putaway.Id,
+                "org-001",
+                "env-dev",
+                "user-site-supervisor",
+                "complete-put-site-001",
+                startedPutaway.Version,
+                10m,
+                null,
+                WarehouseTaskType.Putaway,
+                ["SITE-01"],
+                "site",
+                "SITE-01"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var startedPicking = await new StartWarehouseTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            new StartWarehouseTaskCommand(
+                picking.Id,
+                "org-001",
+                "env-dev",
+                "user-site-supervisor",
+                "start-pick-site-001",
+                1,
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "site",
+                "SITE-01"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(WarehouseTaskStatus.InProgress.ToString(), startedPutaway.Status);
+        Assert.Equal(WarehouseTaskStatus.Completed.ToString(), completedPutaway.Status);
+        Assert.Equal(WarehouseTaskStatus.InProgress.ToString(), startedPicking.Status);
+
+        // 站点边界仍强制：授权站点之外的站点范围一律拒绝，不因 SiteWide 放行。
+        var crossSite = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            new StartWarehouseTaskCommandHandler(
+                dbContext,
+                CreateAuthorizer(dbContext)).Handle(
+                new StartWarehouseTaskCommand(
+                    picking.Id,
+                    "org-001",
+                    "env-dev",
+                    "user-site-supervisor",
+                    "start-pick-site-cross",
+                    startedPicking.Version,
+                    WarehouseTaskType.Picking,
+                    ["SITE-02"],
+                    "site",
+                    "SITE-02"),
+                CancellationToken.None));
+
+        Assert.Equal("site-outside-exact-grant", crossSite.Reason);
+    }
+
     [Fact]
     public async Task Picking_difference_completes_without_inflating_actual_quantity()
     {
