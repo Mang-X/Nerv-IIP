@@ -221,6 +221,46 @@ describe('NvEntityPicker', () => {
     })
   })
 
+  // 台账 #32：工单/物料这类持续新增的大目录，只拉前 N 条再本地过滤 = 第 N+1 条起永远选不到。
+  // serverSearch 打开后本地不再过滤，搜索词交给调用方去发请求。
+  describe('serverSearch —— 目录超过一页时交给服务端过滤', () => {
+    it('把搜索词抛给调用方，且不本地过滤（服务端结果原样呈现）', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择工单', serverSearch: true, search: '' },
+        attachTo: document.body,
+      })
+
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const search = document.body.querySelector('input[role="combobox"]') as HTMLInputElement
+      search.value = 'WO-2026'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+
+      expect(wrapper.emitted('update:search')?.at(-1)).toEqual(['WO-2026'])
+      // 服务端已过滤过：本地不能再删一遍，否则「服务端命中、本地不匹配」的项会消失。
+      expect(document.body.querySelectorAll('[role="option"]').length).toBe(options.length)
+
+      wrapper.unmount()
+    })
+
+    it('目录还有没显示出来的条目时如实说明，并给出继续输入的出路', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择工单', serverSearch: true, search: '', totalCount: 4760 },
+        attachTo: document.body,
+      })
+
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.textContent).toContain('显示 2 / 共 4760 条')
+      expect(document.body.textContent).toContain('输入关键字继续筛选')
+
+      wrapper.unmount()
+    })
+  })
+
   it('clears the selection without opening the picker', async () => {
     const wrapper = mount(NvEntityPicker, {
       props: {

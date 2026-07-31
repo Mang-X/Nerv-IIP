@@ -26,9 +26,9 @@ const openModel = computed({
   set: (value) => emit('update:open', value),
 })
 
-// 「对该单排产」（MAN-694 / #1262）。排程的最小单位是 MES 工单，而契约里还没有
-// 销售订单 → 工单 的稳定关联键（见 useFulfillmentTimeline 的 mes-work-order 节点），
-// 所以这里把销售单号当**检索起点**交给弹窗，由排产员确认工单——绝不按相似编号自动认定。
+// 「对该单排产」（MAN-694 / #1262）。排程的最小单位是 MES 工单；时间线的 mes-work-order
+// 节点已能沿 pegging → 计划建议 → 下游引用 定位到工单，但合批工单可能同时承接多张订单，
+// 排产范围要由排产员当场确认，所以这里仍把销售单号当**检索起点**交给弹窗，不自动代选。
 const scheduleOpen = shallowRef(false)
 const canSchedule = useCanScheduleSingleOrder()
 const salesOrderNo = computed(() => props.order?.salesOrderNo?.trim() ?? '')

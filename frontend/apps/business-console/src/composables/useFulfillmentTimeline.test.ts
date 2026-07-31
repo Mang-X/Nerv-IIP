@@ -1,14 +1,24 @@
 import type {
   BusinessConsoleDemandSourceItem,
   BusinessConsoleErpDeliveryOrderItem,
+  BusinessConsoleMesProductionPlanRow,
+  BusinessConsoleMrpPeggingItem,
+  BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
 import { describe, expect, it } from 'vitest'
 import {
   classifyFulfillmentFailure,
+  describeMrpSuggestion,
+  describeWorkOrderLink,
   FulfillmentNodeError,
   matchDeliveryOrders,
+  matchDemandPeggings,
   matchDemandSource,
+  matchPlanningSuggestion,
+  matchProductionPlanRow,
+  matchSuggestionWorkOrderNo,
   normalizeScope,
+  peggingSuggestionIds,
   resolveRecordNode,
 } from './useFulfillmentTimeline'
 
@@ -75,6 +85,166 @@ describe('matchDemandSource', () => {
   it('never guesses by similar codes and suppresses empty scope', () => {
     expect(matchDemandSource(items, 'SO-2')).toBeUndefined()
     expect(matchDemandSource(items, undefined)).toBeUndefined()
+  })
+})
+
+// 合批场景（#1304 走查实证）：SO-A 与 SO-B 被合并成同一张工单 WO-20260731-000001，
+// MRP 建议对两张订单各留一行 demand pegging，工单来源引用的首条需求引用是 SO-A。
+const MERGED_SUGGESTION_ID = '0199e1f3-0000-7000-8000-000000000001'
+const mergedPeggings: BusinessConsoleMrpPeggingItem[] = [
+  {
+    suggestionId: MERGED_SUGGESTION_ID,
+    peggingType: 'demand',
+    demandSourceReference: 'SO-A',
+    parentSkuCode: 'SKU-FG-100',
+    quantity: 60,
+  },
+  {
+    suggestionId: MERGED_SUGGESTION_ID,
+    peggingType: 'demand',
+    demandSourceReference: 'SO-B',
+    parentSkuCode: 'SKU-FG-100',
+    quantity: 40,
+  },
+  {
+    suggestionId: MERGED_SUGGESTION_ID,
+    peggingType: 'scheduled-receipt',
+    demandSourceReference: 'BusinessErp:PurchaseOrder:SO-A',
+    parentSkuCode: 'SKU-FG-100',
+    quantity: 10,
+  },
+]
+
+const mergedSuggestions: BusinessConsolePlanningSuggestionItem[] = [
+  {
+    suggestionId: 'other-suggestion',
+    skuCode: 'SKU-FG-200',
+    quantity: 5,
+    uomCode: 'PCS',
+    status: 'accepted',
+    downstreamService: 'BusinessMes',
+    downstreamDocumentType: 'WorkOrder',
+    downstreamDocumentId: 'WO-20260731-000009',
+  },
+  {
+    suggestionId: MERGED_SUGGESTION_ID,
+    skuCode: 'SKU-FG-100',
+    quantity: 100,
+    uomCode: 'PCS',
+    status: 'accepted',
+    downstreamService: 'BusinessMes',
+    downstreamDocumentType: 'WorkOrder',
+    downstreamDocumentId: 'WO-20260731-000001',
+  },
+]
+
+const mergedPlanRows: BusinessConsoleMesProductionPlanRow[] = [
+  {
+    productionPlanId: MERGED_SUGGESTION_ID,
+    sourceSystem: 'DemandPlanning',
+    sourceDocumentType: 'PlanningSuggestion',
+    sourceDocumentId: MERGED_SUGGESTION_ID,
+    sourceDemandReference: 'SO-A',
+    skuId: 'SKU-FG-100',
+    plannedQuantity: 100,
+    status: 'released',
+  },
+]
+
+describe('MRP pegging → 建议 → MES 工单（含合批）', () => {
+  it('只认 demand 类型 pegging，scheduled-receipt 的复合引用不参与匹配', () => {
+    expect(matchDemandPeggings(mergedPeggings, 'SO-A')).toHaveLength(1)
+    expect(matchDemandPeggings(mergedPeggings, 'BusinessErp:PurchaseOrder:SO-A')).toEqual([])
+  })
+
+  it('合批工单：两张订单各自都能命中同一个建议', () => {
+    const fromA = peggingSuggestionIds(matchDemandPeggings(mergedPeggings, 'SO-A'))
+    const fromB = peggingSuggestionIds(matchDemandPeggings(mergedPeggings, 'SO-B'))
+    expect(fromA).toEqual([MERGED_SUGGESTION_ID])
+    expect(fromB).toEqual([MERGED_SUGGESTION_ID])
+  })
+
+  it('空 scope 不匹配（不发请求的前置条件）', () => {
+    expect(matchDemandPeggings(mergedPeggings, undefined)).toEqual([])
+    expect(peggingSuggestionIds([])).toEqual([])
+  })
+
+  it('合批工单：两张订单都定位到同一张工单号', () => {
+    for (const salesOrderNo of ['SO-A', 'SO-B']) {
+      const ids = peggingSuggestionIds(matchDemandPeggings(mergedPeggings, salesOrderNo))
+      expect(matchSuggestionWorkOrderNo(mergedSuggestions, ids)).toBe('WO-20260731-000001')
+      expect(matchPlanningSuggestion(mergedSuggestions, ids)?.skuCode).toBe('SKU-FG-100')
+      expect(matchProductionPlanRow(mergedPlanRows, ids, salesOrderNo)?.status).toBe('released')
+    }
+  })
+
+  it('下游引用码值大小写/分隔符两种口径都认', () => {
+    const ids = [MERGED_SUGGESTION_ID]
+    expect(
+      matchSuggestionWorkOrderNo(
+        [
+          {
+            suggestionId: MERGED_SUGGESTION_ID,
+            downstreamService: 'business-mes',
+            downstreamDocumentType: 'work-order',
+            downstreamDocumentId: 'WO-20260731-000001',
+          },
+        ],
+        ids,
+      ),
+    ).toBe('WO-20260731-000001')
+  })
+
+  it('别的下游单据（采购申请）不冒充工单，未接受的建议如实空态', () => {
+    const ids = [MERGED_SUGGESTION_ID]
+    expect(
+      matchSuggestionWorkOrderNo(
+        [
+          {
+            suggestionId: MERGED_SUGGESTION_ID,
+            downstreamService: 'BusinessErp',
+            downstreamDocumentType: 'PurchaseRequisition',
+            downstreamDocumentId: 'PR-20260731-000001',
+          },
+        ],
+        ids,
+      ),
+    ).toBeUndefined()
+    expect(
+      matchSuggestionWorkOrderNo([{ suggestionId: MERGED_SUGGESTION_ID, status: 'open' }], ids),
+    ).toBeUndefined()
+    expect(matchSuggestionWorkOrderNo(mergedSuggestions, [])).toBeUndefined()
+    expect(matchPlanningSuggestion(mergedSuggestions, [])).toBeUndefined()
+  })
+
+  it('合批工单的首条需求引用是别的订单号，不能拿来把本单排除掉', () => {
+    expect(
+      matchProductionPlanRow(mergedPlanRows, [MERGED_SUGGESTION_ID], 'SO-B')?.sourceDocumentId,
+    ).toBe(MERGED_SUGGESTION_ID)
+    // 无建议时退回按销售单号兜底命中
+    expect(matchProductionPlanRow(mergedPlanRows, [], 'SO-A')).toBeDefined()
+    expect(matchProductionPlanRow(mergedPlanRows, [], 'SO-B')).toBeUndefined()
+  })
+})
+
+describe('节点文案：不显裸 GUID、合批如实说明', () => {
+  it('MRP 建议用「物料 × 数量」自识别，绝不显 suggestionId', () => {
+    const label = describeMrpSuggestion({
+      pegging: mergedPeggings[0]!,
+      suggestion: mergedSuggestions[1]!,
+    })
+    expect(label).toBe('SKU-FG-100 × 100 PCS')
+    expect(label).not.toContain(MERGED_SUGGESTION_ID)
+  })
+
+  it('建议本体缺席时回落 pegging 上的物料与数量', () => {
+    expect(describeMrpSuggestion({ pegging: mergedPeggings[1]! })).toBe('SKU-FG-100 × 40')
+  })
+
+  it('合批工单明说同时承接别的订单，非合批不加噪声', () => {
+    const record = { workOrderNo: 'WO-20260731-000001', planRow: mergedPlanRows[0]! }
+    expect(describeWorkOrderLink(record, 'SO-B')).toContain('该工单为合批工单，同时承接 SO-A')
+    expect(describeWorkOrderLink(record, 'SO-A')).not.toContain('合批')
   })
 })
 
