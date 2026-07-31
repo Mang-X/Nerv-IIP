@@ -144,6 +144,9 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
     label: string
   }): Promise<{ row: SiteStockRow; lines: SiteStockLine[] } | null> {
     const uomCode = catalog.resolveUomCode(option.value)
+    // 物料主档还没给出基本单位就跳过这条：台账查询是「单物料单单位」维度，
+    // 猜一个单位只会查回空数据，还会让总览把这条算成「零库存」。
+    if (!uomCode) return null
     const { data } = await getBusinessConsoleInventoryAvailability({
       query: {
         organizationId: context.organizationId,

@@ -1988,15 +1988,31 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
                 detail.WorkOrderId,
                 "converted-to-work-order"));
 
+            // 合批建议一张工单 peg 到多个需求源：为每个持久化的需求源引用点亮 pegged-to-plan 边；
+            // 历史行（升级前）集合为空，回退单值 source_demand_reference。
+            var demandReferences = new List<string>();
             if (!string.IsNullOrWhiteSpace(detail.SourcePlanReference.SourceDemandReference))
             {
+                demandReferences.Add(detail.SourcePlanReference.SourceDemandReference);
+            }
+
+            foreach (var reference in workOrder.SourcePlanReference?.SourceDemandReferences ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(reference) && !demandReferences.Contains(reference, StringComparer.Ordinal))
+                {
+                    demandReferences.Add(reference);
+                }
+            }
+
+            foreach (var demandReference in demandReferences)
+            {
                 nodes.Add(new MesTraceabilityNode(
-                    detail.SourcePlanReference.SourceDemandReference,
+                    demandReference,
                     "DemandSource",
-                    detail.SourcePlanReference.SourceDemandReference,
+                    demandReference,
                     "Source"));
                 edges.Add(new MesTraceabilityEdge(
-                    detail.SourcePlanReference.SourceDemandReference,
+                    demandReference,
                     detail.SourcePlanReference.SourceDocumentId,
                     "pegged-to-plan"));
             }

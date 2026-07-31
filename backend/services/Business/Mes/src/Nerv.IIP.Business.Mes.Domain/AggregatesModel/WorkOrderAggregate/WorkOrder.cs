@@ -24,18 +24,45 @@ public sealed class SourcePlanReference
         string sourceSystem,
         string sourceDocumentType,
         string sourceDocumentId,
-        string? sourceDemandReference)
+        string? sourceDemandReference,
+        IReadOnlyCollection<string>? sourceDemandReferences = null)
     {
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = DomainGuard.Required(sourceDocumentId, nameof(sourceDocumentId));
         SourceDemandReference = string.IsNullOrWhiteSpace(sourceDemandReference) ? null : sourceDemandReference.Trim();
+        var references = new List<string>();
+        if (SourceDemandReference is not null)
+        {
+            references.Add(SourceDemandReference);
+        }
+
+        foreach (var candidate in sourceDemandReferences ?? [])
+        {
+            var reference = candidate?.Trim();
+            if (string.IsNullOrEmpty(reference) || references.Contains(reference, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            references.Add(reference);
+        }
+
+        SourceDemandReferences = references;
     }
 
     public string SourceSystem { get; private set; } = string.Empty;
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string? SourceDemandReference { get; private set; }
+
+    /// <summary>
+    /// 来源建议 peg 到的全部需求源引用（含主引用，按传入顺序去重）。
+    /// 合批建议一张工单对应多张需求源单据；单值 <see cref="SourceDemandReference"/> 只能点亮其中一张，
+    /// 追溯读面按本集合为每个需求源生成 pegged-to-plan 边。
+    /// 升级前的历史行本列为 null，读面回退单值引用；新建工单恒为非空集合。
+    /// </summary>
+    public IReadOnlyList<string>? SourceDemandReferences { get; private set; }
 }
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot

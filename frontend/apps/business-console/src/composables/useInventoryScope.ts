@@ -21,8 +21,6 @@ import { useBusinessMasterDataResources, useBusinessSkus } from './useBusinessMa
  * 与库存台账种子写入的站点一致，保证单工厂现场首屏仍能出数；主数据一旦返回工厂就以主数据为准。
  */
 export const FALLBACK_INVENTORY_SITE_CODE = 'SITE-001'
-/** 物料主数据没有基本单位时的兜底单位（计件物料在台账里就是 pcs）。 */
-export const FALLBACK_INVENTORY_UOM_CODE = 'pcs'
 
 /** 目录里挑不到「物料主数据」时的取数上限——库存现场的物料目录量级在数百条。 */
 const CATALOG_TAKE = 500
@@ -71,9 +69,13 @@ export function useInventoryScopeCatalog() {
   return {
     baseUomBySku,
     defaultSiteCode,
-    /** 所选物料的基本单位；目录里查不到就退到兜底单位，绝不留空导致查询不发。 */
-    resolveUomCode: (skuCode: string) =>
-      baseUomBySku.value.get(skuCode.trim()) ?? FALLBACK_INVENTORY_UOM_CODE,
+    /**
+     * 所选物料的基本单位；目录里查不到就返回空串，绝不猜一个通用单位。
+     * 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs），主档建物料时 baseUomCode 必填，
+     * 查不到只可能是目录还没到——那就等目录（本 computed 一变，调用侧的 watch 会重算）。
+     * 猜出来的单位查库存查不到货，写库存更会让后端单位换算失败。
+     */
+    resolveUomCode: (skuCode: string) => baseUomBySku.value.get(skuCode.trim()) ?? '',
     siteOptions,
     sitesPending: siteCatalog.resourcesPending,
     skuOptions,

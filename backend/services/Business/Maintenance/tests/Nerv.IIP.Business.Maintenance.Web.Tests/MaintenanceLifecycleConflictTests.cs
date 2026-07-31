@@ -184,6 +184,45 @@ public sealed class MaintenanceLifecycleConflictTests
         Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.UomCode), StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Regression for #1285: a spare part line without a unit of measure used to be accepted and the
+    /// integration event converter then invented one. The unit drives the inventory issue posting, so the
+    /// write is rejected up front instead.
+    /// </summary>
+    [Fact]
+    public void Complete_validator_rejects_a_spare_part_line_without_a_unit_of_measure()
+    {
+        var result = new CompleteMaintenanceWorkOrderCommandValidator().Validate(
+            new CompleteMaintenanceWorkOrderCommand(
+                new MaintenanceWorkOrderId(Guid.CreateVersion7()),
+                "fixed",
+                "equipment-failure",
+                10,
+                [new MaintenanceSparePartInput("SPARE-001", 2m, null)]));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.PropertyName.Contains(nameof(MaintenanceSparePartInput.UomCode), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Same rule on the single spare-part registration path (regression for #1285).
+    /// </summary>
+    [Fact]
+    public void Create_spare_part_validator_rejects_a_missing_unit_of_measure()
+    {
+        var result = new CreateMaintenanceSparePartCommandValidator().Validate(
+            new CreateMaintenanceSparePartCommand(
+                "org-001",
+                "env-dev",
+                new MaintenanceWorkOrderId(Guid.CreateVersion7()),
+                "SPARE-001",
+                2m,
+                null));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => string.Equals(x.PropertyName, nameof(CreateMaintenanceSparePartCommand.UomCode), StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task Complete_http_endpoint_returns_409_with_a_safe_envelope()
     {

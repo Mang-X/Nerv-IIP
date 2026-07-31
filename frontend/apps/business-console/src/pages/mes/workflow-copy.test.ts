@@ -51,10 +51,15 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     resourcesPending: ref(false),
     filters: reactive({}),
   }),
-  useBusinessSkus: () => ({ skus: ref([]), skusPending: ref(false), filters: reactive({}) }),
+  // 完工入库的单位跟随成品物料主档的基本单位（FG-001 是计件成品 → pcs）。
+  useBusinessSkus: () => ({
+    skus: ref([{ code: 'FG-001', baseUomCode: 'pcs', active: true }]),
+    skusPending: ref(false),
+    filters: reactive({}),
+  }),
   // 完工入库的单位改成从计量单位主数据里选。
   useBusinessUoms: () => ({
-    uoms: ref([{ code: 'EA', displayName: '个', active: true }]),
+    uoms: ref([{ code: 'pcs', displayName: '个', active: true }]),
     uomsPending: ref(false),
     filters: reactive({}),
   }),
@@ -613,7 +618,7 @@ describe('MES workflow copy', () => {
         quantity: 10,
         skuId: 'FG-001',
         unitCost: 12.34,
-        uomCode: 'EA',
+        uomCode: 'pcs',
         workOrderId: 'WO-001',
       }),
     )

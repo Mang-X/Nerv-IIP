@@ -178,7 +178,8 @@ const createOpen = shallowRef(false)
 const createForm = reactive({
   countNo: '',
   skuCode: '',
-  uomCode: 'EA',
+  // 单位跟随物料主档带出，不预填假单位：写死通用单位会让后端单位换算直接失败。
+  uomCode: '',
   siteCode: '',
   locationCode: '',
   expectedQuantity: '',
@@ -289,7 +290,7 @@ function openCreate() {
   if (!canManageCounts.value) return
   createForm.countNo = ''
   createForm.skuCode = ''
-  createForm.uomCode = 'EA'
+  createForm.uomCode = ''
   createForm.siteCode = ''
   createForm.locationCode = ''
   createForm.expectedQuantity = ''
@@ -301,10 +302,11 @@ async function submitCreate() {
   if (
     !createForm.countNo.trim() ||
     !createForm.skuCode.trim() ||
+    !createForm.uomCode.trim() ||
     !createForm.siteCode.trim() ||
     !createForm.locationCode.trim()
   ) {
-    createError.value = '请填写盘点单号、物料、工厂与库位。'
+    createError.value = '请填写盘点单号、物料、工厂与库位；单位在选定物料后自动带出。'
     return
   }
   const expected =
@@ -318,7 +320,7 @@ async function submitCreate() {
     environmentId: filters.environmentId,
     countNo: createForm.countNo.trim(),
     skuCode: createForm.skuCode.trim(),
-    uomCode: createForm.uomCode.trim() || 'EA',
+    uomCode: createForm.uomCode.trim(),
     siteCode: createForm.siteCode.trim(),
     locationCode: createForm.locationCode.trim(),
     expectedQuantity: expected,

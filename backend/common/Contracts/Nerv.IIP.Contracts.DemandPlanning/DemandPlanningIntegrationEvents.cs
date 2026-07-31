@@ -124,4 +124,5 @@ public sealed record PlanningSuggestionAcceptedPayload(
     string? ProductionVersionReference,
     string DownstreamService,
     string DownstreamDocumentType,
-    string? DownstreamDocumentId);
+    string? DownstreamDocumentId,
+    IReadOnlyCollection<string>? DemandSourceReferences = null);
