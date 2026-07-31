@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
@@ -60,6 +61,48 @@ public sealed class InspectionAggregateTests
         Assert.Equal("failed", line.Result);
         Assert.Equal(11m, line.MeasuredValue);
         Assert.Equal("Tube length above upper specification limit", record.DispositionReason);
+    }
+
+    [Fact]
+    public void Planned_variable_inspection_without_measured_value_throws_known_exception_with_chinese_message()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "length",
+            "Tube length",
+            "caliper",
+            "critical",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Variable,
+            nominalValue: 10m,
+            lowerSpecLimit: 9.5m,
+            upperSpecLimit: 10.5m,
+            unitCode: "mm",
+            samplingPlan: null);
+        plan.Activate();
+
+        // PC 端旧表单只发 observedValue 文本不带 measuredValue（#1326）：
+        // 必须是 KnownException（领域 400 + 中文可行动文案），不能落成 InvalidOperationException 500。
+        var exception = Assert.Throws<KnownException>(() => InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-MISSING-MV",
+            "SKU-RM-1000",
+            inspectedQuantity: 20m,
+            batchNo: "BATCH-001",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Pass("length", observedValue: "10.1", unitCode: "mm", attachmentFileIds: []),
+            ],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: []));
+
+        Assert.Contains("length", exception.Message);
+        Assert.Contains("测量值", exception.Message);
     }
 
     [Fact]
