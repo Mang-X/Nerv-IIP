@@ -2,6 +2,7 @@
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -44,10 +45,14 @@ builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrati
 var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+// `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
+// —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
+// 未显式配置时它回落到权威键，不再各自留一份默认值。
+var inventorySiteCode = builder.Configuration["Inventory:SiteCode"] ?? string.Empty;
 builder.Services.AddSingleton(new MesMaterialRequirementInventoryOptions
 {
-    DefaultSiteCode = builder.Configuration["Inventory:DefaultSiteCode"] ?? "production",
-    SiteCodes = ResolveSiteCodes(builder.Configuration),
+    DefaultSiteCode = inventorySiteCode,
+    SiteCodes = ResolveSiteCodes(builder.Configuration) ?? (string.IsNullOrWhiteSpace(inventorySiteCode) ? null : [inventorySiteCode]),
 });
 builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
@@ -61,6 +66,9 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
+builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
+builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<LeaderDemoSeedService>();

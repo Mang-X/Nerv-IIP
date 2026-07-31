@@ -290,13 +290,13 @@ public sealed class MesIssue557ExecutionTests
         switch (terminalStatus)
         {
             case MaterialIssueRequest.ReceivedStatus:
-                materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 5m, "LOT-1");
+                materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 5m, "LOT-1");
                 break;
             case MaterialIssueRequest.CancelledStatus:
                 materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:30:00Z"));
                 break;
             case MaterialIssueRequest.ReturnRequestedStatus:
-                materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 2m, "LOT-1");
+                materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 2m, "LOT-1");
                 materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:45:00Z"));
                 break;
             case MaterialIssueRequest.ReservationExpiredStatus:
@@ -307,7 +307,7 @@ public sealed class MesIssue557ExecutionTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new ConfirmLineSideMaterialReceiptCommandHandler(dbContext).Handle(
+            new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver).Handle(
                 new ConfirmLineSideMaterialReceiptCommand(
                     "org-001",
                     "env-dev",
@@ -336,7 +336,7 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z")));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver);
 
         // Confirming more than requested trips ConfirmLineSideReceipt's ArgumentOutOfRangeException guard — a sibling
         // of InvalidOperationException that a catch(InvalidOperationException) would miss. It must still surface as a
@@ -593,7 +593,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-06-29T08:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 5m, "LOT-MAT-001");
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 5m, "LOT-MAT-001");
         materialRequest.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialRequest);
         await dbContext.SaveChangesAsync();
@@ -685,7 +685,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-07-03T07:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-07-03T07:30:00Z"), 5m);
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-07-03T07:30:00Z"), 5m);
         materialRequest.ClearDomainEvents();
         dbContext.WorkOrders.Add(workOrder);
         dbContext.MaterialIssueRequests.Add(materialRequest);
@@ -769,7 +769,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-06-29T08:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), receivedQuantity, "LOT-MAT-001");
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), receivedQuantity, "LOT-MAT-001");
         materialRequest.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialRequest);
         return materialRequest;

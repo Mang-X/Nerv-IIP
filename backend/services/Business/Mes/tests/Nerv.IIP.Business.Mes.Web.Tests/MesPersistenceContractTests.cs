@@ -266,12 +266,14 @@ public sealed class MesPersistenceContractTests
 
             await dbContext.SaveChangesAsync();
 
-            var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+            var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver);
             await receiptHandler.Handle(
                 new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", response.ReferenceId, now.AddMinutes(15), 4m, "LOT-OIL-A"),
                 CancellationToken.None);
 
             await dbContext.SaveChangesAsync();
+            // 齐套只认库存过账成功的量：补上两条腿回执后「已收 4」才成立（#1322）。
+            await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, response.ReferenceId, now.AddMinutes(16));
         }
 
         using var recreatedScope = services.CreateScope();
@@ -449,7 +451,7 @@ public sealed class MesPersistenceContractTests
             "L",
             6m,
             now.AddMinutes(1));
-        wrongLotRequest.ConfirmLineSideReceipt(now.AddMinutes(2), 6m, "LOT-OIL-B");
+        wrongLotRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(2), 6m, "LOT-OIL-B");
         dbContext.MaterialIssueRequests.Add(wrongLotRequest);
         await dbContext.SaveChangesAsync();
 
@@ -479,10 +481,10 @@ public sealed class MesPersistenceContractTests
             10m,
             now);
 
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 4m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 4m, "LOT-OIL-A");
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), 6m, "LOT-OIL-B"));
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), 6m, "LOT-OIL-B"));
         Assert.Contains("同一领料申请不能混用多个物料批次", exception.Message);
     }
 
@@ -1955,7 +1957,7 @@ public sealed class MesPersistenceContractTests
                 "PCS",
                 10m,
                 now.AddMinutes(-10));
-            materialIssue.ConfirmLineSideReceipt(now.AddMinutes(-9), 10m, "LOT-SCRAP");
+            materialIssue.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(-9), 10m, "LOT-SCRAP");
             materialIssue.ClearDomainEvents();
             dbContext.MaterialIssueRequests.Add(materialIssue);
             await dbContext.SaveChangesAsync();
@@ -2020,7 +2022,7 @@ public sealed class MesPersistenceContractTests
                 now.AddMinutes(5)));
             await dbContext.SaveChangesAsync();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
             await dbContext.SaveChangesAsync();
 
             await new RecordProductionReportCommandHandler(dbContext).Handle(
@@ -2113,10 +2115,21 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(dbContext).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", "MIR-PARTIAL-001", now.AddMinutes(5), 4m, "LOT-OIL-A"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
+
+        // 过账回执之前：单据在途，齐套一分钱都不能认（消灭「MES 单方面翻绿」的假绿路径，#1322）。
+        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
+            CancellationToken.None);
+        Assert.Equal(0m, Assert.Single(pendingReadiness.Items).ReceivedQuantity);
+        Assert.Equal(
+            MaterialIssueRequest.ReceiptPostingStatus,
+            await dbContext.MaterialIssueRequests.Select(x => x.Status).SingleAsync());
+
+        await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, "MIR-PARTIAL-001", now.AddMinutes(6));
 
         var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
@@ -2169,7 +2182,7 @@ public sealed class MesPersistenceContractTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), materialLotId: "LOT-OIL-A");
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-OIL-A");
             await dbContext.SaveChangesAsync();
 
             var handler = new RecordProductionReportCommandHandler(dbContext);
@@ -2276,7 +2289,7 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
         var request = await dbContext.MaterialIssueRequests.SingleAsync();
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
         var handler = new RecordProductionReportCommandHandler(dbContext);
@@ -2345,7 +2358,7 @@ public sealed class MesPersistenceContractTests
             "L",
             10m,
             now.AddMinutes(1));
-        otherRequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        otherRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         dbContext.MaterialIssueRequests.Add(otherRequest);
         await dbContext.SaveChangesAsync();
 
@@ -2432,9 +2445,9 @@ public sealed class MesPersistenceContractTests
             now,
             now.AddMinutes(45)));
         var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(1));
-        lotARequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        lotARequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(2));
-        lotBRequest.ConfirmLineSideReceipt(now.AddMinutes(6), 10m, "LOT-OIL-B");
+        lotBRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(6), 10m, "LOT-OIL-B");
         dbContext.MaterialIssueRequests.AddRange(lotARequest, lotBRequest);
         await dbContext.SaveChangesAsync();
 
@@ -2503,7 +2516,7 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
         var request = await dbContext.MaterialIssueRequests.SingleAsync();
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
@@ -2563,7 +2576,7 @@ public sealed class MesPersistenceContractTests
             "L",
             6m,
             now.AddMinutes(1));
-        materialIssue.ConfirmLineSideReceipt(now.AddMinutes(5), 6m, "LOT-OIL-REV");
+        materialIssue.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 6m, "LOT-OIL-REV");
         materialIssue.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialIssue);
         await dbContext.SaveChangesAsync();
