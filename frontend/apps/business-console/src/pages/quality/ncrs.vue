@@ -11,9 +11,16 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import { NCR_DISPOSITION_DOCUMENT_TYPE } from '@/data/approvalReference'
+import {
+  NCR_DISPOSITION_TYPE_OPTIONS,
+  ncrDispositionRequiresCentralApproval,
+  ncrDispositionRequiresEvidence,
+} from '@/data/qualityReference'
 import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   inlineErrorMessage,
   notifyError,
@@ -31,6 +38,7 @@ import {
   NvAlertDialogTitle,
   NvAlertDialogTrigger,
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDropdownMenuItem,
   NvField,
@@ -67,6 +75,7 @@ definePage({
 })
 
 const route = useRoute()
+const auth = useAuthStore()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
@@ -95,9 +104,11 @@ const statusOptions = [
 ]
 
 const dispositionForm = reactive({
-  dispositionType: 'use-as-is',
+  dispositionType: 'rework',
   dispositionApprovalChainId: '',
   attachmentFileIds: '',
+  mrbReviewApproved: false,
+  mrbComment: '',
 })
 const closeForm = reactive({
   reason: '',
@@ -139,11 +150,37 @@ const ncrContextItems = computed(() => {
     ...(ncr.closeReason ? [{ label: '关闭原因', value: ncr.closeReason }] : []),
   ]
 })
+/** 该处置是否需要 MRB 评审 + 中央审批链（与后端同一判定，界面据此自解释地展开录入位）。 */
+const requiresCentralApproval = computed(() =>
+  ncrDispositionRequiresCentralApproval(dispositionForm.dispositionType),
+)
+const requiresDispositionEvidence = computed(() =>
+  ncrDispositionRequiresEvidence(dispositionForm.dispositionType),
+)
+/** MRB 评审人取当前登录人：评审是本人当场作出的结论，不允许替他人署名。 */
+const mrbReviewerId = computed(() => auth.principal?.principalId ?? auth.principal?.loginName ?? '')
+const mrbReviewerLabel = computed(
+  () => auth.principal?.loginName || mrbReviewerId.value || '当前账号',
+)
+const dispositionBlockers = computed(() => {
+  const blockers: string[] = []
+  if (requiresCentralApproval.value) {
+    if (!dispositionForm.mrbReviewApproved) blockers.push('该处置需 MRB 评审通过后才能提交。')
+    if (!mrbReviewerId.value) blockers.push('当前账号无法识别评审人身份，无法署名 MRB 评审。')
+    if (!isNonEmpty(dispositionForm.dispositionApprovalChainId))
+      blockers.push('该处置需关联一条已批准的处置审批链。')
+  }
+  if (requiresDispositionEvidence.value && !isNonEmpty(dispositionForm.attachmentFileIds)) {
+    blockers.push('该处置需先上传处置证据（附件）。')
+  }
+  return blockers
+})
 const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
     isNonEmpty(selectedNcrId.value) &&
     isNonEmpty(dispositionForm.dispositionType) &&
+    dispositionBlockers.value.length === 0 &&
     statusActionGate({
       domain: 'quality-ncr',
       action: 'submit-disposition',
@@ -198,6 +235,8 @@ function ncrStatusLabel(status?: string | null) {
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
   dispositionForm.dispositionApprovalChainId = ''
+  dispositionForm.mrbReviewApproved = false
+  dispositionForm.mrbComment = ''
   closeForm.reason = ''
   closeForm.reworkWorkOrderId =
     contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
@@ -214,6 +253,17 @@ async function submitNcrDisposition() {
     dispositionType: dispositionForm.dispositionType.trim(),
     dispositionApprovalChainId: optionalText(dispositionForm.dispositionApprovalChainId),
     attachmentFileIds: splitCsv(dispositionForm.attachmentFileIds),
+    // 需中央审批的处置：后端要求 MRB 评审记录齐备且全部为 approved，缺这一段提交必 400（#1327）。
+    mrbReviews: requiresCentralApproval.value
+      ? [
+          {
+            reviewerId: mrbReviewerId.value,
+            decision: 'approved',
+            comment: optionalText(dispositionForm.mrbComment),
+            reviewedAtUtc: new Date().toISOString(),
+          },
+        ]
+      : undefined,
   }
   const label = selectedNcr.value?.code ?? selectedNcrId.value
   try {
@@ -451,22 +501,63 @@ watch(
                 <NvSelect v-model="dispositionForm.dispositionType">
                   <NvSelectTrigger aria-label="处置类型"><NvSelectValue /></NvSelectTrigger>
                   <NvSelectContent>
-                    <NvSelectItem value="use-as-is">让步接收</NvSelectItem>
-                    <NvSelectItem value="rework">返工</NvSelectItem>
-                    <NvSelectItem value="scrap">报废</NvSelectItem>
-                    <NvSelectItem value="return-to-supplier">退供应商</NvSelectItem>
+                    <NvSelectItem
+                      v-for="option in NCR_DISPOSITION_TYPE_OPTIONS"
+                      :key="option.value"
+                      :value="option.value"
+                      >{{ option.label }}</NvSelectItem
+                    >
                   </NvSelectContent>
                 </NvSelect>
               </NvField>
+
+              <!-- 需中央审批的处置：MRB 评审 + 审批链是硬前置，界面在此自解释地展开录入位。 -->
+              <div
+                v-if="requiresCentralApproval"
+                class="grid gap-3 rounded-md border bg-muted/20 p-3"
+              >
+                <div class="grid gap-1">
+                  <h3 class="text-sm font-semibold text-foreground">MRB 评审</h3>
+                  <p class="text-xs text-muted-foreground">
+                    该处置属于重大处置，需 MRB 评审通过并挂一条已批准的处置审批链后才能提交。
+                  </p>
+                </div>
+                <NvField>
+                  <NvFieldLabel>评审人</NvFieldLabel>
+                  <p class="text-sm text-foreground">{{ mrbReviewerLabel }}</p>
+                </NvField>
+                <NvField class="flex-row items-center justify-between gap-2">
+                  <NvFieldLabel for="ncr-mrb-approved">
+                    本人代表 MRB 评审通过该处置方案 <span class="text-destructive">*</span>
+                  </NvFieldLabel>
+                  <NvCheckbox id="ncr-mrb-approved" v-model="dispositionForm.mrbReviewApproved" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="ncr-mrb-comment">评审意见</NvFieldLabel>
+                  <NvInput
+                    id="ncr-mrb-comment"
+                    v-model="dispositionForm.mrbComment"
+                    maxlength="500"
+                    placeholder="说明评审依据与结论（选填）"
+                  />
+                </NvField>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">
+                全检挑选由质量部门内部决定，无需 MRB 评审与中央审批链。
+              </p>
+
               <BusinessDocumentApprovalPanel
+                v-if="requiresCentralApproval"
                 v-model="dispositionForm.dispositionApprovalChainId"
                 title="处置审批链"
                 source-service="quality"
-                document-type="quality-ncr"
+                :document-type="NCR_DISPOSITION_DOCUMENT_TYPE"
                 :document-id="selectedNcr?.code ?? selectedNcr?.id"
               />
               <NvField>
-                <NvFieldLabel for="ncr-disposition-files">附件</NvFieldLabel>
+                <NvFieldLabel for="ncr-disposition-files">
+                  附件<span v-if="requiresDispositionEvidence" class="text-destructive"> *</span>
+                </NvFieldLabel>
                 <NvInput
                   id="ncr-disposition-files"
                   v-model="dispositionForm.attachmentFileIds"
@@ -474,6 +565,15 @@ watch(
                 />
               </NvField>
             </NvFieldGroup>
+            <ul v-if="dispositionBlockers.length" class="grid gap-1" role="status">
+              <li
+                v-for="blocker in dispositionBlockers"
+                :key="blocker"
+                class="text-xs text-muted-foreground"
+              >
+                {{ blocker }}
+              </li>
+            </ul>
             <div class="flex justify-end">
               <NvButton type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                 <Spinner v-if="submitDispositionPending" aria-hidden="true" />
