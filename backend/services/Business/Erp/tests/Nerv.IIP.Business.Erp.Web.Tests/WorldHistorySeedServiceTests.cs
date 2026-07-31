@@ -37,9 +37,13 @@ public sealed class WorldHistorySeedServiceTests(ITestOutputHelper output)
         Assert.NotEmpty(report.Validation.Sample);
 
         // 已发货的单必有发货单 + 应收 + 收入凭证；已收款的单再加收款单 + 收款凭证。
+        // #1374：已完工待发货的单也有发货单（停在 released），但**不确认收入**——
+        // 因此发货单数 = 已发运 + 待发运，应收/凭证只跟着已发运走。
         var delivered = plans.Count(plan => plan.HasDelivery);
+        var pendingShipment = plans.Count(plan => plan.HasPendingShipment);
         var collected = plans.Count(plan => plan.IsCollected);
-        Assert.Equal(delivered, await dbContext.DeliveryOrders.CountAsync());
+        Assert.Equal(WorldHistorySpec.PendingShipmentOrderCount, pendingShipment);
+        Assert.Equal(delivered + pendingShipment, await dbContext.DeliveryOrders.CountAsync());
         Assert.Equal(delivered, await dbContext.AccountReceivables.CountAsync());
         Assert.Equal(collected, await dbContext.CashReceipts.CountAsync());
         Assert.Equal(delivered + collected, await dbContext.JournalVouchers.CountAsync());

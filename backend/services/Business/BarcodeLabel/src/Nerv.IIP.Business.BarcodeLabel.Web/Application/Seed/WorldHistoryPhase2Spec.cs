@@ -148,8 +148,10 @@ public static class WorldHistoryPhase2Spec
                 IsRework: false));
         }
 
-        // 补产工单：与 MES 侧同一挑选公式（只挂在已发货/已结案的订单之后）。
-        var candidates = plans.Where(plan => plan.HasDelivery).ToArray();
+        // 补产工单：与 MES 侧同一挑选公式（只挂在已完工入库的订单之后）。
+        // #1374：判据是「生产已完工」而不是「已发运」——挑选按下标切片，
+        // 候选池少三张会把每一张补产工单的来源单整体挪位。
+        var candidates = plans.Where(plan => plan.IsProductionClosed).ToArray();
         var reworkCount = (int)Math.Round(plans.Length * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         if (candidates.Length == 0 || reworkCount == 0)
         {
@@ -176,7 +178,10 @@ public static class WorldHistoryPhase2Spec
     /// <summary>销售订单阶段 → 工单执行深度（与 MES 一期 <c>ResolveExecution</c> 同字面量）。</summary>
     public static WorldHistoryExecutionDepth ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecutionDepth.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecutionDepth.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecutionDepth.Partial,
         _ => WorldHistoryExecutionDepth.ReleasedOnly,
     };

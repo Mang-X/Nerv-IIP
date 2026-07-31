@@ -114,7 +114,10 @@ public sealed class WorldHistorySeedService(
     /// <summary>销售订单阶段 → 工单执行深度。</summary>
     private static WorldHistoryExecution ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecution.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecution.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecution.Partial,
         _ => WorldHistoryExecution.ReleasedOnly,
     };
