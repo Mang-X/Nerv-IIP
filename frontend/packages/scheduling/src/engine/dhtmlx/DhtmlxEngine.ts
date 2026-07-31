@@ -328,8 +328,12 @@ const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unkn
   ],
 }
 
-/** 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。 */
-function tooltipHtml(t: ScheduleTask): string {
+/**
+ * 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。
+ * 导出仅为可测:这段是拼字符串直接进 innerHTML,裸色值混进来在浏览器里很难被发现
+ * (得 hover 到恰好是插单的那一条),交给单测按 token 断言。
+ */
+export function tooltipHtml(t: ScheduleTask): string {
   const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
   const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
   const chip = (txt: string, tone: string) =>
