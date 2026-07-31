@@ -424,6 +424,66 @@ public sealed class QualityLifecycleConflictTests
         Assert.Contains($"\"message\":\"{expectedSafeCode}\"", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Claim_endpoint_returns_lifecycle_conflict_for_completed_task_owned_by_another_inspector()
+    {
+        await using var dbContext = CreateDbContext();
+        var task = NewPendingTask("IN-CLAIM-COMPLETED");
+        task.Assign(
+            "inspector-001",
+            null,
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
+        task.Claim(
+            "inspector-001",
+            [],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-27T08:10:00Z"));
+        task.Complete(
+            new InspectionRecordId(Guid.CreateVersion7()),
+            DateTimeOffset.Parse("2026-07-27T08:20:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_claim_completed;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "test-internal-service-token",
+                    }));
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new ClaimHandlerSender(dbContext));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/quality/inspection-tasks/{task.Id.Id}/claim",
+            new
+            {
+                inspectionTaskId = task.Id.Id,
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                actorPrincipalId = "inspector-002",
+                authorizedTeamIds = Array.Empty<string>(),
+                idempotencyKey = "quality-claim-completed",
+                expectedVersion = task.Version,
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("task-already-claimed", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CreateInspectionRecordFromTaskCommandHandler CreateTaskHandler(ApplicationDbContext dbContext)
     {
         return new CreateInspectionRecordFromTaskCommandHandler(
@@ -596,6 +656,42 @@ public sealed class QualityLifecycleConflictTests
             IRequest<TResponse> request,
             CancellationToken cancellationToken = default) =>
             Task.FromException<TResponse>(exception);
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ClaimHandlerSender(ApplicationDbContext dbContext) : ISender
+    {
+        public async Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request is not ClaimInspectionTaskCommand command)
+            {
+                throw new NotSupportedException();
+            }
+
+            var response = await new ClaimInspectionTaskCommandHandler(dbContext)
+                .Handle(command, cancellationToken);
+            return (TResponse)(object)response;
+        }
 
         public Task Send<TRequest>(
             TRequest request,

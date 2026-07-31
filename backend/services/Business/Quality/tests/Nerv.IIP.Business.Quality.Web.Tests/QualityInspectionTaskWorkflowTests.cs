@@ -1155,10 +1155,10 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
-    public async Task Claim_rejects_a_task_already_assigned_to_another_inspector_as_unprocessable()
+    public async Task Claim_rejects_a_pending_task_assigned_to_another_inspector_as_forbidden()
     {
         await using var dbContext = CreateDbContext(
-            nameof(Claim_rejects_a_task_already_assigned_to_another_inspector_as_unprocessable));
+            nameof(Claim_rejects_a_pending_task_assigned_to_another_inspector_as_forbidden));
         var task = NewTask(
             "WO-CLAIMED",
             "OP-10",
@@ -1168,7 +1168,7 @@ public sealed class QualityInspectionTaskWorkflowTests
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        var exception = await Assert.ThrowsAsync<QualityUnprocessableException>(() =>
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
             new ClaimInspectionTaskCommandHandler(dbContext).Handle(
                 new ClaimInspectionTaskCommand(
                     task.Id,
@@ -1180,7 +1180,7 @@ public sealed class QualityInspectionTaskWorkflowTests
                     task.Version),
                 CancellationToken.None));
 
-        Assert.Equal("task-already-claimed", exception.Reason);
+        Assert.Equal("task-outside-selected-work-scope", exception.Reason);
     }
 
     [Fact]
@@ -1446,6 +1446,37 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Organization_task_list_distinguishes_assignment_to_another_team()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Organization_task_list_distinguishes_assignment_to_another_team));
+        var task = NewTask(
+            "WO-ASSIGNED-OTHER-TEAM",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+        task.Assign(null, "TEAM-QA-02", task.Version, DateTimeOffset.Parse("2026-07-05T07:10:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListInspectionTasksQueryHandler(dbContext).Handle(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                InspectionTaskStatuses.Pending,
+                null,
+                0,
+                20,
+                ScopeKind: "organization",
+                PrincipalId: "qa-user-001",
+                AuthorizedTeamIds: ["TEAM-QA-01"]),
+            CancellationToken.None);
+
+        var row = Assert.Single(result.Items);
+        Assert.Equal(["task-assigned-to-another-team"], row.BlockReasons);
+    }
+
+    [Fact]
     public async Task Organization_task_detail_distinguishes_task_already_claimed_by_another_inspector()
     {
         await using var dbContext = CreateDbContext(
@@ -1483,6 +1514,45 @@ public sealed class QualityInspectionTaskWorkflowTests
             CancellationToken.None);
 
         Assert.Equal(["task-already-claimed"], result.Task.BlockReasons);
+    }
+
+    [Fact]
+    public async Task Organization_task_detail_distinguishes_assignment_to_another_team()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Organization_task_detail_distinguishes_assignment_to_another_team));
+        var plan = ActivePlan("PLAN-DETAIL-OTHER-TEAM", "receiving", "SKU-RM-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-DETAIL-OTHER-TEAM",
+            "LINE-001",
+            "SKU-RM-1000",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T07:00:00Z"),
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            "wms:detail-other-team:IN-DETAIL-OTHER-TEAM");
+        task.Assign(null, "TEAM-QA-02", task.Version, DateTimeOffset.Parse("2026-07-05T07:10:00Z"));
+        dbContext.AddRange(plan, task);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new GetInspectionTaskQueryHandler(dbContext).Handle(
+            new GetInspectionTaskQuery(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "organization",
+                "qa-user-001",
+                ["TEAM-QA-01"]),
+            CancellationToken.None);
+
+        Assert.Equal(["task-assigned-to-another-team"], result.Task.BlockReasons);
     }
 
     private static CreateInspectionRecordFromTaskCommandHandler CreateTaskSubmissionHandler(ApplicationDbContext dbContext)

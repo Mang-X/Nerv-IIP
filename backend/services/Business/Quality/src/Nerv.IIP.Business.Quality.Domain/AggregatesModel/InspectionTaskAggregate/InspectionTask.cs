@@ -171,13 +171,19 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         DateTimeOffset claimedAtUtc)
     {
         var normalizedUserId = Required(inspectorUserId);
-        if (AssignedUserId is not null
-            && !string.Equals(AssignedUserId, normalizedUserId, StringComparison.Ordinal))
+        var assignedToAnotherInspector = AssignedUserId is not null
+            && !string.Equals(AssignedUserId, normalizedUserId, StringComparison.Ordinal);
+        if (Status == InspectionTaskStatuses.InProgress && assignedToAnotherInspector)
         {
             throw new InspectionTaskAlreadyClaimedException();
         }
 
         EnsurePending();
+        if (assignedToAnotherInspector)
+        {
+            throw new UnauthorizedAccessException("Inspection task is assigned to another inspector.");
+        }
+
         EnsureExpectedVersion(expectedVersion);
         if (AssignedTeamId is not null
             && !authorizedTeamIds.Any(teamId =>

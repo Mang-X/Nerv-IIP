@@ -108,7 +108,7 @@ public sealed class InspectionTaskTests
     }
 
     [Fact]
-    public void Claim_ShouldRejectAnotherInspectorStaleVersionAndCompletedTask()
+    public void Claim_ShouldRejectPendingAssignmentOutsideActorAndPreserveVersionAndLifecycleConflicts()
     {
         var task = NewTask();
         task.Assign(
@@ -117,7 +117,7 @@ public sealed class InspectionTaskTests
             expectedVersion: 1,
             DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
 
-        Assert.Throws<InspectionTaskAlreadyClaimedException>(() =>
+        Assert.Throws<UnauthorizedAccessException>(() =>
             task.Claim(
                 "qa-user-001",
                 [],
@@ -168,6 +168,32 @@ public sealed class InspectionTaskTests
                 ["TEAM-QA-01"],
                 expectedVersion: 3,
                 DateTimeOffset.Parse("2026-07-05T08:31:00Z")));
+    }
+
+    [Fact]
+    public void Claim_ShouldPreserveCompletedLifecycleConflictWhenAssignedToAnotherInspector()
+    {
+        var task = NewTask();
+        task.Assign(
+            "qa-user-002",
+            null,
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        task.Claim(
+            "qa-user-002",
+            [],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+        task.Complete(
+            new InspectionRecordId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b204")),
+            DateTimeOffset.Parse("2026-07-05T09:00:00Z"));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            task.Claim(
+                "qa-user-001",
+                [],
+                expectedVersion: 4,
+                DateTimeOffset.Parse("2026-07-05T09:30:00Z")));
     }
 
     [Fact]

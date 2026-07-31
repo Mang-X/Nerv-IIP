@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
@@ -27,6 +28,44 @@ public sealed record InspectionTaskResponse(
     Domain.AggregatesModel.InspectionRecordAggregate.InspectionRecordId? InspectionRecordId);
 
 public sealed record ListInspectionTasksResponse(IReadOnlyCollection<InspectionTaskResponse> Items, int Total);
+
+internal static class InspectionTaskBlockReasonResolver
+{
+    public static string[] Resolve(
+        string status,
+        string? assignedUserId,
+        string? assignedTeamId,
+        bool actorOwnsTask,
+        bool actorOwnsTeam,
+        bool hasAllowedActions)
+    {
+        if (hasAllowedActions)
+        {
+            return [];
+        }
+
+        if (status == InspectionTaskStatuses.Completed)
+        {
+            return ["task-completed"];
+        }
+
+        if (assignedUserId is not null && !actorOwnsTask)
+        {
+            return status == InspectionTaskStatuses.InProgress
+                ? ["task-already-claimed"]
+                : ["task-assigned-to-another-inspector"];
+        }
+
+        if (assignedTeamId is not null && !actorOwnsTeam)
+        {
+            return ["task-assigned-to-another-team"];
+        }
+
+        return assignedUserId is null && assignedTeamId is null
+            ? ["task-unassigned"]
+            : ["task-outside-selected-work-scope"];
+    }
+}
 
 public sealed record ListInspectionTasksQuery(
     string OrganizationId,
@@ -176,17 +215,13 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
                 "in-progress" when actorOwnsTask => ["submit-inspection"],
                 _ => [],
             };
-            string[] blockReasons = allowedActions.Length > 0
-                ? []
-                : x.Status == "completed"
-                    ? ["task-completed"]
-                    : x.AssignedUserId is not null && !actorOwnsTask
-                        ? x.Status == "in-progress"
-                            ? new[] { "task-already-claimed" }
-                            : new[] { "task-assigned-to-another-inspector" }
-                    : x.AssignedUserId is null && x.AssignedTeamId is null
-                        ? ["task-unassigned"]
-                        : ["task-outside-selected-work-scope"];
+            var blockReasons = InspectionTaskBlockReasonResolver.Resolve(
+                x.Status,
+                x.AssignedUserId,
+                x.AssignedTeamId,
+                actorOwnsTask,
+                actorOwnsTeam,
+                allowedActions.Length > 0);
             return new InspectionTaskResponse(
                 x.Id,
                 x.InspectionPlanId,

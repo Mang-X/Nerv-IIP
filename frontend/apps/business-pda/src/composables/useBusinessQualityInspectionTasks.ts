@@ -68,6 +68,23 @@ function isInspectionTasksQuery(entry: UseQueryEntry) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
+function claimBlockMessage(reason: string | undefined) {
+  switch (reason) {
+    case 'task-completed':
+      return '任务已完成，仅可查看。'
+    case 'task-already-claimed':
+      return '任务已由其他检验员领取。'
+    case 'task-assigned-to-another-inspector':
+      return '任务已派给其他检验员，无法领取。'
+    case 'task-assigned-to-another-team':
+      return '任务已派给其他班组，无法领取。'
+    case 'task-outside-selected-work-scope':
+      return '任务不在当前工作范围内，无法领取。'
+    default:
+      return '当前任务不可领取，请刷新后重试。'
+  }
+}
+
 /**
  * 检验任务（待检工作台）读 + 逐特性录结果提交数据封装（MAN-457 / #811，与 console C3-1 / #801 同源）。
  *
@@ -369,14 +386,7 @@ export function useBusinessQualityInspectionTasks() {
       return task
     }
     if (!task.allowedActions?.includes('claim')) {
-      const reason = task.blockReasons?.[0]
-      throw new Error(
-        reason === 'task-completed'
-          ? '任务已完成，仅可查看。'
-          : reason === 'task-outside-selected-work-scope'
-            ? '任务已由其他检验员领取。'
-            : '当前任务不可领取，请刷新后重试。',
-      )
+      throw new Error(claimBlockMessage(task.blockReasons?.[0]))
     }
     if (!task.inspectionTaskId || !task.version) {
       throw new Error('任务版本信息缺失，请刷新后重试。')

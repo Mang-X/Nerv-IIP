@@ -194,6 +194,27 @@ describe('useBusinessQualityInspectionTasks', () => {
     })
   })
 
+  it.each([
+    ['task-already-claimed', '任务已由其他检验员领取。'],
+    ['task-assigned-to-another-inspector', '任务已派给其他检验员，无法领取。'],
+    ['task-assigned-to-another-team', '任务已派给其他班组，无法领取。'],
+    ['task-outside-selected-work-scope', '任务不在当前工作范围内，无法领取。'],
+  ])('explains the exact claim block reason %s', async (reason, expectedMessage) => {
+    seedPrincipal()
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    await expect(
+      claimTask({
+        inspectionTaskId: 'TASK-BLOCKED',
+        status: 'pending',
+        version: 2,
+        allowedActions: [],
+        blockReasons: [reason],
+      }),
+    ).rejects.toThrow(expectedMessage)
+    expect(coladaState.claim).not.toHaveBeenCalled()
+  })
+
   it('keeps inspector identity out of the public submit body and forwards org/env', async () => {
     seedPrincipal()
     const { submitInspection } = useBusinessQualityInspectionTasks()

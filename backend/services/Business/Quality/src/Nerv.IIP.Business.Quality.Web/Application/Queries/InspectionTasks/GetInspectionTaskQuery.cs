@@ -90,17 +90,13 @@ public sealed class GetInspectionTaskQueryHandler(ApplicationDbContext dbContext
             InspectionTaskStatuses.InProgress when actorOwnsTask => ["submit-inspection"],
             _ => [],
         };
-        string[] blocks = actions.Length > 0
-            ? []
-            : task.Status == InspectionTaskStatuses.Completed
-                ? ["task-completed"]
-                : task.AssignedUserId is not null && !actorOwnsTask
-                    ? task.Status == InspectionTaskStatuses.InProgress
-                        ? new[] { "task-already-claimed" }
-                        : new[] { "task-assigned-to-another-inspector" }
-                : task.AssignedUserId is null && task.AssignedTeamId is null
-                    ? ["task-unassigned"]
-                    : ["task-outside-selected-work-scope"];
+        var blocks = InspectionTaskBlockReasonResolver.Resolve(
+            task.Status,
+            task.AssignedUserId,
+            task.AssignedTeamId,
+            actorOwnsTask,
+            actorOwnsTeam,
+            actions.Length > 0);
         var asOfUtc = request.AsOfUtc ?? DateTimeOffset.UtcNow;
         var response = new InspectionTaskResponse(
             task.Id,
