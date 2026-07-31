@@ -19,12 +19,19 @@ import {
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import {
+  warehouseTaskBlockReasonText,
   wmsWarehouseTaskStatusFilterOptions,
   wmsWarehouseTaskStatusLabel,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import {
   NvButton,
   NvDataTable,
@@ -68,6 +75,9 @@ const {
   createPicking,
   createPickingPending,
   createPickingError,
+  startPicking,
+  completePicking,
+  pickingActionPending,
   pickingTasksLastUpdatedAt,
   pickingTasksHasSuccessfulResponse,
   pickingTasksHasFailedResponse,
@@ -95,7 +105,9 @@ const { page, pageSize } = usePagedList(filters, {
   ],
 })
 // 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
+  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
+})
 // 出库单是真实读面（只要组织/环境即可列出），拣货任务必须挂在已存在的出库单下。
 const {
   filters: outboundOrderFilters,
@@ -218,6 +230,106 @@ async function submitCreate() {
 }
 
 /**
+ * 拣货执行（#1397 / 台账 #82）。
+ *
+ * 之前这一页只能「看」和「建」，开始 / 完成拣货只有 PDA 有——于是出库复核的前置事实
+ * 在 PC 端永远凑不齐，发货链结构性走不通。后端的动作端点、网关 facade、SDK 早就齐了，
+ * 缺的只是这一段接线。
+ *
+ * 可否操作**一律以服务端的 `allowedActions` 为准**，不在前端另算一套状态机：
+ * 那份结论已经把状态、派工、作业范围合并算过了。不可操作时把 `blockReasons` 翻成中文
+ * 显示出来——页面必须指路，不能只是「没有按钮」。
+ */
+function taskActions(row: PickingRow) {
+  return row.allowedActions ?? []
+}
+function blockReasonText(row: PickingRow) {
+  return warehouseTaskBlockReasonText(row.blockReasons)
+}
+
+async function onStart(row: PickingRow) {
+  try {
+    await startPicking(row)
+    notifySuccess(`已开始拣货：${row.taskNo ?? ''}`)
+  } catch (error) {
+    const recovered = await recoverLifecycleAction(error, {
+      reset: () => {},
+      refresh: refreshPickingTasks,
+      notify: (message) => notifyError(message),
+    })
+    if (!recovered) {
+      notifyOperationFailure('开始拣货失败', error, '开始拣货失败，请稍后重试。', {
+        taskNo: row.taskNo ?? undefined,
+      })
+    }
+  }
+}
+
+// 完成拣货要填实拣数量；少拣时后端强制要差异原因（422 picking-difference-reason-required），
+// 所以弹框在少拣时就把原因框变成必填，别等提交完再报错。
+const completeOpen = shallowRef(false)
+const completeError = shallowRef('')
+const completeTask = shallowRef<PickingRow | undefined>()
+const completeForm = reactive({ executedQuantity: '', differenceReason: '' })
+const completePlannedQuantity = computed(() => completeTask.value?.plannedQuantity ?? 0)
+const completeIsShort = computed(() => {
+  const value = Number(completeForm.executedQuantity)
+  return completeForm.executedQuantity !== '' && value < completePlannedQuantity.value
+})
+
+function openComplete(row: PickingRow) {
+  completeTask.value = row
+  // 默认按计划量整单完成——这是现场最常见的一档，少拣才需要改数字。
+  completeForm.executedQuantity = String(row.plannedQuantity ?? 0)
+  completeForm.differenceReason = ''
+  completeError.value = ''
+  completeOpen.value = true
+}
+
+async function submitComplete() {
+  const row = completeTask.value
+  if (!row) return
+  const quantity = Number(completeForm.executedQuantity)
+  if (completeForm.executedQuantity === '' || !Number.isFinite(quantity) || quantity < 0) {
+    completeError.value = '请填写实拣数量（0 到计划量之间）。'
+    return
+  }
+  if (quantity > completePlannedQuantity.value) {
+    completeError.value = `实拣数量不能超过计划量 ${formatQuantity(completePlannedQuantity.value)}。`
+    return
+  }
+  if (completeIsShort.value && !completeForm.differenceReason.trim()) {
+    completeError.value = '实拣少于计划量，必须填写差异原因。'
+    return
+  }
+  try {
+    await completePicking(row, {
+      executedQuantity: quantity,
+      differenceReason: completeForm.differenceReason,
+    })
+    completeOpen.value = false
+    notifySuccess(`拣货已完成：${row.taskNo ?? ''}`)
+  } catch (error) {
+    const recovered = await recoverLifecycleAction(error, {
+      reset: () => {
+        completeOpen.value = false
+      },
+      refresh: refreshPickingTasks,
+      notify: (message) => notifyError(message),
+    })
+    if (!recovered) {
+      // 失败原因留在弹框里，不只发一条会消失的 toast——用户要照着它改数字/补原因。
+      completeError.value = inlineErrorMessage(error, '完成拣货失败，请稍后重试。', {
+        taskNo: row.taskNo ?? undefined,
+      })
+      notifyOperationFailure('完成拣货失败', error, '完成拣货失败，请稍后重试。', {
+        taskNo: row.taskNo ?? undefined,
+      })
+    }
+  }
+}
+
+/**
  * 读错误只归列表区域。创建拣货任务的失败一律走 toast，不并进这一条：
  * 两者共用一个变量时，「创建失败」会伪装成「列表加载失败」。
  */
@@ -294,6 +406,13 @@ const columns: NvDataTableColumn<PickingRow>[] = [
     accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity),
   },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
+  {
+    key: 'actions',
+    header: '操作',
+    width: 'w-56',
+    // 不可操作时这一列要说「为什么」，导出/排序取阻断原因而不是空串。
+    accessor: (r) => (taskActions(r).length > 0 ? '可执行' : blockReasonText(r) || '不可操作'),
+  },
 ]
 
 function rowKey(row: PickingRow) {
@@ -443,6 +562,33 @@ function firstQuery(value: unknown) {
           >
         </span>
       </template>
+      <template #cell-actions="{ row }">
+        <div v-if="taskActions(row).length > 0" class="flex flex-wrap items-center gap-2">
+          <NvButton
+            v-if="taskActions(row).includes('start')"
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="pickingActionPending"
+            :aria-label="`开始拣货 ${row.taskNo ?? ''}`"
+            @click="onStart(row)"
+            >开始拣货</NvButton
+          >
+          <NvButton
+            v-if="taskActions(row).includes('complete')"
+            size="sm"
+            type="button"
+            :disabled="pickingActionPending"
+            :aria-label="`完成拣货 ${row.taskNo ?? ''}`"
+            @click="openComplete(row)"
+            >完成拣货</NvButton
+          >
+        </div>
+        <!-- 没有按钮时必须指路：只留空白就是台账 #82 里「页面也不指路」的那个坑。 -->
+        <span v-else class="text-xs text-muted-foreground">
+          {{ blockReasonText(row) || '当前任务不可操作' }}
+        </span>
+      </template>
       <template #cell-inventoryContext="{ row }">
         <WmsInventoryContextPanel
           compact
@@ -454,6 +600,66 @@ function firstQuery(value: unknown) {
         />
       </template>
     </NvDataTable>
+
+    <NvDialog v-model:open="completeOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>完成拣货</NvDialogTitle>
+          <NvDialogDescription class="sr-only">登记本次拣货的实拣数量。</NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitComplete">
+          <dl class="grid gap-1 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">任务号</dt>
+              <dd class="font-medium">{{ completeTask?.taskNo ?? '—' }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">来源出库单</dt>
+              <dd>{{ completeTask?.sourceOrderNo ?? '—' }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">计划数量</dt>
+              <dd>
+                {{ formatQuantity(completePlannedQuantity) }} {{ completeTask?.uomCode ?? '' }}
+              </dd>
+            </div>
+          </dl>
+          <NvFieldGroup class="grid gap-3">
+            <NvField>
+              <NvFieldLabel for="wms-picking-executed">实拣数量</NvFieldLabel>
+              <NvInput
+                id="wms-picking-executed"
+                v-model="completeForm.executedQuantity"
+                type="number"
+                min="0"
+                :max="completePlannedQuantity"
+                step="any"
+                autocomplete="off"
+              />
+            </NvField>
+            <!-- 少拣才出现原因框：整单完成时多一个必填框只会拖慢现场。 -->
+            <NvField v-if="completeIsShort">
+              <NvFieldLabel for="wms-picking-reason">差异原因</NvFieldLabel>
+              <NvInput
+                id="wms-picking-reason"
+                v-model="completeForm.differenceReason"
+                autocomplete="off"
+                placeholder="如：库存不足、货损、批次不符"
+              />
+            </NvField>
+          </NvFieldGroup>
+
+          <NvFieldError v-if="completeError" :errors="[completeError]" />
+
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="pickingActionPending">完成拣货</NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog v-model:open="createOpen">
       <NvDialogContent>
