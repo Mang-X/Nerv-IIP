@@ -14,7 +14,7 @@ public partial record ApprovalDecisionId : IGuidStronglyTypedId;
 
 public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SupportedDecisions = ["approve", "reject", "return"];
+    private static readonly IReadOnlySet<string> SupportedDecisions = ApprovalDecisions.StepResolutions;
     private readonly List<ApprovalStep> steps = [];
     private readonly List<ApprovalDecision> decisions = [];
 
@@ -764,6 +764,15 @@ public static class ApprovalDecisions
     public const string Resubmit = "resubmit";
     public const string AddSigner = "add_signer";
     public const string Transfer = "transfer";
+
+    /// <summary>
+    /// 裁决某一步时允许提交的取值（approve / reject / return）——**唯一权威**。
+    /// 聚合的 <c>ResolveStep</c> 与应用层校验器共用这一份，避免校验器比领域更严
+    /// （曾经校验器写死小写字面量，"Approve" 被拦成无线索的 400，#1311）。
+    /// 大小写不敏感：领域侧本就先归一化成小写再落库。
+    /// </summary>
+    public static readonly IReadOnlySet<string> StepResolutions =
+        new HashSet<string>([Approve, Reject, Return], StringComparer.OrdinalIgnoreCase);
 }
 
 public static class ApprovalConditionMatcher
