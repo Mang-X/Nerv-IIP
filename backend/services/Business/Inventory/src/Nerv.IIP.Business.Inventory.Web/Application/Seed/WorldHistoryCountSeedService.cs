@@ -424,7 +424,11 @@ public sealed class WorldHistoryCountValidator(ApplicationDbContext dbContext)
                 continue;
             }
 
-            // 任务表达不了效期维度，确认时由调用方挑具体台账行：只要有一条对得上版本就不是死单。
+            // 任务表达不了效期维度。同一维度出现多行台账是运行期本就不支持的状态
+            // ——ConfirmStockCountAdjustmentCommand 用同样 11 列做 SingleOrDefaultAsync，
+            // 真出现多行会先抛 "Sequence contains more than one element"，走不到 EnsureSameDimension。
+            // 这里按维度分组、任一条对上版本即通过，是刻意选择「不因该既有隐患崩在启动路径上」，
+            // 而不是在复刻领域语义（实际比运行期更宽）。
             if (Array.Exists(candidates, ledger => ledger.LedgerVersion == task.ExpectedLedgerVersion))
             {
                 continue;
