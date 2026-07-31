@@ -7567,22 +7567,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public async Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
+    // MES answers with { status, referenceId, acceptedAtUtc }; deserializing that straight into the
+    // console contract left `accepted` false and dropped the allocated 领料单号. Map it explicitly.
+    public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesCreateMaterialIssueRequest request,
-        CancellationToken cancellationToken)
-    {
-        // MES answers with { status, referenceId, acceptedAtUtc }; deserializing that straight into the
-        // console contract left `accepted` false and dropped the allocated 领料单号. Map it explicitly.
-        var accepted = await SendAsync<MesServiceAcceptedResponse>(
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-issue-requests",
             request,
+            MesMaterialIssueRequestDocumentType,
             cancellationToken);
-        return ToAcceptedResponse(accepted, MesMaterialIssueRequestDocumentType);
-    }
 
     public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
         string internalBearerToken,
@@ -7595,20 +7592,17 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public async Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
+    public Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
         string internalBearerToken,
         string requestId,
         BusinessConsoleMesConfirmLineSideReceiptRequest request,
-        CancellationToken cancellationToken)
-    {
-        var accepted = await SendAsync<MesServiceAcceptedResponse>(
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
             internalBearerToken,
-            HttpMethod.Post,
             $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
             request,
+            MesMaterialIssueRequestDocumentType,
             cancellationToken);
-        return ToAcceptedResponse(accepted, MesMaterialIssueRequestDocumentType);
-    }
 
     public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
         string internalBearerToken,
