@@ -1405,6 +1405,7 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 x.MaterialLotId,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
+                x.Status,
             })
             .ToArrayAsync(cancellationToken);
 
@@ -1419,7 +1420,13 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 var required = x.Sum(y => y.RequiredQuantity);
                 var available = x.Sum(y => y.AvailableQuantity);
                 var staged = x.Sum(y => y.StagedQuantity);
-                var requested = issueRows.Sum(y => y.RequestedQuantity);
+                // 「应领」只算仍然在途/已兑现的领料单。取消、退料中、预留失效的单子不代表仓库还在配货,
+                // 把它们算进来会让 requested 虚高,进而把「其实没人在配」误标成「仓库配送中」。
+                var requested = issueRows
+                    .Where(y => MaterialReadinessGuards.IsActiveIssueRequestStatus(y.Status))
+                    .Sum(y => y.RequestedQuantity);
+                // 「已收」保持对全部单据求和:收到线边的实物是既成事实,取消/退料会自行把 ReceivedQuantity 冲回,
+                // 这里再过滤一次反而会把已消耗的量凭空抹掉,改动齐套结论。
                 var received = issueRows.Sum(y => y.ReceivedQuantity);
                 var shortage = Math.Max(0m, required - available - staged - received);
                 return new MesMaterialReadinessRow(

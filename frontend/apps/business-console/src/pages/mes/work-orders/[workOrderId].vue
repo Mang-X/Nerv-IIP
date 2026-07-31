@@ -140,7 +140,13 @@ const qualityHolds = computed(() =>
 const activeQualityHoldCount = computed(
   () => qualityHolds.value.filter((hold) => hold.isActive).length,
 )
-const materialRows = computed(() => materialReadiness.value?.items ?? [])
+// 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
+const materialRows = computed(() =>
+  (materialReadiness.value?.items ?? []).map((row) => ({
+    ...row,
+    stage: describeMaterialShortageStage(row),
+  })),
+)
 const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
   ...(materialReadiness.value?.blockingReasons ?? []),
@@ -767,13 +773,11 @@ function formatError(error: unknown) {
           <div class="grid gap-0.5">
             <NvStatusBadge
               class="justify-self-start"
-              :value="describeMaterialShortageStage(row).label"
-              :label="describeMaterialShortageStage(row).label"
-              :tone="describeMaterialShortageStage(row).tone"
+              :value="row.stage.label"
+              :label="row.stage.label"
+              :tone="row.stage.tone"
             />
-            <span class="text-xs text-muted-foreground">{{
-              describeMaterialShortageStage(row).nextAction
-            }}</span>
+            <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
           </div>
         </template>
       </NvDataTable>

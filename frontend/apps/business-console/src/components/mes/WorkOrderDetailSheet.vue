@@ -119,7 +119,13 @@ const blockingReasons = computed(() =>
   (detail.value?.blockingReasons ?? []).map(describeMesReadinessReason),
 )
 
-const materialRows = computed(() => materialReadiness.value?.items ?? [])
+// 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
+const materialRows = computed(() =>
+  (materialReadiness.value?.items ?? []).map((row) => ({
+    ...row,
+    stage: describeMaterialShortageStage(row),
+  })),
+)
 const materialShortages = computed(() =>
   materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0),
 )
@@ -448,13 +454,12 @@ function formatQuantity(value?: number | null) {
               <template #cell-shortageStage="{ row }">
                 <div class="grid gap-0.5">
                   <NvStatusBadge
-                    :value="describeMaterialShortageStage(row).label"
-                    :label="describeMaterialShortageStage(row).label"
-                    :tone="describeMaterialShortageStage(row).tone"
+                    class="justify-self-start"
+                    :value="row.stage.label"
+                    :label="row.stage.label"
+                    :tone="row.stage.tone"
                   />
-                  <span class="text-xs text-muted-foreground">{{
-                    describeMaterialShortageStage(row).nextAction
-                  }}</span>
+                  <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
                 </div>
               </template>
             </NvDataTable>

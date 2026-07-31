@@ -6,6 +6,37 @@ using Nerv.IIP.Contracts.Scheduling;
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 /// <summary>
+/// 物料约束口径的配置解析。非法值绝不静默回落——回落方向恰好更宽松(缺料照排),
+/// 会让一个拼错的配置看起来"生效了",与本服务其它配置一样在启动期直接失败。
+/// </summary>
+public static class SchedulingMaterialConstraintModeResolver
+{
+    public const string ConfigurationKey = "Scheduling:MaterialConstraintMode";
+
+    public static SchedulingMaterialConstraintModeContract Resolve(string? configuredValue)
+    {
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return SchedulingMaterialConstraintModeContract.Soft;
+        }
+
+        if (Enum.TryParse<SchedulingMaterialConstraintModeContract>(
+                configuredValue.Trim(),
+                ignoreCase: true,
+                out var parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"{ConfigurationKey}='{configuredValue}' 不是合法的物料约束口径。合法值:" +
+            $"{string.Join(" / ", Enum.GetNames<SchedulingMaterialConstraintModeContract>())};留空即默认 " +
+            $"{SchedulingMaterialConstraintModeContract.Soft}(缺料可排 + 物料风险标记)。");
+    }
+}
+
+/// <summary>
 /// APS lite 有限产能排程器。
 /// 物料口径按产品裁决走软约束(默认):缺料工单照排,只在计划里带出「物料风险」,
 /// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
@@ -362,6 +393,24 @@ file sealed class SchedulerState
                     locked.OperationId,
                     locked.ResourceId,
                     "锁定工序落在排程窗口、班次日历或可用资源之外，无法保留。");
+            }
+
+            // 锁定工序同样吃软约束语义:它已经占住计划位置,缺料照样得在开工前补齐,
+            // 否则 MES 齐套硬门会在开工时拦下一个"看起来已排好"的工序。
+            var lockedOrder = problem.Orders
+                .FirstOrDefault(x => string.Equals(x.OrderId, locked.OrderId, StringComparison.Ordinal));
+            if (materialConstraintMode == SchedulingMaterialConstraintModeContract.Soft
+                && lockedOrder is not null
+                && operationByKey.TryGetValue(
+                    new OperationKey(locked.OrderId, locked.OperationId),
+                    out var lockedOperation))
+            {
+                var lockedItem = new OperationWorkItem(lockedOrder, lockedOperation);
+                var lockedMaterialBlocks = ApplicableOpenEndedMaterialBlocks(lockedItem).ToList();
+                if (lockedMaterialBlocks.Count > 0)
+                {
+                    AddMaterialRisk(lockedItem, lockedMaterialBlocks);
+                }
             }
         }
 
