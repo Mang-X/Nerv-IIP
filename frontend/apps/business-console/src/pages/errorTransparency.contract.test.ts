@@ -97,6 +97,8 @@ describe('业务前端错误透传契约', () => {
       'pages/mes/',
       'pages/master-data/',
       'pages/quality/',
+      // 审批中心是跨域写面（裁决/委托/模板），此前不在名单里——#1298 的覆盖缺口就是这么漏过去的（#1311 / 台账 #29）。
+      'pages/approval/',
     ]
     for (const domain of domains) {
       const covered = files.filter(

@@ -15,7 +15,11 @@ import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
-import { APPROVAL_DOCUMENT_TYPE_OPTIONS } from '@/data/approvalReference'
+import {
+  APPROVAL_DECISION_ACTION_LABELS,
+  APPROVAL_DOCUMENT_TYPE_OPTIONS,
+  type ApprovalDecisionValue,
+} from '@/data/approvalReference'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
@@ -60,7 +64,6 @@ import {
   FilePlus2Icon,
   RefreshCwIcon,
   RotateCcwIcon,
-  SendIcon,
   UserRoundPlusIcon,
   XCircleIcon,
 } from '@lucide/vue'
@@ -102,7 +105,8 @@ const decisionTarget = shallowRef<BusinessConsoleApprovalTaskItem | null>(null)
 const decisionForm = reactive({
   chainId: '',
   stepNo: 0,
-  decision: 'Approve',
+  // 权威取值是小写 approve/reject/return（`APPROVAL_DECISION_VALUES`）——曾经写死大写导致一切裁决必 400（#1311）。
+  decision: 'approve' as ApprovalDecisionValue,
   comment: '',
 })
 
@@ -516,7 +520,7 @@ function formatStatus(value?: boolean | string | null) {
   return value ?? '—'
 }
 
-function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string) {
+function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: ApprovalDecisionValue) {
   if (!canManageApprovals.value || !row.chainId || row.stepNo === undefined) return
   decisionTarget.value = row
   decisionForm.chainId = row.chainId
@@ -526,7 +530,10 @@ function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string
   taskDecisionOpen.value = true
 }
 
-async function quickResolveTask(row: BusinessConsoleApprovalTaskItem, decision: string) {
+async function quickResolveTask(
+  row: BusinessConsoleApprovalTaskItem,
+  decision: ApprovalDecisionValue,
+) {
   if (!canManageApprovals.value || !row.chainId || row.stepNo === undefined) return
   try {
     await approval.resolveTask({
@@ -552,11 +559,8 @@ async function submitTaskDecision() {
   }
 }
 
-function decisionLabel(decision: string) {
-  if (decision === 'Approve') return '通过'
-  if (decision === 'Reject') return '驳回'
-  if (decision === 'Resolve') return '处理'
-  return '处理'
+function decisionLabel(decision: ApprovalDecisionValue) {
+  return APPROVAL_DECISION_ACTION_LABELS[decision]
 }
 
 function viewChain(row: BusinessConsoleApprovalChainItem | BusinessConsoleApprovalTaskItem) {
@@ -792,24 +796,24 @@ function toIsoFromLocalInput(value: string) {
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="quickResolveTask(row, 'Approve')"
+                  @click="quickResolveTask(row, 'approve')"
                 >
                   <CheckCircle2Icon aria-hidden="true" />
                   通过
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="openTaskDecision(row, 'Reject')"
+                  @click="openTaskDecision(row, 'reject')"
                 >
                   <XCircleIcon aria-hidden="true" />
                   驳回
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="openTaskDecision(row, 'Resolve')"
+                  @click="openTaskDecision(row, 'return')"
                 >
-                  <SendIcon aria-hidden="true" />
-                  处理
+                  <RotateCcwIcon aria-hidden="true" />
+                  退回
                 </NvDropdownMenuItem>
               </NvRowActions>
             </template>
@@ -1004,7 +1008,7 @@ function toIsoFromLocalInput(value: string) {
             </NvDialogClose>
             <NvButton
               type="submit"
-              :variant="decisionForm.decision === 'Reject' ? 'destructive' : 'default'"
+              :variant="decisionForm.decision === 'reject' ? 'destructive' : 'default'"
               :disabled="approval.resolveTaskPending.value"
             >
               <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />

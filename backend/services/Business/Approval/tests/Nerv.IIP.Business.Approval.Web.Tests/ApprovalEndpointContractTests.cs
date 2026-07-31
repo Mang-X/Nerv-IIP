@@ -655,6 +655,29 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public void Resolve_validator_accepts_the_three_authoritative_decisions_and_names_them_when_rejecting()
+    {
+        // #1311：审批中心发的是大写 "Approve"，而校验器写死小写字面量、比领域（先归一化再判定）更严，
+        // 于是一切裁决必 400，且英文提示在前端被兜底文案吞掉、用户看不到合法值。
+        static ResolveApprovalStepCommand Command(string decision) =>
+            new(new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", decision, null);
+
+        foreach (var decision in new[] { "approve", "reject", "return", "Approve", "REJECT", " Return " })
+        {
+            var accepted = new ResolveApprovalStepCommandValidator().Validate(Command(decision));
+            Assert.True(accepted.IsValid, $"裁决取值 '{decision}' 应当通过校验");
+        }
+
+        var rejected = new ResolveApprovalStepCommandValidator().Validate(Command("escalate"));
+
+        Assert.False(rejected.IsValid);
+        var message = Assert.Single(rejected.Errors).ErrorMessage;
+        Assert.Contains("approve", message, StringComparison.Ordinal);
+        Assert.Contains("reject", message, StringComparison.Ordinal);
+        Assert.Contains("return", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Approval_http_endpoints_reject_anonymous_callers_before_persistence()
     {
         await using var factory = new WebApplicationFactory<Program>()
