@@ -19,15 +19,15 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
-   - 覆盖：登录→首页真实流程、首页扫码条/应用墙/我的任务空态、`@nerv-iip/ui-mobile` 全部 5 个组件
+   - 覆盖：登录→首页真实流程、首页扫码条/应用墙/我的任务、固定四入口跨页、个人中心与退出，`@nerv-iip/ui-mobile` 全部 5 个组件
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 29 个用例）
+### e2e spec 清单（5 个 spec / 31 个用例）
 
-- `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
+- `e2e/app-flow.spec.ts`（7）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
-  首页扫码 type+Enter 页内回显、不跳死路由。
+  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心并核验可读角色与范围；退出清理 PDA 会话并回登录。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；

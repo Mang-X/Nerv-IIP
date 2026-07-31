@@ -18,6 +18,12 @@ IAM 授权检查按本次 `permissionCode` 返回 role/membership 来源的 perm
 
 公开 `GET /api/business-console/v1/me/work-context` 只从认证结果取 principal，不接受客户端声明 userId；请求的 `permissionCode` 必须来自 BusinessGateway 编译期权限目录，且每次使用 `RealtimeRequired` 重新检查 IAM。响应携带 organization/environment、principal type、规范化角色名称、`applicablePermissionCode`、UTC `resolvedAtUtc`、candidate/authorized scopes 和可选已验证选择。`resolvedAtUtc` 表示本次实时授权检查与 MasterData 调用时快照；下游没有 SnapshotVersion 时不伪造。MasterData 连接/超时稳定返回 503，协议或坏响应返回 502，并进入公开 OpenAPI。该上下文和 `applicablePermissionCode` 不是下游动作授权凭据，每个实际读写动作仍必须按自己的 permission + scope 独立重检。服务 operation `getBusinessMasterDataPrincipalWorkContext` 通过 Gateway operation `getBusinessConsolePrincipalWorkContext` 登记为 `exposed`。
 
+## PDA 四入口、角色工作台与个人中心（MAN-633 / #1170）
+
+Business PDA 现在以固定底部四入口组织现场作业：工作台、任务、扫码、我的。工作台和任务入口直接使用当前 principal 的 `permissionCodes` 聚合多个角色的 route-ready 能力，不要求也不提供手工角色切换；相同业务路由只出现一次。MES “我的生产任务”继续由服务端 `assignedUserId = principalId` 过滤并以行级主体再校验，Quality 入口指向既有 Self 范围任务页；WMS 只标为当前授权作业范围，不把 self/work-pool/site 工作池伪称个人任务。
+
+个人中心复用 MAN-627 permission-aware work-context，按当前主体持有的 PDA 代表性权限聚合并去重可读角色、班组与授权范围，同时展示认证主体、登录名、工号、岗位和实时网络状态。退出会先取消并移除 PDA 的 Pinia Colada 查询缓存、清理 sessionStorage 与 `nerv-iip.business-pda.*` 持久状态，再清除认证会话并返回登录页；不删除同源 Console 的存储。扫码入口在 barcode resolve facade 尚未交付时只显示实际读取到的原码和当前权限内作业入口，不伪造对象类型或跳转结果。离线消息中心、终端舰队、独立 mobile API 和扫码解析仍不在本项范围。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
