@@ -195,19 +195,19 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         ArgumentNullException.ThrowIfNull(inspectionPlan);
         if (inspectionPlan.Status != "active")
         {
-            throw new InvalidOperationException("Planned inspection records require an active inspection plan.");
+            throw new KnownException("检验方案未启用，无法按方案录入检验记录，请先启用方案。");
         }
 
         var normalizedSourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         if (!string.Equals(inspectionPlan.Category, normalizedSourceType, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Inspection plan category '{inspectionPlan.Category}' does not match record source type '{normalizedSourceType}'.");
+            throw new KnownException($"检验方案适用环节为“{inspectionPlan.Category}”，与本次检验环节“{normalizedSourceType}”不一致。");
         }
 
         if (!string.IsNullOrWhiteSpace(inspectionPlan.SkuCode)
             && !string.Equals(inspectionPlan.SkuCode, skuCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"Inspection plan SKU '{inspectionPlan.SkuCode}' does not match inspected SKU '{skuCode}'.");
+            throw new KnownException($"检验方案适用物料为“{inspectionPlan.SkuCode}”，与送检物料“{skuCode}”不一致。");
         }
 
         var plannedLines = CalculatePlannedLines(inspectionPlan, resultLines, inspectedQuantity, uomConversions ?? []);
@@ -416,7 +416,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             .ToArray();
         if (missingRequired.Length > 0)
         {
-            throw new InvalidOperationException($"Inspection record is missing required characteristic(s): {string.Join(", ", missingRequired)}.");
+            throw new KnownException($"以下必检特性还没有录入结果：{string.Join("、", missingRequired)}。");
         }
 
         var plannedLines = inspectionPlan.Characteristics
@@ -439,7 +439,9 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             var resolvedSamplingPlan = characteristic.SamplingPlan.ResolveForLotSize(inspectedQuantity, characteristic.Severity);
             if (inspectedQuantity < resolvedSamplingPlan.SampleSize)
             {
-                throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {resolvedSamplingPlan.SampleSize}.");
+                // 送检数量不够抽样量是录入/送检问题而非系统故障：抛 KnownException 走领域 400，
+                // 中文点名特性与要求的抽样量，前端分层透传（#1298）可原样上屏，不再落成 500（#1338 同型）。
+                throw new KnownException($"特性“{characteristic.CharacteristicCode}”按抽样方案需检验 {resolvedSamplingPlan.SampleSize} 件，当前送检数量不足。");
             }
         }
 
@@ -447,7 +449,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         {
             InspectionCharacteristicTypes.Variable => CalculateVariableLine(characteristic, input, inspectedQuantity, uomConversions),
             InspectionCharacteristicTypes.Attribute => CalculateAttributeLine(characteristic, input),
-            _ => throw new InvalidOperationException($"Unsupported characteristic type '{characteristic.CharacteristicType}'."),
+            // 方案里写了平台不认识的特性类型同样是配置问题，不该 500：中文点名类型与合法取值。
+            _ => throw new KnownException($"检验方案的特性类型“{characteristic.CharacteristicType}”不受支持，只能是计量型或计数型。"),
         };
     }
 
