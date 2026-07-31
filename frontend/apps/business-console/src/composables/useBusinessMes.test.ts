@@ -671,7 +671,7 @@ describe('business MES composables', () => {
       code: 'MATERIAL_SHORTAGE',
       label: '物料缺料',
       detail: '物料 MAT-OIL，批次 LOT-OIL-A 缺口 2',
-      nextStep: '按缺口发领料单或补齐线边库存后再开工',
+      nextStep: '在工单详情「用料齐套」发起领料；物料到线边后确认收料',
     })
     expect(
       describeMesReadinessReason('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照。'),

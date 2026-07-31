@@ -119,7 +119,8 @@ public sealed class ApprovalTemplateCodeContractTests
                     "system:inventory"),
                 CancellationToken.None));
 
-        Assert.Contains("template was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // 文案在本分支已中文化（MAN-698 批次 A）：断言只换措辞，语义仍是「查无此模板」。
+        Assert.Contains("审批模板不存在", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -181,7 +182,8 @@ public sealed class ApprovalTemplateCodeContractTests
                 "system:erp"),
             CancellationToken.None));
 
-        Assert.Contains("template was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // 文案在本分支已中文化（MAN-698 批次 A）：断言只换措辞，语义仍是「查无此模板」。
+        Assert.Contains("审批模板不存在", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>与 <c>WorldHistoryApprovalSeedService.SeedTemplatesAsync</c> 同形状的采购模板（不落任何演示专属字段）。</summary>
