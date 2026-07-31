@@ -180,6 +180,17 @@ describe('notifyOperationFailure', () => {
     notifyOperationFailure('撤销失败', { status: 500 }, '撤销失败，请稍后重试')
     expect(toastError).toHaveBeenCalledWith('撤销失败，请稍后重试')
   })
+
+  // 兜底文案不给时按 action 派生：仍指名道姓，不退化成泛化的「操作失败，请稍后重试。」。
+  it('不给兜底文案时按动作派生，而不是泛化的「操作失败」', () => {
+    notifyOperationFailure('发布', { status: 500 })
+    expect(toastError).toHaveBeenCalledWith('发布失败，请稍后重试。')
+  })
+
+  it('派生兜底不抢服务端领域消息的位置', () => {
+    notifyOperationFailure('发布', { detail: '工单已关闭，不能发布' })
+    expect(toastError).toHaveBeenCalledWith('发布：工单已关闭，不能发布')
+  })
 })
 
 describe('notifyError / notifySuccess', () => {
