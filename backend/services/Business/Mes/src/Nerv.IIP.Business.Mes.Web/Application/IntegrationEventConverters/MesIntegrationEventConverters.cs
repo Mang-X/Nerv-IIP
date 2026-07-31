@@ -143,13 +143,17 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
     }
 }
 
-public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
+public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
+    IMesFinishedGoodsReceiptLocationResolver locationResolver)
     : IIntegrationEventConverter<FinishedGoodsReceiptRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
     public InventoryMovementRequestedIntegrationEvent Convert(FinishedGoodsReceiptRequestedDomainEvent domainEvent)
     {
         var request = domainEvent.FinishedGoodsReceiptRequest;
         var occurredAtUtc = DateTimeOffset.UtcNow;
+        // 完工入库目标位置走配置解析（#1331）：硬编码 finished-goods/receiving 与库存种子
+        // （SITE-001/WH-WB-FG-01）错配，会把成品记进一个不存在的命名空间。
+        var location = locationResolver.Resolve();
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -159,8 +163,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             request.WorkOrderId,
             request.SkuId,
             request.UomCode,
-            "finished-goods",
-            "receiving",
+            location.SiteCode,
+            location.LocationCode,
             request.ProducedLotNo,
             domainEvent.Quantity,
             occurredAtUtc,

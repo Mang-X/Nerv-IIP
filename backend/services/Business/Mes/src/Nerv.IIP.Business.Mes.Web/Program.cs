@@ -54,6 +54,15 @@ builder.Services.AddSingleton(new MesMaterialRequirementInventoryOptions
     DefaultSiteCode = inventorySiteCode,
     SiteCodes = ResolveSiteCodes(builder.Configuration) ?? (string.IsNullOrWhiteSpace(inventorySiteCode) ? null : [inventorySiteCode]),
 });
+// 完工入库目标位置：配置驱动（#1331），缺失时由 resolver 显式 KnownException，绝不回落到硬编码命名空间。
+// 站点复用上面的权威键 `Inventory:SiteCode`；只有成品仓独立成站点的部署才需要 `Inventory:FinishedGoodsSiteCode`。
+var finishedGoodsSiteCode = builder.Configuration["Inventory:FinishedGoodsSiteCode"];
+builder.Services.AddSingleton(new MesFinishedGoodsReceiptLocationOptions
+{
+    SiteCode = string.IsNullOrWhiteSpace(finishedGoodsSiteCode) ? inventorySiteCode : finishedGoodsSiteCode,
+    LocationCode = builder.Configuration["Inventory:FinishedGoodsLocationCode"] ?? string.Empty,
+});
+builder.Services.AddSingleton<IMesFinishedGoodsReceiptLocationResolver, ConfiguredMesFinishedGoodsReceiptLocationResolver>();
 builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
