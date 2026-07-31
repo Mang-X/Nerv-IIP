@@ -195,6 +195,51 @@ public sealed class MesCapSubscriptionTests
     }
 
     [PostgreSqlFact]
+    public async Task PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save()
+    {
+        var adminConnectionString = ReadPostgresConnectionString();
+        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_asset_restored");
+        await using var factory = CreateFactory(database.ConnectionString);
+        await MigrateAsync(factory);
+        await SeedScheduleFactsAsync(factory);
+
+        var unavailableFromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var restoredAtUtc = unavailableFromUtc.AddHours(2);
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var store = seedScope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
+            store.AddUnavailability(new WorkCenterUnavailability(
+                "WC-A",
+                unavailableFromUtc,
+                null,
+                "breakdown",
+                "ASSET-CNC-01",
+                "org-001",
+                "env-dev"));
+            await seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateRestoredEvent(restoredAtUtc);
+        using (var handlerScope = factory.Services.CreateScope())
+        {
+            var handler = handlerScope.ServiceProvider
+                .GetRequiredService<AssetRestoredIntegrationEventHandlerForReschedule>();
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var window = await assertionDb.WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
+        var schedule = await assertionDb.ScheduleResults.AsNoTracking().SingleAsync();
+        var inbox = await assertionDb.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(x =>
+            x.ConsumerName == AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName);
+
+        Assert.Equal(restoredAtUtc, window.ToUtc);
+        Assert.Equal("AssetRestored", schedule.Trigger.ToString());
+        Assert.Equal(integrationEvent.EventId, inbox.EventId);
+    }
+
+    [PostgreSqlFact]
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states()
     {
@@ -380,6 +425,23 @@ public sealed class MesCapSubscriptionTests
             "maintenance",
             "maintenance.AssetUnavailable:ASSET-CNC-01:20260523080000",
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", fromUtc));
+    }
+
+    private static AssetRestoredIntegrationEvent CreateRestoredEvent(DateTimeOffset restoredAtUtc)
+    {
+        return new AssetRestoredIntegrationEvent(
+            "evt-mes-asset-restored",
+            MaintenanceIntegrationEventTypes.AssetRestored,
+            MaintenanceIntegrationEventVersions.V1,
+            restoredAtUtc,
+            MaintenanceIntegrationEventSources.Maintenance,
+            "corr-mes-asset-restored",
+            "evt-mes-cap-asset-unavailable",
+            "org-001",
+            "env-dev",
+            "maintenance",
+            "maintenance.AssetRestored:ASSET-CNC-01:20260523100000",
+            new AssetRestoredPayload("ASSET-CNC-01", restoredAtUtc));
     }
 
     private static bool CandidateSubscribesToTopic(object candidate, string topic)

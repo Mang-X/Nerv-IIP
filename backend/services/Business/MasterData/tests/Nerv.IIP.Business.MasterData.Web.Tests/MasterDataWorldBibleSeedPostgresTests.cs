@@ -42,7 +42,10 @@ public sealed class MasterDataWorldBibleSeedPostgresTests(ITestOutputHelper outp
         output.WriteLine($"master-data-world-bible-seed-first-run-ms={firstRunMilliseconds}");
         output.WriteLine($"master-data-world-bible-seed-idempotent-rerun-ms={rerun.ElapsedMilliseconds}");
 
-        Assert.Equal(3, await db.Workshops.CountAsync());
+        var worldBibleWorkshopCodes = WorldBibleSpec.Workshops.Select(x => x.Code).ToArray();
+        Assert.Equal(
+            worldBibleWorkshopCodes.Length,
+            await db.Workshops.CountAsync(x => worldBibleWorkshopCodes.Contains(x.Code)));
         Assert.Equal(14, await db.ProductionLines.CountAsync(x => x.Code.StartsWith("LINE-WB-")));
         Assert.Equal(46, await db.DeviceAssets.CountAsync(x => !x.Code.Contains("DEMO") && !x.Code.Contains("SCALE")));
         Assert.Equal(84, await db.Skus.CountAsync(x => !x.Code.StartsWith("SKU-")));

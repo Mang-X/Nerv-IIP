@@ -385,16 +385,23 @@ public sealed class IamTokenHardeningTests
             return Task.FromResult(sessions.SingleOrDefault(x => x.RefreshTokenHash == refreshTokenHash));
         }
 
-        public Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+        public Task<bool> RotateActiveRefreshTokenAsync(
             string refreshTokenHash,
             DateTimeOffset now,
             string revokedReason,
+            UserSession rotatedSession,
             CancellationToken cancellationToken = default)
         {
             _ = cancellationToken;
             var session = sessions.SingleOrDefault(x => x.RefreshTokenHash == refreshTokenHash && x.CanRefresh(now));
-            session?.Revoke(now, revokedReason);
-            return Task.FromResult(session);
+            if (session is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            session.Revoke(now, revokedReason);
+            sessions.Add(rotatedSession);
+            return Task.FromResult(true);
         }
 
         public Task<int> RevokeFamilyAsync(
