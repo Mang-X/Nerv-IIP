@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -106,6 +107,57 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal("PlanningSuggestion", workOrder.SourcePlanReference.SourceDocumentType);
         Assert.Equal(WorldHistorySpec.PlanningSuggestionIdForSalesOrder(settled.SalesOrderNo).ToString(), workOrder.SourcePlanReference.SourceDocumentId);
         Assert.Equal(settled.SalesOrderNo, workOrder.SourcePlanReference.SourceDemandReference);
+    }
+
+    /// <summary>
+    /// #1373：种子绕过下达命令，于是齐套证明位从没盖过章，开工门禁对**全世界**工单
+    /// 一律加 <c>MATERIAL_REQUIREMENT_SNAPSHOT_MISSING</c>——总览按纯数量口径显示「缺料 0」，
+    /// 逐工序「开工」按钮却全被拦。齐套需求还只挂首序任务，OP-20 之后连需求行都取不到，
+    /// 期望证明位被翻成 <c>no-requirements</c>，就算盖了章也对不上。
+    /// 这条用例走真实的门禁评估器，钉住「首序真能开工 + 全工序都不因缺证明位被拦」。
+    /// </summary>
+    [Fact]
+    public async Task History_seed_stamps_the_kitting_proof_so_no_operation_is_blocked_by_a_missing_snapshot()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var workOrder = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.Status == WorkOrder.ReleasedStatus)
+            .OrderBy(x => x.WorkOrderIdValue)
+            .FirstAsync();
+
+        Assert.Equal(
+            WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+            workOrder.MaterialRequirementSnapshotStatus);
+        Assert.NotNull(workOrder.MaterialRequirementSnapshotEvaluatedAtUtc);
+        // 门禁要求版本印章与工单生产版本逐字相等，否则等同于没有证明。
+        Assert.Equal(workOrder.ProductionVersionId, workOrder.MaterialRequirementSnapshotProductionVersionId);
+
+        // 齐套需求是工单级事实（与运行时快照提供方同形），任何一道工序都能取到。
+        var requirements = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.WorkOrderId == workOrder.WorkOrderIdValue)
+            .ToArrayAsync();
+        Assert.NotEmpty(requirements);
+        Assert.All(requirements, requirement => Assert.Null(requirement.OperationTaskId));
+
+        var tasks = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x => x.WorkOrderId == workOrder.WorkOrderIdValue)
+            .OrderBy(x => x.OperationSequence)
+            .ToArrayAsync();
+        var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext).EvaluateManyAsync(
+            tasks,
+            new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+            CancellationToken.None);
+
+        Assert.All(readiness.Values, entry => Assert.DoesNotContain(
+            entry.BlockReasons,
+            reason => reason.StartsWith("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", StringComparison.Ordinal)));
+        // 首序工序无阻塞：这是走查里点不动的那颗按钮。
+        Assert.Contains("start", readiness[tasks[0].OperationTaskIdValue].AllowedActions);
     }
 
     [Fact]
