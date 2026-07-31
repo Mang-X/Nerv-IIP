@@ -170,6 +170,23 @@ const filteredDemands = computed(() => {
 const demandFilterActive = computed(
   () => demandKeyword.value.trim().length > 0 || demandTypeFilter.value !== 'all',
 )
+/**
+ * 刷新后已选类型可能整类消失（那批需求被消化完了）。选项列表是按现有数据生成的，
+ * 留着一个不在列表里的值会让下拉**显示为空白**，而表格又按它筛成空——用户看不出发生了什么。
+ * 这里回落「全部类型」并明说一句，让人知道筛选被重置了、不是数据没了。
+ */
+const demandTypeResetNotice = shallowRef('')
+watch(demandTypeFilterOptions, (options) => {
+  const selected = demandTypeFilter.value
+  if (selected === 'all' || options.some((option) => option.value === selected)) return
+  demandTypeResetNotice.value = `「${demandTypeLabel(selected)}」类需求已不在当前需求池中，已切回全部类型。`
+  demandTypeFilter.value = 'all'
+})
+// 用户自己改筛选就把提示撤掉，别让它常驻。
+watch([demandTypeFilter, demandKeyword], () => {
+  if (demandTypeResetNotice.value && demandTypeFilter.value === 'all') return
+  demandTypeResetNotice.value = ''
+})
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
 const { skus } = useBusinessSkus()
@@ -1181,6 +1198,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           <UrgencyDisplayModeSelect v-model="displayMode" />
         </template>
       </NvToolbar>
+      <p v-if="demandTypeResetNotice" class="text-sm text-muted-foreground" role="status">
+        {{ demandTypeResetNotice }}
+      </p>
       <NvDataTable
         :columns="demandColumns"
         :rows="filteredDemands"

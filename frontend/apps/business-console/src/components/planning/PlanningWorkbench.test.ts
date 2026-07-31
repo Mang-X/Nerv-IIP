@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import PlanningWorkbench from './PlanningWorkbench.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -40,6 +41,9 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
 
 const routerPush = vi.hoisted(() => vi.fn())
 const planningSpies = vi.hoisted(() => ({
+  // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
+  demandsRef: null as { value: Array<Record<string, unknown>> } | null,
+  resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -56,6 +60,44 @@ const planningSpies = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   planningSpies.activeMrpRun = reactive(planningSpies.activeMrpRun)
+  const DEFAULT_DEMANDS = [
+    {
+      demandSourceId: 'demand-001',
+      sourceReference: 'SO-DEMO-001',
+      sourceLineReference: '10',
+      customerCode: 'CUST-001',
+      sourceVersion: 3,
+      sourceStatus: 'active',
+      demandType: 'sales-order',
+      skuCode: 'SKU-FG-1000',
+      uomCode: 'pcs',
+      siteCode: 'SITE-01',
+      quantity: 2,
+      dueDate: '2026-08-15',
+    },
+    // 第二条走预测来源：需求池筛选（关键字 / 类型）要能把两条真的分开。
+    {
+      demandSourceId: 'demand-002',
+      sourceReference: 'FC-2026-08-A',
+      sourceLineReference: '20',
+      customerCode: 'CUST-002',
+      sourceVersion: 1,
+      sourceStatus: 'active',
+      demandType: 'forecast',
+      skuCode: 'SKU-FG-2000',
+      uomCode: 'pcs',
+      siteCode: 'SITE-01',
+      quantity: 8,
+      dueDate: '2026-08-20',
+    },
+  ]
+  const demandsRef = shallowRef([...DEFAULT_DEMANDS])
+  planningSpies.demandsRef = demandsRef as unknown as {
+    value: Array<Record<string, unknown>>
+  }
+  planningSpies.resetDemands = () => {
+    demandsRef.value = [...DEFAULT_DEMANDS]
+  }
   return {
     SUGGESTION_REJECT_REASON_MAX_LENGTH: 128,
     useBusinessPlanning: () => ({
@@ -81,37 +123,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
         dueDate: '2026-06-01',
         idempotencyKey: '',
       }),
-      demands: shallowRef([
-        {
-          demandSourceId: 'demand-001',
-          sourceReference: 'SO-DEMO-001',
-          sourceLineReference: '10',
-          customerCode: 'CUST-001',
-          sourceVersion: 3,
-          sourceStatus: 'active',
-          demandType: 'sales-order',
-          skuCode: 'SKU-FG-1000',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 2,
-          dueDate: '2026-08-15',
-        },
-        // 第二条走预测来源：需求池筛选（关键字 / 类型）要能把两条真的分开。
-        {
-          demandSourceId: 'demand-002',
-          sourceReference: 'FC-2026-08-A',
-          sourceLineReference: '20',
-          customerCode: 'CUST-002',
-          sourceVersion: 1,
-          sourceStatus: 'active',
-          demandType: 'forecast',
-          skuCode: 'SKU-FG-2000',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 8,
-          dueDate: '2026-08-20',
-        },
-      ]),
+      demands: demandsRef,
       demandsError: shallowRef(null),
       demandsPending: shallowRef(false),
       mrpRuns: shallowRef([
@@ -294,7 +306,33 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 vi.mock('@nerv-iip/ui', async () => {
-  const { defineComponent, h } = await vi.importActual<typeof import('vue')>('vue')
+  const { defineComponent, h, inject, provide } = await vi.importActual<typeof import('vue')>('vue')
+  // 下拉要能真的选中一项（需求池类型筛选用例靠它）：Root 负责回传值，Item 渲染成可点按钮。
+  const SELECT_SETTER = Symbol.for('nv-select-setter')
+  const Select = defineComponent({
+    props: { modelValue: { type: String, default: '' } },
+    emits: ['update:modelValue'],
+    setup(_props, { emit, slots }) {
+      provide(SELECT_SETTER, (value: string) => emit('update:modelValue', value))
+      return () => h('div', slots.default?.())
+    },
+  })
+  const SelectItem = defineComponent({
+    props: { value: { type: String, default: '' } },
+    setup(props, { slots }) {
+      const setValue = inject<(value: string) => void>(SELECT_SETTER, () => {})
+      return () =>
+        h(
+          'button',
+          {
+            type: 'button',
+            'data-select-value': props.value,
+            onClick: () => setValue(props.value),
+          },
+          slots.default?.(),
+        )
+    },
+  })
   const Shell = defineComponent({ template: '<div><slot /><slot name="actions" /></div>' })
   const Button = defineComponent({
     emits: ['click'],
@@ -356,9 +394,9 @@ vi.mock('@nerv-iip/ui', async () => {
     NvInput: Shell,
     NvMetricCard: Shell,
     NvPageHeader: Shell,
-    NvSelect: Shell,
+    NvSelect: Select,
     NvSelectContent: Shell,
-    NvSelectItem: Shell,
+    NvSelectItem: SelectItem,
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
     Spinner: Shell,
@@ -383,6 +421,7 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.status = ''
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
+    planningSpies.resetDemands()
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
@@ -419,6 +458,27 @@ describe('PlanningWorkbench', () => {
 
       expect(wrapper.text()).toContain('SO-DEMO-001')
       expect(wrapper.text()).not.toContain('FC-2026-08-A')
+    })
+
+    // 刷新后已选类型整类消失时，下拉不能留一个不在选项里的值（会显示为空白，
+    // 表格又按它筛成空，用户看不出发生了什么）。
+    it('刷新后已选类型不复存在时回落全部类型并说明原因', async () => {
+      const wrapper = mount(PlanningWorkbench)
+      // 用「销售订单」这一类：它只出现在需求池筛选下拉里，不会和新建需求表单的类型下拉撞选择器。
+      await wrapper.get('[data-select-value="sales-order"]').trigger('click')
+      expect(wrapper.text()).toContain('SO-DEMO-001')
+      expect(wrapper.text()).not.toContain('FC-2026-08-A')
+
+      // 销售订单类需求被消化完，刷新后整类消失。
+      planningSpies.demandsRef!.value = planningSpies.demandsRef!.value.filter(
+        (demand) => demand.demandType !== 'sales-order',
+      )
+      await nextTick()
+      await nextTick()
+
+      expect(wrapper.text()).toContain('已不在当前需求池中，已切回全部类型')
+      // 回落后剩下的那条照常显示，不是筛成空白。
+      expect(wrapper.text()).toContain('FC-2026-08-A')
     })
 
     it('全都筛没了时给的是「换个条件」而不是「当前范围没有需求」', async () => {

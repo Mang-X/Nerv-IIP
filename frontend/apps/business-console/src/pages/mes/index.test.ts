@@ -69,7 +69,7 @@ const myScopeState = vi.hoisted(() => ({
   scope: undefined as { kind: string; id: string; displayName?: string } | undefined,
   scopeMessage: '',
   readState: 'ready' as 'idle' | 'loading' | 'error' | 'ready',
-  totals: { queued: 0, inProgress: 0 } as Record<string, number>,
+  totals: {} as Record<string, number>,
 }))
 
 vi.mock('@/composables/useBusinessMes', () => {
@@ -126,7 +126,7 @@ describe('MES index page', () => {
     myScopeState.scope = { kind: 'team', id: 'TEAM-A', displayName: '注塑一班' }
     myScopeState.scopeMessage = ''
     myScopeState.readState = 'ready'
-    myScopeState.totals = { queued: 0, inProgress: 0 }
+    myScopeState.totals = { queued: 0, inProgress: 0, paused: 0, scheduleInvalidated: 0 }
   })
 
   function mountPage() {
@@ -221,8 +221,8 @@ describe('MES index page', () => {
 
   // 走查台账 #50：驾驶舱只有全厂总量，班组长看不到「我这一摊」。
   describe('我的班组维度', () => {
-    it('按作业范围给出待开工 / 进行中，并写明这是谁的范围', () => {
-      myScopeState.totals = { queued: 12, inProgress: 3 }
+    it('按作业范围给出四个未终态计数，并写明这是谁的范围', () => {
+      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
 
       const wrapper = mountPage()
       const text = wrapper.text()
@@ -233,11 +233,28 @@ describe('MES index page', () => {
       expect(text).toContain('12')
       expect(text).toContain('我的范围 · 进行中')
       expect(text).toContain('3')
+      // 暂停与排程失效此前完全漏在外面（「进行中」的文案还把 paused 一起讲了进去）。
+      expect(text).toContain('我的范围 · 已暂停')
+      expect(text).toContain('5')
+      expect(text).toContain('我的范围 · 排程已失效')
+      expect(text).toContain('7')
 
       const queueLink = wrapper
         .findAll('[data-router-link]')
         .find((link) => link.text().includes('打开我的工序队列'))
       expect(queueLink?.attributes('data-to')).toBe('/mes/operation-tasks')
+    })
+
+    // 一格一个后端状态码，不做归并：文案不许替某个状态"代言"另一个状态。
+    it('四格逐一对应未终态状态码，终态不混进来', () => {
+      const text = mountPage().text()
+
+      expect(text).toContain('已排程、尚未开工')
+      expect(text).toContain('已开工、正在做')
+      expect(text).toContain('开工后被挂起，等着恢复')
+      expect(text).toContain('排程作废，需重新排产才能开工')
+      // 旧文案把 paused 归并进「进行中」，这句不许再出现。
+      expect(text).not.toContain('等着报工或完工')
     })
 
     // 全厂总量与「我的范围」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
@@ -251,7 +268,7 @@ describe('MES index page', () => {
 
     it('范围数字没读到时显占位，不拿 0 当结论', () => {
       myScopeState.readState = 'error'
-      myScopeState.totals = { queued: 12, inProgress: 3 }
+      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
 
       const text = mountPage().text()
 

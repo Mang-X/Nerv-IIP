@@ -205,57 +205,55 @@ const commandCards = computed(() => [
  * 而服务端按最早开工时间升序返回、页大小封顶 500，backlog 一大今天的活根本不在这一页里，
  * 切出来的数会骗人。所以这里只讲**作业范围**这一刀（精确），日期维度另立 followup。
  */
-const myQueuedTasks = useMesOperationTasks()
-const myRunningTasks = useMesOperationTasks()
-// 只要服务端算好的 total，不需要行——页大小取 1，别为一个数字拉回 100 行。
-myQueuedTasks.filters.status = 'queued'
-myQueuedTasks.filters.take = 1
-myRunningTasks.filters.status = 'inProgress'
-myRunningTasks.filters.take = 1
+/**
+ * 未终态的四个执行状态各给一格，**逐一对应后端状态码，不做归并**：
+ * 曾把「进行中」写成"已开工、等着报工或完工"，实际上把 `paused` 一起讲了进去，而 `paused`
+ * 根本没进任何一格；`scheduleInvalidated`（排程已失效）同样漏在外面——走查里堵住主链的
+ * 533 项正是这一类。少一格就等于让班组长以为"我这摊只有这些活"。
+ */
+const MY_SCOPE_TASK_BUCKETS = [
+  { key: 'queued', label: '待开工', meta: '已排程、尚未开工' },
+  { key: 'inProgress', label: '进行中', meta: '已开工、正在做' },
+  { key: 'paused', label: '已暂停', meta: '开工后被挂起，等着恢复' },
+  { key: 'scheduleInvalidated', label: '排程已失效', meta: '排程作废，需重新排产才能开工' },
+] as const
 
-const myScope = computed(() => myQueuedTasks.operationListScope.value)
+// 一格一次查询：只要服务端算好的 total，不需要行——页大小取 1，别为一个数字拉回 100 行。
+const myScopeQueries = MY_SCOPE_TASK_BUCKETS.map((bucket) => {
+  const query = useMesOperationTasks()
+  query.filters.status = bucket.key
+  query.filters.take = 1
+  return { bucket, query }
+})
+const myScopeAnchor = myScopeQueries[0].query
+
+const myScope = computed(() => myScopeAnchor.operationListScope.value)
 const myScopeLabel = computed(() => {
   const scope = myScope.value
   if (!scope) return ''
   const kind = mesWorkScopeKindLabel(scope.kind)
   return scope.displayName ? `${scope.displayName}（${kind}）` : kind
 })
-/** 两个计数任一还没读到就整块显「—」：范围数字宁可说不知道，也不能拿 0 当结论。 */
-const myScopeReady = computed(
-  () =>
-    myQueuedTasks.operationTasksState.value === 'ready' &&
-    myRunningTasks.operationTasksState.value === 'ready',
+/** 任一格还没读到就整块显「—」：范围数字宁可说不知道，也不能拿 0 当结论。 */
+const myScopeReady = computed(() =>
+  myScopeQueries.every(({ query }) => query.operationTasksState.value === 'ready'),
 )
 const myScopeNote = computed(() => {
   if (!myScope.value)
-    return myQueuedTasks.operationListScopeMessage.value || '尚未确定你的作业范围。'
-  if (!myScopeReady.value) return readStateNote(myQueuedTasks.operationTasksState.value)
+    return myScopeAnchor.operationListScopeMessage.value || '尚未确定你的作业范围。'
+  if (!myScopeReady.value) return readStateNote(myScopeAnchor.operationTasksState.value)
   return `作业范围：${myScopeLabel.value}`
 })
-const myScopeCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'my-queued',
-    label: '我的范围 · 待开工',
-    value: readStateValue(
-      myQueuedTasks.operationTasksState.value,
-      myQueuedTasks.operationTasksTotal.value,
-    ),
+const myScopeCells = computed<NvMetricStripCell[]>(() =>
+  myScopeQueries.map(({ bucket, query }) => ({
+    key: `my-${bucket.key}`,
+    label: `我的范围 · ${bucket.label}`,
+    value: readStateValue(query.operationTasksState.value, query.operationTasksTotal.value),
     unit: myScopeReady.value ? '个' : undefined,
-    meta: '这一摊里还没开工的工序任务',
+    meta: bucket.meta,
     metaTone: 'neutral',
-  },
-  {
-    key: 'my-running',
-    label: '我的范围 · 进行中',
-    value: readStateValue(
-      myRunningTasks.operationTasksState.value,
-      myRunningTasks.operationTasksTotal.value,
-    ),
-    unit: myScopeReady.value ? '个' : undefined,
-    meta: '已开工、等着报工或完工的工序任务',
-    metaTone: 'neutral',
-  },
-])
+  })),
+)
 
 function blockerCountByArea(keywords: string[]) {
   return blockers.value.filter((i) =>

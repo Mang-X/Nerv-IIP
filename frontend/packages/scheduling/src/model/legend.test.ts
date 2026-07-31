@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { toModel } from './aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from './fixtures'
 import { deriveLegendSemantics } from './legend'
-import { resolveTimeScale } from './scale'
+import { resolveTimeScale, shiftBoundaryRendersAt } from './scale'
 
 /** 固定「现在」,免得 calendar.now 跟着真实时间飘。样例计划期覆盖 2026-06-10。 */
 const NOW = Date.parse('2026-06-10T09:00:00.000Z')
@@ -58,6 +58,33 @@ describe('deriveLegendSemantics', () => {
     it('班次级刻度下,奇数整点起班落不到 2 小时一格的起点上,不列', () => {
       const model = toModel(planWithShiftsAt(7))
       expect(deriveLegendSemantics(model, NOW, 'hour').calendar.shift).toBe(false)
+    })
+
+    // 已知近似(记录假设,不是在断言 DHTMLX 的行为):
+    // hour 档假定 2 小时格从**偶数整点**起步。引擎从不设 config.start_date,时间轴范围由任务
+    // 时间推导后按刻度对齐,对齐到哪一档单位由 DHTMLX 内部决定——本仓库没有证据,本机也没有
+    // DHTMLX 试用包可实测(loader 别名到 stub、引擎契约测试 skip)。
+    // 因此:时间轴若起于奇数整点,下面两条的期望值会与图面相反。治本前请勿把它读成"与引擎等价"。
+    // 治本方向:引擎回传实际格线,或显式钉死 config.start_date 的相位。
+    it('【已知近似】hour 档以「偶数整点 = 格线」为假设,奇数相位时间轴下会与图面相反', () => {
+      const evenShift = toModel(planWithShiftsAt(8))
+      const oddShift = toModel(planWithShiftsAt(7))
+      // 当前假设下的判定:偶数整点起班列、奇数整点起班不列。
+      expect(deriveLegendSemantics(evenShift, NOW, 'hour').calendar.shift).toBe(true)
+      expect(deriveLegendSemantics(oddShift, NOW, 'hour').calendar.shift).toBe(false)
+      // 判定只看班次起点的小时奇偶,不看时间轴从哪里开始——这正是"近似"之所在。
+      expect(shiftBoundaryRendersAt(localIso(8), 'hour')).toBe(true)
+      expect(shiftBoundaryRendersAt(localIso(7), 'hour')).toBe(false)
+    })
+
+    // 与上一条相对:日 / 周 / 月档是**精确**判定,和时间轴相位无关——
+    // 格子 ≥1 天,任何非零点起班都不可能等于格子起点,零点起班也只与日边界重合。
+    it('日级及以上是精确判定:任何相位下都画不出班次边界', () => {
+      for (const scale of ['day', 'week', 'month'] as const) {
+        for (const hour of [0, 7, 8, 15, 16, 23]) {
+          expect(shiftBoundaryRendersAt(localIso(hour), scale), `${scale}@${hour}`).toBe(false)
+        }
+      }
     })
 
     it('日级刻度下班次竖线画不出来,图例不列班次边界', () => {
