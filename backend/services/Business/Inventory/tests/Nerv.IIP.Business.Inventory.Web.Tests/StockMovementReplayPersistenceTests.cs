@@ -30,8 +30,10 @@ public sealed class StockMovementReplayPersistenceTests
             firstMovementId = first.MovementId;
             await db.SaveChangesAsync(CancellationToken.None);
 
-            Assert.Null(replay.UnitCost);
-            Assert.Equal(12.34m, (await db.StockMovements.SingleAsync(x => x.Id == firstMovementId)).UnitCost);
+            // 出库落库的 unit_cost 是台账移动平均成本（派生事实），requested_unit_cost 保留调用方原样的 null。
+            var posted = await db.StockMovements.SingleAsync(x => x.Id == firstMovementId);
+            Assert.Equal(12.34m, posted.UnitCost);
+            Assert.Null(posted.RequestedUnitCost);
         }
 
         await using (var db = CreateContext(connection))
@@ -95,6 +97,154 @@ public sealed class StockMovementReplayPersistenceTests
         }
     }
 
+    /// <summary>
+    /// 入库成本是调用方事实、直接决定存货计价，重放改成本必须冲突。
+    /// 这条守护的是「成本比较不能被整体放过」——把载荷比较里的成本项删掉或写成恒真，本用例即红。
+    /// </summary>
+    [Fact]
+    public async Task Inbound_replay_with_a_different_unit_cost_is_an_idempotency_conflict()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        var first = NewCommand("receipt-line-1", 10m) with
+        {
+            MovementType = "inbound",
+            SourceDocumentId = "RECEIPT-001",
+            UnitCost = 12.34m,
+        };
+
+        await using (var db = CreateContext(connection))
+        {
+            await new PostStockMovementCommandHandler(db).Handle(first, CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var db = CreateContext(connection))
+        {
+            var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+                new PostStockMovementCommandHandler(db).Handle(first with { UnitCost = 99.99m }, CancellationToken.None));
+
+            Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, exception.FailureCode);
+        }
+    }
+
+    /// <summary>入库重放同一成本仍是幂等成功——护栏不能靠「成本一律冲突」来通过。</summary>
+    [Fact]
+    public async Task Inbound_replay_with_the_same_unit_cost_returns_the_existing_posting()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        var first = NewCommand("receipt-line-1", 10m) with
+        {
+            MovementType = "inbound",
+            SourceDocumentId = "RECEIPT-001",
+            UnitCost = 12.34m,
+        };
+        StockMovementId firstMovementId;
+
+        await using (var db = CreateContext(connection))
+        {
+            firstMovementId = (await new PostStockMovementCommandHandler(db).Handle(first, CancellationToken.None)).MovementId;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var db = CreateContext(connection))
+        {
+            var replay = await new PostStockMovementCommandHandler(db).Handle(first, CancellationToken.None);
+
+            Assert.Equal(firstMovementId, replay.MovementId);
+            Assert.Equal(10m, replay.OnHandQuantity);
+            Assert.Equal(1, await db.StockMovements.CountAsync());
+        }
+    }
+
+    /// <summary>
+    /// 调拨的 UnitCost 会给入库腿定价（PostStockMovementCommand.CreateTransferInMovementOrReject），
+    /// 而幂等只查出库腿——出库腿若跳过成本比较，「首次不传成本、重放传 99」会被静默判成幂等成功，
+    /// 调用方以为 99 生效、实际入库腿仍按源移动平均入账，且无任何冲突信号。这条守护该静默错账路径。
+    /// </summary>
+    [Fact]
+    public async Task Transfer_replay_that_changes_the_unit_cost_is_an_idempotency_conflict()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        var transfer = NewTransferCommand("transfer-1", unitCost: null);
+
+        await using (var db = CreateContext(connection))
+        {
+            await SeedInboundAsync(db, 10m, 10m);
+            await new PostStockMovementCommandHandler(db).Handle(transfer, CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var db = CreateContext(connection))
+        {
+            var inbound = await db.StockMovements.SingleAsync(x => x.IdempotencyKey == "transfer-1:in");
+            Assert.Equal(10m, inbound.UnitCost);
+
+            var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+                new PostStockMovementCommandHandler(db).Handle(
+                    NewTransferCommand("transfer-1", unitCost: 99m),
+                    CancellationToken.None));
+
+            Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, exception.FailureCode);
+        }
+    }
+
+    /// <summary>
+    /// 调拨首次显式传成本、重放传同一成本：出库腿落库的 unit_cost 会被移动平均覆写，
+    /// 若拿它跟重放请求比就是 #1332 的另一面（误报冲突）。这条守护重放仍须幂等成功。
+    /// </summary>
+    [Fact]
+    public async Task Transfer_replay_with_the_same_explicit_unit_cost_returns_the_existing_posting()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        var transfer = NewTransferCommand("transfer-1", unitCost: 99m);
+        StockMovementId firstMovementId;
+
+        await using (var db = CreateContext(connection))
+        {
+            await SeedInboundAsync(db, 10m, 10m);
+            firstMovementId = (await new PostStockMovementCommandHandler(db).Handle(transfer, CancellationToken.None)).MovementId;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var db = CreateContext(connection))
+        {
+            var outbound = await db.StockMovements.SingleAsync(x => x.Id == firstMovementId);
+            Assert.Equal(10m, outbound.UnitCost);
+            Assert.Equal(99m, outbound.RequestedUnitCost);
+
+            var replay = await new PostStockMovementCommandHandler(db).Handle(transfer, CancellationToken.None);
+
+            Assert.Equal(firstMovementId, replay.MovementId);
+
+            // 种子入库 + 调拨两腿 = 3 条，重放不得再写第 4 条。
+            Assert.Equal(3, await db.StockMovements.CountAsync());
+        }
+    }
+
+    private static async Task SeedInboundAsync(ApplicationDbContext db, decimal quantity, decimal unitCost)
+    {
+        await new PostStockMovementCommandHandler(db).Handle(
+            NewCommand("seed-inbound", quantity) with
+            {
+                MovementType = "inbound",
+                SourceDocumentId = "RECEIPT-001",
+                UnitCost = unitCost,
+            },
+            CancellationToken.None);
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static PostStockMovementCommand NewTransferCommand(string idempotencyKey, decimal? unitCost)
+    {
+        return NewCommand(idempotencyKey, -2m) with
+        {
+            MovementType = "transfer",
+            UnitCost = unitCost,
+            TransferInLocationCode = "LOC-B-01",
+            TransferInQuantity = 2m,
+        };
+    }
+
     private static async Task<SqliteConnection> OpenDatabaseAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -153,6 +303,7 @@ public sealed class StockMovementReplayPersistenceTests
                 production_date TEXT NULL,
                 expiry_date TEXT NULL,
                 quantity TEXT NOT NULL,
+                requested_unit_cost TEXT NULL,
                 unit_cost TEXT NULL,
                 movement_amount TEXT NULL,
                 posted_at_utc TEXT NOT NULL

@@ -63,7 +63,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         ProductionDate = productionDate;
         ExpiryDate = expiryDate;
         Quantity = NonZero(quantity, nameof(quantity));
-        UnitCost = unitCost is null ? null : NonNegative(unitCost.Value, nameof(unitCost));
+        RequestedUnitCost = unitCost is null ? null : NonNegative(unitCost.Value, nameof(unitCost));
+        UnitCost = RequestedUnitCost;
         MovementAmount = UnitCost * Quantity;
         PostedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockMovementPostedDomainEvent(this));
@@ -88,6 +89,17 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
     public decimal Quantity { get; private set; }
+
+    /// <summary>
+    /// 调用方随请求提交的单位成本原始事实，落库后永不改写；为 null 表示调用方未指定、由台账派生。
+    /// 幂等重放的载荷比较只认这一列，<see cref="UnitCost"/> 不参与——后者是派生结果，见 <see cref="ApplyValuation"/>。
+    /// </summary>
+    public decimal? RequestedUnitCost { get; private set; }
+
+    /// <summary>
+    /// 生效单位成本：出库一律被 <see cref="ApplyValuation"/> 用台账移动平均成本改写，入库沿用调用方值或回落移动平均。
+    /// 这是派生事实，不是调用方载荷。
+    /// </summary>
     public decimal? UnitCost { get; private set; }
     public decimal? MovementAmount { get; private set; }
     public DateTime PostedAtUtc { get; private set; }
@@ -148,6 +160,13 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         MovementAmount = valuationUnitCost * Quantity;
     }
 
+    /// <summary>
+    /// 幂等重放判定：逐字段比较「调用方载荷」，任一字段不同即为 IDEMPOTENCY_CONFLICT。
+    /// 只比较调用方能决定的事实——<see cref="UnitCost"/> 与 <see cref="MovementAmount"/> 是
+    /// <see cref="ApplyValuation"/> 落库前改写的派生结果，拿它跟重放请求比会造成假冲突，因此比较
+    /// <see cref="RequestedUnitCost"/>。反过来也不能整体跳过成本比较：调拨的入库腿由调用方 UnitCost 定价，
+    /// 而调拨幂等只查出库腿，跳过就会把「改了成本的重放」静默判成幂等成功。
+    /// </summary>
     public bool HasSamePayload(StockMovement other)
     {
         return OrganizationId == other.OrganizationId
@@ -169,15 +188,7 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && ProductionDate == other.ProductionDate
             && ExpiryDate == other.ExpiryDate
             && Quantity == other.Quantity
-            && HasSameRequestedValuation(other);
-    }
-
-    private bool HasSameRequestedValuation(StockMovement other)
-    {
-        // Outbound valuation is authoritative ledger state, not caller payload:
-        // StockLedger.ApplyValuation replaces UnitCost with the moving-average cost before persistence.
-        // Comparing that derived value with a replayed request's null/ignored UnitCost creates a false conflict.
-        return Quantity < 0 || UnitCost == other.UnitCost;
+            && RequestedUnitCost == other.RequestedUnitCost;
     }
 
     private static decimal NonZero(decimal value, string parameterName)
