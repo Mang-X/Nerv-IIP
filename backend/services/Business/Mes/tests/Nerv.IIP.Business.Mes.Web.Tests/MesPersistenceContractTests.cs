@@ -283,7 +283,7 @@ public sealed class MesPersistenceContractTests
             CancellationToken.None);
 
         Assert.Equal("Blocked", readiness.ReadinessStatus);
-        Assert.Contains("MAT-OIL LOT-OIL-A shortage 2", readiness.BlockingReasons);
+        Assert.Contains("MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 2", readiness.BlockingReasons);
         var row = Assert.Single(readiness.Items);
         Assert.Equal("MAT-OIL", row.MaterialId);
         Assert.Equal("LOT-OIL-A", row.MaterialLotId);
@@ -463,7 +463,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("LOT-OIL-A", row.MaterialLotId);
         Assert.Equal(0m, row.ReceivedQuantity);
         Assert.Equal(6m, row.ShortageQuantity);
-        Assert.Contains("MAT-OIL LOT-OIL-A shortage 6", readiness.BlockingReasons);
+        Assert.Contains("MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 6", readiness.BlockingReasons);
     }
 
     [Fact]
@@ -535,7 +535,9 @@ public sealed class MesPersistenceContractTests
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-BLOCKED-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
-        Assert.Contains("物料齐套未满足", exception.Message);
+        // 开工被拒的文案已剥掉英文码，只剩中文事实（读面仍保留 `CODE: 中文`）。
+        Assert.Contains("物料 MAT-SEAL 缺口 8", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_SHORTAGE", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -704,13 +706,14 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext, FakeMesMaterialRequirementSnapshotProvider.Missing).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-MISSING-MAT-001", now.AddMinutes(10)),
                 CancellationToken.None));
-        Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", releaseException.Message);
+        Assert.Contains("工单缺少齐套需求快照", releaseException.Message, StringComparison.Ordinal);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-MISSING-MAT-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
-        Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message);
+        Assert.Contains("工单缺少齐套需求快照", startException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -794,7 +797,9 @@ public sealed class MesPersistenceContractTests
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-QH-10", "start", now.AddMinutes(12)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, startHold.Message);
+        // 开工被拒的文案经分层透传直接上屏，已剥掉英文码只留中文（读面仍保留 `CODE: 中文`）。
+        Assert.Contains("质量保留", startHold.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(MesReadinessReasonCodes.QualityHoldActive, startHold.Message, StringComparison.Ordinal);
     }
 
     // 回归 #799（2026-07-17 隔离全栈实测暴露的跨服务 sourceService 词汇 bug）：Quality 发布的 payload.SourceService

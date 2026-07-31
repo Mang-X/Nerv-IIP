@@ -80,7 +80,7 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                 && x.TemplateCode == request.TemplateCode
                 && x.DocumentType == request.DocumentType,
                 cancellationToken)
-            ?? throw new KnownException("Approval template was not found.");
+            ?? throw new KnownException("审批模板不存在，请先在审批模板中配置后再发起。");
         ApprovalChain chain;
         try
         {

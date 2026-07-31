@@ -120,7 +120,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 cancellationToken);
             if (shortages.Count > 0)
             {
-                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+                throw new KnownException($"物料齐套未满足：{MaterialReadinessGuards.DescribeForUser(shortages)}");
             }
         }
 
@@ -1290,7 +1290,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                     cancellationToken);
             if (!readiness.AllowedActions.Contains("start", StringComparer.Ordinal))
             {
-                throw new KnownException(string.Join("; ", readiness.BlockReasons));
+                throw new KnownException(MaterialReadinessGuards.DescribeForUser(readiness.BlockReasons));
             }
 
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -1440,7 +1440,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
             .ToArrayAsync(cancellationToken);
         if (blockingOperations.Length > 0)
         {
-            throw new KnownException($"前序工序尚未完成，OperationTaskId = {task.OperationTaskIdValue}, BlockingOperations = {string.Join(',', blockingOperations)}");
+            // 这条会经分层透传直接上屏，而前端只原样透传 60 字以内的中文短消息（超了会被截断）——
+            // 所以只说「哪几道工序还没完工」，不带 OperationTaskId = 这类内部字段名；
+            // 前序太多时只点前三道，剩下的给个数（MAN-698 台账 #35 同批）。
+            var named = blockingOperations.Take(3).ToArray();
+            var more = blockingOperations.Length > named.Length
+                ? $" 等 {blockingOperations.Length} 道"
+                : string.Empty;
+            throw new KnownException($"前序工序尚未完成：{string.Join('、', named)}{more}。");
         }
     }
 }
@@ -1468,6 +1475,49 @@ internal static class MaterialReadinessGuards
     {
         return !string.IsNullOrWhiteSpace(status)
             && ActiveIssueRequestStatuses.Contains(status, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 缺料阻塞原因在 **MES 服务内**的唯一措辞：<c>MATERIAL_SHORTAGE: 物料 X（批次 Y）缺口 N</c>，
+    /// 与 <see cref="MissingRequirementSnapshotReason"/> 同一形态（<c>英文码: 中文说明</c>）——
+    /// 前端按冒号前的码取标签与下一步动作，冒号后的中文原样作为明细上屏。
+    /// 本服务内新增缺料产出点一律走这里（曾经三处各写一套、其中两处直出英文生码
+    /// 「物料编码 + shortage + 数量」，界面上既读不懂又被徽标截断；MAN-698 台账 #35）。
+    ///
+    /// ⚠️ 这个形态是**跨服务约定**，但实现有意重复三份：本处、Scheduling 的
+    /// <c>SchedulingMaterialReasonText</c>、前端的 <c>describeMesReadinessReason</c>。
+    /// 服务边界不共享库、前端更不可能引用后端代码，所以**共享的是断言不是代码**：
+    /// 本处与 Scheduling 侧各有一条逐字一致的格式用例互相钉住，改措辞两边一起红。
+    /// </summary>
+    public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
+    {
+        var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
+        return $"MATERIAL_SHORTAGE: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
+    }
+
+    /// <summary>
+    /// 把阻塞原因串成**给用户看的一句话**：读面保留 <c>CODE: 中文</c>（前端按码取标签与下一步动作），
+    /// 但写操作被拒时的 <see cref="KnownException"/> 文案要去掉英文码——它经分层透传直接上屏，
+    /// 反馈规范禁止界面出现英文错误码（`frontend/DESIGN/patterns/feedback-and-notifications.md`）。
+    /// </summary>
+    public static string DescribeForUser(IEnumerable<string> reasons)
+    {
+        return string.Join("；", reasons.Select(StripReasonCode).Where(x => x.Length > 0));
+    }
+
+    private static string StripReasonCode(string reason)
+    {
+        var separator = reason.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0)
+        {
+            return reason.Trim();
+        }
+
+        var code = reason[..separator];
+        // 只剥「全大写下划线」形态的码，别把中文说明里的冒号误当分隔符。
+        return code.All(x => char.IsAsciiLetterUpper(x) || char.IsAsciiDigit(x) || x == '_')
+            ? reason[(separator + 1)..].Trim()
+            : reason.Trim();
     }
 
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
@@ -1616,9 +1666,7 @@ internal static class MaterialReadinessGuards
                 return (x.Key.MaterialId, MaterialLotId: (string?)x.Key.MaterialLotId, Shortage: shortage);
             })
             .Where(x => x.Shortage > 0)
-            .Select(x => x.MaterialLotId is null
-                ? $"{x.MaterialId} shortage {x.Shortage:0.######}"
-                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.Shortage:0.######}")
+            .Select(x => FormatShortageReason(x.MaterialId, x.MaterialLotId, x.Shortage))
             .ToArray();
     }
 

@@ -126,7 +126,7 @@ public sealed class ProductionVersionApiContractTests
                 20,
                 true),
             CancellationToken.None));
-        Assert.Contains("effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("该生效区间已有生产版本", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class ProductionVersionApiContractTests
             NewCreateCommand("MBOM-1000:B", "ROUTE-1000:B", validFrom: new DateOnly(2026, 6, 1)),
             CancellationToken.None));
 
-        Assert.Contains("effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("该生效区间已有生产版本", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

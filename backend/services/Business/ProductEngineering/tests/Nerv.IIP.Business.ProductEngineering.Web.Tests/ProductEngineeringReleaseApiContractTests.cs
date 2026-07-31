@@ -1154,7 +1154,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             []);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MBOM MBOM-1000 的修订 A 已存在", exception.Message, StringComparison.Ordinal);
 
         var createdCommand = command with { Revision = "B" };
         await handler.Handle(createdCommand, CancellationToken.None);
@@ -1370,7 +1370,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new BomLineCommand("ENG-1002", 1m, "EA")]),
             CancellationToken.None));
 
-        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已有已发布修订", exception.Message, StringComparison.Ordinal);
         Assert.Contains("EBOM-OVERLAP", exception.Message, StringComparison.Ordinal);
     }
 
@@ -1406,7 +1406,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已有已发布修订", exception.Message, StringComparison.Ordinal);
         Assert.Contains("MBOM-OVERLAP", exception.Message, StringComparison.Ordinal);
     }
 
@@ -1437,7 +1437,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new RoutingOperationCommand(10, null, "mixing", null)]),
             CancellationToken.None));
 
-        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已有已发布修订", exception.Message, StringComparison.Ordinal);
         Assert.Contains("ROUTE-OVERLAP", exception.Message, StringComparison.Ordinal);
     }
 
@@ -1600,7 +1600,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 new DateOnly(2026, 6, 1),
                 [new RoutingOperationCommand(10, "WC-MIX-01", "mixing", "混合", 30)]),
             CancellationToken.None));
-        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("工艺路线 ROUTE-1000 的修订 A 已存在", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2451,6 +2451,48 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Equal(first.Id, second.Id);
         Assert.Matches("^EDOC-[0-9]{8}-[0-9]{6}$", first.Id);
+        Assert.Single(dbContext.EngineeringDocuments);
+    }
+
+    /// <summary>
+    /// MAN-698 台账 #34：手填文档号撞号时后端只给英文「already exists」，前端分层透传把英文
+    /// 兜底成「登记文档修订失败，请稍后重试」，用户既不知道撞了什么也不知道怎么改。
+    /// 现在给中文可行动消息（点名文档号 + 修订 + 出路：换修订或留空自动取号）。
+    /// </summary>
+    [Fact]
+    public async Task Register_engineering_document_duplicate_number_states_the_conflict_in_chinese()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new RegisterEngineeringDocumentCommandHandler(
+            new EngineeringDocumentRepository(dbContext),
+            new ProductEngineeringCodingService());
+        RegisterEngineeringDocumentCommand Command(string idempotencyKey) => new(
+            "org-001",
+            "env-dev",
+            "EDOC-MANUAL-001",
+            "A",
+            "file-001",
+            "shock-absorber.dwg",
+            "application/dwg",
+            "cad-drawing",
+            idempotencyKey);
+
+        await handler.Handle(Command("engineering-document-dup-1"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 换幂等键 = 用户重新提交了一次「同号同修订」，不是重放：必须撞号拒绝。
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(Command("engineering-document-dup-2"), CancellationToken.None));
+
+        Assert.Contains("EDOC-MANUAL-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("修订 A", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("留空取号", exception.Message, StringComparison.Ordinal);
+        // 上屏文案受 serverErrorMessage 的 60 字截断限制：超了尾部的「怎么办」会被吃掉，
+        // 而「怎么办」正是这条消息存在的意义（MAN-698 批次 A 复审第 5 条）。
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
+        Assert.DoesNotContain("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Single(dbContext.EngineeringDocuments);
     }
 

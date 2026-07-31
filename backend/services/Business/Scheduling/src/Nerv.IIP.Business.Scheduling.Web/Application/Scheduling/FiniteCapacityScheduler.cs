@@ -1713,8 +1713,11 @@ file sealed class SchedulerState
             return $"物料未齐套:{detail}{more}。{Suffix}";
         }
 
-        return reasonCodes.Count > 0
-            ? $"物料未齐套({string.Join('、', reasonCodes)})。{Suffix}"
+        // 原因串来自 MES,形态是 `CODE: 中文事实`——上屏前把英文码剥掉,
+        // 界面上不该出现 MATERIAL_SHORTAGE 这类码(MAN-698 台账 #35)。
+        var readableReasons = SchedulingMaterialReasonText.DescribeForUser(reasonCodes);
+        return readableReasons.Count > 0
+            ? $"物料未齐套({string.Join('、', readableReasons)})。{Suffix}"
             : $"物料未齐套。{Suffix}";
     }
 
@@ -1776,11 +1779,17 @@ file sealed class SchedulerState
         };
     }
 
+    /// <summary>
+    /// 硬约束下工序排不出去时的未排原因,直接进读面的「未排原因」列——
+    /// 同样要剥掉英文码(此前会渲染成「物料未齐套（material-shortage）」，
+    /// 码是给程序看的，用户读不懂；MAN-698 台账 #35 遗留同型)。
+    /// </summary>
     private static string MaterialBlockMessage(SchedulingMaterialReadinessContract materialReadiness)
     {
-        return materialReadiness.ReasonCodes.Count == 0
+        var readableReasons = SchedulingMaterialReasonText.DescribeForUser(materialReadiness.ReasonCodes);
+        return readableReasons.Count == 0
             ? "物料未齐套：开工前需先完成备料。"
-            : $"物料未齐套（{string.Join('、', materialReadiness.ReasonCodes)}）：开工前需先完成备料。";
+            : $"物料未齐套（{string.Join('、', readableReasons)}）：开工前需先完成备料。";
     }
 
     /// <summary>质量放行原因来自上游码值,读面直接展示,所以给它套一层中文说明。</summary>
