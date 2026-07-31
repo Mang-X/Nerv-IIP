@@ -74,6 +74,30 @@ describe('toModel', () => {
     expect(op10.startUtc).toBeTruthy()
   })
 
+  // #1320:设备「状态未知」同样是软约束 —— 挂在已排工序上,不进 unscheduled。
+  it('maps equipment data risks onto their scheduled tasks instead of unscheduling them', () => {
+    const m = toModel({
+      ...samplePlan,
+      equipmentRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          resourceId: 'DEV-CNC-01',
+          reasonCodes: ['equipment.sourceStale'],
+          message:
+            '设备 DEV-CNC-01 状态未知(采集数据已过期)。已按计划排入,开工前请人工确认设备可用。',
+        },
+      ],
+    })
+
+    const op10 = m.tasks.find((t) => t.id === 'a1')!
+    expect(op10.equipmentRisk?.resourceId).toBe('DEV-CNC-01')
+    expect(op10.equipmentRisk?.message).toContain('开工前请人工确认设备可用')
+    expect(m.equipmentRisks).toHaveLength(1)
+    expect(op10.type).toBe('operation')
+    expect(op10.startUtc).toBeTruthy()
+  })
+
   it('keeps the current tooling conflict in business language', () => {
     const m = toModel({
       ...samplePlan,

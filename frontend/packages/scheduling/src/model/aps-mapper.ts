@@ -12,6 +12,7 @@ import type {
   ScheduleTask,
   UnscheduledItem,
   MaterialRisk,
+  EquipmentRisk,
 } from './types'
 import { BLOCK_LABELS, toBlockKind } from './blocks'
 
@@ -129,6 +130,22 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     if (t) t.materialRisk = risk
   }
 
+  // 设备数据风险（软约束）：这些工序排在状态未知的设备上（无快照 / 快照过期 / 采集源不可达）。
+  // 「不知道」不等于「不可用」，所以它同样标在已排工序上，不进 unscheduled。
+  const equipmentRisks: EquipmentRisk[] = (plan.equipmentRisks ?? []).map((r) => ({
+    orderId: r.orderId ?? '',
+    operationId: r.operationId ?? '',
+    resourceId: r.resourceId ?? '',
+    reasonCodes: [...(r.reasonCodes ?? [])],
+    message: r.message ?? '',
+  }))
+  for (const risk of equipmentRisks) {
+    const t = operations.find(
+      (o) => o.orderId === risk.orderId && o.operationId === risk.operationId,
+    )
+    if (t) t.equipmentRisk = risk
+  }
+
   const unscheduled: UnscheduledItem[] = (plan.unscheduledOperations ?? []).map((u) => ({
     orderId: u.orderId ?? '',
     operationId: u.operationId ?? '',
@@ -210,6 +227,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     conflicts,
     unscheduled,
     materialRisks,
+    equipmentRisks,
     changes,
     groupDimensions: operations.some((o) => o.dimensions?.workCenter)
       ? [{ key: 'workCenter', label: '工作中心' }]

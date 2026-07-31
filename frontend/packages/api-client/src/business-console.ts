@@ -1357,6 +1357,7 @@ export type {
   NervIipContractsSchedulingSchedulePlanShiftWindowContract as BusinessConsoleSchedulingShiftWindow,
   NervIipContractsSchedulingSchedulePlanContract as BusinessConsoleSchedulePlan,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract as BusinessConsoleSchedulingMaterialRisk,
+  NervIipContractsSchedulingSchedulePlanEquipmentRiskContract as BusinessConsoleSchedulingEquipmentRisk,
   NervIipContractsSchedulingSchedulingMaterialShortageContract as BusinessConsoleSchedulingMaterialShortage,
   NervIipContractsSchedulingSchedulePlanComparisonContract as BusinessConsoleSchedulingPlanComparison,
   NervIipContractsSchedulingSchedulePlanImpactContract as BusinessConsoleSchedulingPlanImpact,
@@ -2421,6 +2422,7 @@ import type {
   NervIipContractsSchedulingGanttScheduleItemContract,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract,
   NervIipContractsSchedulingSchedulingMaterialShortageContract,
+  NervIipContractsSchedulingSchedulePlanEquipmentRiskContract,
 } from './generated/business-console/types.gen'
 
 export type SchedulePlanContract = NervIipContractsSchedulingSchedulePlanContract
@@ -2440,6 +2442,9 @@ export type SchedulePlanMaterialRiskContract =
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract
 export type SchedulingMaterialShortageContract =
   NervIipContractsSchedulingSchedulingMaterialShortageContract
+// 设备软约束（#1320）：排在状态未知设备上的工序风险（无快照 / 快照过期 / 采集源不可达）。
+export type SchedulePlanEquipmentRiskContract =
+  NervIipContractsSchedulingSchedulePlanEquipmentRiskContract
 export type GanttScheduleItemContract = NervIipContractsSchedulingGanttScheduleItemContract
 export type SchedulePlanSummary =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse

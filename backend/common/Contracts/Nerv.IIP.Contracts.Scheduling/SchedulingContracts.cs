@@ -30,7 +30,11 @@ public sealed record SchedulingProblemContract(
     IReadOnlyCollection<SchedulingUnavailabilityWindowContract> UnavailabilityWindows,
     IReadOnlyCollection<SchedulingMaterialReadinessContract> MaterialReadiness,
     IReadOnlyCollection<SchedulingQualityBlockContract> QualityBlocks,
-    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments);
+    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments,
+    // 设备数据风险(软约束):设备没有运行时快照 / 快照已过期 / 采集源不可达。
+    // 「不知道」不等于「不可用」——它不进 UnavailabilityWindows(那里只放真实停机与维护),
+    // 只作为风险随计划带出,提示排产员这台设备的状态是盲区。
+    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null);
 
 public sealed record SchedulingOrderContract(
     string OrderId,
@@ -86,6 +90,30 @@ public sealed record SchedulingUnavailabilityWindowContract(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     string ReasonCode);
+
+/// <summary>
+/// 设备数据风险(软约束):某台设备在某段窗口内「状态未知」——没有运行时快照、快照已过期,
+/// 或采集源当时不可达。这是数据盲区,不是设备真的不能干活,所以它不阻断排程,
+/// 只作为风险随计划带出,由排产员决定是否人工确认设备状态。
+/// </summary>
+public sealed record SchedulingEquipmentDataRiskContract(
+    string ResourceId,
+    string? WorkCenterId,
+    string ReasonCode,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? SourceReferenceLabel = null);
+
+/// <summary>
+/// 设备「状态未知」的口径:软约束(默认)= 照排 + 带设备数据风险标记;
+/// 硬约束 = 沿用旧行为,状态未知即全窗不可用(会把无快照设备整台排除)。
+/// 真实的停机/维护窗口(Unavailable)在两种口径下都是硬阻,不受此开关影响。
+/// </summary>
+public enum SchedulingEquipmentUnknownModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
 
 public sealed record SchedulingMaterialReadinessContract(
     string ScopeType,
@@ -150,7 +178,19 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<GanttScheduleItemContract> GanttItems,
     IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
     IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
-    IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null);
+    IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
+    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null);
+
+/// <summary>
+/// 设备数据风险(软约束):工序已排到这台设备上,但该设备在计划窗口内没有可信的运行时状态
+/// (无快照 / 快照过期 / 采集源不可达)。开工前建议人工确认设备可用。
+/// </summary>
+public sealed record SchedulePlanEquipmentRiskContract(
+    string OrderId,
+    string OperationId,
+    string ResourceId,
+    IReadOnlyCollection<string> ReasonCodes,
+    string Message);
 
 /// <summary>
 /// 物料风险(软约束):工序已排入计划,但开工前必须先把这些物料补齐,否则 MES 侧齐套硬门会拦住开工。
@@ -233,7 +273,8 @@ public sealed record SchedulePlanMetricsContract(
     decimal AverageResourceUtilization,
     int LockedOperationCount = 0,
     int OptimizableOperationCount = 0,
-    int MaterialRiskOperationCount = 0);
+    int MaterialRiskOperationCount = 0,
+    int EquipmentRiskOperationCount = 0);
 
 public sealed record ScheduleAssignmentContract(
     string AssignmentId,
@@ -289,7 +330,8 @@ public sealed record GanttScheduleItemContract(
     SchedulePlanStatusContract Status,
     bool HasConflict,
     ScheduleConflictReasonCodeContract? ConflictReasonCode,
-    bool HasMaterialRisk = false);
+    bool HasMaterialRisk = false,
+    bool HasEquipmentRisk = false);
 
 public static class SchedulingIntegrationEventTypes
 {

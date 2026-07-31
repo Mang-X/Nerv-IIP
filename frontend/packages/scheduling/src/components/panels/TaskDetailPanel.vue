@@ -183,6 +183,19 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         <p v-else class="mt-1">{{ task.materialRisk.message }}</p>
       </div>
 
+      <!--
+        设备数据风险：工序排在了运行时状态未知的设备上（无快照 / 快照过期 / 采集源不可达）。
+        「不知道」不等于「不可用」，所以是中性提示而非阻断色。
+      -->
+      <div
+        v-if="task.equipmentRisk"
+        class="nv-sched-equipment-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
+        data-testid="task-equipment-risk"
+      >
+        <p class="font-medium">设备状态未知 · 开工前请人工确认设备可用</p>
+        <p class="mt-1">{{ task.equipmentRisk.message }}</p>
+      </div>
+
       <!-- 明细网格 -->
       <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
         <div v-if="!isOrder" class="col-span-2 flex justify-between">

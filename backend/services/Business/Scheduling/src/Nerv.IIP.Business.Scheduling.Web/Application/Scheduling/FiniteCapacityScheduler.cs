@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
@@ -33,6 +34,46 @@ public static class SchedulingMaterialConstraintModeResolver
             $"{ConfigurationKey}='{configuredValue}' 不是合法的物料约束口径。合法值:" +
             $"{string.Join(" / ", Enum.GetNames<SchedulingMaterialConstraintModeContract>())};留空即默认 " +
             $"{SchedulingMaterialConstraintModeContract.Soft}(缺料可排 + 物料风险标记)。");
+    }
+}
+
+/// <summary>
+/// 设备「状态未知」口径(DI 用的显式载体,避免把裸枚举注册进容器)。
+/// </summary>
+public sealed record SchedulingEquipmentUnknownModeOption(SchedulingEquipmentUnknownModeContract Mode)
+{
+    public static SchedulingEquipmentUnknownModeOption Default { get; } =
+        new(SchedulingEquipmentUnknownModeContract.Soft);
+}
+
+/// <summary>
+/// 设备「状态未知」口径的配置解析。与物料口径同样绝不静默回落——回落方向同样更宽松。
+/// </summary>
+public static class SchedulingEquipmentUnknownModeResolver
+{
+    public const string ConfigurationKey = "Scheduling:EquipmentUnknownMode";
+
+    public static SchedulingEquipmentUnknownModeContract Resolve(string? configuredValue)
+    {
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return SchedulingEquipmentUnknownModeContract.Soft;
+        }
+
+        if (Enum.TryParse<SchedulingEquipmentUnknownModeContract>(
+                configuredValue.Trim(),
+                ignoreCase: true,
+                out var parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"{ConfigurationKey}='{configuredValue}' 不是合法的设备状态未知口径。合法值:" +
+            $"{string.Join(" / ", Enum.GetNames<SchedulingEquipmentUnknownModeContract>())};留空即默认 " +
+            $"{SchedulingEquipmentUnknownModeContract.Soft}(状态未知可排 + 设备数据风险标记)。" +
+            "真实停机/维护窗口在两种口径下都是硬阻。");
     }
 }
 
@@ -320,6 +361,7 @@ file sealed class SchedulerState
     private readonly List<ScheduleChangeContract> changeSummary = [];
     private readonly HashSet<OperationKey> failedOperationKeys = [];
     private readonly List<SchedulePlanMaterialRiskContract> materialRisks = [];
+    private readonly List<SchedulePlanEquipmentRiskContract> equipmentRisks = [];
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
@@ -394,6 +436,13 @@ file sealed class SchedulerState
                     locked.ResourceId,
                     "锁定工序落在排程窗口、班次日历或可用资源之外，无法保留。");
             }
+
+            // 锁定工序同样带设备数据风险:它已经占住这台设备的时段,状态盲区一样要提示。
+            AddEquipmentRisk(
+                locked.OrderId,
+                locked.OperationId,
+                locked.ResourceId,
+                ApplicableEquipmentDataRisks(locked.ResourceId, locked.StartUtc, locked.EndUtc));
 
             // 锁定工序同样吃软约束语义:它已经占住计划位置,缺料照样得在开工前补齐,
             // 否则 MES 齐套硬门会在开工时拦下一个"看起来已排好"的工序。
@@ -558,6 +607,13 @@ file sealed class SchedulerState
         var materialRiskKeys = orderedMaterialRisks
             .Select(x => new OperationKey(x.OrderId, x.OperationId))
             .ToHashSet();
+        var orderedEquipmentRisks = equipmentRisks
+            .OrderBy(x => x.OrderId, StringComparer.Ordinal)
+            .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+            .ToList();
+        var equipmentRiskKeys = orderedEquipmentRisks
+            .Select(x => new OperationKey(x.OrderId, x.OperationId))
+            .ToHashSet();
 
         return new SchedulePlanContract(
             ContractVersion: problem.ContractVersion,
@@ -567,7 +623,12 @@ file sealed class SchedulerState
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
-            Metrics: BuildMetrics(orderedAssignments, resourceOccupancies, resourceLoads, materialRiskKeys.Count),
+            Metrics: BuildMetrics(
+                orderedAssignments,
+                resourceOccupancies,
+                resourceLoads,
+                materialRiskKeys.Count,
+                equipmentRiskKeys.Count),
             Assignments: orderedAssignments,
             ResourceLoads: resourceLoads,
             Conflicts: conflicts,
@@ -588,21 +649,25 @@ file sealed class SchedulerState
                     Status: SchedulePlanStatusContract.Preview,
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
                     ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey),
-                    HasMaterialRisk: materialRiskKeys.Contains(operationKey));
+                    HasMaterialRisk: materialRiskKeys.Contains(operationKey),
+                    HasEquipmentRisk: equipmentRiskKeys.Contains(operationKey));
             }).ToList(),
             // 工作日历与不可用窗口是排程输入的一部分,随计划一起带出:读面据此画工作日/非工作日、
             // 班次边界与维护/停机/换线/换型底纹,不必再单独取一次日历。
             Calendars: SchedulePlanCalendarProjector.ProjectCalendars(problem),
             BlockWindows: SchedulePlanCalendarProjector.ProjectBlockWindows(problem),
             // 物料软约束的产物:这些工序已排入计划,但开工前必须先备料。
-            MaterialRisks: orderedMaterialRisks);
+            MaterialRisks: orderedMaterialRisks,
+            // 设备软约束的产物:这些工序排在状态未知的设备上,开工前需人工确认设备可用。
+            EquipmentRisks: orderedEquipmentRisks);
     }
 
     private SchedulePlanMetricsContract BuildMetrics(
         IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
         IReadOnlyCollection<ResourceOccupancy> resourceOccupancies,
         IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads,
-        int materialRiskOperationCount)
+        int materialRiskOperationCount,
+        int equipmentRiskOperationCount)
     {
         var dueByOperation = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (
@@ -647,7 +712,8 @@ file sealed class SchedulerState
             AverageResourceUtilization: averageResourceUtilization,
             LockedOperationCount: orderedAssignments.Count(x => x.IsLocked),
             OptimizableOperationCount: optimizableAssignments.Length,
-            MaterialRiskOperationCount: materialRiskOperationCount);
+            MaterialRiskOperationCount: materialRiskOperationCount,
+            EquipmentRiskOperationCount: equipmentRiskOperationCount);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
@@ -742,6 +808,13 @@ file sealed class SchedulerState
         {
             AddMaterialRisk(item, openEndedMaterialBlocks);
         }
+
+        // 设备数据风险同理:只对真正落到这台设备上的时段登记。
+        AddEquipmentRisk(
+            item.Order.OrderId,
+            item.Operation.OperationId,
+            selected.Resource.ResourceId,
+            ApplicableEquipmentDataRisks(selected.Resource.ResourceId, selected.StartUtc, selected.EndUtc));
 
         return new ScheduleAssignmentContract(
             AssignmentId: $"assign-{item.Order.OrderId}-{item.Operation.OperationId}",
@@ -1543,6 +1616,85 @@ file sealed class SchedulerState
             item.Operation.OperationId,
             null,
             message);
+    }
+
+    /// <summary>
+    /// 登记设备数据风险:工序已排到这台设备上,但计划窗口内这台设备的运行时状态是盲区
+    /// (无快照 / 快照过期 / 采集源不可达)。「不知道」不阻断排程,只补一条预警级冲突,
+    /// 让读面提示「开工前请人工确认设备状态」。
+    /// </summary>
+    private void AddEquipmentRisk(
+        string orderId,
+        string operationId,
+        string resourceId,
+        IReadOnlyCollection<SchedulingEquipmentDataRiskContract> risks)
+    {
+        if (risks.Count == 0)
+        {
+            return;
+        }
+
+        var reasonCodes = risks
+            .Select(x => x.ReasonCode)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var message = EquipmentRiskMessage(resourceId, reasonCodes);
+
+        equipmentRisks.Add(new SchedulePlanEquipmentRiskContract(
+            orderId,
+            operationId,
+            resourceId,
+            reasonCodes,
+            message));
+        AddConflict(
+            ScheduleConflictReasonCodeContract.Equipment,
+            ScheduleConflictSeverityContract.Warning,
+            orderId,
+            operationId,
+            resourceId,
+            message);
+    }
+
+    private static string EquipmentRiskMessage(string resourceId, IReadOnlyCollection<string> reasonCodes)
+    {
+        const string Suffix = "已按计划排入,开工前请人工确认设备可用。";
+        var detail = reasonCodes
+            .Select(DescribeEquipmentRiskReason)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return detail.Length > 0
+            ? $"设备 {resourceId} 状态未知({string.Join('、', detail)})。{Suffix}"
+            : $"设备 {resourceId} 状态未知。{Suffix}";
+    }
+
+    private static string DescribeEquipmentRiskReason(string reasonCode)
+    {
+        return reasonCode switch
+        {
+            EquipmentRuntimeReasonCodes.SourceStale => "采集数据已过期",
+            HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode => "采集源当前不可达",
+            EquipmentRuntimeReasonCodes.TagMappingMissing => "采集点位未映射",
+            _ => "缺少运行时状态"
+        };
+    }
+
+    private IReadOnlyCollection<SchedulingEquipmentDataRiskContract> ApplicableEquipmentDataRisks(
+        string resourceId,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc)
+    {
+        var risks = problem.EquipmentDataRisks;
+        if (risks is null || risks.Count == 0)
+        {
+            return [];
+        }
+
+        return risks
+            .Where(x => string.Equals(x.ResourceId, resourceId, StringComparison.Ordinal))
+            .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
+            .ToArray();
     }
 
     private static string MaterialRiskMessage(

@@ -986,6 +986,16 @@ function reasonLabel(reason?: string | null) {
                 </p>
               </div>
               <div>
+                <p class="text-xs text-muted-foreground">设备状态未知工序</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.equipmentRiskOperationCount ??
+                    planDetail.equipmentRisks?.length ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div>
                 <p class="text-xs text-muted-foreground">负荷分钟</p>
                 <p class="text-sm font-medium text-foreground">
                   {{ planDetail.metrics?.assignedMinutes ?? 0 }}
@@ -1084,6 +1094,29 @@ function reasonLabel(reason?: string | null) {
                   </li>
                 </ul>
                 <p class="mt-1 text-xs">{{ risk.message }}</p>
+              </div>
+            </div>
+          </section>
+
+          <!--
+            设备数据风险（软约束）：无快照 / 快照过期 / 采集源不可达 —— 这是数据盲区，
+            不是设备不可用。工序照排，但开工前要人工确认设备状态。
+          -->
+          <section v-if="planDetail.equipmentRisks?.length" class="grid gap-3">
+            <h3 class="text-sm font-semibold text-foreground">
+              设备状态未知 · 开工前请人工确认设备可用
+            </h3>
+            <div class="grid gap-2">
+              <div
+                v-for="risk in planDetail.equipmentRisks"
+                :key="`${risk.orderId}:${risk.operationId}`"
+                class="rounded-md border border-border bg-muted/40 p-3 text-sm"
+                data-testid="plan-equipment-risk"
+              >
+                <p class="font-medium">
+                  {{ risk.orderId }} · {{ risk.operationId }} · {{ risk.resourceId }}
+                </p>
+                <p class="mt-1 text-xs text-muted-foreground">{{ risk.message }}</p>
               </div>
             </div>
           </section>

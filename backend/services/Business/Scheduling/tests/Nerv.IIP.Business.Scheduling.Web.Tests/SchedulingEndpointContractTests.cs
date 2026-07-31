@@ -117,7 +117,8 @@ public sealed class SchedulingEndpointContractTests
             new FixedTimeProvider(FixedNow),
             new NoopSchedulingEquipmentAvailabilityProvider(),
             new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            new PassthroughSchedulingOperationOverrideOverlay(),
+            SchedulingEquipmentUnknownModeOption.Default);
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
 
         var first = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
@@ -159,7 +160,8 @@ public sealed class SchedulingEndpointContractTests
             new FixedTimeProvider(FixedNow),
             availabilityProvider,
             new NoopSchedulingMaterialReadinessProvider(),
-            new PassthroughSchedulingOperationOverrideOverlay());
+            new PassthroughSchedulingOperationOverrideOverlay(),
+            SchedulingEquipmentUnknownModeOption.Default);
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -188,7 +190,8 @@ public sealed class SchedulingEndpointContractTests
             new FixedTimeProvider(FixedNow),
             new NoopSchedulingEquipmentAvailabilityProvider(),
             materialReadinessProvider,
-            new PassthroughSchedulingOperationOverrideOverlay());
+            new PassthroughSchedulingOperationOverrideOverlay(),
+            SchedulingEquipmentUnknownModeOption.Default);
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -690,6 +693,131 @@ public sealed class SchedulingEndpointContractTests
         yield return [new HttpRequestMessage(HttpMethod.Post, "/api/business/v1/scheduling/plans/plan-missing/release")];
     }
 
+    /// <summary>
+    /// #1320 验收:设备全部无快照(采集源不可达)+ 缺料的工单,在软约束下仍然全排,
+    /// 只带双风险标记;风险都是预警级,发布守卫放行——锁定→发布链恢复可达。
+    /// </summary>
+    [Fact]
+    public async Task Release_passes_when_plan_only_carries_warning_level_equipment_and_material_risks()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new FixedTimeProvider(FixedNow);
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(),
+            clock,
+            new StubSchedulingEquipmentAvailabilityProvider(new EquipmentRuntimeAvailabilityResponse(
+                1,
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                problem.HorizonStartUtc,
+                problem.HorizonEndUtc,
+                problem.Resources.Select(resource => new EquipmentRuntimeAvailabilityWindowContract(
+                    resource.ResourceId,
+                    resource.WorkCenterId,
+                    EquipmentRuntimeAvailabilityStatus.Unknown,
+                    HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode,
+                    EquipmentRuntimeSeverity.Blocked,
+                    problem.HorizonStartUtc,
+                    problem.HorizonEndUtc,
+                    EquipmentRuntimeSourceType.StaleSource,
+                    "source-unavailable",
+                    "equipment.availability.sourceUnavailable",
+                    [])).ToArray())),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        ScopeType: "order",
+                        ScopeId: "WO-RUSH-REAR-001",
+                        MaterialReadyUtc: null,
+                        IsReady: false,
+                        ReasonCodes: ["MAT-A shortage 2"],
+                        Shortages: [new SchedulingMaterialShortageContract("MAT-A", null, 5m, 3m, 2m)])
+                ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 全排:设备状态未知与缺料都不再产生未排工序。
+        Assert.Empty(created.UnscheduledOperations);
+        Assert.Equal(problem.Orders.Sum(x => x.Operations.Count), created.Assignments.Count);
+        // 双风险标记都在。
+        Assert.NotEmpty(created.EquipmentRisks ?? []);
+        Assert.NotEmpty(created.MaterialRisks ?? []);
+        Assert.Contains(created.GanttItems, x => x.HasEquipmentRisk && x.HasMaterialRisk);
+        Assert.DoesNotContain(created.Conflicts, x => x.Severity == ScheduleConflictSeverityContract.Error);
+
+        var released = await releaseHandler.Handle(
+            new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(SchedulePlanStatusContract.Released, released.Status);
+    }
+
+    /// <summary>
+    /// 分界另一侧:真实停机导致工序排不出去时,发布守卫照旧拒绝。软化不能把发布门也拆了。
+    /// </summary>
+    [Fact]
+    public async Task Release_still_rejects_plan_with_unscheduled_operations_from_real_downtime()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new FixedTimeProvider(FixedNow);
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(),
+            clock,
+            new StubSchedulingEquipmentAvailabilityProvider(new EquipmentRuntimeAvailabilityResponse(
+                1,
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                problem.HorizonStartUtc,
+                problem.HorizonEndUtc,
+                [
+                    new EquipmentRuntimeAvailabilityWindowContract(
+                        "DEV-WELD-01",
+                        "WC-TUBE-WELD",
+                        EquipmentRuntimeAvailabilityStatus.Unavailable,
+                        EquipmentRuntimeReasonCodes.Downtime,
+                        EquipmentRuntimeSeverity.Blocked,
+                        problem.HorizonStartUtc,
+                        problem.HorizonEndUtc,
+                        EquipmentRuntimeSourceType.DeviceState,
+                        "DEV-WELD-01",
+                        EquipmentRuntimeReasonCodes.Downtime,
+                        [])
+                ])),
+            new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)),
+            new PostgreSqlScheduleReleaseScopeLock(dbContext));
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEmpty(created.UnscheduledOperations);
+        await Assert.ThrowsAsync<KnownException>(() => releaseHandler.Handle(
+            new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+            CancellationToken.None));
+    }
+
     private static CreateSchedulePlanCommandHandler CreatePlanHandler(ApplicationDbContext dbContext)
     {
         var clock = new FixedTimeProvider(FixedNow);
@@ -700,7 +828,8 @@ public sealed class SchedulingEndpointContractTests
             new NoopSchedulingEquipmentAvailabilityProvider(),
             new NoopSchedulingMaterialReadinessProvider(),
             new SchedulingOperationOverrideOverlay(dbContext),
-            new OrderUrgencyService(dbContext, clock));
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
