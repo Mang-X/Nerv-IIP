@@ -4343,7 +4343,10 @@ public sealed record BusinessConsoleMesMaterialReadinessResponse(
     string WorkOrderId,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
-    IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items);
+    IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items,
+    // 齐套核算口径（#1291）：只认线边可用 + 已备料 + 已收料，不含原料仓等其他库存。
+    // MRP 用的是全厂库存口径，两个数字不同是正常的——读面必须显式标注，不能让用户以为系统自相矛盾。
+    string? ReadinessScope = null);
 
 public sealed record BusinessConsoleMesMaterialReadinessRow(
     string MaterialId,
@@ -4354,7 +4357,9 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal StagedQuantity,
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
-    string Status);
+    string Status,
+    // 缺口卡在哪个环节：none / awaitingPreparation（还没发起领料）/ awaitingDelivery（仓库在配）。
+    string? ShortageStage = null);
 
 // 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
 // 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read

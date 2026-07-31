@@ -205,6 +205,10 @@ function cardHtml(t: ScheduleTask): string {
   const alert = t.hasConflict
     ? `<span class="nerv-card-alert" title="冲突">${ALERT_ICON}</span>`
     : ''
+  // 物料风险(软约束):已排但缺料 —— 提示「开工前备料」,不是排不进去。
+  const matRisk = t.materialRisk
+    ? `<span class="nv-sched-material-risk-chip" title="需在开工前完成备料">缺料待备</span>`
+    : ''
   const prog =
     t.progress != null
       ? `<span class="nerv-card-prog"><span style="width:${Math.round(t.progress * 100)}%"></span></span>`
@@ -214,7 +218,7 @@ function cardHtml(t: ScheduleTask): string {
     <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
     <div class="nerv-card-r3">${meta3}</div>
-    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}</div>
+    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${matRisk}</div>
     ${prog}
   </div>`
 }
@@ -262,6 +266,7 @@ function tooltipHtml(t: ScheduleTask): string {
     t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
     t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
+    t.materialRisk ? chip('缺料待备', 'var(--nv-scheduling-kit-warn)') : '',
   ]
     .filter(Boolean)
     .join('')
@@ -281,6 +286,7 @@ function tooltipHtml(t: ScheduleTask): string {
     ...(t.hasConflict && t.conflictReason
       ? ([['冲突', conflictReasonLabel[t.conflictReason]]] as Array<[string, string]>)
       : []),
+    ...(t.materialRisk ? ([['物料', t.materialRisk.message]] as Array<[string, string]>) : []),
   ]
   const body = rows
     .map(

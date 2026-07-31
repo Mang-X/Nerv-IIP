@@ -19,6 +19,27 @@
 }
 
 @layer nv-components {
+  /* 物料风险（软约束）：已排但缺料。沿用 kit-warn 语义 —— 预警而非阻断，
+     与「不可排」的 destructive 明确区分。详情面板/草案表格共用这一块视觉。 */
+  .nv-sched-material-risk {
+    border: 1px solid color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 55%);
+    background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 88%);
+    color: var(--foreground);
+  }
+  .nv-sched-material-risk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.375rem;
+    border-radius: 0.3125rem;
+    border: 1px solid currentColor;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--nv-scheduling-kit-warn);
+    background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 85%);
+  }
+
   .nerv-gantt {
     position: relative;
     width: 100%;

@@ -92,7 +92,29 @@ public sealed record SchedulingMaterialReadinessContract(
     string ScopeId,
     DateTimeOffset? MaterialReadyUtc,
     bool IsReady,
-    IReadOnlyCollection<string> ReasonCodes);
+    IReadOnlyCollection<string> ReasonCodes,
+    IReadOnlyCollection<SchedulingMaterialShortageContract>? Shortages = null);
+
+/// <summary>
+/// 单项物料缺口(排程读面用):缺哪个物料、需要多少、可用多少、缺口多少。
+/// 排产把物料当软约束,缺口只作为「开工前必须补齐」的风险随计划带出,不再阻断排程。
+/// </summary>
+public sealed record SchedulingMaterialShortageContract(
+    string MaterialId,
+    string? MaterialLotId,
+    decimal RequiredQuantity,
+    decimal AvailableQuantity,
+    decimal ShortageQuantity);
+
+/// <summary>
+/// 物料约束口径:软约束(默认)= 可排 + 带物料风险标记;硬约束 = 缺料直接不可排。
+/// 产品裁决:齐套是开工门槛(MES 侧硬门),不是排产门槛。
+/// </summary>
+public enum SchedulingMaterialConstraintModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
 
 public sealed record SchedulingQualityBlockContract(
     string ScopeType,
@@ -127,7 +149,18 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
     IReadOnlyCollection<GanttScheduleItemContract> GanttItems,
     IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
-    IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null);
+    IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
+    IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null);
+
+/// <summary>
+/// 物料风险(软约束):工序已排入计划,但开工前必须先把这些物料补齐,否则 MES 侧齐套硬门会拦住开工。
+/// </summary>
+public sealed record SchedulePlanMaterialRiskContract(
+    string OrderId,
+    string OperationId,
+    IReadOnlyCollection<string> ReasonCodes,
+    IReadOnlyCollection<SchedulingMaterialShortageContract> Shortages,
+    string Message);
 
 /// <summary>
 /// 计划所依据的工作日历(投影自排程问题的班次窗口),供读面画工作日/非工作日与班次边界。
@@ -199,7 +232,8 @@ public sealed record SchedulePlanMetricsContract(
     decimal OnTimeRate,
     decimal AverageResourceUtilization,
     int LockedOperationCount = 0,
-    int OptimizableOperationCount = 0);
+    int OptimizableOperationCount = 0,
+    int MaterialRiskOperationCount = 0);
 
 public sealed record ScheduleAssignmentContract(
     string AssignmentId,
@@ -254,7 +288,8 @@ public sealed record GanttScheduleItemContract(
     DateTimeOffset EndUtc,
     SchedulePlanStatusContract Status,
     bool HasConflict,
-    ScheduleConflictReasonCodeContract? ConflictReasonCode);
+    ScheduleConflictReasonCodeContract? ConflictReasonCode,
+    bool HasMaterialRisk = false);
 
 public static class SchedulingIntegrationEventTypes
 {

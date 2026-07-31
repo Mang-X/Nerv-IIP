@@ -13,6 +13,10 @@ import {
 } from '@/composables/useSingleOrderScheduling'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import {
+  describeMaterialShortageStage,
+  MATERIAL_READINESS_SCOPE_NOTE,
+} from '@/composables/mes/materialReadinessScope'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
 import {
@@ -65,7 +69,7 @@ import {
   XCircleIcon,
 } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -136,7 +140,13 @@ const qualityHolds = computed(() =>
 const activeQualityHoldCount = computed(
   () => qualityHolds.value.filter((hold) => hold.isActive).length,
 )
-const materialRows = computed(() => materialReadiness.value?.items ?? [])
+// 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
+const materialRows = computed(() =>
+  (materialReadiness.value?.items ?? []).map((row) => ({
+    ...row,
+    stage: describeMaterialShortageStage(row),
+  })),
+)
 const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
   ...(materialReadiness.value?.blockingReasons ?? []),
@@ -234,10 +244,12 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
   },
   { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
-  { key: 'availableQuantity', header: '可用', align: 'end', width: 'w-20' },
+  { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
   { key: 'shortageQuantity', header: '短缺', align: 'end', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
+  // 缺口卡在哪个环节 + 下一步动作（#1291：齐套页要能讲清「缺什么、缺在哪个环节、下一步动作」）。
+  { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
 ]
 
 // --- 取消工单（破坏性动作，原因必填 + 补偿预览，A1 §2/§4） ---
@@ -729,6 +741,10 @@ function formatError(error: unknown) {
 
     <div class="grid gap-2">
       <span class="text-sm font-semibold text-foreground">用料齐套</span>
+      <!-- 口径自解释：齐套只认线边/备料范围，与 MRP 的全厂库存口径本来就不同（#1291）。 -->
+      <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
+        {{ MATERIAL_READINESS_SCOPE_NOTE }}
+      </p>
       <NvDataTable
         :columns="materialColumns"
         :rows="materialRows"
@@ -753,7 +769,25 @@ function formatError(error: unknown) {
         <template #cell-status="{ row }">
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
         </template>
+        <template #cell-shortageStage="{ row }">
+          <div class="grid gap-0.5">
+            <NvStatusBadge
+              class="justify-self-start"
+              :value="row.stage.label"
+              :label="row.stage.label"
+              :tone="row.stage.tone"
+            />
+            <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
+          </div>
+        </template>
       </NvDataTable>
+      <!-- 全厂库存对照入口：穿透到库存可用量页，核对「原料仓有没有货」。 -->
+      <RouterLink
+        v-if="materialShortageCount > 0"
+        class="justify-self-start text-sm font-medium text-brand hover:underline"
+        :to="{ path: '/inventory/availability' }"
+        >去库存可用量核对全厂是否有货</RouterLink
+      >
     </div>
 
     <!-- 取消工单确认（含补偿预览区），A1 §2 破坏性动作原因必填 -->

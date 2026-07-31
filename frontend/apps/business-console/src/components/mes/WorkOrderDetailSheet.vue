@@ -6,6 +6,10 @@ import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import {
+  describeMaterialShortageStage,
+  MATERIAL_READINESS_SCOPE_NOTE,
+} from '@/composables/mes/materialReadinessScope'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
   resolveDispatchAffordance,
@@ -115,7 +119,13 @@ const blockingReasons = computed(() =>
   (detail.value?.blockingReasons ?? []).map(describeMesReadinessReason),
 )
 
-const materialRows = computed(() => materialReadiness.value?.items ?? [])
+// 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
+const materialRows = computed(() =>
+  (materialReadiness.value?.items ?? []).map((row) => ({
+    ...row,
+    stage: describeMaterialShortageStage(row),
+  })),
+)
 const materialShortages = computed(() =>
   materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0),
 )
@@ -149,8 +159,10 @@ const materialColumns: NvDataTableColumn<(typeof materialRows)['value'][number]>
     accessor: (r) => resolveSkuLabel(r.materialId),
   },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
-  { key: 'availableQuantity', header: '可用', align: 'end', width: 'w-20' },
+  { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'shortageQuantity', header: '缺口', align: 'end', width: 'w-20' },
+  // 缺口卡在哪个环节 + 下一步动作：只给数字讲不清「为什么 MRP 说有货、这里说缺」。
+  { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
 ]
 
 // ── 工序动作 ────────────────────────────────────────────────────
@@ -411,6 +423,10 @@ function formatQuantity(value?: number | null) {
                 {{ materialShortages.length }} 项缺料
               </span>
             </div>
+            <!-- 口径自解释：齐套 ≠ MRP 的全厂库存口径，必须写在表格旁边（#1291）。 -->
+            <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
+              {{ MATERIAL_READINESS_SCOPE_NOTE }}
+            </p>
             <NvDataTable
               :columns="materialColumns"
               :rows="materialRows"
@@ -434,6 +450,17 @@ function formatQuantity(value?: number | null) {
                 >
                   {{ formatQuantity(row.shortageQuantity) }}
                 </span>
+              </template>
+              <template #cell-shortageStage="{ row }">
+                <div class="grid gap-0.5">
+                  <NvStatusBadge
+                    class="justify-self-start"
+                    :value="row.stage.label"
+                    :label="row.stage.label"
+                    :tone="row.stage.tone"
+                  />
+                  <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
+                </div>
               </template>
             </NvDataTable>
           </section>

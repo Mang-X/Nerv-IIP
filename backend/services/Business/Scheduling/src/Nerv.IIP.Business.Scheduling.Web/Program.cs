@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -88,7 +89,11 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
-    builder.Services.AddSingleton<FiniteCapacityScheduler>();
+    // 物料约束口径:默认软约束(缺料可排 + 物料风险标记),需要严格口径的环境可配置成 Hard。
+    // 非法值在启动期直接失败,不静默回落到更宽松的一侧。
+    var materialConstraintMode = SchedulingMaterialConstraintModeResolver.Resolve(
+        builder.Configuration[SchedulingMaterialConstraintModeResolver.ConfigurationKey]);
+    builder.Services.AddSingleton(new FiniteCapacityScheduler(materialConstraintMode));
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();

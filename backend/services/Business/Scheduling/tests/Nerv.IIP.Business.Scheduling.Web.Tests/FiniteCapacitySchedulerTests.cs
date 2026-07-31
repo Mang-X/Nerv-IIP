@@ -1130,7 +1130,7 @@ public class FiniteCapacitySchedulerTests
             x.OrderId == "WO-SNAPSHOT-001"
             && x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.Quality
-            && x.Message == "resource-quarantine");
+            && x.Message == "质量限制（resource-quarantine）：需先完成质量放行。");
         Assert.Contains(plan.Conflicts, x =>
             x.OrderId == "WO-SNAPSHOT-001"
             && x.OperationId == "WO-SNAPSHOT-001-OP10"
@@ -1139,9 +1139,310 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
-    public void Schedule_reports_material_reason_for_open_ended_top_level_material_unavailability()
+    // 产品裁决:齐套是开工门槛不是排产门槛。缺料工序默认照排,只带出物料风险。
+    public void Schedule_keeps_material_short_operation_schedulable_and_flags_material_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-material-soft-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.DoesNotContain(plan.UnscheduledOperations, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        var risk = Assert.Single(plan.MaterialRisks ?? []);
+        Assert.Equal("WO-SNAPSHOT-001", risk.OrderId);
+        Assert.Equal("WO-SNAPSHOT-001-OP10", risk.OperationId);
+        Assert.Contains("material-shortage", risk.ReasonCodes);
+        Assert.Contains(risk.Shortages, x => x.MaterialId == "RM-OIL-01" && x.ShortageQuantity == 145.86m);
+        Assert.Contains("需在开工前完成备料", risk.Message);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        Assert.Contains(plan.GanttItems, x => x.OperationId == "WO-SNAPSHOT-001-OP10" && x.HasMaterialRisk);
+        // 物料风险是预警,不是阻断。
+        Assert.Contains(plan.Conflicts, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Severity == ScheduleConflictSeverityContract.Warning);
+    }
+
+    [Fact]
+    // 硬约束开关保留:配置成 Hard 时沿用「缺料即不可排」。
+    public void Schedule_blocks_material_short_operation_when_material_constraint_is_hard()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var scheduler = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard);
+
+        var plan = scheduler.Schedule(problem, "plan-material-hard-001", GeneratedAtUtc);
+
+        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OrderId == "WO-SNAPSHOT-001"
+            && x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Message == "物料未齐套（material-shortage）：开工前需先完成备料。");
+        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Contains(plan.Conflicts, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Severity == ScheduleConflictSeverityContract.Error);
+    }
+
+    [Fact]
+    // 台账 #38:未排原因不许再出英文生码,读面拿到的必须是中文人话。
+    public void Schedule_reports_unscheduled_reasons_in_business_chinese()
     {
         var problem = CreateSingleOperationProblem() with
+        {
+            Orders =
+            [
+                CreateSingleOperationProblem().Orders.Single() with
+                {
+                    Operations =
+                    [
+                        CreateSingleOperationProblem().Orders.Single().Operations.Single() with
+                        {
+                            RequiredCapabilityCode = "CAP-NOT-INSTALLED"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-chinese-reason-001", GeneratedAtUtc);
+
+        var unscheduled = Assert.Single(plan.UnscheduledOperations);
+        Assert.DoesNotContain(unscheduled.Message, char.IsAsciiLetter);
+        Assert.Contains("资源", unscheduled.Message);
+    }
+
+    [Fact]
+    // 走查场景形状(#1291):一工单 8 道工序、首工序缺料。
+    // 修复前首工序判 material 不可排,其余 7 道全部 predecessorUnscheduled,整单排不出去。
+    public void Schedule_unblocks_the_whole_operation_chain_when_only_the_first_operation_is_short()
+    {
+        var problem = CreateEightOperationChainProblem(materialShortOperationSequences: [10]);
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-chain-soft-001", GeneratedAtUtc);
+
+        Assert.Equal(8, plan.Assignments.Count);
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.DoesNotContain(plan.Conflicts, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.PredecessorUnscheduled);
+        // 风险计数 = 真正缺料的工序数,不因连锁而扩散到后继工序。
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        var risk = Assert.Single(plan.MaterialRisks ?? []);
+        Assert.Equal("WO-CHAIN-001-OP10", risk.OperationId);
+        Assert.Single(plan.GanttItems, x => x.HasMaterialRisk);
+        // 工序链仍按前后序推进,不是全挤在同一时刻。
+        var ordered = plan.Assignments.OrderBy(x => x.OperationSequence).ToArray();
+        Assert.True(ordered[0].EndUtc <= ordered[1].StartUtc);
+    }
+
+    [Fact]
+    // 对照组:硬约束下同一形状仍然整链塌方,证明上面的解阻确实来自软约束而不是别处改动。
+    public void Schedule_still_collapses_the_chain_under_hard_material_constraint()
+    {
+        var problem = CreateEightOperationChainProblem(materialShortOperationSequences: [10]);
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(problem, "plan-chain-hard-001", GeneratedAtUtc);
+
+        Assert.Empty(plan.Assignments);
+        Assert.Equal(8, plan.UnscheduledOperations.Count);
+        Assert.Equal(7, plan.UnscheduledOperations.Count(x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.PredecessorUnscheduled));
+    }
+
+    [Fact]
+    // 多道工序缺料时,风险计数逐工序对齐,不去重成一条。
+    public void Schedule_counts_material_risk_per_short_operation()
+    {
+        var problem = CreateEightOperationChainProblem(materialShortOperationSequences: [10, 30, 50]);
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-chain-soft-002", GeneratedAtUtc);
+
+        Assert.Equal(8, plan.Assignments.Count);
+        Assert.Equal(3, plan.Metrics.MaterialRiskOperationCount);
+        Assert.Equal(3, (plan.MaterialRisks ?? []).Count);
+        Assert.Equal(3, plan.GanttItems.Count(x => x.HasMaterialRisk));
+    }
+
+    [Fact]
+    // 锁定工序缺料同样要在开工前备料 —— 它已经占住计划位置,漏登记会让缺料悄悄溜过。
+    public void Schedule_flags_material_risk_for_locked_assignments_too()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var operation = problem.Orders.Single().Operations.Single();
+        var lockedProblem = problem with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "assign-locked-001",
+                    OrderId: "WO-SNAPSHOT-001",
+                    OperationId: operation.OperationId,
+                    OperationSequence: operation.OperationSequence,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: problem.HorizonStartUtc,
+                    EndUtc: problem.HorizonStartUtc.AddMinutes(60),
+                    LockReasonCode: "planner-lock")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(lockedProblem, "plan-locked-risk-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.Assignments, x => x.OperationId == operation.OperationId && x.IsLocked);
+        var risk = Assert.Single(plan.MaterialRisks ?? []);
+        Assert.Equal(operation.OperationId, risk.OperationId);
+        Assert.Contains("需在开工前完成备料", risk.Message);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        Assert.Contains(plan.GanttItems, x => x.OperationId == operation.OperationId && x.HasMaterialRisk);
+    }
+
+    [Fact]
+    // 硬约束下锁定工序不登记风险(走的是旧的硬门语义)。
+    public void Schedule_does_not_flag_locked_material_risk_under_hard_constraint()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var operation = problem.Orders.Single().Operations.Single();
+        var lockedProblem = problem with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    "assign-locked-001",
+                    "WO-SNAPSHOT-001",
+                    operation.OperationId,
+                    operation.OperationSequence,
+                    "DEV-SNAPSHOT-01",
+                    "WC-SNAPSHOT",
+                    problem.HorizonStartUtc,
+                    problem.HorizonStartUtc.AddMinutes(60),
+                    "planner-lock")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(lockedProblem, "plan-locked-risk-hard-001", GeneratedAtUtc);
+
+        Assert.Empty(plan.MaterialRisks ?? []);
+    }
+
+    [Theory]
+    [InlineData(null, SchedulingMaterialConstraintModeContract.Soft)]
+    [InlineData("", SchedulingMaterialConstraintModeContract.Soft)]
+    [InlineData("   ", SchedulingMaterialConstraintModeContract.Soft)]
+    [InlineData("soft", SchedulingMaterialConstraintModeContract.Soft)]
+    [InlineData(" Hard ", SchedulingMaterialConstraintModeContract.Hard)]
+    public void MaterialConstraintMode_resolves_configured_values(
+        string? configured,
+        SchedulingMaterialConstraintModeContract expected)
+    {
+        Assert.Equal(expected, SchedulingMaterialConstraintModeResolver.Resolve(configured));
+    }
+
+    [Theory]
+    [InlineData("strict")]
+    [InlineData("Sofft")]
+    [InlineData("2")]
+    // 非法值绝不静默回落到更宽松的 Soft:启动期直接失败,并把合法值写进异常。
+    public void MaterialConstraintMode_rejects_illegal_configuration_instead_of_falling_back(string configured)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => SchedulingMaterialConstraintModeResolver.Resolve(configured));
+
+        Assert.Contains(configured, exception.Message);
+        Assert.Contains("Soft", exception.Message);
+        Assert.Contains("Hard", exception.Message);
+    }
+
+    /// <summary>
+    /// 走查场景形状:一张工单 8 道工序、串行前后序,指定序号的工序缺料。
+    /// </summary>
+    private static SchedulingProblemContract CreateEightOperationChainProblem(
+        IReadOnlyCollection<int> materialShortOperationSequences)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var horizonEnd = new DateTimeOffset(2026, 6, 5, 0, 0, 0, TimeSpan.Zero);
+        var operations = Enumerable.Range(1, 8)
+            .Select(index => new SchedulingOperationContract(
+                OperationId: $"WO-CHAIN-001-OP{index * 10}",
+                OperationSequence: index * 10,
+                PredecessorOperationIds: index == 1 ? [] : [$"WO-CHAIN-001-OP{(index - 1) * 10}"],
+                DurationMinutes: 60,
+                RequiredCapabilityCode: "CAP-CHAIN",
+                EligibleResourceIds: ["DEV-CHAIN-01"],
+                PrimaryResourceId: "DEV-CHAIN-01",
+                EarliestStartUtc: horizonStart,
+                DueUtc: horizonEnd,
+                Priority: 1,
+                IsRush: false,
+                SplitPolicy: ScheduleSplitPolicyContract.NonSplittable,
+                MaterialReadyUtc: null,
+                QualityBlockReason: null,
+                SourceReference: "TEST:CHAIN"))
+            .ToArray();
+
+        return new SchedulingProblemContract(
+            ContractVersion: 1,
+            ProblemId: "problem-chain-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "prod",
+            HorizonStartUtc: horizonStart,
+            HorizonEndUtc: horizonEnd,
+            Orders:
+            [
+                new SchedulingOrderContract(
+                    OrderId: "WO-CHAIN-001",
+                    SkuCode: "FG-CHAIN",
+                    Quantity: 1,
+                    DueUtc: horizonEnd,
+                    Priority: 1,
+                    IsRush: false,
+                    Operations: operations)
+            ],
+            Resources:
+            [
+                new SchedulingResourceContract(
+                    ResourceId: "DEV-CHAIN-01",
+                    WorkCenterId: "WC-CHAIN",
+                    CapabilityCodes: ["CAP-CHAIN"],
+                    CapacityUnits: 1,
+                    CalendarId: "CAL-CHAIN",
+                    SortKey: "001")
+            ],
+            Calendars:
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-CHAIN",
+                    ShiftWindows: Enumerable.Range(0, 4)
+                        .Select(day => new SchedulingTimeWindowContract(
+                            horizonStart.AddDays(day).AddHours(8),
+                            horizonStart.AddDays(day).AddHours(20),
+                            "day-shift"))
+                        .ToArray())
+            ],
+            UnavailabilityWindows: [],
+            MaterialReadiness: materialShortOperationSequences
+                .Select(sequence => new SchedulingMaterialReadinessContract(
+                    ScopeType: "operation",
+                    ScopeId: $"WO-CHAIN-001-OP{sequence}",
+                    MaterialReadyUtc: null,
+                    IsReady: false,
+                    ReasonCodes: ["material-shortage"],
+                    Shortages:
+                    [
+                        new SchedulingMaterialShortageContract("RM-OIL-01", null, 145.86m, 0m, 145.86m)
+                    ]))
+                .ToArray(),
+            QualityBlocks: [],
+            LockedAssignments: []);
+    }
+
+    private static SchedulingProblemContract CreateMaterialShortageProblem()
+    {
+        return CreateSingleOperationProblem() with
         {
             MaterialReadiness =
             [
@@ -1150,24 +1451,13 @@ public class FiniteCapacitySchedulerTests
                     ScopeId: "WO-SNAPSHOT-001",
                     MaterialReadyUtc: null,
                     IsReady: false,
-                    ReasonCodes: ["material-shortage"])
+                    ReasonCodes: ["material-shortage"],
+                    Shortages:
+                    [
+                        new SchedulingMaterialShortageContract("RM-OIL-01", null, 145.86m, 0m, 145.86m)
+                    ])
             ]
         };
-        var scheduler = new FiniteCapacityScheduler();
-
-        var plan = scheduler.Schedule(problem, "plan-material-blocked-001", GeneratedAtUtc);
-
-        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
-        Assert.Contains(plan.UnscheduledOperations, x =>
-            x.OrderId == "WO-SNAPSHOT-001"
-            && x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
-            && x.Message == "material-shortage");
-        Assert.Contains(plan.Conflicts, x =>
-            x.OrderId == "WO-SNAPSHOT-001"
-            && x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
-            && x.Severity == ScheduleConflictSeverityContract.Error);
     }
 
     private static SchedulePlanContract ScheduleShockAbsorber()
