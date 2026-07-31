@@ -432,7 +432,8 @@ public sealed class QualityInspectionEndpointContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(plan.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("检验方案", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.InspectionRecords);
     }
 
@@ -503,7 +504,8 @@ public sealed class QualityInspectionEndpointContractTests
             new CreateInspectionRecordCommand("org-001", "env-dev", null, "receiving", "purchase-receipt", "RCV-MD-001", "SKU-RM-1000", 1m, null, null,
                 [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])], null, [], MeasuringDeviceId: device.Id), CancellationToken.None));
 
-        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(device.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("校准已过期", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -604,7 +606,9 @@ public sealed class QualityInspectionEndpointContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RCV-MISMATCH-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-RM-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不一致", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.InspectionRecords);
     }
 
@@ -818,7 +822,8 @@ public sealed class QualityInspectionEndpointContractTests
                 [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
             CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-APPROVAL-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.Equal("approval-chain-pending", approvalStatusClient.LastChainId);
     }
 
@@ -899,7 +904,8 @@ public sealed class QualityInspectionEndpointContractTests
                 [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
             CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-APPROVAL-003", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.Equal("NCR-APPROVAL-003", approvalStatusClient.LastNcrCode);
     }
 
@@ -1354,7 +1360,8 @@ public sealed class QualityInspectionEndpointContractTests
                 "Disposition completed"),
             CancellationToken.None));
 
-        Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-SCRAP-CAPA-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CAPA", exception.Message, StringComparison.Ordinal);
         Assert.Equal("disposition-in-progress", ncr.Status);
     }
 

@@ -90,7 +90,7 @@ public sealed class GetQualityReasonQueryHandler(ApplicationDbContext dbContext)
             x.EnvironmentId == request.EnvironmentId &&
             x.ReasonCode == request.ReasonCode,
             cancellationToken)
-            ?? throw new KnownException($"Quality reason '{request.ReasonCode}' was not found.");
+            ?? throw new KnownException($"找不到质量原因 {request.ReasonCode}，请在质量原因页面刷新列表并确认编码后重试。");
         return QualityReasonMapper.ToItem(reason);
     }
 }
