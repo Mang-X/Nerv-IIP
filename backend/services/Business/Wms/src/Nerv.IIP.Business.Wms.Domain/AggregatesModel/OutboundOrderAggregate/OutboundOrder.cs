@@ -162,6 +162,21 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             assignedPoolCode);
     }
 
+    /// <summary>
+    /// Announces to MES that this outbound document carries its material issue request. Only valid for
+    /// outbound orders actually sourced from a MES material issue request.
+    /// </summary>
+    public void AnnounceMaterialIssuePrepared(string materialIssueRequestNo, string? pickingTaskNo, DateTimeOffset preparedAtUtc)
+    {
+        var requestNo = WmsText.Required(materialIssueRequestNo, nameof(materialIssueRequestNo));
+        if (!string.Equals(SourceDocumentId, requestNo, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Outbound order does not belong to the given material issue request.");
+        }
+
+        AddDomainEvent(new MaterialIssueOutboundPreparedDomainEvent(this, requestNo, WmsText.Optional(pickingTaskNo), preparedAtUtc));
+    }
+
     public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
     {
         EnsureOpen();
