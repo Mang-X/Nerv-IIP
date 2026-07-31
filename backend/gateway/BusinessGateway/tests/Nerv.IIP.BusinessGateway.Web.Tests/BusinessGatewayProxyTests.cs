@@ -10159,6 +10159,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public Exception? DetailFailure { get; init; }
 
+    public BusinessConsoleMasterDataResourceDetail? ResourceDetailResponse { get; set; }
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -10219,7 +10221,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             throw DetailFailure;
         }
 
-        return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
+        return Task.FromResult(
+            ResourceDetailResponse ?? ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
@@ -10444,13 +10447,27 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken)
     {
         LastListWorkersRequest = request;
-        var items = string.IsNullOrWhiteSpace(request.UserId)
-            ? WorkerDirectory
-            : WorkerDirectory.Where(x => x.UserId == request.UserId).ToArray();
+        IEnumerable<BusinessConsoleWorkerDirectoryItem> query = WorkerDirectory;
+        if (!string.IsNullOrWhiteSpace(request.UserId))
+        {
+            query = query.Where(x => string.Equals(x.UserId, request.UserId, StringComparison.Ordinal));
+        }
+        if (!string.IsNullOrWhiteSpace(request.EmploymentStatus))
+        {
+            query = query.Where(x => string.Equals(
+                x.EmploymentStatus,
+                request.EmploymentStatus,
+                StringComparison.OrdinalIgnoreCase));
+        }
+        if (!request.IncludeDisabled)
+        {
+            query = query.Where(x => x.Active);
+        }
+        var items = query.ToArray();
         return Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
             request.PageIndex,
             request.PageSize,
-            items.Count,
+            items.Length,
             items));
     }
 

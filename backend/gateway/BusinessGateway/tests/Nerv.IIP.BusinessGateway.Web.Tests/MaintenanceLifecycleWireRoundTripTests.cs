@@ -14,10 +14,22 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
         var handler = new RecordingWireHandler(workOrderId);
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
         var client = new HttpBusinessMaintenanceClient(httpClient);
-        var actions = Enum.GetValues<BusinessConsoleMaintenanceWorkOrderAction>();
-
-        foreach (var action in actions)
+        var frozenWireActions = new (int NumericValue, string RawJson)[]
         {
+            (0, "\"accept\""),
+            (1, "\"start\""),
+            (2, "\"pause\""),
+            (3, "\"waitForParts\""),
+            (4, "\"resume\""),
+            (5, "\"complete\""),
+            (6, "\"verify\""),
+            (7, "\"close\""),
+            (8, "\"cancel\""),
+        };
+
+        foreach (var wireAction in frozenWireActions)
+        {
+            var action = (BusinessConsoleMaintenanceWorkOrderAction)wireAction.NumericValue;
             var response = await client.TransitionWorkOrderAsync(
                 "test-internal-token",
                 workOrderId,
@@ -32,10 +44,10 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             Assert.Equal("Accepted", response.Status);
         }
 
-        Assert.Equal(actions.Length, handler.Requests.Count);
+        Assert.Equal(frozenWireActions.Length, handler.Requests.Count);
         Assert.Equal(
-            actions.Select(x => JsonNamingPolicy.CamelCase.ConvertName(x.ToString())),
-            handler.Requests.Select(x => x.GetProperty("action").GetString()));
+            frozenWireActions.Select(x => x.RawJson),
+            handler.Requests.Select(x => x.GetProperty("action").GetRawText()));
         Assert.All(handler.Requests, request =>
         {
             Assert.Equal(workOrderId, request.GetProperty("workOrderId").GetString());

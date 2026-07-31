@@ -486,10 +486,14 @@ internal static class MaintenanceWorkScopeAccess
                     request.OrganizationId,
                     request.EnvironmentId,
                     UserId: request.TechnicianUserId,
+                    EmploymentStatus: "active",
                     PageSize: 2,
                     IncludeDisabled: false),
                 cancellationToken);
-            if (!workers.Items.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
+            if (!workers.Items.Any(x =>
+                    x.Active
+                    && string.Equals(x.EmploymentStatus, "active", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
             {
                 throw Forbidden();
             }
@@ -497,17 +501,26 @@ internal static class MaintenanceWorkScopeAccess
 
         if (!string.IsNullOrWhiteSpace(request.TeamId))
         {
-            var teams = await masterData.ListResourcesAsync(
-                internalToken,
-                new BusinessConsoleListResourcesRequest(
-                    request.OrganizationId,
-                    request.EnvironmentId,
-                    "team",
-                    IncludeDisabled: false,
-                    Take: 2,
-                    Keyword: request.TeamId),
-                cancellationToken);
-            if (!teams.Resources.Any(x => x.Active && string.Equals(x.Code, request.TeamId, StringComparison.Ordinal)))
+            try
+            {
+                var team = await masterData.GetResourceDetailAsync(
+                    internalToken,
+                    new BusinessConsoleMasterDataResourceRequest(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        "team",
+                        request.TeamId),
+                    cancellationToken);
+                if (!team.Active
+                    || !string.Equals(team.ResourceType, "team", StringComparison.Ordinal)
+                    || !string.Equals(team.Code, request.TeamId, StringComparison.Ordinal)
+                    || !string.Equals(team.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+                    || !string.Equals(team.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+                {
+                    throw Forbidden();
+                }
+            }
+            catch (BusinessServiceProxyException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
             {
                 throw Forbidden();
             }

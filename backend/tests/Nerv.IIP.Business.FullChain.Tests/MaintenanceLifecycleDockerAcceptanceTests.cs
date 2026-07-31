@@ -309,17 +309,25 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
             await WaitForRedisAsync(redisConnectionString);
             return dependencies;
         }
-        catch
+        catch (Exception startupException)
         {
-            if (dependencies is not null)
+            try
             {
-                await dependencies.DisposeAsync();
+                if (dependencies is not null)
+                {
+                    await dependencies.DisposeAsync();
+                }
+                else
+                {
+                    await CleanupOwnedResourcesAsync(redisName, postgresName, ownershipLabel);
+                }
             }
-            else
+            catch (Exception cleanupException)
             {
-                await RemoveContainerAsync(redisName, ownershipLabel);
-                await RemoveContainerAsync(postgresName, ownershipLabel);
-                await AssertNoOwnedContainersAsync(ownershipLabel);
+                throw new AggregateException(
+                    "MAN-631 Docker dependency startup and cleanup both failed.",
+                    startupException,
+                    cleanupException);
             }
 
             throw;
@@ -328,10 +336,17 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await RemoveContainerAsync(redisContainerName, ownershipLabel);
-        await RemoveContainerAsync(postgresContainerName, ownershipLabel);
-        await AssertNoOwnedContainersAsync(ownershipLabel);
+        await CleanupOwnedResourcesAsync(redisContainerName, postgresContainerName, ownershipLabel);
     }
+
+    private static Task CleanupOwnedResourcesAsync(
+        string redisName,
+        string postgresName,
+        string expectedOwnershipLabel) =>
+        DockerOwnedResourceCleanup.CleanupAsync(
+            [redisName, postgresName],
+            name => RemoveContainerAsync(name, expectedOwnershipLabel),
+            () => AssertNoOwnedContainersAsync(expectedOwnershipLabel));
 
     private static async Task WaitForPostgresAsync(string connectionString)
     {
