@@ -307,7 +307,8 @@ public static class WorldHistoryLabelSpec
         var purchasePlans = WorldHistoryProcurementSpec.BuildPurchasePlans(asOfDate, scale);
 
         var finishedGoods = workOrderFacts.Where(fact => fact.HasFinishedGoodsReceipt).ToArray();
-        var deliveries = orderPlans.Where(plan => plan.HasDelivery).ToArray();
+        // #1374：装箱标签在装箱环节打印，与发运与否无关。
+        var deliveries = orderPlans.Where(plan => plan.IsProductionClosed).ToArray();
         var receipts = purchasePlans.Where(plan => plan.IsReceived).ToArray();
 
         var budget = Math.Max(0, RoundTarget(PrintBatchTarget, scale) - WorkCenterCodes.Count);

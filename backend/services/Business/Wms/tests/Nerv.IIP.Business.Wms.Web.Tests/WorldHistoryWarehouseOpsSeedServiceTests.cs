@@ -25,6 +25,96 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     /// <summary>库写入类用例的规模：足够跑出四档盘点结局与四档 WCS 结局，又不让 InMemory provider 变慢。</summary>
     private const double TestScale = 0.3d;
 
+    /// <summary>
+    /// #1374 · 补产工单「来源订单」配对的跨服务黄金向量，Phase2Spec 侧。
+    ///
+    /// MES 测试工程里有一份逐字相同的用例，读的是 <c>work_orders.source_plan_reference</c>。
+    /// 任一侧把候选池判据改回 <c>HasDelivery</c>，按下标切片的挑选就整体错位、摘要立刻分叉
+    /// ——这正是原有「只断言条数」抓不住的那类漂移。
+    /// </summary>
+    [Fact]
+    public void Rework_work_order_sources_match_the_cross_service_golden_vector()
+    {
+        var reworkPairs = WorldHistoryPhase2Spec
+            .BuildWorkOrderFacts(
+                WorldHistoryReworkSourceGoldenVector.AsOfDate,
+                WorldHistoryReworkSourceGoldenVector.Scale)
+            .Where(fact => fact.IsRework)
+            .OrderBy(fact => fact.Plan.WorkOrderNo, StringComparer.Ordinal)
+            .Select(fact => (fact.Plan.WorkOrderNo, fact.SourceOrder.WorkOrderNo))
+            .ToArray();
+
+        Assert.Equal(WorldHistoryReworkSourceGoldenVector.ReworkCount, reworkPairs.Length);
+        Assert.Equal(
+            WorldHistoryReworkSourceGoldenVector.Digest,
+            WorldHistoryReworkSourceGoldenVector.DigestOf(reworkPairs));
+    }
+
+    /// <summary>本 asOfDate 下 ERP 侧「已完工待发货」的订单条数——当前队列据此挂发货出库单（#1374）。</summary>
+    private static int PendingShipmentCount(DateOnly asOfDate) =>
+        WorldHistorySpec.BuildOrderPlans(asOfDate, TestScale).Count(plan => plan.HasPendingShipment);
+
+    /// <summary>
+    /// #1374 · 发货链必须有可操作对象。
+    ///
+    /// 修复前当前队列的 4 张出库单**全是领料**，「销售发货 → 拣货 → 复核 → 发运」这条最核心的
+    /// 仓储链路一个可点的对象都没有。本用例守住四件事：发货出库单在场且状态 Open、
+    /// 源单据是 ERP 真实的发货单号、拣货维度是成品库里那张单自己的完工批、
+    /// 以及单号仍留在 <c>OB-WQ-</c> 段内（否则会掉进「历史出库单必须已完成」的通道被判失败）。
+    /// </summary>
+    [Fact]
+    public async Task Current_queue_carries_operable_delivery_outbound_orders()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await SeedDocumentChainAsync(db, asOfDate);
+        await new WorldHistoryWarehouseOpsSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var pendingOrders = WorldHistorySpec.BuildOrderPlans(asOfDate, TestScale)
+            .Where(plan => plan.HasPendingShipment)
+            .ToArray();
+        Assert.Equal(WorldHistorySpec.PendingShipmentOrderCount, pendingOrders.Length);
+
+        var deliveryOutbounds = await db.OutboundOrders
+            .AsNoTracking()
+            .Include(order => order.Lines)
+            .Where(order => order.SourceDocumentType == WorldHistoryWmsSpec.DeliveryOrderSourceType
+                && order.Status == OutboundOrderStatus.Open)
+            .ToArrayAsync();
+
+        Assert.Equal(pendingOrders.Length, deliveryOutbounds.Length);
+        Assert.Equal(
+            pendingOrders.Select(plan => WorldHistorySpec.DeliveryOrderNo(plan.Index)).Order(StringComparer.Ordinal),
+            deliveryOutbounds.Select(order => order.SourceDocumentId).Order(StringComparer.Ordinal));
+        Assert.All(deliveryOutbounds, order =>
+        {
+            Assert.True(
+                WorldHistoryWarehouseOpsSpec.IsCurrentQueueOutboundOrder(order.OutboundOrderNo),
+                $"{order.OutboundOrderNo} 不在当前队列号段内，会被历史校验器按「必须已完成」判失败。");
+            var line = Assert.Single(order.Lines);
+            Assert.Equal(WorldHistoryPhase2Spec.FinishedGoodsLocationCode, line.PickLocationCode);
+            var plan = Assert.Single(
+                pendingOrders,
+                candidate => WorldHistorySpec.DeliveryOrderNo(candidate.Index) == order.SourceDocumentId);
+            Assert.Equal(WorldHistoryMesSpec.ProducedLotNo(plan.WorkOrderNo), line.LotNo);
+            Assert.Equal(plan.Quantity, line.RequestedQuantity);
+        });
+
+        // 每张发货出库单都有配套的拣货任务，演示才点得动。
+        var pickingTasks = await db.WarehouseTasks
+            .AsNoTracking()
+            .Where(task => task.TaskType == WarehouseTaskType.Picking)
+            .ToArrayAsync();
+        Assert.All(
+            deliveryOutbounds,
+            order => Assert.Contains(pickingTasks, task => task.SourceOrderNo == order.OutboundOrderNo));
+    }
+
+    /// <summary>每个作业池都写全成员（#1374）：三个池 × 成员数。</summary>
+    private static int ExpectedMembershipCount =>
+        WorldHistoryWarehouseOpsSpec.WorkPools.Count
+        * WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.Count;
+
     /// <summary>低于该条数不做分布类断言（上线日附近的缩放样本只有个位数事实）。</summary>
     private const int MinimumDistributionSample = 12;
 
@@ -68,11 +158,14 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
 
         Assert.Equal(expectedWcsTasks, report.WcsTasksWritten);
         Assert.Equal(expectedReturns, report.SupplierReturnRequestsWritten);
+        // #1374：当前队列在 4 张领料出库单之外，还挂着与 ERP 待发运订单一一对应的发货出库单。
+        var pendingShipments = PendingShipmentCount(asOfDate);
+        Assert.True(pendingShipments > 0, "发货链必须有可操作对象，否则演示走到发货环节无对象可点。");
         Assert.Equal(4, report.CurrentQueue.InboundOrdersWritten);
         Assert.Equal(2, report.CurrentQueue.PutawayTasksWritten);
-        Assert.Equal(4, report.CurrentQueue.OutboundOrdersWritten);
-        Assert.Equal(4, report.CurrentQueue.PickingTasksWritten);
-        Assert.Equal(2, report.CurrentQueue.ReviewReadyOrdersWritten);
+        Assert.Equal(4 + pendingShipments, report.CurrentQueue.OutboundOrdersWritten);
+        Assert.Equal(4 + pendingShipments, report.CurrentQueue.PickingTasksWritten);
+        Assert.Equal(3, report.CurrentQueue.ReviewReadyOrdersWritten);
         Assert.Equal(
             WorldHistoryCountSpec.CountPlanCount(asOfDate, TestScale),
             await db.CountExecutions.CountAsync());
@@ -80,7 +173,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(report.SupplierReturnRequestsWritten, await db.SupplierReturnRequests.CountAsync());
         Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, await db.WarehouseWorkPools.CountAsync());
         Assert.Equal(
-            WorldHistoryWarehouseOpsSpec.WorkPools.Count,
+            ExpectedMembershipCount,
             await db.WarehouseWorkPoolMemberships.CountAsync());
 
         // 校验器（fail-closed）跑过并如实回报条数。
@@ -88,9 +181,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         Assert.Equal(report.WcsTasksWritten, report.Validation.WcsTasksChecked);
         Assert.Equal(report.SupplierReturnRequestsWritten, report.Validation.SupplierReturnRequestsChecked);
         Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, report.Validation.WorkPoolsChecked);
-        Assert.Equal(
-            WorldHistoryWarehouseOpsSpec.WorkPools.Count,
-            report.Validation.WorkPoolMembershipsChecked);
+        Assert.Equal(ExpectedMembershipCount, report.Validation.WorkPoolMembershipsChecked);
     }
 
     [Theory]
@@ -264,12 +355,34 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             Assert.True(pool.Active);
         });
         var memberships = await db.WarehouseWorkPoolMemberships.AsNoTracking().ToArrayAsync();
-        Assert.Equal(WorldHistoryWarehouseOpsSpec.WorkPools.Count, memberships.Length);
-        Assert.All(memberships, membership =>
+        Assert.Equal(ExpectedMembershipCount, memberships.Length);
+        Assert.All(memberships, membership => Assert.True(membership.Active));
+
+        // #1374：账面上干过活的人（历史单据 / 盘点的全部 ExecutorUserId）必须在每个池里都有资格，
+        // 主管与演示管理员同样在册——否则 PC 端仓储域按池取范围时整域 403。
+        foreach (var pool in WorldHistoryWarehouseOpsSpec.WorkPools)
         {
-            Assert.Equal(WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId, membership.PrincipalId);
-            Assert.True(membership.Active);
-        });
+            Assert.Equal(
+                WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.Order(StringComparer.Ordinal),
+                memberships
+                    .Where(membership => membership.PoolCode == pool.PoolCode)
+                    .Select(membership => membership.PrincipalId)
+                    .Order(StringComparer.Ordinal));
+        }
+
+        // 成员集合恰好等于历史执行人（4 名库管），一个不少、一个不多。
+        Assert.Equal(
+            WorldHistoryPhase2Spec.Storekeepers.Select(person => person.UserId).Order(StringComparer.Ordinal),
+            WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.Order(StringComparer.Ordinal));
+
+        // #1374 · 管理员与仓储主管**不得**入池：成员资格是现场作业资格，
+        // 他们一旦入池，「我的任务」会顶成范围目录首项、成为前端默认，六页对管理员默认空态。
+        Assert.DoesNotContain(
+            WorldHistoryWarehouseOpsSpec.DemoAdministratorPrincipalId,
+            WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds);
+        Assert.DoesNotContain(
+            WorldHistoryWarehouseOpsSpec.WarehouseSupervisorPrincipalId,
+            WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds);
 
         var authorizer = new WarehouseWorkScopeAuthorizer(
             db,
@@ -486,7 +599,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
             TestScale);
 
         Assert.True(firstHistory.InboundOrdersWritten > 0);
-        Assert.Equal(14, firstOperations.CurrentQueue.TotalWritten);
+        Assert.Equal(14 + (2 * PendingShipmentCount(asOfDate)), firstOperations.CurrentQueue.TotalWritten);
         Assert.Equal(0, secondHistory.InboundOrdersWritten);
         Assert.Equal(0, secondHistory.OutboundOrdersWritten);
         Assert.Equal(0, secondHistory.WarehouseTasksWritten);
@@ -626,13 +739,19 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
     }
 
     /// <summary>
-    /// #1343：种子只给演示仓储员登记作业池成员资格（这是对的——成员资格是现场事实），
-    /// 但管理员/主管只有 IAM 精确站点授权。这类主体必须仍能拿到站点范围并读到整站真实
-    /// 作业面，否则仓储六页对 admin 整域 403 全空。
+    /// #1343：只有 IAM 精确站点授权、没有任何作业池资格的主体必须仍能拿到站点范围并读到
+    /// 整站真实作业面，否则仓储六页对这类主体整域 403 全空。
+    ///
+    /// #1374 追加：这条同时是**目录首项**的回归防线。<c>self</c>（「我的任务」）只在有成员资格时
+    /// 才出现且排在最前，而前端默认取首项——一旦有人把管理员写进作业池，
+    /// 断言里的 `[("site", ...)]` 会立刻变成 `[("self", ...), ...]` 而红。
     /// </summary>
     [Fact]
-    public async Task Seeded_memberships_stay_operator_only_while_site_grant_alone_still_reaches_real_work()
+    public async Task Site_grant_alone_without_any_pool_membership_still_reaches_real_work()
     {
+        // 用演示管理员本人来验：#1374 后他仍**不是**任何池的成员，
+        // 因此目录首项必须还是 site，六个仓储页对他默认满数据而不是「我的任务」空态。
+        const string outsiderPrincipalId = WorldHistoryWarehouseOpsSpec.DemoAdministratorPrincipalId;
         var asOfDate = new DateOnly(2026, 7, 27);
         await using var db = CreateDbContext();
         await SeedDocumentChainAsync(db, asOfDate);
@@ -641,9 +760,12 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
 
         var memberships = await db.WarehouseWorkPoolMemberships.AsNoTracking().ToArrayAsync();
         Assert.NotEmpty(memberships);
-        Assert.All(memberships, membership => Assert.Equal(
-            WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
-            membership.PrincipalId));
+        Assert.DoesNotContain(
+            memberships,
+            membership => string.Equals(
+                membership.PrincipalId,
+                outsiderPrincipalId,
+                StringComparison.Ordinal));
 
         var authorizer = new WarehouseWorkScopeAuthorizer(
             db,
@@ -651,14 +773,14 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         var catalog = await authorizer.GetCatalogAsync(
             "org-001",
             "env-dev",
-            "user-admin",
+            outsiderPrincipalId,
             [WorldHistorySpec.SiteCode],
             CancellationToken.None);
         var site = await authorizer.ResolveAsync(
             new WarehouseWorkScopeRequest(
                 "org-001",
                 "env-dev",
-                "user-admin",
+                outsiderPrincipalId,
                 [WorldHistorySpec.SiteCode],
                 "site",
                 WorldHistorySpec.SiteCode,
@@ -819,7 +941,7 @@ public sealed class WorldHistoryWarehouseOpsSeedServiceTests
         ApplicationDbContext db,
         DateOnly asOfDate)
     {
-        var spec = WorldHistoryWarehouseOpsSpec.BuildCurrentQueue(asOfDate);
+        var spec = WorldHistoryWarehouseOpsSpec.BuildCurrentQueue(asOfDate, TestScale);
         var inboundNumbers = spec.ReceiptOrders
             .Concat(spec.PutawayOrders)
             .Select(draft => draft.InboundOrderNo)

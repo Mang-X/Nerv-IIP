@@ -267,9 +267,11 @@ for ($offset = 0; $offset + 1 -lt $fgLots.Count -and $groupIndex -lt 3; $offset 
                 qualityStatus = 'unrestricted'; ownerType = 'company'
             }
         }
+        # 词表与 WmsSourceDocumentTypes.DeliveryOrder 保持一致（写错字面量时链路不会报错，只会静默丢失应收）。
+        # 注意：本脚本的 sourceDocumentId 是 SO-DEMO-2xx 而非 DO-2026-#####，本就不进 ERP 应收链。
         $body = @{
             organizationId = $OrganizationId; environmentId = $EnvironmentId
-            outboundOrderNo = $orderNo; sourceDocumentType = 'delivery-order'; sourceDocumentId = "SO-DEMO-2$('{0:D2}' -f $groupIndex)"
+            outboundOrderNo = $orderNo; sourceDocumentType = 'erp-delivery-order'; sourceDocumentId = "SO-DEMO-2$('{0:D2}' -f $groupIndex)"
             siteCode = 'SITE-001'; lines = $lines
         }
         $created = Invoke-NervDemoPost -Token $adminToken -PathAndQuery '/wms/outbound-orders' -Body $body

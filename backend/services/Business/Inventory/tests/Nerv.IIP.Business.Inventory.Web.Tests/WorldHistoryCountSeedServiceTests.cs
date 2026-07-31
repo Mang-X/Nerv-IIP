@@ -182,6 +182,87 @@ public sealed class WorldHistoryCountSeedServiceTests
     }
 
     /// <summary>
+    /// #1374 · **盘点任务的快照版本必须是 seed 落幕时的台账版本**。
+    ///
+    /// 预留块会 <c>LedgerVersion++</c>，两块的维度 100% 重叠；先盘点后预留会让盘点任务
+    /// 一出生即死单（确认差异当场判需复盘）。这里按 Program.cs 的真实顺序
+    /// 流水 → 预留 → 盘点 跑完，断言每张可确认任务的快照都对得上。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AsOfDates))]
+    public async Task Count_task_snapshot_version_matches_the_ledger_after_reservations_land(
+        int year,
+        int month,
+        int day)
+    {
+        var asOfDate = new DateOnly(year, month, day);
+        await using var db = CreateDbContext();
+        await SeedMovementChainAsync(db, asOfDate);
+        await new WorldHistoryReservationSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        await new WorldHistoryCountSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var tasks = await db.StockCountTasks.AsNoTracking()
+            .Where(x => x.Status != StockCountTaskStatuses.Cancelled)
+            .ToArrayAsync();
+        var ledgers = await db.StockLedgers.AsNoTracking().ToArrayAsync();
+        Assert.NotEmpty(tasks);
+        foreach (var task in tasks)
+        {
+            var ledger = Assert.Single(
+                ledgers,
+                x => x.SkuCode == task.SkuCode
+                    && x.LocationCode == task.LocationCode
+                    && x.LotNo == task.LotNo
+                    && x.QualityStatus == task.QualityStatus);
+            Assert.Equal(ledger.LedgerVersion, task.ExpectedLedgerVersion);
+        }
+    }
+
+    /// <summary>
+    /// #1374 的门禁反证：把顺序倒回「先盘点、后预留」，校验器必须 fail-closed，
+    /// 而不是像修复前那样全绿放行一整批死单。
+    /// </summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_reservations_land_after_the_count_snapshot()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await SeedMovementChainAsync(db, asOfDate);
+        await new WorldHistoryCountSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+        await new WorldHistoryReservationSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryCountConsistencyException>(() =>
+            new WorldHistoryCountValidator(db).ValidateAsync("org-001", "env-dev", asOfDate, TestScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("一出生即死单", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// #1374 的次生脆弱性：未回单的盘点任务必须避开 WMS 当前队列占用的维度，
+    /// 否则演示当天「先拣货、再确认盘点」照样把快照版本捅穿。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AsOfDates))]
+    public void Open_count_plans_never_touch_the_current_queue_dimensions(int year, int month, int day)
+    {
+        var currentQueueSkus = WorldHistoryCountSpec.CurrentQueueDimensions
+            .Select(dimension => dimension.SkuCode)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(currentQueueSkus);
+        Assert.Empty(WorldHistoryCountSpec.OpenCountDimensions
+            .Select(dimension => dimension.SkuCode)
+            .Intersect(currentQueueSkus, StringComparer.Ordinal));
+
+        var openPlans = WorldHistoryCountSpec.BuildCountPlans(new DateOnly(year, month, day), 1.0d)
+            .Where(plan => plan.Outcome == WorldHistoryCountOutcome.Open)
+            .ToArray();
+
+        Assert.NotEmpty(openPlans);
+        Assert.All(openPlans, plan => Assert.DoesNotContain(plan.SkuCode, currentQueueSkus));
+    }
+
+    /// <summary>
     /// 跨服务黄金向量：<c>WorldHistoryCountSpec</c> 在仓储与库存两侧按同一字面量重复声明，
     /// 两侧各有一份**逐字相同**的本用例。任一侧改动而另一侧没跟上，两边的盘点单号 /
     /// 差异量就会漂移，跨域对账当场失效。
