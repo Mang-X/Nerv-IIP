@@ -261,6 +261,7 @@ watch(
       ...emptyLine(),
       characteristicCode: characteristic.characteristicCode ?? '',
       characteristicName: characteristic.name ?? '',
+      characteristicType: characteristic.characteristicType ?? '',
       unitCode: characteristic.unitCode ?? '',
       specification: formatSpecification(characteristic),
     }))
@@ -308,7 +309,10 @@ const validResultLines = computed(() =>
   recordForm.resultLines.filter(
     (line) =>
       isNonEmpty(line.characteristicCode) &&
-      isNonEmpty(line.observedValue) &&
+      // 计量型特性有效性看数值测量值（后端契约必填），计数型仍看实测值文本（#1326）。
+      (isVariableLine(line)
+        ? toMeasuredNumber(line.measuredValue) !== undefined
+        : isNonEmpty(line.observedValue)) &&
       isNonEmpty(line.result) &&
       hasRequiredDefectContext(line),
   ),
@@ -350,6 +354,10 @@ function emptyLine() {
     characteristicCode: '',
     result: 'passed',
     observedValue: '',
+    // 计量型（variable）特性提交契约要求数值 measuredValue，缺失后端直接拒（#1326）；
+    // characteristicType 从方案特性清单带出，驱动「数值输入 vs 文本输入」的切换。
+    measuredValue: '',
+    characteristicType: '',
     unitCode: '',
     defectReason: '',
     defectQuantity: '',
@@ -366,6 +374,8 @@ function hasPristineResultLines() {
     [
       line.characteristicCode,
       line.observedValue,
+      line.measuredValue,
+      line.characteristicType,
       line.unitCode,
       line.defectReason,
       line.defectQuantity,
@@ -402,10 +412,26 @@ function onCharacteristicCodeChange(line: ReturnType<typeof emptyLine>, value: s
   const characteristic = planCharacteristics.value.find(
     (item) => (item.characteristicCode ?? '').trim().toLowerCase() === code,
   )
-  if (!characteristic) return
+  if (!characteristic) {
+    // 计划外编码类型未知：清掉类型标记回退文本录入，避免沿用上一个特性的计量模式。
+    line.characteristicType = ''
+    return
+  }
   line.characteristicName = characteristic.name ?? ''
+  line.characteristicType = characteristic.characteristicType ?? ''
   if (characteristic.unitCode) line.unitCode = characteristic.unitCode
   line.specification = formatSpecification(characteristic)
+}
+// 计量型（variable）特性：录数值测量值、提交 measuredValue；计数型（attribute）录文本实测值。
+function isVariableLine(line: { characteristicType: string }) {
+  return line.characteristicType.trim().toLowerCase() === 'variable'
+}
+// 测量值必须显式录入：空串不许被 Number('') === 0 吞成合法的 0（区别于 toOptionalNumber）。
+function toMeasuredNumber(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 function removeCharacteristicRow(index: number) {
   if (recordForm.resultLines.length === 1) {
@@ -526,14 +552,21 @@ async function submitInspectionRecord() {
 }
 
 function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResult[] {
-  return validResultLines.value.map((line) => ({
-    characteristicCode: line.characteristicCode.trim(),
-    result: line.result.trim(),
-    observedValue: line.observedValue.trim(),
-    unitCode: optionalText(line.unitCode),
-    defectReason: optionalText(line.defectReason),
-    defectQuantity: toOptionalNumber(line.defectQuantity),
-  }))
+  return validResultLines.value.map((line) => {
+    // 计量型特性必须带数值 measuredValue（后端按方案规格判定），observedValue 同步为其字符串形式；
+    // 计数型保持 observedValue 文本、不带 measuredValue（#1326）。
+    const measuredValue = isVariableLine(line) ? toMeasuredNumber(line.measuredValue) : undefined
+    return {
+      characteristicCode: line.characteristicCode.trim(),
+      result: line.result.trim(),
+      observedValue:
+        measuredValue !== undefined ? String(measuredValue) : line.observedValue.trim(),
+      measuredValue,
+      unitCode: optionalText(line.unitCode),
+      defectReason: optionalText(line.defectReason),
+      defectQuantity: toOptionalNumber(line.defectQuantity),
+    }
+  })
 }
 function optionalText(value: string) {
   const trimmed = value.trim()
@@ -876,7 +909,25 @@ function isPresent(value: string | undefined | null): value is string {
                     </NvSelectContent>
                   </NvSelect>
                 </NvField>
-                <NvField>
+                <!-- 计量型特性录数值测量值（提交 measuredValue，语义对齐 PDA 数字键盘）；
+                     计数型仍录文本实测值（observedValue）。 -->
+                <NvField v-if="isVariableLine(line)">
+                  <NvFieldLabel :for="`measured-value-${index}`">
+                    测量值{{ line.unitCode ? `（${line.unitCode}）` : '' }}
+                  </NvFieldLabel>
+                  <NvInput
+                    :id="`measured-value-${index}`"
+                    v-model="line.measuredValue"
+                    type="number"
+                    inputmode="decimal"
+                    step="any"
+                    required
+                  />
+                  <NvFieldDescription v-if="line.specification">
+                    规格：{{ line.specification }}
+                  </NvFieldDescription>
+                </NvField>
+                <NvField v-else>
                   <NvFieldLabel :for="`observed-value-${index}`">实测值</NvFieldLabel>
                   <NvInput :id="`observed-value-${index}`" v-model="line.observedValue" required />
                   <NvFieldDescription v-if="line.specification">

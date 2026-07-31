@@ -104,6 +104,7 @@ const qualityState = vi.hoisted(() => ({
     {
       characteristicCode: 'DIM-01',
       name: '长度',
+      characteristicType: undefined as string | undefined,
       lowerSpecLimit: 9.8,
       upperSpecLimit: 10.2,
       unitCode: 'mm',
@@ -358,6 +359,7 @@ describe('quality route location behavior', () => {
       {
         characteristicCode: 'DIM-01',
         name: '长度',
+        characteristicType: undefined,
         lowerSpecLimit: 9.8,
         upperSpecLimit: 10.2,
         unitCode: 'mm',
@@ -365,6 +367,7 @@ describe('quality route location behavior', () => {
     ]
     qualityState.planCharacteristicsRef = undefined
     notifySpies.error.mockReset()
+    notifySpies.operationFailure.mockReset()
     notifySpies.success.mockReset()
     taskActionSpies.startInspection.mockReset()
     taskActionSpies.refreshInspectionTasks.mockReset()
@@ -720,6 +723,169 @@ describe('quality route location behavior', () => {
     })
     expect(vm.recordForm.resultLines[0]!.observedValue).toBe('10.1')
     expect(taskActionSpies.refreshInspectionTasks).not.toHaveBeenCalled()
+  })
+
+  // #1326：计量型（variable）特性必须提交数值 measuredValue，缺失时后端会以领域 400 拒绝。
+  it('submits measuredValue for variable characteristics and gates submit on a numeric value', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        characteristicType: 'variable',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockResolvedValueOnce({
+      data: { inspectionRecordId: 'REC-001' },
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        resultLines: Array<{
+          characteristicCode: string
+          characteristicType: string
+          measuredValue: string
+          observedValue: string
+        }>
+      }
+      canCreateRecord: boolean
+      submitInspectionRecord: () => Promise<void>
+    }
+
+    // 自动带出的计量特性行：未录测量值前禁止提交（不再靠文本 observedValue 假放行）。
+    expect(vm.recordForm.resultLines[0]).toMatchObject({
+      characteristicCode: 'DIM-01',
+      characteristicType: 'variable',
+    })
+    expect(vm.canCreateRecord).toBe(false)
+
+    vm.recordForm.resultLines[0]!.measuredValue = '10.1'
+    await nextRenderTick()
+    expect(vm.canCreateRecord).toBe(true)
+
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledWith(
+      'TASK-001',
+      expect.objectContaining({
+        resultLines: [
+          expect.objectContaining({
+            characteristicCode: 'DIM-01',
+            measuredValue: 10.1,
+            observedValue: '10.1',
+            unitCode: 'mm',
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('keeps attribute characteristics on text observedValue without measuredValue', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'APP-01',
+        name: '外观',
+        characteristicType: 'attribute',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockResolvedValueOnce({
+      data: { inspectionRecordId: 'REC-002' },
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '外观无划痕'
+    await nextRenderTick()
+
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledWith(
+      'TASK-001',
+      expect.objectContaining({
+        resultLines: [
+          expect.objectContaining({
+            characteristicCode: 'APP-01',
+            observedValue: '外观无划痕',
+            measuredValue: undefined,
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('routes the backend measured-value rejection through operation failure passthrough', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        characteristicType: 'variable',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    const rejection = {
+      success: false,
+      statusCode: 400,
+      message: '计量型特性“dim-01”需要填写测量值，请录入数值后重新提交。',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce(rejection)
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ measuredValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.measuredValue = '10.1'
+    await nextRenderTick()
+
+    await vm.submitInspectionRecord()
+    // 台账 #52：领域拒绝理由必须走分层透传（notifyOperationFailure），不能吞成兜底文案。
+    expect(notifySpies.operationFailure).toHaveBeenCalledWith(
+      '检验记录提交失败',
+      rejection,
+      '检验记录提交失败，请稍后重试。',
+    )
   })
 
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {
