@@ -55,6 +55,23 @@ public sealed class QualityNcrDispositionApprovalDocumentTypeTests
             CancellationToken.None));
     }
 
+    /// <summary>
+    /// 审批链响应缺 <c>documentType</c> 字段时反序列化出 null：判定必须是「不通过」，
+    /// 而不是让 <c>HashSet.Contains(null)</c> 抛 ArgumentNullException 冒成 500。
+    /// </summary>
+    [Fact]
+    public async Task Missing_document_type_is_rejected_instead_of_throwing()
+    {
+        var client = CreateClient(documentType: null);
+
+        Assert.False(await client.IsApprovedForNcrDispositionAsync(
+            "chain-001",
+            "org-001",
+            "env-dev",
+            "NCR-2026-0001",
+            CancellationToken.None));
+    }
+
     [Fact]
     public void Canonical_document_type_is_the_single_source_of_truth()
     {
@@ -63,7 +80,7 @@ public sealed class QualityNcrDispositionApprovalDocumentTypeTests
         Assert.Contains(ApprovalDocumentTypes.CapaClosure, ApprovalDocumentTypes.CapaClosureAliases);
     }
 
-    private static HttpApprovalChainStatusClient CreateClient(string documentType)
+    private static HttpApprovalChainStatusClient CreateClient(string? documentType)
     {
         var httpClient = new HttpClient(new StubHandler(documentType))
         {
@@ -72,7 +89,7 @@ public sealed class QualityNcrDispositionApprovalDocumentTypeTests
         return new HttpApprovalChainStatusClient(httpClient, new StubTokenProvider());
     }
 
-    private sealed class StubHandler(string documentType) : HttpMessageHandler
+    private sealed class StubHandler(string? documentType) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

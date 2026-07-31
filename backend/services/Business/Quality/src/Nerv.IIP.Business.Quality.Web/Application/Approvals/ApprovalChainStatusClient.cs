@@ -51,6 +51,9 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
             && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
+            // DocumentType 来自反序列化，缺字段时会是 null；HashSet.Contains(null) 会抛，
+            // 而这里的语义是「判不通过」，所以先兜底。
+            && chain.DocumentType is not null
             && NcrDispositionDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, ncrCode, StringComparison.Ordinal);
     }
@@ -68,6 +71,7 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
             && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
+            && chain.DocumentType is not null
             && CapaClosureDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, capaCode, StringComparison.Ordinal);
     }
@@ -97,7 +101,7 @@ public sealed class HttpApprovalChainStatusClient(
         string EnvironmentId,
         string Status,
         string SourceService,
-        string DocumentType,
+        string? DocumentType,
         string DocumentId);
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
