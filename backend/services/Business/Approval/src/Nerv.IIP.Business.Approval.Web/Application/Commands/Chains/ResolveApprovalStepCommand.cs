@@ -61,14 +61,23 @@ public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbCon
             step.StepNo == request.StepNo
             && step.Status == ApprovalStepStatuses.Pending
             && step.MatchesApprover(x.DelegatorActorType, x.DelegatorActorRef)));
-        var decision = chain.ResolveStep(
-            request.StepNo,
-            request.ActorType,
-            request.ActorRef,
-            request.Decision,
-            request.Comment,
-            matchingDelegation?.DelegatorActorType,
-            matchingDelegation?.DelegatorActorRef);
-        return decision.Id;
+        try
+        {
+            var decision = chain.ResolveStep(
+                request.StepNo,
+                request.ActorType,
+                request.ActorRef,
+                request.Decision,
+                request.Comment,
+                matchingDelegation?.DelegatorActorType,
+                matchingDelegation?.DelegatorActorRef);
+            return decision.Id;
+        }
+        catch (InvalidOperationException exception)
+        {
+            // 领域拒绝（非审批人 / 链已终态 / 步骤越序…）全部是业务约束，必须落成 400 + 中文短消息，
+            // 而不是未捕获异常兜底出的 500 英文生码（#1327）。
+            throw new KnownException(exception.Message);
+        }
     }
 }
