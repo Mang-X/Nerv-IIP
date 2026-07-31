@@ -21,13 +21,8 @@ const RAW_ERROR_ALLOWLIST = new Map<string, string>([
   ['composables/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
   ['composables/useFulfillmentTimeline.ts', '包装成领域错误类型 FulfillmentNodeError，不直接上屏'],
   ['composables/mes/useReceiptCreateForm.ts', '已先走 serverErrorMessage，仅作兜底取值'],
-  [
-    'pages/quality/inspection-tasks.vue',
-    // ⚠️ 预存问题（待跟进）：这里靠 `errorValue instanceof Error` 判 403 走「无权限」空态，
-    // 而 generated client 在 throwOnError 下抛的是响应体对象——这条判定对真实 403 其实**失效**，
-    // 页面会退回普通失败态而不是无权限空态。不在本次范围内（本 PR 只做文案透传，不改空态语义）。
-    '识别 403 走「无权限」空态，不把原文上屏；判定本身对响应体对象失效，预存问题待跟进',
-  ],
+  // pages/quality/inspection-tasks.vue 曾在此豁免（靠 `instanceof Error` 判 403，对响应体对象永远不成立，
+  // 真实 403 退化成普通失败态）——MAN-698 批次 A 已改成按状态码判（`isForbiddenError`），豁免随之取消。
 ])
 
 /**

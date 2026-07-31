@@ -335,7 +335,8 @@ function formatQuantity(value?: number | null) {
               :key="reason.code"
               class="text-xs text-muted-foreground"
             >
-              {{ reason.label }} —— {{ reason.nextStep }}
+              {{ reason.label }}{{ reason.detail ? `（${reason.detail}）` : '' }} ——
+              {{ reason.nextStep }}
             </p>
           </section>
 

@@ -249,6 +249,33 @@ public sealed class MesTaskScopeQueryTests
         Assert.Empty(unknown.Items);
     }
 
+    /// <summary>
+    /// MAN-698 台账 #35：缺料阻塞原因此前在三处各写一套，其中齐套读面与下达前置检查直出英文生码
+    /// 「物料编码 + shortage + 数量」，界面上既读不懂又被徽标截断。现在统一走
+    /// <see cref="MaterialReadinessGuards.FormatShortageReason"/>：读面 <c>CODE: 中文</c>，
+    /// 写操作被拒的文案剥掉码只留中文。
+    /// </summary>
+    [Fact]
+    public void Material_shortage_reason_is_chinese_and_strips_the_code_for_user_facing_messages()
+    {
+        var withLot = MaterialReadinessGuards.FormatShortageReason("MAT-OIL", "LOT-OIL-A", 2.5m);
+        var withoutLot = MaterialReadinessGuards.FormatShortageReason("MAT-BEARING", null, 7m);
+
+        Assert.Equal("MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5", withLot);
+        Assert.Equal("MATERIAL_SHORTAGE: 物料 MAT-BEARING 缺口 7", withoutLot);
+        Assert.DoesNotContain("shortage ", withLot, StringComparison.OrdinalIgnoreCase);
+
+        var userFacing = MaterialReadinessGuards.DescribeForUser(
+            [withLot, withoutLot, MaterialReadinessGuards.MissingRequirementSnapshotReason]);
+
+        Assert.DoesNotContain("MATERIAL_SHORTAGE", userFacing, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", userFacing, StringComparison.Ordinal);
+        Assert.Contains("物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5", userFacing, StringComparison.Ordinal);
+        Assert.Contains("工单缺少齐套需求快照", userFacing, StringComparison.Ordinal);
+        // 中文说明里自带冒号的原因不能被当成码剥掉半句。
+        Assert.Equal("物料齐套未满足：还差 3 件", MaterialReadinessGuards.DescribeForUser(["物料齐套未满足：还差 3 件"]));
+    }
+
     [Fact]
     public async Task Emp012_blocked_task_returns_predecessor_and_material_shortage_reasons_together()
     {
@@ -340,10 +367,14 @@ public sealed class MesTaskScopeQueryTests
                     "start",
                     now.AddMinutes(5)),
                 CancellationToken.None));
-        Assert.Contains("PREVIOUS_OPERATION_INCOMPLETE", commandException.Message, StringComparison.Ordinal);
+        // 读面保留 `CODE: 中文`（前端按码取标签/下一步），但写操作被拒的文案会经分层透传直接上屏，
+        // 因此必须已剥掉英文码、只剩中文人话（MAN-698 台账 #35）。
         Assert.Contains("前序工序尚未完成", commandException.Message, StringComparison.Ordinal);
-        Assert.Contains("MATERIAL_SHORTAGE", commandException.Message, StringComparison.Ordinal);
-        Assert.Contains("物料齐套未满足", commandException.Message, StringComparison.Ordinal);
+        Assert.Contains("物料 MAT-BEARING", commandException.Message, StringComparison.Ordinal);
+        Assert.Contains("缺口 7", commandException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("PREVIOUS_OPERATION_INCOMPLETE", commandException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_SHORTAGE", commandException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("shortage", commandException.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -441,10 +472,12 @@ public sealed class MesTaskScopeQueryTests
                     "start",
                     now.AddMinutes(1)),
                 CancellationToken.None));
+        // 写操作被拒的文案已剥掉英文码，只留中文（读面仍保留 `CODE: 中文`）。
         Assert.Contains(
-            MaterialReadinessGuards.MissingRequirementSnapshotReason,
+            "工单缺少齐套需求快照",
             exception.Message,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

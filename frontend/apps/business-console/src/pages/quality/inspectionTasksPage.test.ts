@@ -262,12 +262,37 @@ describe('quality inspection task workbench page', () => {
   })
 
   it('shows a retryable failure state instead of an empty success state', () => {
+    // 5xx 走分层透传映射成人话（不把 503 原文甩给用户），仍是可重试的失败态。
     state.error = new Error('503')
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })
-    expect(wrapper.text()).toContain('待检任务加载失败，请稍后重试。')
+    expect(wrapper.text()).toContain('服务暂时不可用')
+    expect(wrapper.text()).not.toContain('503')
     expect(wrapper.text()).toContain('重试')
     expect(wrapper.text()).not.toContain('当前没有待检任务')
     expect(wrapper.find('[data-testid="task-table"]').exists()).toBe(false)
+  })
+
+  // MAN-698 批次 A（#1298 规格轴）：这里原来靠 `error instanceof Error` 判 403，
+  // 而 generated client 在 throwOnError 下抛的是**解析后的响应体对象**——判定永远不成立，
+  // 真实 403 退化成普通失败态。现在按状态码判，恢复「无权限」语义。
+  it('真实 403（响应体对象 + 拦截器挂的 response）走「无权限」文案，不是通用失败', () => {
+    state.error = { title: 'Forbidden', response: { status: 403 } }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    expect(wrapper.text()).toContain('没有查看质检待检任务的权限')
+    expect(wrapper.text()).not.toContain('待检任务加载失败')
+    expect(wrapper.text()).not.toContain('Forbidden')
+  })
+
+  it('RFC7807 直接带 status 的 403 同样走「无权限」文案', () => {
+    state.error = { status: 403, detail: 'forbidden' }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    expect(wrapper.text()).toContain('没有查看质检待检任务的权限')
+  })
+
+  it('后端明确给了中文拒绝理由时原样上屏，不被兜底吞掉', () => {
+    state.error = { message: '当前业务范围内没有质量模块的读取授权。', response: { status: 400 } }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    expect(wrapper.text()).toContain('当前业务范围内没有质量模块的读取授权。')
   })
 
   it('consumes the stable source document locator contract from WMS', () => {

@@ -264,9 +264,10 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                     receivedQuantity);
                 if (shortage > 0m)
                 {
-                    var lot = group.Key.MaterialLotId is null ? string.Empty : $"，批次 {group.Key.MaterialLotId}";
-                    blockReasons.Add(
-                        $"MATERIAL_SHORTAGE: 物料齐套未满足，物料 {group.Key.MaterialId}{lot} 缺口 {shortage:0.######}");
+                    blockReasons.Add(MaterialReadinessGuards.FormatShortageReason(
+                        group.Key.MaterialId,
+                        group.Key.MaterialLotId,
+                        shortage));
                 }
             }
         }

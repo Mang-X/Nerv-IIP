@@ -331,7 +331,7 @@ public sealed class ApprovalEndpointContractTests
         await firstDbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => secondDbContext.SaveChangesAsync(CancellationToken.None));
-        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已被其他人同时处理", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -541,7 +541,7 @@ public sealed class ApprovalEndpointContractTests
                 "system:eco"),
             CancellationToken.None));
 
-        Assert.Contains("active step", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("没有匹配到任何审批步骤", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -671,11 +671,11 @@ public sealed class ApprovalEndpointContractTests
             new ListApprovalDecisionsQuery("org-001", "env-dev", "not-a-guid", null, null, null, null, null, 0, 10));
 
         Assert.False(templateResult.IsValid);
-        Assert.Contains(templateResult.Errors, x => x.ErrorMessage.Contains("letters", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(templateResult.Errors, x => x.ErrorMessage.Contains("只能使用字母、数字", StringComparison.Ordinal));
         Assert.False(resolveResult.IsValid);
         Assert.Contains(resolveResult.Errors, x => x.ErrorMessage.Contains("approve", StringComparison.OrdinalIgnoreCase));
         Assert.False(decisionsResult.IsValid);
-        Assert.Contains(decisionsResult.Errors, x => x.ErrorMessage.Contains("valid GUID", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(decisionsResult.Errors, x => x.ErrorMessage.Contains("合法的 GUID", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -699,6 +699,48 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains("approve", message, StringComparison.Ordinal);
         Assert.Contains("reject", message, StringComparison.Ordinal);
         Assert.Contains("return", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// MAN-698 台账 #33：审批模板校验器的拒绝理由此前全是英文（"CompletionPolicy must be all or any." 等），
+    /// 前端分层透传（#1298）只原样上屏中文短消息，英文一律被兜底吞成「保存失败，请稍后重试」——
+    /// 用户改不动模板。这里钉住：拒绝消息是中文、点名合法取值；且大小写差异不再比领域更严（#1313 同型）。
+    /// </summary>
+    [Fact]
+    public void Template_validator_states_the_legal_values_in_chinese()
+    {
+        static CreateOrUpdateApprovalTemplateCommand WithStep(ApprovalTemplateStepInput step) =>
+            NewTemplateCommand() with { Steps = [step] };
+
+        var badPolicy = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
+            WithStep(new ApprovalTemplateStepInput(1, "Engineering review", null, "user", "u-engineering", 24, "unanimous")));
+        var badExpression = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
+            WithStep(new ApprovalTemplateStepInput(1, "Engineering review", null, "user", "u-engineering", 24, null, "approverType=user")));
+        var bothConditions = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
+            WithStep(new ApprovalTemplateStepInput(
+                1, "Engineering review", null, "user", "u-engineering", 24, null, "documentType=eco",
+                new ApprovalRoutingConditionInput(1000m))));
+        var badRange = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
+            WithStep(new ApprovalTemplateStepInput(
+                1, "Engineering review", null, "user", "u-engineering", 24, null, null,
+                new ApprovalRoutingConditionInput(5000m, 1000m))));
+
+        Assert.False(badPolicy.IsValid);
+        Assert.Contains(badPolicy.Errors, x => x.ErrorMessage.Contains("会签", StringComparison.Ordinal) && x.ErrorMessage.Contains("或签", StringComparison.Ordinal));
+        Assert.False(badExpression.IsValid);
+        Assert.Contains(badExpression.Errors, x => x.ErrorMessage.Contains("步骤条件只能留空", StringComparison.Ordinal));
+        Assert.False(bothConditions.IsValid);
+        Assert.Contains(bothConditions.Errors, x => x.ErrorMessage.Contains("只能二选一", StringComparison.Ordinal));
+        Assert.False(badRange.IsValid);
+        Assert.Contains(badRange.Errors, x => x.ErrorMessage.Contains("金额区间非法", StringComparison.Ordinal));
+
+        // 领域侧 Normalize 先转小写，校验器不得比它更严：'All' / 'Any' 必须放行。
+        foreach (var policy in new[] { "all", "any", "All", "ANY", " any " })
+        {
+            var accepted = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
+                WithStep(new ApprovalTemplateStepInput(1, "Engineering review", null, "user", "u-engineering", 24, policy)));
+            Assert.True(accepted.IsValid, $"完成策略 '{policy}' 应当通过校验");
+        }
     }
 
     [Fact]
