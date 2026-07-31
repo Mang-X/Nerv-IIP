@@ -43,12 +43,21 @@ Assert-Contract (
     $content.Contains('actorPrincipalId=$actor&authorizedSiteCodes=$site&scopeKind=site&scopeId=$site&siteCode=$site')) `
     'Verify script must query the WMS outbound order with trusted actor and exact site scope.'
 Assert-Contract ($content.Contains('function Wait-WmsOutboundOrderEvent')) 'Verify script must observe the real Redis-created outbound before bootstrapping assignment facts.'
-Assert-Contract ($content.Contains('Wait-WmsOutboundOrderEvent -ManagedProcess $wmsProcess -DeliveryOrderNo $deliveryOrderNo')) 'Verify script must wait for this run-scoped delivery event before restarting WMS.'
-Assert-Contract ($content.Contains("$wmsProcess.Stop.Invoke('MAN-527 governed work-scope bootstrap')")) 'Verify script must stop the first managed WMS process before its governed work-scope bootstrap restart.'
+Assert-Contract ($content.Contains('Wait-WmsOutboundOrderEvent -ManagedProcess $wmsProcess -DeliveryOrderNo $deliveryOrderNo')) 'Verify script must wait for this run-scoped delivery event before locating the unassigned outbound.'
+Assert-Contract (-not $content.Contains("$wmsProcess.Stop.Invoke('MAN-527 governed work-scope bootstrap')")) 'Verify script must not seed assignment facts after the run-scoped outbound exists.'
 Assert-Contract ($content.Contains("LeaderDemo__History__Enabled = 'true'")) 'Verify script must establish the governed WMS work-pool membership fixture.'
+Assert-Contract (
+    $content.IndexOf("LeaderDemo__History__Enabled = 'true'", [StringComparison]::Ordinal) -lt
+        $content.IndexOf('$script:erpProcess = Start-ManagedBackgroundProcess', [StringComparison]::Ordinal)) `
+    'Verify script must finish the WMS work-scope fixture before ERP can publish the run-scoped outbound.'
+Assert-Contract ($content.Contains('function Get-UnassignedWmsOutboundOrderReadback')) 'Verify script must use a narrow read-only lookup for the hidden unassigned outbound.'
+Assert-Contract ($content.Contains('assigned_pool_code IS NULL')) 'Verify script readback must prove the run-scoped outbound has no prior pool assignment.'
+Assert-Contract ($content.Contains('assigned_operator_user_id IS NULL')) 'Verify script readback must prove the run-scoped outbound has no prior operator assignment.'
 Assert-Contract ($content.Contains('/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/assignment')) 'Verify script must assign the outbound order through public HTTP before completion.'
 Assert-Contract ($content.Contains("poolCode = `$wmsShippingPoolCode")) 'Verify script must assign the outbound order to the trusted shipping pool.'
-Assert-Contract ($content.Contains("expectedVersion = [long]`$outbound.version")) 'Verify script assignment must use the real public outbound version.'
+Assert-Contract ($content.Contains("expectedVersion = [long]`$unassignedOutbound.version")) 'Verify script assignment must use the exact unassigned readback version.'
+Assert-Contract ($content.Contains("assignedPoolCode -ne `$wmsShippingPoolCode")) 'Verify script must publicly read back and assert the first pool assignment.'
+Assert-Contract ($content.Contains("assignedOperatorUserId -ne `$wmsActorPrincipalId")) 'Verify script must publicly read back and assert the first operator assignment.'
 Assert-Contract ($content.Contains("Inventory__BaseUrl = `$inventoryUrl")) 'Verify script must wire WMS picking reservations to its managed Inventory process.'
 Assert-Contract ($content.Contains('/api/inventory/v1/movements')) 'Verify script must establish real available stock through public Inventory HTTP.'
 Assert-Contract ($content.Contains('foreach ($outboundLine in @($outbound.lines))')) 'Verify script must execute the picking lifecycle for every outbound line.'
@@ -77,5 +86,12 @@ Assert-Contract ($content.Contains('completedAtUtc')) 'Verify script must assert
 Assert-Contract ($content.Contains('finally')) 'Verify script must clean up processes and disposable infrastructure in finally.'
 Assert-Contract ($content.Contains('erp-wms-delivery-completion-evidence.json')) 'Verify script must write reusable acceptance evidence.'
 Assert-Contract ($content.Contains('$runningResult.Stdout')) 'Verify script must preserve compose-service cleanup ownership.'
+foreach ($cleanupStep in @('stop-erp', 'stop-wms', 'stop-inventory', 'drop-database', 'readback-database', 'stop-postgres', 'stop-redis', 'readback-managed-processes')) {
+    Assert-Contract ($content.Contains("# Cleanup-Step: $cleanupStep")) "Verify script must independently execute cleanup step $cleanupStep."
+}
+Assert-Contract ($content.Contains('managedProcessRemaining')) 'Verify script evidence must record managed-process cleanup readback.'
+Assert-Contract ($content.Contains('exactDatabaseRemaining')) 'Verify script evidence must record exact disposable-database cleanup readback.'
+Assert-Contract ($content.Contains('pre-existing-running-not-stopped')) 'Verify script evidence must distinguish pre-existing compose services that were not owned.'
+Assert-Contract ($content.Contains('cleanupErrors')) 'Verify script must aggregate cleanup errors and fail after all cleanup and evidence steps.'
 
 Write-Host 'ERP and WMS delivery-completion cross-process verify script contract tests passed.'

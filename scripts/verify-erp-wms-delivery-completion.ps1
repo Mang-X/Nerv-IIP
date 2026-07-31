@@ -95,6 +95,53 @@ function Invoke-JsonPost {
     Invoke-RestMethod -Method Post -Uri $Uri -Headers $Headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12)
 }
 
+function Get-UnassignedWmsOutboundOrderReadback {
+    param(
+        [string]$ComposeFile,
+        [string]$DatabaseName,
+        [string]$DeliveryOrderNo)
+    if ($DeliveryOrderNo -notmatch '^DO-MAN527-[A-F0-9]{8}$') {
+        throw "Refusing WMS outbound readback for an invalid run-scoped delivery key: $DeliveryOrderNo"
+    }
+    $result = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments @(
+            'compose', '-f', $ComposeFile,
+            'exec', '-T', 'postgres',
+            'psql', '-U', 'nerv', '-d', $DatabaseName,
+            '-At', '-F', '|',
+            '-c', @"
+SELECT id::text, version::text
+FROM wms.outbound_orders
+WHERE organization_id = 'org-001'
+  AND environment_id = 'env-dev'
+  AND outbound_order_no = '$DeliveryOrderNo'
+  AND assigned_pool_code IS NULL
+  AND assigned_operator_user_id IS NULL;
+"@) `
+        -WorkingDirectory $root `
+        -Name 'man527-read-unassigned-outbound'
+    $rows = @("$($result.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($rows.Count -ne 1) {
+        throw "Expected exactly one run-scoped unassigned WMS outbound readback for $DeliveryOrderNo; found $($rows.Count)."
+    }
+    $parts = $rows[0].Split('|')
+    if ($parts.Count -ne 2) {
+        throw "Run-scoped unassigned WMS outbound readback was malformed for $DeliveryOrderNo."
+    }
+    try {
+        $outboundOrderId = [Guid]::Parse($parts[0])
+        $version = [long]$parts[1]
+    }
+    catch {
+        throw "Run-scoped unassigned WMS outbound readback was malformed for $DeliveryOrderNo."
+    }
+    [pscustomobject]@{
+        outboundOrderId = $outboundOrderId.ToString()
+        version = $version
+    }
+}
+
 function Wait-WmsOutboundOrder {
     param(
         [string]$WmsUrl,
@@ -203,6 +250,9 @@ $running = @("$($runningResult.Stdout)" -split '\r?\n' | Where-Object { -not [st
 $startedPostgres = $running -notcontains 'postgres'
 $startedRedis = $running -notcontains 'redis'
 $databaseName = "man527_$([Guid]::NewGuid().ToString('N'))"
+if ($databaseName -notmatch '^man527_[a-f0-9]{32}$') {
+    throw "Refusing to use an invalid MAN-527 disposable database name: $databaseName"
+}
 $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Database=[^;]*') {
     $PostgresAdminConnectionString -replace '(?i)Database=[^;]*', "Database=$databaseName"
 } else {
@@ -226,6 +276,21 @@ $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Busine
 $wmsProject = Join-Path $root 'backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Nerv.IIP.Business.Wms.Web.csproj'
 $inventoryProject = Join-Path $root 'backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj'
 $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+$managedProcessIds = [System.Collections.Generic.List[int]]::new()
+$cleanupErrors = [System.Collections.Generic.List[string]]::new()
+$scenarioError = $null
+$businessEvidence = $null
+$evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
+$evidencePath = Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json'
+$cleanupEvidence = [ordered]@{
+    managedProcessIds = @()
+    managedProcessRemaining = $null
+    databaseName = $databaseName
+    exactDatabaseRemaining = $null
+    postgres = if ($startedPostgres) { 'owned-pending-cleanup' } else { 'pre-existing-running-not-stopped' }
+    redis = if ($startedRedis) { 'owned-pending-cleanup' } else { 'pre-existing-running-not-stopped' }
+    errors = @()
+}
 
 try {
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man527-infrastructure-up' | Out-Null
@@ -256,14 +321,19 @@ try {
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{ ASPNETCORE_URLS = $inventoryUrl }) -ScriptBlock {
         $script:inventoryProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $inventoryProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-inventory'
     }
+    [void]$managedProcessIds.Add([int]$inventoryProcess.Process.Id)
     Wait-Healthy -Uri "$inventoryUrl/health" -ManagedProcess $inventoryProcess
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
         ASPNETCORE_URLS = $wmsUrl
         Inventory__BaseUrl = $inventoryUrl
+        LeaderDemo__History__Enabled = 'true'
+        LeaderDemo__Seed__OrganizationId = 'org-001'
+        LeaderDemo__Seed__EnvironmentId = 'env-dev'
     }) -ScriptBlock {
-        $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms'
+        $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms-work-scope'
     }
+    [void]$managedProcessIds.Add([int]$wmsProcess.Process.Id)
     Wait-Healthy -Uri "$wmsUrl/health" -ManagedProcess $wmsProcess
 
     Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
@@ -275,6 +345,7 @@ try {
     }) -ScriptBlock {
         $script:erpProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $erpProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-erp'
     }
+    [void]$managedProcessIds.Add([int]$erpProcess.Process.Id)
     Wait-Healthy -Uri "$erpUrl/health" -ManagedProcess $erpProcess
 
     $headers = @{
@@ -299,28 +370,13 @@ try {
     } | Out-Null
 
     Wait-WmsOutboundOrderEvent -ManagedProcess $wmsProcess -DeliveryOrderNo $deliveryOrderNo
-    $wmsProcess.Stop.Invoke('MAN-527 governed work-scope bootstrap')
-    $wmsProcess = $null
-    Invoke-WithScopedEnvironment -Variables ($commonEnvironment + @{
-        ASPNETCORE_URLS = $wmsUrl
-        Inventory__BaseUrl = $inventoryUrl
-        LeaderDemo__History__Enabled = 'true'
-        LeaderDemo__Seed__OrganizationId = 'org-001'
-        LeaderDemo__Seed__EnvironmentId = 'env-dev'
-    }) -ScriptBlock {
-        $script:wmsProcess = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('run', '--project', $wmsProject, '--no-build', '--no-launch-profile') -WorkingDirectory $root -Name 'man527-wms-work-scope'
-    }
-    Wait-Healthy -Uri "$wmsUrl/health" -ManagedProcess $wmsProcess
-
-    $outbound = Wait-WmsOutboundOrder `
-        -WmsUrl $wmsUrl `
-        -Headers $headers `
-        -DeliveryOrderNo $deliveryOrderNo `
-        -ActorPrincipalId $wmsActorPrincipalId `
-        -SiteCode $wmsSiteCode
-    $outboundOrderId = if ($outbound.outboundOrderId -is [string]) { $outbound.outboundOrderId } elseif ($null -ne $outbound.outboundOrderId.value) { $outbound.outboundOrderId.value } else { "$($outbound.outboundOrderId)" }
+    $unassignedOutbound = Get-UnassignedWmsOutboundOrderReadback `
+        -ComposeFile $composeFile `
+        -DatabaseName $databaseName `
+        -DeliveryOrderNo $deliveryOrderNo
+    $outboundOrderId = "$($unassignedOutbound.outboundOrderId)"
     $assignmentUri = "$wmsUrl/api/business/v1/wms/outbound-orders/$([Uri]::EscapeDataString($outboundOrderId))/assignment"
-    $assignment = Invoke-JsonPost -Uri $assignmentUri -Headers $headers -Body @{
+    Invoke-JsonPost -Uri $assignmentUri -Headers $headers -Body @{
         outboundOrderId = $outboundOrderId
         organizationId = 'org-001'
         environmentId = 'env-dev'
@@ -329,7 +385,17 @@ try {
         poolCode = $wmsShippingPoolCode
         operatorPrincipalId = $wmsActorPrincipalId
         idempotencyKey = "man527-assign-$deliveryOrderNo"
-        expectedVersion = [long]$outbound.version
+        expectedVersion = [long]$unassignedOutbound.version
+    } | Out-Null
+    $outbound = Wait-WmsOutboundOrder `
+        -WmsUrl $wmsUrl `
+        -Headers $headers `
+        -DeliveryOrderNo $deliveryOrderNo `
+        -ActorPrincipalId $wmsActorPrincipalId `
+        -SiteCode $wmsSiteCode
+    if ($outbound.assignedPoolCode -ne $wmsShippingPoolCode -or
+        $outbound.assignedOperatorUserId -ne $wmsActorPrincipalId) {
+        throw "Public WMS readback did not prove the first assignment for $deliveryOrderNo."
     }
     foreach ($outboundLine in @($outbound.lines)) {
         Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/movements" -Headers $headers -Body @{
@@ -474,15 +540,24 @@ try {
         throw 'Repeated completion changed the public ERP delivery or receivable facts.'
     }
 
-    $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
-    [System.IO.Directory]::CreateDirectory($evidenceDirectory) | Out-Null
-    $evidencePath = Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json'
-    [ordered]@{
+    $businessEvidence = [ordered]@{
         verifiedAtUtc = [DateTimeOffset]::UtcNow
+        scenarioStatus = 'passed'
         deliveryOrderNo = $deliveryOrderNo
-        transport = 'Redis CAP across separate ERP, WMS, and replay-probe processes'
+        transport = 'Redis CAP across separate ERP, WMS, Inventory, and replay-probe processes'
         persistence = 'Disposable real PostgreSQL database'
-        wmsOutboundOrder = [ordered]@{ outboundOrderNo = $outbound.outboundOrderNo; completionHttpReplay = 'same idempotency key accepted twice' }
+        wmsOutboundOrder = [ordered]@{
+            outboundOrderNo = $outbound.outboundOrderNo
+            firstAssignment = [ordered]@{
+                preAssignmentReadback = 'exact run-scoped row had no assigned pool or operator'
+                preAssignmentVersion = $unassignedOutbound.version
+                poolCode = $outbound.assignedPoolCode
+                operatorPrincipalId = $outbound.assignedOperatorUserId
+                establishedThrough = 'public WMS assignment endpoint'
+            }
+            pickingLifecycle = 'public create/read/assign/start/progress/complete for every outbound line'
+            completionHttpReplay = 'same idempotency key accepted twice'
+        }
         erpDelivery = [ordered]@{
             status = $deliveryAfterReplay.status
             shippedAtUtc = $deliveryAfterReplay.shippedAtUtc
@@ -491,20 +566,149 @@ try {
         }
         accountReceivable = [ordered]@{ receivableNo = $receivableAfterReplay.receivableNo; sourceDocumentNo = $receivableAfterReplay.sourceDocumentNo }
         repeatedEvent = 'same event id published twice through Redis; one delivery projection, one receivable, one target-consumer durable inbox row, no target-consumer dead letter'
-    } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
-    Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written to $evidencePath"
+    }
+}
+catch {
+    $scenarioError = $_
 }
 finally {
-    if ($erpProcess) { $erpProcess.Stop.Invoke('MAN-527 verification completed') }
-    if ($wmsProcess) { $wmsProcess.Stop.Invoke('MAN-527 verification completed') }
-    if ($inventoryProcess) { $inventoryProcess.Stop.Invoke('MAN-527 verification completed') }
-    if ($databaseCreated) {
-        Invoke-DockerCompose -Arguments @('-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);") -WorkingDirectory $root -Name 'man527-drop-database' | Out-Null
+    # Cleanup-Step: stop-erp
+    try {
+        if ($erpProcess) { $erpProcess.Stop.Invoke('MAN-527 verification completed') }
     }
-    $servicesToStop = @()
-    if ($startedPostgres) { $servicesToStop += 'postgres' }
-    if ($startedRedis) { $servicesToStop += 'redis' }
-    if ($servicesToStop.Count -gt 0) {
-        Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + $servicesToStop) -WorkingDirectory $root -Name 'man527-infrastructure-stop' | Out-Null
+    catch {
+        [void]$cleanupErrors.Add("stop-erp: $($_.Exception.Message)")
     }
+    # Cleanup-Step: stop-wms
+    try {
+        if ($wmsProcess) { $wmsProcess.Stop.Invoke('MAN-527 verification completed') }
+    }
+    catch {
+        [void]$cleanupErrors.Add("stop-wms: $($_.Exception.Message)")
+    }
+    # Cleanup-Step: stop-inventory
+    try {
+        if ($inventoryProcess) { $inventoryProcess.Stop.Invoke('MAN-527 verification completed') }
+    }
+    catch {
+        [void]$cleanupErrors.Add("stop-inventory: $($_.Exception.Message)")
+    }
+    # Cleanup-Step: drop-database
+    try {
+        if ($databaseCreated) {
+            Invoke-DockerCompose -Arguments @(
+                '-f', $composeFile,
+                'exec', '-T', 'postgres',
+                'psql', '-U', 'nerv', '-d', 'postgres',
+                '-v', 'ON_ERROR_STOP=1',
+                '-c', "DROP DATABASE IF EXISTS $databaseName WITH (FORCE);"
+            ) -WorkingDirectory $root -Name 'man527-drop-database' | Out-Null
+        }
+    }
+    catch {
+        [void]$cleanupErrors.Add("drop-database: $($_.Exception.Message)")
+    }
+    # Cleanup-Step: readback-database
+    try {
+        if (-not $databaseCreated) {
+            $cleanupEvidence.exactDatabaseRemaining = 0
+        }
+        else {
+            $databaseReadback = Invoke-NativeCommandOutput `
+                -Command 'docker' `
+                -Arguments @(
+                    'compose', '-f', $composeFile,
+                    'exec', '-T', 'postgres',
+                    'psql', '-U', 'nerv', '-d', 'postgres',
+                    '-At',
+                    '-c', "SELECT COUNT(*) FROM pg_database WHERE datname = '$databaseName';"
+                ) `
+                -WorkingDirectory $root `
+                -Name 'man527-readback-database-cleanup'
+            $cleanupEvidence.exactDatabaseRemaining = [int]("$($databaseReadback.Stdout)".Trim())
+            if ($cleanupEvidence.exactDatabaseRemaining -ne 0) {
+                throw "Disposable database still exists after cleanup: $databaseName"
+            }
+        }
+    }
+    catch {
+        [void]$cleanupErrors.Add("readback-database: $($_.Exception.Message)")
+    }
+    # Cleanup-Step: stop-postgres
+    if ($startedPostgres) {
+        try {
+            Invoke-DockerCompose -Arguments @('-f', $composeFile, 'stop', 'postgres') -WorkingDirectory $root -Name 'man527-stop-postgres' | Out-Null
+            $runningAfterStop = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-readback-postgres-stop'
+            $runningServices = @("$($runningAfterStop.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($runningServices -contains 'postgres') {
+                throw 'Script-owned PostgreSQL service is still running after stop.'
+            }
+            $cleanupEvidence.postgres = 'owned-stopped'
+        }
+        catch {
+            [void]$cleanupErrors.Add("stop-postgres: $($_.Exception.Message)")
+        }
+    }
+    # Cleanup-Step: stop-redis
+    if ($startedRedis) {
+        try {
+            Invoke-DockerCompose -Arguments @('-f', $composeFile, 'stop', 'redis') -WorkingDirectory $root -Name 'man527-stop-redis' | Out-Null
+            $runningAfterStop = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-readback-redis-stop'
+            $runningServices = @("$($runningAfterStop.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($runningServices -contains 'redis') {
+                throw 'Script-owned Redis service is still running after stop.'
+            }
+            $cleanupEvidence.redis = 'owned-stopped'
+        }
+        catch {
+            [void]$cleanupErrors.Add("stop-redis: $($_.Exception.Message)")
+        }
+    }
+    # Cleanup-Step: readback-managed-processes
+    try {
+        $remainingManagedProcesses = @($managedProcessIds | Where-Object {
+            $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue)
+        })
+        $cleanupEvidence.managedProcessIds = @($managedProcessIds)
+        $cleanupEvidence.managedProcessRemaining = $remainingManagedProcesses.Count
+        if ($remainingManagedProcesses.Count -ne 0) {
+            throw "Managed process PIDs still exist after cleanup: $($remainingManagedProcesses -join ', ')"
+        }
+    }
+    catch {
+        [void]$cleanupErrors.Add("readback-managed-processes: $($_.Exception.Message)")
+    }
+
+    $cleanupEvidence.errors = @($cleanupErrors)
+    $evidencePayload = if ($null -ne $businessEvidence) {
+        $businessEvidence
+    }
+    else {
+        [ordered]@{
+            verifiedAtUtc = [DateTimeOffset]::UtcNow
+            scenarioStatus = 'failed'
+            deliveryOrderNo = $deliveryOrderNo
+            scenarioError = if ($null -ne $scenarioError) { $scenarioError.Exception.Message } else { 'Business evidence was not produced.' }
+        }
+    }
+    $evidencePayload.cleanup = $cleanupEvidence
+    try {
+        [System.IO.Directory]::CreateDirectory($evidenceDirectory) | Out-Null
+        $evidencePayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+        Write-Diagnostic "MAN-527 ERP/WMS delivery-completion evidence written after cleanup to $evidencePath"
+    }
+    catch {
+        [void]$cleanupErrors.Add("write-evidence: $($_.Exception.Message)")
+    }
+}
+
+if ($null -ne $scenarioError -or $cleanupErrors.Count -ne 0) {
+    $failureParts = [System.Collections.Generic.List[string]]::new()
+    if ($null -ne $scenarioError) {
+        [void]$failureParts.Add("scenario: $($scenarioError.Exception.Message)")
+    }
+    foreach ($cleanupError in $cleanupErrors) {
+        [void]$failureParts.Add("cleanup: $cleanupError")
+    }
+    throw "MAN-527 verification failed. $($failureParts -join ' | ')"
 }
