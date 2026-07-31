@@ -459,7 +459,9 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     {
         if (!input.MeasuredValue.HasValue)
         {
-            throw new InvalidOperationException($"Variable characteristic '{characteristic.CharacteristicCode}' requires measured value.");
+            // 计量型特性缺测量值是录入问题而非系统故障：抛 KnownException 走 400，
+            // 中文点名特性与要求，前端分层透传（#1298）可原样上屏，不再落成 500（#1326）。
+            throw new KnownException($"计量型特性“{characteristic.CharacteristicCode}”需要填写测量值，请录入数值后重新提交。");
         }
 
         var measuredValueInPlanUnit = input.MeasuredValue.Value;
