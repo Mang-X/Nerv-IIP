@@ -182,6 +182,14 @@ describe('notifyOperationFailure', () => {
     notifyOperationFailure('撤销失败', { status: 500 }, '撤销失败，请稍后重试')
     expect(toastError).toHaveBeenCalledWith('撤销失败，请稍后重试')
   })
+
+  // action 实参的主流写法已带「失败」后缀（现网 106 处里 103 处形如 '撤销失败'），
+  // 所以兜底文案必须由调用方自己写；若按 action 派生就会拼出「撤销失败失败，请稍后重试」。
+  it('动作前缀原样拼接，不额外补「失败」二字', () => {
+    notifyOperationFailure('撤销失败', { detail: '工单已关闭，不能撤销' }, '撤销失败，请稍后重试')
+    expect(toastError).toHaveBeenCalledWith('撤销失败：工单已关闭，不能撤销')
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('失败失败'))
+  })
 })
 
 describe('notifyError / notifySuccess', () => {

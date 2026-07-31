@@ -206,6 +206,23 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         return references;
     }
 
+    /// <summary>
+    /// 单值「主需求源引用」：<see cref="GetDemandSourceReferences"/> 的第一条；
+    /// 没有 demand 类型 pegging 时回退到任意非空 pegging 引用，避免历史数据丢链。
+    /// </summary>
+    /// <remarks>
+    /// 下游只认单值引用的字段（MES 工单的 SourceDemandReference、集成事件 payload 的主引用）都用它。
+    /// 之所以收在聚合里：这条「主引用 + 回退」三联式原本在集成事件转换器、下游桥接、
+    /// 验收测试三处各抄一遍，任一处的回退条件写歪，同一张建议在事件里和在工单上就会指向不同需求源。
+    /// </remarks>
+    public string? GetPrimaryDemandSourceReference()
+    {
+        var references = GetDemandSourceReferences();
+        return references.Count > 0
+            ? references[0]
+            : peggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+    }
+
     public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
     {
         if (Status == PlanningSuggestionStatus.Accepted)

@@ -201,6 +201,27 @@ export function isForbiddenError(error: unknown): boolean {
 }
 
 /**
+ * **分层透传链的唯一实现**：三个入口（`notifyOperationFailure` / `inlineErrorMessage` /
+ * `notifyError`）走的是同一条链，差别只在动作前缀、兜底文案与排障日志的标签。
+ *
+ * 链路：先取服务端真正说的那句话（信封 `message` → RFC7807 `detail`/`title` → 校验 `errors`），
+ * 中文领域消息原样上屏；英文 HTTP / 5xx 文案交给 `friendlyErrorMessage` 映射成人话，
+ * **原文只进 `console.error`**（反馈规范禁止英文错误码 / 5xx 原文上屏）。
+ *
+ * 之所以收成一处：三个入口原本各抄一遍这四行，任一处漏掉 `serverErrorMessage` 那步，
+ * 该入口就会把后端的领域拒绝理由吞成猜测性兜底文案（MAN-691 / #1259、MAN-700 / #1289 两次踩过）。
+ */
+function resolveLayeredMessage(error: unknown, fallback: string | undefined, logLabel: string) {
+  const raw = serverErrorMessage(error)
+  const message = friendlyErrorMessage(raw || error, fallback)
+  if (raw && message !== raw) {
+    // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
+    console.error(`[${logLabel}] 服务端原始错误：`, raw, error)
+  }
+  return message
+}
+
+/**
  * 写操作失败的统一反馈：**分层透传**，一句话——「服务端说的人话上屏，通用 HTTP 文案先映射」。
  *
  * 1. **服务端领域消息**（中文、可行动，如「工单缺少生产版本，无法排程」）→ 带动作前缀原样上屏；
@@ -211,14 +232,14 @@ export function isForbiddenError(error: unknown): boolean {
  *
  * 之所以要它而不是直接 `notifyError`：写操作要让用户知道**是哪个动作**失败了
  * （「发布失败：…」/「生成失败：…」），且服务端的领域拒绝理由必须原样看得见（MAN-691 / #1259）。
+ *
+ * `fallback` **必填，不由 `action` 派生**：`action` 实参的主流写法本身已带「失败」后缀
+ * （现网 106 处里 103 处形如 `'撤销失败'`），派生兜底会拼出「撤销失败失败，请稍后重试」。
+ * 领域兜底句只能由调用方自己写。
  */
 export function notifyOperationFailure(action: string, error: unknown, fallback: string): void {
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, '')
-  if (raw && message !== raw) {
-    // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
-    console.error(`[${action}] 服务端原始错误：`, raw, error)
-  }
+  // 第二个参数传 '' 是刻意的——什么都取不到时要落到调用方的领域兜底，而不是通用兜底句。
+  const message = resolveLayeredMessage(error, '', action)
   toast.error(message ? `${action}：${message}` : fallback)
 }
 
@@ -232,12 +253,7 @@ export function notifyOperationFailure(action: string, error: unknown, fallback:
  */
 export function inlineErrorMessage(error: unknown, fallback = '请求失败，请稍后重试。'): string {
   if (!error) return ''
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback)
-  if (raw && message !== raw) {
-    console.error('[加载失败] 服务端原始错误：', raw, error)
-  }
-  return message
+  return resolveLayeredMessage(error, fallback, '加载失败')
 }
 
 /** 成功反馈。 */
@@ -268,10 +284,5 @@ export function notifyWarning(message: string): void {
  * 于是 `{ detail: '报价单已过期，不能转订单' }` 这类 400 全被吞成兜底文案（MAN-700 / #1289）。
  */
 export function notifyError(error: unknown, fallback?: string): void {
-  const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback)
-  if (raw && message !== raw) {
-    console.error('[操作失败] 服务端原始错误：', raw, error)
-  }
-  toast.error(message)
+  toast.error(resolveLayeredMessage(error, fallback, '操作失败'))
 }
