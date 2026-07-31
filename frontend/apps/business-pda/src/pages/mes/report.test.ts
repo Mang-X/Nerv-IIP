@@ -106,6 +106,11 @@ const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
 const exactTaskScopeReadyRef = ref(true)
 const exactTaskScopeMessageRef = ref('')
+const workScopeOptionsRef = ref([
+  { label: '精加工一线（工作中心）', value: 'work-center:WC-A' },
+  { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
+])
+const workScopeSelectionRef = ref<string | undefined>('work-center:WC-A')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -215,6 +220,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: ref(false),
     promote: vi.fn(),
     dismiss: vi.fn(),
+  }),
+  // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: computed(() => workScopeOptionsRef.value),
+    scopeSelectionValue: workScopeSelectionRef,
   }),
 }))
 

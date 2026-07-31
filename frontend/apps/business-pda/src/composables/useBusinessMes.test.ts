@@ -23,6 +23,7 @@ import {
 import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 
 import {
+  MES_WORK_SCOPE_UNAVAILABLE_MESSAGE,
   useMesMaterialIssue,
   useMesCurrentOperationSops,
   useMesExactOperationTask,
@@ -1087,7 +1088,8 @@ describe('pda useBusinessMes composables', () => {
         completesOperation: false,
         idempotencyKey: 'report-no-scope',
       }),
-    ).rejects.toThrow('尚未选择已授权作业范围')
+      // 响应成功但授权清单为空 = 「一个授权范围都没有」，与「还没选」是两回事（#1297）。
+    ).rejects.toThrow(MES_WORK_SCOPE_UNAVAILABLE_MESSAGE)
     expect(mutateAsync).not.toHaveBeenCalled()
   })
 
@@ -1160,7 +1162,8 @@ describe('pda useBusinessMes composables', () => {
     expect(operationScopeReady.value).toBe(false)
     await expect(
       startTask('ot-no-scope', { idempotencyKey: 'operation-no-scope' }),
-    ).rejects.toThrow('尚未选择已授权作业范围')
+      // 同上：授权清单为空的真话是「没有已授权范围」，不能说成「还没选」（#1297）。
+    ).rejects.toThrow(MES_WORK_SCOPE_UNAVAILABLE_MESSAGE)
     expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
     expect(mutateAsync).not.toHaveBeenCalled()
   })
