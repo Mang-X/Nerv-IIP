@@ -32,7 +32,7 @@ public sealed class RevokeApprovalDelegationCommandHandler(ApplicationDbContext 
                 && x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException("Approval delegation was not found.");
+            ?? throw new KnownException("审批委托不存在或已被撤销。");
         delegation.Revoke(request.RevokedBy);
     }
 }

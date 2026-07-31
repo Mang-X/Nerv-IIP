@@ -43,7 +43,7 @@ public sealed class ListApprovalDecisionsQueryValidator : AbstractValidator<List
         RuleFor(x => x.ChainId)
             .MaximumLength(150)
             .Must(value => string.IsNullOrWhiteSpace(value) || Guid.TryParse(value, out _))
-            .WithMessage("ChainId must be a valid GUID.");
+            .WithMessage("审批链 ID 必须是合法的 GUID。");
         RuleFor(x => x.ActorType).MaximumLength(50);
         RuleFor(x => x.ActorRef).MaximumLength(150);
         RuleFor(x => x.Decision).MaximumLength(50);
