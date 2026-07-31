@@ -349,6 +349,12 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// MasterData 删除防护需要反查 ProductEngineering 的引用占用（HttpProductEngineeringReferenceUsageChecker）。
+// 缺这一行时 MasterData 回退固定端口 5108，在动态端口的 ephemeral 会话上必打错端口。
+// 只注入端点环境变量、不加 WaitFor：ProductEngineering 已 WaitFor(businessMasterData)，反向等待会成环。
+businessMasterData = businessMasterData
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"));
+
 var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5109, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
@@ -358,9 +364,14 @@ var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bui
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
+    // Inventory 的 SKU 效期策略读取走 MasterData HTTP（HttpInventorySkuExpiryPolicyProvider）；
+    // 不注入则回退固定端口 5107，ephemeral 会话上必打错端口。
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessInventoryDatabase, "PostgreSQL")
-    .WaitFor(businessInventoryDatabase);
+    .WithReference(businessMasterData)
+    .WaitFor(businessInventoryDatabase)
+    .WaitFor(businessMasterData);
 businessInventory = WithRedisMessagingTransport(businessInventory);
 if (rabbitmq is not null)
 {
@@ -497,6 +508,18 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// Inventory 盘点调整审批链（HttpStockCountApprovalClient）与 ProductEngineering 工程审批校验
+// （HttpEngineeringApprovalVerifier）都通过 HTTP 访问 Approval；Approval 声明晚于二者，
+// 只能在此回填端点环境变量，否则 ephemeral 会话回退固定端口 5114 必打错端口。
+businessInventory = businessInventory
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    .WithReference(businessApproval)
+    .WaitFor(businessApproval);
+businessProductEngineering = businessProductEngineering
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    .WithReference(businessApproval)
+    .WaitFor(businessApproval);
+
 var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5115, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
@@ -585,14 +608,19 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    // ERP 出/入库单取消联动 WMS（HttpWmsOutbound/InboundCancellationClient）；
+    // 不注入则回退固定端口，ephemeral 会话上必打错端口。
+    .WithEnvironment("Wms__BaseUrl", businessWms.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessErpDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessApproval)
+    .WithReference(businessWms)
     .WithReference(iam)
     .WaitFor(businessErpDatabase)
     .WaitFor(businessMasterData)
     .WaitFor(businessApproval)
+    .WaitFor(businessWms)
     .WaitFor(iam);
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)
@@ -625,6 +653,11 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    // 排产「生成首版」依赖 MasterData（产能日历/工作中心）与 ProductEngineering（工艺路线）HTTP 读面；
+    // 此前漏注入这两行，服务回退固定端口 5107/5108，在动态端口的 ephemeral 会话上
+    // 生成首版必 500 downstream-request-failed —— GitHub #1316 的直接原因。
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
@@ -637,11 +670,15 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
+    .WithReference(businessProductEngineering)
     .WithReference(businessMes)
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
     .WithReference(fileStorage)
     .WaitFor(businessSchedulingDatabase)
+    .WaitFor(businessMasterData)
+    .WaitFor(businessProductEngineering)
     .WaitFor(businessMes)
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance);

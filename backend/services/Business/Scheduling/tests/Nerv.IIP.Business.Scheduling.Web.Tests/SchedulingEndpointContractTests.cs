@@ -93,6 +93,7 @@ public sealed class SchedulingEndpointContractTests
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 builder.UseSetting("ConnectionStrings:PostgreSQL", string.Empty);
+                ConfigureRequiredUpstreamBaseUrls(builder);
             });
 
         var exception = await Record.ExceptionAsync(async () =>
@@ -955,6 +956,15 @@ public sealed class SchedulingEndpointContractTests
             CancellationToken cancellationToken) => Task.FromResult(problem);
     }
 
+    private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)
+    {
+        builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
+        builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
+        builder.UseSetting("Mes:BaseUrl", "http://mes.local");
+        builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+        builder.UseSetting("Maintenance:BaseUrl", "http://maintenance.local");
+    }
+
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>
     {
         private readonly string databaseName = $"scheduling-live-http-{Guid.NewGuid():N}";
@@ -967,6 +977,7 @@ public sealed class SchedulingEndpointContractTests
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.UseSetting("ConnectionStrings:PostgreSQL", "Host=unused;Database=nerv_iip_scheduling_live_http;Username=nerv;Password=nerv");
+            ConfigureRequiredUpstreamBaseUrls(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();

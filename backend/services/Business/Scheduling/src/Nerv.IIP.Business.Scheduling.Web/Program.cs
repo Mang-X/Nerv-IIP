@@ -39,11 +39,11 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "MasterData:BaseUrl", "http://localhost:5107");
-    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "ProductEngineering:BaseUrl", "http://localhost:5108");
-    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Mes:BaseUrl", "http://localhost:5111");
-    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
-    var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Maintenance:BaseUrl", "http://localhost:5117");
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
     builder.Services.AddHttpClient<ISchedulingProblemMasterDataClient, HttpSchedulingProblemMasterDataClient>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -279,7 +279,11 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
     return char.ToLowerInvariant(name[0]) + name[1..];
 }
 
-static Uri ResolveServiceBaseAddress(IConfiguration configuration, string configurationKey, string fallback)
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
 {
     var configuredBaseUrl = configuration[configurationKey];
     if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
@@ -287,7 +291,12 @@ static Uri ResolveServiceBaseAddress(IConfiguration configuration, string config
         return new Uri(configuredBaseUrl, UriKind.Absolute);
     }
 
-    return new Uri(fallback, UriKind.Absolute);
+    if (environment.IsDevelopment())
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118
