@@ -83,7 +83,8 @@ const form = reactive({
   sourceDocumentLineId: '',
   idempotencyKey: '',
   skuCode: '',
-  uomCode: 'EA',
+  // 单位跟随物料主档带出（onSkuChange），不预填假单位：写死通用单位会让后端单位换算直接失败。
+  uomCode: '',
   siteCode: '',
   locationCode: '',
   lotNo: '',

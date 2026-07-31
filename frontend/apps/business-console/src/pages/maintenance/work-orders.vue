@@ -205,7 +205,7 @@ interface SparePartRow {
 }
 let nextSpareRowId = 1
 function createSpareRow(): SparePartRow {
-  // 单位留空：选完物料自动带出它的基本单位，提交时仍保留 EA 兜底（见 buildSparePartInputs）。
+  // 单位留空：选完物料自动带出它的基本单位；主档没维护就由操作员选，不预填假单位。
   return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: '', unitCost: '' }
 }
 
@@ -488,10 +488,16 @@ async function submitComplete() {
     completeError.value = '备件数量需为正数。'
     return
   }
+  // 单位来自备件的物料主档（选完物料自动带出），主档没维护基本单位时要人工选，不替它兜一个通用单位：
+  // 按 kg / l 计量的备件用错单位，后端单位换算会直接失败。
+  if (filledSpares.some((row) => !row.uomCode.trim())) {
+    completeError.value = '备件单位缺失，请为每条备件选择计量单位。'
+    return
+  }
   const spareParts: BusinessConsoleMaintenanceSparePartInput[] = filledSpares.map((row) => ({
     skuCode: row.skuCode.trim(),
     quantity: Number(row.quantity),
-    uomCode: row.uomCode.trim() || 'EA',
+    uomCode: row.uomCode.trim(),
   }))
   try {
     await completeWorkOrder(target.workOrderId, {

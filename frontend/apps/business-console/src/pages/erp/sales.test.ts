@@ -1,3 +1,4 @@
+import type { VueWrapper } from '@vue/test-utils'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,6 +69,7 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
 }))
 
 const state = vi.hoisted(() => ({
+  createQuotation: vi.fn(async (_body: unknown) => undefined),
   quotations: [] as Array<Record<string, unknown>>,
   deliveries: [] as Array<Record<string, unknown>>,
   salesOrders: [] as Array<Record<string, unknown>>,
@@ -115,7 +117,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
     approveQuotation: state.approveQuotation,
     approveQuotationPending: shallowRef(false),
     approveQuotationError: shallowRef(undefined),
-    createQuotation: vi.fn(),
+    createQuotation: state.createQuotation,
     createQuotationPending: shallowRef(false),
     createQuotationError: shallowRef(undefined),
   }),
@@ -149,12 +151,25 @@ vi.mock('@/composables/useErpPickerCatalog', () => ({
     supplierOptions: computed(() => []),
     partnersPending: shallowRef(false),
   }),
+  // 两种不同计量单位的物料：用来证明单据行的单位来自物料主档，而不是页面常量。
   useErpItemCatalog: () => ({
-    skuOptions: computed(() => [{ value: 'SKU-001', label: '示例物料' }]),
+    skuOptions: computed(() => [
+      { value: 'SKU-SHOCK-FR-01', label: '前减振器总成' },
+      { value: 'RM-BAR-45-01', label: '45号钢棒料' },
+    ]),
     skusPending: shallowRef(false),
-    uomOptions: computed(() => [{ value: 'EA', label: '个' }]),
+    uomOptions: computed(() => [
+      { value: 'pcs', label: '个' },
+      { value: 'kg', label: '千克' },
+    ]),
     uomsPending: shallowRef(false),
-    baseUomBySku: computed(() => new Map([['SKU-001', 'EA']])),
+    baseUomBySku: computed(
+      () =>
+        new Map([
+          ['SKU-SHOCK-FR-01', 'pcs'],
+          ['RM-BAR-45-01', 'kg'],
+        ]),
+    ),
   }),
   useErpSiteCatalog: () => ({
     siteOptions: computed(() => [{ value: 'SITE-01', label: '一号工厂' }]),
@@ -184,9 +199,8 @@ const selectStubs = {
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
-// 新建销售订单弹框：真实 NvDialog 会 teleport 到 body、NvEntityPicker 要开面板选工厂，
-// 本用例只关心「提交失败时用户看到什么」，把这层壳桩成普通节点。
-const orderDialogStubs = {
+// 弹框外壳：真实 NvDialog 会 teleport 到 body，两组用例都只关心壳里的表单行为，桩成普通节点。
+const dialogShellStubs = {
   NvDialog: { props: ['open'], template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
@@ -194,6 +208,10 @@ const orderDialogStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvDialogClose: { template: '<div><slot /></div>' },
+}
+// 新建销售订单弹框：NvEntityPicker 要开面板选工厂，本用例只关心「提交失败时用户看到什么」。
+const orderDialogStubs = {
+  ...dialogShellStubs,
   NvEntityPicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -202,6 +220,26 @@ const orderDialogStubs = {
   },
 }
 
+// 新建报价弹窗：实体选择器桩成可直接读写的输入位，用例只关心提交体里的单位来自哪里。
+const dialogStubs = {
+  ...dialogShellStubs,
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  NvButton: {
+    template: '<button v-bind="$attrs" :type="$attrs.type ?? \'button\'"><slot /></button>',
+  },
+}
+/** 打开「新建报价」弹窗（按钮按文案找，不为测试往页面塞标记）。 */
+async function openCreateDialog(wrapper: VueWrapper) {
+  const trigger = wrapper.findAll('button').find((b) => b.text().includes('新建报价'))
+  expect(trigger).toBeTruthy()
+  await trigger!.trigger('click')
+  await flushPromises()
+}
 const rowActionStubs = {
   RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
   DropdownMenuItem: {
@@ -213,6 +251,7 @@ const rowActionStubs = {
 beforeEach(() => {
   // 履约追踪 Sheet 里的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   setActivePinia(createPinia())
+  state.createQuotation = vi.fn(async (_body: unknown) => undefined)
   state.salesOrders = []
   state.deliveries = []
   state.quotations = []
@@ -313,6 +352,60 @@ describe('ERP sales quotation page', () => {
     expect(state.toastError).toHaveBeenCalledWith('审批报价失败，请稍后重试。')
     expect(state.toastError).not.toHaveBeenCalledWith(expect.stringContaining('Internal Server'))
     consoleError.mockRestore()
+  })
+
+  // 回归 #1285：报价行的 uomCode 曾写死为 'EA'，而世界里根本没有这个单位，
+  // 真实 MRP / 单位换算必然 500。单位必须来自所选物料主档的基本单位。
+  it('sends the selected SKU base unit of measure instead of a hardcoded one', async () => {
+    const wrapper = mount(QuotationsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs } },
+    })
+    await flushPromises()
+
+    await openCreateDialog(wrapper)
+
+    await wrapper.get('#erp-quo-customer').setValue('CUST-001')
+    await wrapper.get('#erp-quo-expires').setValue('2026-12-31')
+    // 选一个按千克计量的物料：单位应自动带出 kg。
+    await wrapper.get('#erp-quo-sku').setValue('RM-BAR-45-01')
+    await wrapper.get('#erp-quo-required').setValue('2026-09-01')
+    await flushPromises()
+    expect((wrapper.get('#erp-quo-uom').element as HTMLInputElement).value).toBe('kg')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const body = state.createQuotation.mock.calls[0]![0] as {
+      lines?: Array<{ skuCode?: string; uomCode?: string }>
+    }
+    expect(body.lines?.[0]?.skuCode).toBe('RM-BAR-45-01')
+    expect(body.lines?.[0]?.uomCode).toBe('kg')
+
+    // 换成按件计量的物料：单位跟着物料主档变，不是任何固定常量。
+    await wrapper.get('#erp-quo-sku').setValue('SKU-SHOCK-FR-01')
+    await flushPromises()
+    expect((wrapper.get('#erp-quo-uom').element as HTMLInputElement).value).toBe('pcs')
+  })
+
+  it('blocks submission while the unit of measure is still empty', async () => {
+    const wrapper = mount(QuotationsPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs } },
+    })
+    await flushPromises()
+
+    await openCreateDialog(wrapper)
+
+    await wrapper.get('#erp-quo-customer').setValue('CUST-001')
+    await wrapper.get('#erp-quo-expires').setValue('2026-12-31')
+    // 物料目录里没有的编码（深链/历史数据）：带不出基本单位，就不许提交，也不预填假单位。
+    await wrapper.get('#erp-quo-sku').setValue('SKU-NOT-IN-CATALOG')
+    await wrapper.get('#erp-quo-required').setValue('2026-09-01')
+    await flushPromises()
+    expect((wrapper.get('#erp-quo-uom').element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createQuotation).not.toHaveBeenCalled()
   })
 })
 

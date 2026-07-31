@@ -30,7 +30,13 @@ public sealed class SalesOrderDemandDemoSeedServiceTests
         Assert.Equal("released", order.Status);
         Assert.Equal(1, order.Version);
         Assert.Equal(SalesOrderDemandDemoSeedService.SkuCode, Assert.Single(order.Lines).SkuCode);
-        Assert.Single(await dbContext.Quotations.ToArrayAsync());
+        // Regression for #1285: the seeded demand chain must carry the demo SKU's real base unit ("pcs"
+        // in master data). A unit that master data never defines has no conversion, so every MRP run on
+        // the seeded chain fails.
+        Assert.Equal("pcs", SalesOrderDemandDemoSeedService.UomCode);
+        Assert.Equal(SalesOrderDemandDemoSeedService.UomCode, Assert.Single(order.Lines).UomCode);
+        var quotation = Assert.Single(await dbContext.Quotations.Include(x => x.Lines).ToArrayAsync());
+        Assert.Equal(SalesOrderDemandDemoSeedService.UomCode, Assert.Single(quotation.Lines).UomCode);
 
         var published = Assert.Single(scope.ServiceProvider
             .GetRequiredService<RecordingIntegrationEventPublisher>()
