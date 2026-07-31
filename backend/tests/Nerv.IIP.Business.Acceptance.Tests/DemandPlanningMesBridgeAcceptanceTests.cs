@@ -180,12 +180,10 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
                 .Select(x => x.ProductionVersionReference)
                 .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
             // 与 HttpMesPlanningSuggestionDownstreamBridge 同形：完整携带 demand 类型需求源引用。
+            // 主引用一律走聚合的 GetPrimaryDemandSourceReference()，不在测试里重抄一份回退规则
+            // ——否则规则改了测试仍按旧口径断言，越绿越错。
             var demandReferences = suggestion.GetDemandSourceReferences();
-            var demandReference = demandReferences.Count > 0
-                ? demandReferences[0]
-                : suggestion.PeggingLinks
-                    .Select(x => x.DemandSourceReference)
-                    .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+            var demandReference = suggestion.GetPrimaryDemandSourceReference();
             var dueUtc = new DateTimeOffset(suggestion.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
             var result = await handler.Handle(
                 new ConvertPlanToWorkOrderCommand(

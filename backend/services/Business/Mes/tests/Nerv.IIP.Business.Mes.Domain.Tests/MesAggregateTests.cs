@@ -635,4 +635,22 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() => workOrder.MarkReleased());
         Assert.Contains("closed", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    // 需求源引用是履约追溯链的持久事实。`IReadOnlyList<string>` 只是静态类型上的只读，
+    // 直接交出内部 List 时一个向下转型就能在 EF 变更跟踪背后改掉它。
+    [Fact]
+    public void SourcePlanReference_demand_references_are_not_mutable_through_a_downcast()
+    {
+        var reference = new SourcePlanReference(
+            "demand-planning",
+            "planning-suggestion",
+            "PS-001",
+            "DEMAND-001",
+            ["DEMAND-002"]);
+
+        Assert.Equal(new[] { "DEMAND-001", "DEMAND-002" }, reference.SourceDemandReferences);
+        Assert.Throws<NotSupportedException>(() =>
+            ((IList<string>)reference.SourceDemandReferences!).Add("DEMAND-003"));
+        Assert.Equal(2, reference.SourceDemandReferences!.Count);
+    }
 }
