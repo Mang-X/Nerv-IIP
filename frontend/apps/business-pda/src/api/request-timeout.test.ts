@@ -160,6 +160,31 @@ describe('describeRequestError', () => {
     })
   })
 
+  // #1324：三道开工拦截的反馈必须一致——缺料的服务端真因以前被通用 HTTP 文案吞掉。
+  it.each([
+    [409, '物料齐套未满足，物料 MAT-OIL 缺口 5'],
+    [422, '物料齐套未满足：MAT-OIL 缺口 5'],
+    [400, '当前工序尚未派工，不能开工'],
+  ])(
+    'lets the server business reason through for HTTP %s instead of generic copy',
+    (status, reason) => {
+      expect(describeRequestError({ status, message: reason })).toMatchObject({
+        status,
+        message: reason,
+        indeterminate: false,
+      })
+    },
+  )
+
+  it('keeps local guidance when the server only returns a technical string or an auth failure', () => {
+    expect(
+      describeRequestError({ status: 409, message: 'downstream-request-failed' }),
+    ).toMatchObject({ message: expect.stringContaining('状态已变化') })
+    expect(
+      describeRequestError({ status: 403, message: '缺少权限码 business.mes.operations.manage' }),
+    ).toMatchObject({ message: expect.stringContaining('当前账号无此操作权限') })
+  })
+
   it('classifies a DISPATCHED timeout / network drop as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
     expect(describeRequestError(new RequestTimeoutError())).toMatchObject({
       kind: 'timeout',

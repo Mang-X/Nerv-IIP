@@ -973,6 +973,12 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         var uomCode = string.IsNullOrWhiteSpace(request.UomCode)
             ? throw new KnownException("领料申请必须指定单位，UomCode 不能为空。")
             : request.UomCode.Trim();
+        // 单位是物料主档的事实，不是界面常量。占位单位会一路带到集成事件转换处才炸（库存腿无法换算），
+        // 那时已经是发布侧异常而非业务拒绝；在受理时就以业务错误回绝，让调用方能看懂并修正。
+        if (string.Equals(uomCode, MaterialIssueRequest.UnspecifiedUomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException("领料申请的单位不能是占位值，请按物料主档的基本计量单位提交。");
+        }
 
         var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
             .AsNoTracking()
