@@ -109,11 +109,30 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
         return new MrpRun(organizationId, environmentId, horizonStart, horizonEnd);
     }
 
-    public void Start(PlanningInputSnapshot snapshot)
+    /// <summary>
+    /// 排队 → 运行中（异步任务模式 #1306）：worker 在独立事务里先提交此状态，
+    /// 让前端轮询能看到「排队中 → 计算中 → 终态」的真实进程；
+    /// 若之后进程崩溃，DB 里遗留的 Running 记录由启动恢复扫描置为失败。
+    /// </summary>
+    public void MarkRunning()
     {
         if (Status != MrpRunStatus.Created)
         {
-            throw new InvalidOperationException("Only created MRP runs can be started.");
+            throw new InvalidOperationException("Only created MRP runs can be marked as running.");
+        }
+
+        StartedAtUtc = DateTimeOffset.UtcNow;
+        Status = MrpRunStatus.Running;
+    }
+
+    /// <summary>
+    /// 记录本次计算读取的输入快照元数据；只允许在运行中状态写入（计算事务内）。
+    /// </summary>
+    public void RecordInputSnapshot(PlanningInputSnapshot snapshot)
+    {
+        if (Status != MrpRunStatus.Running)
+        {
+            throw new InvalidOperationException("Input snapshot metadata can only be recorded on running MRP runs.");
         }
 
         ProductionEngineeringSnapshotSource = DemandPlanningText.Required(snapshot.ProductionEngineeringSnapshotSource);
@@ -131,8 +150,13 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
             InventorySnapshotSource);
         DemandCount = snapshot.DemandCount;
         AvailabilityCount = snapshot.AvailabilityCount;
-        StartedAtUtc = DateTimeOffset.UtcNow;
-        Status = MrpRunStatus.Running;
+    }
+
+    /// <summary>排队 → 运行中并记录快照元数据（同事务便捷路径，供种子与单测使用）。</summary>
+    public void Start(PlanningInputSnapshot snapshot)
+    {
+        MarkRunning();
+        RecordInputSnapshot(snapshot);
     }
 
     public void Complete(int suggestionCount)
@@ -148,9 +172,14 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
         this.AddDomainEvent(new MrpRunCompletedDomainEvent(this));
     }
 
+    public const int FailureReasonMaxLength = 512;
+
     /// <summary>
     /// 异步执行模式下，后台计算失败（或服务重启中断）时把 run 置为失败并记录可读原因。
     /// 允许从排队（Created）或运行中（Running）进入失败态；终态不可再迁移。
+    /// 有意不发领域事件（与 <see cref="Complete"/> 不对称）：MrpRunCompleted 集成事件的
+    /// 消费者只关心成功产出的建议，失败态目前没有任何下游消费者，读面轮询已足够；
+    /// 将来若有消费者依赖失败通知，再补 MrpRunFailedDomainEvent。
     /// </summary>
     public void Fail(string reason)
     {
@@ -166,6 +195,4 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
         CompletedAtUtc = DateTimeOffset.UtcNow;
         Status = MrpRunStatus.Failed;
     }
-
-    public const int FailureReasonMaxLength = 512;
 }

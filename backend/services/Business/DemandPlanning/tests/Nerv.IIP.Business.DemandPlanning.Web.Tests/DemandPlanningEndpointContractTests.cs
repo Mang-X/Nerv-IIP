@@ -459,10 +459,15 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
-    public async Task Mrp_run_worker_completes_queued_run_end_to_end()
+    public async Task Mrp_run_worker_completes_queued_run_end_to_end_and_commits_running_before_calculation()
     {
-        await using var provider = CreateWorkerProvider(sp =>
-            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()));
+        // 状态时序断言（PR #1310 审核整改）：worker 必须先在独立事务提交 Running，
+        // 再进入计算事务——快照拉取时从新 scope 读 DB 应当已看到 Running。
+        var observedStatusesDuringSnapshotFetch = new List<MrpRunStatus>();
+        await using var provider = CreateWorkerProvider(sp => new StatusObservingSnapshotProvider(
+            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            observedStatusesDuringSnapshotFetch));
         MrpRunId runId;
         using (var scope = provider.CreateScope())
         {
@@ -471,6 +476,9 @@ public sealed class DemandPlanningEndpointContractTests
             runId = await new RunMrpCommandHandler(dbContext)
                 .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
             await dbContext.SaveChangesAsync(CancellationToken.None);
+
+            // 受理提交后、worker 启动前：DB 呈现排队态（时序起点）。
+            Assert.Equal(MrpRunStatus.Created, dbContext.MrpRuns.AsNoTracking().Single(x => x.Id == runId).Status);
         }
 
         // 不显式入队：worker 启动恢复扫描必须接管遗留的排队记录（服务重启场景）。
@@ -482,7 +490,10 @@ public sealed class DemandPlanningEndpointContractTests
             Assert.Equal(MrpRunStatus.Completed, run.Status);
             Assert.NotNull(run.StartedAtUtc);
             Assert.NotNull(run.CompletedAtUtc);
+            Assert.True(run.StartedAtUtc <= run.CompletedAtUtc);
             Assert.Equal(2, run.SuggestionCount);
+            // 计算事务开始（快照拉取）时，独立 scope 已能读到已提交的 Running。
+            Assert.Equal([MrpRunStatus.Running], observedStatusesDuringSnapshotFetch);
             using var scope = provider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             Assert.Equal(2, dbContext.PlanningSuggestions.Count());
@@ -491,6 +502,28 @@ public sealed class DemandPlanningEndpointContractTests
         {
             await worker.StopAsync(CancellationToken.None);
         }
+    }
+
+    [Fact]
+    public async Task Mark_mrp_run_running_command_commits_running_state_and_rejects_replay()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var runId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new MarkMrpRunRunningCommandHandler(dbContext);
+
+        await handler.Handle(new MarkMrpRunRunningCommand(runId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var run = dbContext.MrpRuns.AsNoTracking().Single(x => x.Id == runId);
+        Assert.Equal(MrpRunStatus.Running, run.Status);
+        Assert.NotNull(run.StartedAtUtc);
+        var replay = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(new MarkMrpRunRunningCommand(runId), CancellationToken.None));
+        Assert.Contains("不能进入运行中", replay.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -596,6 +629,32 @@ public sealed class DemandPlanningEndpointContractTests
         services.AddSingleton<IMrpRunExecutionQueue, MrpRunExecutionQueue>();
         services.AddScoped(snapshotProviderFactory);
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// 在快照拉取瞬间从**独立 scope** 回读 run 的已提交状态：验证 worker 的 Running
+    /// 确实先于计算事务提交（而不是同事务内的未提交中间态）。
+    /// </summary>
+    private sealed class StatusObservingSnapshotProvider(
+        IPlanningInputSnapshotProvider inner,
+        IServiceScopeFactory scopeFactory,
+        List<MrpRunStatus> observedStatuses) : IPlanningInputSnapshotProvider
+    {
+        public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly horizonStart,
+            DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            using (var scope = scopeFactory.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                observedStatuses.Add(dbContext.MrpRuns.AsNoTracking().Single().Status);
+            }
+
+            return await inner.GetSnapshotAsync(organizationId, environmentId, horizonStart, horizonEnd, cancellationToken);
+        }
     }
 
     private sealed class ThrowingPlanningInputSnapshotProvider : IPlanningInputSnapshotProvider

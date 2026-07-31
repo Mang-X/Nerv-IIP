@@ -104,6 +104,25 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Mrp_run_mark_running_commits_state_before_snapshot_and_rejects_out_of_order_transitions()
+    {
+        var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        // 快照元数据只能写在运行中状态上（worker 两跳时序：先 Running 后计算）。
+        Assert.Throws<InvalidOperationException>(() =>
+            run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2)));
+
+        run.MarkRunning();
+        Assert.Equal(MrpRunStatus.Running, run.Status);
+        Assert.NotNull(run.StartedAtUtc);
+        Assert.Throws<InvalidOperationException>(run.MarkRunning);
+
+        run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        run.Complete(suggestionCount: 0);
+        Assert.Equal(MrpRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
     public void Mrp_run_fails_from_queued_or_running_with_clamped_reason_and_terminal_states_reject_failure()
     {
         var queued = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));

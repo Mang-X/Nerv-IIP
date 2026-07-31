@@ -93,6 +93,27 @@ public sealed class MrpRunWorker(
 
     private async Task ExecuteRunAsync(MrpRunId runId, CancellationToken cancellationToken)
     {
+        // 第一跳（独立事务）：先提交 Running，前端轮询才能看到「排队中 → 计算中 → 终态」，
+        // 且进程崩溃时 DB 里的 Running 记录让恢复扫描能判定「计算被中断」。
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(new MarkMrpRunRunningCommand(runId), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // 置运行中失败（已终态/记录缺失/基础设施故障）：跳过本条，不误写失败态；
+            // 仍处 Created 的记录由下次启动恢复扫描重新入队。
+            logger.LogError(exception, "Failed to mark MRP run {RunId} as running; skipping execution.", runId);
+            return;
+        }
+
+        // 第二跳（计算事务）：成功置 Completed；失败另起事务置 Failed。
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();

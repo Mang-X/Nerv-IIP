@@ -39,8 +39,40 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext)
 }
 
 /// <summary>
+/// 把一次排队中的 MRP 运行置为运行中（worker 在计算事务之前的独立事务）：
+/// 先提交 Running 再计算，前端轮询才能看到「排队中 → 计算中 → 终态」的真实进程，
+/// 进程崩溃时 DB 里遗留的 Running 记录也让启动恢复扫描有据可依。
+/// </summary>
+public sealed record MarkMrpRunRunningCommand(MrpRunId RunId) : ICommand;
+
+public sealed class MarkMrpRunRunningCommandValidator : AbstractValidator<MarkMrpRunRunningCommand>
+{
+    public MarkMrpRunRunningCommandValidator()
+    {
+        RuleFor(x => x.RunId).NotNull();
+    }
+}
+
+public sealed class MarkMrpRunRunningCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<MarkMrpRunRunningCommand>
+{
+    public async Task Handle(MarkMrpRunRunningCommand request, CancellationToken cancellationToken)
+    {
+        var run = await dbContext.MrpRuns.FirstOrDefaultAsync(x => x.Id == request.RunId, cancellationToken)
+            ?? throw new KnownException($"MRP 运行不存在：{request.RunId}");
+        if (run.Status != MrpRunStatus.Created)
+        {
+            throw new KnownException($"MRP 运行当前状态为 {run.Status}，不能进入运行中。");
+        }
+
+        run.MarkRunning();
+    }
+}
+
+/// <summary>
 /// 后台执行一次已受理的 MRP 运行：拉取输入快照、展开计算、写入建议并置完成态。
-/// 与受理事务分离；失败由调用方（worker）另起事务用 <see cref="MarkMrpRunFailedCommand"/> 置失败态。
+/// 与受理事务分离；worker 先经 <see cref="MarkMrpRunRunningCommand"/> 独立事务置运行中，
+/// 失败由调用方（worker）另起事务用 <see cref="MarkMrpRunFailedCommand"/> 置失败态。
 /// </summary>
 public sealed record ExecuteMrpRunCommand(MrpRunId RunId) : ICommand<ExecuteMrpRunCommandResult>;
 
@@ -68,9 +100,15 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
     {
         var run = await dbContext.MrpRuns.FirstOrDefaultAsync(x => x.Id == request.RunId, cancellationToken)
             ?? throw new KnownException($"MRP 运行不存在：{request.RunId}");
-        if (run.Status != MrpRunStatus.Created)
+        // 常规路径由 worker 先置 Running；Created 也接受（直接调用/单测路径），在本事务内补置。
+        if (run.Status is not (MrpRunStatus.Created or MrpRunStatus.Running))
         {
             throw new KnownException($"MRP 运行当前状态为 {run.Status}，不能重复执行。");
+        }
+
+        if (run.Status == MrpRunStatus.Created)
+        {
+            run.MarkRunning();
         }
 
         var snapshot = await snapshotProvider.GetSnapshotAsync(
@@ -87,7 +125,7 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
             .ToArray();
         var inputCoverageStart = snapshot.Demands.Count == 0 ? null : (DateOnly?)snapshot.Demands.Min(x => x.DueDate);
         var inputCoverageEnd = snapshot.Demands.Count == 0 ? null : (DateOnly?)snapshot.Demands.Max(x => x.DueDate);
-        run.Start(new PlanningInputSnapshot(
+        run.RecordInputSnapshot(new PlanningInputSnapshot(
             snapshot.ProductionEngineeringSnapshotSource,
             snapshot.InventorySnapshotSource,
             snapshot.Demands.Count,
