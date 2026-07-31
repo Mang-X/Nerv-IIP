@@ -1768,7 +1768,9 @@ public sealed record BusinessConsoleAssignQualityInspectionTaskRequest(
     string? AssignedTeamId,
     string? Reason,
     string IdempotencyKey,
-    long ExpectedVersion);
+    long ExpectedVersion,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessQualityAssignInspectionTaskRequest(
     string OrganizationId,
@@ -1809,6 +1811,15 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     [property: RouteParam] string InspectionTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
+    string? DispositionReason,
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string IdempotencyKey);
+
+public sealed record BusinessQualityCreateInspectionRecordFromTaskRequest(
+    string InspectionTaskId,
+    string OrganizationId,
+    string EnvironmentId,
     string InspectorUserId,
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,

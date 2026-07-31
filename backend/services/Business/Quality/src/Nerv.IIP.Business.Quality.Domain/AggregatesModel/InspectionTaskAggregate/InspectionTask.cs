@@ -170,8 +170,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         long expectedVersion,
         DateTimeOffset claimedAtUtc)
     {
-        EnsurePending();
-        EnsureExpectedVersion(expectedVersion);
         var normalizedUserId = Required(inspectorUserId);
         if (AssignedUserId is not null
             && !string.Equals(AssignedUserId, normalizedUserId, StringComparison.Ordinal))
@@ -179,6 +177,8 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             throw new InspectionTaskAlreadyClaimedException();
         }
 
+        EnsurePending();
+        EnsureExpectedVersion(expectedVersion);
         if (AssignedTeamId is not null
             && !authorizedTeamIds.Any(teamId =>
                 string.Equals(Optional(teamId), AssignedTeamId, StringComparison.Ordinal)))

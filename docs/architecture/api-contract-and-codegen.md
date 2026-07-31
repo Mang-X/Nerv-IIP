@@ -163,9 +163,9 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `createBusinessConsoleQualityInspectionRecord` | `POST /api/business-console/v1/quality/inspection-records` | 创建检验记录。 |
 | `listBusinessConsoleQualityInspectionTasks` | `GET /api/business-console/v1/quality/inspection-tasks` | 按可信主体解析的 Self/Team/Organization 范围查询检验任务；来源、关键字、超期与状态过滤先于 `total` 和稳定 offset 分页。 |
 | `getBusinessConsoleQualityInspectionTask` | `GET /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}` | 在同一主体范围内回读任务、检验方案抽样/特性、归属、版本、`allowedActions` 和阻塞原因。 |
-| `assignBusinessConsoleQualityInspectionTask` | `POST /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment` | 管理权限下派工或转派；目标人员/班组从 MasterData 权威目录校验，转派必须给出原因，并以版本和幂等键返回耐久回执。 |
+| `assignBusinessConsoleQualityInspectionTask` | `POST /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment` | 管理权限下派工或转派；Gateway 先以可信主体解析选定 Organization/Team/Self 范围并回读目标任务，DenyAll 或目标越界均在写入前 fail closed；目标人员/班组从 MasterData 权威目录校验，转派必须给出原因，并以版本和幂等键返回耐久回执。 |
 | `claimBusinessConsoleQualityInspectionTask` | `POST /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/claim` | 当前主体原子领取本人或授权班组的 pending 任务；无权、生命周期冲突和已被他人领取分别返回 403/409/422。 |
-| `createBusinessConsoleQualityInspectionRecordFromTask` | `POST /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record` | 仅当前已领取检验员可提交；可信 principal 作为 inspector 审计，完成态保留幂等回放且不可再次操作。 |
+| `createBusinessConsoleQualityInspectionRecordFromTask` | `POST /api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record` | 仅当前已领取检验员可提交；公开请求不接受 `inspectorUserId`，Gateway 以认证 principal 注入内部下游 DTO，并强制携带 organization/environment 供 Quality 精确租户校验；完成态保留幂等回放且不可再次操作。 |
 | `listBusinessConsoleQualityReasonCodes` | `GET /api/business-console/v1/quality/reason-codes` | 查询质量原因/不良代码目录，支持启用状态、分组和关键字过滤。 |
 | `getBusinessConsoleQualityReasonCode` | `GET /api/business-console/v1/quality/reason-codes/{reasonCode}` | 查询质量原因详情。 |
 | `createBusinessConsoleQualityReasonCode` | `POST /api/business-console/v1/quality/reason-codes` | 创建质量原因，包含分组、严重度和默认处置。 |

@@ -270,7 +270,6 @@ public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidato
         RuleFor(x => x.InspectionTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
@@ -639,12 +638,16 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleAssignQualityInspectionTaskRequest, BusinessConsoleQualityInspectionTaskAssignmentResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionPlansManage)
 {
     protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
     protected override string OrganizationId(BusinessConsoleAssignQualityInspectionTaskRequest request) =>
         request.OrganizationId;
@@ -663,8 +666,26 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        await EnsureAssignmentTargetsAsync(request, cancellationToken);
         var inspectionTaskId = Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.QualityInspectionPlansManage,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        _ = await quality.GetInspectionTaskAsync(
+            tokenProvider.BearerToken,
+            inspectionTaskId,
+            new BusinessQualityInspectionTaskDetailRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                scope.Kind,
+                RequireAuthorizedPrincipalId(),
+                scope.TeamIds),
+            cancellationToken);
+        await EnsureAssignmentTargetsAsync(request, cancellationToken);
         return await quality.AssignInspectionTaskAsync(
             tokenProvider.BearerToken,
             inspectionTaskId,
@@ -826,11 +847,15 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
         return quality.CreateInspectionRecordFromTaskAsync(
             tokenProvider.BearerToken,
             inspectionTaskId,
-            request with
-            {
-                InspectionTaskId = inspectionTaskId,
-                InspectorUserId = RequireAuthorizedPrincipalId(),
-            },
+            new BusinessQualityCreateInspectionRecordFromTaskRequest(
+                inspectionTaskId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                RequireAuthorizedPrincipalId(),
+                request.ResultLines,
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds,
+                request.IdempotencyKey),
             cancellationToken);
     }
 }

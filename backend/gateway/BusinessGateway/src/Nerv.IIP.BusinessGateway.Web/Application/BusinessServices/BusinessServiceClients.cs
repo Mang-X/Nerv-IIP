@@ -351,7 +351,7 @@ public interface IBusinessQualityClient
     Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
-        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        BusinessQualityCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
@@ -3143,7 +3143,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     public async Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
-        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        BusinessQualityCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamCreateInspectionRecordFromTaskResponse>(
@@ -3152,6 +3152,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/inspection-record",
             new DownstreamCreateInspectionRecordFromTaskRequest(
                 inspectionTaskId,
+                request.OrganizationId,
+                request.EnvironmentId,
                 request.InspectorUserId,
                 request.ResultLines?.Select(ToDownstreamLine).ToArray(),
                 request.DispositionReason,
@@ -3723,6 +3725,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private sealed record DownstreamCreateInspectionRecordFromTaskRequest(
         string InspectionTaskId,
+        string OrganizationId,
+        string EnvironmentId,
         string InspectorUserId,
         IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
         string? DispositionReason,

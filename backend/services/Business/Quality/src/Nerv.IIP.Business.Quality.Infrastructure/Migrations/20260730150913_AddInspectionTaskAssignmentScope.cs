@@ -40,7 +40,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 table: "inspection_tasks",
                 type: "bigint",
                 nullable: false,
-                defaultValue: 0L,
+                defaultValue: 1L,
                 comment: "Optimistic version advanced for assignment and lifecycle changes.");
 
             migrationBuilder.CreateTable(

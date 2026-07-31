@@ -7431,6 +7431,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "requestBody": {
@@ -36619,16 +36635,9 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "inspectorUserId",
           "idempotencyKey"
         ],
         "properties": {
-          "inspectorUserId": {
-            "type": "string",
-            "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
-          },
           "resultLines": {
             "type": "array",
             "nullable": true,

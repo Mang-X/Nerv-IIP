@@ -148,6 +148,29 @@ public sealed class InspectionTaskTests
     }
 
     [Fact]
+    public void Claim_ShouldReportAlreadyClaimedWhenAnotherInspectorRetriesAfterClaim()
+    {
+        var task = NewTask();
+        task.Assign(
+            null,
+            "TEAM-QA-01",
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:20:00Z"));
+        task.Claim(
+            "qa-user-001",
+            ["TEAM-QA-01"],
+            expectedVersion: 2,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Throws<InspectionTaskAlreadyClaimedException>(() =>
+            task.Claim(
+                "qa-user-002",
+                ["TEAM-QA-01"],
+                expectedVersion: 3,
+                DateTimeOffset.Parse("2026-07-05T08:31:00Z")));
+    }
+
+    [Fact]
     public void EnsureAssignedInspector_ShouldRejectCrossInspectorCompletion()
     {
         var task = NewTask();

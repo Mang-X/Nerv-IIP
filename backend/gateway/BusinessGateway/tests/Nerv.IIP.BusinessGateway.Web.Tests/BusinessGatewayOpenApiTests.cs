@@ -101,6 +101,23 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment", "post", "assignBusinessConsoleQualityInspectionTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/claim", "post", "claimBusinessConsoleQualityInspectionTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
+        var submitOperation = paths
+            .GetProperty("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record")
+            .GetProperty("post");
+        var submitSchemaRef = submitOperation
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString()!;
+        var submitSchemaName = submitSchemaRef.Split('/')[^1];
+        var submitProperties = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(submitSchemaName)
+            .GetProperty("properties");
+        Assert.False(submitProperties.TryGetProperty("inspectorUserId", out _));
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "idempotencyKey", 150);
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
         AssertOperationId(paths, "/api/business-console/v1/quality/measuring-devices", "get", "listBusinessConsoleQualityMeasuringDevices");

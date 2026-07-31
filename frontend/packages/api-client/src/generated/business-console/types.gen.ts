@@ -2077,7 +2077,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest = {
-    inspectorUserId: string;
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
@@ -10935,6 +10934,8 @@ export type AssignBusinessConsoleQualityInspectionTaskData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment';
 };

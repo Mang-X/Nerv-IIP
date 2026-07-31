@@ -94,6 +94,10 @@ public sealed class GetInspectionTaskQueryHandler(ApplicationDbContext dbContext
             ? []
             : task.Status == InspectionTaskStatuses.Completed
                 ? ["task-completed"]
+                : task.AssignedUserId is not null && !actorOwnsTask
+                    ? task.Status == InspectionTaskStatuses.InProgress
+                        ? new[] { "task-already-claimed" }
+                        : new[] { "task-assigned-to-another-inspector" }
                 : task.AssignedUserId is null && task.AssignedTeamId is null
                     ? ["task-unassigned"]
                     : ["task-outside-selected-work-scope"];

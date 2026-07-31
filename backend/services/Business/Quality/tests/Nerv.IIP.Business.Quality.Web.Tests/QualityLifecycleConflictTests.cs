@@ -52,7 +52,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1"),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1", "org-001", "env-dev"),
                 CancellationToken.None));
 
         Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -73,7 +73,7 @@ public sealed class QualityLifecycleConflictTests
         await dbContext.SaveChangesAsync();
 
         var result = await CreateTaskHandler(dbContext).Handle(
-            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-2"),
+            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-2", "org-001", "env-dev"),
             CancellationToken.None);
 
         Assert.Equal(record.Id, result.InspectionRecordId);
@@ -95,7 +95,7 @@ public sealed class QualityLifecycleConflictTests
         await dbContext.SaveChangesAsync();
 
         var result = await CreateTaskHandler(dbContext).Handle(
-            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-3"),
+            new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-3", "org-001", "env-dev"),
             CancellationToken.None);
 
         Assert.Equal(record.Id, result.InspectionRecordId);
@@ -122,7 +122,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-4"),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-4", "org-001", "env-dev"),
                 CancellationToken.None));
 
         Assert.Equal("create-inspection-record-from-task", exception.Action);
@@ -144,7 +144,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             CreateTaskHandler(dbContext).Handle(
-                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-5"),
+                new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-5", "org-001", "env-dev"),
                 CancellationToken.None));
 
         Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -159,7 +159,7 @@ public sealed class QualityLifecycleConflictTests
         dbContext.InspectionTasks.Add(task);
         await dbContext.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<KnownException>(() =>
+        var exception = await Assert.ThrowsAsync<QualityAuthorizationException>(() =>
             CreateTaskHandler(dbContext).Handle(
                 new CreateInspectionRecordFromTaskCommand(
                     task.Id,
@@ -172,6 +172,7 @@ public sealed class QualityLifecycleConflictTests
                     "env-a"),
                 CancellationToken.None));
 
+        Assert.Equal("task-tenant-mismatch", exception.Reason);
         Assert.Equal(InspectionTaskStatuses.Pending, task.Status);
         Assert.Null(task.InspectionRecordId);
         Assert.Empty(dbContext.InspectionRecords);
@@ -369,6 +370,60 @@ public sealed class QualityLifecycleConflictTests
         Assert.DoesNotContain(InspectionTaskStatuses.InProgress, body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("authorization", 403, "task-outside-selected-work-scope")]
+    [InlineData("lifecycle", 409, "lifecycle-conflict")]
+    [InlineData("already-claimed", 422, "task-already-claimed")]
+    public async Task Claim_endpoint_preserves_authorization_lifecycle_and_already_claimed_statuses(
+        string failureKind,
+        int expectedStatusCode,
+        string expectedSafeCode)
+    {
+        Exception exception = failureKind switch
+        {
+            "authorization" => QualityAuthorizationException.Forbidden("task-outside-selected-work-scope"),
+            "lifecycle" => new QualityLifecycleConflictException("claim", InspectionTaskStatuses.Completed),
+            _ => new QualityUnprocessableException("task-already-claimed"),
+        };
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_claim;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "test-internal-service-token",
+                    }));
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new ExceptionSender(exception));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var taskId = Guid.CreateVersion7();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/quality/inspection-tasks/{taskId}/claim",
+            new
+            {
+                inspectionTaskId = taskId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                actorPrincipalId = "inspector-002",
+                authorizedTeamIds = new[] { "TEAM-QA" },
+                idempotencyKey = "quality-claim-second",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(expectedStatusCode, (int)response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains($"\"message\":\"{expectedSafeCode}\"", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CreateInspectionRecordFromTaskCommandHandler CreateTaskHandler(ApplicationDbContext dbContext)
     {
         return new CreateInspectionRecordFromTaskCommandHandler(
@@ -514,6 +569,33 @@ public sealed class QualityLifecycleConflictTests
                     "create-inspection-record-from-task",
                     InspectionTaskStatuses.InProgress));
         }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ExceptionSender(Exception exception) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<TResponse>(exception);
 
         public Task Send<TRequest>(
             TRequest request,

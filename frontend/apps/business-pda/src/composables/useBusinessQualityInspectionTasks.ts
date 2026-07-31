@@ -275,7 +275,7 @@ export function useBusinessQualityInspectionTasks() {
 
   /**
    * 提交检验结果。`resultLines` 由 `@nerv-iip/business-core` 归一（业务口径），此处仅注入
-   * org/env（query）与 `inspectorUserId`（body）——调用方不可覆盖检验员身份。
+   * org/env（query）；检验员身份只由网关从认证主体注入，不进入公开请求体。
    *
    * `dispositionReason`（处置原因）：检验结果**不合格时后端必填**（`InspectionRecord` 领域校验），
    * 合格时可省。由调用页在判不合格时收集并传入。
@@ -346,7 +346,6 @@ export function useBusinessQualityInspectionTasks() {
             environmentId: environmentId.value,
           },
           body: {
-            inspectorUserId: inspectorUserId.value,
             // business-core 的行结构与 api-client `InspectionCharacteristicResult` 同形，直接透传。
             resultLines: resultLines as BusinessConsoleInspectionCharacteristicResult[],
             ...(reason ? { dispositionReason: reason } : {}),

@@ -34,8 +34,8 @@ public sealed record CreateInspectionRecordFromTaskCommand(
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
     string? IdempotencyKey,
-    string? OrganizationId = null,
-    string? EnvironmentId = null) : ICommand<CreateInspectionRecordFromTaskResult>;
+    string OrganizationId,
+    string EnvironmentId) : ICommand<CreateInspectionRecordFromTaskResult>;
 
 public sealed class CreateInspectionRecordFromTaskCommandLock : ICommandLock<CreateInspectionRecordFromTaskCommand>
 {
@@ -54,6 +54,8 @@ public sealed class CreateInspectionRecordFromTaskCommandValidator : AbstractVal
     {
         RuleFor(x => x.InspectionTaskId).NotEmpty();
         RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ResultLines).NotEmpty();
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
@@ -74,12 +76,10 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
     {
         var task = await inspectionTaskRepository.GetAsync(request.InspectionTaskId, cancellationToken)
             ?? throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
-        if ((request.OrganizationId is not null
-                && !string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal))
-            || (request.EnvironmentId is not null
-                && !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)))
+        if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
-            throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
+            throw QualityAuthorizationException.Forbidden("task-tenant-mismatch");
         }
         var replay = await TryGetReplayAsync(task, request, cancellationToken);
         if (replay is not null)

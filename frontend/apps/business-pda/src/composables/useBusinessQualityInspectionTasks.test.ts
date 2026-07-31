@@ -194,7 +194,7 @@ describe('useBusinessQualityInspectionTasks', () => {
     })
   })
 
-  it('injects inspectorUserId (principalId) + org/env into the submit call — caller only supplies lines', async () => {
+  it('keeps inspector identity out of the public submit body and forwards org/env', async () => {
     seedPrincipal()
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
@@ -204,7 +204,7 @@ describe('useBusinessQualityInspectionTasks', () => {
     const arg = coladaState.submit.mock.calls[0][0]
     expect(arg.path).toEqual({ inspectionTaskId: 'TASK-1' })
     expect(arg.query).toEqual({ organizationId: 'org-001', environmentId: 'env-dev' })
-    expect(arg.body.inspectorUserId).toBe('user-admin')
+    expect(arg.body).not.toHaveProperty('inspectorUserId')
     expect(arg.body.resultLines).toEqual(LINES)
     expect(arg.body.idempotencyKey).toMatch(/^quality-submit-/)
   })

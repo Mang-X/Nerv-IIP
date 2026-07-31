@@ -35,8 +35,8 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds,
     string IdempotencyKey,
-    string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string OrganizationId,
+    string EnvironmentId);
 
 public sealed record GetInspectionTaskRequest(
     InspectionTaskId InspectionTaskId,
@@ -71,8 +71,8 @@ public sealed class CreateInspectionRecordFromTaskRequestValidator
 {
     public CreateInspectionRecordFromTaskRequestValidator()
     {
-        RuleFor(x => x.OrganizationId).MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }

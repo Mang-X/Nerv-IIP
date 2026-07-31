@@ -180,6 +180,10 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
                 ? []
                 : x.Status == "completed"
                     ? ["task-completed"]
+                    : x.AssignedUserId is not null && !actorOwnsTask
+                        ? x.Status == "in-progress"
+                            ? new[] { "task-already-claimed" }
+                            : new[] { "task-assigned-to-another-inspector" }
                     : x.AssignedUserId is null && x.AssignedTeamId is null
                         ? ["task-unassigned"]
                         : ["task-outside-selected-work-scope"];
