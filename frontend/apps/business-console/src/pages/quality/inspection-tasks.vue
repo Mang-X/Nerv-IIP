@@ -21,6 +21,7 @@ import {
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { AlertCircleIcon, ArrowRightIcon, ClipboardCheckIcon, RefreshCwIcon } from '@lucide/vue'
+import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -197,12 +198,18 @@ function formatDateTime(value?: string | null) {
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(date)
 }
 
+/**
+ * 加载失败的行内文案。**按状态码判 403**，不能按 `error instanceof Error` 判：
+ * generated client 在 `throwOnError` 下抛的是解析后的响应体对象，那条判定对真实 403 永远不成立，
+ * 「无权限」空态会退化成普通失败态（MAN-698 台账 / #1298 规格轴）。
+ * 其余失败交给 `inlineErrorMessage` 走分层透传（服务端中文理由原样上屏、英文 HTTP 文案映射人话）。
+ */
 function formatError(errorValue: unknown) {
   if (!errorValue) return ''
-  if (errorValue instanceof Error && errorValue.message.includes('403')) {
-    return '当前账号没有查看质检待检任务的权限。'
+  if (isForbiddenError(errorValue)) {
+    return '当前账号没有查看质检待检任务的权限，请联系管理员申请质量模块权限。'
   }
-  return '待检任务加载失败，请稍后重试。'
+  return inlineErrorMessage(errorValue, '待检任务加载失败，请稍后重试。')
 }
 
 function sourceDocumentRoute(task: BusinessConsoleQualityInspectionTaskItem) {

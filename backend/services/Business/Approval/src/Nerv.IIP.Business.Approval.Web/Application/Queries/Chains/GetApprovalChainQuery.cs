@@ -48,7 +48,7 @@ public sealed class GetApprovalChainQueryHandler(ApplicationDbContext dbContext)
             .Include(x => x.Steps)
             .Include(x => x.Decisions)
             .SingleOrDefaultAsync(x => x.Id == request.ChainId, cancellationToken)
-            ?? throw new KnownException("Approval chain was not found.");
+            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
         return new ApprovalChainResponse(
             chain.Id.ToString(),
             chain.OrganizationId,

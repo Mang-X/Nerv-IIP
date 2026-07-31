@@ -41,7 +41,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         }
         catch (DbUpdateConcurrencyException)
         {
-            throw new KnownException("Approval chain was updated concurrently. Reload the chain and retry the decision.");
+            throw new KnownException("该审批单已被其他人同时处理，请刷新后重新裁决。");
         }
     }
 

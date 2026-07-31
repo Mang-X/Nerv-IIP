@@ -271,7 +271,8 @@ public sealed class InspectionAggregateTests
             samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
         plan.Activate();
 
-        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.CreateFromPlan(
+        // 缺必检特性同样是录入问题（领域 400 中文），不是 500。
+        var exception = Assert.Throws<KnownException>(() => InspectionRecord.CreateFromPlan(
             plan,
             "receiving",
             "purchase-receipt",
@@ -402,8 +403,13 @@ public sealed class InspectionAggregateTests
             InspectionSamplingPlan.Create("general-ii", "2.5", sampleSize: 5, acceptanceNumber: 0, rejectionNumber: 1));
     }
 
+    /// <summary>
+    /// MAN-698 台账 #36（#1338 同型）：送检数量少于抽样方案要求时抛 InvalidOperationException 落成 500，
+    /// 界面只剩「服务暂时不可用」。这是送检/录入问题，应当是领域 400 + 中文可行动文案，
+    /// 并且报的是按批量解析出的抽样量（Z1.4），不是方案上声明的那个数。
+    /// </summary>
     [Fact]
-    public void Planned_record_sample_size_error_reports_resolved_z14_sample_size()
+    public void Planned_record_sample_size_error_reports_resolved_z14_sample_size_in_chinese()
     {
         var plan = NewPlan();
         plan.AddCharacteristic(
@@ -421,7 +427,7 @@ public sealed class InspectionAggregateTests
             samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 200, acceptanceNumber: 5, rejectionNumber: 6));
         plan.Activate();
 
-        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.CreateFromPlan(
+        var exception = Assert.Throws<KnownException>(() => InspectionRecord.CreateFromPlan(
             plan,
             "receiving",
             "purchase-receipt",
@@ -438,8 +444,13 @@ public sealed class InspectionAggregateTests
             dispositionReason: "AQL rejection number reached",
             dispositionAttachmentFileIds: []));
 
-        Assert.Contains("requires sample size 20", exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("requires sample size 200", exception.Message, StringComparison.Ordinal);
+        // 报的是 Z1.4 按批量解析出的抽样量 20，而不是方案上声明的 200（口径不变，只把文案换成中文）。
+        Assert.Contains("需检验 20 件", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("200", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("appearance", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("送检数量不足", exception.Message, StringComparison.Ordinal);
+        // 英文生码是本条要根除的形态。
+        Assert.DoesNotContain("sample size", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

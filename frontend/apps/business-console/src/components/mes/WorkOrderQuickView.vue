@@ -115,7 +115,9 @@ function openFull() {
             >{{ blockingReasons.length }} 项卡点，需先处理：</span
           >
           <span v-for="(reason, i) in blockingReasons" :key="i" class="text-muted-foreground"
-            >· {{ reason.label }}（{{ reason.nextStep }}）</span
+            >· {{ reason.label }}{{ reason.detail ? `：${reason.detail}` : '' }}（{{
+              reason.nextStep
+            }}）</span
           >
         </div>
 

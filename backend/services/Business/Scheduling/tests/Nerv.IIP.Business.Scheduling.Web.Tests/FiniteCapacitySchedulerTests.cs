@@ -1179,7 +1179,8 @@ public class FiniteCapacitySchedulerTests
             x.OrderId == "WO-SNAPSHOT-001"
             && x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
-            && x.Message == "物料未齐套（material-shortage）：开工前需先完成备料。");
+            // 裸码 material-shortage 不再直出给用户:已知裸码翻成中文(MAN-698 台账 #35 遗留同型)。
+            && x.Message == "物料未齐套（物料缺料）：开工前需先完成备料。");
         Assert.Empty(plan.MaterialRisks ?? []);
         Assert.Contains(plan.Conflicts, x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"

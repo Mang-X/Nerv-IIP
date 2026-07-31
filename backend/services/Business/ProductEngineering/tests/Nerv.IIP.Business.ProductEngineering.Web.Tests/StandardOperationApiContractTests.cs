@@ -81,7 +81,7 @@ public sealed class StandardOperationApiContractTests
             NewCreateCommand("OP-MIX"),
             CancellationToken.None));
 
-        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("标准工序 OP-MIX 已存在", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
