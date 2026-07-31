@@ -42,7 +42,7 @@ public sealed class GetInspectionRecordQueryHandler(ApplicationDbContext dbConte
         }
 
         var record = await query.FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Inspection record '{request.InspectionRecordId}' was not found.");
+            ?? throw new KnownException($"找不到检验记录 {request.InspectionRecordId}，请在检验记录页刷新并确认记录编号后重试。");
         return new InspectionRecordResponse(
             record.Id,
             record.OrganizationId,

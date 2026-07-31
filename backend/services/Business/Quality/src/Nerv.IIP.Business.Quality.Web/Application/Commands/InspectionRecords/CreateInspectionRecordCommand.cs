@@ -99,7 +99,8 @@ public sealed class CreateInspectionRecordCommandHandler(
         {
             if (existing.InspectedQuantity != request.InspectedQuantity)
             {
-                throw new KnownException("Inspection source document and SKU already have a record with a different inspected quantity.");
+                throw new KnownException(
+                    $"来源单据 {request.SourceDocumentId} 与 SKU {request.SkuCode} 已有检验记录，原检验数量为 {existing.InspectedQuantity} 件，本次为 {request.InspectedQuantity} 件，请使用相同数量重试；如需更正请在检验记录页发起复检。");
             }
 
             await RejectMatchingTaskBypassAsync(request, cancellationToken);
@@ -135,7 +136,7 @@ public sealed class CreateInspectionRecordCommandHandler(
                     request.EnvironmentId,
                     request.InspectionPlanId,
                     cancellationToken)
-                ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
+                ?? throw new KnownException($"找不到检验方案 {request.InspectionPlanId}，请在检验方案页确认方案已建档并启用后重试。");
             var uomConversions = await uomConversionClient.GetConversionsAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -184,15 +185,24 @@ public sealed class CreateInspectionRecordCommandHandler(
     private async Task<InspectionMeasuringDeviceUsage?> ResolveMeasuringDeviceUsageAsync(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
     {
         if (request.MeasuringDeviceId is null) return null;
-        if (dbContext is null) throw new KnownException("Measuring-device traceability is unavailable.");
+        if (dbContext is null)
+        {
+            throw new KnownException(
+                $"来源单据 {request.SourceDocumentId} 的 SKU {request.SkuCode} 需要测量设备追溯，但质量服务未启用该配置，请在质量配置页启用后重试。");
+        }
         var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken)
-            ?? throw new KnownException("Measuring device was not found.");
+            ?? throw new KnownException(
+                $"找不到测量设备 {request.MeasuringDeviceId}，请在测量设备页确认设备已建档后重试。");
         if (device.OrganizationId != request.OrganizationId || device.EnvironmentId != request.EnvironmentId)
-            throw new KnownException("Measuring device does not belong to the inspection scope.");
+        {
+            throw new KnownException(
+                $"测量设备 {request.MeasuringDeviceId} 不属于来源单据 {request.SourceDocumentId} 的组织和环境范围，请选择同一质量范围内的设备后重试。");
+        }
         var usage = InspectionMeasuringDeviceUsage.Create(device, timeProvider.GetUtcNow());
         var policy = configuration?["Quality:MeasuringDevice:ExpiredInspectionPolicy"] ?? "warn";
         if (MeasuringDeviceInspectionPolicy.Blocks(policy, usage.CalibrationState))
-            throw new KnownException("The selected measuring device has expired calibration and inspection entry is blocked.");
+            throw new KnownException(
+                $"测量设备 {request.MeasuringDeviceId} 的校准已过期，来源单据 {request.SourceDocumentId} 的检验录入已阻止，请在测量设备页完成校准后再提交。");
         return usage;
     }
 
@@ -236,18 +246,21 @@ public sealed class CreateInspectionRecordCommandHandler(
             cancellationToken);
         if (!verification.Exists)
         {
-            throw new KnownException(verification.Message ?? $"Inspection source document '{request.SourceDocumentId}' was not found.");
+            throw new KnownException(
+                $"找不到来源单据 {request.SourceDocumentId} 或该单据不属于当前质量范围，请在收货单页面确认单据和 SKU {request.SkuCode} 后重试。");
         }
 
         if (!string.IsNullOrWhiteSpace(verification.SkuCode)
             && !string.Equals(verification.SkuCode, request.SkuCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new KnownException("Inspection source document SKU does not match the inspected SKU.");
+            throw new KnownException(
+                $"来源单据 {request.SourceDocumentId} 上的 SKU {verification.SkuCode} 与本次检验 SKU {request.SkuCode} 不一致，请返回收货单页面选择正确 SKU 后重试。");
         }
 
         if (verification.Quantity is { } sourceQuantity && request.InspectedQuantity > sourceQuantity)
         {
-            throw new KnownException("Inspection quantity cannot exceed the source document quantity.");
+            throw new KnownException(
+                $"来源单据 {request.SourceDocumentId} 的 SKU {request.SkuCode} 可检验数量仅为 {sourceQuantity} 件，本次提交 {request.InspectedQuantity} 件，请调整检验数量后重试。");
         }
     }
 }

@@ -59,12 +59,13 @@ public sealed class CreateReinspectionCommandHandler(
                 request.EnvironmentId,
                 cancellationToken)
             ?? throw new KnownException(
-                $"Inspection record '{request.ReinspectionOfInspectionRecordId}' was not found.");
+                $"找不到检验记录 {request.ReinspectionOfInspectionRecordId}，请在检验记录页确认记录编号后重试。");
         // Translate the aggregate's terminal-pass invariant into the service's stable known-error contract.
         // InspectionRecord.Reinspect repeats the guard for non-HTTP callers that bypass this handler.
         if (string.Equals(previous.Result, InspectionRecordResults.Passed, StringComparison.Ordinal))
         {
-            throw new KnownException("Passed inspection records are terminal and cannot be reinspected.");
+            throw new KnownException(
+                $"检验记录 {previous.Id} 已为合格结果，不能重复复检；如需其他检验请在检验记录页新建独立检验。");
         }
 
         var existing = await inspectionRecordRepository.FindByReinspectionOfAsync(
@@ -83,14 +84,17 @@ public sealed class CreateReinspectionCommandHandler(
                     previous.InspectionPlanId,
                     cancellationToken)
                 ?? throw new KnownException(
-                    $"Inspection plan '{previous.InspectionPlanId}' was not found.");
+                    $"找不到检验记录 {previous.Id} 引用的检验方案 {previous.InspectionPlanId}，请在检验方案页确认方案已建档并启用后重试。");
         var conversions = plan is null
             ? []
             : await uomConversionClient.GetConversionsAsync(
                 previous.OrganizationId,
                 previous.EnvironmentId,
                 cancellationToken);
-        var measuringDeviceUsage = await ResolveMeasuringDeviceUsageAsync(request, cancellationToken);
+        var measuringDeviceUsage = await ResolveMeasuringDeviceUsageAsync(
+            request,
+            previous.Id,
+            cancellationToken);
         var resultLines = request.ResultLines.Select(line => new InspectionResultLineInput(
             line.CharacteristicCode,
             line.ObservedValue,
@@ -115,6 +119,7 @@ public sealed class CreateReinspectionCommandHandler(
 
     private async Task<InspectionMeasuringDeviceUsage?> ResolveMeasuringDeviceUsageAsync(
         CreateReinspectionCommand request,
+        InspectionRecordId previousInspectionRecordId,
         CancellationToken cancellationToken)
     {
         if (request.MeasuringDeviceId is null)
@@ -124,17 +129,20 @@ public sealed class CreateReinspectionCommandHandler(
 
         if (dbContext is null)
         {
-            throw new KnownException("Measuring-device traceability is unavailable.");
+            throw new KnownException(
+                $"测量设备 {request.MeasuringDeviceId} 的追溯配置暂不可用，请在质量配置页启用测量设备追溯后重试。");
         }
 
         var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(
                 x => x.Id == request.MeasuringDeviceId,
                 cancellationToken)
-            ?? throw new KnownException("Measuring device was not found.");
+            ?? throw new KnownException(
+                $"找不到测量设备 {request.MeasuringDeviceId}，请在测量设备页确认设备已建档后重试。");
         if (device.OrganizationId != request.OrganizationId
             || device.EnvironmentId != request.EnvironmentId)
         {
-            throw new KnownException("Measuring device does not belong to the inspection scope.");
+            throw new KnownException(
+                $"测量设备 {request.MeasuringDeviceId} 不属于检验记录 {previousInspectionRecordId} 的组织和环境范围，请选择同一质量范围内的设备后重试。");
         }
 
         var usage = InspectionMeasuringDeviceUsage.Create(device, timeProvider.GetUtcNow());
@@ -142,7 +150,7 @@ public sealed class CreateReinspectionCommandHandler(
         if (MeasuringDeviceInspectionPolicy.Blocks(policy, usage.CalibrationState))
         {
             throw new KnownException(
-                "The selected measuring device has expired calibration and inspection entry is blocked.");
+                $"测量设备 {request.MeasuringDeviceId} 的校准已过期，检验记录 {previousInspectionRecordId} 禁止录入，请在测量设备页完成校准后再提交。");
         }
 
         return usage;
