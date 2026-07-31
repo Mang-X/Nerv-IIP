@@ -1014,6 +1014,40 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal("sales-order-credit-release", approvalClient.LastRequest?.DocumentType);
         Assert.Equal("user:sales-001", approvalClient.LastRequest?.StartedBy);
         Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
+
+        // 审批驳回：订单维持冻结，且再次提交解冻必须重新发起审批（ERP 侧不做本地去重；
+        // 审批侧 PendingIdentityKey 在驳回时置空，故新链不会被吞——见 Approval 侧配套实证用例）。
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            new ApprovalCompletedIntegrationEvent(
+                "evt-sales-credit-rejected-001",
+                ApprovalIntegrationEventTypes.ApprovalRejected,
+                ApprovalIntegrationEventVersions.V1,
+                DateTimeOffset.UtcNow,
+                ApprovalIntegrationEventSources.BusinessApproval,
+                "chain-sales-credit-000",
+                "decision-sales-credit-000",
+                "org-001",
+                "env-dev",
+                "user:credit-manager",
+                "sales-credit-rejected:SO-001",
+                new ApprovalCompletedPayload(
+                    "chain-sales-credit-000",
+                    ApprovalResults.Rejected,
+                    "user",
+                    "credit-manager",
+                    null,
+                    null,
+                    new ApprovalDocumentReferencePayload("business-erp", "sales-order-credit-release", "SO-001", null),
+                    "user:sales-001")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
+
+        var secondSubmitResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
+            CancellationToken.None);
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultApprovalStarted, secondSubmitResult);
+        Assert.Equal(2, approvalClient.CallCount);
         await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             new ApprovalCompletedIntegrationEvent(
                 "evt-sales-credit-approved-001",
@@ -1104,9 +1138,12 @@ public sealed class ErpBusinessGapClosureTests
     {
         public PurchaseOrderApprovalRequest? LastRequest { get; private set; }
 
+        public int CallCount { get; private set; }
+
         public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
         {
             LastRequest = request;
+            CallCount++;
             return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
         }
     }

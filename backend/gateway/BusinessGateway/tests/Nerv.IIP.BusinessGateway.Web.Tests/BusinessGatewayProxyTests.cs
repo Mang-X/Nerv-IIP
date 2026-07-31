@@ -3860,7 +3860,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", erp.LastInternalToken);
         Assert.Equal("SO-HELD-001", erp.LastReleaseSalesOrderCreditHoldRequest?.SalesOrderNo);
-        Assert.NotNull(erp.LastReleaseSalesOrderCreditHoldRequest?.StartedBy);
+        // 与同文件 MES reverse 的防伪基线一致：precise 断言 principal actorRef，而不是只排除伪造值。
+        Assert.Equal("user-admin", erp.LastReleaseSalesOrderCreditHoldRequest?.StartedBy);
         Assert.NotEqual("user:spoofed", erp.LastReleaseSalesOrderCreditHoldRequest!.StartedBy);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("credit-release-approval-started", document.RootElement.GetProperty("data").GetString());
