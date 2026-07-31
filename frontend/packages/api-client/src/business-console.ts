@@ -1355,6 +1355,8 @@ export type {
   NervIipContractsSchedulingSchedulePlanCalendarContract as BusinessConsoleSchedulingPlanCalendar,
   NervIipContractsSchedulingSchedulePlanShiftWindowContract as BusinessConsoleSchedulingShiftWindow,
   NervIipContractsSchedulingSchedulePlanContract as BusinessConsoleSchedulePlan,
+  NervIipContractsSchedulingSchedulePlanMaterialRiskContract as BusinessConsoleSchedulingMaterialRisk,
+  NervIipContractsSchedulingSchedulingMaterialShortageContract as BusinessConsoleSchedulingMaterialShortage,
   NervIipContractsSchedulingSchedulePlanComparisonContract as BusinessConsoleSchedulingPlanComparison,
   NervIipContractsSchedulingSchedulePlanImpactContract as BusinessConsoleSchedulingPlanImpact,
   NervIipContractsSchedulingSchedulePlanRevisionContract as BusinessConsoleSchedulingPlanRevision,
@@ -2414,6 +2416,8 @@ import type {
   NervIipContractsSchedulingScheduleChangeContract,
   NervIipContractsSchedulingScheduleChangeTypeContract,
   NervIipContractsSchedulingGanttScheduleItemContract,
+  NervIipContractsSchedulingSchedulePlanMaterialRiskContract,
+  NervIipContractsSchedulingSchedulingMaterialShortageContract,
 } from './generated/business-console/types.gen'
 
 export type SchedulePlanContract = NervIipContractsSchedulingSchedulePlanContract
@@ -2428,6 +2432,11 @@ export type ScheduleConflictSeverityContract =
 export type UnscheduledOperationContract = NervIipContractsSchedulingUnscheduledOperationContract
 export type ScheduleChangeContract = NervIipContractsSchedulingScheduleChangeContract
 export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChangeTypeContract
+// 物料软约束（#1291）：已排但缺料的工序风险 + 结构化缺口明细。
+export type SchedulePlanMaterialRiskContract =
+  NervIipContractsSchedulingSchedulePlanMaterialRiskContract
+export type SchedulingMaterialShortageContract =
+  NervIipContractsSchedulingSchedulingMaterialShortageContract
 export type GanttScheduleItemContract = NervIipContractsSchedulingGanttScheduleItemContract
 export type SchedulePlanSummary =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse

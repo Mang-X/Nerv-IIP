@@ -5,9 +5,18 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
-public sealed class FiniteCapacityScheduler
+/// <summary>
+/// APS lite 有限产能排程器。
+/// 物料口径按产品裁决走软约束(默认):缺料工单照排,只在计划里带出「物料风险」,
+/// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
+/// 保留旧的「缺料即不可排」行为,供需要严格口径的环境按配置切回。
+/// </summary>
+public sealed class FiniteCapacityScheduler(
+    SchedulingMaterialConstraintModeContract materialConstraintMode = SchedulingMaterialConstraintModeContract.Soft)
 {
     public const string AlgorithmVersion = "aps-lite-v1";
+
+    public SchedulingMaterialConstraintModeContract MaterialConstraintMode { get; } = materialConstraintMode;
 
     public SchedulePlanContract Schedule(
         SchedulingProblemContract problem,
@@ -26,7 +35,7 @@ public sealed class FiniteCapacityScheduler
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
-        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc);
+        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode);
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
         return state.ToPlan();
@@ -279,14 +288,21 @@ file sealed class SchedulerState
     private readonly List<UnscheduledOperationContract> unscheduledOperations = [];
     private readonly List<ScheduleChangeContract> changeSummary = [];
     private readonly HashSet<OperationKey> failedOperationKeys = [];
+    private readonly List<SchedulePlanMaterialRiskContract> materialRisks = [];
+    private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
-    private SchedulerState(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
+    private SchedulerState(
+        SchedulingProblemContract problem,
+        string planId,
+        DateTimeOffset generatedAtUtc,
+        SchedulingMaterialConstraintModeContract materialConstraintMode)
     {
         this.problem = problem;
         this.planId = planId;
         this.generatedAtUtc = generatedAtUtc;
+        this.materialConstraintMode = materialConstraintMode;
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
         operationByKey = problem.Orders
@@ -296,9 +312,13 @@ file sealed class SchedulerState
             .ToDictionary(x => x.Key, x => x.Operation);
     }
 
-    public static SchedulerState From(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
+    public static SchedulerState From(
+        SchedulingProblemContract problem,
+        string planId,
+        DateTimeOffset generatedAtUtc,
+        SchedulingMaterialConstraintModeContract materialConstraintMode)
     {
-        return new SchedulerState(problem, planId, generatedAtUtc);
+        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode);
     }
 
     public void ReserveLockedAssignments()
@@ -331,7 +351,7 @@ file sealed class SchedulerState
                 locked.OrderId,
                 locked.OperationId,
                 ScheduleChangeTypeContract.Preserved,
-                "Locked assignment reserved before APS lite scheduling."));
+                "锁定工序已按原计划保留，未参与本次重排。"));
 
             if (invalidLock)
             {
@@ -341,7 +361,7 @@ file sealed class SchedulerState
                     locked.OrderId,
                     locked.OperationId,
                     locked.ResourceId,
-                    "Locked assignment is outside the scheduling horizon, calendar, resource set, or availability.");
+                    "锁定工序落在排程窗口、班次日历或可用资源之外，无法保留。");
             }
         }
 
@@ -382,7 +402,7 @@ file sealed class SchedulerState
                 AddUnscheduled(
                     item,
                     ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
-                    "Operation predecessor could not be scheduled in this problem.");
+                    "前序工序未能排入本次计划，本工序只能顺延等待。");
                 continue;
             }
 
@@ -408,7 +428,7 @@ file sealed class SchedulerState
                         AddUnscheduled(
                             stalled,
                             ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
-                            "Operation predecessor could not be scheduled in this problem.");
+                            "前序工序未能排入本次计划，本工序只能顺延等待。");
                     }
                     break;
                 }
@@ -443,8 +463,8 @@ file sealed class SchedulerState
                 result.OperationId,
                 result.EndUtc > item.Operation.DueUtc ? ScheduleChangeTypeContract.Delayed : ScheduleChangeTypeContract.Added,
                 result.EndUtc > item.Operation.DueUtc
-                    ? "Assignment finishes after due date."
-                    : "Scheduled by APS lite."));
+                    ? "排入时间晚于交期，将造成延期。"
+                    : "已按有限产能排入计划。"));
 
             if (result.EndUtc > item.Operation.DueUtc)
             {
@@ -454,7 +474,7 @@ file sealed class SchedulerState
                     result.OrderId,
                     result.OperationId,
                     result.ResourceId,
-                    "Assignment finishes after due date.");
+                    "排入时间晚于交期，将造成延期。");
             }
 
             if (remaining.Count == 0 && stalledItems.Count > 0)
@@ -482,6 +502,13 @@ file sealed class SchedulerState
 
         var resourceOccupancies = BuildResourceOccupancies(orderedAssignments);
         var resourceLoads = BuildResourceLoads(resourceOccupancies);
+        var orderedMaterialRisks = materialRisks
+            .OrderBy(x => x.OrderId, StringComparer.Ordinal)
+            .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+            .ToList();
+        var materialRiskKeys = orderedMaterialRisks
+            .Select(x => new OperationKey(x.OrderId, x.OperationId))
+            .ToHashSet();
 
         return new SchedulePlanContract(
             ContractVersion: problem.ContractVersion,
@@ -491,7 +518,7 @@ file sealed class SchedulerState
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
-            Metrics: BuildMetrics(orderedAssignments, resourceOccupancies, resourceLoads),
+            Metrics: BuildMetrics(orderedAssignments, resourceOccupancies, resourceLoads, materialRiskKeys.Count),
             Assignments: orderedAssignments,
             ResourceLoads: resourceLoads,
             Conflicts: conflicts,
@@ -511,18 +538,22 @@ file sealed class SchedulerState
                     EndUtc: x.EndUtc,
                     Status: SchedulePlanStatusContract.Preview,
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
-                    ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey));
+                    ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey),
+                    HasMaterialRisk: materialRiskKeys.Contains(operationKey));
             }).ToList(),
             // 工作日历与不可用窗口是排程输入的一部分,随计划一起带出:读面据此画工作日/非工作日、
             // 班次边界与维护/停机/换线/换型底纹,不必再单独取一次日历。
             Calendars: SchedulePlanCalendarProjector.ProjectCalendars(problem),
-            BlockWindows: SchedulePlanCalendarProjector.ProjectBlockWindows(problem));
+            BlockWindows: SchedulePlanCalendarProjector.ProjectBlockWindows(problem),
+            // 物料软约束的产物:这些工序已排入计划,但开工前必须先备料。
+            MaterialRisks: orderedMaterialRisks);
     }
 
     private SchedulePlanMetricsContract BuildMetrics(
         IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
         IReadOnlyCollection<ResourceOccupancy> resourceOccupancies,
-        IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads)
+        IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads,
+        int materialRiskOperationCount)
     {
         var dueByOperation = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (
@@ -566,35 +597,42 @@ file sealed class SchedulerState
             OnTimeRate: onTimeRate,
             AverageResourceUtilization: averageResourceUtilization,
             LockedOperationCount: orderedAssignments.Count(x => x.IsLocked),
-            OptimizableOperationCount: optimizableAssignments.Length);
+            OptimizableOperationCount: optimizableAssignments.Length,
+            MaterialRiskOperationCount: materialRiskOperationCount);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
     {
         if (!item.Operation.ToolingAvailable)
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Tooling, "Required tooling is unavailable or not applicable to this work center and SKU.");
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Tooling, "所需工装不可用，或不适用于该工作中心与产品。");
             return null;
         }
 
         if (!string.IsNullOrWhiteSpace(item.Operation.QualityBlockReason))
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, item.Operation.QualityBlockReason);
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, QualityBlockMessage(item.Operation.QualityBlockReason));
             return null;
         }
 
-        var openEndedMaterialBlock = ApplicableOpenEndedMaterialBlocks(item).FirstOrDefault();
-        if (openEndedMaterialBlock is not null)
+        // 物料口径:齐套是开工门槛,不是排产门槛。
+        // 软约束(默认)下缺料工序照排,只登记物料风险 + 预警级冲突,提示「需在开工前完成备料」;
+        // 硬约束下沿用旧行为,缺料直接判为不可排。
+        var openEndedMaterialBlocks = ApplicableOpenEndedMaterialBlocks(item).ToList();
+        if (openEndedMaterialBlocks.Count > 0)
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Material, MaterialBlockMessage(openEndedMaterialBlock));
-            return null;
+            if (materialConstraintMode == SchedulingMaterialConstraintModeContract.Hard)
+            {
+                AddUnscheduled(item, ScheduleConflictReasonCodeContract.Material, MaterialBlockMessage(openEndedMaterialBlocks[0]));
+                return null;
+            }
         }
 
         var qualityBlocks = ApplicableOperationQualityBlocks(item).ToList();
         var openEndedQualityBlock = qualityBlocks.FirstOrDefault(x => x.BlockedUntilUtc is null);
         if (openEndedQualityBlock is not null)
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, openEndedQualityBlock.ReasonCode);
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, QualityBlockMessage(openEndedQualityBlock.ReasonCode));
             return null;
         }
 
@@ -610,14 +648,14 @@ file sealed class SchedulerState
         var earliestStart = earliestStartCandidates.Max();
         if (earliestStart >= problem.HorizonEndUtc)
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.OutsideHorizon, "Operation earliest start is outside the scheduling horizon.");
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.OutsideHorizon, "最早可开工时间已超出排程窗口。");
             return null;
         }
 
         var candidates = EligibleResources(item).ToList();
         if (candidates.Count == 0)
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.NoEligibleResource, "No eligible resource can run the required capability.");
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.NoEligibleResource, "没有具备所需工艺能力的可用资源。");
             return null;
         }
 
@@ -640,7 +678,7 @@ file sealed class SchedulerState
             if (openEndedResourceQualityBlocks.Count != 0
                 && openEndedResourceQualityBlocks.All(block => block is not null))
             {
-                AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, openEndedResourceQualityBlocks[0]!.ReasonCode);
+                AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, QualityBlockMessage(openEndedResourceQualityBlocks[0]!.ReasonCode));
                 return null;
             }
 
@@ -650,6 +688,12 @@ file sealed class SchedulerState
         }
 
         var selected = feasibleSlots[0];
+        // 工序确实排进去了才登记物料风险,避免给不可排工序挂上「已排但缺料」的假标记。
+        if (openEndedMaterialBlocks.Count > 0)
+        {
+            AddMaterialRisk(item, openEndedMaterialBlocks);
+        }
+
         return new ScheduleAssignmentContract(
             AssignmentId: $"assign-{item.Order.OrderId}-{item.Operation.OperationId}",
             OrderId: item.Order.OrderId,
@@ -932,7 +976,7 @@ file sealed class SchedulerState
                 locked.OrderId,
                 locked.OperationId,
                 locked.ResourceId,
-                "Locked assignments exceed the resource finite capacity.");
+                "锁定工序之间相互冲突，已超出该资源的有限产能。");
         }
     }
 
@@ -1223,11 +1267,11 @@ file sealed class SchedulerState
     {
         return reasonCode switch
         {
-            ScheduleConflictReasonCodeContract.Capacity => "No feasible slot exists because finite capacity is saturated inside the scheduling horizon.",
-            ScheduleConflictReasonCodeContract.Calendar => "No feasible slot exists because no shift calendar window can fit the operation duration.",
-            ScheduleConflictReasonCodeContract.Equipment => "No feasible slot exists because eligible resources are unavailable inside the scheduling horizon.",
-            ScheduleConflictReasonCodeContract.Tooling => "No feasible slot exists because required tooling is occupied by a competing work order.",
-            _ => "No feasible capacity slot exists inside the scheduling horizon."
+            ScheduleConflictReasonCodeContract.Capacity => "排程窗口内产能已排满，找不到可用时段。",
+            ScheduleConflictReasonCodeContract.Calendar => "班次日历里没有能容纳该工序时长的完整窗口。",
+            ScheduleConflictReasonCodeContract.Equipment => "排程窗口内可用资源全部处于不可用状态（维护/停机）。",
+            ScheduleConflictReasonCodeContract.Tooling => "所需工装被其他工单占用，窗口内排不开。",
+            _ => "排程窗口内找不到可用的产能时段。"
         };
     }
 
@@ -1366,7 +1410,10 @@ file sealed class SchedulerState
         string? message)
     {
         failedOperationKeys.Add(OperationKey.From(item));
-        var reasonMessage = string.IsNullOrWhiteSpace(message) ? reasonCode.ToString() : message;
+        // 未排原因必须是人话:没有具体说明时也要回落到中文原因,绝不把枚举名当消息发给读面。
+        var reasonMessage = string.IsNullOrWhiteSpace(message)
+            ? UnscheduledReasonText(reasonCode)
+            : message;
         unscheduledOperations.Add(new UnscheduledOperationContract(
             item.Order.OrderId,
             item.Operation.OperationId,
@@ -1384,6 +1431,90 @@ file sealed class SchedulerState
             item.Operation.OperationId,
             null,
             reasonMessage);
+    }
+
+    /// <summary>未排/冲突原因的中文兜底文案(读面直接展示,不做二次翻译)。</summary>
+    private static string UnscheduledReasonText(ScheduleConflictReasonCodeContract reasonCode)
+    {
+        return reasonCode switch
+        {
+            ScheduleConflictReasonCodeContract.DueDate => "交期风险：排入时间晚于交期。",
+            ScheduleConflictReasonCodeContract.Capacity => "产能不足：排程窗口内排不下。",
+            ScheduleConflictReasonCodeContract.Calendar => "班次日历不可用：窗口内没有可用工作时间。",
+            ScheduleConflictReasonCodeContract.Material => "物料未齐套：开工前需先完成备料。",
+            ScheduleConflictReasonCodeContract.Quality => "质量限制：该工序被质量放行卡住。",
+            ScheduleConflictReasonCodeContract.Equipment => "设备不可用：可用资源处于维护或停机。",
+            ScheduleConflictReasonCodeContract.NoEligibleResource => "无可用资源：没有具备所需工艺能力的资源。",
+            ScheduleConflictReasonCodeContract.OutsideHorizon => "超出排程窗口：最早可开工时间在窗口之外。",
+            ScheduleConflictReasonCodeContract.InvalidLockedAssignment => "锁定无效：锁定的排程结果不成立。",
+            ScheduleConflictReasonCodeContract.PredecessorUnscheduled => "前序未排产：前道工序没能排入本次计划。",
+            ScheduleConflictReasonCodeContract.Tooling => "工装不可用：所需工装被占用或不适用。",
+            _ => "排程受阻：请查看该工序的具体约束。"
+        };
+    }
+
+    /// <summary>
+    /// 登记物料风险:工序已排入计划,但开工前必须补齐这些物料(MES 侧齐套硬门仍会拦开工)。
+    /// 同时补一条预警级冲突,让读面「冲突与风险」清单也能看到,但不影响可排性。
+    /// </summary>
+    private void AddMaterialRisk(
+        OperationWorkItem item,
+        IReadOnlyCollection<SchedulingMaterialReadinessContract> blocks)
+    {
+        var reasonCodes = blocks
+            .SelectMany(x => x.ReasonCodes)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var shortages = blocks
+            .SelectMany(x => x.Shortages ?? [])
+            .GroupBy(x => (x.MaterialId, x.MaterialLotId))
+            .Select(x => new SchedulingMaterialShortageContract(
+                x.Key.MaterialId,
+                x.Key.MaterialLotId,
+                x.Sum(y => y.RequiredQuantity),
+                x.Sum(y => y.AvailableQuantity),
+                x.Sum(y => y.ShortageQuantity)))
+            .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
+            .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
+            .ToArray();
+        var message = MaterialRiskMessage(shortages, reasonCodes);
+
+        materialRisks.Add(new SchedulePlanMaterialRiskContract(
+            item.Order.OrderId,
+            item.Operation.OperationId,
+            reasonCodes,
+            shortages,
+            message));
+        AddConflict(
+            ScheduleConflictReasonCodeContract.Material,
+            ScheduleConflictSeverityContract.Warning,
+            item.Order.OrderId,
+            item.Operation.OperationId,
+            null,
+            message);
+    }
+
+    private static string MaterialRiskMessage(
+        IReadOnlyCollection<SchedulingMaterialShortageContract> shortages,
+        IReadOnlyCollection<string> reasonCodes)
+    {
+        const string Suffix = "已按计划排入,需在开工前完成备料。";
+        if (shortages.Count > 0)
+        {
+            var detail = string.Join(
+                '、',
+                shortages
+                    .Take(3)
+                    .Select(x => $"{x.MaterialId} 缺 {x.ShortageQuantity:0.######}"));
+            var more = shortages.Count > 3 ? $" 等 {shortages.Count} 项" : string.Empty;
+            return $"物料未齐套:{detail}{more}。{Suffix}";
+        }
+
+        return reasonCodes.Count > 0
+            ? $"物料未齐套({string.Join('、', reasonCodes)})。{Suffix}"
+            : $"物料未齐套。{Suffix}";
     }
 
     private void AddConflict(
@@ -1447,8 +1578,16 @@ file sealed class SchedulerState
     private static string MaterialBlockMessage(SchedulingMaterialReadinessContract materialReadiness)
     {
         return materialReadiness.ReasonCodes.Count == 0
-            ? "material-unavailable"
-            : string.Join(",", materialReadiness.ReasonCodes);
+            ? "物料未齐套：开工前需先完成备料。"
+            : $"物料未齐套（{string.Join('、', materialReadiness.ReasonCodes)}）：开工前需先完成备料。";
+    }
+
+    /// <summary>质量放行原因来自上游码值,读面直接展示,所以给它套一层中文说明。</summary>
+    private static string QualityBlockMessage(string? reasonCode)
+    {
+        return string.IsNullOrWhiteSpace(reasonCode)
+            ? "质量限制：该工序被质量放行卡住。"
+            : $"质量限制（{reasonCode}）：需先完成质量放行。";
     }
 
     private static bool Overlaps(DateTimeOffset start1, DateTimeOffset end1, DateTimeOffset start2, DateTimeOffset end2)

@@ -1130,7 +1130,7 @@ public class FiniteCapacitySchedulerTests
             x.OrderId == "WO-SNAPSHOT-001"
             && x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.Quality
-            && x.Message == "resource-quarantine");
+            && x.Message == "质量限制（resource-quarantine）：需先完成质量放行。");
         Assert.Contains(plan.Conflicts, x =>
             x.OrderId == "WO-SNAPSHOT-001"
             && x.OperationId == "WO-SNAPSHOT-001-OP10"
@@ -1139,9 +1139,85 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
-    public void Schedule_reports_material_reason_for_open_ended_top_level_material_unavailability()
+    // 产品裁决:齐套是开工门槛不是排产门槛。缺料工序默认照排,只带出物料风险。
+    public void Schedule_keeps_material_short_operation_schedulable_and_flags_material_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-material-soft-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.DoesNotContain(plan.UnscheduledOperations, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        var risk = Assert.Single(plan.MaterialRisks ?? []);
+        Assert.Equal("WO-SNAPSHOT-001", risk.OrderId);
+        Assert.Equal("WO-SNAPSHOT-001-OP10", risk.OperationId);
+        Assert.Contains("material-shortage", risk.ReasonCodes);
+        Assert.Contains(risk.Shortages, x => x.MaterialId == "RM-OIL-01" && x.ShortageQuantity == 145.86m);
+        Assert.Contains("需在开工前完成备料", risk.Message);
+        Assert.Equal(1, plan.Metrics.MaterialRiskOperationCount);
+        Assert.Contains(plan.GanttItems, x => x.OperationId == "WO-SNAPSHOT-001-OP10" && x.HasMaterialRisk);
+        // 物料风险是预警,不是阻断。
+        Assert.Contains(plan.Conflicts, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Severity == ScheduleConflictSeverityContract.Warning);
+    }
+
+    [Fact]
+    // 硬约束开关保留:配置成 Hard 时沿用「缺料即不可排」。
+    public void Schedule_blocks_material_short_operation_when_material_constraint_is_hard()
+    {
+        var problem = CreateMaterialShortageProblem();
+        var scheduler = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard);
+
+        var plan = scheduler.Schedule(problem, "plan-material-hard-001", GeneratedAtUtc);
+
+        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OrderId == "WO-SNAPSHOT-001"
+            && x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Message == "物料未齐套（material-shortage）：开工前需先完成备料。");
+        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Contains(plan.Conflicts, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
+            && x.Severity == ScheduleConflictSeverityContract.Error);
+    }
+
+    [Fact]
+    // 台账 #38:未排原因不许再出英文生码,读面拿到的必须是中文人话。
+    public void Schedule_reports_unscheduled_reasons_in_business_chinese()
     {
         var problem = CreateSingleOperationProblem() with
+        {
+            Orders =
+            [
+                CreateSingleOperationProblem().Orders.Single() with
+                {
+                    Operations =
+                    [
+                        CreateSingleOperationProblem().Orders.Single().Operations.Single() with
+                        {
+                            RequiredCapabilityCode = "CAP-NOT-INSTALLED"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-chinese-reason-001", GeneratedAtUtc);
+
+        var unscheduled = Assert.Single(plan.UnscheduledOperations);
+        Assert.DoesNotContain(unscheduled.Message, char.IsAsciiLetter);
+        Assert.Contains("资源", unscheduled.Message);
+    }
+
+    private static SchedulingProblemContract CreateMaterialShortageProblem()
+    {
+        return CreateSingleOperationProblem() with
         {
             MaterialReadiness =
             [
@@ -1150,24 +1226,13 @@ public class FiniteCapacitySchedulerTests
                     ScopeId: "WO-SNAPSHOT-001",
                     MaterialReadyUtc: null,
                     IsReady: false,
-                    ReasonCodes: ["material-shortage"])
+                    ReasonCodes: ["material-shortage"],
+                    Shortages:
+                    [
+                        new SchedulingMaterialShortageContract("RM-OIL-01", null, 145.86m, 0m, 145.86m)
+                    ])
             ]
         };
-        var scheduler = new FiniteCapacityScheduler();
-
-        var plan = scheduler.Schedule(problem, "plan-material-blocked-001", GeneratedAtUtc);
-
-        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "WO-SNAPSHOT-001-OP10");
-        Assert.Contains(plan.UnscheduledOperations, x =>
-            x.OrderId == "WO-SNAPSHOT-001"
-            && x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
-            && x.Message == "material-shortage");
-        Assert.Contains(plan.Conflicts, x =>
-            x.OrderId == "WO-SNAPSHOT-001"
-            && x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
-            && x.Severity == ScheduleConflictSeverityContract.Error);
     }
 
     private static SchedulePlanContract ScheduleShockAbsorber()

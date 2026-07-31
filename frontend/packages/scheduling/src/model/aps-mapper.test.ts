@@ -42,6 +42,38 @@ describe('toModel', () => {
     })
   })
 
+  // 产品裁决（#1291）：齐套是开工门槛不是排产门槛 —— 物料缺口挂在「已排」工序上，不进 unscheduled。
+  it('maps material risks onto their scheduled tasks instead of unscheduling them', () => {
+    const m = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [
+            {
+              materialId: 'RM-OIL-01',
+              materialLotId: null,
+              requiredQuantity: 145.86,
+              availableQuantity: 0,
+              shortageQuantity: 145.86,
+            },
+          ],
+          message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+        },
+      ],
+    })
+
+    const op10 = m.tasks.find((t) => t.id === 'a1')!
+    expect(op10.materialRisk?.shortages[0]!.shortageQuantity).toBe(145.86)
+    expect(op10.materialRisk?.message).toContain('需在开工前完成备料')
+    expect(m.materialRisks).toHaveLength(1)
+    // 风险挂在已排 task 上，不是把工序标成「未排」。
+    expect(op10.type).toBe('operation')
+    expect(op10.startUtc).toBeTruthy()
+  })
+
   it('keeps the current tooling conflict in business language', () => {
     const m = toModel({
       ...samplePlan,

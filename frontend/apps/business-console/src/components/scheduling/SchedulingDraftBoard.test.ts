@@ -54,10 +54,54 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
+    // 列：工单/工序 · 资源 · 开始 · 结束 · 物料 · 锁定 · 待排
     const cells = wrapper.findAll('tbody td')
-    expect(cells).toHaveLength(6)
+    expect(cells).toHaveLength(7)
     expect((cells[2]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
-    expect(cells[5]!.text()).toContain('移回待排')
+    expect(cells[4]!.text()).toContain('齐套')
+    expect(cells[6]!.text()).toContain('移回待排')
+  })
+
+  // 产品裁决（#1291）：齐套是开工门槛不是排产门槛 —— 缺料工序照排，
+  // 草案表格与横幅必须显式提示「需在开工前完成备料」，而不是把它当未排。
+  it('renders material risk hints for scheduled-but-short operations', async () => {
+    const risk = {
+      orderId: 'WO-001',
+      operationId: 'OP-10',
+      reasonCodes: ['material-shortage'],
+      shortages: [
+        {
+          materialId: 'RM-OIL-01',
+          materialLotId: null,
+          requiredQuantity: 145.86,
+          availableQuantity: 0,
+          shortageQuantity: 145.86,
+        },
+      ],
+      message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+    }
+    const riskyModel: ScheduleModel = {
+      ...model,
+      tasks: [{ ...model.tasks[0]!, materialRisk: risk }],
+      materialRisks: [risk],
+    }
+
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: { model: riskyModel },
+      global: { stubs: { GanttChart: true, ResourceSchedulerBoard: true } },
+    })
+
+    const banner = wrapper.find('[data-testid="scheduling-material-risks"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('需在开工前完成备料')
+    expect(banner.text()).toContain('RM-OIL-01')
+
+    const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格编辑'))!
+    await tableTab.trigger('focus')
+    await tableTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody td')[4]!.text()).toContain('缺料待备')
   })
 
   it('emits persistOverride with the task id, which the page must map to operationId', async () => {

@@ -1338,6 +1338,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
     calendars?: Array<NervIipContractsSchedulingSchedulePlanCalendarContract> | null;
     blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
+    materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1353,6 +1354,7 @@ export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
     averageResourceUtilization?: number;
     lockedOperationCount?: number;
     optimizableOperationCount?: number;
+    materialRiskOperationCount?: number;
 };
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
@@ -1420,6 +1422,7 @@ export type NervIipContractsSchedulingGanttScheduleItemContract = {
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     hasConflict?: boolean;
     conflictReasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract | null;
+    hasMaterialRisk?: boolean;
 };
 
 export type NervIipContractsSchedulingSchedulePlanCalendarContract = {
@@ -1445,6 +1448,22 @@ export type NervIipContractsSchedulingSchedulePlanBlockWindowContract = {
 };
 
 export type NervIipContractsSchedulingScheduleBlockKindContract = 'maintenance' | 'downtime' | 'lineChange' | 'changeover';
+
+export type NervIipContractsSchedulingSchedulePlanMaterialRiskContract = {
+    orderId?: string;
+    operationId?: string;
+    reasonCodes?: Array<string>;
+    shortages?: Array<NervIipContractsSchedulingSchedulingMaterialShortageContract>;
+    message?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
+    materialId?: string;
+    materialLotId?: string | null;
+    requiredQuantity?: number;
+    availableQuantity?: number;
+    shortageQuantity?: number;
+};
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;
@@ -1535,6 +1554,7 @@ export type NervIipContractsSchedulingSchedulingMaterialReadinessContract = {
     materialReadyUtc?: string | null;
     isReady?: boolean;
     reasonCodes?: Array<string>;
+    shortages?: Array<NervIipContractsSchedulingSchedulingMaterialShortageContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingQualityBlockContract = {
@@ -3959,6 +3979,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     readinessStatus?: string;
     blockingReasons?: Array<string>;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow>;
+    readinessScope?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow = {
@@ -3971,6 +3992,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     receivedQuantity?: number;
     shortageQuantity?: number;
     status?: string;
+    shortageStage?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRequest = {

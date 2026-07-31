@@ -198,6 +198,18 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                     : $"{x.MaterialId} {x.MaterialLotId} shortage {x.ShortageQuantity:0.######}")
                 .ToArray()
             : response.BlockingReasons;
+        // 结构化缺口:排程读面要能讲清「缺哪个物料、缺多少」,不能只给一串拼好的原因串。
+        var shortages = response.Items
+            .Where(x => x.ShortageQuantity > 0)
+            .Select(x => new SchedulingMaterialShortageContract(
+                x.MaterialId,
+                string.IsNullOrWhiteSpace(x.MaterialLotId) ? null : x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.ShortageQuantity))
+            .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
+            .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
+            .ToArray();
 
         return
         [
@@ -206,7 +218,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 ScopeId: response.WorkOrderId,
                 MaterialReadyUtc: null,
                 IsReady: false,
-                ReasonCodes: reasonCodes)
+                ReasonCodes: reasonCodes,
+                Shortages: shortages)
         ];
     }
 

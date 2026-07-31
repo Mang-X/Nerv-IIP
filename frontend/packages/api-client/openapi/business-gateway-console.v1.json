@@ -33579,6 +33579,13 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanBlockWindowContract"
             }
+          },
+          "materialRisks": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialRiskContract"
+            }
           }
         }
       },
@@ -33634,6 +33641,10 @@
             "format": "int32"
           },
           "optimizableOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "materialRiskOperationCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -33858,6 +33869,9 @@
                 "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
               }
             ]
+          },
+          "hasMaterialRisk": {
+            "type": "boolean"
           }
         }
       },
@@ -33942,6 +33956,58 @@
           "lineChange",
           "changeover"
         ]
+      },
+      "NervIIPContractsSchedulingSchedulePlanMaterialRiskContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shortages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingMaterialShortageContract"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingMaterialShortageContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiredQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "availableQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "shortageQuantity": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
       },
       "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest": {
         "type": "object",
@@ -34274,6 +34340,13 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "shortages": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingMaterialShortageContract"
             }
           }
         }
@@ -42948,6 +43021,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow"
             }
+          },
+          "readinessScope": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -42988,6 +43065,10 @@
           },
           "status": {
             "type": "string"
+          },
+          "shortageStage": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -1319,7 +1319,28 @@ public sealed record MesMaterialReadinessResponse(
     string WorkOrderId,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
-    IReadOnlyCollection<MesMaterialReadinessRow> Items);
+    IReadOnlyCollection<MesMaterialReadinessRow> Items,
+    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged);
+
+/// <summary>
+/// 齐套核算口径。齐套只认「线边可用 + 已备料 + 已收料」,不含原料仓等其他库存;
+/// MRP 读的是全厂库存,两个口径本来就不同 —— 读面必须显式标注,不能让用户自己猜。
+/// </summary>
+public static class MesMaterialReadinessScopes
+{
+    public const string LineSideAndStaged = "lineSideAndStaged";
+}
+
+/// <summary>
+/// 缺口卡在哪个环节:未发起领料(备料环节)/ 已发起待收料(配送环节)/ 不缺。
+/// 读面据此给出「下一步动作」,不再只甩一个缺口数字。
+/// </summary>
+public static class MesMaterialShortageStages
+{
+    public const string None = "none";
+    public const string AwaitingPreparation = "awaitingPreparation";
+    public const string AwaitingDelivery = "awaitingDelivery";
+}
 
 public sealed record MesMaterialReadinessRow(
     string MaterialId,
@@ -1330,7 +1351,8 @@ public sealed record MesMaterialReadinessRow(
     decimal StagedQuantity,
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
-    string Status);
+    string Status,
+    string ShortageStage = MesMaterialShortageStages.None);
 
 public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMaterialReadinessQuery, MesMaterialReadinessResponse>
@@ -1409,7 +1431,13 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                     staged,
                     received,
                     shortage,
-                    shortage > 0 ? "Shortage" : "Ready");
+                    shortage > 0 ? "Shortage" : "Ready",
+                    // 缺口还在哪个环节:已发起领料但没收齐 → 仓库在配;一张领料都没发 → 还没备料。
+                    shortage <= 0
+                        ? MesMaterialShortageStages.None
+                        : requested > received
+                            ? MesMaterialShortageStages.AwaitingDelivery
+                            : MesMaterialShortageStages.AwaitingPreparation);
             })
             .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)
