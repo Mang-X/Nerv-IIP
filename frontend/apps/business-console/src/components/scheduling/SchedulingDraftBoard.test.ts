@@ -54,12 +54,13 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    // 列：工单/工序 · 资源 · 开始 · 结束 · 物料 · 锁定 · 待排
+    // 列：工单/工序 · 资源 · 开始 · 结束 · 物料 · 设备状态 · 锁定 · 待排
     const cells = wrapper.findAll('tbody td')
-    expect(cells).toHaveLength(7)
+    expect(cells).toHaveLength(8)
     expect((cells[2]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
     expect(cells[4]!.text()).toContain('齐套')
-    expect(cells[6]!.text()).toContain('移回待排')
+    expect(cells[5]!.text()).toContain('正常')
+    expect(cells[7]!.text()).toContain('移回待排')
   })
 
   // 产品裁决（#1291）：齐套是开工门槛不是排产门槛 —— 缺料工序照排，
@@ -102,6 +103,39 @@ describe('SchedulingDraftBoard', () => {
     await flushPromises()
 
     expect(wrapper.findAll('tbody td')[4]!.text()).toContain('缺料待备')
+  })
+
+  // #1320:设备「状态未知」是数据盲区,不是不可用 —— 横幅 + 表格列都要如实说明。
+  it('surfaces equipment data risks as a banner and a table chip', async () => {
+    const risk = {
+      orderId: 'WO-001',
+      operationId: 'OP-10',
+      resourceId: 'DEV-CNC-01',
+      reasonCodes: ['equipment.sourceStale'],
+      message: '设备 DEV-CNC-01 状态未知(采集数据已过期)。已按计划排入,开工前请人工确认设备可用。',
+    }
+    const riskyModel: ScheduleModel = {
+      ...model,
+      tasks: [{ ...model.tasks[0]!, equipmentRisk: risk }],
+      equipmentRisks: [risk],
+    }
+
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: { model: riskyModel },
+      global: { stubs: { GanttChart: true, ResourceSchedulerBoard: true } },
+    })
+
+    const banner = wrapper.find('[data-testid="scheduling-equipment-risks"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('开工前请人工确认设备可用')
+    expect(banner.text()).toContain('DEV-CNC-01')
+
+    const tableTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格编辑'))!
+    await tableTab.trigger('focus')
+    await tableTab.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody td')[5]!.text()).toContain('状态未知')
   })
 
   it('emits persistOverride with the task id, which the page must map to operationId', async () => {

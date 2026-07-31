@@ -10,6 +10,8 @@
     --nv-scheduling-rush: oklch(0.68 0.18 45);
     --nv-scheduling-kit-ok: var(--nv-success);
     --nv-scheduling-kit-warn: oklch(0.82 0.15 85);
+    /* 设备数据风险(状态未知)。中性语义:它是数据盲区,不是预警级的物料缺口,更不是阻断。 */
+    --nv-scheduling-equip-unknown: var(--muted-foreground);
     --nv-scheduling-kit-bad: var(--destructive);
     --nv-scheduling-block-maintenance: var(--muted-foreground);
     --nv-scheduling-block-downtime: var(--destructive);
@@ -38,6 +40,27 @@
     white-space: nowrap;
     color: var(--nv-scheduling-kit-warn);
     background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 85%);
+  }
+
+  /* 设备数据风险（软约束）：排在状态未知设备上。中性 muted 语义 ——
+     与物料缺口的 kit-warn 预警、不可排的 destructive 阻断三者互不混淆。 */
+  .nv-sched-equipment-risk {
+    border: 1px solid color-mix(in oklch, var(--nv-scheduling-equip-unknown), transparent 55%);
+    background: color-mix(in oklch, var(--nv-scheduling-equip-unknown), transparent 88%);
+    color: var(--foreground);
+  }
+  .nv-sched-equipment-risk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.375rem;
+    border-radius: 0.3125rem;
+    border: 1px solid currentColor;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--nv-scheduling-equip-unknown);
+    background: color-mix(in oklch, var(--nv-scheduling-equip-unknown), transparent 85%);
   }
 
   .nerv-gantt {
