@@ -399,6 +399,82 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
     }
 
+    [Fact]
+    public void Creating_a_material_issue_request_publishes_the_warehouse_leg_of_the_chain()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            7m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+
+        var domainEvent = Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
+        var integrationEvent = new MaterialIssueRequestCreatedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal(MesIntegrationEventTypes.MaterialIssueRequested, integrationEvent.EventType);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
+        Assert.Equal("MIR-001", integrationEvent.Payload.RequestNo);
+        Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
+        Assert.Equal("OP-10", integrationEvent.Payload.OperationTaskId);
+        Assert.Equal("MAT-OIL", integrationEvent.Payload.MaterialId);
+        Assert.Equal("L", integrationEvent.Payload.UomCode);
+        Assert.Equal(7m, integrationEvent.Payload.RequestedQuantity);
+        Assert.Equal("mes:material-issue-requested:org-001:env-dev:MIR-001", integrationEvent.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Material_issue_created_idempotency_key_is_stable_across_replays_of_the_same_request()
+    {
+        static MaterialIssueRequestCreatedDomainEvent NewCreation() =>
+            MaterialIssueRequest.Create(
+                    "org-001",
+                    "env-dev",
+                    "MIR-001",
+                    "WO-001",
+                    null,
+                    "MAT-OIL",
+                    "L",
+                    7m,
+                    DateTimeOffset.Parse("2026-06-15T07:45:00Z"))
+                .GetDomainEvents()
+                .OfType<MaterialIssueRequestCreatedDomainEvent>()
+                .Single();
+
+        var converter = new MaterialIssueRequestCreatedIntegrationEventConverter();
+
+        Assert.Equal(
+            converter.Convert(NewCreation()).IdempotencyKey,
+            converter.Convert(NewCreation()).IdempotencyKey);
+    }
+
+    [Fact]
+    public void Linking_the_warehouse_outbound_is_idempotent_for_the_same_acknowledgement()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            null,
+            "MAT-OIL",
+            "L",
+            7m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+        var preparedAtUtc = DateTimeOffset.Parse("2026-06-15T07:50:00Z");
+
+        Assert.True(request.LinkWarehouseOutbound("MI-MIR-001", "MI-MIR-001-P1", preparedAtUtc));
+        Assert.False(request.LinkWarehouseOutbound("MI-MIR-001", "MI-MIR-001-P1", preparedAtUtc.AddMinutes(5)));
+        Assert.Equal("MI-MIR-001", request.WmsRequestId);
+        Assert.Equal("MI-MIR-001-P1", request.WmsPickingTaskNo);
+        Assert.Equal(preparedAtUtc, request.WmsPreparedAtUtc);
+    }
+
     private sealed class StubMesIntegrationEventContextAccessor(MesIntegrationEventContext context)
         : IMesIntegrationEventContextAccessor
     {

@@ -1126,7 +1126,9 @@ public sealed record MesMaterialIssueRequestRow(
     string? MaterialCode = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
-    DateTimeOffset? InventoryPostingFailedAtUtc = null);
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    string? WmsRequestId = null,
+    string? WmsPickingTaskNo = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -1208,7 +1210,9 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.MaterialId,
                 x.InventoryPostingFailureCode,
                 x.InventoryPostingFailureMessage,
-                x.InventoryPostingFailedAtUtc))
+                x.InventoryPostingFailedAtUtc,
+                x.WmsRequestId,
+                x.WmsPickingTaskNo))
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total);
     }

@@ -275,6 +275,17 @@ function extractServerMessage(error: unknown): string | undefined {
   return undefined
 }
 
+/**
+ * 分层透传（#1298）判据：只有「人话」才值得替换本地指引——中文业务原因（如
+ * 「物料齐套未满足：MAT-OIL 缺口 5」）能指导操作工，而 `downstream-request-failed`
+ * 这类技术串只会让人困惑。与 PC 侧 friendlyErrorMessage 同一口径。
+ */
+function isOperatorFacingMessage(message: string | undefined): message is string {
+  if (!message) return false
+  const trimmed = message.trim()
+  return trimmed.length > 0 && trimmed.length <= 120 && /[\u4e00-\u9fa5]/.test(trimmed)
+}
+
 function extractHttpStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined
   const record = error as Record<string, unknown>
@@ -298,6 +309,12 @@ function actionableHttpMessage(status: number): string | undefined {
   if (status === 422) return '提交内容未通过业务校验，请检查必填项和数值后重试'
   if (status >= 500) return '服务暂时不可用，请稍后重试；写操作请先刷新核实结果'
   return undefined
+}
+
+function businessFailureMessage(error: unknown, fallback: string): string {
+  const serverMessage = extractServerMessage(error)
+  if (isOperatorFacingMessage(serverMessage)) return serverMessage
+  return fallback
 }
 
 /**
@@ -326,10 +343,12 @@ export function describeRequestError(
             .trim()
             .toLowerCase()
         : ''
+    // 分层透传（#1298）：只有本地能讲得更清楚的失败码才改写文案，其余一律回传服务端给的真因
+    // ——否则缺料这类拦截会被「操作失败」吞掉，操作工看不到缺哪个物料、缺多少。
     const message =
       failureCode === 'negative_on_hand' || failureCode === 'inventory-shortage'
         ? '库存不足，无法完成本次库存过账，请核对数量后重试'
-        : fallback
+        : businessFailureMessage(error, fallback)
     return {
       kind: 'business',
       message,
@@ -364,10 +383,18 @@ export function describeRequestError(
   const status = extractHttpStatus(error)
   const actionableMessage = status === undefined ? undefined : actionableHttpMessage(status)
   if (status !== undefined) {
+    const serverMessage = extractServerMessage(error)
+    // 分层透传（#1298）：业务拒绝（400/409/422…）的服务端原因永远比通用 HTTP 文案有用——
+    // 「物料齐套未满足：MAT-OIL 缺口 5」必须原样上屏，而不是「状态已变化，请刷新后按最新状态操作」。
+    // 401/403（登录/权限）与 5xx 仍用本地指引：那里的服务端文案对操作工没有可执行价值。
+    const prefersServerMessage =
+      isOperatorFacingMessage(serverMessage) && status < 500 && status !== 401 && status !== 403
     return {
       kind: 'business',
       status,
-      message: actionableMessage ?? extractServerMessage(error) ?? fallback,
+      message: prefersServerMessage
+        ? serverMessage
+        : (actionableMessage ?? serverMessage ?? fallback),
       // A proxy/gateway 5xx can be produced after the downstream write was
       // dispatched. Preserve the same idempotency key (or perform authoritative
       // readback) instead of treating it as a definite failure.

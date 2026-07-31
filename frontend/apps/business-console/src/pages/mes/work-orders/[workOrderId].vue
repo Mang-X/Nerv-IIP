@@ -18,6 +18,7 @@ import {
   MATERIAL_READINESS_SCOPE_NOTE,
 } from '@/composables/mes/materialReadinessScope'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
@@ -88,16 +89,22 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  confirmLineSideReceipt,
+  confirmLineSideReceiptPending,
+  createMaterialIssueRequest,
+  createMaterialIssueRequestPending,
   detail,
   detailError,
   detailPending,
   filters,
   finishedGoodsReceiptRequests,
   materialIssueRequests,
+  materialIssueRequestsPending,
   materialReadiness,
   materialReadinessError,
   materialReadinessPending,
   refreshDetail,
+  refreshMaterialIssueRequests,
   refreshMaterialReadiness,
   retryCancelPreview,
   workOrderManageScopeMessage,
@@ -250,7 +257,143 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   // 缺口卡在哪个环节 + 下一步动作（#1291：齐套页要能讲清「缺什么、缺在哪个环节、下一步动作」）。
   { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
+  { key: 'actions', header: '操作', width: 'w-28' },
 ]
+
+// --- 发起领料 / 线边收料（#1324）---
+// 齐套区的「下一步动作」以前指向一个 PC 上并不存在的动作（只有 PDA 能发起）。这里补齐两处入口，
+// 语义与校验与 PDA 侧同源：领料必须指定物料且数量>0；收料数量可省（默认收齐），指定时必须>0。
+const canManageMaterials = computed(() => permissionCodes.value.includes(P.mesMaterialsManage))
+// 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs）。界面写死一个占位单位会被 MES 直接拒收，
+// 也无法在库存腿上换算——取不到主档单位就阻断提交并说明原因，绝不猜（#1294 同款姿势）。
+const { resolveBaseUom, skusPending } = useSkuNames()
+const OPEN_ISSUE_STATUSES = new Set(['requested', 'partiallyreceived'])
+const issueOpen = ref(false)
+const issueForm = reactive({
+  materialId: '',
+  quantity: '',
+  operationTaskId: '',
+  idempotencyKey: '',
+})
+const receiveOpen = ref(false)
+const receiveForm = reactive({
+  requestId: '',
+  quantity: '',
+  materialLotId: '',
+  idempotencyKey: '',
+})
+
+function newMaterialIdempotencyKey(scope: string) {
+  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const materialIssueRows = computed(() => materialIssueRequests.value)
+type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
+const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
+  { key: 'requestId', header: '领料单', cellClass: 'font-medium' },
+  {
+    key: 'materialId',
+    header: '物料',
+    accessor: (r) => resolveSkuLabel(r.materialCode ?? r.materialId),
+  },
+  { key: 'requestedQuantity', header: '申请量', align: 'end', width: 'w-20' },
+  { key: 'receivedQuantity', header: '已收', align: 'end', width: 'w-20' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  // WMS 回写的出库单号：没有回写就是「仓库还没接单」，不能用空白冒充已发料。
+  { key: 'wmsRequestId', header: '出库单', width: 'w-32' },
+  { key: 'actions', header: '操作', width: 'w-28' },
+]
+
+const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))
+const issueUomBlockReason = computed(() => {
+  if (!issueForm.materialId.trim()) return ''
+  if (issueUomCode.value) return ''
+  return skusPending.value
+    ? '正在读取物料主档单位，请稍候。'
+    : '物料主档没有基本计量单位，无法发起领料。请先在物料主数据补齐该物料的基本计量单位。'
+})
+const canSubmitIssue = computed(() => {
+  if (!canManageMaterials.value) return false
+  if (!issueForm.materialId.trim()) return false
+  if (!issueUomCode.value) return false
+  if (!issueForm.quantity.trim()) return true
+  const quantity = Number(issueForm.quantity)
+  return Number.isFinite(quantity) && quantity > 0
+})
+const canSubmitReceipt = computed(() => {
+  if (!canManageMaterials.value) return false
+  if (!receiveForm.requestId) return false
+  if (!receiveForm.quantity.trim()) return true
+  const quantity = Number(receiveForm.quantity)
+  return Number.isFinite(quantity) && quantity > 0
+})
+
+function openIssueDialog(materialId?: string) {
+  if (!canManageMaterials.value) return
+  issueForm.materialId = materialId ?? ''
+  issueForm.quantity = ''
+  issueForm.operationTaskId = ''
+  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+    `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
+  )
+  issueOpen.value = true
+}
+
+function canReceive(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    OPEN_ISSUE_STATUSES.has((row.status ?? '').toLowerCase().replace(/[^a-z]/g, ''))
+  )
+}
+
+function openReceiveDialog(row: MaterialIssueRow) {
+  if (!canReceive(row)) return
+  receiveForm.requestId = row.requestId ?? ''
+  receiveForm.quantity = ''
+  receiveForm.materialLotId = row.materialLotId ?? ''
+  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
+  receiveOpen.value = true
+}
+
+async function submitIssue() {
+  if (!canSubmitIssue.value || createMaterialIssueRequestPending.value) return
+  const quantity = issueForm.quantity.trim() ? Number(issueForm.quantity) : undefined
+  try {
+    const uomCode = issueUomCode.value
+    if (!uomCode) return
+    await createMaterialIssueRequest({
+      materialId: issueForm.materialId.trim(),
+      uomCode,
+      quantity,
+      operationTaskId: issueForm.operationTaskId.trim() || undefined,
+      // 写面重试要落在同一张领料单上：幂等键在打开弹窗时冻结，成功后才换新。
+      idempotencyKey: issueForm.idempotencyKey,
+    })
+    issueOpen.value = false
+    notifySuccess('已发起领料，仓库出库单生成后会回写到本页。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    // 分层透传（#1298）：后端拒绝原因原样上屏，不用「操作失败」吞掉缺料/状态冲突的真因。
+    notifyOperationFailure('发起领料失败', error, '发起领料失败，请稍后重试。')
+  }
+}
+
+async function submitReceipt() {
+  if (!canSubmitReceipt.value || confirmLineSideReceiptPending.value) return
+  const receivedQuantity = receiveForm.quantity.trim() ? Number(receiveForm.quantity) : undefined
+  try {
+    await confirmLineSideReceipt(receiveForm.requestId, {
+      receivedQuantity,
+      materialLotId: receiveForm.materialLotId.trim() || undefined,
+      idempotencyKey: receiveForm.idempotencyKey,
+    })
+    receiveOpen.value = false
+    notifySuccess('已确认线边收料。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+  }
+}
 
 // --- 取消工单（破坏性动作，原因必填 + 补偿预览，A1 §2/§4） ---
 const CANCELLABLE_STATUSES = new Set(['created', 'released', 'hold'])
@@ -740,7 +883,21 @@ function formatError(error: unknown) {
     </div>
 
     <div class="grid gap-2">
-      <span class="text-sm font-semibold text-foreground">用料齐套</span>
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold text-foreground">用料齐套</span>
+        <!-- 齐套区的「下一步动作」在 PC 上必须真的能执行：这里就是发起领料的入口（#1324）。 -->
+        <NvButton
+          v-if="canManageMaterials"
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="open-material-issue"
+          @click="openIssueDialog()"
+        >
+          <PackageCheckIcon aria-hidden="true" />
+          发起领料
+        </NvButton>
+      </div>
       <!-- 口径自解释：齐套只认线边/备料范围，与 MRP 的全厂库存口径本来就不同（#1291）。 -->
       <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
         {{ MATERIAL_READINESS_SCOPE_NOTE }}
@@ -780,6 +937,19 @@ function formatError(error: unknown) {
             <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
           </div>
         </template>
+        <template #cell-actions="{ row }">
+          <NvButton
+            v-if="canManageMaterials"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`issue-material-${row.materialId}`"
+            @click="openIssueDialog(row.materialId ?? '')"
+          >
+            发起领料
+          </NvButton>
+          <span v-else class="text-xs text-muted-foreground">无领料权限</span>
+        </template>
       </NvDataTable>
       <!-- 全厂库存对照入口：穿透到库存可用量页，核对「原料仓有没有货」。 -->
       <RouterLink
@@ -789,6 +959,176 @@ function formatError(error: unknown) {
         >去库存可用量核对全厂是否有货</RouterLink
       >
     </div>
+
+    <!-- 领料与收料：本工单已发起的领料单、仓库出库单回写与线边收料入口（#1324）。 -->
+    <div class="grid gap-2">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold text-foreground">领料与收料</span>
+        <NvButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          :disabled="materialIssueRequestsPending"
+          @click="refreshMaterialIssueRequests"
+        >
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </NvButton>
+      </div>
+      <NvDataTable
+        :columns="materialIssueColumns"
+        :rows="materialIssueRows"
+        :row-key="(r) => r.requestId ?? ''"
+        :loading="materialIssueRequestsPending"
+        empty-message="本工单还没有领料单。缺料时在上方「发起领料」，仓库接单后这里会出现出库单号。"
+        :searchable="false"
+        :column-settings="false"
+        data-testid="material-issue-requests"
+      >
+        <template #cell-requestedQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.requestedQuantity) }}</span></template
+        >
+        <template #cell-receivedQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</span></template
+        >
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
+        <template #cell-wmsRequestId="{ row }">
+          <span v-if="row.wmsRequestId" class="font-medium">{{ row.wmsRequestId }}</span>
+          <span v-else class="text-xs text-muted-foreground">仓库尚未接单</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <NvButton
+            v-if="canReceive(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`receive-material-${row.requestId}`"
+            @click="openReceiveDialog(row)"
+          >
+            线边收料
+          </NvButton>
+          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+        </template>
+      </NvDataTable>
+    </div>
+
+    <!-- 发起领料 -->
+    <NvAlertDialog v-model:open="issueOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>发起领料 · {{ filters.workOrderId }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            领料发起后由仓库生成出库与拣货任务，出库单号回写到本页；物料到线边后再确认收料。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="issue-material">
+              物料 <span class="text-destructive">*</span>
+            </NvFieldLabel>
+            <NvInput id="issue-material" v-model="issueForm.materialId" placeholder="物料标识" />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-uom">单位</NvFieldLabel>
+            <!-- 单位来自物料主档，不给用户编辑，也不用占位值冒充。 -->
+            <p v-if="issueUomCode" class="text-sm text-foreground" data-testid="issue-uom">
+              {{ issueUomCode }}（取自物料主档基本计量单位）
+            </p>
+            <p v-else class="text-sm text-destructive" data-testid="issue-uom-blocked">
+              {{ issueUomBlockReason || '请先选择物料。' }}
+            </p>
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-quantity">数量</NvFieldLabel>
+            <NvInput
+              id="issue-quantity"
+              v-model="issueForm.quantity"
+              inputmode="decimal"
+              placeholder="留空表示按用料需求量领取"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-operation">工序任务</NvFieldLabel>
+            <NvInput
+              id="issue-operation"
+              v-model="issueForm.operationTaskId"
+              placeholder="可留空，指定后领料归属该工序"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="createMaterialIssueRequestPending"
+            @click="issueOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="!canSubmitIssue || createMaterialIssueRequestPending"
+            data-testid="submit-material-issue"
+            @click="submitIssue"
+          >
+            <Spinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
+            确认发起领料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边收料 -->
+    <NvAlertDialog v-model:open="receiveOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>线边收料 · {{ receiveForm.requestId }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            确认收料后线边可用量随即增加；数量留空表示按未收余量一次收齐。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="receive-quantity">收料数量</NvFieldLabel>
+            <NvInput
+              id="receive-quantity"
+              v-model="receiveForm.quantity"
+              inputmode="decimal"
+              placeholder="留空表示收齐剩余数量"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="receive-lot">物料批次</NvFieldLabel>
+            <NvInput
+              id="receive-lot"
+              v-model="receiveForm.materialLotId"
+              placeholder="退料与追溯依赖批次，建议如实填写"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="confirmLineSideReceiptPending"
+            @click="receiveOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="!canSubmitReceipt || confirmLineSideReceiptPending"
+            data-testid="submit-line-side-receipt"
+            @click="submitReceipt"
+          >
+            <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
+            确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
 
     <!-- 取消工单确认（含补偿预览区），A1 §2 破坏性动作原因必填 -->
     <NvAlertDialog v-model:open="cancelOpen">

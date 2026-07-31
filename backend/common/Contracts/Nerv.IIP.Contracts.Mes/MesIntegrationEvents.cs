@@ -13,6 +13,13 @@ public static class MesIntegrationEventTypes
     public const string OperationTaskManualDispatchCleared = "mes.OperationTaskManualDispatchCleared";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
     public const string ProductionReportRecorded = "mes.ProductionReportRecorded";
+    public const string MaterialIssueRequested = "mes.MaterialIssueRequested";
+}
+
+public static class MesSourceDocumentTypes
+{
+    /// <summary>Source document type WMS uses for outbound work created from a MES material issue request.</summary>
+    public const string MaterialIssueRequest = "mes-material-issue-request";
 }
 
 public static class MesIntegrationEventVersions
@@ -263,3 +270,32 @@ public sealed record FinishedGoodsReceiptRequestedPayload(
     string? ProducedLotNo,
     string? SerialNo,
     DateTimeOffset RequestedAtUtc);
+
+public sealed record MesMaterialIssueRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    MesMaterialIssueRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MesMaterialIssueRequestedPayload(
+    string RequestNo,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string MaterialId,
+    string UomCode,
+    decimal RequestedQuantity,
+    DateTimeOffset RequestedAtUtc,
+    string? SiteCode = null,
+    string? SourceLocationCode = null,
+    string? LineSideLocationCode = null);
