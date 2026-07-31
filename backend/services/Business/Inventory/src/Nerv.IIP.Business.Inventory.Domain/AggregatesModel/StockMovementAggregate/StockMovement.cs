@@ -169,7 +169,15 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && ProductionDate == other.ProductionDate
             && ExpiryDate == other.ExpiryDate
             && Quantity == other.Quantity
-            && UnitCost == other.UnitCost;
+            && HasSameRequestedValuation(other);
+    }
+
+    private bool HasSameRequestedValuation(StockMovement other)
+    {
+        // Outbound valuation is authoritative ledger state, not caller payload:
+        // StockLedger.ApplyValuation replaces UnitCost with the moving-average cost before persistence.
+        // Comparing that derived value with a replayed request's null/ignored UnitCost creates a false conflict.
+        return Quantity < 0 || UnitCost == other.UnitCost;
     }
 
     private static decimal NonZero(decimal value, string parameterName)
