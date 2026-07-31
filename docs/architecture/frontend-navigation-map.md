@@ -149,7 +149,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 > PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
 >
-> PDA 仓储作业状态（Plan 2 + MAN-629，已建 5 页）：**收货入库 `/wms/inbound`、复核发货 `/wms/review`、拣货 `/wms/pick`、上架 `/wms/putaway`、盘点 `/wms/count` 五页均接入当前主体的 `self/work-pool/site` 作业范围**；五类对象均有持久工作池/操作员派工和并发版本，遗留未派工记录默认不展示。上架/拣货不再是只读清单：PDA 消费服务端 `allowedActions/blockReasons` 提供 start、累计 progress、exception、complete，终态不再显示操作；短拣必须选择差异原因。收货/复核/盘点保留幂等写闭环，盘点入口与首页汇总独立受 `business.wms.counts.read` 裁剪，创建/派工/完成盘点要求 `business.inventory.counts.manage`。扫码 resolve 与离线 outbox/sync 仍后置。
+> PDA 仓储作业状态（Plan 2 + MAN-629，已建 5 页）：**收货入库 `/wms/inbound`、复核发货 `/wms/review`、拣货 `/wms/pick`、上架 `/wms/putaway`、盘点 `/wms/count` 五页均接入当前主体的 `self/work-pool/site` 作业范围**；五类对象均有持久工作池/操作员派工和并发版本，`self`/`work-pool` 范围下未派工记录不展示；`site` 范围（#1343 起由 IAM 精确站点授权直接成立，不再要求作业池成员资格）是整站作业面，含站内尚未派工的记录。上架/拣货不再是只读清单：PDA 消费服务端 `allowedActions/blockReasons` 提供 start、累计 progress、exception、complete，终态不再显示操作；短拣必须选择差异原因。收货/复核/盘点保留幂等写闭环，盘点入口与首页汇总独立受 `business.wms.counts.read` 裁剪，创建/派工/完成盘点要求 `business.inventory.counts.manage`。扫码 resolve 与离线 outbox/sync 仍后置。
 >
 > PDA MES 状态（Plan 3，已建）：MES 工序执行/报工/领料/完工入库 已建——`@nerv-iip/business-core` 已点亮 `mes.operation`/`mes.report`/`mes.issue`/`mes.receipt` 四个应用墙入口（`routeReady=true`），并落地报工/完工入库的 `productionReportFlow`/`finishedGoodsReceiptFlow` StepFlow；MES facade 全就绪、无后端阻塞。
 >

@@ -58,8 +58,14 @@ public sealed class WarehouseAssignedResourceExecutionAuthorizer(
                 scopeId,
                 request.ResourceSiteCode),
             cancellationToken);
-        if (!selection.PoolCodes.Contains(request.AssignedPoolCode, StringComparer.Ordinal)
-            || !selection.SiteCodes.Contains(request.ResourceSiteCode, StringComparer.Ordinal))
+        // 站点范围（IAM 精确站点授权）是整站作业面，读写口径必须一致：站内资源直接放行，
+        // 不再按作业池收窄——否则 site 范围「能读不能做」，对本可作业的主体是回归。
+        // self / work-pool 语义不变；站点边界在两条路径上都强制。
+        var withinSelectedScope =
+            selection.SiteCodes.Contains(request.ResourceSiteCode, StringComparer.Ordinal)
+            && (selection.SiteWide
+                || selection.PoolCodes.Contains(request.AssignedPoolCode, StringComparer.Ordinal));
+        if (!withinSelectedScope)
         {
             throw WmsAuthorizationException.Forbidden("resource-outside-selected-work-scope");
         }

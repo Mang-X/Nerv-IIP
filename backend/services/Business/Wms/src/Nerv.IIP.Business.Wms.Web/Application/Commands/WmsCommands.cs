@@ -1198,8 +1198,14 @@ internal static class WarehouseTaskActionExecution
                 command.ScopeId,
                 task.SiteCode),
             cancellationToken);
-        if (!selection.PoolCodes.Contains(task.AssignedPoolCode, StringComparer.Ordinal)
-            || !selection.SiteCodes.Contains(task.SiteCode, StringComparer.Ordinal))
+        // 与读面同一口径：站点范围（IAM 精确站点授权）覆盖整站任务，不再按作业池收窄；
+        // self / work-pool 语义不变，站点边界两条路径都强制（见
+        // WarehouseAssignedResourceExecutionAuthorizer 同款判定）。
+        var withinSelectedScope =
+            selection.SiteCodes.Contains(task.SiteCode, StringComparer.Ordinal)
+            && (selection.SiteWide
+                || selection.PoolCodes.Contains(task.AssignedPoolCode, StringComparer.Ordinal));
+        if (!withinSelectedScope)
         {
             throw WmsAuthorizationException.Forbidden("task-outside-selected-work-scope");
         }

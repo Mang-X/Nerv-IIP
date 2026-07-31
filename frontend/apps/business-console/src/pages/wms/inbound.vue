@@ -113,6 +113,7 @@ const {
   scopeOptions,
   selectedScopeLabel,
   hasSelection: inboundScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   error: workScopeError,
   refresh: refreshWorkScopes,
@@ -455,9 +456,7 @@ function formatError(error: unknown) {
         inboundOrdersHasFailedResponse || Boolean(inboundOrdersError) || Boolean(workScopeError)
       "
       failure-explanation="WMS 收货作业范围或入库单未成功返回，请重试。"
-      :empty-explanation="
-        inboundScopeReady ? '当前作业范围没有收货单。' : '作业范围目录未就绪，未发起查询。'
-      "
+      :empty-explanation="inboundScopeReady ? '当前作业范围没有收货单。' : workScopeUnreadyMessage"
     />
 
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
@@ -572,7 +571,7 @@ function formatError(error: unknown) {
       :error="inboundOrdersError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择业务范围，再查看入库单。"
+      :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看入库单。'"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
