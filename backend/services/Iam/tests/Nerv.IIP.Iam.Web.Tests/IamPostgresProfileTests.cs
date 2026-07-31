@@ -14,6 +14,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
@@ -97,7 +98,7 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
-    public async Task Postgres_profile_seeds_admin_and_persists_login_refresh_logout_and_connector_validation()
+    public async Task Postgres_profile_seeds_admin_and_persists_login_refresh_replay_logout_and_connector_validation()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(postgresConnectionString))
@@ -198,7 +199,7 @@ public sealed class IamPostgresProfileTests
 
             client.DefaultRequestHeaders.Authorization = new("Bearer", rotated.AccessToken);
             var meWithRotatedAccessToken = await client.GetAsync("/api/iam/v1/me");
-            meWithRotatedAccessToken.EnsureSuccessStatusCode();
+            Assert.Equal(HttpStatusCode.Unauthorized, meWithRotatedAccessToken.StatusCode);
 
             var logout = await client.PostAsJsonAsync("/api/iam/v1/auth/logout", new { sessionId = rotated.SessionId });
             Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
@@ -252,7 +253,7 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
-    public async Task Postgres_refresh_token_rotation_consumes_token_once_under_parallel_replay()
+    public async Task Postgres_refresh_token_rotation_consumes_token_once_and_replay_revokes_token_family()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(postgresConnectionString))
@@ -313,7 +314,7 @@ public sealed class IamPostgresProfileTests
                 var activeSessionCount = await db.UserSessions.CountAsync(x => x.UserId == adminUserId && x.RevokedAtUtc == null);
 
                 Assert.Equal(2, sessionCount);
-                Assert.Equal(1, activeSessionCount);
+                Assert.Equal(0, activeSessionCount);
             }
         }
         finally
@@ -323,7 +324,7 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
-    public async Task Postgres_refresh_token_consume_rolls_back_when_session_read_fails()
+    public async Task Postgres_refresh_replay_after_consumption_commit_revokes_rotated_session()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(postgresConnectionString))
@@ -346,7 +347,122 @@ public sealed class IamPostgresProfileTests
             Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
             Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
-            var interceptor = new FailNextSessionReadInterceptor();
+            var interceptor = new PauseAfterArmedTransactionCommitInterceptor();
+            await using var factory = new WebApplicationFactory<Program>()
+                .WithWebHostBuilder(builder =>
+                {
+                    builder.ConfigureServices(services =>
+                    {
+                        services.AddDbContext<ApplicationDbContext>(
+                            (_, options) => options.AddInterceptors(interceptor));
+                    });
+                });
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+            var login = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "admin", password = "Admin123!" });
+            login.EnsureSuccessStatusCode();
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
+
+            await using var rotatingScope = factory.Services.CreateAsyncScope();
+            await using var replayScope = factory.Services.CreateAsyncScope();
+            var rotatingAuth = rotatingScope.ServiceProvider.GetRequiredService<IIamAuthService>();
+            var rotatingSessions = rotatingScope.ServiceProvider.GetRequiredService<IUserSessionRepository>();
+            var replayAuth = replayScope.ServiceProvider.GetRequiredService<IIamAuthService>();
+
+            interceptor.Arm();
+            var rotationTask = RotateAndSaveAsync();
+            await interceptor.WaitUntilCommitPausedAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            try
+            {
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(
+                    () => replayAuth.RefreshAsync(
+                        auth.RefreshToken,
+                        "replay-client",
+                        "10.0.0.10",
+                        CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            finally
+            {
+                interceptor.Release();
+            }
+
+            var rotated = await rotationTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", rotated.AccessToken);
+            var me = await client.GetAsync("/api/iam/v1/me");
+            Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var adminUserId = new UserId("user-admin");
+                var sessions = await db.UserSessions
+                    .Where(x => x.UserId == adminUserId)
+                    .ToListAsync();
+
+                Assert.Equal(2, sessions.Count);
+                Assert.All(sessions, session => Assert.NotNull(session.RevokedAtUtc));
+                Assert.Contains(sessions, session => session.Id.Id == rotated.SessionId
+                    && session.RevokedReason == "refresh-reuse-detected");
+            }
+
+            async Task<Nerv.IIP.Iam.Web.Application.Auth.AuthResponse> RotateAndSaveAsync()
+            {
+                var response = await rotatingAuth.RefreshAsync(
+                    auth.RefreshToken,
+                    "rotating-client",
+                    "127.0.0.1",
+                    CancellationToken.None);
+                await rotatingSessions.UnitOfWork.SaveEntitiesAsync();
+                return response;
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public async Task Postgres_refresh_token_rotation_rolls_back_when_rotated_session_insert_fails()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            var interceptor = new FailNextSessionInsertInterceptor();
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseNpgsql(
                     postgresConnectionString,
@@ -370,18 +486,32 @@ public sealed class IamPostgresProfileTests
             await db.UserSessions.AddAsync(session);
             await db.SaveChangesAsync();
 
-            interceptor.FailNextSessionRead = true;
+            var rotatedSession = new UserSession(
+                new UserSessionId("session-rollback-proof-rotated"),
+                new UserId("user-admin"),
+                "refresh-token-hash-rotated",
+                now,
+                now.AddDays(14),
+                1,
+                null,
+                null,
+                tokenFamilyId: session.TokenFamilyId,
+                previousSessionId: session.Id.Id);
+            interceptor.FailNextSessionInsert = true;
             var repository = new UserSessionRepository(db);
 
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ConsumeActiveRefreshTokenAsync(
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.RotateActiveRefreshTokenAsync(
                 "refresh-token-hash",
                 now,
                 "refresh-rotated",
+                rotatedSession,
                 CancellationToken.None));
-            Assert.IsType<TimeoutException>(exception.InnerException);
+            var updateException = Assert.IsType<DbUpdateException>(exception.InnerException);
+            Assert.IsType<TimeoutException>(updateException.InnerException);
 
             db.ChangeTracker.Clear();
-            var originalSession = await db.UserSessions.SingleAsync(x => x.Id == new UserSessionId("session-rollback-proof"));
+            var originalSession = await db.UserSessions.SingleAsync();
+            Assert.Equal(new UserSessionId("session-rollback-proof"), originalSession.Id);
             Assert.Null(originalSession.RevokedAtUtc);
         }
         finally
@@ -1017,9 +1147,9 @@ public sealed class IamPostgresProfileTests
         return envelope.Data;
     }
 
-    private sealed class FailNextSessionReadInterceptor : DbCommandInterceptor
+    private sealed class FailNextSessionInsertInterceptor : DbCommandInterceptor
     {
-        public bool FailNextSessionRead { get; set; }
+        public bool FailNextSessionInsert { get; set; }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
@@ -1027,16 +1157,53 @@ public sealed class IamPostgresProfileTests
             InterceptionResult<DbDataReader> result,
             CancellationToken cancellationToken = default)
         {
-            if (FailNextSessionRead
-                && command.CommandText.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains("user_sessions", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains("RefreshTokenHash", StringComparison.OrdinalIgnoreCase))
+            if (FailNextSessionInsert
+                && command.CommandText.StartsWith("INSERT", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("user_sessions", StringComparison.OrdinalIgnoreCase))
             {
-                FailNextSessionRead = false;
-                throw new TimeoutException("Injected session read failure.");
+                FailNextSessionInsert = false;
+                throw new TimeoutException("Injected rotated session insert failure.");
             }
 
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class PauseAfterArmedTransactionCommitInterceptor : DbTransactionInterceptor
+    {
+        private readonly TaskCompletionSource<bool> commitPaused =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int armed;
+        private int claimed;
+
+        public void Arm()
+        {
+            Volatile.Write(ref armed, 1);
+        }
+
+        public Task WaitUntilCommitPausedAsync()
+        {
+            return commitPaused.Task;
+        }
+
+        public void Release()
+        {
+            release.TrySetResult(true);
+        }
+
+        public override async Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref armed) == 1
+                && Interlocked.CompareExchange(ref claimed, 1, 0) == 0)
+            {
+                commitPaused.TrySetResult(true);
+                await release.Task.WaitAsync(cancellationToken);
+            }
         }
     }
 
