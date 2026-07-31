@@ -20,7 +20,7 @@ IAM 授权检查按本次 `permissionCode` 返回 role/membership 来源的 perm
 
 ## PDA 四入口、角色工作台与个人中心（MAN-633 / #1170）
 
-Business PDA 现在以固定底部四入口组织现场作业：工作台、任务、扫码、我的。工作台和任务入口直接使用当前 principal 的 `permissionCodes` 聚合多个角色的 route-ready 能力，不要求也不提供手工角色切换；相同业务路由只出现一次。任务页不再消费客户端可控的 MES dispatch assignment 并称为“我的生产任务”，而是进入按当前主体与授权作业范围过滤的工序执行页；Quality 入口继续指向服务端 Self 范围任务页，WMS 只标为当前授权作业范围，不把 self/work-pool/site 工作池伪称个人任务。工序深链必须同时携带 `workOrderId + operationTaskId`，页面以两者精确匹配后才打开动作面板；单边、缺失或不在当前授权范围的组合都显式失败。
+Business PDA 现在以固定底部四入口组织现场作业：工作台、任务、扫码、我的。工作台和任务入口直接使用当前 principal 的 `permissionCodes` 聚合多个角色的 route-ready 能力，不要求也不提供手工角色切换；相同业务路由只出现一次。工作台与任务页都不再消费客户端可控的 MES dispatch assignment 并称为“我的任务”，而是进入按当前主体与授权作业范围过滤的工序执行页；Quality 入口继续指向服务端 Self 范围任务页，WMS 只标为当前授权作业范围，不把 self/work-pool/site 工作池伪称个人任务。任务页和扫码页的作业导航使用带 `href` 的原生 RouterLink，非交互 `NvCell` 只负责品牌展示，避免导航退化为 `div role=button`。工序深链必须同时携带 `workOrderId + operationTaskId`，页面以两者精确匹配后才打开动作面板；同路由 query push/back/forward 会关闭旧 sheet、重绑定 pair 并等待新范围响应，单边、缺失或不在当前授权范围的组合都显式失败。
 
 个人中心复用 MAN-627 permission-aware work-context，按当前主体持有的 PDA 代表性权限聚合并去重可读角色、班组与授权范围，同时展示认证主体、登录名、工号、岗位、实时网络状态和 `resolvedAtUtc` 新鲜度；loading、error、partial 与确认空值分开呈现并可重试。WMS 的 receipts/shipments/counts 权限目录另外聚合可信 `self/work-pool/site` 授权选项与各作业页共享的当前选择，不用通用 work-context 推测仓储范围。退出先在本机清除认证会话，再有界等待 `logoutConsoleSession` 撤销结果；网络失败或超时仍安全回登录页并显示远端撤销状态。清理只移除 PDA 查询缓存和 `nerv-iip.business-pda.*` 持久状态，保留同源 Console 数据与待处理业务意图。扫码入口在 barcode resolve facade 尚未交付时只显示实际读取到的原码和当前权限内作业入口，不伪造对象类型或跳转结果。离线消息中心、终端舰队、独立 mobile API 和扫码解析仍不在本项范围。
 

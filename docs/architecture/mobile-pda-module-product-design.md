@@ -19,7 +19,7 @@
 PDA 首页采用任务范式而非菜单树，由三部分构成：
 
 - **常驻扫码条（ScanBar）**：顶部固定、自动聚焦并在失焦后自动重聚焦，捕获键盘楔入扫码序列，是 PDA 的命脉入口。
-- **我的任务**：跨 WMS/MES 的个人待办卡片（TaskCard），让操作员直接看到「该我干的活」。
+- **可信任务入口**：只对服务端 principal-bound 的任务使用“我的”语义；其余入口明确按当前主体授权作业范围进入。
 - **快捷应用墙（AppWall）**：收货/上架/拣货/复核发货/盘点/报工/领料/完工入库/工序执行/巡检点检/报修 等作业入口，以九宫格形式呈现。
 
 扫码结果通过 ScanResultRouter 分流：扫码串 → 识别对象（工单/库位/批次/SKU/设备/容器）→ 直接进入对应作业页。
@@ -28,7 +28,7 @@ PDA 首页采用任务范式而非菜单树，由三部分构成：
 
 ## 3. 角色与权限
 
-PDA 面向一线操作员角色，默认可见能力收敛为：**我的任务、扫码直达、应用墙**，不暴露 PC 能力目录与完整菜单树。
+PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务入口、扫码直达、应用墙**，不暴露 PC 能力目录与完整菜单树。
 
 权限以 **BusinessGateway per-request enforcement 为唯一权威**：Gateway 按当前 bearer token、组织/环境上下文与 operation permission 做每请求授权。前端按 permission catalog / `me` 上下文 / feature flag 对应用墙与任务入口做裁剪，但这只是 UX 优化，不是授权边界；客户端不得因为入口已隐藏或已显示而跳过 401/403 处理。「我的任务」必须逐领域由 Gateway 绑定当前 principal，并由拥有 assignment 的领域服务做 Self/Team 行级裁决；Quality 检验任务已完成该链路，其余没有 assignee/owner 事实的对象仍不得伪称个人任务。
 
@@ -37,7 +37,7 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**我的任务�
 里程碑顺序（与 spec §11 一致）：
 
 - **M0 `ui-mobile` 地基**（先行）：`AppShellMobile`（含顶/底/左右三段安全区）+ ScanBar + ListRow + BottomSheet + Result 先跑通；建 `business-core` 骨架与设计 token 接入。
-- **M1 PDA 壳**：`business-pda` app + Capacitor APK 基线 + 首页（我的任务/应用墙/扫码分流）+ 登录/会话复用。
+- **M1 PDA 壳**：`business-pda` app + Capacitor APK 基线 + 首页（可信任务入口/应用墙/扫码分流）+ 登录/会话复用。
 - **M2 WMS 一线闭环（已建 · 5 页）**：收货入库/复核发货/盘点（写闭环 + 幂等）+ 拣货/上架（只读任务清单）五页全量落地。#374 已补 WMS 拣货、上架、盘点独立 list facade，curated barrel 已接出（`@nerv-iip/api-client`），首页 WMS 入口五项已点亮；拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete），盘点写经 count-executions complete（幂等键注入）。
 - **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)（MES facade 全就绪，无后端阻塞）。
 - **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。
@@ -53,7 +53,7 @@ PDA v1 闭环依赖若干 BusinessGateway facade 能力，当前存在缺口（�
 - **「我的任务」个人过滤缺失**：WMS list facade 已接收 `operatorUserId` 参数但缺少 WMS assigned operator 持久字段，`workbench/summary` 仍只提供 KPI/待办/通知。
 - **扫码解析端点缺失**：仅有扫码记录 create+list，缺 `POST barcode/resolve`（扫码串 → 对象类型/ID/目标作业页）；对象搜索当前不支持库存批次/库位/设备类型。
 
-处置口径：#374 已收口 WMS P0 list facade（拣货/上架/盘点 list 已交付）；扫码解析、真实个人任务收件箱和全局搜索库存批次/设备类型仍需后续下游事实支撑。缺口落地前，对应 PDA 作业页保持 disabled / feature-flag hidden 或以父单进入，不做半截入口或空跳转；「我的任务」v1 先按工作中心/状态在客户端聚合现有 list，缺口落地后切换为后端个人过滤。
+处置口径：#374 已收口 WMS P0 list facade（拣货/上架/盘点 list 已交付）；扫码解析、真实个人任务收件箱和全局搜索库存批次/设备类型仍需后续下游事实支撑。缺口落地前，对应 PDA 作业页保持 disabled / feature-flag hidden 或以父单进入，不做半截入口或空跳转；不再以客户端 `assignedUserId` 或工作中心聚合伪造“我的任务”，只有服务端 principal-bound 读面可使用 Self 口径。
 
 ## 6. 验收
 

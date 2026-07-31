@@ -34,6 +34,23 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   await expect(result.getByText('工序已完成')).toBeVisible()
 })
 
+test('工序执行：same-route query push 与 back/forward 始终只打开当前双强 ID', async ({ page }) => {
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+
+  await page.evaluate(async (target) => {
+    const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
+    await router.push(target)
+  }, '/mes/operation?workOrderId=WO-2&operationTaskId=OP-3')
+  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+})
+
 test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结果', async ({ page }) => {
   let submittedReport: Record<string, unknown> | undefined
   await page.route('**/api/business-console/v1/mes/production-reports', async (route) => {

@@ -723,6 +723,13 @@ export function useMesOperationTasks() {
       filters.environmentId.trim(),
       selectedScope?.kind ?? '',
       selectedScope?.id ?? '',
+      filters.status?.trim() ?? '',
+      filters.keyword?.trim() ?? '',
+      filters.workOrderId?.trim() ?? '',
+      filters.workCenterId?.trim() ?? '',
+      filters.deviceAssetId?.trim() ?? '',
+      filters.skip,
+      filters.take,
     ].join(':')
   })
 

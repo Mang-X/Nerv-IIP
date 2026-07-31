@@ -1,8 +1,7 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
-
-const push = vi.fn(() => Promise.resolve())
-vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 
 vi.mock('@/composables/useWorkbenchHome', () => ({
   HOME_PERMISSIONS: {
@@ -24,7 +23,18 @@ import TasksPage from './tasks.vue'
 
 describe('PDA tasks page', () => {
   it('uses truthful scoped task entrances without claiming client-filtered MES rows are personal', async () => {
-    const wrapper = mount(TasksPage)
+    const target = defineComponent({ template: '<div>target</div>' })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/tasks', component: TasksPage },
+        { path: '/mes/operation', component: target },
+        { path: '/quality/tasks', component: target },
+      ],
+    })
+    await router.push('/tasks')
+    await router.isReady()
+    const wrapper = mount(TasksPage, { global: { plugins: [router] } })
 
     expect(wrapper.text()).toContain('生产作业')
     expect(wrapper.text()).toContain('我的质检任务')
@@ -32,13 +42,12 @@ describe('PDA tasks page', () => {
     expect(wrapper.text()).not.toContain('暂无派给我的生产任务')
     expect(wrapper.text()).not.toContain('仓储任务')
 
-    const production = wrapper
-      .findAll('[role="button"]')
-      .find((cell) => cell.text().includes('生产作业'))!
-    await production.trigger('keydown', { key: 'Enter' })
-    expect(push).toHaveBeenCalledWith('/mes/operation')
+    const production = wrapper.get('a[href="/mes/operation"]')
+    expect(production.text()).toContain('生产作业')
+    expect(production.attributes('aria-label')).toBe('生产作业，服务端按当前主体与授权作业范围过滤')
 
-    await wrapper.get('[data-testid="quality-self-tasks"]').trigger('click')
-    expect(push).toHaveBeenCalledWith('/quality/tasks')
+    await production.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/mes/operation')
   })
 })

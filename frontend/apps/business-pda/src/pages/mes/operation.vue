@@ -69,26 +69,32 @@ function queryString(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-const requestedWorkOrderId = queryString(route.query.workOrderId)
-const requestedOperationTaskId = queryString(route.query.operationTaskId)
-const hasCompleteTaskDeepLink = Boolean(requestedWorkOrderId && requestedOperationTaskId)
+const requestedWorkOrderId = computed(() => queryString(route.query.workOrderId))
+const requestedOperationTaskId = computed(() => queryString(route.query.operationTaskId))
+const hasCompleteTaskDeepLink = computed(() =>
+  Boolean(requestedWorkOrderId.value && requestedOperationTaskId.value),
+)
+const hasAnyTaskDeepLink = computed(() =>
+  Boolean(requestedWorkOrderId.value || requestedOperationTaskId.value),
+)
+const hasInvalidTaskDeepLink = computed(
+  () => hasAnyTaskDeepLink.value && !hasCompleteTaskDeepLink.value,
+)
+const deepLinkIdentity = computed(
+  () => `${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+)
 const deepLinkMessage = ref('')
 
-if (hasCompleteTaskDeepLink) {
-  filters.workOrderId = requestedWorkOrderId
-  filters.keyword = requestedOperationTaskId
-} else if (requestedWorkOrderId || requestedOperationTaskId) {
-  deepLinkMessage.value = '工序任务链接缺少工单或任务标识，无法安全打开。'
-}
-
 const visibleOperationTasks = computed(() =>
-  hasCompleteTaskDeepLink
-    ? operationTasks.value.filter(
-        (task) =>
-          task.workOrderId === requestedWorkOrderId &&
-          task.operationTaskId === requestedOperationTaskId,
-      )
-    : operationTasks.value,
+  hasInvalidTaskDeepLink.value
+    ? []
+    : hasCompleteTaskDeepLink.value
+      ? operationTasks.value.filter(
+          (task) =>
+            task.workOrderId === requestedWorkOrderId.value &&
+            task.operationTaskId === requestedOperationTaskId.value,
+        )
+      : operationTasks.value,
 )
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
@@ -230,17 +236,40 @@ function openSheet(task: Task) {
   sopFilters.asOfDate = ''
 }
 
-const deepLinkOpened = ref(false)
+const deepLinkOpenedIdentity = ref('')
 watch(
-  [visibleOperationTasks, pending, hasSuccessfulResponse],
-  ([tasks, isPending, successful]) => {
-    if (!hasCompleteTaskDeepLink || deepLinkOpened.value || isPending || !successful) return
+  [requestedWorkOrderId, requestedOperationTaskId],
+  ([workOrderId, operationTaskId]) => {
+    closeSheet()
+    if (!operationResultUnknown.value) result.value = null
+    deepLinkOpenedIdentity.value = ''
+    deepLinkMessage.value = ''
+    const completePair = Boolean(workOrderId && operationTaskId)
+    filters.workOrderId = completePair ? workOrderId : undefined
+    filters.keyword = completePair ? operationTaskId : undefined
+    if ((workOrderId || operationTaskId) && !completePair) {
+      deepLinkMessage.value = '工序任务链接缺少工单或任务标识，无法安全打开。'
+    }
+  },
+  { immediate: true },
+)
+watch(
+  [visibleOperationTasks, pending, hasSuccessfulResponse, deepLinkIdentity],
+  ([tasks, isPending, successful, identity]) => {
+    if (
+      !hasCompleteTaskDeepLink.value ||
+      deepLinkOpenedIdentity.value === identity ||
+      isPending ||
+      !successful
+    )
+      return
     const exactTask = tasks[0]
     if (!exactTask) {
       deepLinkMessage.value = '未在当前主体授权作业范围内找到指定工序任务。'
       return
     }
-    deepLinkOpened.value = true
+    deepLinkMessage.value = ''
+    deepLinkOpenedIdentity.value = identity
     openSheet(exactTask)
   },
   { immediate: true },

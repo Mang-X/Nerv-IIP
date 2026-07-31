@@ -91,16 +91,18 @@ test('failed login shows an error and stays on the login route', async ({ page }
   await expect(page.getByRole('button', { name: '登录' })).toBeVisible()
 })
 
-test('home shows scan bar, my dispatch tasks and a permission-gated app wall', async ({ page }) => {
+test('home shows an honest permission-gated workbench without fake personal dispatch rows', async ({
+  page,
+}) => {
   await seedStoredSession(page)
   await page.goto('/')
 
   await expect(page.getByTestId('home-name')).toHaveText('李秀英')
   // scan bar focus input present
   await expect(page.locator('input[placeholder^="扫描"]')).toBeVisible()
-  // 「我的任务」呈现派工到本人的工序任务（服务端 assignedUserId 过滤，中文状态标签）。
-  await expect(page.getByTestId('home-my-tasks')).toContainText('WO-2026-00001')
-  await expect(page.getByTestId('home-my-tasks')).toContainText('进行中')
+  await expect(page.getByTestId('home-my-tasks')).toHaveCount(0)
+  await expect(page.getByText('我的任务', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('暂无派给我的任务')).toHaveCount(0)
   // 仓储摘要块随 WMS 读权限出现（计数来自各 open 列表 total）。
   await expect(page.getByTestId('home-warehouse')).toContainText('待上架')
   // 主体带全量 PDA 权限 → 应用墙入口全部可见可点。
@@ -110,6 +112,30 @@ test('home shows scan bar, my dispatch tasks and a permission-gated app wall', a
 
   await expectNoHorizontalOverflow(page)
   await expectTouchTargets(page)
+})
+
+test('task and scan navigation cells are native links with browser keyboard semantics', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await seedStoredSession(page)
+  await page.goto('/tasks')
+
+  const production = page.getByRole('link', { name: /生产作业/ })
+  await expect(production).toHaveAttribute('href', '/mes/operation')
+  await production.focus()
+  await expect(production).toBeFocused()
+  await expect(production).toHaveCSS('outline-style', 'solid')
+  await production.press('Space')
+  await expect(page).toHaveURL('/tasks')
+  await production.press('Enter')
+  await expect(page).toHaveURL('/mes/operation')
+
+  await page.goto('/scan')
+  const report = page.getByRole('link', { name: '生产报工' })
+  await expect(report).toHaveAttribute('href', '/mes/report')
+  await report.press('Enter')
+  await expect(page).toHaveURL('/mes/report')
 })
 
 test('clicking an app-wall entry navigates to its work page', async ({ page }) => {
@@ -166,7 +192,7 @@ test('fixed four-entrance navigation adapts the workbench, tasks, scan and profi
   await expect(tabBar.getByRole('button', { name: '我的' })).toBeFocused()
 
   await expect(tabBar.getByRole('button', { name: '任务' })).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByRole('button', { name: /生产作业/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /生产作业/ })).toBeVisible()
   await expect(page.getByText('我的质检任务')).toBeVisible()
 
   await tabBar.getByRole('button', { name: '扫码' }).click()

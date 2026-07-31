@@ -1,12 +1,10 @@
 import {
-  listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
   listBusinessConsoleWorkersQueryOptions,
-  type BusinessConsoleMesDispatchTaskRow,
   type BusinessConsoleQualityInspectionTaskItem,
   type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
@@ -25,14 +23,11 @@ import {
  *
  * - 权限判定用 `principal.permissionCodes`（真实授权来自网关逐请求校验，这里只决定
  *   首页渲染哪些板块，避免无权限板块发起注定 403 的请求）。
- * - 「我的任务」走派工读面 `assignedUserId = principalId` 服务端过滤（非客户端筛页，
- *   不受 take 截断漏计）。
  * - 各域空 scope（未登录 / principal 缺 org/env）时一律不发请求。
  */
 
 /** 首页各板块的权限门槛（与 BusinessGateway 各 facade 实际要求一致）。 */
 export const HOME_PERMISSIONS = {
-  myTasks: 'business.mes.dispatch.read',
   mesOperations: 'business.mes.operations.read',
   workerProfile: 'business.masterdata.resources.read',
   wmsReceipts: 'business.wms.receipts.read',
@@ -42,15 +37,7 @@ export const HOME_PERMISSIONS = {
   alarms: 'business.iiot.alarms.read',
 } as const
 
-/** 视为「进行中/待处理」的派工任务状态（终态 Completed/Cancelled 不上首页）。 */
-const OPEN_DISPATCH_STATUSES = new Set(['Queued', 'InProgress', 'Paused', 'ScheduleInvalidated'])
-
 const HOME_TAKE = 100
-
-/** 与 useBusinessMes 同款：以宽对象注入可选查询参数（生成类型的 status 联合是文档性收窄）。 */
-function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
-  return value === undefined || value === '' ? {} : { [key]: value }
-}
 
 function listItems<TItem>(
   envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
@@ -101,81 +88,6 @@ export function usePdaIdentity() {
     can,
     worker,
     displayName: computed(() => worker.value?.displayName || loginName.value),
-  }
-}
-
-export function useMyDispatchTasks() {
-  const identity = usePdaIdentity()
-  const enabled = computed(
-    () =>
-      identity.hasScope.value &&
-      Boolean(identity.principalId.value) &&
-      identity.can(HOME_PERMISSIONS.myTasks),
-  )
-
-  // 按状态分查（Queued / InProgress / Paused 各一查）：列表默认按最早开始时间升序，
-  // 工人名下的历史已完成任务量很大（L1 引擎按班组回填），无状态过滤时 take 窗口会被
-  // 旧完成任务淹没、在办任务反而查不到；分查后计数直接用服务端 total（准确不受截断影响）。
-  const statusQuery = (status: string) =>
-    useQuery(() => ({
-      ...listBusinessConsoleMesDispatchTasksQueryOptions({
-        query: {
-          organizationId: identity.organizationId.value,
-          environmentId: identity.environmentId.value,
-          assignedUserId: identity.principalId.value,
-          ...optionalQuery('status', status),
-          skip: 0,
-          take: HOME_TAKE,
-        },
-      }),
-      enabled: enabled.value,
-    }))
-
-  const queuedQuery = statusQuery('Queued')
-  const inProgressQuery = statusQuery('InProgress')
-  const pausedQuery = statusQuery('Paused')
-
-  // 运行时状态是 MES 侧 `Status.ToString()` 的 PascalCase 直传（生成类型上的 camelCase
-  // 联合是文档性收窄，与线上负载不符），这里统一宽化为 string 比较——与 mes/operation 页同惯例。
-  const statusOf = (task: BusinessConsoleMesDispatchTaskRow): string => task.status ?? ''
-
-  const openTasks = computed<BusinessConsoleMesDispatchTaskRow[]>(() =>
-    [
-      ...listItems<BusinessConsoleMesDispatchTaskRow>(inProgressQuery.data.value),
-      ...listItems<BusinessConsoleMesDispatchTaskRow>(pausedQuery.data.value),
-      ...listItems<BusinessConsoleMesDispatchTaskRow>(queuedQuery.data.value),
-    ]
-      // 服务端 assignedUserId 过滤为主；行级再校验一次（旧网关忽略未知参数时不误显他人任务）。
-      .filter((task) => task.assignedUserId === identity.principalId.value)
-      .filter((task) => OPEN_DISPATCH_STATUSES.has(statusOf(task)))
-      .sort((a, b) => {
-        // 进行中/暂停靠前，其后按排产时间升序。
-        const rank = (t: BusinessConsoleMesDispatchTaskRow) =>
-          statusOf(t) === 'InProgress' ? 0 : statusOf(t) === 'Paused' ? 1 : 2
-        const byRank = rank(a) - rank(b)
-        if (byRank !== 0) return byRank
-        return (a.scheduledAtUtc ?? a.plannedStartUtc ?? '').localeCompare(
-          b.scheduledAtUtc ?? b.plannedStartUtc ?? '',
-        )
-      }),
-  )
-
-  return {
-    enabled,
-    openTasks,
-    queuedCount: computed(() => listTotal(queuedQuery.data.value)),
-    inProgressCount: computed(
-      () => listTotal(inProgressQuery.data.value) + listTotal(pausedQuery.data.value),
-    ),
-    pending: computed(
-      () =>
-        queuedQuery.isLoading.value ||
-        inProgressQuery.isLoading.value ||
-        pausedQuery.isLoading.value,
-    ),
-    error: queuedQuery.error,
-    refresh: () =>
-      Promise.all([queuedQuery.refetch(), inProgressQuery.refetch(), pausedQuery.refetch()]),
   }
 }
 

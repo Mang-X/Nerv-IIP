@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ClipboardCheck, Factory, PackageOpen } from '@lucide/vue'
-import { NvAppShellMobile, NvCell, NvCellGroup, NvNavBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvCellGroup, NvNavBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 
+import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
 import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/useWorkbenchHome'
 
 definePage({ meta: { requiresAuth: true, title: '任务' } })
 
-const router = useRouter()
 const identity = usePdaIdentity()
 const canSeeMesOperations = computed(() => identity.can(HOME_PERMISSIONS.mesOperations))
 const canSeeQualitySelfTasks = computed(() => identity.can(HOME_PERMISSIONS.quality))
@@ -25,10 +24,6 @@ const warehouseEntrances = computed(() => {
   }
   return entries
 })
-
-function openRoute(route: string) {
-  router.push(route).catch(() => undefined)
-}
 </script>
 
 <template>
@@ -39,45 +34,44 @@ function openRoute(route: string) {
       <section v-if="canSeeMesOperations">
         <h1 class="mb-2 text-sm font-semibold text-foreground">生产作业</h1>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell
+          <PdaNavigationCell
+            to="/mes/operation"
             title="生产作业"
             note="服务端按当前主体与授权作业范围过滤"
-            arrow
-            @click="openRoute('/mes/operation')"
+            accessible-name="生产作业，服务端按当前主体与授权作业范围过滤"
           >
             <template #icon><Factory /></template>
-          </NvCell>
+          </PdaNavigationCell>
         </NvCellGroup>
       </section>
 
       <section v-if="canSeeQualitySelfTasks">
         <h2 class="mb-2 text-sm font-semibold text-foreground">质量任务</h2>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell
+          <PdaNavigationCell
             data-testid="quality-self-tasks"
+            to="/quality/tasks"
             title="我的质检任务"
             note="服务端按当前主体 Self 范围返回"
-            arrow
-            @click="openRoute('/quality/tasks')"
           >
             <template #icon><ClipboardCheck /></template>
-          </NvCell>
+          </PdaNavigationCell>
         </NvCellGroup>
       </section>
 
       <section v-if="warehouseEntrances.length">
         <h2 class="mb-2 text-sm font-semibold text-foreground">仓储作业</h2>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell
+          <PdaNavigationCell
             v-for="entry in warehouseEntrances"
             :key="entry.route"
+            :to="entry.route"
             :title="entry.title"
             :note="entry.note"
-            arrow
-            @click="openRoute(entry.route)"
+            :accessible-name="`${entry.title}，${entry.note}`"
           >
             <template #icon><PackageOpen /></template>
-          </NvCell>
+          </PdaNavigationCell>
         </NvCellGroup>
       </section>
     </div>

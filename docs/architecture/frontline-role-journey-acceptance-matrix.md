@@ -80,35 +80,35 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 
 ## 3. 总览矩阵
 
-| 旅程                   | 端       | 账号       | 当前数据范围                               | 公开入口                      | 当前结果       |
-| ---------------------- | -------- | ---------- | ------------------------------------------ | ----------------------------- | -------------- |
-| O1 在制工序继续执行    | PDA      | `emp010`   | 首页伪“我的任务”；执行页 Organization      | MES dispatch/operation facade | 部分可验       |
-| O2 可开工任务启动      | PDA      | `emp010`   | 首页伪“我的任务”；执行页 Organization      | MES start facade              | 阻塞状态映射   |
-| O3 前序未完阻断        | PDA      | `emp012`   | 首页伪“我的任务”；命令按 org/env + task ID | MES start facade              | 可验服务端阻断 |
-| O4 物料未齐套阻断      | PDA      | `emp012`   | 首页伪“我的任务”；命令按 org/env + task ID | MES start facade              | 可验服务端阻断 |
-| W1 收货并进入上架观察  | PDA      | `emp049`   | Organization                               | WMS inbound/putaway facade    | 阻塞终态守卫   |
-| W2 拣货并复核发货      | PDA      | `emp049`   | Organization                               | WMS picking/outbound facade   | 阻塞终态守卫   |
-| Q1 待检执行与 NCR 支线 | PDA      | `emp034`   | Self（当前 principal）                     | Quality task/record facade    | 可验           |
-| M1 维修人员处理工单    | PDA      | 无         | 无 Technician scope                        | Maintenance facade 存在       | 阻塞           |
-| S1 工人固定工位执行    | 工位机   | 无         | 无                                         | `business-workstation` 未实现 | 阻塞           |
-| T1 班组/车间当班处置   | 车间终端 | 无         | 无 Team/Workshop scope                     | 专用工作台未实现              | 阻塞           |
-| P1 计划员/管理者工作台 | PC       | 无代表账号 | admin 仅 Organization                      | Business Console              | 阻塞角色终验   |
+| 旅程                   | 端       | 账号       | 当前数据范围                           | 公开入口                      | 当前结果       |
+| ---------------------- | -------- | ---------- | -------------------------------------- | ----------------------------- | -------------- |
+| O1 在制工序继续执行    | PDA      | `emp010`   | 当前主体授权作业范围；双强 ID 精确打开 | MES operation facade          | 部分可验       |
+| O2 可开工任务启动      | PDA      | `emp010`   | 当前主体授权作业范围；双强 ID 精确打开 | MES start facade              | 阻塞状态映射   |
+| O3 前序未完阻断        | PDA      | `emp012`   | 当前主体授权作业范围 + task ID         | MES start facade              | 可验服务端阻断 |
+| O4 物料未齐套阻断      | PDA      | `emp012`   | 当前主体授权作业范围 + task ID         | MES start facade              | 可验服务端阻断 |
+| W1 收货并进入上架观察  | PDA      | `emp049`   | Organization                           | WMS inbound/putaway facade    | 阻塞终态守卫   |
+| W2 拣货并复核发货      | PDA      | `emp049`   | Organization                           | WMS picking/outbound facade   | 阻塞终态守卫   |
+| Q1 待检执行与 NCR 支线 | PDA      | `emp034`   | Self（当前 principal）                 | Quality task/record facade    | 可验           |
+| M1 维修人员处理工单    | PDA      | 无         | 无 Technician scope                    | Maintenance facade 存在       | 阻塞           |
+| S1 工人固定工位执行    | 工位机   | 无         | 无                                     | `business-workstation` 未实现 | 阻塞           |
+| T1 班组/车间当班处置   | 车间终端 | 无         | 无 Team/Workshop scope                 | 专用工作台未实现              | 阻塞           |
+| P1 计划员/管理者工作台 | PC       | 无代表账号 | admin 仅 Organization                  | Business Console              | 阻塞角色终验   |
 
 ## 4. PDA 操作工：`emp010` / `emp012`
 
 ### 4.1 共用主旅程
 
-| 环节           | 预期结果与证据                                                                                                                                                                                                                                                                                     |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 登录           | 从 PDA 登录页调用 `loginConsoleUser`；`getConsolePrincipal` 必须返回对应 `user-emp-*`、`role-pda-operator`、org/env 与 MES 最小权限。                                                                                                                                                              |
-| 默认工作台     | 权限聚合首页只出现允许的 MES、报警、报修入口。任务页已移除客户端可控 `assignedUserId` 形成的伪个人 MES 列表，只提供按当前主体授权范围进入工序执行的入口；首页既有 dispatch 摘要仍不能作为权威本人任务证据。                                                                                        |
-| 范围           | `/mes/operation` 使用 MAN-627 permission-aware work-context 的已验证选择查询，任务页不再声称只显示本人任务；首页既有 dispatch assignment 过滤仍不等于服务端绑定当前主体。MES 归属查询的后续收口继续由 #1163/#1165 跟进。                                                                           |
-| 筛选/分页/刷新 | 工序页扫码只写 `keyword`；请求固定 `skip=0,take=100`，没有加载更多/分页控件。错误面可手动刷新。超过 100 条时不能证明全量，登记为 P1。                                                                                                                                                              |
-| 详情/强 ID     | 任务行保存 `operationTaskId`、`workOrderId`、`operationCode`、`workCenterId`、`assignedUserId`、当前 `status`；显示名不能替代 ID。任务入口深链同时携带并精确匹配 `workOrderId + operationTaskId`，单边或不在当前授权范围的组合不打开动作面板。                                                     |
-| 动作           | 服务端真实生命周期是 Queued 可开始、InProgress 可暂停/完成、Paused 可恢复/完成；开始前校验前序、质量、设备与物料。PDA `actionsFor` 却只给 `Ready` 开始动作，而公开列表序列化的是 `Queued`，因此当前无法从 PDA 启动真实任务。状态动作门禁由 #1160 跟进，引导式执行流由 #1174 跟进；这不是数据前置。 |
-| 权威回执       | start/pause/resume/complete 响应中的 `operationTaskId`、`status`、`changedAtUtc`，随后同 ID 公开列表回读同一状态。PDA 自己生成的幂等键不是业务回执。                                                                                                                                               |
-| 终态只读       | Completed/Cancelled 等状态刷新后 `actionsFor` 返回空，页面显示“当前状态无可执行动作”；再次提交非法状态必须由服务端拒绝且状态不变。                                                                                                                                                                 |
-| 退出           | PDA 个人中心已有可见退出入口：先清本地认证会话，再有界调用 `logoutConsoleSession`；成功、网络失败与超时均回登录页，后两者显示远端撤销状态。自动化已覆盖本地 fail-safe，真实账号终验仍需保存 revoke 请求与受保护路由回登录证据。                                                                    |
+| 环节           | 预期结果与证据                                                                                                                                                                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 登录           | 从 PDA 登录页调用 `loginConsoleUser`；`getConsolePrincipal` 必须返回对应 `user-emp-*`、`role-pda-operator`、org/env 与 MES 最小权限。                                                                                                                                                                                 |
+| 默认工作台     | 权限聚合首页只出现允许的 MES、报警、报修入口，不再消费客户端可控 `assignedUserId` 的 dispatch 摘要或显示“我的任务”；任务页只提供按当前主体授权范围进入工序执行的入口。                                                                                                                                                |
+| 范围           | `/mes/operation` 使用 MAN-627 permission-aware work-context 的已验证选择查询，任务页与首页均不再把 Organization assignment 过滤声称为本人任务。MES principal-bound 收件箱仍是后续能力，不由 MAN-633 前端伪造。                                                                                                        |
+| 筛选/分页/刷新 | 工序页扫码只写 `keyword`；请求固定 `skip=0,take=100`，没有加载更多/分页控件。错误面可手动刷新。超过 100 条时不能证明全量，登记为 P1。                                                                                                                                                                                 |
+| 详情/强 ID     | 任务行保存 `operationTaskId`、`workOrderId`、`operationCode`、`workCenterId`、`assignedUserId`、当前 `status`；显示名不能替代 ID。任务入口深链同时携带并精确匹配 `workOrderId + operationTaskId`；同路由 query push/back/forward 会清旧对象并等待新 pair 的范围绑定响应，单边或不在当前授权范围的组合不打开动作面板。 |
+| 动作           | 服务端真实生命周期是 Queued 可开始、InProgress 可暂停/完成、Paused 可恢复/完成；开始前校验前序、质量、设备与物料。PDA `actionsFor` 却只给 `Ready` 开始动作，而公开列表序列化的是 `Queued`，因此当前无法从 PDA 启动真实任务。状态动作门禁由 #1160 跟进，引导式执行流由 #1174 跟进；这不是数据前置。                    |
+| 权威回执       | start/pause/resume/complete 响应中的 `operationTaskId`、`status`、`changedAtUtc`，随后同 ID 公开列表回读同一状态。PDA 自己生成的幂等键不是业务回执。                                                                                                                                                                  |
+| 终态只读       | Completed/Cancelled 等状态刷新后 `actionsFor` 返回空，页面显示“当前状态无可执行动作”；再次提交非法状态必须由服务端拒绝且状态不变。                                                                                                                                                                                    |
+| 退出           | PDA 个人中心已有可见退出入口：先清本地认证会话，再有界调用 `logoutConsoleSession`；成功、网络失败与超时均回登录页，后两者显示远端撤销状态。自动化已覆盖本地 fail-safe，真实账号终验仍需保存 revoke 请求与受保护路由回登录证据。                                                                                       |
 
 ### 4.2 正常与异常支线
 

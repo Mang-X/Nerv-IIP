@@ -14,13 +14,12 @@ import {
   PackageSearch,
   Wrench,
 } from '@lucide/vue'
-import { operationTaskStatusLabel, PDA_TASK_KINDS } from '@nerv-iip/business-core'
+import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
   HOME_PERMISSIONS,
-  useMyDispatchTasks,
   usePdaIdentity,
   usePendingInspectionSummary,
   useWarehouseSummary,
@@ -31,7 +30,6 @@ import {
   NvCellGroup,
   NvMobileAvatar,
   NvMobileGrid,
-  NvMobileSkeleton,
   NvMobileTag,
   NvScanBar,
   type GridItem,
@@ -48,7 +46,6 @@ definePage({
 
 const router = useRouter()
 const identity = usePdaIdentity()
-const myTasks = useMyDispatchTasks()
 const warehouse = useWarehouseSummary()
 const inspection = usePendingInspectionSummary()
 
@@ -71,32 +68,6 @@ const identitySubtitle = computed(() => {
   const parts = [worker?.jobTitle, worker?.teams?.[0]?.teamName].filter(Boolean)
   return parts.join(' · ')
 })
-
-const MY_TASKS_PREVIEW = 5
-const myTasksPreview = computed(() => myTasks.openTasks.value.slice(0, MY_TASKS_PREVIEW))
-
-type TagVariant = 'default' | 'brand' | 'success' | 'warning' | 'danger'
-function taskTagVariant(status?: string): TagVariant {
-  switch (status) {
-    case 'InProgress':
-      return 'brand'
-    case 'Paused':
-      return 'warning'
-    case 'ScheduleInvalidated':
-      return 'danger'
-    default:
-      return 'default'
-  }
-}
-
-function taskNote(task: (typeof myTasksPreview.value)[number]) {
-  const parts = [
-    task.operationCode ? `工序 ${task.operationCode}` : '',
-    task.workCenterName || task.workCenterCode || task.workCenterId || '',
-    task.deviceAssetName || task.deviceAssetCode || '',
-  ].filter(Boolean)
-  return parts.join(' · ')
-}
 
 const INSPECTION_PREVIEW = 3
 const scopedInspectionTasks = computed(() =>
@@ -206,60 +177,6 @@ function openRoute(route: string) {
       <p v-if="lastScan" data-testid="last-scan" class="-mt-2 text-sm text-foreground">
         已扫码：{{ lastScan }}
       </p>
-
-      <!-- 我的任务（派工到本人的工序任务，仅有派工读权限的产线角色可见） -->
-      <section v-if="myTasks.enabled.value" data-testid="home-my-tasks">
-        <div class="mb-2 flex items-baseline justify-between">
-          <h2 class="text-sm font-medium text-muted-foreground">我的任务</h2>
-          <div class="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              进行中
-              <span class="font-semibold text-foreground">{{ myTasks.inProgressCount.value }}</span>
-            </span>
-            <span>
-              待开工
-              <span class="font-semibold text-foreground">{{ myTasks.queuedCount.value }}</span>
-            </span>
-          </div>
-        </div>
-
-        <div v-if="myTasks.pending.value" class="space-y-2">
-          <NvMobileSkeleton variant="rect" class="h-12" />
-          <NvMobileSkeleton variant="rect" class="h-12" />
-        </div>
-        <NvCellGroup
-          v-else-if="myTasksPreview.length > 0"
-          class="overflow-hidden rounded-xl border border-border"
-        >
-          <NvCell
-            v-for="task in myTasksPreview"
-            :key="task.operationTaskId"
-            :title="task.workOrderNo || task.workOrderId || '工单'"
-            :note="taskNote(task)"
-            arrow
-            @click="openRoute('/mes/operation')"
-          >
-            <template #value>
-              <NvMobileTag :variant="taskTagVariant(task.status)" size="sm">
-                {{ operationTaskStatusLabel(task.status) }}
-              </NvMobileTag>
-            </template>
-          </NvCell>
-          <NvCell
-            v-if="myTasks.openTasks.value.length > myTasksPreview.length"
-            :title="`查看全部 ${myTasks.openTasks.value.length} 项任务`"
-            arrow
-            class="text-muted-foreground"
-            @click="openRoute('/mes/operation')"
-          />
-        </NvCellGroup>
-        <div
-          v-else
-          class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
-        >
-          暂无派给我的任务
-        </div>
-      </section>
 
       <!-- 仓储任务（有 WMS 读权限的仓储角色可见） -->
       <section v-if="warehouse.enabled.value" data-testid="home-warehouse">

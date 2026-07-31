@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { ClipboardCheck, FilePen, PackageCheck, Wrench } from '@lucide/vue'
-import { NvAppShellMobile, NvCell, NvCellGroup, NvNavBar, NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvCellGroup, NvNavBar, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
 
+import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
 import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 
 definePage({ meta: { requiresAuth: true, title: '扫码' } })
 
 const identity = usePdaIdentity()
-const router = useRouter()
 const scannedCode = shallowRef('')
+const navigationFocused = shallowRef(false)
 
 const workEntrances = computed(() =>
   [
@@ -40,10 +40,6 @@ const workEntrances = computed(() =>
     },
   ].filter((entry) => identity.can(entry.permission)),
 )
-
-function openRoute(route: string) {
-  router.push(route).catch(() => undefined)
-}
 </script>
 
 <template>
@@ -51,7 +47,11 @@ function openRoute(route: string) {
     <template #header><NvNavBar title="扫码" /></template>
 
     <div class="space-y-5 p-4">
-      <NvScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="scannedCode = $event" />
+      <NvScanBar
+        placeholder="扫描工单 / 库位 / 物料 / 设备"
+        :active="!navigationFocused"
+        @scan="scannedCode = $event"
+      />
 
       <div
         v-if="scannedCode"
@@ -67,15 +67,16 @@ function openRoute(route: string) {
       <section v-if="workEntrances.length">
         <h1 class="mb-2 text-sm font-semibold text-foreground">选择作业</h1>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell
+          <PdaNavigationCell
             v-for="entry in workEntrances"
             :key="entry.route"
+            :to="entry.route"
             :title="entry.title"
-            arrow
-            @click="openRoute(entry.route)"
+            @focusin="navigationFocused = true"
+            @focusout="navigationFocused = false"
           >
             <template #icon><component :is="entry.icon" /></template>
-          </NvCell>
+          </PdaNavigationCell>
         </NvCellGroup>
       </section>
     </div>
