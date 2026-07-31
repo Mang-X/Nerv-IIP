@@ -55,7 +55,8 @@ public sealed class QualityLifecycleConflictTests
                 new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1", "org-001", "env-dev"),
                 CancellationToken.None));
 
-        Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(task.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("检验方案", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
         Assert.Empty(dbContext.InspectionRecords);
     }
