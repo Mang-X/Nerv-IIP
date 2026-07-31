@@ -20,6 +20,18 @@ public sealed class ErpCommandValidatorTests
     }
 
     [Fact]
+    public void Purchase_receipt_requires_quality_status_per_line()
+    {
+        // #1345：qualityStatus 缺失必 400，是收货必填的业务决策点；补上后完整命令须可通过。
+        var validator = new RecordPurchaseReceiptCommandValidator();
+
+        AssertInvalid(validator.Validate(new RecordPurchaseReceiptCommand(
+            "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, "")])));
+        Assert.True(validator.Validate(new RecordPurchaseReceiptCommand(
+            "org-001", "env-dev", null, "PO-2026-0001", [new PurchaseReceiptCommandLine("1", 10m, "quality")])).IsValid);
+    }
+
+    [Fact]
     public void Sales_commands_reject_empty_or_non_positive_input()
     {
         AssertInvalid(new OpenOpportunityCommandValidator().Validate(new OpenOpportunityCommand("", "env-dev", "", "", "")));

@@ -3048,7 +3048,8 @@ public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
 
 public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string PurchaseOrderLineNo,
-    decimal ReceivedQuantity);
+    decimal ReceivedQuantity,
+    string QualityStatus);
 
 public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
 

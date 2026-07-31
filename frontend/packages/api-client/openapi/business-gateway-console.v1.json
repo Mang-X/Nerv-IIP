@@ -52403,6 +52403,9 @@
           "receivedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "qualityStatus": {
+            "type": "string"
           }
         }
       },

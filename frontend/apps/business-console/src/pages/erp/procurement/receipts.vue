@@ -24,6 +24,11 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -110,10 +115,18 @@ const receiptCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+// 质检状态是收货时的真实业务决策点（#1345）：ERP 命令必填，决定后续是否触发来料检验。
+// 合法值与 ERP 域 ErpQualityStatusNormalizer 归一化结果对齐：unrestricted / quality / blocked。
+const qualityStatusOptions = [
+  { value: 'quality', label: '待检（先收货，转来料检验）' },
+  { value: 'unrestricted', label: '合格（免检，直接可用）' },
+  { value: 'blocked', label: '冻结（暂扣，待处理）' },
+] as const
+
 // 「带出式录入」：收货对象只能由所选采购行带入，弹窗自身不提供采购单/行号的挑选或补填入口。
 const open = shallowRef(false)
 const receiptRow = shallowRef<(typeof rows.value)[number] | null>(null)
-const form = reactive({ receivedQuantity: '1', purchaseReceiptNo: '' })
+const form = reactive({ receivedQuantity: '1', purchaseReceiptNo: '', qualityStatus: 'quality' })
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
@@ -144,6 +157,8 @@ function openDialog(row: (typeof rows.value)[number]) {
   // 默认按待收数量整单收货，一线只在部分到货时改小。
   form.receivedQuantity = String(row.openQuantity > 0 ? row.openQuantity : 1)
   form.purchaseReceiptNo = ''
+  // 默认「待检」：来料先入待检库位、由质检裁定放行，是收货环节业务上更稳妥的默认。
+  form.qualityStatus = 'quality'
   showErrors.value = false
   open.value = true
 }
@@ -157,7 +172,13 @@ async function submit() {
     await receipts.recordPurchaseReceipt({
       purchaseOrderNo: row.purchaseOrderNo,
       purchaseReceiptNo: form.purchaseReceiptNo.trim() || undefined,
-      lines: [{ purchaseOrderLineNo: row.lineNo, receivedQuantity: Number(form.receivedQuantity) }],
+      lines: [
+        {
+          purchaseOrderLineNo: row.lineNo,
+          receivedQuantity: Number(form.receivedQuantity),
+          qualityStatus: form.qualityStatus,
+        },
+      ],
     })
     open.value = false
     notifySuccess(`${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`)
@@ -281,6 +302,24 @@ async function submit() {
                 autofocus
                 :data-invalid="showErrors && invalid.receivedQuantity ? '' : undefined"
               />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-receipt-quality-status">
+                质检状态 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvSelect v-model="form.qualityStatus">
+                <NvSelectTrigger id="erp-receipt-quality-status" aria-label="质检状态"
+                  ><NvSelectValue placeholder="选择质检状态"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in qualityStatusOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField
               ><NvFieldLabel for="erp-receipt-no">送货单号（可选）</NvFieldLabel

@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   receipts: [] as Array<Record<string, unknown>>,
   receiptsTotal: 7,
   convertPurchaseRequisition: vi.fn(),
+  recordPurchaseReceipt: vi.fn(),
   supplierPartners: [] as Array<Record<string, unknown>>,
 }))
 
@@ -75,7 +76,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
     pending: shallowRef(false),
     ready: computed(() => true),
     refresh: vi.fn(),
-    recordPurchaseReceipt: vi.fn(),
+    recordPurchaseReceipt: state.recordPurchaseReceipt,
     recordPurchaseReceiptPending: shallowRef(false),
     recordPurchaseReceiptError: shallowRef(undefined),
   }),
@@ -397,5 +398,46 @@ describe('ERP procurement receipt page', () => {
     expect(wrapper.text()).toContain('SKU-RM-003')
     expect(wrapper.text()).toContain('5')
     expect(wrapper.text()).not.toContain('-3')
+  })
+
+  // #1345：qualityStatus 是 ERP 收货命令必填字段，表单必须带出质检状态并随行提交。
+  it('submits the receipt with the selected quality status and defaults to pending inspection', async () => {
+    state.recordPurchaseReceipt.mockResolvedValue({})
+    const wrapper = mount(ReceiptsPage, { global: { stubs: globalStubs } })
+    await flushPromises()
+
+    const receiveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('登记收货'))
+    expect(receiveButton).toBeTruthy()
+    await receiveButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('质检状态')
+    const select = wrapper.get('select')
+    expect(new Set(select.findAll('option').map((o) => o.attributes('value')))).toEqual(
+      new Set(['quality', 'unrestricted', 'blocked']),
+    )
+    expect((select.element as HTMLSelectElement).value).toBe('quality')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.recordPurchaseReceipt).toHaveBeenCalledWith({
+      purchaseOrderNo: 'PO-002',
+      purchaseReceiptNo: undefined,
+      lines: [{ purchaseOrderLineNo: '10', receivedQuantity: 5, qualityStatus: 'quality' }],
+    })
+
+    await receiveButton!.trigger('click')
+    await wrapper.get('select').setValue('unrestricted')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.recordPurchaseReceipt).toHaveBeenLastCalledWith({
+      purchaseOrderNo: 'PO-002',
+      purchaseReceiptNo: undefined,
+      lines: [{ purchaseOrderLineNo: '10', receivedQuantity: 5, qualityStatus: 'unrestricted' }],
+    })
   })
 })
