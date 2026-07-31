@@ -23,6 +23,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -189,7 +190,8 @@ const itemPickerOptions = computed(() => {
   return options
 })
 
-const documentNumberValid = computed(() => form.documentNumber.trim().length > 0)
+// 文档号可留空由后端取号（coding allocator，形如 EDOC-20260731-000001）——手填只是为了沿用既有编号。
+// 台账 #34：此前文档号必填，手填撞号只能靠提交后的 400 才知道，且那条 400 还是英文、被兜底吞掉。
 const revisionValid = computed(() => form.revision.trim().length > 0)
 const documentTypeValid = computed(() => form.documentType.trim().length > 0)
 const fileIdValid = computed(() => form.fileId.trim().length > 0)
@@ -197,7 +199,6 @@ const fileNameValid = computed(() => form.fileName.trim().length > 0)
 const contentTypeValid = computed(() => form.contentType.trim().length > 0)
 const canSubmit = computed(
   () =>
-    documentNumberValid.value &&
     revisionValid.value &&
     documentTypeValid.value &&
     fileIdValid.value &&
@@ -211,15 +212,32 @@ function openCreate() {
   formOpen.value = true
 }
 
+/**
+ * 当前页里已有同号同修订？——提交前的**占用预检**，只看已加载的行，
+ * 因此措辞是「已在列表中」而不是「已存在」：真正的权威判定在后端（撞号给中文 400）。
+ */
+const documentNumberTaken = computed(() => {
+  const number = form.documentNumber.trim().toLowerCase()
+  const revision = form.revision.trim().toLowerCase()
+  if (!number || !revision) return false
+  return documents.value.some(
+    (row) =>
+      (row.documentNumber ?? '').trim().toLowerCase() === number &&
+      (row.revision ?? '').trim().toLowerCase() === revision,
+  )
+})
+
 async function submitForm() {
   if (!canSubmit.value) {
     showErrors.value = true
     return
   }
+  const documentNumber = form.documentNumber.trim()
   const body: BusinessConsoleRegisterEngineeringDocumentRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    documentNumber: form.documentNumber.trim(),
+    // 留空 = 交给后端 coding allocator 取号（契约上 documentNumber 本就可选）。
+    documentNumber: documentNumber || undefined,
     revision: form.revision.trim(),
     fileId: form.fileId.trim(),
     fileName: form.fileName.trim(),
@@ -228,8 +246,14 @@ async function submitForm() {
     itemCode: form.itemCode.trim() || undefined,
   }
   try {
-    await registerDocument(body)
-    notifySuccess(`已登记文档「${form.documentNumber.trim()}」修订 ${form.revision.trim()}。`)
+    const result = (await registerDocument(body)) as { data?: { id?: string | null } } | undefined
+    // 自动取号时号码只有后端知道：从回执里取出来告诉用户，别让他去列表里猜哪条是新的。
+    const registeredNumber = documentNumber || (result?.data?.id ?? '').trim()
+    notifySuccess(
+      registeredNumber
+        ? `已登记文档「${registeredNumber}」修订 ${form.revision.trim()}。`
+        : `已登记文档修订 ${form.revision.trim()}。`,
+    )
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
@@ -302,15 +326,19 @@ function formatError(error: unknown) {
 
               <FormSectionTitle>文档标识</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
-                <NvField :data-invalid="showErrors && !documentNumberValid">
-                  <NvFieldLabel for="doc-number"
-                    >文档号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
+                <NvField>
+                  <NvFieldLabel for="doc-number">文档号</NvFieldLabel>
                   <NvInput
                     id="doc-number"
                     v-model="form.documentNumber"
-                    placeholder="如 DOC-0001"
+                    placeholder="留空自动取号"
                   />
+                  <NvFieldDescription v-if="documentNumberTaken" class="text-warning">
+                    该文档号的这个修订已在列表中，换修订号或留空自动取号。
+                  </NvFieldDescription>
+                  <NvFieldDescription v-else
+                    >留空由系统取号；填了就沿用既有编号。</NvFieldDescription
+                  >
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="doc-rev"

@@ -78,7 +78,7 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering document '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"文档号 {allocation.Code} 的修订 {request.Revision} 已登记，请换修订号或留空由系统取号。");
         }
 
         var document = EngineeringDocument.Register(
@@ -169,7 +169,7 @@ public sealed class PublishSopDocumentCommandHandler(IEngineeringDocumentReposit
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"SOP document '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"SOP 文档号 {allocation.Code} 的修订 {request.Revision} 已发布，请换修订号或留空由系统取号。");
         }
 
         var document = EngineeringDocument.PublishSop(
@@ -232,7 +232,7 @@ public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItem
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering item '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"物料 {allocation.Code} 的修订 {request.Revision} 已存在，请换一个修订号。");
         }
 
         var item = EngineeringItem.CreateRevision(
@@ -313,12 +313,12 @@ public sealed class ReleaseEngineeringBomCommandHandler(
 
         if (await repository.GetByBusinessKeyAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken) is not null)
         {
-            throw new KnownException($"Engineering BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"EBOM {allocation.Code} 的修订 {request.Revision} 已存在，请换一个修订号。");
         }
 
         if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
+            throw new KnownException($"EBOM {allocation.Code} 已有已发布修订，请先通过工程变更归档现有修订。");
         }
 
         await _masterDataReferenceValidator.ValidateActiveReferencesAsync(
@@ -430,12 +430,12 @@ public sealed class ReleaseManufacturingBomCommandHandler(
 
         if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Manufacturing BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"MBOM {allocation.Code} 的修订 {request.Revision} 已存在，请换一个修订号。");
         }
 
         if (await manufacturingBomRepository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Manufacturing BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
+            throw new KnownException($"MBOM {allocation.Code} 已有已发布修订，请先通过工程变更归档现有修订。");
         }
 
         var ebom = await engineeringBomRepository.GetByBusinessKeyAsync(
@@ -554,12 +554,12 @@ public sealed class ReleaseRoutingCommandHandler(
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Routing '{allocation.Code}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"工艺路线 {allocation.Code} 的修订 {request.Revision} 已存在，请换一个修订号。");
         }
 
         if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Routing '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
+            throw new KnownException($"工艺路线 {allocation.Code} 已有已发布修订，请先通过工程变更归档现有修订。");
         }
 
         var standardOperations = new Dictionary<string, StandardOperation>(StringComparer.Ordinal);

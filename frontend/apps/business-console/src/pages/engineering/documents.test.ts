@@ -210,6 +210,72 @@ describe('engineering documents page', () => {
     expect(stub.registerDocument).not.toHaveBeenCalled()
   })
 
+  // MAN-698 台账 #34：文档号原来必填，撞号只能靠提交后的 400 才知道（而那条 400 还是英文、
+  // 被兜底吞成「请稍后重试」）。现在留空由后端 coding allocator 取号，号码从回执里回显。
+  it('文档号留空自动取号：不发 documentNumber，成功提示回显后端取到的号', async () => {
+    stub.registerDocument.mockResolvedValueOnce({ data: { id: 'EDOC-20260731-000007' } })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('specification')
+    await wrapper.find('#doc-file-id').setValue('file-xyz')
+    await wrapper.find('#doc-file-name').setValue('spec.pdf')
+    await wrapper.find('#doc-content-type').setValue('application/pdf')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.registerDocument).toHaveBeenCalledTimes(1)
+    const body = stub.registerDocument.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.documentNumber).toBeUndefined()
+    expect(stub.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('EDOC-20260731-000007'))
+  })
+
+  it('占用预检：手填的号 + 修订已在列表中时当场提示换修订或留空', async () => {
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-number').setValue('DOC-1')
+    await wrapper.find('#doc-rev').setValue('A')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已在列表中')
+
+    await wrapper.find('#doc-rev').setValue('B')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('已在列表中')
+  })
+
+  // 撞号的权威判定在后端：中文 400 必须原样上屏，不能被兜底文案吞掉（分层透传 #1298）。
+  it('后端撞号的中文 400 原样上屏，不退化成「请稍后重试」', async () => {
+    stub.registerDocument.mockRejectedValueOnce({
+      message: '文档号 DOC-1 的修订 A 已登记，请换修订号或留空由系统取号。',
+    })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#doc-number').setValue('DOC-1')
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('specification')
+    await wrapper.find('#doc-file-id').setValue('file-xyz')
+    await wrapper.find('#doc-file-name').setValue('spec.pdf')
+    await wrapper.find('#doc-content-type').setValue('application/pdf')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalledWith(
+      expect.stringContaining('文档号 DOC-1 的修订 A 已登记'),
+    )
+    expect(stub.toastError).not.toHaveBeenCalledWith(expect.stringContaining('请稍后重试'))
+  })
+
   it('查看：行「查看」拉 get-by-id 渲染真实文档明细', async () => {
     stub.fetchDocumentDetail.mockResolvedValue({
       documentNumber: 'DOC-1',
