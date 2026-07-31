@@ -2221,7 +2221,7 @@ public sealed class MesEndpointContractTests
             "PCS",
             10m,
             requestedAtUtc);
-        request.ConfirmLineSideReceipt(requestedAtUtc.AddMinutes(1), 10m, "LOT-SCRAP");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, requestedAtUtc.AddMinutes(1), 10m, "LOT-SCRAP");
         request.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(request);
         return [new ConsumedMaterialLotInput("MAT-SCRAP", "LOT-SCRAP", consumedQuantity, requestNo)];

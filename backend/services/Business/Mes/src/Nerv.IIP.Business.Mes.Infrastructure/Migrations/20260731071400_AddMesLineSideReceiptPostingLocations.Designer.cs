@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260731071400_AddMesLineSideReceiptPostingLocations")]
+    partial class AddMesLineSideReceiptPostingLocations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1137,12 +1140,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("inventory_posting_failure_message")
                         .HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
 
-                    b.Property<string>("LocationCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("location_code")
-                        .HasComment("Inventory location code the material was consumed from, copied from the supplying material issue request line-side target.");
-
                     b.Property<string>("MaterialId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1184,12 +1181,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("report_no")
                         .HasComment("MES production report number that consumed this material lot.");
-
-                    b.Property<string>("SiteCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("site_code")
-                        .HasComment("Inventory site code the material was consumed from, copied from the supplying material issue request line-side target.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
