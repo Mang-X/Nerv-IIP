@@ -144,7 +144,8 @@ public sealed record MaintenanceWorkOrderLifecycleEventItem(
 public sealed record MaintenanceWorkOrderDetail(
     MaintenanceWorkOrderListItem WorkOrder,
     IReadOnlyCollection<MaintenanceWorkOrderLifecycleEventItem> Lifecycle,
-    IReadOnlyCollection<string> AllowedActions);
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
 
 public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMaintenanceWorkOrderQuery, MaintenanceWorkOrderDetail>
@@ -176,18 +177,40 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                 x.ResultingVersion,
                 x.OccurredAtUtc))
             .ToArrayAsync(cancellationToken);
-        return new MaintenanceWorkOrderDetail(workOrder, lifecycle, AllowedActions(workOrder.Status));
+        var completionDataComplete = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.Id == request.WorkOrderId)
+            .Select(x => x.CompletionResult != null
+                && x.DowntimeReasonCode != null
+                && x.DowntimeMinutes != null
+                && x.DowntimeMinutes > 0
+                && x.CompletedAtUtc != null)
+            .SingleAsync(cancellationToken);
+        var eligibility = MaintenanceWorkOrderEligibility.Evaluate(workOrder.Status, completionDataComplete);
+        return new MaintenanceWorkOrderDetail(workOrder, lifecycle, eligibility.AllowedActions, eligibility.BlockReasons);
     }
+}
 
-    private static IReadOnlyCollection<string> AllowedActions(string status) => status switch
+public sealed record MaintenanceWorkOrderEligibilityResult(
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
+
+public static class MaintenanceWorkOrderEligibility
+{
+    public static MaintenanceWorkOrderEligibilityResult Evaluate(string status, bool completionDataComplete) => status switch
     {
-        nameof(MaintenanceWorkOrderStatus.Open) => ["assign", "accept", "cancel"],
-        nameof(MaintenanceWorkOrderStatus.Accepted) => ["start", "cancel"],
-        nameof(MaintenanceWorkOrderStatus.InProgress) => ["pause", "waitForParts", "complete", "cancel"],
-        nameof(MaintenanceWorkOrderStatus.Paused) or nameof(MaintenanceWorkOrderStatus.WaitingForParts) => ["resume", "cancel"],
-        nameof(MaintenanceWorkOrderStatus.Completed) => ["verify"],
-        nameof(MaintenanceWorkOrderStatus.Verified) => ["close"],
-        _ => [],
+        nameof(MaintenanceWorkOrderStatus.Open) => new(["assign", "accept", "cancel"], []),
+        nameof(MaintenanceWorkOrderStatus.Accepted) => new(["start", "cancel"], []),
+        nameof(MaintenanceWorkOrderStatus.InProgress) => new(["pause", "waitForParts", "complete", "cancel"], []),
+        nameof(MaintenanceWorkOrderStatus.Paused) or nameof(MaintenanceWorkOrderStatus.WaitingForParts) => new(["resume", "cancel"], []),
+        nameof(MaintenanceWorkOrderStatus.Completed) when completionDataComplete => new(["verify"], []),
+        nameof(MaintenanceWorkOrderStatus.Verified) when completionDataComplete => new(["close"], []),
+        nameof(MaintenanceWorkOrderStatus.Completed) or nameof(MaintenanceWorkOrderStatus.Verified) =>
+            new([], ["completion-data-incomplete"]),
+        nameof(MaintenanceWorkOrderStatus.Closed) or nameof(MaintenanceWorkOrderStatus.Cancelled) =>
+            new([], ["terminal-status"]),
+        _ => new([], ["unknown-status"]),
     };
 }
 

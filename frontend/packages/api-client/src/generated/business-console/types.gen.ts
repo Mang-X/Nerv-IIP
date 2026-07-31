@@ -5634,6 +5634,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     version?: number;
     allowedActions?: Array<string> | null;
     lifecycle?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem> | null;
+    blockReasons?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {

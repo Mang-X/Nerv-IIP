@@ -587,6 +587,8 @@ Source:
 
 MAN-631/#1168 迁移 `20260731175513_AddMaintenanceWorkOrderLifecycle` 为 `maintenance_work_orders` 增加 `assigned_team_id`、接单/验证/关闭/取消权威时间和整数 `version` 乐观并发令牌；新的分派/执行动作与兼容一步完工链路共享同一工单锁并推进同一 `version` 边界。迁移同时增加 status/device/assigned-technician/assigned-team 四组 tenant-scoped query-shaped 索引，避免授权队列在排序/分页前扫描整个租户。状态列继续保存字符串枚举，新增 Accepted、InProgress、Paused、WaitingForParts、Verified、Closed、Cancelled；Closed 与 Cancelled 为终态。
 
+MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 PostgreSQL `pg_trgm`，并为工单 keyword 查询的 `device_asset_id`、`source_alarm_id`、`source_reference_id`、`assigned_technician_user_id`、`assigned_team_id` 五个 `lower(column) LIKE '%keyword%'` 分支增加 GIN `gin_trgm_ops` 表达式索引；provider-specific DDL 仅位于 Maintenance Infrastructure migration，Application 查询保持 provider-neutral。真实 PostgreSQL 验证在禁用顺序扫描时断言五路 BitmapOr 均命中对应索引。
+
 ## BusinessScheduling Schema
 
 Schema: `scheduling`

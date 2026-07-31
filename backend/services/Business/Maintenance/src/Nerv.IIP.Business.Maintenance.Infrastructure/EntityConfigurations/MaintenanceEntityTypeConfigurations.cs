@@ -58,6 +58,9 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
             .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTeamId, x.OpenedAtUtc })
             .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
+        // The five lower(column) substring predicates in ListMaintenanceWorkOrdersQueryHandler are backed by
+        // PostgreSQL pg_trgm GIN expression indexes in AddMaintenanceKeywordSearchIndexes. EF cannot model
+        // expression indexes, so that provider-specific query support stays migration-owned.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
         // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })

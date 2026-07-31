@@ -457,6 +457,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         using var document = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(["cancel"], document.RootElement.GetProperty("data").GetProperty("allowedActions").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(
+            ["assigned-technician-required"],
+            document.RootElement.GetProperty("data").GetProperty("blockReasons").EnumerateArray().Select(x => x.GetString()));
 
         var transition = await client.PostAsJsonAsync(
             "/api/business-console/v1/maintenance/work-orders/wo-team-a/actions",
@@ -918,12 +921,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope("self", "user-admin", "Current worker", "worker-user", [])),
         };
 
-        foreach (var auth in new[]
+        foreach (var (auth, expectedBlockReason) in new[]
                  {
-                     new FakeBusinessGatewayAuthorizationClient(
+                     (new FakeBusinessGatewayAuthorizationClient(
                          requirement => requirement.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
-                         scopeGrants: [grants[0]]),
-                     FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants),
+                         scopeGrants: [grants[0]]), "manage-permission-required"),
+                     (FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants), "work-scope-required"),
                  })
         {
             var maintenance = new RecordingMaintenanceFacadeClient
@@ -958,6 +961,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 $"scopeRequest={maintenance.LastWorkOrderListRequest}; principalRequest={masterData.LastPrincipalWorkContextRequest}");
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.Empty(document.RootElement.GetProperty("data").GetProperty("allowedActions").EnumerateArray());
+            Assert.Equal(
+                [expectedBlockReason],
+                document.RootElement.GetProperty("data").GetProperty("blockReasons").EnumerateArray().Select(x => x.GetString()));
             Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         }
     }
@@ -1910,6 +1916,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public IReadOnlyCollection<string> WorkOrderDetailAllowedActions { get; init; } = [];
 
+    public IReadOnlyCollection<string> WorkOrderDetailBlockReasons { get; init; } = [];
+
     public BusinessServiceProxyException? CompleteWorkOrderFailure { get; init; }
 
     public int AssignCallCount { get; private set; }
@@ -2017,7 +2025,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "alarm-001",
                 "alarm-001",
                 DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture))) with
-            { AllowedActions = WorkOrderDetailAllowedActions });
+            { AllowedActions = WorkOrderDetailAllowedActions, BlockReasons = WorkOrderDetailBlockReasons });
     }
 
     private static bool MatchesCsv(string? csv, string? value) =>

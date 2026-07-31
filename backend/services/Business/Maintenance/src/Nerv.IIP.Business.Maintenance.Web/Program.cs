@@ -45,7 +45,15 @@ try
     }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
-        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .AddFastEndpoints(o =>
+        {
+            if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+            {
+                o.Assemblies = [Assembly.GetExecutingAssembly()];
+                o.DisableAutoDiscovery = true;
+            }
+            o.IncludeAbstractValidators = true;
+        })
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>

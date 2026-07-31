@@ -17,6 +17,60 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 public sealed class MaintenanceLifecycleDockerAcceptanceTests
 {
     [Fact]
+    public async Task Keyword_substring_query_uses_the_real_postgres_trigram_indexes()
+    {
+        await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();
+        await using var provider = await CreateMaintenanceProviderAsync(dependencies.PostgresConnectionString);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
+                "org-man631-search", "env-man631", "DEV-MAN631-NEEDLE", "ALARM-MAN631-NEEDLE", "high",
+                assignedTechnicianUserId: "TECH-MAN631-NEEDLE");
+            workOrder.Assign("TECH-MAN631-NEEDLE", "TEAM-MAN631-NEEDLE");
+            db.MaintenanceWorkOrders.Add(workOrder);
+            await db.SaveChangesAsync();
+        }
+
+        await using var connection = new NpgsqlConnection(dependencies.PostgresConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SET enable_seqscan = off;
+            EXPLAIN (COSTS OFF)
+            SELECT id
+            FROM maintenance.maintenance_work_orders
+            WHERE lower(device_asset_id) LIKE '%man631-needle%'
+               OR lower(source_alarm_id) LIKE '%man631-needle%'
+               OR lower(source_reference_id) LIKE '%man631-needle%'
+               OR lower(assigned_technician_user_id) LIKE '%man631-needle%'
+               OR lower(assigned_team_id) LIKE '%man631-needle%';
+            """;
+        var planLines = new List<string>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                planLines.Add(reader.GetString(0));
+            }
+        }
+        var plan = string.Join(Environment.NewLine, planLines);
+
+        Assert.Contains("BitmapOr", plan, StringComparison.Ordinal);
+        foreach (var indexName in new[]
+                 {
+                     "ix_maintenance_work_orders_search_device_trgm",
+                     "ix_maintenance_work_orders_search_alarm_trgm",
+                     "ix_maintenance_work_orders_search_reference_trgm",
+                     "ix_maintenance_work_orders_search_technician_trgm",
+                     "ix_maintenance_work_orders_search_team_trgm",
+                 })
+        {
+            Assert.Contains(indexName, plan, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task Lifecycle_idempotency_is_serialized_by_real_postgres_and_redis()
     {
         await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();

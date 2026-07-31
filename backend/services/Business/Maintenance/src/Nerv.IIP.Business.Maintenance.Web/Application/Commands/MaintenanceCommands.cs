@@ -433,12 +433,24 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
         var parts = existing.Code.Split('|', 3, StringSplitOptions.TrimEntries);
         if (parts.Length is not (2 or 3) ||
             !Enum.TryParse<MaintenanceWorkOrderStatus>(parts[0], out var status) ||
+            !Enum.IsDefined(status) ||
             !DateTimeOffset.TryParseExact(
                 parts[1],
                 "O",
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind,
-                out var changedAtUtc))
+                out var changedAtUtc) ||
+            changedAtUtc == default)
+        {
+            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+        }
+
+        var storedVersion = workOrder.Version;
+        if (parts.Length == 3 && (!int.TryParse(
+                parts[2],
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out storedVersion) || storedVersion < 0))
         {
             throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
         }
@@ -447,13 +459,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             request.WorkOrderId,
             status,
             changedAtUtc,
-            parts.Length == 3 && int.TryParse(
-                parts[2],
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var version)
-                ? version
-                : workOrder.Version);
+            storedVersion);
     }
 
     private void AddCompletionIdempotencyRecord(

@@ -68,6 +68,30 @@ public sealed class MaintenanceSchemaConventionTests
         AssertInboxDeduplicationBeforeUniqueIndex(migrationBuilder, MaintenanceFacts.Schema);
     }
 
+    [Fact]
+    public void Keyword_search_migration_uses_pg_trgm_expression_indexes_matching_every_substring_field()
+    {
+        var migration = new AddMaintenanceKeywordSearchIndexes();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMaintenanceKeywordSearchIndexes)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+        var sql = string.Join(Environment.NewLine, migrationBuilder.Operations
+            .OfType<SqlOperation>()
+            .Select(operation => operation.Sql));
+
+        Assert.Contains("CREATE EXTENSION IF NOT EXISTS pg_trgm", sql, StringComparison.Ordinal);
+        foreach (var column in new[]
+                 {
+                     "device_asset_id", "source_alarm_id", "source_reference_id",
+                     "assigned_technician_user_id", "assigned_team_id",
+                 })
+        {
+            Assert.Contains($"lower({column}) gin_trgm_ops", sql, StringComparison.Ordinal);
+        }
+        Assert.Equal(5, sql.Split("CREATE INDEX ", StringSplitOptions.None).Length - 1);
+    }
+
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
     {
         var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));

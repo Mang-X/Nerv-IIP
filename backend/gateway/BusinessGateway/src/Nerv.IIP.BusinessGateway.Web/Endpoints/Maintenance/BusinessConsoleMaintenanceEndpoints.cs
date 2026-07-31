@@ -186,18 +186,27 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
             workOrderId,
             cancellationToken);
         var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, workOrderId, request, cancellationToken);
-        if (!await CanManageAsync(request, bearerToken, workOrderId, cancellationToken))
-        {
-            workOrder = workOrder with { AllowedActions = [] };
-        }
-        else
+        var manageBlockReason = await GetManageBlockReasonAsync(request, bearerToken, workOrderId, cancellationToken);
+        if (manageBlockReason is not null)
         {
             workOrder = workOrder with
             {
-                AllowedActions = MaintenanceActionOwnership.FilterAllowedActions(
-                    workOrder.AllowedActions,
-                    workOrder.AssignedTechnicianUserId,
-                    RequireAuthorizedPrincipalId()),
+                AllowedActions = [],
+                BlockReasons = AppendBlockReason(workOrder.BlockReasons, manageBlockReason),
+            };
+        }
+        else
+        {
+            var filteredActions = MaintenanceActionOwnership.FilterAllowedActions(
+                workOrder.AllowedActions,
+                workOrder.AssignedTechnicianUserId,
+                RequireAuthorizedPrincipalId());
+            workOrder = workOrder with
+            {
+                AllowedActions = filteredActions,
+                BlockReasons = filteredActions.Count < (workOrder.AllowedActions?.Count ?? 0)
+                    ? AppendBlockReason(workOrder.BlockReasons, "assigned-technician-required")
+                    : workOrder.BlockReasons,
             };
         }
         var enriched = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
@@ -210,7 +219,7 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
         return enriched.Single();
     }
 
-    private async Task<bool> CanManageAsync(
+    private async Task<string?> GetManageBlockReasonAsync(
         BusinessConsoleMaintenanceContextRequest request,
         string bearerToken,
         string workOrderId,
@@ -231,7 +240,7 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
                 cancellationToken);
             if (!authorization.IsAllowed)
             {
-                return false;
+                return "manage-permission-required";
             }
 
             await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
@@ -246,18 +255,23 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
                 request.ScopeId,
                 workOrderId,
                 cancellationToken);
-            return true;
+            return null;
         }
         catch (BusinessServiceProxyException exception) when (exception.StatusCode == HttpStatusCode.Forbidden)
         {
-            return false;
+            return "work-scope-required";
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Failed closed while checking Maintenance manage actions for work order {WorkOrderId}.", workOrderId);
-            return false;
+            return "manage-permission-required";
         }
     }
+
+    private static IReadOnlyCollection<string> AppendBlockReason(
+        IReadOnlyCollection<string>? reasons,
+        string reason) =>
+        (reasons ?? []).Append(reason).Distinct(StringComparer.Ordinal).ToArray();
 }
 
 [Tags("Business Console Maintenance")]

@@ -57,4 +57,45 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
         Assert.Empty(self.Items);
         Assert.Equal(teamOnly.Id, Assert.Single(team.Items).WorkOrderId);
     }
+
+    [Fact]
+    public async Task Detail_derives_actions_and_block_reasons_from_status_and_persisted_business_data()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var normal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-NORMAL", "high", "reporter");
+        var terminal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-TERMINAL", "high", "reporter");
+        terminal.Cancel();
+        var missingData = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-MISSING", "high", "reporter", assignedTechnicianUserId: "tech-001");
+        missingData.Accept("tech-001");
+        missingData.StartWork();
+        missingData.Finish("fixed", "failure", 5, [], "tech-001");
+        db.Entry(missingData).Property(x => x.CompletionResult).CurrentValue = null;
+        db.MaintenanceWorkOrders.AddRange(normal, terminal, missingData);
+        await db.SaveChangesAsync();
+        var handler = new GetMaintenanceWorkOrderQueryHandler(db);
+
+        var normalDetail = await handler.Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", normal.Id), CancellationToken.None);
+        var terminalDetail = await handler.Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", terminal.Id), CancellationToken.None);
+        var missingDetail = await handler.Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", missingData.Id), CancellationToken.None);
+
+        Assert.Equal(["assign", "accept", "cancel"], normalDetail.AllowedActions);
+        Assert.Empty(normalDetail.BlockReasons);
+        Assert.Empty(terminalDetail.AllowedActions);
+        Assert.Equal(["terminal-status"], terminalDetail.BlockReasons);
+        Assert.Empty(missingDetail.AllowedActions);
+        Assert.Equal(["completion-data-incomplete"], missingDetail.BlockReasons);
+    }
+
+    [Fact]
+    public void Unknown_status_is_read_only_and_explainable()
+    {
+        var eligibility = MaintenanceWorkOrderEligibility.Evaluate("FutureState", completionDataComplete: true);
+
+        Assert.Empty(eligibility.AllowedActions);
+        Assert.Equal(["unknown-status"], eligibility.BlockReasons);
+    }
 }

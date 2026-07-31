@@ -204,7 +204,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     string? AssignedTeamId = null,
     int Version = 0,
     IReadOnlyCollection<string>? AllowedActions = null,
-    IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null);
+    IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null,
+    IReadOnlyCollection<string>? BlockReasons = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
     string Action,
