@@ -47,7 +47,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(21, contracts.Count);
+        Assert.Equal(24, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
@@ -111,6 +111,18 @@ public sealed class QualityInspectionEndpointContractTests
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
             && x.OperationId == "createBusinessQualityInspectionRecordFromTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "getBusinessQualityInspectionTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
+            && x.OperationId == "assignBusinessQualityInspectionTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/claim"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
+            && x.OperationId == "claimBusinessQualityInspectionTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/quality/spc/control-chart"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "queryBusinessQualitySpcControlChart");
@@ -156,6 +168,9 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
     [InlineData(typeof(ListInspectionTasksEndpoint))]
     [InlineData(typeof(CreateInspectionRecordFromTaskEndpoint))]
+    [InlineData(typeof(GetInspectionTaskEndpoint))]
+    [InlineData(typeof(AssignInspectionTaskEndpoint))]
+    [InlineData(typeof(ClaimInspectionTaskEndpoint))]
     [InlineData(typeof(QuerySpcControlChartEndpoint))]
     [InlineData(typeof(QueryProcessCapabilityEndpoint))]
     [InlineData(typeof(EvaluateSpcControlChartEndpoint))]

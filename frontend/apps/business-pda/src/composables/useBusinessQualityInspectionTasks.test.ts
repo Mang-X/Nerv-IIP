@@ -9,7 +9,12 @@ const coladaState = vi.hoisted(() => ({
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   dataById: new Map<string, { value: unknown }>(),
   submit: vi.fn(),
+  claim: vi.fn(),
   listPlain: vi.fn(),
+  listOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
+    query: vi.fn(),
+  })),
 }))
 
 // The composable consumes the Quality facade through the curated
@@ -18,10 +23,7 @@ const coladaState = vi.hoisted(() => ({
 vi.mock('@nerv-iip/api-client', () => ({
   confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleQualityInspectionTasks: coladaState.listPlain,
-  listBusinessConsoleQualityInspectionTasksQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
-    query: vi.fn(),
-  })),
+  listBusinessConsoleQualityInspectionTasksQueryOptions: coladaState.listOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityReasonCodes' }],
     query: vi.fn(),
@@ -32,6 +34,11 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
+    mutationKind: 'submit',
+  })),
+  claimBusinessConsoleQualityInspectionTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+    mutationKind: 'claim',
   })),
   getConsolePrincipal: vi.fn(),
   loginConsoleUser: vi.fn(),
@@ -54,8 +61,8 @@ vi.mock('@pinia/colada', () => ({
       refetch: vi.fn(),
     }
   }),
-  useMutation: vi.fn(() => ({
-    mutateAsync: coladaState.submit,
+  useMutation: vi.fn((options) => ({
+    mutateAsync: options.mutationKind === 'claim' ? coladaState.claim : coladaState.submit,
     isLoading: shallowRef(false),
     error: shallowRef(),
   })),
@@ -102,13 +109,30 @@ describe('useBusinessQualityInspectionTasks', () => {
     vi.clearAllMocks()
     coladaState.queryOptionsById.clear()
     coladaState.dataById.clear()
+    coladaState.claim.mockResolvedValue({
+      success: true,
+      data: {
+        inspectionTaskId: 'TASK-1',
+        status: 'in-progress',
+        assignedInspectorUserId: 'user-admin',
+        version: 3,
+      },
+    })
     coladaState.listPlain.mockImplementation(
       async ({ query }: { query: { inspectionTaskId?: string } }) => ({
         data: {
           success: true,
           data: {
             items: query.inspectionTaskId
-              ? [{ inspectionTaskId: query.inspectionTaskId, status: 'pending' }]
+              ? [
+                  {
+                    inspectionTaskId: query.inspectionTaskId,
+                    status: 'in-progress',
+                    assignedInspectorUserId: 'user-admin',
+                    version: 3,
+                    allowedActions: ['submit-inspection'],
+                  },
+                ]
               : [],
             total: query.inspectionTaskId ? 1 : 0,
           },
@@ -136,9 +160,184 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleQualityReasonCodes')?.enabled).toBe(
       true,
     )
+    expect(coladaState.listOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      }),
+    })
   })
 
-  it('injects inspectorUserId (principalId) + org/env into the submit call — caller only supplies lines', async () => {
+  it('claims an assigned pending task with the trusted self scope before execution', async () => {
+    seedPrincipal()
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    const claimed = await claimTask({
+      inspectionTaskId: 'TASK-1',
+      status: 'pending',
+      version: 2,
+      allowedActions: ['claim'],
+    })
+
+    expect(coladaState.claim).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      },
+      body: {
+        idempotencyKey: expect.stringMatching(/^quality-claim-/),
+        expectedVersion: 2,
+      },
+    })
+    expect(claimed).toMatchObject({
+      inspectionTaskId: 'TASK-1',
+      status: 'in-progress',
+      assignedInspectorUserId: 'user-admin',
+      version: 3,
+    })
+  })
+
+  it('round-trips claim through the exact in-progress readback before allowing submit', async () => {
+    seedPrincipal()
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-1',
+                status: 'in-progress',
+                assignedInspectorUserId: 'user-admin',
+                version: 4,
+                allowedActions: ['submit-inspection'],
+                blockReasons: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-1',
+                status: 'in-progress',
+                assignedInspectorUserId: 'user-admin',
+                version: 4,
+                allowedActions: ['submit-inspection'],
+                blockReasons: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+    const { claimTask, submitInspection } = useBusinessQualityInspectionTasks()
+
+    const claimed = await claimTask({
+      inspectionTaskId: 'TASK-1',
+      status: 'pending',
+      version: 2,
+      allowedActions: ['claim'],
+    })
+    await submitInspection('TASK-1', LINES)
+
+    expect(claimed).toMatchObject({
+      inspectionTaskId: 'TASK-1',
+      status: 'in-progress',
+      assignedInspectorUserId: 'user-admin',
+      version: 4,
+      allowedActions: ['submit-inspection'],
+    })
+    expect(coladaState.listPlain).toHaveBeenCalledTimes(2)
+    expect(coladaState.listPlain).toHaveBeenNthCalledWith(1, {
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+        inspectionTaskId: 'TASK-1',
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    expect(coladaState.submit).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['task-already-claimed', '任务已由其他检验员领取。'],
+    ['task-assigned-to-another-inspector', '任务已派给其他检验员，无法领取。'],
+    ['task-assigned-to-another-team', '任务已派给其他班组，无法领取。'],
+    ['task-outside-selected-work-scope', '任务不在当前工作范围内，无法领取。'],
+  ])('explains the exact claim block reason %s', async (reason, expectedMessage) => {
+    seedPrincipal()
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    await expect(
+      claimTask({
+        inspectionTaskId: 'TASK-BLOCKED',
+        status: 'pending',
+        version: 2,
+        allowedActions: [],
+        blockReasons: [reason],
+      }),
+    ).rejects.toThrow(expectedMessage)
+    expect(coladaState.claim).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      { status: 403, message: 'task-outside-selected-work-scope' },
+      '任务不在当前工作范围内，无法领取。',
+    ],
+    [{ response: { status: 422 }, message: 'task-already-claimed' }, '任务已由其他检验员领取。'],
+  ])(
+    'translates only a stable claim mutation blocker into actionable Chinese',
+    async (failure, message) => {
+      seedPrincipal()
+      coladaState.claim.mockRejectedValueOnce(failure)
+      const { claimTask } = useBusinessQualityInspectionTasks()
+
+      await expect(
+        claimTask({
+          inspectionTaskId: 'TASK-RACED',
+          status: 'pending',
+          version: 2,
+          allowedActions: ['claim'],
+        }),
+      ).rejects.toThrow(message)
+    },
+  )
+
+  it.each([
+    { success: false, message: 'lifecycle-conflict' },
+    { status: 422, message: 'internal-untrusted-detail' },
+  ])('preserves non-safe claim failures for the page recovery boundary', async (failure) => {
+    seedPrincipal()
+    coladaState.claim.mockRejectedValueOnce(failure)
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    await expect(
+      claimTask({
+        inspectionTaskId: 'TASK-RACED',
+        status: 'pending',
+        version: 2,
+        allowedActions: ['claim'],
+      }),
+    ).rejects.toBe(failure)
+  })
+
+  it('keeps inspector identity out of the public submit body and forwards org/env', async () => {
     seedPrincipal()
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
@@ -148,7 +347,7 @@ describe('useBusinessQualityInspectionTasks', () => {
     const arg = coladaState.submit.mock.calls[0][0]
     expect(arg.path).toEqual({ inspectionTaskId: 'TASK-1' })
     expect(arg.query).toEqual({ organizationId: 'org-001', environmentId: 'env-dev' })
-    expect(arg.body.inspectorUserId).toBe('user-admin')
+    expect(arg.body).not.toHaveProperty('inspectorUserId')
     expect(arg.body.resultLines).toEqual(LINES)
     expect(arg.body.idempotencyKey).toMatch(/^quality-submit-/)
   })
@@ -168,6 +367,59 @@ describe('useBusinessQualityInspectionTasks', () => {
     const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
     expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
     expect(coladaState.submit.mock.calls[2][0].body.idempotencyKey).not.toBe(firstKey)
+  })
+
+  it('replays the same submit key after a lost committed response when self readback is completed', async () => {
+    seedPrincipal()
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-LOST-COMMIT',
+                status: 'in-progress',
+                inspectionRecordId: null,
+                allowedActions: ['submit-inspection'],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                inspectionTaskId: 'TASK-LOST-COMMIT',
+                status: 'completed',
+                inspectionRecordId: 'RECORD-COMMITTED',
+                allowedActions: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+    coladaState.submit
+      .mockRejectedValueOnce(new TypeError('response lost after commit'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: { inspectionRecordId: 'RECORD-COMMITTED' },
+      })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-LOST-COMMIT', LINES)).rejects.toThrow(
+      'response lost after commit',
+    )
+    await submitInspection('TASK-LOST-COMMIT', LINES)
+
+    expect(coladaState.submit).toHaveBeenCalledTimes(2)
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
   })
 
   it('clears the submit intent after a determinate 422 so the next attempt uses a new key', async () => {
@@ -206,7 +458,14 @@ describe('useBusinessQualityInspectionTasks', () => {
       data: {
         success: true,
         data: {
-          items: [{ inspectionTaskId: 'TASK-1', status: 'completed' }],
+          items: [
+            {
+              inspectionTaskId: 'TASK-1',
+              status: 'completed',
+              inspectionRecordId: 'RECORD-OTHER',
+              allowedActions: [],
+            },
+          ],
           total: 1,
         },
       },
@@ -219,6 +478,8 @@ describe('useBusinessQualityInspectionTasks', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
         inspectionTaskId: 'TASK-1',
         skip: 0,
         take: 2,

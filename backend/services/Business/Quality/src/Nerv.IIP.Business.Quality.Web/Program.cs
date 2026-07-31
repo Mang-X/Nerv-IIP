@@ -174,6 +174,12 @@ try
         ICommandLock<CreateInspectionRecordFromTaskCommand>,
         CreateInspectionRecordFromTaskCommandLock>();
     builder.Services.AddScoped<
+        ICommandLock<AssignInspectionTaskCommand>,
+        AssignInspectionTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<ClaimInspectionTaskCommand>,
+        ClaimInspectionTaskCommandLock>();
+    builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();
 

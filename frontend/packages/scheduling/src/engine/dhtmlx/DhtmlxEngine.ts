@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from '../engine'
 import { conflictReasonLabel } from '../../model/labels'
+import { resolveTimeScale } from '../../model/scale'
 import { createGanttInstanceSync } from './loader'
 import { applySkin } from './skin'
 
@@ -671,15 +672,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     g.render()
   }
 
+  /** 刻度解析与图例同源(model/scale.ts):图例讲的班次边界必须和这里画出来的一致。 */
   private resolveScale(): Exclude<TimeScale, 'auto'> {
-    if (this.scale !== 'auto') return this.scale
-    const h = this.model?.horizon
-    if (!h?.startUtc || !h?.endUtc) return 'day'
-    const days = (Date.parse(h.endUtc) - Date.parse(h.startUtc)) / 86_400_000
-    if (days <= 2) return 'hour'
-    if (days <= 14) return 'day'
-    if (days <= 90) return 'week'
-    return 'month'
+    return resolveTimeScale(this.scale, this.model?.horizon)
   }
 
   /** 当前刻度配置。资源排产板在小时刻度下插入「班次带」(日期 / 班次 / 小时)。 */

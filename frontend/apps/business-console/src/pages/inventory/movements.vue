@@ -5,7 +5,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
-import { INVENTORY_MOVEMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
+import {
+  INVENTORY_MANUAL_MOVEMENT_DEFAULT_TYPE,
+  INVENTORY_MANUAL_MOVEMENT_TYPE_OPTIONS,
+  inventoryMovementTypeLabel,
+} from '@/data/inventoryReference'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -29,6 +33,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvEntityPicker,
@@ -77,7 +82,8 @@ const QUALITY_OPTIONS = [
 ]
 
 const form = reactive({
-  movementType: 'receipt',
+  // 默认类型必须是外部命令真的接受的码值：此前默认 `receipt` 后端从不接受，一开弹框就注定 400（台账 #49）。
+  movementType: INVENTORY_MANUAL_MOVEMENT_DEFAULT_TYPE,
   sourceService: 'business-console',
   sourceDocumentId: '',
   sourceDocumentLineId: '',
@@ -99,19 +105,6 @@ const form = reactive({
 
 /** 调拨是两腿业务：出库位减、入库位增、数量等额，单腿会凭空增减库存。 */
 const isTransfer = computed(() => form.movementType === 'transfer')
-
-// 移动类型码值 → 中文标签：界面说人话，下发仍是后端码值。
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  inbound: '入库',
-  outbound: '出库',
-  transfer: '移库',
-  adjustment: '调整',
-  'status-transfer-out': '状态转出',
-  'status-transfer-in': '状态转入',
-  'count-adjustment': '盘点调整',
-  receipt: '入库',
-  issue: '出库',
-}
 
 const movementSheetOpen = shallowRef(false)
 
@@ -188,9 +181,7 @@ const columns: NvDataTableColumn<MovementRow>[] = [
   {
     key: 'movementType',
     header: '类型',
-    // 本页的 MOVEMENT_TYPE_LABELS 比共享词表更全（含状态转出入、盘点调整），用它。
-    accessor: (r) =>
-      r.movementType ? (MOVEMENT_TYPE_LABELS[r.movementType] ?? r.movementType) : '—',
+    accessor: (r) => inventoryMovementTypeLabel(r.movementType),
   },
   { key: 'skuCode', header: '物料', accessor: (r) => skuText(r.skuCode) },
   {
@@ -327,12 +318,19 @@ function isNonEmpty(value: string) {
               <NvSelect v-model="form.movementType">
                 <NvSelectTrigger aria-label="移动类型"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
-                  <NvSelectItem value="receipt">入库</NvSelectItem>
-                  <NvSelectItem value="issue">出库</NvSelectItem>
-                  <NvSelectItem value="transfer">调拨</NvSelectItem>
-                  <NvSelectItem value="adjustment">调整</NvSelectItem>
+                  <NvSelectItem
+                    v-for="option in INVENTORY_MANUAL_MOVEMENT_TYPE_OPTIONS"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
                 </NvSelectContent>
               </NvSelect>
+              <!-- 移库是两腿业务（#1359 后端强制配平）：选中它下面会多出「入库库位」，
+                   数量按调拨量正数录入，提交时自动拆成 -N / +N 两腿。 -->
+              <NvFieldDescription v-if="isTransfer"
+                >移库要一进一出：填出库库位与入库库位，按调拨量提交，两腿等额相消。</NvFieldDescription
+              >
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-source-document">来源单据</NvFieldLabel>

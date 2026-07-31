@@ -66,7 +66,9 @@ public sealed class QualityCalibrationRecordQueryTests
     public async Task Calibration_records_are_filtered_ordered_and_scoped_on_postgres()
     {
         var anchor = new DateTimeOffset(2026, 7, 27, 0, 0, 0, TimeSpan.Zero);
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Calibration_records_are_filtered_ordered_and_scoped_on_postgres));
+        var connectionString = database.ConnectionString;
 
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));

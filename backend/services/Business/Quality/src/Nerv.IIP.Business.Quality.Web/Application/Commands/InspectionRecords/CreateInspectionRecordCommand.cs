@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
@@ -101,7 +102,7 @@ public sealed class CreateInspectionRecordCommandHandler(
                 throw new KnownException("Inspection source document and SKU already have a record with a different inspected quantity.");
             }
 
-            await CompleteMatchingTaskAsync(request, existing.Id, cancellationToken);
+            await RejectMatchingTaskBypassAsync(request, cancellationToken);
             return existing.Id;
         }
 
@@ -176,7 +177,7 @@ public sealed class CreateInspectionRecordCommandHandler(
         }
 
         await repository.AddAsync(record, cancellationToken);
-        await CompleteMatchingTaskAsync(request, record.Id, cancellationToken);
+        await RejectMatchingTaskBypassAsync(request, cancellationToken);
         return record.Id;
     }
 
@@ -195,9 +196,8 @@ public sealed class CreateInspectionRecordCommandHandler(
         return usage;
     }
 
-    private async Task CompleteMatchingTaskAsync(
+    private async Task RejectMatchingTaskBypassAsync(
         CreateInspectionRecordCommand request,
-        InspectionRecordId inspectionRecordId,
         CancellationToken cancellationToken)
     {
         var task = await inspectionTaskRepository.FindOpenBySourceAsync(
@@ -213,16 +213,9 @@ public sealed class CreateInspectionRecordCommandHandler(
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        if (task.Status == InspectionTaskStatuses.Pending)
-        {
-            task.Start("system:quality", now);
-        }
-
-        if (task.Status == InspectionTaskStatuses.InProgress)
-        {
-            task.Complete(inspectionRecordId, now);
-        }
+        throw new QualityLifecycleConflictException(
+            "create-inspection-record",
+            "matching-task-requires-task-submit");
     }
 
     private async Task VerifySourceDocumentAsync(CreateInspectionRecordCommand request, CancellationToken cancellationToken)

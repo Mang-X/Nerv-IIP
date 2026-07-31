@@ -124,7 +124,7 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         await AssertInvalidResponseAsync(() => client.CreateInspectionRecordFromTaskAsync(
             "internal-token",
             "inspection-task-001",
-            new BusinessConsoleCreateInspectionRecordFromTaskRequest(
+            new BusinessQualityCreateInspectionRecordFromTaskRequest(
                 "inspection-task-001",
                 "org-001",
                 "env-dev",

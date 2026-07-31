@@ -30,7 +30,7 @@ PDA 首页采用任务范式而非菜单树，由三部分构成：
 
 PDA 面向一线操作员角色，默认可见能力收敛为：**我的任务、扫码直达、应用墙**，不暴露 PC 能力目录与完整菜单树。
 
-权限以 **BusinessGateway per-request enforcement 为唯一权威**：Gateway 按当前 bearer token、组织/环境上下文与 operation permission 做每请求授权。前端按 permission catalog / `me` 上下文 / feature flag 对应用墙与任务入口做裁剪，但这只是 UX 优化，不是授权边界；客户端不得因为入口已隐藏或已显示而跳过 401/403 处理。「我的任务」的个人范围在后端个人过滤端点（见 §5 缺口 4）落地前为客户端按工作中心/状态聚合，仅作展示，最终可见性仍以 Gateway 返回为准。
+权限以 **BusinessGateway per-request enforcement 为唯一权威**：Gateway 按当前 bearer token、组织/环境上下文与 operation permission 做每请求授权。前端按 permission catalog / `me` 上下文 / feature flag 对应用墙与任务入口做裁剪，但这只是 UX 优化，不是授权边界；客户端不得因为入口已隐藏或已显示而跳过 401/403 处理。「我的任务」必须逐领域由 Gateway 绑定当前 principal，并由拥有 assignment 的领域服务做 Self/Team 行级裁决；Quality 检验任务已完成该链路，其余没有 assignee/owner 事实的对象仍不得伪称个人任务。
 
 ## 4. 分期
 
