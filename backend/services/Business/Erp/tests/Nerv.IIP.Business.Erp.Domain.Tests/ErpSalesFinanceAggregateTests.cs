@@ -121,6 +121,36 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
+    public void Quotation_tracks_converted_sales_order_reference_exactly_once()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-CONVERT-001",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
+
+        // 未批准不能登记转出。
+        Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-001"));
+
+        quotation.Approve();
+        Assert.False(quotation.IsConverted);
+        quotation.MarkConvertedToSalesOrder("SO-001");
+
+        Assert.True(quotation.IsConverted);
+        Assert.Equal("SO-001", quotation.ConvertedSalesOrderNo);
+        Assert.NotNull(quotation.ConvertedAtUtc);
+
+        // 已转出：不能二次登记，也不能再创建销售订单。
+        Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-002"));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var exception = Assert.Throws<InvalidOperationException>(() => quotation.EnsureCanCreateSalesOrder(today));
+        Assert.Contains("SO-001", exception.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation("SO-002", "SITE-001", quotation));
+    }
+
+    [Fact]
     public void Sales_order_copies_approved_quotation_lines_and_total()
     {
         var quotation = Quotation.Create(

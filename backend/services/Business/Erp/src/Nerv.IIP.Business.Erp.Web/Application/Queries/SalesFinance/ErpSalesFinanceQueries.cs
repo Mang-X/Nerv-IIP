@@ -83,7 +83,8 @@ public sealed record QuotationListItem(
     string Status,
     decimal TotalAmount,
     IReadOnlyCollection<QuotationLineListItem> Lines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? ConvertedSalesOrderNo);
 
 public sealed record QuotationLineListItem(
     string LineNo,
@@ -144,7 +145,8 @@ public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
                         line.UnitPrice,
                         line.RequiredDate))
                     .ToArray(),
-                x.CreatedAtUtc))
+                x.CreatedAtUtc,
+                x.ConvertedSalesOrderNo))
             .ToArrayAsync(cancellationToken);
 
         return new ListQuotationsResponse(items, total);

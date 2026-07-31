@@ -74,7 +74,7 @@ const state = vi.hoisted(() => ({
   deliveries: [] as Array<Record<string, unknown>>,
   salesOrders: [] as Array<Record<string, unknown>>,
   approveQuotation: vi.fn(async (_no: string) => undefined),
-  createSalesOrder: vi.fn(async (_body: unknown) => undefined),
+  createSalesOrder: vi.fn(async (_body: unknown): Promise<unknown> => undefined),
   releaseCreditHold: undefined as unknown as ReturnType<typeof vi.fn>,
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -318,6 +318,33 @@ describe('ERP sales quotation page', () => {
     expect(wrapper.text()).toMatch(/待审报价[^0-9]*1/)
   })
 
+  // #1312：已转出的报价在列表上标注既有订单号，用户不用真的再点一次转订单才发现。
+  it('labels converted quotations with the existing sales order number', async () => {
+    state.quotations = [
+      {
+        quotationNo: 'QUO-CONVERTED-1',
+        customerCode: 'CUST-A',
+        status: 'Approved',
+        totalAmount: 1000,
+        expiresOn: '2026-12-31',
+        convertedSalesOrderNo: 'SO-20260731-000001',
+      },
+      {
+        quotationNo: 'QUO-APPROVED-1',
+        customerCode: 'CUST-B',
+        status: 'Approved',
+        totalAmount: 2000,
+        expiresOn: '2026-12-31',
+      },
+    ]
+    const wrapper = mount(QuotationsPage, { global: { stubs: { ...layoutStub } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已转 SO-20260731-000001')
+    // 未转出的已批准报价不带标注。
+    expect(wrapper.text().match(/已转 SO-/g)).toHaveLength(1)
+  })
+
   // MAN-700 / #1289：generated client 抛的是响应体对象，旧写法只判 instanceof Error，
   // 后端 400 的领域拒绝理由全被吞成「审批报价失败，请稍后重试。」，用户不知道哪儿不满足。
   it('surfaces the service domain message when approving a quotation fails', async () => {
@@ -437,6 +464,50 @@ describe('ERP sales order and delivery pages', () => {
     expect(state.createSalesOrder).toHaveBeenCalledTimes(1)
     expect(state.toastError).toHaveBeenCalledWith('创建销售订单失败：报价单未审批通过，不能转订单')
     expect(state.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  // #1312：已批准报价重复转订单，后端幂等返回既有订单号（不新建、不翻倍需求），
+  // 前端必须把「复用既有单」和「新建成功」说成两句话，用户才知道没有第二张单。
+  it('tells the user the existing order was reused when converting an already-converted quotation', async () => {
+    state.createSalesOrder = vi.fn(async () => ({
+      salesOrderId: 'so-id-001',
+      salesOrderNo: 'SO-20260731-000001',
+      reusedExistingOrder: true,
+    }))
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...orderDialogStubs } },
+    })
+    await flushPromises()
+
+    await wrapper.get('#erp-so-quotation').setValue('QUO-2026-0007')
+    await wrapper.get('[data-testid="site-picker"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.toastSuccess).toHaveBeenCalledWith(
+      '该报价已转出，已为你带回既有订单 SO-20260731-000001',
+    )
+    expect(state.toastError).not.toHaveBeenCalled()
+  })
+
+  it('names the new sales order number when the conversion actually creates one', async () => {
+    state.createSalesOrder = vi.fn(async () => ({
+      salesOrderId: 'so-id-002',
+      salesOrderNo: 'SO-20260731-000002',
+      reusedExistingOrder: false,
+    }))
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...orderDialogStubs } },
+    })
+    await flushPromises()
+
+    await wrapper.get('#erp-so-quotation').setValue('QUO-2026-0008')
+    await wrapper.get('[data-testid="site-picker"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.toastSuccess).toHaveBeenCalledWith('销售订单 SO-20260731-000002 已创建')
+    expect(state.toastError).not.toHaveBeenCalled()
   })
 
   it('sales orders keep keyword search and only expose the shared urgency display selector', async () => {

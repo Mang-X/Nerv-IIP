@@ -52484,6 +52484,10 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "convertedSalesOrderNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -52660,6 +52664,12 @@
         "properties": {
           "salesOrderId": {
             "type": "string"
+          },
+          "salesOrderNo": {
+            "type": "string"
+          },
+          "reusedExistingOrder": {
+            "type": "boolean"
           }
         }
       },

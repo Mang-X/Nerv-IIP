@@ -458,6 +458,61 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Converting_an_already_converted_quotation_idempotently_returns_the_existing_order()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-CONVERT-ONCE", "CUST-001", "SKU-FG-001");
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QUO-CONVERT-ONCE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var first = await new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 1_000_000m, "CNY"))).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CONVERT-001", "QUO-CONVERT-ONCE", "SITE-001", "so-convert-key-1"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 重复转同一报价：新幂等键 + 新单号仍幂等返回既有订单。信用读取器返回 null 证明幂等路径完全不触发信用检查（否则会抛缺信用主数据）。
+        var second = await new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(null)).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CONVERT-002", "QUO-CONVERT-ONCE", "SITE-001", "so-convert-key-2"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.False(first.ReusedExistingOrder);
+        Assert.True(second.ReusedExistingOrder);
+        Assert.Equal(first.SalesOrderId, second.SalesOrderId);
+        Assert.Equal("SO-CONVERT-001", first.SalesOrderNo);
+        Assert.Equal("SO-CONVERT-001", second.SalesOrderNo);
+        // 只有一张订单：需求侧不会因为重复转出收到第二条 SalesOrderReleased 事件。
+        Assert.Single(dbContext.SalesOrders.Where(x => x.QuotationNo == "QUO-CONVERT-ONCE"));
+        var quotation = dbContext.Quotations.Single(x => x.QuotationNo == "QUO-CONVERT-ONCE");
+        Assert.Equal("SO-CONVERT-001", quotation.ConvertedSalesOrderNo);
+        Assert.NotNull(quotation.ConvertedAtUtc);
+    }
+
+    [Fact]
+    public async Task Quotation_list_projects_converted_sales_order_reference()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-LIST-CONVERT", "QUO-LIST-CONVERT", "CUST-001", "SKU-FG-001");
+
+        var response = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", null, "QUO-LIST-CONVERT"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("SO-LIST-CONVERT", item.ConvertedSalesOrderNo);
+    }
+
+    [Fact]
     public async Task Create_sales_order_uses_master_data_credit_limit_and_holds_overrun()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
