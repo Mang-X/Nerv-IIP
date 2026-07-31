@@ -13,6 +13,7 @@ import {
 } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -392,6 +393,8 @@ function formatDate(value?: string | null) {
 
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+
+      <MesWorkScopeFilter permission-code="business.mes.operations.read" />
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
       <p
