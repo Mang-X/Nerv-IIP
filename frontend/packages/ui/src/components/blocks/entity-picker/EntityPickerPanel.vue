@@ -23,6 +23,12 @@ const props = withDefaults(
     dense?: boolean
     /** 是否显示编码行。`value` 是内部标识（GUID）且没有 `code` 时必须关掉。 */
     showCode?: boolean
+    /** 服务端搜索时的受控搜索词。 */
+    search?: string
+    /** 目录由服务端按搜索词过滤：本地不再二次过滤，`options` 即当前结果。 */
+    serverSearch?: boolean
+    /** 服务端搜索时目录的匹配总数；大于当前条数即说明还有没显示出来的。 */
+    totalCount?: number
   }>(),
   {
     searchPlaceholder: '搜索名称 / 编码…',
@@ -30,6 +36,7 @@ const props = withDefaults(
     loading: false,
     dense: true,
     showCode: true,
+    serverSearch: false,
   },
 )
 
@@ -38,13 +45,27 @@ function codeOf(option: EntityPickerOption): string {
   return option.code ?? option.value
 }
 
-const emit = defineEmits<{ (e: 'pick', option: EntityPickerOption): void }>()
+const emit = defineEmits<{
+  (e: 'pick', option: EntityPickerOption): void
+  (e: 'update:search', value: string): void
+}>()
 
-const query = ref('')
+const localQuery = ref('')
 const activeIndex = ref(0)
 const inputEl = ref<HTMLInputElement>()
 
+// 服务端搜索时搜索词由调用方持有（要拿去发请求）；本地搜索时留在面板内部。
+const query = computed({
+  get: () => (props.serverSearch ? (props.search ?? '') : localQuery.value),
+  set: (value: string) => {
+    if (props.serverSearch) emit('update:search', value)
+    else localQuery.value = value
+  },
+})
+
 const filtered = computed(() => {
+  // 服务端已按搜索词过滤过：再本地过滤一遍只会把「服务端命中、当前页没有」的项误删。
+  if (props.serverSearch) return props.options
   const q = query.value.trim().toLowerCase()
   if (!q) return props.options
   // 搜人读编码走 `code`（没有才回落 `value`）。`value` 是 GUID 时用户不会去搜它，
@@ -53,6 +74,12 @@ const filtered = computed(() => {
     `${o.label} ${o.hint ?? ''} ${codeOf(o)}`.toLowerCase().includes(q),
   )
 })
+
+// 目录比当前显示的多时如实说明还有多少，并给出「继续输入」的出路，
+// 免得用户以为列表就这么多、新建的条目「不见了」。
+const hasMore = computed(
+  () => props.serverSearch && props.totalCount != null && props.totalCount > filtered.value.length,
+)
 
 const listboxId = useId()
 const optionId = (index: number) => `${listboxId}-opt-${index}`
@@ -162,8 +189,12 @@ defineExpose({ focus: () => inputEl.value?.focus() })
         )
       "
     >
-      <span class="truncate">{{ sourceText ?? '' }}</span>
-      <span v-if="!loading" class="shrink-0 tabular-nums">共 {{ filtered.length }} 条</span>
+      <span class="truncate">
+        {{ hasMore ? '输入关键字继续筛选' : (sourceText ?? '') }}
+      </span>
+      <span v-if="!loading" class="shrink-0 tabular-nums">
+        {{ hasMore ? `显示 ${filtered.length} / 共 ${totalCount} 条` : `共 ${filtered.length} 条` }}
+      </span>
     </div>
   </div>
 </template>
