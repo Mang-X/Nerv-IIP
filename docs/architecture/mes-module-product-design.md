@@ -94,7 +94,13 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 **统一带参契约**：跨工序操作一律携带 `workOrderId + operationTaskId + workCenterId + skuId`。
 
 ### 3.7 领料闭环可视化（跨域：MES 领料申请 → WMS 出库）
-**事实**：`MaterialIssueRequestRow` 已含 `wmsRequestId`（连 WMS 出库）+ `requestedQuantity`/`receivedQuantity`（收料进度）+ `status` —— **后端闭环已建**。但前端「齐套与物料」页不暴露这条链，用户发起领料后看不到后续 → 体验上"断"。
+**事实（2026-07-31 更正，含尚未落地项的明确标注）**：`MaterialIssueRequestRow` 早就含 `wmsRequestId`（连 WMS 出库）+ `requestedQuantity`/`receivedQuantity`（收料进度）+ `status`，但**字段有 ≠ 闭环有**：本文档 v1 据此写下的「后端闭环已建」是失实的 —— 领料申请创建不发任何领域事件，WMS 从不知道有人领料，`wmsRequestId` 恒 `null`。当前状态请按下面三行读，**不要再把"计划中"当成"已建成"**：
+
+- **已落地（#1324 / PR #1340，已合入 main）**：MES `MaterialIssueRequested` → WMS 建出库单/拣货任务 → `MaterialIssueOutboundPrepared` 回写 MES 的两跳事件链；`wmsRequestId` 至此才真的会被写上值。
+- **已落地（#1341 / PR #1355）**：网关 MES 受理回执的显式映射 **14/14 处写面全覆盖**（计划转工单、工单下达/暂停/取消、质量放行强制解除、派工、遥测候选驳回、报缺陷、停机记录/恢复、交接班创建/接班、领料申请、线边收料），修好 `accepted` 恒 `false`、下游单号被丢的缺陷；`downstreamService`/`downstreamDocumentType` 统一用全仓 PascalCase 词表（`BusinessMes` + `WorkOrder`/`MaterialIssueRequest`/…），与集成事件信封的 `sourceService`（kebab，如 `business-mes`）是两张不同的词表，不要混用。
+- **仍未落地**：拣货完成 → 线边收料是**人工衔接**（仓库拣完，操作工在 PC/PDA 点「线边收料」），没有自动流转事件，**不算自动闭环**；真正的自动闭环需单独立项（见 PR #1340 的 Followup）。
+
+前端「齐套与物料」页此前不暴露这条链，用户发起领料后看不到后续 → 体验上"断"。
 **方案**：领料申请行显式做成「**已收 / 应领 进度 + 状态徽章**」，并把 `wmsRequestId` 做成**跳 WMS 出库**的链接（不显 GUID，显「查看出库」）。让「工单缺料 → 发起领料 → WMS 出库 → 收料回写 → 齐套」整条在 MES 侧一眼可见、可追。**领料是开工前的物料门，必须可发现、可追踪。**
 
 ### 3.8 齐套口径自解释（#1291）
