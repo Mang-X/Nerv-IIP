@@ -6046,6 +6046,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     movementId?: string;
     onHandQuantity?: number;
     availableQuantity?: number;
+    transferInMovementId?: string | null;
+    transferInOnHandQuantity?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePostStockMovementRequest = {
@@ -6067,6 +6069,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     ownerId?: string | null;
     quantity?: number;
     allowExpiredStock?: boolean;
+    transferInSiteCode?: string | null;
+    transferInLocationCode?: string | null;
+    transferInQuantity?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateStockCountTaskResponse = NetCorePalExtensionsDtoResponseData & {

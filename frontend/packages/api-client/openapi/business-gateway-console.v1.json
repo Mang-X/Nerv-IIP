@@ -51107,6 +51107,15 @@
           "availableQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "transferInMovementId": {
+            "type": "string",
+            "nullable": true
+          },
+          "transferInOnHandQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -51172,6 +51181,19 @@
           },
           "allowExpiredStock": {
             "type": "boolean"
+          },
+          "transferInSiteCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "transferInLocationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "transferInQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
