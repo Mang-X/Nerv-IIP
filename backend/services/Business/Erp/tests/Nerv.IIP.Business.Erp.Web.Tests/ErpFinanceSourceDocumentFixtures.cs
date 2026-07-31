@@ -1,6 +1,8 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -11,6 +13,54 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// </summary>
 internal static class ErpFinanceSourceDocumentFixtures
 {
+    public static async Task SeedPurchaseOrderAsync(
+        Infrastructure.ApplicationDbContext dbContext,
+        string purchaseOrderNo,
+        string supplierCode,
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
+    {
+        var purchaseOrder = PurchaseOrder.Create(
+            organizationId,
+            environmentId,
+            purchaseOrderNo,
+            supplierCode,
+            "SITE-001",
+            [new PurchaseOrderLineDraft("L1", "SKU-RM-SRC", "EA", 1m, 1m, new DateOnly(2026, 8, 1))]);
+        dbContext.PurchaseOrders.Add(purchaseOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    public static async Task SeedPurchaseReceiptAsync(
+        Infrastructure.ApplicationDbContext dbContext,
+        string purchaseReceiptNo,
+        string supplierCode,
+        string organizationId = "org-001",
+        string environmentId = "env-dev")
+    {
+        var purchaseOrder = PurchaseOrder.Create(
+            organizationId,
+            environmentId,
+            $"PO-SRC-{purchaseReceiptNo}",
+            supplierCode,
+            "SITE-001",
+            [new PurchaseOrderLineDraft("L1", "SKU-RM-SRC", "EA", 1m, 1m, new DateOnly(2026, 8, 1))]);
+        purchaseOrder.MarkApprovalRequested($"chain-{purchaseReceiptNo}");
+        purchaseOrder.ReleaseAfterApproval($"chain-{purchaseReceiptNo}");
+        dbContext.PurchaseOrders.Add(purchaseOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                organizationId,
+                environmentId,
+                purchaseReceiptNo,
+                purchaseOrder.PurchaseOrderNo,
+                [new PurchaseReceiptCommandLine("L1", 1m, "accepted")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
     public static async Task SeedDeliveryOrderAsync(
         Infrastructure.ApplicationDbContext dbContext,
         string deliveryOrderNo,

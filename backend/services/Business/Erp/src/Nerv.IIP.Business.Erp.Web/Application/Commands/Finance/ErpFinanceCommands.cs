@@ -162,6 +162,14 @@ public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbCo
             request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
             "account payable voucher",
             cancellationToken);
+        // 来源单据与供应商必须真实存在且一致，否则财务账可凭空生成垃圾应付单。
+        await AccountPayableSourceDocumentGuard.EnsureSourceDocumentAndSupplierAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceDocumentNo,
+            request.SupplierCode,
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-payable", request.PayableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
