@@ -63,6 +63,15 @@ const overviewState = vi.hoisted(() => ({
   refreshOverview: vi.fn(),
 }))
 
+// 「我的班组」那块的数字来自工序任务读面（按登录人授权作业范围过滤后的服务端 total）。
+// 这里按 status 分别给桩，用例才能验「待开工 / 进行中」各自取到了自己的数。
+const myScopeState = vi.hoisted(() => ({
+  scope: undefined as { kind: string; id: string; displayName?: string } | undefined,
+  scopeMessage: '',
+  readState: 'ready' as 'idle' | 'loading' | 'error' | 'ready',
+  totals: { queued: 0, inProgress: 0 } as Record<string, number>,
+}))
+
 vi.mock('@/composables/useBusinessMes', () => {
   function readonlyRef<T>(read: () => T) {
     return {
@@ -90,6 +99,18 @@ vi.mock('@/composables/useBusinessMes', () => {
       pendingWork: readonlyRef(() => overviewState.pendingWork),
       refreshOverview: overviewState.refreshOverview,
     }),
+    mesWorkScopeKindLabel: (kind: string) =>
+      ({ team: '班组', 'work-center': '工作中心' })[kind] ?? kind,
+    useMesOperationTasks: () => {
+      const filters = { status: undefined as string | undefined, take: 0 }
+      return {
+        filters,
+        operationTasksTotal: readonlyRef(() => myScopeState.totals[filters.status ?? ''] ?? 0),
+        operationTasksState: readonlyRef(() => myScopeState.readState),
+        operationListScope: readonlyRef(() => myScopeState.scope),
+        operationListScopeMessage: readonlyRef(() => myScopeState.scopeMessage),
+      }
+    },
   }
 })
 
@@ -102,6 +123,10 @@ describe('MES index page', () => {
     overviewState.readState = 'ready'
     overviewState.pendingWork = []
     overviewState.refreshOverview.mockReset()
+    myScopeState.scope = { kind: 'team', id: 'TEAM-A', displayName: '注塑一班' }
+    myScopeState.scopeMessage = ''
+    myScopeState.readState = 'ready'
+    myScopeState.totals = { queued: 0, inProgress: 0 }
   })
 
   function mountPage() {
@@ -192,5 +217,53 @@ describe('MES index page', () => {
 
     expect(text).toContain('本次读取的汇总里没有阻塞')
     expect(text).toContain('进入工单与派工')
+  })
+
+  // 走查台账 #50：驾驶舱只有全厂总量，班组长看不到「我这一摊」。
+  describe('我的班组维度', () => {
+    it('按作业范围给出待开工 / 进行中，并写明这是谁的范围', () => {
+      myScopeState.totals = { queued: 12, inProgress: 3 }
+
+      const wrapper = mountPage()
+      const text = wrapper.text()
+
+      expect(text).toContain('我的班组 · 现在该干什么')
+      expect(text).toContain('作业范围：注塑一班（班组）')
+      expect(text).toContain('我的范围 · 待开工')
+      expect(text).toContain('12')
+      expect(text).toContain('我的范围 · 进行中')
+      expect(text).toContain('3')
+
+      const queueLink = wrapper
+        .findAll('[data-router-link]')
+        .find((link) => link.text().includes('打开我的工序队列'))
+      expect(queueLink?.attributes('data-to')).toBe('/mes/operation-tasks')
+    })
+
+    // 全厂总量与「我的范围」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
+    it('全厂那一条明确标注全厂口径，不再叫「在制」', () => {
+      const text = mountPage().text()
+
+      expect(text).toContain('全厂工单')
+      expect(text).toContain('全厂工序任务')
+      expect(text).not.toContain('在制工单')
+    })
+
+    it('范围数字没读到时显占位，不拿 0 当结论', () => {
+      myScopeState.readState = 'error'
+      myScopeState.totals = { queued: 12, inProgress: 3 }
+
+      const text = mountPage().text()
+
+      expect(text).not.toContain('12')
+      expect(text).toContain('—')
+    })
+
+    it('作业范围本身还没确定时，把原因说出来而不是空着', () => {
+      myScopeState.scope = undefined
+      myScopeState.scopeMessage = '你的账号还没有配置作业范围，请联系管理员。'
+
+      expect(mountPage().text()).toContain('你的账号还没有配置作业范围，请联系管理员。')
+    })
   })
 })

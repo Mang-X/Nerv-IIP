@@ -62,6 +62,7 @@ import {
   NvTabsContent,
   NvTabsList,
   NvTabsTrigger,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import {
   CalendarCogIcon,
@@ -139,6 +140,36 @@ function refreshUrgency() {
   void orderUrgencies.refresh()
   refreshPlanning()
 }
+
+/**
+ * 需求池筛选（GH#1292 第 5 项）：一屏几百条需求此前没有任何查找手段，计划员要找某张销售订单
+ * 或某个物料只能肉眼扫。需求池读面是**整表返回、不带关键字/分页参数**，所以筛选在前端做。
+ */
+const demandKeyword = shallowRef('')
+const demandTypeFilter = shallowRef('all')
+/** 类型选项按池子里真实出现过的类型生成——不列一个筛完必空的类型。 */
+const demandTypeFilterOptions = computed(() => [
+  { label: '全部类型', value: 'all' },
+  ...[...new Set(demands.value.map((demand) => demand.demandType).filter(Boolean))].map((type) => ({
+    label: demandTypeLabel(type),
+    value: type as string,
+  })),
+])
+const filteredDemands = computed(() => {
+  const keyword = demandKeyword.value.trim().toLowerCase()
+  const type = demandTypeFilter.value
+  return orderedDemands.value.filter((demand) => {
+    if (type !== 'all' && demand.demandType !== type) return false
+    if (!keyword) return true
+    // 搜来源单号 / 物料 / 客户 / 工厂：计划员手里通常就是这四个之一。
+    return [demand.sourceReference, demand.skuCode, demand.customerCode, demand.siteCode].some(
+      (value) => value?.toLowerCase().includes(keyword),
+    )
+  })
+})
+const demandFilterActive = computed(
+  () => demandKeyword.value.trim().length > 0 || demandTypeFilter.value !== 'all',
+)
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
 const { skus } = useBusinessSkus()
@@ -1113,7 +1144,12 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <NvTabs default-value="demands">
     <NvTabsList>
-      <NvTabsTrigger value="demands">需求池 ({{ demands.length }})</NvTabsTrigger>
+      <!-- 筛选生效时页签显「筛出数/总数」，别让人以为需求池整个缩水了。 -->
+      <NvTabsTrigger value="demands"
+        >需求池 ({{
+          demandFilterActive ? `${filteredDemands.length}/${demands.length}` : demands.length
+        }})</NvTabsTrigger
+      >
       <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
       <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
       <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
@@ -1121,17 +1157,42 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsList>
 
     <NvTabsContent value="demands" class="grid gap-3">
-      <div class="flex flex-wrap items-center justify-end">
-        <UrgencyDisplayModeSelect v-model="displayMode" />
-      </div>
+      <NvToolbar
+        v-model:search="demandKeyword"
+        search-placeholder="搜来源单号 / 物料 / 客户 / 工厂"
+        search-label="需求池关键字"
+      >
+        <template #filters>
+          <NvSelect v-model="demandTypeFilter">
+            <NvSelectTrigger class="h-9 w-36" aria-label="需求类型筛选"
+              ><NvSelectValue
+            /></NvSelectTrigger>
+            <NvSelectContent>
+              <NvSelectItem
+                v-for="option in demandTypeFilterOptions"
+                :key="option.value"
+                :value="option.value"
+                >{{ option.label }}</NvSelectItem
+              >
+            </NvSelectContent>
+          </NvSelect>
+        </template>
+        <template #actions>
+          <UrgencyDisplayModeSelect v-model="displayMode" />
+        </template>
+      </NvToolbar>
       <NvDataTable
         :columns="demandColumns"
-        :rows="orderedDemands"
+        :rows="filteredDemands"
         row-key="demandSourceId"
         :loading="demandsPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围没有计划需求。"
+        :empty-message="
+          demandFilterActive
+            ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
+            : '当前范围没有计划需求。'
+        "
       >
         <template #cell-sourceReference="{ row }">
           <NvButton

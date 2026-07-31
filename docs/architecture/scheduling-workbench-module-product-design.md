@@ -58,6 +58,13 @@
 - **图例与图面一致**(#1274 铁律):「缺料待备」「设备状态未知」既然出现在甘特卡片与 tooltip 上,
   `deriveLegendSemantics` 就必须同步推导出 `status.materialRisk` / `status.equipmentRisk`,图例随之出现;
   方案全齐套、设备状态全都清楚时图例里不出现对应项。
+- **随刻度出现/消失的语义要按刻度推导**(走查台账 #41):班次边界竖线由引擎逐格判定
+  (单元格起点 === 班次窗口起点),**日 / 周 / 月刻度下一条也画不出来**(格子 ≥1 天,
+  08:00 / 16:00 起的班次落不到格子起点),班次级(2 小时一格)也只有偶数整点起班才画得出。
+  因此 `deriveLegendSemantics(model, now, scale)` 接受当前刻度,`calendar.shift` 按
+  `shiftBoundaryRendersAt` 的实际渲染事实推导,而不是只看「后端有没有带日历」;
+  `'auto'` 的解析与引擎同源(`model/scale.ts` 的 `resolveTimeScale`,引擎直接调用它),
+  图例与图面不许各算各的。图例消费方(`SchedulingLegend`)必须把 `scale` 传下去。
 - **未排原因是中文人话**(台账 #38):不可排原因与冲突说明由 BusinessScheduling 直接产出中文业务语言,
   读面不再需要翻译枚举名;上游码值(质量放行/物料缺口)套一层中文说明再上屏。
 - 空状态:无计划时指引「前往规则排程」或在需求与计划中生成方案。

@@ -96,6 +96,21 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           quantity: 2,
           dueDate: '2026-08-15',
         },
+        // 第二条走预测来源：需求池筛选（关键字 / 类型）要能把两条真的分开。
+        {
+          demandSourceId: 'demand-002',
+          sourceReference: 'FC-2026-08-A',
+          sourceLineReference: '20',
+          customerCode: 'CUST-002',
+          sourceVersion: 1,
+          sourceStatus: 'active',
+          demandType: 'forecast',
+          skuCode: 'SKU-FG-2000',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 8,
+          dueDate: '2026-08-20',
+        },
       ]),
       demandsError: shallowRef(null),
       demandsPending: shallowRef(false),
@@ -308,6 +323,17 @@ vi.mock('@nerv-iip/ui', async () => {
     },
   })
 
+  // 工具条要真能收关键字并把 filters / actions 插槽渲染出来，否则筛选用例测不到东西。
+  const Toolbar = defineComponent({
+    props: {
+      search: { type: String, default: '' },
+      searchLabel: { type: String, default: '搜索' },
+    },
+    emits: ['update:search'],
+    template:
+      '<div><input :aria-label="searchLabel" :value="search" @input="$emit(\'update:search\', $event.target.value)" /><slot name="filters" /><slot name="actions" /></div>',
+  })
+
   return {
     toast: {
       error: (...args: unknown[]) => planningSpies.toastError(...args),
@@ -341,6 +367,7 @@ vi.mock('@nerv-iip/ui', async () => {
     NvTabsContent: Shell,
     NvTabsList: Shell,
     NvTabsTrigger: Shell,
+    NvToolbar: Toolbar,
   }
 })
 
@@ -366,6 +393,41 @@ describe('PlanningWorkbench', () => {
     expect(routerPush).toHaveBeenCalledWith({
       path: '/erp/sales/orders',
       query: { keyword: 'SO-DEMO-001' },
+    })
+  })
+
+  // GH#1292 第 5 项：需求池此前没有任何查找手段，几百条需求只能肉眼扫。
+  // 读面整表返回、不带关键字参数，所以筛选在前端做——这组用例锁住它真的筛得动。
+  describe('需求池搜索与筛选', () => {
+    it('关键字命中来源单号 / 物料 / 客户，未命中的行不再渲染', async () => {
+      const wrapper = mount(PlanningWorkbench)
+      expect(wrapper.text()).toContain('SO-DEMO-001')
+      expect(wrapper.text()).toContain('FC-2026-08-A')
+
+      await wrapper.get('[aria-label="需求池关键字"]').setValue('fc-2026')
+
+      expect(wrapper.text()).toContain('FC-2026-08-A')
+      expect(wrapper.text()).not.toContain('SO-DEMO-001')
+      // 页签同步显「筛出数/总数」，别让人以为需求池整个缩水了。
+      expect(wrapper.text()).toContain('需求池 (1/2)')
+    })
+
+    it('关键字也能按物料编码命中', async () => {
+      const wrapper = mount(PlanningWorkbench)
+
+      await wrapper.get('[aria-label="需求池关键字"]').setValue('SKU-FG-1000')
+
+      expect(wrapper.text()).toContain('SO-DEMO-001')
+      expect(wrapper.text()).not.toContain('FC-2026-08-A')
+    })
+
+    it('全都筛没了时给的是「换个条件」而不是「当前范围没有需求」', async () => {
+      const wrapper = mount(PlanningWorkbench)
+
+      await wrapper.get('[aria-label="需求池关键字"]').setValue('查无此单')
+
+      expect(wrapper.text()).not.toContain('SO-DEMO-001')
+      expect(wrapper.text()).toContain('需求池 (0/2)')
     })
   })
 

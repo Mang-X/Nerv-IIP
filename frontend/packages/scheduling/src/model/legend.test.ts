@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { toModel } from './aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from './fixtures'
 import { deriveLegendSemantics } from './legend'
+import { resolveTimeScale } from './scale'
+
+/** 固定「现在」,免得 calendar.now 跟着真实时间飘。样例计划期覆盖 2026-06-10。 */
+const NOW = Date.parse('2026-06-10T09:00:00.000Z')
 
 // 图例不许列图上没有的东西——这组用例就是那条硬约束的门禁。
 describe('deriveLegendSemantics', () => {
@@ -17,10 +21,76 @@ describe('deriveLegendSemantics', () => {
   })
 
   it('后端带出工作日历才谈班次边界', () => {
-    expect(deriveLegendSemantics(toModel(samplePlanWithCalendar)).calendar.shift).toBe(true)
-    expect(deriveLegendSemantics(toModel(samplePlan)).calendar.shift).toBe(false)
+    expect(deriveLegendSemantics(toModel(samplePlanWithCalendar), NOW, 'hour').calendar.shift).toBe(
+      true,
+    )
+    expect(deriveLegendSemantics(toModel(samplePlan), NOW, 'hour').calendar.shift).toBe(false)
     // 非工作底纹恒在:没有日历时引擎也会按通用作息画。
     expect(deriveLegendSemantics(toModel(samplePlan)).calendar.nonWorking).toBe(true)
+  })
+
+  // 走查台账 #41:图例=图面事实。班次竖线由引擎逐格判定(单元格起点 === 班次窗口起点),
+  // 日级刻度一格是一整天,08:00/16:00 起的班次一条线都画不出来 → 图例也不许列。
+  describe('班次边界按当前刻度推导(台账 #41)', () => {
+    // 用本地时间构造,避免测试跟着运行机器时区飘。
+    const localIso = (hour: number) => new Date(2026, 5, 10, hour, 0, 0, 0).toISOString()
+    const planWithShiftsAt = (...hours: number[]) => ({
+      ...samplePlan,
+      calendars: [
+        {
+          calendarId: 'CAL-MAIN',
+          resourceIds: ['WC-001'],
+          workCenterIds: ['WC-001'],
+          shiftWindows: hours.map((hour) => ({
+            startUtc: localIso(hour),
+            endUtc: localIso(hour + 8),
+            shiftCode: `shift-${hour}`,
+          })),
+        },
+      ],
+    })
+
+    it('班次级刻度下,落在单元格起点(偶数整点)的班次才列', () => {
+      const model = toModel(planWithShiftsAt(8, 16))
+      expect(deriveLegendSemantics(model, NOW, 'hour').calendar.shift).toBe(true)
+    })
+
+    it('班次级刻度下,奇数整点起班落不到 2 小时一格的起点上,不列', () => {
+      const model = toModel(planWithShiftsAt(7))
+      expect(deriveLegendSemantics(model, NOW, 'hour').calendar.shift).toBe(false)
+    })
+
+    it('日级刻度下班次竖线画不出来,图例不列班次边界', () => {
+      const model = toModel(planWithShiftsAt(8, 16))
+      expect(deriveLegendSemantics(model, NOW, 'day').calendar.shift).toBe(false)
+      // 非工作底纹与「现在」线不受刻度影响,仍照常推导。
+      expect(deriveLegendSemantics(model, NOW, 'day').calendar.nonWorking).toBe(true)
+    })
+
+    it('周 / 月刻度同理不列', () => {
+      const model = toModel(planWithShiftsAt(0, 8, 16))
+      expect(deriveLegendSemantics(model, NOW, 'week').calendar.shift).toBe(false)
+      expect(deriveLegendSemantics(model, NOW, 'month').calendar.shift).toBe(false)
+    })
+
+    it('不传刻度时按 auto 解析:计划期跨度决定实际刻度', () => {
+      // toModel 的 horizon 由任务时间推导,这里直接覆写成想验的跨度。
+      const short = {
+        ...toModel(planWithShiftsAt(8)),
+        horizon: { startUtc: localIso(0), endUtc: localIso(24) },
+      }
+      // 跨度 ≤2 天 → 班次级 → 画得出来
+      expect(resolveTimeScale('auto', short.horizon)).toBe('hour')
+      expect(deriveLegendSemantics(short, NOW).calendar.shift).toBe(true)
+
+      const long = {
+        ...toModel(planWithShiftsAt(8)),
+        horizon: { startUtc: localIso(0), endUtc: new Date(2026, 5, 30).toISOString() },
+      }
+      // 跨度 20 天 → 周级 → 画不出来
+      expect(resolveTimeScale('auto', long.horizon)).toBe('week')
+      expect(deriveLegendSemantics(long, NOW).calendar.shift).toBe(false)
+    })
   })
 
   it('「现在」线只在计划期覆盖当下时出现', () => {
