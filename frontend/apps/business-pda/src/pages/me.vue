@@ -35,8 +35,18 @@ async function logout() {
   if (loggingOut.value) return
   loggingOut.value = true
   clearCache()
-  await auth.logout()
-  await router.push('/login')
+  const outcome = await auth.logoutAndRevoke({ timeoutMs: 3_000 })
+  await router.push(
+    outcome.status === 'failed' || outcome.status === 'timed-out'
+      ? { path: '/login', query: { logout: outcome.status } }
+      : { path: '/login' },
+  )
+}
+
+function formatResolvedAt(value: string) {
+  if (!value) return '未返回'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 </script>
 
@@ -45,6 +55,26 @@ async function logout() {
     <template #header><NvNavBar title="我的" /></template>
 
     <div class="space-y-5 p-4">
+      <section
+        v-if="profile.state.value !== 'ready'"
+        class="space-y-3 rounded-xl border border-border bg-card p-4 text-sm"
+        :class="profile.state.value === 'loading' ? 'text-muted-foreground' : 'text-destructive'"
+        :role="profile.state.value === 'loading' ? 'status' : 'alert'"
+      >
+        <p v-if="profile.state.value === 'loading'">正在加载角色与范围…</p>
+        <p v-else-if="profile.state.value === 'error'">加载角色与范围失败，请重试。</p>
+        <p v-else>部分角色或范围加载失败，当前仅展示已确认事实。</p>
+        <NvMobileButton
+          v-if="profile.state.value !== 'loading'"
+          data-testid="retry-profile"
+          variant="outline"
+          size="sm"
+          @click="profile.refresh"
+        >
+          重新加载
+        </NvMobileButton>
+      </section>
+
       <section class="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
         <NvMobileAvatar :name="profile.displayName.value" size="lg" />
         <div class="min-w-0 flex-1">
@@ -91,7 +121,9 @@ async function logout() {
           <NvMobileTag v-for="role in profile.roleNames.value" :key="role" size="sm">
             {{ role }}
           </NvMobileTag>
-          <span v-if="!profile.roleNames.value.length" class="text-sm text-muted-foreground"
+          <span
+            v-if="profile.state.value === 'ready' && !profile.roleNames.value.length"
+            class="text-sm text-muted-foreground"
             >未返回可读角色</span
           >
         </div>
@@ -110,11 +142,54 @@ async function logout() {
           >
             {{ scope }}
           </NvMobileTag>
-          <span v-if="!profile.scopeLabels.value.length" class="text-sm text-muted-foreground"
+          <span
+            v-if="profile.state.value === 'ready' && !profile.scopeLabels.value.length"
+            class="text-sm text-muted-foreground"
             >未返回可用范围</span
           >
         </div>
       </section>
+
+      <section>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">WMS 授权作业范围</h2>
+        <div
+          class="flex min-h-touch flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
+        >
+          <NvMobileTag
+            v-for="scope in profile.wmsAuthorizedScopeLabels.value"
+            :key="scope"
+            variant="brand"
+            size="sm"
+          >
+            {{ scope }}
+          </NvMobileTag>
+          <span
+            v-if="profile.state.value === 'ready' && !profile.wmsAuthorizedScopeLabels.value.length"
+            class="text-sm text-muted-foreground"
+            >未返回可用 WMS 范围</span
+          >
+        </div>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">WMS 当前选择</h2>
+        <div
+          class="flex min-h-touch flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
+        >
+          <NvMobileTag v-for="scope in profile.wmsCurrentScopeLabels.value" :key="scope" size="sm">
+            {{ scope }}
+          </NvMobileTag>
+          <span
+            v-if="profile.state.value === 'ready' && !profile.wmsCurrentScopeLabels.value.length"
+            class="text-sm text-muted-foreground"
+            >当前未选择 WMS 作业范围</span
+          >
+        </div>
+      </section>
+
+      <p class="text-xs text-muted-foreground">
+        角色与范围更新时间：{{ formatResolvedAt(profile.resolvedAtUtc.value) }}
+      </p>
 
       <NvMobileButton
         data-testid="logout"

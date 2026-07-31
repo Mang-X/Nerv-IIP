@@ -24,4 +24,12 @@ describe('PDA scan page', () => {
     expect(wrapper.text()).not.toContain('收货入库')
     expect(push).not.toHaveBeenCalled()
   })
+
+  it.each(['Enter', ' '])('opens a permitted work entrance with the %s key', async (key) => {
+    const wrapper = mount(ScanPage)
+
+    await wrapper.get('[role="button"]').trigger('keydown', { key })
+
+    expect(push).toHaveBeenCalledWith('/mes/report')
+  })
 })

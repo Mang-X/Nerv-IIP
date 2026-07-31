@@ -1,23 +1,16 @@
 <script setup lang="ts">
 import { ClipboardCheck, Factory, PackageOpen } from '@lucide/vue'
-import { operationTaskStatusLabel } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvCell, NvCellGroup, NvMobileTag, NvNavBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvCell, NvCellGroup, NvNavBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import {
-  HOME_PERMISSIONS,
-  useMyDispatchTasks,
-  usePdaIdentity,
-} from '@/composables/useWorkbenchHome'
+import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/useWorkbenchHome'
 
 definePage({ meta: { requiresAuth: true, title: '任务' } })
 
 const router = useRouter()
 const identity = usePdaIdentity()
-const myTasks = useMyDispatchTasks()
-
-const personalTasks = computed(() => myTasks.openTasks.value)
+const canSeeMesOperations = computed(() => identity.can(HOME_PERMISSIONS.mesOperations))
 const canSeeQualitySelfTasks = computed(() => identity.can(HOME_PERMISSIONS.quality))
 const warehouseEntrances = computed(() => {
   const entries: Array<{ title: string; note: string; route: string }> = []
@@ -43,37 +36,18 @@ function openRoute(route: string) {
     <template #header><NvNavBar title="任务" /></template>
 
     <div class="space-y-5 p-4">
-      <section v-if="myTasks.enabled.value">
-        <div class="mb-2 flex items-center justify-between">
-          <h1 class="text-sm font-semibold text-foreground">我的生产任务</h1>
-          <span class="text-xs text-muted-foreground">
-            进行中 {{ myTasks.inProgressCount.value }} · 待开工 {{ myTasks.queuedCount.value }}
-          </span>
-        </div>
-        <NvCellGroup
-          v-if="personalTasks.length"
-          class="overflow-hidden rounded-xl border border-border"
-        >
+      <section v-if="canSeeMesOperations">
+        <h1 class="mb-2 text-sm font-semibold text-foreground">生产作业</h1>
+        <NvCellGroup class="overflow-hidden rounded-xl border border-border">
           <NvCell
-            v-for="task in personalTasks"
-            :key="task.operationTaskId"
-            :title="task.workOrderNo || task.workOrderId || '生产任务'"
-            :note="task.operationCode ? `工序 ${task.operationCode}` : undefined"
+            title="生产作业"
+            note="服务端按当前主体与授权作业范围过滤"
             arrow
             @click="openRoute('/mes/operation')"
           >
             <template #icon><Factory /></template>
-            <template #value>
-              <NvMobileTag size="sm">{{ operationTaskStatusLabel(task.status) }}</NvMobileTag>
-            </template>
           </NvCell>
         </NvCellGroup>
-        <div
-          v-else-if="!myTasks.pending.value"
-          class="rounded-xl border border-dashed border-border bg-card p-5 text-center text-sm text-muted-foreground"
-        >
-          暂无派给我的生产任务
-        </div>
       </section>
 
       <section v-if="canSeeQualitySelfTasks">

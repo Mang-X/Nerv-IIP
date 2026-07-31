@@ -33,6 +33,7 @@ import {
 /** 首页各板块的权限门槛（与 BusinessGateway 各 facade 实际要求一致）。 */
 export const HOME_PERMISSIONS = {
   myTasks: 'business.mes.dispatch.read',
+  mesOperations: 'business.mes.operations.read',
   workerProfile: 'business.masterdata.resources.read',
   wmsReceipts: 'business.wms.receipts.read',
   wmsShipments: 'business.wms.shipments.read',

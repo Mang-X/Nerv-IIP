@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { aggregatePdaProfileContexts, clearPdaApplicationStorage } from './usePdaProfile'
+import {
+  aggregatePdaProfileContexts,
+  aggregateWmsProfileScopes,
+  clearPdaApplicationStorage,
+} from './usePdaProfile'
 
 describe('aggregatePdaProfileContexts', () => {
   it('deduplicates readable roles and authorized scopes across permission-aware contexts', () => {
@@ -40,17 +44,42 @@ describe('aggregatePdaProfileContexts', () => {
 })
 
 describe('clearPdaApplicationStorage', () => {
-  it('removes only PDA-owned persisted state and clears session storage', () => {
+  it('removes only PDA-owned cache while retaining an unconfirmed business intent', () => {
     localStorage.setItem('nerv-iip.business-pda.auth', 'session')
     localStorage.setItem('nerv-iip.business-pda.filter', 'cached')
     localStorage.setItem('nerv-iip.console.auth', 'keep')
-    sessionStorage.setItem('pending-write', 'cached')
+    sessionStorage.setItem('nerv-iip.business-pda.transient-filter', 'cached')
+    sessionStorage.setItem('nerv-iip.pending-business-intents.v1', '[{"idempotencyKey":"stable"}]')
 
     clearPdaApplicationStorage()
 
     expect(localStorage.getItem('nerv-iip.business-pda.auth')).toBeNull()
     expect(localStorage.getItem('nerv-iip.business-pda.filter')).toBeNull()
     expect(localStorage.getItem('nerv-iip.console.auth')).toBe('keep')
-    expect(sessionStorage.length).toBe(0)
+    expect(sessionStorage.getItem('nerv-iip.business-pda.transient-filter')).toBeNull()
+    expect(sessionStorage.getItem('nerv-iip.pending-business-intents.v1')).toContain('stable')
+  })
+})
+
+describe('aggregateWmsProfileScopes', () => {
+  it('keeps emp049 authorized site/work-pool scopes separate from each current selection', () => {
+    const result = aggregateWmsProfileScopes([
+      {
+        catalog: 'receipts',
+        options: [
+          { label: '我的任务', value: 'self:emp049' },
+          { label: '一号仓收货作业池', value: 'work-pool:WMS-SITE-001-RECEIVING' },
+          { label: '一号仓', value: 'site:SITE-001' },
+        ],
+        selectedValue: 'work-pool:WMS-SITE-001-RECEIVING',
+      },
+    ])
+
+    expect(result.authorizedLabels).toEqual([
+      '收货/上架 · 本人 · emp049',
+      '收货/上架 · 作业池 · 一号仓收货作业池',
+      '收货/上架 · 站点 · 一号仓',
+    ])
+    expect(result.currentLabels).toEqual(['收货/上架 · 作业池 · 一号仓收货作业池'])
   })
 })

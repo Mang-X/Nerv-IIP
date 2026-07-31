@@ -12,6 +12,9 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 
 1. **jsdom 单元/组件测试**（`vp test run src`）
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
+   - 本工作台补充覆盖：任务页不发起伪个人 MES 查询、`workOrderId + operationTaskId` 强 ID 深链、
+     Profile loading/error/partial/ready、WMS 授权/当前选择、远端登出撤销成功/失败/超时，以及
+     `NvCell` 的 Enter/Space 激活。
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
 2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
@@ -27,7 +30,8 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 
 - `e2e/app-flow.spec.ts`（7）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
-  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心并核验可读角色与范围；退出清理 PDA 会话并回登录。
+  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心，
+  核验可读角色与范围、键盘 Tab 焦点可见；退出清理 PDA 会话并回登录。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；

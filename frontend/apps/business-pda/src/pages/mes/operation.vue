@@ -28,8 +28,8 @@ import {
   NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -62,6 +62,34 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useMesOperationTasks()
+const route = useRoute()
+const router = useRouter()
+
+function queryString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const requestedWorkOrderId = queryString(route.query.workOrderId)
+const requestedOperationTaskId = queryString(route.query.operationTaskId)
+const hasCompleteTaskDeepLink = Boolean(requestedWorkOrderId && requestedOperationTaskId)
+const deepLinkMessage = ref('')
+
+if (hasCompleteTaskDeepLink) {
+  filters.workOrderId = requestedWorkOrderId
+  filters.keyword = requestedOperationTaskId
+} else if (requestedWorkOrderId || requestedOperationTaskId) {
+  deepLinkMessage.value = '工序任务链接缺少工单或任务标识，无法安全打开。'
+}
+
+const visibleOperationTasks = computed(() =>
+  hasCompleteTaskDeepLink
+    ? operationTasks.value.filter(
+        (task) =>
+          task.workOrderId === requestedWorkOrderId &&
+          task.operationTaskId === requestedOperationTaskId,
+      )
+    : operationTasks.value,
+)
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
   team: '班组',
@@ -97,8 +125,6 @@ const {
   refresh: refreshSops,
   createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
-
-const router = useRouter()
 
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
 const downloadFetch = createTimeoutFetch()
@@ -203,6 +229,23 @@ function openSheet(task: Task) {
   sopFilters.routingRevision = ''
   sopFilters.asOfDate = ''
 }
+
+const deepLinkOpened = ref(false)
+watch(
+  [visibleOperationTasks, pending, hasSuccessfulResponse],
+  ([tasks, isPending, successful]) => {
+    if (!hasCompleteTaskDeepLink || deepLinkOpened.value || isPending || !successful) return
+    const exactTask = tasks[0]
+    if (!exactTask) {
+      deepLinkMessage.value = '未在当前主体授权作业范围内找到指定工序任务。'
+      return
+    }
+    deepLinkOpened.value = true
+    openSheet(exactTask)
+  },
+  { immediate: true },
+)
+
 function closeSheet() {
   selected.value = null
   confirmingComplete.value = false
@@ -395,6 +438,14 @@ function formatDate(value?: string | null) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
       <p
+        v-if="deepLinkMessage"
+        data-testid="operation-deep-link-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ deepLinkMessage }}
+      </p>
+      <p
         v-if="operationListScopeMessage"
         data-testid="operation-list-scope-message"
         class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
@@ -440,7 +491,7 @@ function formatDate(value?: string | null) {
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
         <NvListRow
-          v-for="task in operationTasks"
+          v-for="task in visibleOperationTasks"
           :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
           :title="rowTitle(task)"
           :subtitle="rowSubtitle(task)"

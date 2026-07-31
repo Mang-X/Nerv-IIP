@@ -20,6 +20,8 @@ export const principal = {
     'business.mes.receipts.read',
     'business.wms.receipts.read',
     'business.wms.shipments.read',
+    'business.wms.counts.read',
+    'business.inventory.counts.manage',
     'business.quality.inspection-records.read',
     'business.iiot.alarms.read',
     'business.maintenance.work-orders.read',
@@ -104,8 +106,20 @@ const nowUtc = '2026-06-11T00:00:00.000Z'
 // Realistic WMS row shapes mirroring the real api-client item types — just enough
 // fields for the PDA pages to render business codes + Chinese status (no raw codes/GUIDs).
 const inboundOrders = [
-  { inboundOrderId: 'in-1', inboundOrderNo: 'IN-1', status: 'pending', createdAtUtc: nowUtc },
-  { inboundOrderId: 'in-2', inboundOrderNo: 'IN-2', status: 'pending', createdAtUtc: nowUtc },
+  {
+    inboundOrderId: 'in-1',
+    inboundOrderNo: 'IN-1',
+    status: 'open',
+    version: 1,
+    createdAtUtc: nowUtc,
+  },
+  {
+    inboundOrderId: 'in-2',
+    inboundOrderNo: 'IN-2',
+    status: 'open',
+    version: 1,
+    createdAtUtc: nowUtc,
+  },
 ]
 
 const outboundOrders = [
@@ -167,7 +181,8 @@ const countExecutions = [
     skuCode: 'SKU-1',
     locationCode: 'A1',
     expectedQuantity: 100,
-    status: 'pending',
+    status: 'Open',
+    version: 1,
     createdAtUtc: nowUtc,
   },
 ]
@@ -181,33 +196,57 @@ export const mesOperationTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-1',
-    status: 'Running',
+    status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
+    qualityStatus: 'Passed',
   },
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-1',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    qualityStatus: 'Passed',
   },
   {
     operationTaskId: 'OP-3',
     workOrderId: 'WO-2',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 10,
     workCenterId: 'WC-C',
+    qualityStatus: 'Passed',
   },
 ]
 
 const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskId: `OP-${index + 1}`,
   workOrderId: 'WO-501',
-  status: 'Ready',
+  status: 'Queued',
   operationSequence: index + 1,
   workCenterId: 'WC-MANY',
+  qualityStatus: 'Passed',
 }))
+
+function confirmedOperation(
+  operationType: string,
+  resourceId: string,
+  idempotencyKey: string,
+  resourceStatus: string,
+) {
+  return {
+    operationType,
+    authority: 'business-gateway',
+    resourceType: 'business-resource',
+    resourceId,
+    idempotencyKey,
+    outcome: 'confirmed',
+    stateConfirmed: true,
+    readbackRequired: false,
+    changedAtUtc: nowUtc,
+    resourceStatus,
+  }
+}
 
 /**
  * Dispatch-task rows（首页「我的任务」）— shape mirrors `BusinessConsoleMesDispatchTaskRow`：
@@ -323,16 +362,127 @@ export async function routeBusinessConsoleApi(route: Route) {
   const method = route.request().method()
   const isPost = method === 'POST'
 
+  if (pathname === '/api/business-console/v1/me/work-context') {
+    const permissionCode = requestUrl.searchParams.get('permissionCode')
+    return fulfillJson(
+      route,
+      envelope({
+        organizationId: principal.organizationId,
+        environmentId: principal.environmentId,
+        applicablePermissionCode: permissionCode,
+        resolvedAtUtc: '2026-07-31T12:00:00.000Z',
+        principal: {
+          id: principal.principalId,
+          principalType: principal.principalType,
+          loginName: principal.loginName,
+          roles: [{ id: 'role-pda-operator', displayName: 'PDA 操作员' }],
+        },
+        resolutionStatus: 'resolved',
+        worker: {
+          id: 'worker-012',
+          userId: principal.principalId,
+          employeeNo: workerProfile.employeeNo,
+          name: workerProfile.displayName,
+          departmentName: '生产部',
+          jobTitle: workerProfile.jobTitle,
+          employmentStatus: 'active',
+        },
+        teams: [{ id: 'team-a', name: workerProfile.teams[0]?.teamName ?? '', isLeader: false }],
+        authorizedScopes: [
+          {
+            kind: 'work-center',
+            id: 'WC-A',
+            displayName: '精加工一线',
+            relationship: 'work-center',
+            authorizationPaths: [],
+          },
+        ],
+        selectedScope: {
+          kind: 'work-center',
+          id: 'WC-A',
+          displayName: '精加工一线',
+          relationship: 'work-center',
+          authorizationPaths: [],
+        },
+        availableScopeKinds: ['work-center'],
+        issues: [],
+      }),
+    )
+  }
+
   // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
+  if (/\/wms\/work-scopes\/(receipts|shipments|counts)$/.test(pathname)) {
+    return fulfillJson(
+      route,
+      envelope({
+        actorPrincipalId: principal.principalId,
+        items: [
+          {
+            scopeKind: 'self',
+            scopeId: principal.principalId,
+            displayName: workerProfile.displayName,
+          },
+          {
+            scopeKind: 'work-pool',
+            scopeId: 'POOL-001',
+            displayName: '一号仓作业池',
+          },
+          { scopeKind: 'site', scopeId: 'SITE-001', displayName: '一号仓' },
+        ],
+      }),
+    )
+  }
+
+  if (/\/wms\/operational-candidates\/(receipts|shipments|counts)$/.test(pathname)) {
+    return fulfillJson(
+      route,
+      envelope({
+        scopeKind: requestUrl.searchParams.get('scopeKind'),
+        scopeId: requestUrl.searchParams.get('scopeId'),
+        locations: [],
+        lots: [],
+        asOfUtc: nowUtc,
+        freshnessUtc: nowUtc,
+        truncated: false,
+      }),
+    )
+  }
+
   // complete endpoints (POST .../{id}/complete) — match before the list paths.
   if (isPost && /\/wms\/inbound-orders\/[^/]+\/complete$/.test(pathname)) {
-    return fulfillJson(route, envelope({}))
+    const inboundOrderId = pathname.split('/').at(-2) ?? ''
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        inboundOrderId,
+        operationReceipt: confirmedOperation(
+          'wms.inbound-order.complete',
+          inboundOrderId,
+          body.idempotencyKey,
+          'completed',
+        ),
+      }),
+    )
   }
   if (isPost && /\/wms\/outbound-orders\/[^/]+\/complete$/.test(pathname)) {
     return fulfillJson(route, envelope({}))
   }
   if (isPost && /\/wms\/count-executions\/[^/]+\/complete$/.test(pathname)) {
-    return fulfillJson(route, envelope({}))
+    const countExecutionId = pathname.split('/').at(-2) ?? ''
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        countExecutionId,
+        operationReceipt: confirmedOperation(
+          'wms.count-execution.complete',
+          countExecutionId,
+          body.idempotencyKey,
+          'completed',
+        ),
+      }),
+    )
   }
 
   // list endpoints (GET).
@@ -382,7 +532,19 @@ export async function routeBusinessConsoleApi(route: Route) {
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
-      return fulfillJson(route, envelope({ workOrderId: 'WO-M-new' }))
+      const body = route.request().postDataJSON() as { idempotencyKey: string }
+      return fulfillJson(
+        route,
+        envelope({
+          workOrderId: 'WO-M-new',
+          operationReceipt: confirmedOperation(
+            'maintenance.work-order.create',
+            'WO-M-new',
+            body.idempotencyKey,
+            'open',
+          ),
+        }),
+      )
     }
     return fulfillJson(
       route,
@@ -470,9 +632,23 @@ export async function routeBusinessConsoleApi(route: Route) {
     method === 'POST' &&
     /\/mes\/operation-tasks\/[^/]+\/(start|pause|resume|complete)$/.test(pathname)
   ) {
-    return fulfillJson(route, envelope({}))
+    const operationTaskId = pathname.split('/').at(-2) ?? ''
+    const action = pathname.split('/').at(-1) ?? ''
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        operationTaskId,
+        operationReceipt: confirmedOperation(
+          `mes.operation-task.${action}`,
+          operationTaskId,
+          body.idempotencyKey,
+          action === 'complete' ? 'Completed' : 'InProgress',
+        ),
+      }),
+    )
   }
-  if (pathname === `${base}/operation-tasks`) {
+  if (pathname === `${base}/operation-tasks` || pathname === `${base}/reportable-operation-tasks`) {
     const workOrderId = requestUrl.searchParams.get('workOrderId')
     const scopedItems =
       workOrderId === 'WO-501'

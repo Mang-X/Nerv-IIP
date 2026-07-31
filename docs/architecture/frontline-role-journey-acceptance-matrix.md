@@ -101,14 +101,14 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 | 环节           | 预期结果与证据                                                                                                                                                                                                                                                                                     |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 登录           | 从 PDA 登录页调用 `loginConsoleUser`；`getConsolePrincipal` 必须返回对应 `user-emp-*`、`role-pda-operator`、org/env 与 MES 最小权限。                                                                                                                                                              |
-| 默认工作台     | 权限聚合首页只出现允许的 MES、报警、报修入口。“我的任务”把当前 `principalId` 作为客户端可控 `assignedUserId`，分别查询 Queued/InProgress/Paused 并在客户端再次比对返回行；服务端没有把该值绑定到当前主体，因此这是 Organization scope 内的 assignment 过滤，不是权威本人任务。                     |
-| 范围           | 首页和 `/mes/operation` 当前都不能证明当前主体范围：前者信任客户端 `assignedUserId`，后者调用 `listBusinessConsoleMesOperationTasks` 时连该过滤都没有。真正的 current-subject scope、主体上下文和 MES 归属查询由 #1163/#1164/#1165 跟进；当前不得声称任何一面只显示本人任务。                      |
+| 默认工作台     | 权限聚合首页只出现允许的 MES、报警、报修入口。任务页已移除客户端可控 `assignedUserId` 形成的伪个人 MES 列表，只提供按当前主体授权范围进入工序执行的入口；首页既有 dispatch 摘要仍不能作为权威本人任务证据。                                                                                        |
+| 范围           | `/mes/operation` 使用 MAN-627 permission-aware work-context 的已验证选择查询，任务页不再声称只显示本人任务；首页既有 dispatch assignment 过滤仍不等于服务端绑定当前主体。MES 归属查询的后续收口继续由 #1163/#1165 跟进。                                                                           |
 | 筛选/分页/刷新 | 工序页扫码只写 `keyword`；请求固定 `skip=0,take=100`，没有加载更多/分页控件。错误面可手动刷新。超过 100 条时不能证明全量，登记为 P1。                                                                                                                                                              |
-| 详情/强 ID     | 任务行至少保存 `operationTaskId`、`workOrderId`、`operationCode`、`workCenterId`、`assignedUserId`、当前 `status`；显示名不能替代 ID。                                                                                                                                                             |
+| 详情/强 ID     | 任务行保存 `operationTaskId`、`workOrderId`、`operationCode`、`workCenterId`、`assignedUserId`、当前 `status`；显示名不能替代 ID。任务入口深链同时携带并精确匹配 `workOrderId + operationTaskId`，单边或不在当前授权范围的组合不打开动作面板。                                                     |
 | 动作           | 服务端真实生命周期是 Queued 可开始、InProgress 可暂停/完成、Paused 可恢复/完成；开始前校验前序、质量、设备与物料。PDA `actionsFor` 却只给 `Ready` 开始动作，而公开列表序列化的是 `Queued`，因此当前无法从 PDA 启动真实任务。状态动作门禁由 #1160 跟进，引导式执行流由 #1174 跟进；这不是数据前置。 |
 | 权威回执       | start/pause/resume/complete 响应中的 `operationTaskId`、`status`、`changedAtUtc`，随后同 ID 公开列表回读同一状态。PDA 自己生成的幂等键不是业务回执。                                                                                                                                               |
 | 终态只读       | Completed/Cancelled 等状态刷新后 `actionsFor` 返回空，页面显示“当前状态无可执行动作”；再次提交非法状态必须由服务端拒绝且状态不变。                                                                                                                                                                 |
-| 退出           | `@nerv-iip/auth` store 支持 revoke，但 PDA 当前没有可见退出入口。该项阻塞整条角色旅程通过，需补 UI、调用 `logoutConsoleSession`、清本地会话并验证受保护路由回到登录页。                                                                                                                            |
+| 退出           | PDA 个人中心已有可见退出入口：先清本地认证会话，再有界调用 `logoutConsoleSession`；成功、网络失败与超时均回登录页，后两者显示远端撤销状态。自动化已覆盖本地 fail-safe，真实账号终验仍需保存 revoke 请求与受保护路由回登录证据。                                                                    |
 
 ### 4.2 正常与异常支线
 
@@ -126,11 +126,11 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 | 环节           | 预期结果与证据                                                                                                                                                                                                                                           |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 登录/工作台    | `getConsolePrincipal` 返回 `role-pda-warehouse`；首页按权限展示待收货、待上架、待拣货、待盘点总量和 WMS 快捷入口。                                                                                                                                       |
-| 范围           | 当前 inbound/outbound/putaway/picking 都仅按 org/env 查询。WMS 单据和任务没有 assigned operator 持久字段，历史里的 `user-emp-049..052` 也未落到单据；因此这些是 Organization scope，不是“我的仓储任务”。                                                 |
+| 范围           | MAN-629 后 receipts/shipments/counts 公开目录只提供可信 `self/work-pool/site`，实际列表按当前选择服务端过滤；个人中心分别展示各目录授权选项与共享当前选择。任何范围都不称为“我的仓储任务”，真实账号终验仍须保存目录、选择和列表三者一致的证据。          |
 | 筛选/分页/刷新 | 收货/复核扫码使用 `keyword`，上架/拣货扫码使用 `locationCode`。列表固定 `skip=0,take=100`，无分页控件；错误面可刷新。超过 100 条为 P1 缺口。                                                                                                             |
 | 详情/强 ID     | 收货保存 `inboundOrderId`/`inboundOrderNo` 与逐行 `inboundOrderLineId`；上架/拣货保存 `warehouseTaskId`/`taskNo`/`sourceOrderNo`；复核保存 `outboundOrderId`/`outboundOrderNo`。                                                                         |
 | 终态只读       | 当前 inbound/outbound 查询没有默认 `status=Open`，两个页面也会让任意返回行进入完成抽屉，没有终态状态守卫。后端拒绝非法转换不能替代只读体验；状态门禁由 #1160 跟进，WMS 作业流由 #1176 跟进。终态行可以留在列表供回读，但不得打开完成抽屉或暴露完成动作。 |
-| 退出           | 与操作工相同，PDA 缺可见退出入口，当前阻塞。                                                                                                                                                                                                             |
+| 退出           | 与操作工相同，已有本地 fail-safe + 有界远端 revoke；真实账号终验仍需保存网络与路由证据。                                                                                                                                                                 |
 
 ### 5.2 收货 → 质检门禁 → 上架
 
@@ -168,7 +168,7 @@ commit、时间戳和证据路径时，不在本基线引用历史精确计数�
 | 动作/门禁      | Pending 任务先以 `expectedVersion + idempotencyKey` 原子领取；只有权威动作包含 `submit` 才进入录入。必检特性完整、每行有效，不合格时处置原因必填；提交 `createBusinessConsoleQualityInspectionRecordFromTask` 时 inspector 由认证 principal 注入。无权、生命周期冲突、被他人领取分别 403/409/422，Completed 只读。                              |
 | 权威回执       | 契约与提交 composable 已保留 `inspectionRecordId`、`result` 及可选 NCR ID/code；当前结果组件只消费结论和 NCR 标识，只提供 `openNcr`，没有检验记录 ID 展示或记录详情入口。当前验收须从浏览器网络响应保存回执，再手工调用公开 `getBusinessConsoleQualityInspectionRecord` 按同一 ID 回读；结果页记录跳转由 #1177 跟进，完成前 UI 端到端仍是缺口。 |
 | 终态只读       | 提交后任务转 completed 并退出 pending 列表；检验记录与 NCR 详情作为只读证据，不能再次创建第二条首检。                                                                                                                                                                                                                                           |
-| 退出           | PDA 缺可见退出入口，当前阻塞。                                                                                                                                                                                                                                                                                                                  |
+| 退出           | 与操作工相同，已有本地 fail-safe + 有界远端 revoke；真实账号终验仍需保存网络与路由证据。                                                                                                                                                                                                                                                        |
 
 MAN-630 已新增真实 inspector/team assignment、Self/Team 范围、领取/转派状态机和耐久审计回执。
 目标人员与班组从 MasterData 权威目录校验；转派保留原因；领取和提交共享任务锁及版本裁决。
@@ -236,7 +236,7 @@ Business Console 已有真实登录、按 `permissionCodes` 裁剪的顶部域/�
    W1/W2 均保持阻塞。
 3. 四个现有 PDA 账号分别完成其正常与异常支线；每条证据含当次强 ID、命令回执和公开回读。
    Quality 当前可用网络回执 + 手工公开详情回读，结果页记录入口未补齐时必须标为 UI gap。
-4. PDA 增加可见退出并完成 session revoke；角色化列表范围和分页缺口关闭，或明确保持“部分可验”。
+4. PDA 可见退出与 session revoke 已有自动化覆盖；真实账号终验补网络与受保护路由证据。角色化列表范围和分页缺口关闭，或明确保持“部分可验”。
 5. 维修、班组长、车间角色和 PC 计划/管理账号、角色、范围与数据前置全部由公开事实补齐。
 6. 工位机、班组/车间终端若仍未实现，相关旅程保持阻塞；不得用 mock screen、PDA 或 admin 代验。
 7. 全部证据来自同一 commit 的真实 PostgreSQL/Redis run，资源被精确清理，且没有直接 DB 写读证据。

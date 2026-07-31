@@ -152,7 +152,21 @@ test('fixed four-entrance navigation adapts the workbench, tasks, scan and profi
 
   await tabBar.getByRole('button', { name: '任务' }).click()
   await expect(page).toHaveURL('/tasks')
-  await expect(page.getByText('WO-2026-00001').first()).toBeVisible()
+
+  const tasksTab = tabBar.getByRole('button', { name: '任务' })
+  const workbenchTab = tabBar.getByRole('button', { name: '工作台' })
+  await tasksTab.press('Shift+Tab')
+  await expect(workbenchTab).toBeFocused()
+  await expect(workbenchTab).toHaveCSS('outline-style', 'solid')
+  await page.keyboard.press('Tab')
+  await expect(tabBar.getByRole('button', { name: '任务' })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(tabBar.getByRole('button', { name: '扫码' })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(tabBar.getByRole('button', { name: '我的' })).toBeFocused()
+
+  await expect(tabBar.getByRole('button', { name: '任务' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('button', { name: /生产作业/ })).toBeVisible()
   await expect(page.getByText('我的质检任务')).toBeVisible()
 
   await tabBar.getByRole('button', { name: '扫码' }).click()

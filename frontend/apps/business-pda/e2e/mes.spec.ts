@@ -41,6 +41,7 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
       return routeBusinessConsoleApi(route)
     }
     submittedReport = route.request().postDataJSON() as Record<string, unknown>
+    const idempotencyKey = String(submittedReport.idempotencyKey)
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -49,6 +50,18 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
         data: {
           productionReportId: '019f-e2e-production-report',
           reportNo: 'RPT-E2E-0001',
+          operationReceipt: {
+            operationType: 'mes.production-report.record',
+            authority: 'business-gateway',
+            resourceType: 'business-resource',
+            resourceId: '019f-e2e-production-report',
+            idempotencyKey,
+            outcome: 'confirmed',
+            stateConfirmed: true,
+            readbackRequired: false,
+            changedAtUtc: '2026-06-11T00:00:00.000Z',
+            resourceStatus: 'completed',
+          },
         },
       }),
     })

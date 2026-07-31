@@ -7,10 +7,14 @@ const push = vi.fn()
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
+const routeState = vi.hoisted(() => ({
+  query: {} as Record<string, string | undefined>,
+}))
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
   }),
+  useRoute: () => routeState,
   useRouter: () => ({ push }),
 }))
 
@@ -28,6 +32,7 @@ const filters = reactive({
   organizationId: 'org-001',
   environmentId: 'env-dev',
   keyword: undefined as string | undefined,
+  workOrderId: undefined as string | undefined,
 })
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
@@ -117,6 +122,8 @@ describe('PDA MES operation execution page', () => {
     push.mockClear()
     routeGuardState.guard = undefined
     filters.keyword = undefined
+    filters.workOrderId = undefined
+    routeState.query = {}
   })
 
   function dispatchBeforeUnload() {
@@ -150,6 +157,21 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
     // BottomSheet 内容 teleport 到 body
     expect(document.body.textContent).toContain('完成')
+    wrapper.unmount()
+  })
+
+  it('consumes the workOrderId and operationTaskId deep link and opens that exact task', async () => {
+    routeState.query = {
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-2',
+    }
+
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(filters.workOrderId).toBe('WO-2026-0002')
+    expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
     wrapper.unmount()
   })
 
