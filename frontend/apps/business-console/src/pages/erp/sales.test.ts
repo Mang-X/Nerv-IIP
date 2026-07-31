@@ -252,16 +252,8 @@ const rowActionStubs = {
   },
 }
 
-// 弹窗结构不是被测对象：内联渲染 slot，避免 teleport 干扰按钮断言。
-const dialogStubs = {
-  NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
-  NvDialogContent: { template: '<div><slot /></div>' },
-  NvDialogHeader: { template: '<div><slot /></div>' },
-  NvDialogTitle: { template: '<h2><slot /></h2>' },
-  NvDialogDescription: { template: '<p><slot /></p>' },
-  NvDialogFooter: { template: '<div><slot /></div>' },
-  NvDialogClose: { template: '<span><slot /></span>' },
-}
+// 解冻复核弹窗用例：沿用弹框外壳桩（内联渲染 slot，避免 teleport 干扰按钮断言）。
+const creditDialogStubs = dialogShellStubs
 
 beforeEach(() => {
   // 履约追踪 Sheet 里的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
@@ -495,7 +487,9 @@ describe('ERP sales order and delivery pages', () => {
       },
       { salesOrderNo: 'SO-REL-001', customerCode: 'CUST-B', status: 'released', totalAmount: 100 },
     ]
-    const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...creditDialogStubs } },
+    })
     await flushPromises()
 
     // 行内入口精确匹配「解冻复核」；弹窗提交按钮是「提交解冻复核」，不计入行入口。
@@ -512,7 +506,9 @@ describe('ERP sales order and delivery pages', () => {
         totalAmount: 900_000,
       },
     ]
-    const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...creditDialogStubs } },
+    })
     await flushPromises()
 
     await wrapper
