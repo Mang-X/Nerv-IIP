@@ -28,7 +28,12 @@ import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPan
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyOperationFailure,
+  notifySuccess,
+  notifyWarning,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -69,11 +74,12 @@ import {
   RefreshCwIcon,
   XIcon,
 } from '@lucide/vue'
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const {
   acceptSuggestion,
+  activeMrpRun,
   acceptSuggestionError,
   acceptSuggestionPending,
   createMpsBucket,
@@ -456,14 +462,35 @@ async function submitMpsBucket() {
     notifyOperationFailure('保存主计划行失败', error, '保存主计划行失败，请稍后重试。')
   }
 }
+// 运行 MRP（#1306 异步任务模式）：提交只是「受理」，弹框显示计算中且全程可关闭，
+// 后台照跑；轮询到终态后统一 toast + 刷新读面（关没关弹框都一样）。
 async function submitMrpRun() {
   try {
     await runMrp()
-    mrpOpen.value = false
+    notifySuccess('MRP 已受理，正在后台计算，完成后自动刷新。')
   } catch (error) {
     notifyOperationFailure('运行 MRP 失败', error, '运行 MRP 失败，请稍后重试。')
   }
 }
+const mrpRunInProgress = computed(
+  () => activeMrpRun.status === 'queued' || activeMrpRun.status === 'running',
+)
+watch(
+  () => activeMrpRun.status,
+  (status) => {
+    if (status === 'completed') {
+      notifySuccess(`MRP 计算完成，共生成 ${activeMrpRun.suggestionCount ?? 0} 条计划建议。`)
+      mrpOpen.value = false
+    } else if (status === 'failed') {
+      // failureReason 是服务端领域消息，走分层透传（中文原样上屏、英文映射人话）。
+      // 后端 worker 对非预期异常会自带「MRP 计算失败：」前缀，这里去重避免叠成两层。
+      const reason = activeMrpRun.failureReason.replace(/^MRP 计算失败[:：]\s*/, '')
+      notifyOperationFailure('MRP 计算失败', reason, 'MRP 计算失败，请在「MRP 运行」列表查看原因。')
+    } else if (status === 'polling-timeout') {
+      notifyWarning('MRP 仍在后台计算，可稍后在「MRP 运行」列表查看结果。')
+    }
+  },
+)
 async function reviewMps(row: BusinessConsoleMpsBucketItem) {
   if (!row.mpsId) return
   try {
@@ -523,6 +550,8 @@ function planningStatus(status?: string | null): { label: string; tone: StatusTo
   if (s === 'accepted' || s === 'completed')
     return { label: s === 'accepted' ? '已接受' : '已完成', tone: 'success' }
   if (s === 'running' || s === 'inprogress') return { label: '运行中', tone: 'info' }
+  // Created = 异步受理后的排队态（#1306）。
+  if (s === 'created' || s === 'queued') return { label: '排队中', tone: 'info' }
   if (s === 'failed') return { label: '失败', tone: 'danger' }
   if (s === 'open' || s === 'pending') return { label: '待评审', tone: 'warning' }
   return { label: status || '未知', tone: 'neutral' }
@@ -809,9 +838,22 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 />
               </NvField>
             </NvFieldGroup>
+            <div
+              v-if="mrpRunInProgress"
+              class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+            >
+              <Spinner aria-hidden="true" />
+              <span>
+                已受理，{{
+                  activeMrpRun.status === 'running' ? '正在计算' : '排队等待计算'
+                }}…可关闭此窗口，后台继续执行，完成后自动刷新。
+              </span>
+            </div>
             <NvDialogFooter>
-              <NvButton type="button" variant="outline" @click="mrpOpen = false">取消</NvButton>
-              <NvButton type="submit" :disabled="runMrpPending">
+              <NvButton type="button" variant="outline" @click="mrpOpen = false">
+                {{ mrpRunInProgress ? '关闭' : '取消' }}
+              </NvButton>
+              <NvButton type="submit" :disabled="runMrpPending || mrpRunInProgress">
                 <Spinner v-if="runMrpPending" aria-hidden="true" />
                 运行 MRP
               </NvButton>
@@ -1250,11 +1292,20 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <template #cell-horizon="{ row }"
           >{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template
         >
-        <template #cell-status="{ row }"
-          ><NvStatusBadge
-            :label="planningStatus(row.status).label"
-            :tone="planningStatus(row.status).tone"
-        /></template>
+        <template #cell-status="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <NvStatusBadge
+              :label="planningStatus(row.status).label"
+              :tone="planningStatus(row.status).tone"
+            />
+            <span
+              v-if="row.failureReason"
+              class="max-w-48 truncate text-xs text-muted-foreground"
+              :title="row.failureReason"
+              >{{ row.failureReason }}</span
+            >
+          </div>
+        </template>
         <template #cell-inputSources="{ row }">{{ inputSourcesLabel(row.inputSources) }}</template>
         <template #cell-inputCoverage="{ row }">{{ inputCoverageLabel(row) }}</template>
         <template #cell-demandCount="{ row }"

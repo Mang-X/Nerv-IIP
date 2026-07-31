@@ -40882,34 +40882,8 @@
           "runId": {
             "type": "string"
           },
-          "suggestionCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "hasInputDegradation": {
-            "type": "boolean"
-          },
-          "inputDegradationSources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "inputSources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "inputCoverageStart": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          },
-          "inputCoverageEnd": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -41035,6 +41009,10 @@
           "inputCoverageEnd": {
             "type": "string",
             "format": "date",
+            "nullable": true
+          },
+          "failureReason": {
+            "type": "string",
             "nullable": true
           }
         }

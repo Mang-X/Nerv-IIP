@@ -3138,8 +3138,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleRunMrpRequest("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), planning.LastRunMrpRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
+        // #1306 异步受理回执：提交即回 runId + 排队状态，不再同步返回计算结果。
         Assert.Equal("mrp-run-001", data.GetProperty("runId").GetString());
-        Assert.Empty(data.GetProperty("inputDegradationSources").EnumerateArray());
+        Assert.Equal("Created", data.GetProperty("status").GetString());
     }
 
     [Fact]
@@ -11899,12 +11900,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         LastRunMrpRequest = request;
         return Task.FromResult(new BusinessConsoleRunMrpResponse(
             "mrp-run-001",
-            2,
-            false,
-            [],
-            ["mps", "sales-order"],
-            new DateOnly(2026, 6, 1),
-            new DateOnly(2026, 6, 30)));
+            "Created"));
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -11928,7 +11924,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
                 ["scheduled-receipts"],
                 ["mps", "sales-order"],
                 new DateOnly(2026, 6, 1),
-                new DateOnly(2026, 6, 30)),
+                new DateOnly(2026, 6, 30),
+                null),
         ]));
     }
 

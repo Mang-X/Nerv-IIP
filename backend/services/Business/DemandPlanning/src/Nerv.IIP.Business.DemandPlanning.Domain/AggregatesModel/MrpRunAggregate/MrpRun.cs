@@ -6,9 +6,11 @@ public partial record MrpRunId : IGuidStronglyTypedId;
 
 public enum MrpRunStatus
 {
+    /// <summary>已受理排队，等待后台执行（对外语义 queued）。</summary>
     Created = 0,
     Running = 1,
     Completed = 2,
+    Failed = 3,
 }
 
 public sealed record PlanningInputSnapshot(
@@ -94,6 +96,7 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
         inputDegradationSources ??= PlanningInputDegradation.FromSnapshotSources(
             ProductionEngineeringSnapshotSource,
             InventorySnapshotSource);
+    public string? FailureReason { get; private set; }
     public int DemandCount { get; private set; }
     public int AvailabilityCount { get; private set; }
     public int SuggestionCount { get; private set; }
@@ -144,4 +147,25 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
         Status = MrpRunStatus.Completed;
         this.AddDomainEvent(new MrpRunCompletedDomainEvent(this));
     }
+
+    /// <summary>
+    /// 异步执行模式下，后台计算失败（或服务重启中断）时把 run 置为失败并记录可读原因。
+    /// 允许从排队（Created）或运行中（Running）进入失败态；终态不可再迁移。
+    /// </summary>
+    public void Fail(string reason)
+    {
+        if (Status is not (MrpRunStatus.Created or MrpRunStatus.Running))
+        {
+            throw new InvalidOperationException("Only queued or running MRP runs can be marked as failed.");
+        }
+
+        var normalized = DemandPlanningText.Required(reason, nameof(reason));
+        FailureReason = normalized.Length <= FailureReasonMaxLength
+            ? normalized
+            : normalized[..FailureReasonMaxLength];
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+        Status = MrpRunStatus.Failed;
+    }
+
+    public const int FailureReasonMaxLength = 512;
 }

@@ -30,6 +30,13 @@ describe('friendlyErrorMessage', () => {
     expect(friendlyErrorMessage('Error: 500')).toContain('刷新列表核实')
   })
 
+  it('网关超时（downstream-timeout / 504）→ 可行动提示，任务可能仍在处理（#1306）', () => {
+    expect(friendlyErrorMessage(new Error('downstream-timeout'))).toContain('任务可能仍在处理')
+    expect(friendlyErrorMessage('504 Gateway Timeout')).toContain('刷新相关列表查看结果')
+    // 不能被通用网络分支吞掉。
+    expect(friendlyErrorMessage(new Error('downstream-timeout'))).not.toContain('网络异常')
+  })
+
   it('网络错误 → 人话', () => {
     expect(friendlyErrorMessage(new Error('Failed to fetch'))).toContain('刷新列表核实')
     expect(friendlyErrorMessage('NetworkError when attempting')).toContain('结果可能尚未确认')

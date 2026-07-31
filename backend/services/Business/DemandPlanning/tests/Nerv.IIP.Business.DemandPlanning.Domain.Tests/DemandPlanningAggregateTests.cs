@@ -104,6 +104,29 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Mrp_run_fails_from_queued_or_running_with_clamped_reason_and_terminal_states_reject_failure()
+    {
+        var queued = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        queued.Fail("MRP 计算因服务重启被中断，请重新运行。");
+        Assert.Equal(MrpRunStatus.Failed, queued.Status);
+        Assert.Equal("MRP 计算因服务重启被中断，请重新运行。", queued.FailureReason);
+        Assert.NotNull(queued.CompletedAtUtc);
+
+        var running = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        running.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        running.Fail(new string('异', MrpRun.FailureReasonMaxLength + 100));
+        Assert.Equal(MrpRunStatus.Failed, running.Status);
+        Assert.Equal(MrpRun.FailureReasonMaxLength, running.FailureReason!.Length);
+
+        // 终态（已完成/已失败）不可再置失败。
+        Assert.Throws<InvalidOperationException>(() => running.Fail("again"));
+        var completed = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        completed.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        completed.Complete(suggestionCount: 0);
+        Assert.Throws<InvalidOperationException>(() => completed.Fail("late"));
+    }
+
+    [Fact]
     public void Mrp_run_exposes_input_degradation_sources_from_snapshot_metadata()
     {
         var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));

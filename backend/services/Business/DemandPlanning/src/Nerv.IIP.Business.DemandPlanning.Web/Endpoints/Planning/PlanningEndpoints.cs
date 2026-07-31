@@ -7,6 +7,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.ServiceAuth;
 
@@ -123,14 +124,10 @@ public sealed record ListForecastInputsRequest(
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
-public sealed record RunMrpResponse(
-    MrpRunId RunId,
-    int SuggestionCount,
-    bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources,
-    IReadOnlyCollection<string> InputSources,
-    DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+/// <summary>
+/// 异步受理回执（#1306）：提交即返回排队中的 runId，计算结果经运行列表读面轮询获取。
+/// </summary>
+public sealed record RunMrpResponse(MrpRunId RunId, MrpRunStatus Status);
 
 public sealed record ListMrpRunsRequest(string OrganizationId, string EnvironmentId);
 
@@ -368,25 +365,25 @@ public sealed class ListForecastInputsEndpoint(ISender sender)
     }
 }
 
-public sealed class RunMrpEndpoint(ISender sender)
+public sealed class RunMrpEndpoint(ISender sender, IMrpRunExecutionQueue executionQueue)
     : DemandPlanningEndpoint<RunMrpRequest, ResponseData<RunMrpResponse>>
 {
     public override void Configure()
     {
         ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<RunMrpEndpoint>());
+        Description(b => b.Produces<ResponseData<RunMrpResponse>>(StatusCodes.Status202Accepted));
     }
 
     public override async Task HandleAsync(RunMrpRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RunMrpCommand(req.OrganizationId, req.EnvironmentId, req.HorizonStart, req.HorizonEnd), ct);
-        await Send.OkAsync(new RunMrpResponse(
-            result.RunId,
-            result.SuggestionCount,
-            result.HasInputDegradation,
-            result.InputDegradationSources,
-            result.InputSources,
-            result.InputCoverageStart,
-            result.InputCoverageEnd).AsResponseData(), cancellation: ct);
+        // 受理事务（登记排队记录）在 Send 返回时已由 UoW 行为提交；之后才入队，
+        // 避免 worker 抢在提交前读不到记录。
+        var runId = await sender.Send(new RunMrpCommand(req.OrganizationId, req.EnvironmentId, req.HorizonStart, req.HorizonEnd), ct);
+        executionQueue.Enqueue(runId);
+        await Send.ResponseAsync(
+            new RunMrpResponse(runId, MrpRunStatus.Created).AsResponseData(),
+            StatusCodes.Status202Accepted,
+            ct);
     }
 }
 
