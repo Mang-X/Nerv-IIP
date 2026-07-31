@@ -939,10 +939,36 @@ public sealed class BusinessGatewayProxyTests
     public async Task Quality_inspection_tasks_list_and_create_record_from_task_forward_context_and_internal_service_token()
     {
         var quality = new RecordingQualityClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-quality-manager",
+                    "organization",
+                    "org-001",
+                    [
+                        BusinessGatewayPermissions.QualityInspectionRecordsRead,
+                        BusinessGatewayPermissions.QualityInspectionRecordsCreate,
+                    ],
+                    OrganizationWide: true),
+            ]);
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "organization",
+                    "org-001",
+                    "当前组织",
+                    "organization",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -970,20 +996,27 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(1, quality.InspectionTaskListCallCount);
         Assert.Equal(
-            new BusinessConsoleQualityInspectionTaskListRequest(
+            new BusinessQualityInspectionTaskListRequest(
                 "org-001",
                 "env-dev",
                 "pending",
                 "SKU-RM-1000",
                 1,
                 50,
-                "0199aa00-0000-7000-8000-000000000004"),
+                "0199aa00-0000-7000-8000-000000000004",
+                "organization",
+                "user-admin",
+                [],
+                null,
+                null,
+                null,
+                null),
             quality.LastInspectionTaskListRequest);
         Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskTaskId);
         Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskRequest!.InspectionTaskId);
         Assert.Equal("org-001", quality.LastCreateInspectionRecordFromTaskRequest.OrganizationId);
         Assert.Equal("env-dev", quality.LastCreateInspectionRecordFromTaskRequest.EnvironmentId);
-        Assert.Equal("user:user-admin", quality.LastCreateInspectionRecordFromTaskRequest.InspectorUserId);
+        Assert.Equal("user-admin", quality.LastCreateInspectionRecordFromTaskRequest.InspectorUserId);
         Assert.Equal("within tolerance", quality.LastCreateInspectionRecordFromTaskRequest.DispositionReason);
         Assert.Equal(["file-cert-001"], quality.LastCreateInspectionRecordFromTaskRequest.DispositionAttachmentFileIds);
         var resultLine = Assert.Single(quality.LastCreateInspectionRecordFromTaskRequest.ResultLines!);
@@ -1003,6 +1036,301 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("rejected", createData.GetProperty("result").GetString());
         Assert.Equal("ncr-from-task-001", createData.GetProperty("nonconformanceReportId").GetString());
         Assert.Equal("NCR-2026-0001", createData.GetProperty("nonconformanceReportCode").GetString());
+    }
+
+    [Fact]
+    public async Task Quality_inspection_task_list_resolves_self_scope_and_forwards_server_filters()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], SelfIds: ["user-admin"]),
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-inspector",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.QualityInspectionRecordsRead]),
+            ]);
+        var quality = new RecordingQualityClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-user",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin&status=pending&sourceType=production&sourceService=mes&keyword=WO-100&overdue=true&skip=5&take=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(auth.LastRequirement!.IncludePrincipalContext);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Equal("self", quality.LastInspectionTaskListRequest!.ScopeKind);
+        Assert.Equal("user-admin", quality.LastInspectionTaskListRequest.PrincipalId);
+        Assert.Empty(quality.LastInspectionTaskListRequest.AuthorizedTeamIds!);
+        Assert.Equal("production", quality.LastInspectionTaskListRequest.SourceType);
+        Assert.Equal("mes", quality.LastInspectionTaskListRequest.SourceService);
+        Assert.Equal("WO-100", quality.LastInspectionTaskListRequest.Keyword);
+        Assert.True(quality.LastInspectionTaskListRequest.Overdue);
+        Assert.Equal(5, quality.LastInspectionTaskListRequest.Skip);
+        Assert.Equal(25, quality.LastInspectionTaskListRequest.Take);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_task_claim_uses_authenticated_principal_and_authorized_team_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role",
+                    "role-team-inspector",
+                    "team",
+                    "TEAM-QA",
+                    [BusinessGatewayPermissions.QualityInspectionRecordsCreate]),
+            ]);
+        var quality = new RecordingQualityClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "team",
+                    "TEAM-QA",
+                    "检验班",
+                    "active-membership",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/inspection-tasks/task-001/claim?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-QA",
+            new
+            {
+                inspectionTaskId = "forged-task",
+                organizationId = "forged-org",
+                environmentId = "forged-env",
+                scopeKind = "team",
+                scopeId = "TEAM-FORGED",
+                idempotencyKey = "claim-001",
+                expectedVersion = 2,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("task-001", quality.LastClaimInspectionTaskId);
+        Assert.Equal("user-admin", quality.LastClaimInspectionTaskRequest!.ActorPrincipalId);
+        Assert.Equal(["TEAM-QA"], quality.LastClaimInspectionTaskRequest.AuthorizedTeamIds);
+        Assert.Equal("org-001", quality.LastClaimInspectionTaskRequest.OrganizationId);
+        Assert.Equal("env-dev", quality.LastClaimInspectionTaskRequest.EnvironmentId);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_task_assignment_validates_master_data_target_and_overwrites_actor()
+    {
+        var auth = AllowedOrganizationScope(BusinessGatewayPermissions.QualityInspectionPlansManage);
+        var quality = new RecordingQualityClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "organization",
+                    "org-001",
+                    "当前组织",
+                    "organization",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/inspection-tasks/task-001/assignment?organizationId=org-001&environmentId=env-dev&scopeKind=organization&scopeId=org-001",
+            new
+            {
+                inspectionTaskId = "forged-task",
+                organizationId = "forged-org",
+                environmentId = "forged-env",
+                assignedInspectorUserId = "user-op-001",
+                reason = "shift handoff",
+                idempotencyKey = "assign-001",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-op-001", masterData.LastListWorkersRequest!.UserId);
+        Assert.Equal("task-001", quality.LastAssignInspectionTaskId);
+        Assert.Equal("task-001", quality.LastGetInspectionTaskId);
+        Assert.Equal("organization", quality.LastGetInspectionTaskRequest!.ScopeKind);
+        Assert.Equal("user-admin", quality.LastAssignInspectionTaskRequest!.ActorPrincipalId);
+        Assert.Equal("user-op-001", quality.LastAssignInspectionTaskRequest.AssignedInspectorUserId);
+        Assert.Equal("shift handoff", quality.LastAssignInspectionTaskRequest.Reason);
+    }
+
+    [Theory]
+    [InlineData("self", "user-admin", "user-op-001", null)]
+    [InlineData("team", "TEAM-QA", null, "TEAM-OTHER")]
+    [InlineData("team", "TEAM-QA", "user-op-001", "TEAM-QA")]
+    public async Task Quality_inspection_task_assignment_rejects_target_outside_selected_scope_after_source_read(
+        string scopeKind,
+        string scopeId,
+        string? assignedInspectorUserId,
+        string? assignedTeamId)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "assignment-target-scope",
+                    scopeKind,
+                    scopeId,
+                    [BusinessGatewayPermissions.QualityInspectionPlansManage]),
+            ]);
+        var quality = new RecordingQualityClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    scopeKind,
+                    scopeId,
+                    "派工范围",
+                    "active-membership",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/quality/inspection-tasks/task-target/assignment?organizationId=org-001&environmentId=env-dev&scopeKind={scopeKind}&scopeId={scopeId}",
+            new
+            {
+                assignedInspectorUserId,
+                assignedTeamId,
+                idempotencyKey = $"assign-target-{scopeKind}-{assignedInspectorUserId}-{assignedTeamId}",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("task-target", quality.LastGetInspectionTaskId);
+        Assert.Null(quality.LastAssignInspectionTaskId);
+    }
+
+    [Theory]
+    [InlineData("team", "TEAM-QA")]
+    [InlineData("self", "user-admin")]
+    public async Task Quality_inspection_task_assignment_rejects_target_outside_selected_scope(
+        string scopeKind,
+        string scopeId)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "assignment-scope",
+                    scopeKind,
+                    scopeId,
+                    [BusinessGatewayPermissions.QualityInspectionPlansManage]),
+            ]);
+        var quality = new RecordingQualityClient
+        {
+            GetInspectionTaskFailure = new BusinessServiceProxyException(
+                HttpStatusCode.Forbidden,
+                "task-outside-selected-work-scope"),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    scopeKind,
+                    scopeId,
+                    "派工范围",
+                    "active-membership",
+                    [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/quality/inspection-tasks/task-outside/assignment?organizationId=org-001&environmentId=env-dev&scopeKind={scopeKind}&scopeId={scopeId}",
+            new
+            {
+                assignedInspectorUserId = "user-op-001",
+                idempotencyKey = $"assign-outside-{scopeKind}",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("task-outside", quality.LastGetInspectionTaskId);
+        Assert.Null(quality.LastAssignInspectionTaskId);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_task_assignment_rejects_deny_all_without_downstream_mutation()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], DenyAll: true));
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/inspection-tasks/task-001/assignment?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin",
+            new
+            {
+                assignedInspectorUserId = "user-op-001",
+                idempotencyKey = "assign-deny-all",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(quality.LastGetInspectionTaskId);
+        Assert.Null(quality.LastAssignInspectionTaskId);
     }
 
     [Fact]
@@ -7603,14 +7931,21 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionTasksAsync(
             "internal-token-001",
-            new BusinessConsoleQualityInspectionTaskListRequest(
+            new BusinessQualityInspectionTaskListRequest(
                 "org-001",
                 "env-dev",
                 "pending",
                 "SKU-RM-1000",
                 1,
                 50,
-                "0199aa00-0000-7000-8000-000000000004"),
+                "0199aa00-0000-7000-8000-000000000004",
+                "organization",
+                "user-admin",
+                [],
+                null,
+                null,
+                null,
+                null),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -7630,7 +7965,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(item.InspectionRecordId);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50&inspectionTaskId=0199aa00-0000-7000-8000-000000000004", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50&inspectionTaskId=0199aa00-0000-7000-8000-000000000004&scopeKind=organization&principalId=user-admin", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -7662,7 +7997,7 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.CreateInspectionRecordFromTaskAsync(
             "internal-token-001",
             "inspection-task-001",
-            new BusinessConsoleCreateInspectionRecordFromTaskRequest(
+            new BusinessQualityCreateInspectionRecordFromTaskRequest(
                 "inspection-task-001",
                 "org-001",
                 "env-dev",
@@ -7708,9 +8043,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("pass", line.GetProperty("result").GetString());
         Assert.Equal("file-line-001", line.GetProperty("attachmentFileIds")[0].GetString());
 
-        // Tenancy is derived from the loaded task aggregate downstream — org/env must NOT leak into the body.
-        Assert.False(root.TryGetProperty("organizationId", out _));
-        Assert.False(root.TryGetProperty("environmentId", out _));
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
     }
 
     [Fact]
@@ -10659,11 +10993,23 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public int InspectionTaskListCallCount { get; private set; }
 
-    public BusinessConsoleQualityInspectionTaskListRequest? LastInspectionTaskListRequest { get; private set; }
+    public BusinessQualityInspectionTaskListRequest? LastInspectionTaskListRequest { get; private set; }
+
+    public string? LastGetInspectionTaskId { get; private set; }
+
+    public BusinessQualityInspectionTaskDetailRequest? LastGetInspectionTaskRequest { get; private set; }
+
+    public string? LastAssignInspectionTaskId { get; private set; }
+
+    public BusinessQualityAssignInspectionTaskRequest? LastAssignInspectionTaskRequest { get; private set; }
+
+    public string? LastClaimInspectionTaskId { get; private set; }
+
+    public BusinessQualityClaimInspectionTaskRequest? LastClaimInspectionTaskRequest { get; private set; }
 
     public string? LastCreateInspectionRecordFromTaskTaskId { get; private set; }
 
-    public BusinessConsoleCreateInspectionRecordFromTaskRequest? LastCreateInspectionRecordFromTaskRequest { get; private set; }
+    public BusinessQualityCreateInspectionRecordFromTaskRequest? LastCreateInspectionRecordFromTaskRequest { get; private set; }
 
     public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
 
@@ -10688,6 +11034,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     public int? NcrTotal { get; init; }
 
     public BusinessServiceProxyException? CreateInspectionRecordFromTaskFailure { get; init; }
+
+    public BusinessServiceProxyException? GetInspectionTaskFailure { get; init; }
 
     public Task<BusinessConsoleCreateInspectionPlanResponse> CreateInspectionPlanAsync(
         string internalBearerToken,
@@ -10763,7 +11111,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
         string internalBearerToken,
-        BusinessConsoleQualityInspectionTaskListRequest request,
+        BusinessQualityInspectionTaskListRequest request,
         CancellationToken cancellationToken)
     {
         InspectionTaskListCallCount++;
@@ -10791,10 +11139,82 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             1));
     }
 
+    public Task<BusinessConsoleQualityInspectionTaskDetailResponse> GetInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityInspectionTaskDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastGetInspectionTaskId = inspectionTaskId;
+        LastGetInspectionTaskRequest = request;
+        if (GetInspectionTaskFailure is not null)
+        {
+            throw GetInspectionTaskFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleQualityInspectionTaskDetailResponse(
+            new BusinessConsoleQualityInspectionTaskItem(
+                inspectionTaskId,
+                "inspection-plan-001",
+                "receiving",
+                "wms",
+                "GRN-001",
+                "GRN-001-1",
+                "SKU-RM-1000",
+                12m,
+                "EA",
+                "LOT-001",
+                null,
+                "pending",
+                DateTimeOffset.Parse("2026-07-09T08:00:00Z"),
+                DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
+                null),
+            "IP-001",
+            "incoming",
+            []));
+    }
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> AssignInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityAssignInspectionTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAssignInspectionTaskId = inspectionTaskId;
+        LastAssignInspectionTaskRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionTaskAssignmentResponse(
+            inspectionTaskId,
+            "pending",
+            request.AssignedInspectorUserId,
+            request.AssignedTeamId,
+            request.ExpectedVersion + 1,
+            DateTimeOffset.Parse("2026-07-30T08:00:00Z")));
+    }
+
+    public Task<BusinessConsoleQualityInspectionTaskAssignmentResponse> ClaimInspectionTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessQualityClaimInspectionTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastClaimInspectionTaskId = inspectionTaskId;
+        LastClaimInspectionTaskRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionTaskAssignmentResponse(
+            inspectionTaskId,
+            "in-progress",
+            request.ActorPrincipalId,
+            request.AuthorizedTeamIds.FirstOrDefault(),
+            request.ExpectedVersion + 1,
+            DateTimeOffset.Parse("2026-07-30T08:00:00Z")));
+    }
+
     public Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
-        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        BusinessQualityCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

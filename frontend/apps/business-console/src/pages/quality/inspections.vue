@@ -4,6 +4,7 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import { listBusinessConsoleQualityInspectionTasks } from '@nerv-iip/api-client'
 import type { ComboboxSuggestion, NvDataTableColumn, SearchSelectOption } from '@nerv-iip/ui'
 import { qualitySourceTypeLabel } from '@nerv-iip/business-core'
 import {
@@ -21,7 +22,6 @@ import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
-import { useAuthStore } from '@/stores/auth'
 import {
   inlineErrorMessage,
   notifyError,
@@ -75,7 +75,6 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
@@ -290,6 +289,46 @@ const recordPlanModel = computed({
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
+const inspectionTaskSubmissionAllowed = shallowRef(false)
+let inspectionTaskGateEpoch = 0
+watch(
+  [
+    () => firstQuery(route.query.inspectionTaskId),
+    () => filters.organizationId,
+    () => filters.environmentId,
+  ],
+  async ([inspectionTaskId, organizationId, environmentId]) => {
+    const epoch = ++inspectionTaskGateEpoch
+    if (!inspectionTaskId) {
+      inspectionTaskSubmissionAllowed.value = true
+      return
+    }
+    inspectionTaskSubmissionAllowed.value = false
+    if (!organizationId.trim() || !environmentId.trim()) return
+    try {
+      const { data } = await listBusinessConsoleQualityInspectionTasks({
+        query: {
+          organizationId,
+          environmentId,
+          inspectionTaskId,
+          skip: 0,
+          take: 2,
+        },
+        throwOnError: true,
+      })
+      if (epoch !== inspectionTaskGateEpoch) return
+      const exactTasks = (data?.success ? (data.data?.items ?? []) : []).filter(
+        (task) => task.inspectionTaskId === inspectionTaskId,
+      )
+      inspectionTaskSubmissionAllowed.value =
+        exactTasks.length === 1 &&
+        Boolean(exactTasks[0]?.allowedActions?.includes('submit-inspection'))
+    } catch {
+      if (epoch === inspectionTaskGateEpoch) inspectionTaskSubmissionAllowed.value = false
+    }
+  },
+  { immediate: true },
+)
 // 从待检任务行进入时来源字段全部由任务带出——只读呈现，不给用户改的错觉。
 const recordContextItems = computed(() => [
   { label: '检验方案', value: recordForm.inspectionPlanId },
@@ -320,6 +359,7 @@ const validResultLines = computed(() =>
 const canCreateRecord = computed(
   () =>
     hasBusinessContext(filters) &&
+    (!isInspectionTaskFlow.value || inspectionTaskSubmissionAllowed.value) &&
     (isInspectionTaskFlow.value ||
       (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
     isNonEmpty(recordForm.sourceType) &&
@@ -490,15 +530,9 @@ async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
   const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
   if (inspectionTaskId) {
-    const inspectorUserId = auth.principal?.principalId?.trim()
-    if (!inspectorUserId) {
-      notifyError('当前账号缺少质检员身份，无法提交检验。')
-      return
-    }
     let response
     try {
       response = await taskActions.startInspection(inspectionTaskId, {
-        inspectorUserId,
         resultLines: toCharacteristicResults(),
         dispositionReason: optionalText(recordForm.dispositionReason),
         dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),

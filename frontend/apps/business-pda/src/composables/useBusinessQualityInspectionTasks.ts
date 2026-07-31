@@ -1,5 +1,6 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  claimBusinessConsoleQualityInspectionTaskMutationOptions,
   confirmBusinessConsoleOperation,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionTasks,
@@ -18,6 +19,12 @@ import {
   type QualityCharacteristicResultLine as ResultLine,
 } from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import {
+  InspectionTaskClaimBlockedError,
+  isInspectionTaskBlockReason,
+  inspectionTaskBlockReasonMessage,
+  type InspectionTaskBlockReason,
+} from '@/components/quality/inspectionTaskBlockReasons'
 import { useAuthStore } from '@/stores/auth'
 import {
   useListFreshness,
@@ -67,15 +74,44 @@ function isInspectionTasksQuery(entry: UseQueryEntry) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
+function errorHttpStatus(error: unknown) {
+  if (typeof error !== 'object' || error === null) return undefined
+  const candidate = error as Record<string, unknown>
+  if (typeof candidate.status === 'number') return candidate.status
+  if (typeof candidate.statusCode === 'number') return candidate.statusCode
+  if (typeof candidate.response !== 'object' || candidate.response === null) return undefined
+  const status = (candidate.response as Record<string, unknown>).status
+  return typeof status === 'number' ? status : undefined
+}
+
+function safeClaimBlockReason(error: unknown): InspectionTaskBlockReason | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const candidate = error as Record<string, unknown>
+  const status = errorHttpStatus(error)
+  const message = candidate.message
+  if (typeof message !== 'string') return undefined
+
+  if (
+    status === 403 &&
+    (message === 'task-assigned-to-another-inspector' ||
+      message === 'task-assigned-to-another-team' ||
+      message === 'task-outside-selected-work-scope')
+  ) {
+    return message
+  }
+  if (status === 422 && message === 'task-already-claimed') return message
+  return undefined
+}
+
 /**
  * 检验任务（待检工作台）读 + 逐特性录结果提交数据封装（MAN-457 / #811，与 console C3-1 / #801 同源）。
  *
- * - org/env 取登录主体 `useAuthStore().principal`（PDA 无 business-context store）；
- *   `inspectorUserId` = `principal.principalId`（写面必填的检验员身份，服务端审计操作人）。
- *   scope 空（未登录 / 缺 org/env）时列表不发请求（`enabled:false`）。
- * - 列表默认按 `status=pending` 服务端过滤；来源类型筛选、超期置顶排序、扫码直达均为
- *   **客户端**逻辑（facade 仅支持 org/env/status/skuCode/skip/take，无 sourceType/超期/关键字参数），
- *   因此当扫码/来源筛选命中第一页之外时以 `total` 判断是否可 `loadMore`，不把"页内未命中"当"不存在"。
+ * - org/env 与 `principalId` 均取登录主体；列表显式请求 Self scope，未登录或任一作用域值
+ *   缺失时不发请求，且查询键绑定 principal，避免换人登录后复用旧缓存。
+ * - 列表默认按 `status=pending` 服务端过滤；来源、关键字和超期条件均由 facade 下传 Quality
+ *   服务端后再分页，扫码命中第一页之外时仍可依据权威 `total` 继续加载。
+ * - 待领取任务先调用 claim；服务端以授权班组、expectedVersion 和稳定意图键原子领取，
+ *   只有权威 allowedActions 包含 submit 后才能进入逐特性录入。
  * - 提交端点按显式 `idempotencyKey` 绑定请求指纹与权威 inspectionRecordId；超时后同一意图
  *   复用原键，成功后清除，下一次新意图换键。权威 pass/fail 仍由后端按检验计划规格计算。
  */
@@ -84,8 +120,13 @@ export function useBusinessQualityInspectionTasks() {
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const inspectorUserId = computed(() => auth.principal?.principalId ?? '')
-  const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
-  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
+  const scopeReady = computed(() =>
+    Boolean(organizationId.value && environmentId.value && inspectorUserId.value),
+  )
+  const scopeKey = computed(
+    () =>
+      `${organizationId.value.trim()}:${environmentId.value.trim()}:${inspectorUserId.value.trim()}`,
+  )
 
   const queryCache = useQueryCache()
   const filters = reactive<InspectionTaskFilters>({
@@ -99,6 +140,8 @@ export function useBusinessQualityInspectionTasks() {
       query: {
         organizationId: organizationId.value,
         environmentId: environmentId.value,
+        scopeKind: 'self',
+        scopeId: inspectorUserId.value,
         status: filters.status,
         skip: filters.skip,
         take: filters.take,
@@ -159,6 +202,16 @@ export function useBusinessQualityInspectionTasks() {
         .catch(ignoreBackgroundError)
     },
   })
+  const claimMutation = useMutation({
+    ...claimBusinessConsoleQualityInspectionTaskMutationOptions(),
+    onSuccess() {
+      paginationEpoch += 1
+      extraTasks.value = []
+      void queryCache
+        .invalidateQueries({ predicate: isInspectionTasksQuery })
+        .catch(ignoreBackgroundError)
+    },
+  })
 
   const baseTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
     listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
@@ -178,6 +231,7 @@ export function useBusinessQualityInspectionTasks() {
       key: scopeKey.value,
       organizationId: organizationId.value,
       environmentId: environmentId.value,
+      principalId: inspectorUserId.value,
       status: filters.status,
     }
   }
@@ -187,7 +241,8 @@ export function useBusinessQualityInspectionTasks() {
       scopeReady.value &&
       paginationEpoch === execution.epoch &&
       scopeKey.value === execution.key &&
-      filters.status === execution.status
+      filters.status === execution.status &&
+      inspectorUserId.value === execution.principalId
     )
   }
 
@@ -201,6 +256,8 @@ export function useBusinessQualityInspectionTasks() {
       query: {
         organizationId: execution.organizationId,
         environmentId: execution.environmentId,
+        scopeKind: 'self',
+        scopeId: execution.principalId,
         status: execution.status,
         skip,
         take: Math.min(Math.max(take, 1), MAX_TAKE),
@@ -253,7 +310,7 @@ export function useBusinessQualityInspectionTasks() {
 
   /**
    * 提交检验结果。`resultLines` 由 `@nerv-iip/business-core` 归一（业务口径），此处仅注入
-   * org/env（query）与 `inspectorUserId`（body）——调用方不可覆盖检验员身份。
+   * org/env（query）；检验员身份只由网关从认证主体注入，不进入公开请求体。
    *
    * `dispositionReason`（处置原因）：检验结果**不合格时后端必填**（`InspectionRecord` 领域校验），
    * 合格时可省。由调用页在判不合格时收集并传入。
@@ -290,6 +347,8 @@ export function useBusinessQualityInspectionTasks() {
         query: {
           organizationId: organizationId.value,
           environmentId: environmentId.value,
+          scopeKind: 'self',
+          scopeId: inspectorUserId.value,
           inspectionTaskId,
           skip: 0,
           take: 2,
@@ -300,11 +359,20 @@ export function useBusinessQualityInspectionTasks() {
         authoritativeEnvelope,
       ).filter((task) => task.inspectionTaskId === inspectionTaskId)
       const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+      const hasAuthoritativeSubmitAction =
+        authoritative?.allowedActions?.includes('submit-inspection') === true
+      const canReplayCommittedSubmit =
+        isReplay &&
+        authoritative?.status?.trim().toLowerCase() === 'completed' &&
+        Boolean(authoritative.inspectionRecordId?.trim())
       assertLifecycleActionExecutable({
         domain: 'quality-inspection-task',
         action: 'create-record',
         facts: {
-          status: authoritative?.status,
+          status:
+            hasAuthoritativeSubmitAction || canReplayCommittedSubmit
+              ? authoritative?.status
+              : undefined,
           inspectionRecordId: authoritative?.inspectionRecordId,
           idempotentReplay: isReplay,
         },
@@ -322,7 +390,6 @@ export function useBusinessQualityInspectionTasks() {
             environmentId: environmentId.value,
           },
           body: {
-            inspectorUserId: inspectorUserId.value,
             // business-core 的行结构与 api-client `InspectionCharacteristicResult` 同形，直接透传。
             resultLines: resultLines as BusinessConsoleInspectionCharacteristicResult[],
             ...(reason ? { dispositionReason: reason } : {}),
@@ -336,6 +403,93 @@ export function useBusinessQualityInspectionTasks() {
         },
       ),
     )
+  }
+
+  async function claimTask(task: BusinessConsoleQualityInspectionTaskItem) {
+    if (!scopeReady.value || !inspectorUserId.value) {
+      throw new Error('登录态未就绪，请稍后重试')
+    }
+    if (task.status === 'in-progress' && task.assignedInspectorUserId === inspectorUserId.value) {
+      return task
+    }
+    if (!task.allowedActions?.includes('claim')) {
+      const blockReason = task.blockReasons?.[0]
+      if (isInspectionTaskBlockReason(blockReason)) {
+        throw new InspectionTaskClaimBlockedError(blockReason)
+      }
+      throw new Error(inspectionTaskBlockReasonMessage(task.blockReasons?.[0]))
+    }
+    const inspectionTaskId = task.inspectionTaskId
+    const expectedVersion = task.version
+    if (!inspectionTaskId || !expectedVersion) {
+      throw new Error('任务版本信息缺失，请刷新后重试。')
+    }
+    const scope = {
+      principalId: inspectorUserId.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'quality.inspection-task.claim',
+      payloadFingerprint: `${inspectionTaskId}:${expectedVersion}`,
+    }
+    const { idempotencyKey } = acquirePendingBusinessIntent(
+      scope,
+      () => `quality-claim-${makeIdempotencyKey()}`,
+    )
+    let envelope
+    try {
+      envelope = await completePendingBusinessIntent(scope, () =>
+        claimMutation.mutateAsync({
+          path: { inspectionTaskId },
+          query: {
+            organizationId: organizationId.value,
+            environmentId: environmentId.value,
+            scopeKind: 'self',
+            scopeId: inspectorUserId.value,
+          },
+          body: {
+            idempotencyKey,
+            expectedVersion,
+          },
+        }),
+      )
+    } catch (error) {
+      const blockReason = safeClaimBlockReason(error)
+      if (blockReason) throw new InspectionTaskClaimBlockedError(blockReason)
+      throw error
+    }
+    if (envelope.success !== true || !envelope.data) {
+      throw new Error(envelope.message?.trim() || '领取检验任务失败，请重试。')
+    }
+    const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        scopeKind: 'self',
+        scopeId: inspectorUserId.value,
+        inspectionTaskId,
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: true,
+    })
+    const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
+      authoritativeEnvelope,
+    ).filter((candidate) => candidate.inspectionTaskId === inspectionTaskId)
+    const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+    assertLifecycleActionExecutable({
+      domain: 'quality-inspection-task',
+      action: 'create-record',
+      facts: {
+        status: authoritative?.allowedActions?.includes('submit-inspection')
+          ? authoritative.status
+          : undefined,
+        inspectionRecordId: authoritative?.inspectionRecordId,
+      },
+    })
+    return {
+      ...task,
+      ...authoritative,
+    }
   }
 
   return {
@@ -354,6 +508,8 @@ export function useBusinessQualityInspectionTasks() {
     refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
     reasonCodes,
     submitInspection,
+    claimTask,
+    claimPending: claimMutation.isLoading,
     submitPending: submitMutation.isLoading,
     scopeReady,
   }

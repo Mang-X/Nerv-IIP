@@ -22,6 +22,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<InspectionPlan> InspectionPlans => Set<InspectionPlan>();
     public DbSet<InspectionRecord> InspectionRecords => Set<InspectionRecord>();
     public DbSet<InspectionTask> InspectionTasks => Set<InspectionTask>();
+    public DbSet<InspectionTaskAssignmentReceipt> InspectionTaskAssignmentReceipts =>
+        Set<InspectionTaskAssignmentReceipt>();
     public DbSet<MeasuringDevice> MeasuringDevices => Set<MeasuringDevice>();
     public DbSet<CalibrationRecord> CalibrationRecords => Set<CalibrationRecord>();
     public DbSet<QualityReason> QualityReasons => Set<QualityReason>();

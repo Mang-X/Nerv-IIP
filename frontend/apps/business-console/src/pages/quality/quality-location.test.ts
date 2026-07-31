@@ -1,5 +1,6 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
@@ -66,6 +67,7 @@ const taskActionSpies = vi.hoisted(() => ({
   startInspection: vi.fn(),
   refreshInspectionTasks: vi.fn(),
 }))
+const qualityTaskRead = vi.hoisted(() => vi.fn())
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
 vi.mock('@/utils/notify', async (importOriginal) => ({
@@ -75,15 +77,15 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifySuccess: notifySpies.success,
 }))
 
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
-}))
-
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
     startInspection: taskActionSpies.startInspection,
     refreshInspectionTasks: taskActionSpies.refreshInspectionTasks,
   }),
+}))
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleQualityInspectionTasks: qualityTaskRead,
 }))
 
 const qualityState = vi.hoisted(() => ({
@@ -349,6 +351,7 @@ function mountQualityPage(component: unknown) {
 
 describe('quality route location behavior', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.inspectionContextInitiallyEmpty = false
@@ -372,6 +375,22 @@ describe('quality route location behavior', () => {
     taskActionSpies.startInspection.mockReset()
     taskActionSpies.refreshInspectionTasks.mockReset()
     taskActionSpies.refreshInspectionTasks.mockResolvedValue(undefined)
+    qualityTaskRead.mockReset()
+    qualityTaskRead.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-001',
+              status: 'in-progress',
+              allowedActions: ['submit-inspection'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
     routerSpies.push.mockReset()
     routerSpies.replace.mockReset()
     routerSpies.replace.mockImplementation(async ({ query }: { query: Record<string, string> }) => {
@@ -601,6 +620,51 @@ describe('quality route location behavior', () => {
     await nextRenderTick()
 
     expect(vm.canCreateRecord).toBe(true)
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledOnce()
+    expect(taskActionSpies.startInspection.mock.calls[0]?.[1]).not.toHaveProperty('inspectorUserId')
+  })
+
+  it('keeps the existing task submit action disabled when backend allowedActions only permits claim', async () => {
+    qualityTaskRead.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-001',
+              status: 'pending',
+              allowedActions: ['claim'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      canCreateRecord: boolean
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await nextRenderTick()
+
+    expect(vm.canCreateRecord).toBe(false)
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).not.toHaveBeenCalled()
   })
 
   it('preserves inspector input when plan characteristics arrive asynchronously', async () => {

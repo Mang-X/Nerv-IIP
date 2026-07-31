@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { inspectionTaskBlockReasonMessage } from '@/components/quality/inspectionTaskBlockReasons'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
@@ -36,6 +37,22 @@ function dueText(iso?: string) {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN')
 }
+function statusLabel(status?: string) {
+  if (status === 'pending') return '待领取'
+  if (status === 'in-progress') return '进行中'
+  if (status === 'completed') return '已完成'
+  return status || '状态未知'
+}
+function statusVariant(status?: string): 'brand' | 'warning' | 'default' {
+  if (status === 'in-progress') return 'warning'
+  if (status === 'completed') return 'default'
+  return 'brand'
+}
+function canExecute(task: Task) {
+  return Boolean(
+    task.allowedActions?.includes('claim') || task.allowedActions?.includes('submit-inspection'),
+  )
+}
 </script>
 
 <template>
@@ -49,9 +66,7 @@ function dueText(iso?: string) {
     @retry="() => emit('refresh')"
   />
 
-  <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
-    加载中…
-  </div>
+  <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">加载中…</div>
 
   <div
     v-else-if="rawCount === 0"
@@ -91,10 +106,23 @@ function dueText(iso?: string) {
       data-testid="task-row"
       :title="taskTitle(task)"
       :subtitle="taskSubtitle(task)"
-      @select="emit('select', task)"
+      :interactive="canExecute(task)"
+      :class="{ 'opacity-60': !canExecute(task) }"
+      @select="canExecute(task) && emit('select', task)"
     >
+      <template v-if="!canExecute(task)" #meta>
+        <p
+          :data-testid="`task-block-reason-${task.inspectionTaskId}`"
+          class="mt-1 text-sm text-destructive"
+        >
+          {{ inspectionTaskBlockReasonMessage(task.blockReasons?.[0]) }}
+        </p>
+      </template>
       <template #trailing>
         <div class="flex shrink-0 flex-col items-end gap-1">
+          <NvMobileTag :variant="statusVariant(task.status)">
+            {{ statusLabel(task.status) }}
+          </NvMobileTag>
           <NvMobileTag
             v-if="isOverdue(task)"
             :data-testid="`overdue-${task.inspectionTaskId}`"

@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Coding;
 
@@ -8,6 +9,18 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Errors;
 public sealed class QualityIdempotencyConflictException : Exception
 {
     public const string SafeCode = "idempotency-conflict";
+}
+
+public sealed class QualityAuthorizationException(string reason) : Exception(reason)
+{
+    public string Reason { get; } = reason;
+
+    public static QualityAuthorizationException Forbidden(string reason) => new(reason);
+}
+
+public sealed class QualityUnprocessableException(string reason) : Exception(reason)
+{
+    public string Reason { get; } = reason;
 }
 
 public sealed class QualityLifecycleConflictException(string action, string currentStatus)
@@ -39,6 +52,30 @@ public sealed class QualityLifecycleConflictMiddleware(
                 new QualityLifecycleConflictResponse(false, QualityIdempotencyConflictException.SafeCode),
                 context.RequestAborted);
         }
+        catch (QualityAuthorizationException exception)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, exception.Reason),
+                context.RequestAborted);
+        }
+        catch (QualityUnprocessableException exception)
+        {
+            context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, exception.Reason),
+                context.RequestAborted);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogInformation(
+                exception,
+                "Quality persistence concurrency conflict.");
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new QualityLifecycleConflictResponse(false, QualityLifecycleConflictException.SafeCode),
+                context.RequestAborted);
+        }
         catch (DbUpdateException exception) when (
             QualityIdempotencyPersistenceConflicts.IsTargetConflict(exception, dbContext))
         {
@@ -65,18 +102,40 @@ public static class QualityIdempotencyPersistenceConflicts
 {
     public static bool IsTargetConflict(DbUpdateException exception, ApplicationDbContext dbContext)
     {
-        var expectedConstraint = dbContext.Model.FindEntityType(typeof(CodeIdempotencyKey))
-            ?.GetIndexes()
-            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(
+        var expectedConstraints = new[]
+        {
+            FindConstraint(
+                dbContext,
+                typeof(CodeIdempotencyKey),
                 [
                     nameof(CodeIdempotencyKey.OrganizationId),
                     nameof(CodeIdempotencyKey.EnvironmentId),
                     nameof(CodeIdempotencyKey.RuleKey),
                     nameof(CodeIdempotencyKey.IdempotencyKey),
-                ]))
-            .GetDatabaseName();
-        return MatchesPostgreSqlUniqueConstraint(exception, expectedConstraint);
+                ]),
+            FindConstraint(
+                dbContext,
+                typeof(InspectionTaskAssignmentReceipt),
+                [
+                    nameof(InspectionTaskAssignmentReceipt.OrganizationId),
+                    nameof(InspectionTaskAssignmentReceipt.EnvironmentId),
+                    nameof(InspectionTaskAssignmentReceipt.InspectionTaskId),
+                    nameof(InspectionTaskAssignmentReceipt.Action),
+                    nameof(InspectionTaskAssignmentReceipt.IdempotencyKey),
+                ]),
+        };
+        return expectedConstraints.Any(expectedConstraint =>
+            MatchesPostgreSqlUniqueConstraint(exception, expectedConstraint));
     }
+
+    private static string? FindConstraint(
+        ApplicationDbContext dbContext,
+        Type entityType,
+        IReadOnlyCollection<string> propertyNames) =>
+        dbContext.Model.FindEntityType(entityType)
+            ?.GetIndexes()
+            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(propertyNames))
+            .GetDatabaseName();
 
     private static bool MatchesPostgreSqlUniqueConstraint(
         DbUpdateException exception,

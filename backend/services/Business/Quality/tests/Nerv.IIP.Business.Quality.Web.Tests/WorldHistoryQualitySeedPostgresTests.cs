@@ -23,7 +23,9 @@ public sealed class WorldHistoryQualitySeedPostgresTests(ITestOutputHelper outpu
     [QualityPostgresFact]
     public async Task Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await QualityPostgresTestDatabase.CreateAsync(
+            nameof(Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean));
+        var connectionString = database.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddQualityPostgreSqlPersistence(connectionString);
