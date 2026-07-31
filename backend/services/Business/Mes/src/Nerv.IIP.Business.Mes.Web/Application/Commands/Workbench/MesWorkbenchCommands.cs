@@ -1011,7 +1011,9 @@ public sealed record ConfirmLineSideMaterialReceiptCommand(
     decimal? ReceivedQuantity = null,
     string? MaterialLotId = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbContext dbContext)
+public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialSupplyLocationResolver supplyLocationResolver)
     : ICommandHandler<ConfirmLineSideMaterialReceiptCommand, MesAcceptedResponse>
 {
     public async Task<MesAcceptedResponse> Handle(ConfirmLineSideMaterialReceiptCommand request, CancellationToken cancellationToken)
@@ -1035,8 +1037,26 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
                 materialRequest.Status);
         }
 
+        // 来源库位取库存实际持仓（配置候选库位 + 库存实时查询），目标库位取工位线边：
+        // 过账位置不再由 MES 臆造，Inventory 也就不会再以 NEGATIVE_ON_HAND 全拒（#1322）。
+        var postingQuantity = request.ReceivedQuantity ??
+            materialRequest.RequestedQuantity - materialRequest.ReceivedQuantity;
+        var locations = await supplyLocationResolver.ResolveAsync(
+            new MesMaterialSupplyLocationRequest(
+                materialRequest.OrganizationId,
+                materialRequest.EnvironmentId,
+                materialRequest.MaterialId,
+                materialRequest.UomCode,
+                request.MaterialLotId ?? materialRequest.MaterialLotId,
+                postingQuantity),
+            cancellationToken);
+
         MesDomainRuleGuard.Enforce(() =>
-            materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId));
+            materialRequest.ConfirmLineSideReceipt(
+                locations,
+                request.ReceivedAtUtc,
+                request.ReceivedQuantity,
+                request.MaterialLotId));
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
@@ -1433,6 +1453,8 @@ internal static class MaterialReadinessGuards
     [
         MaterialIssueRequest.RequestedStatus,
         MaterialIssueRequest.PartiallyReceivedStatus,
+        // 收料已提交、库存过账在途:仓库仍在配货,「应领」要算;但「已收」只认过账成功的量。
+        MaterialIssueRequest.ReceiptPostingStatus,
         MaterialIssueRequest.ReceivedStatus
     ];
 

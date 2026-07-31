@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 /// <summary>
@@ -93,6 +95,33 @@ public static class WorldHistoryMesSpec
             new($"SF-VLV-{platformIndex + 1:D2}", 1m, "pcs"),
             new($"RM-SPR-{(platformIndex % 4) + 1:D2}", 1m, "pcs"),
         ];
+    }
+
+    #endregion
+
+    #region 二期库位（与库存 / 仓储侧 WorldHistoryPhase2Spec 同字面量）
+
+    /// <summary>原料库。</summary>
+    public const string RawMaterialLocationCode = "WH-WB-RM-01";
+
+    /// <summary>半成品库。</summary>
+    public const string SemiFinishedLocationCode = "WH-WB-SF-01";
+
+    /// <summary>车间线边库：领料后物料的去向。</summary>
+    public const string LineSideLocationCode = "WH-WB-LINE-01";
+
+    /// <summary>历史领料的真实调拨库位：来源按物料常驻库位，目标是车间线边库。</summary>
+    public static MaterialTransferLocations TransferLocationsFor(string skuCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skuCode);
+        var sourceLocationCode = skuCode.StartsWith("SF-", StringComparison.Ordinal)
+            ? SemiFinishedLocationCode
+            : RawMaterialLocationCode;
+        return new MaterialTransferLocations(
+            WorldHistorySpec.SiteCode,
+            sourceLocationCode,
+            WorldHistorySpec.SiteCode,
+            LineSideLocationCode);
     }
 
     #endregion

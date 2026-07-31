@@ -94,7 +94,9 @@ public sealed class MesIntegrationEventTests
             "LOT-OIL-A",
             "L",
             2.5m,
-            "MIR-001");
+            "MIR-001",
+            MaterialSupplyTestFixtures.Locations.TargetSiteCode,
+            MaterialSupplyTestFixtures.Locations.TargetLocationCode);
 
         var integrationEvent = new ProductionMaterialConsumedIntegrationEventConverter()
             .Convert(new ProductionMaterialConsumedDomainEvent(consumption));
@@ -105,8 +107,8 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("business-mes", integrationEvent.Payload.SourceService);
         Assert.Equal("PRPT-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
-        Assert.Equal("production", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-2.5m, integrationEvent.Payload.Quantity);
         Assert.Equal("PRPT-001", integrationEvent.CorrelationId);
@@ -185,6 +187,7 @@ public sealed class MesIntegrationEventTests
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
         request.ConfirmLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -197,8 +200,8 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("MIR-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("L", integrationEvent.Payload.UomCode);
-        Assert.Equal("warehouse", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
@@ -218,6 +221,7 @@ public sealed class MesIntegrationEventTests
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
         request.ConfirmLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -231,8 +235,8 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("OP-10", integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("L", integrationEvent.Payload.UomCode);
-        Assert.Equal("production", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
@@ -252,7 +256,8 @@ public sealed class MesIntegrationEventTests
             "L",
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
-        request.ConfirmLineSideReceipt(
+        request.ConfirmAndPostLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -264,12 +269,12 @@ public sealed class MesIntegrationEventTests
             .Convert(new MaterialReturnedToWarehouseDomainEvent(request, 1m, "LOT-MAT-001", DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
 
         Assert.Equal("outbound", productionOutbound.Payload.MovementType);
-        Assert.Equal("production", productionOutbound.Payload.SiteCode);
-        Assert.Equal("line-side", productionOutbound.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, productionOutbound.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, productionOutbound.Payload.LocationCode);
         Assert.Equal(-1m, productionOutbound.Payload.Quantity);
         Assert.Equal("inbound", warehouseInbound.Payload.MovementType);
-        Assert.Equal("warehouse", warehouseInbound.Payload.SiteCode);
-        Assert.Equal("line-side", warehouseInbound.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceSiteCode, warehouseInbound.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceLocationCode, warehouseInbound.Payload.LocationCode);
         Assert.Equal(1m, warehouseInbound.Payload.Quantity);
     }
 
