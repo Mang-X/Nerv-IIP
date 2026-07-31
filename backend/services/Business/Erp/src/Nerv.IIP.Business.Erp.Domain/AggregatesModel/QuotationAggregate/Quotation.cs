@@ -55,6 +55,14 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
     public QuotationStatus Status { get; private set; }
     public decimal TotalAmount { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
+
+    /// <summary>已由本报价转出的销售订单号；null 表示尚未转出。转出后再次转订单必须幂等返回该单号。</summary>
+    public string? ConvertedSalesOrderNo { get; private set; }
+
+    /// <summary>报价转出销售订单的 UTC 时间；与 <see cref="ConvertedSalesOrderNo"/> 同生共死。</summary>
+    public DateTime? ConvertedAtUtc { get; private set; }
+
+    public bool IsConverted => ConvertedSalesOrderNo is not null;
     public IReadOnlyCollection<QuotationLine> Lines => lines;
 
     public static Quotation Create(
@@ -85,6 +93,11 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
 
     public void EnsureCanCreateSalesOrder(DateOnly today)
     {
+        if (IsConverted)
+        {
+            throw new InvalidOperationException($"Quotation has already been converted to sales order '{ConvertedSalesOrderNo}'.");
+        }
+
         if (Status != QuotationStatus.Approved)
         {
             throw new InvalidOperationException("Only approved quotations can create sales orders.");
@@ -94,6 +107,23 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
         {
             throw new InvalidOperationException("Expired quotations cannot create sales orders.");
         }
+    }
+
+    /// <summary>登记报价已转出的销售订单引用。仅允许在已批准且未转出时调用一次。</summary>
+    public void MarkConvertedToSalesOrder(string salesOrderNo)
+    {
+        if (IsConverted)
+        {
+            throw new InvalidOperationException($"Quotation has already been converted to sales order '{ConvertedSalesOrderNo}'.");
+        }
+
+        if (Status != QuotationStatus.Approved)
+        {
+            throw new InvalidOperationException("Only approved quotations can be converted to sales orders.");
+        }
+
+        ConvertedSalesOrderNo = ErpText.Required(salesOrderNo, nameof(salesOrderNo));
+        ConvertedAtUtc = DateTime.UtcNow;
     }
 }
 

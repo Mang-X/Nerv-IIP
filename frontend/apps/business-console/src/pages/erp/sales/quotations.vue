@@ -297,7 +297,19 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-status="{ row }">
+        <div class="flex items-center gap-1.5">
+          <NvStatusBadge :value="row.status ?? '-'" />
+          <!-- 已转出报价：标注既有订单号；再次转订单后端会幂等返回这张单，不会新建。 -->
+          <span
+            v-if="row.convertedSalesOrderNo"
+            class="text-xs text-muted-foreground"
+            :title="`该报价已转出为销售订单 ${row.convertedSalesOrderNo}，重复转订单将返回同一张单`"
+          >
+            已转 {{ row.convertedSalesOrderNo }}
+          </span>
+        </div>
+      </template>
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >

@@ -150,6 +150,10 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var orderCreatedAtUtc = MomentOn(timeline.OrderDate, plan.SalesOrderNo, "order");
         BackdateUtc(salesOrder, x => x.CreatedAtUtc, orderCreatedAtUtc);
 
+        // 报价已转出：登记订单引用，否则种子报价停留在「已批准未转出」，真机上还能再转一次产生重复单。
+        quotation.MarkConvertedToSalesOrder(plan.SalesOrderNo);
+        BackdateNullableUtc(quotation, x => x.ConvertedAtUtc, orderCreatedAtUtc);
+
         // 大客户框架/新平台意向：每 40 单前置一个销售机会（销售机会页的历史故事）。
         if (plan.Index % WorldHistoryErpSpec.OpportunityEveryNthSalesOrder == 1)
         {
