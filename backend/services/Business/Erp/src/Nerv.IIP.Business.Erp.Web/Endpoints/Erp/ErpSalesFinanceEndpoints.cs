@@ -23,7 +23,8 @@ public sealed record CreateQuotationRequest(string OrganizationId, string Enviro
 public sealed record CreateQuotationResponse(QuotationId QuotationId);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
 public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string SiteCode, string? IdempotencyKey = null);
-public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
+/// <summary>报价转订单响应：<paramref name="ReusedExistingOrder"/> 为 true 表示报价已转出，本次幂等返回既有订单而未新建。</summary>
+public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId, string SalesOrderNo, bool ReusedExistingOrder);
 public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string LineNo, decimal OrderedQuantity, decimal UnitPrice, DateOnly RequiredDate, string Reason);
 public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
 public sealed record ReleaseSalesOrderCreditHoldRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string StartedBy = "system:erp");
@@ -179,8 +180,8 @@ public sealed class CreateSalesOrderEndpoint(ISender sender, IErpIntegrationEven
             req.QuotationNo,
             req.SiteCode,
             req.IdempotencyKey));
-        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
+        await Send.OkAsync(new CreateSalesOrderResponse(result.SalesOrderId, result.SalesOrderNo, result.ReusedExistingOrder).AsResponseData(), cancellation: ct);
     }
 }
 

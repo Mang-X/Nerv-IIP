@@ -12324,7 +12324,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     "Draft",
                     200m,
                     [new BusinessConsoleErpQuotationLineItem("10", "SKU-FG", "EA", 2m, 100m, DateOnly.Parse("2026-07-01"))],
-                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
+                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    null),
             ],
             1));
     }
@@ -12478,7 +12479,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         LastCreateSalesOrderRequest = request;
-        return Task.FromResult(new BusinessConsoleCreateErpSalesOrderResponse("so-id-001"));
+        return Task.FromResult(new BusinessConsoleCreateErpSalesOrderResponse("so-id-001", "SO-001", false));
     }
 
     public Task<string> ReleaseSalesOrderCreditHoldAsync(
