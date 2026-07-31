@@ -55,7 +55,8 @@ public sealed class QualityLifecycleConflictTests
                 new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-1", "org-001", "env-dev"),
                 CancellationToken.None));
 
-        Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(task.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("检验方案", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
         Assert.Empty(dbContext.InspectionRecords);
     }
@@ -147,7 +148,9 @@ public sealed class QualityLifecycleConflictTests
                 new CreateInspectionRecordFromTaskCommand(task.Id, "inspector-001", [], null, [], "lifecycle-submit-5", "org-001", "env-dev"),
                 CancellationToken.None));
 
-        Assert.Contains("plan", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(task.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("找不到检验任务", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("检验方案", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
     }
 
@@ -228,7 +231,8 @@ public sealed class QualityLifecycleConflictTests
                 new SubmitNonconformanceReportDispositionCommand(ncr.Id, "scrap", null, [], []),
                 CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-SUBMIT-APPROVAL", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
     }
 
@@ -249,7 +253,8 @@ public sealed class QualityLifecycleConflictTests
                 new SubmitNonconformanceReportDispositionCommand(ncr.Id, "sort-and-screen", null, [], []),
                 CancellationToken.None));
 
-        Assert.Contains("evidence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-SUBMIT-EVIDENCE", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("附件", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
     }
 
@@ -299,7 +304,8 @@ public sealed class QualityLifecycleConflictTests
                 new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
                 CancellationToken.None));
 
-        Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-CLOSE-CAPA", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CAPA", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
     }
 
