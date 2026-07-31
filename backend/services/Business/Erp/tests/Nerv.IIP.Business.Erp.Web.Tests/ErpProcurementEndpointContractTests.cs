@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
@@ -551,6 +552,32 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_purchase_order_starts_approval_with_the_contract_template_code()
+    {
+        // #1344 三方漂移契约（ERP 发起侧）：新建采购订单（含 RFQ 中标转单路径）发起审批时，
+        // 模板码 / 单据类型 / 来源服务必须逐字等于审批契约常量——任何一侧漂移本用例必红。
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-TEMPLATE-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+
+        Assert.NotNull(approvalClient.LastRequest);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
+        Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
+        Assert.Equal("business-erp", approvalClient.LastRequest.SourceService);
+    }
+
+    [Fact]
     public async Task Convert_purchase_requisitions_uses_supplier_quotation_merges_lines_and_marks_sources_converted()
     {
         await using var provider = CreateInMemoryProvider();
@@ -583,6 +610,10 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal("PO-REQ-001", result.PurchaseOrderNo);
         Assert.Equal("SUP-001", result.SupplierCode);
         Assert.NotNull(approvalClient.LastRequest);
+        // #1344 三方漂移契约：转单发起的审批必须用契约模板码（种子落库的 APT-WB-PO-001），
+        // 不得再回到从未落库的 erp-purchase-order-release 字面量（种子态必 400）。
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
+        Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
         var order = Assert.Single(dbContext.PurchaseOrders.Include(x => x.Lines).ThenInclude(x => x.SourceLinks));
         var line = Assert.Single(order.Lines);
         Assert.Equal(7m, line.OrderedQuantity);
@@ -736,7 +767,8 @@ public sealed class ErpProcurementEndpointContractTests
         dbContext.PurchaseOrders.Add(order);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new RequestPurchaseOrderChangeCommandHandler(dbContext, new CapturingPurchaseOrderApprovalClient());
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        var handler = new RequestPurchaseOrderChangeCommandHandler(dbContext, approvalClient);
         var command = new RequestPurchaseOrderChangeCommand(
             "org-001",
             "env-dev",
@@ -747,6 +779,9 @@ public sealed class ErpProcurementEndpointContractTests
         var secondChainId = await handler.Handle(command, CancellationToken.None);
 
         Assert.NotEqual(firstChainId, secondChainId);
+        // #1344：变更再审批与下达共用同一张种子模板（同单据类型、同审批人，种子只此一张采购模板），
+        // 旧字面量 erp-purchase-order-change 同样从未落库。
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
     }
 
     [Fact]
@@ -771,6 +806,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal(chainId, order.ApprovalChainId);
         Assert.Equal(70m, order.TotalAmount);
         Assert.Equal(70m, approvalClient.LastRequest!.Amount);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest.TemplateCode);
     }
 
     [Fact]

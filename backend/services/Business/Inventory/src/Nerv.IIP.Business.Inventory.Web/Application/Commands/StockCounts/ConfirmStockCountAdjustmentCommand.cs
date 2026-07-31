@@ -111,7 +111,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                     task.EnvironmentId,
                     approvalOptions.TemplateCode,
                     "inventory",
-                    "inventory-count-variance",
+                    approvalOptions.DocumentType,
                     task.CountTaskCode,
                     "system:inventory",
                     varianceAmount),

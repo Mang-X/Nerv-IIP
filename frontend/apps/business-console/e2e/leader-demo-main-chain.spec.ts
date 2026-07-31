@@ -864,26 +864,10 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       )
       productionVersionId = textOf(productionVersion.productionVersionId ?? productionVersion)
 
-      const approvalTemplateCode = 'erp-purchase-order-release'
-      await create('/api/business-console/v1/approval/templates', {
-        organizationId,
-        environmentId,
-        templateCode: approvalTemplateCode,
-        documentType: 'purchase-order',
-        version: 1,
-        isActive: true,
-        steps: [
-          {
-            stepNo: 1,
-            stepName: 'MAN-524 procurement approval',
-            approverType: principalType,
-            approverRef: principalId,
-            dueInHours: 24,
-            completionPolicy: 'all',
-          },
-        ],
-      })
-
+      // #1344：采购下达审批走**种子模板** APT-WB-PO-001（documentType=purchase-order，
+      // 审批人 user-admin，即本用例登录的 admin principal）。这里绝不能再 POST /approval/templates：
+      // 该命令是 CreateOrUpdate → ReplaceDefinition，会把种子模板的步骤定义覆写成 e2e 专用步骤名，
+      // 而种子「已存在一律不动」，重跑也不修复——等于 e2e 污染演示数据。
       const purchaseOrderPath = '/api/business-console/v1/erp/procurement/purchase-orders'
       const purchaseOrderRequest = {
         organizationId,
