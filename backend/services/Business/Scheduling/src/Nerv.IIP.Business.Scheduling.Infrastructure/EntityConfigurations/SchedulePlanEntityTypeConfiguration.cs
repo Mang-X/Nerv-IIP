@@ -35,6 +35,7 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.AverageResourceUtilization).HasColumnName("average_resource_utilization").HasPrecision(18, 6).HasComment("Total assigned minutes divided by total available minutes across resource load windows.");
         builder.Property(x => x.MaterialRisksJson).HasColumnName("material_risks_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of material risks and nested shortages emitted with the generated plan.");
         builder.Property(x => x.EquipmentRisksJson).HasColumnName("equipment_risks_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of equipment data risks emitted with the generated plan.");
+        builder.Property(x => x.BlockWindowsJson).HasColumnName("block_windows_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of equipment unavailability (maintenance/downtime) windows that actually constrained this plan.");
         builder.HasIndex(x => x.PlanId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId })
             .IsUnique()
