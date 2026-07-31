@@ -2056,12 +2056,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     assignedTeamId?: string | null;
     reason?: string | null;
     idempotencyKey: string;
-    expectedVersion?: number;
+    expectedVersion: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleClaimQualityInspectionTaskRequest = {
     idempotencyKey: string;
-    expectedVersion?: number;
+    expectedVersion: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordFromTaskResponse = NetCorePalExtensionsDtoResponseData & {

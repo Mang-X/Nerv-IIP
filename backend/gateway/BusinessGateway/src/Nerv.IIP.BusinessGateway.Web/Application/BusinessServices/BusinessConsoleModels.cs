@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Contracts.Iam;
@@ -1768,7 +1769,7 @@ public sealed record BusinessConsoleAssignQualityInspectionTaskRequest(
     string? AssignedTeamId,
     string? Reason,
     string IdempotencyKey,
-    long ExpectedVersion,
+    [property: JsonRequired, Required] long ExpectedVersion,
     [property: QueryParam] string? ScopeKind = null,
     [property: QueryParam] string? ScopeId = null);
 
@@ -1789,7 +1790,7 @@ public sealed record BusinessConsoleClaimQualityInspectionTaskRequest(
     [property: QueryParam] string? ScopeKind,
     [property: QueryParam] string? ScopeId,
     string IdempotencyKey,
-    long ExpectedVersion);
+    [property: JsonRequired, Required] long ExpectedVersion);
 
 public sealed record BusinessQualityClaimInspectionTaskRequest(
     string OrganizationId,

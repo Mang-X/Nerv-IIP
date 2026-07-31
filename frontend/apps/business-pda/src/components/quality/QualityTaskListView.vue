@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import { inspectionTaskBlockReasonMessage } from '@/components/quality/inspectionTaskBlockReasons'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
@@ -105,9 +106,18 @@ function canExecute(task: Task) {
       data-testid="task-row"
       :title="taskTitle(task)"
       :subtitle="taskSubtitle(task)"
+      :interactive="canExecute(task)"
       :class="{ 'opacity-60': !canExecute(task) }"
       @select="canExecute(task) && emit('select', task)"
     >
+      <template v-if="!canExecute(task)" #meta>
+        <p
+          :data-testid="`task-block-reason-${task.inspectionTaskId}`"
+          class="mt-1 text-sm text-destructive"
+        >
+          {{ inspectionTaskBlockReasonMessage(task.blockReasons?.[0]) }}
+        </p>
+      </template>
       <template #trailing>
         <div class="flex shrink-0 flex-col items-end gap-1">
           <NvMobileTag :variant="statusVariant(task.status)">

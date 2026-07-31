@@ -2,6 +2,7 @@
 import QualityExecuteStep from '@/components/quality/QualityExecuteStep.vue'
 import QualityResultStep from '@/components/quality/QualityResultStep.vue'
 import QualityTaskListStep from '@/components/quality/QualityTaskListStep.vue'
+import { InspectionTaskClaimBlockedError } from '@/components/quality/inspectionTaskBlockReasons'
 import type {
   AuthoritativeInspectionResult,
   QualityResultState,
@@ -14,7 +15,7 @@ import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecover
 import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { NvAppShellMobile, NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
-import { computed, ref, useTemplateRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -77,7 +78,15 @@ async function selectTask(task: Task) {
   try {
     selectedTask.value = await claimTask(task)
   } catch (error) {
-    await onFailed(error instanceof Error ? error.message : '任务不可执行，请刷新后重试。', error)
+    if (await lifecycleRecovery.handle(error)) return
+    claimToast.value = {
+      show: true,
+      message:
+        error instanceof InspectionTaskClaimBlockedError
+          ? error.message
+          : '任务不可执行，请刷新后重试。',
+      type: 'error',
+    }
   }
 }
 function backToList() {
@@ -89,6 +98,14 @@ const lifecycleRecovery = useLifecycleActionRecovery({
   reset: backToList,
   refresh,
 })
+const claimToast = shallowRef({
+  show: false,
+  message: '',
+  type: 'error' as const,
+})
+function setClaimToastOpen(show: boolean) {
+  claimToast.value = { ...claimToast.value, show }
+}
 
 function onSubmitted(authoritative: AuthoritativeInspectionResult) {
   result.value = { phase: 'submitted', authoritative }
@@ -191,6 +208,12 @@ function openNcr() {
       :message="lifecycleRecovery.toast.value.message"
       :type="lifecycleRecovery.toast.value.type"
       @update:show="lifecycleRecovery.setToastOpen"
+    />
+    <NvMobileToast
+      :show="claimToast.show"
+      :message="claimToast.message"
+      :type="claimToast.type"
+      @update:show="setClaimToastOpen"
     />
   </NvAppShellMobile>
 </template>

@@ -19,6 +19,12 @@ import {
   type QualityCharacteristicResultLine as ResultLine,
 } from '@nerv-iip/business-core'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import {
+  InspectionTaskClaimBlockedError,
+  isInspectionTaskBlockReason,
+  inspectionTaskBlockReasonMessage,
+  type InspectionTaskBlockReason,
+} from '@/components/quality/inspectionTaskBlockReasons'
 import { useAuthStore } from '@/stores/auth'
 import {
   useListFreshness,
@@ -68,21 +74,33 @@ function isInspectionTasksQuery(entry: UseQueryEntry) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
-function claimBlockMessage(reason: string | undefined) {
-  switch (reason) {
-    case 'task-completed':
-      return '任务已完成，仅可查看。'
-    case 'task-already-claimed':
-      return '任务已由其他检验员领取。'
-    case 'task-assigned-to-another-inspector':
-      return '任务已派给其他检验员，无法领取。'
-    case 'task-assigned-to-another-team':
-      return '任务已派给其他班组，无法领取。'
-    case 'task-outside-selected-work-scope':
-      return '任务不在当前工作范围内，无法领取。'
-    default:
-      return '当前任务不可领取，请刷新后重试。'
+function errorHttpStatus(error: unknown) {
+  if (typeof error !== 'object' || error === null) return undefined
+  const candidate = error as Record<string, unknown>
+  if (typeof candidate.status === 'number') return candidate.status
+  if (typeof candidate.statusCode === 'number') return candidate.statusCode
+  if (typeof candidate.response !== 'object' || candidate.response === null) return undefined
+  const status = (candidate.response as Record<string, unknown>).status
+  return typeof status === 'number' ? status : undefined
+}
+
+function safeClaimBlockReason(error: unknown): InspectionTaskBlockReason | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const candidate = error as Record<string, unknown>
+  const status = errorHttpStatus(error)
+  const message = candidate.message
+  if (typeof message !== 'string') return undefined
+
+  if (
+    status === 403 &&
+    (message === 'task-assigned-to-another-inspector' ||
+      message === 'task-assigned-to-another-team' ||
+      message === 'task-outside-selected-work-scope')
+  ) {
+    return message
   }
+  if (status === 422 && message === 'task-already-claimed') return message
+  return undefined
 }
 
 /**
@@ -386,9 +404,15 @@ export function useBusinessQualityInspectionTasks() {
       return task
     }
     if (!task.allowedActions?.includes('claim')) {
-      throw new Error(claimBlockMessage(task.blockReasons?.[0]))
+      const blockReason = task.blockReasons?.[0]
+      if (isInspectionTaskBlockReason(blockReason)) {
+        throw new InspectionTaskClaimBlockedError(blockReason)
+      }
+      throw new Error(inspectionTaskBlockReasonMessage(task.blockReasons?.[0]))
     }
-    if (!task.inspectionTaskId || !task.version) {
+    const inspectionTaskId = task.inspectionTaskId
+    const expectedVersion = task.version
+    if (!inspectionTaskId || !expectedVersion) {
       throw new Error('任务版本信息缺失，请刷新后重试。')
     }
     const scope = {
@@ -396,27 +420,34 @@ export function useBusinessQualityInspectionTasks() {
       organizationId: organizationId.value,
       environmentId: environmentId.value,
       operationType: 'quality.inspection-task.claim',
-      payloadFingerprint: `${task.inspectionTaskId}:${task.version}`,
+      payloadFingerprint: `${inspectionTaskId}:${expectedVersion}`,
     }
     const { idempotencyKey } = acquirePendingBusinessIntent(
       scope,
       () => `quality-claim-${makeIdempotencyKey()}`,
     )
-    const envelope = await completePendingBusinessIntent(scope, () =>
-      claimMutation.mutateAsync({
-        path: { inspectionTaskId: task.inspectionTaskId! },
-        query: {
-          organizationId: organizationId.value,
-          environmentId: environmentId.value,
-          scopeKind: 'self',
-          scopeId: inspectorUserId.value,
-        },
-        body: {
-          idempotencyKey,
-          expectedVersion: task.version,
-        },
-      }),
-    )
+    let envelope
+    try {
+      envelope = await completePendingBusinessIntent(scope, () =>
+        claimMutation.mutateAsync({
+          path: { inspectionTaskId },
+          query: {
+            organizationId: organizationId.value,
+            environmentId: environmentId.value,
+            scopeKind: 'self',
+            scopeId: inspectorUserId.value,
+          },
+          body: {
+            idempotencyKey,
+            expectedVersion,
+          },
+        }),
+      )
+    } catch (error) {
+      const blockReason = safeClaimBlockReason(error)
+      if (blockReason) throw new InspectionTaskClaimBlockedError(blockReason)
+      throw error
+    }
     if (envelope.success !== true || !envelope.data) {
       throw new Error(envelope.message?.trim() || '领取检验任务失败，请重试。')
     }

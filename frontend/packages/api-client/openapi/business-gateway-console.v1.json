@@ -36526,6 +36526,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "expectedVersion",
           "idempotencyKey"
         ],
         "properties": {
@@ -36565,6 +36566,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "expectedVersion",
           "idempotencyKey"
         ],
         "properties": {

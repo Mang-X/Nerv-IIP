@@ -215,6 +215,48 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(coladaState.claim).not.toHaveBeenCalled()
   })
 
+  it.each([
+    [
+      { status: 403, message: 'task-outside-selected-work-scope' },
+      '任务不在当前工作范围内，无法领取。',
+    ],
+    [{ response: { status: 422 }, message: 'task-already-claimed' }, '任务已由其他检验员领取。'],
+  ])(
+    'translates only a stable claim mutation blocker into actionable Chinese',
+    async (failure, message) => {
+      seedPrincipal()
+      coladaState.claim.mockRejectedValueOnce(failure)
+      const { claimTask } = useBusinessQualityInspectionTasks()
+
+      await expect(
+        claimTask({
+          inspectionTaskId: 'TASK-RACED',
+          status: 'pending',
+          version: 2,
+          allowedActions: ['claim'],
+        }),
+      ).rejects.toThrow(message)
+    },
+  )
+
+  it.each([
+    { success: false, message: 'lifecycle-conflict' },
+    { status: 422, message: 'internal-untrusted-detail' },
+  ])('preserves non-safe claim failures for the page recovery boundary', async (failure) => {
+    seedPrincipal()
+    coladaState.claim.mockRejectedValueOnce(failure)
+    const { claimTask } = useBusinessQualityInspectionTasks()
+
+    await expect(
+      claimTask({
+        inspectionTaskId: 'TASK-RACED',
+        status: 'pending',
+        version: 2,
+        allowedActions: ['claim'],
+      }),
+    ).rejects.toBe(failure)
+  })
+
   it('keeps inspector identity out of the public submit body and forwards org/env', async () => {
     seedPrincipal()
     const { submitInspection } = useBusinessQualityInspectionTasks()

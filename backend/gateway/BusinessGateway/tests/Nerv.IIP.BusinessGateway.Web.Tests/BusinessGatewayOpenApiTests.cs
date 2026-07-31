@@ -100,6 +100,14 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}", "get", "getBusinessConsoleQualityInspectionTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/assignment", "post", "assignBusinessConsoleQualityInspectionTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/claim", "post", "claimBusinessConsoleQualityInspectionTask");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleAssignQualityInspectionTaskRequest",
+            "expectedVersion");
+        AssertRequiredSchemaProperty(
+            document,
+            "BusinessConsoleClaimQualityInspectionTaskRequest",
+            "expectedVersion");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
         var submitOperation = paths
             .GetProperty("/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record")
