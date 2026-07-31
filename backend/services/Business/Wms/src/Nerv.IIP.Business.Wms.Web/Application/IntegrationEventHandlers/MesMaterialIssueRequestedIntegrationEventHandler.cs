@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Contracts.Mes;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
     ApplicationDbContext dbContext,
     ISender sender,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ILogger<MesMaterialIssueRequestedIntegrationEventHandler>? logger = null)
     : IIntegrationEventHandler<MesMaterialIssueRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-wms.mes-material-issue-requested";
@@ -49,6 +51,11 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
     {
         if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase))
         {
+            // 记录后跳过：非 MES 来源不是本消费者的事实，但静默丢弃会让「事件发了却什么都没发生」无从排查。
+            logger?.LogDebug(
+                "Skipping material issue request {EventId} from unexpected source service {SourceService}.",
+                integrationEvent.EventId,
+                integrationEvent.SourceService);
             return;
         }
 

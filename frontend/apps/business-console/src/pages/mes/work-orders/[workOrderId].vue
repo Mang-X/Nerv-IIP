@@ -18,6 +18,7 @@ import {
   MATERIAL_READINESS_SCOPE_NOTE,
 } from '@/composables/mes/materialReadinessScope'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
@@ -263,6 +264,9 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
 // 齐套区的「下一步动作」以前指向一个 PC 上并不存在的动作（只有 PDA 能发起）。这里补齐两处入口，
 // 语义与校验与 PDA 侧同源：领料必须指定物料且数量>0；收料数量可省（默认收齐），指定时必须>0。
 const canManageMaterials = computed(() => permissionCodes.value.includes(P.mesMaterialsManage))
+// 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs）。界面写死一个占位单位会被 MES 直接拒收，
+// 也无法在库存腿上换算——取不到主档单位就阻断提交并说明原因，绝不猜（#1294 同款姿势）。
+const { resolveBaseUom, skusPending } = useSkuNames()
 const OPEN_ISSUE_STATUSES = new Set(['requested', 'partiallyreceived'])
 const issueOpen = ref(false)
 const issueForm = reactive({
@@ -300,9 +304,18 @@ const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
   { key: 'actions', header: '操作', width: 'w-28' },
 ]
 
+const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))
+const issueUomBlockReason = computed(() => {
+  if (!issueForm.materialId.trim()) return ''
+  if (issueUomCode.value) return ''
+  return skusPending.value
+    ? '正在读取物料主档单位，请稍候。'
+    : '物料主档没有基本计量单位，无法发起领料。请先在物料主数据补齐该物料的基本计量单位。'
+})
 const canSubmitIssue = computed(() => {
   if (!canManageMaterials.value) return false
   if (!issueForm.materialId.trim()) return false
+  if (!issueUomCode.value) return false
   if (!issueForm.quantity.trim()) return true
   const quantity = Number(issueForm.quantity)
   return Number.isFinite(quantity) && quantity > 0
@@ -346,9 +359,11 @@ async function submitIssue() {
   if (!canSubmitIssue.value || createMaterialIssueRequestPending.value) return
   const quantity = issueForm.quantity.trim() ? Number(issueForm.quantity) : undefined
   try {
+    const uomCode = issueUomCode.value
+    if (!uomCode) return
     await createMaterialIssueRequest({
       materialId: issueForm.materialId.trim(),
-      uomCode: 'UNSPECIFIED',
+      uomCode,
       quantity,
       operationTaskId: issueForm.operationTaskId.trim() || undefined,
       // 写面重试要落在同一张领料单上：幂等键在打开弹窗时冻结，成功后才换新。
@@ -1014,6 +1029,16 @@ function formatError(error: unknown) {
               物料 <span class="text-destructive">*</span>
             </NvFieldLabel>
             <NvInput id="issue-material" v-model="issueForm.materialId" placeholder="物料标识" />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-uom">单位</NvFieldLabel>
+            <!-- 单位来自物料主档，不给用户编辑，也不用占位值冒充。 -->
+            <p v-if="issueUomCode" class="text-sm text-foreground" data-testid="issue-uom">
+              {{ issueUomCode }}（取自物料主档基本计量单位）
+            </p>
+            <p v-else class="text-sm text-destructive" data-testid="issue-uom-blocked">
+              {{ issueUomBlockReason || '请先选择物料。' }}
+            </p>
           </NvField>
           <NvField>
             <NvFieldLabel for="issue-quantity">数量</NvFieldLabel>

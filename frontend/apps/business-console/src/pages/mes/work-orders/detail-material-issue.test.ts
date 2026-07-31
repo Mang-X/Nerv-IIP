@@ -42,6 +42,19 @@ const state = vi.hoisted(() => ({
   createMaterialIssueRequest: vi.fn(),
   confirmLineSideReceipt: vi.fn(),
   materialIssueRequests: [] as Record<string, unknown>[],
+  baseUomBySku: new Map<string, string>(),
+  skusPending: false,
+}))
+
+// 单位取自物料主档（#1294 姿势）：主档缺单位就不许发起领料，绝不写死占位值。
+vi.mock('@/composables/useSkuNames', () => ({
+  useSkuNames: () => ({
+    resolveBaseUom: (code?: string | null) =>
+      code ? state.baseUomBySku.get(code.trim()) : undefined,
+    resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+    resolveSkuName: (code?: string | null) => code ?? undefined,
+    skusPending: ref(state.skusPending),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
@@ -130,7 +143,19 @@ function mountDetail(permissionCodes: string[]) {
         NvTooltipProvider: { template: '<div><slot /></div>' },
         NvTooltipTrigger: { template: '<div><slot /></div>' },
         NvTooltipContent: { template: '<div><slot /></div>' },
+        // reka 的 Dialog 子件要求真实 DialogRoot 上下文（门禁绿≠真机可用的老坑），
+        // 打开弹窗的用例里整棵子树都要桩掉。
         NvAlertDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+        NvAlertDialogContent: { template: '<div><slot /></div>' },
+        NvAlertDialogHeader: { template: '<div><slot /></div>' },
+        NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+        NvAlertDialogDescription: { template: '<p><slot /></p>' },
+        NvAlertDialogFooter: { template: '<div><slot /></div>' },
+        NvFieldGroup: { template: '<div><slot /></div>' },
+        NvField: { template: '<div><slot /></div>' },
+        NvFieldLabel: { template: '<label><slot /></label>' },
+        NvInput: { props: ['modelValue'], template: '<input />' },
+        CarriedContextSummary: { template: '<div />' },
       },
     },
   })
@@ -141,6 +166,9 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     state.createMaterialIssueRequest.mockReset()
     state.confirmLineSideReceipt.mockReset()
     state.materialIssueRequests.length = 0
+    state.baseUomBySku.clear()
+    state.baseUomBySku.set('MAT-OIL', 'L')
+    state.skusPending = false
   })
 
   it('有领料管理权限时渲染「发起领料」入口', () => {
@@ -154,6 +182,44 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     const wrapper = mountDetail(['business.mes.work-orders.read'])
 
     expect(wrapper.find('[data-testid="open-material-issue"]').exists()).toBe(false)
+  })
+
+  it('发起领料带上物料主档单位，而不是占位值 UNSPECIFIED', async () => {
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    await wrapper.find('[data-testid="open-material-issue"]').trigger('click')
+    const vm = wrapper.vm as unknown as {
+      issueForm: { materialId: string }
+      submitIssue: () => Promise<void>
+    }
+    vm.issueForm.materialId = 'MAT-OIL'
+    await wrapper.vm.$nextTick()
+    await vm.submitIssue()
+
+    expect(state.createMaterialIssueRequest).toHaveBeenCalledTimes(1)
+    expect(state.createMaterialIssueRequest.mock.calls[0][0]).toMatchObject({
+      materialId: 'MAT-OIL',
+      uomCode: 'L',
+    })
+  })
+
+  it('物料主档没有基本计量单位时阻断提交并给出中文原因', async () => {
+    state.baseUomBySku.clear()
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    await wrapper.find('[data-testid="open-material-issue"]').trigger('click')
+    const vm = wrapper.vm as unknown as {
+      issueForm: { materialId: string }
+      canSubmitIssue: boolean
+      submitIssue: () => Promise<void>
+    }
+    vm.issueForm.materialId = 'MAT-OIL'
+    await wrapper.vm.$nextTick()
+
+    expect(vm.canSubmitIssue).toBe(false)
+    expect(wrapper.find('[data-testid="issue-uom-blocked"]').text()).toContain(
+      '物料主档没有基本计量单位',
+    )
+    await vm.submitIssue()
+    expect(state.createMaterialIssueRequest).not.toHaveBeenCalled()
   })
 
   it('WMS 未回写出库单时明说「仓库尚未接单」，不用空白冒充已发料', () => {
