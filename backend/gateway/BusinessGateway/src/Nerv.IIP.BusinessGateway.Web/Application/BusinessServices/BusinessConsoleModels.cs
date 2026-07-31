@@ -3211,7 +3211,8 @@ public sealed record BusinessConsoleErpQuotationItem(
     string Status,
     decimal TotalAmount,
     IReadOnlyCollection<BusinessConsoleErpQuotationLineItem> Lines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? ConvertedSalesOrderNo);
 
 public sealed record BusinessConsoleErpQuotationLineItem(
     string LineNo,
@@ -3234,7 +3235,8 @@ public sealed record BusinessConsoleCreateErpSalesOrderRequest(
     string SiteCode,
     string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId);
+/// <summary>报价转订单响应：ReusedExistingOrder 为 true 表示报价已转出，本次幂等返回既有订单而未新建。</summary>
+public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId, string SalesOrderNo, bool ReusedExistingOrder);
 
 /// <summary>
 /// 信用冻结解冻请求。<c>StartedBy</c> 由 Gateway 从已认证 principal 注入，客户端不提供。

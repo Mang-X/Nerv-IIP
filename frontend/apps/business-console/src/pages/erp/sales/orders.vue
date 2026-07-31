@@ -211,13 +211,20 @@ async function submit() {
   showErrors.value = true
   if (!canSubmit.value) return
   try {
-    await orders.createSalesOrder({
+    const result = await orders.createSalesOrder({
       quotationNo: form.quotationNo.trim(),
       siteCode: form.siteCode.trim(),
       salesOrderNo: form.salesOrderNo.trim() || undefined,
     })
     open.value = false
-    notifySuccess('销售订单已创建')
+    // 已转出报价重复转订单：后端幂等返回既有订单号（不新建、不产生新需求），这里明确告知用户复用了哪张单。
+    if (result?.reusedExistingOrder) {
+      notifySuccess(`该报价已转出，已为你带回既有订单 ${result.salesOrderNo ?? ''}`.trim())
+    } else {
+      notifySuccess(
+        result?.salesOrderNo ? `销售订单 ${result.salesOrderNo} 已创建` : '销售订单已创建',
+      )
+    }
   } catch (error) {
     notifyOperationFailure(
       '创建销售订单失败',

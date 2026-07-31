@@ -62,10 +62,10 @@ export const APPROVAL_DECISION_LABELS: Readonly<Record<string, string>> = {
   abstain: '弃权',
   delegate: '转办',
   withdraw: '撤回',
-  // 后端 Approval 域实际下发的还有 return；前端快捷操作另有 resolve。
+  // 后端 Approval 域实际下发的还有 return（`ApprovalDecisions.Return`）。
+  // 曾登记过的 `resolve` 是前端自造值、后端从未支持（#1311 的 400 之一），已随快捷操作一并去掉。
   return: '退回',
   returned: '已退回',
-  resolve: '处理',
 }
 
 /**

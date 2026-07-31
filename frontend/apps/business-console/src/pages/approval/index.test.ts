@@ -9,6 +9,17 @@ const approvalState = vi.hoisted(() => ({
   createDelegation: vi.fn(async () => undefined),
   resolveTask: vi.fn(async () => undefined),
   revokeDelegation: vi.fn(async () => undefined),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
+
+// 反馈走真实 notify 分层透传，只把 toast 换成 spy：断言的是「用户最终看到的那句话」。
+vi.mock('@nerv-iip/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/ui')>()),
+  toast: {
+    error: (...args: unknown[]) => approvalState.toastError(...args),
+    success: (...args: unknown[]) => approvalState.toastSuccess(...args),
+  },
 }))
 
 vi.mock('@/composables/useBusinessApproval', () => ({
@@ -44,7 +55,7 @@ vi.mock('@/composables/useBusinessApproval', () => ({
       {
         decisionId: 'decision-1',
         chainId: 'chain-1',
-        decision: 'Approve',
+        decision: 'approve',
         actorRef: 'manager-a',
         documentType: '采购订单',
         documentId: 'PO-260701-001',
@@ -203,6 +214,8 @@ beforeEach(() => {
   approvalState.createDelegation.mockClear()
   approvalState.resolveTask.mockClear()
   approvalState.revokeDelegation.mockClear()
+  approvalState.toastError.mockReset()
+  approvalState.toastSuccess.mockReset()
 })
 
 describe('approval center page permissions and actions', () => {
@@ -222,10 +235,52 @@ describe('approval center page permissions and actions', () => {
     expect(approvalState.resolveTask).toHaveBeenCalledWith({
       chainId: 'chain-1',
       stepNo: 10,
-      decision: 'Approve',
+      decision: 'approve',
       comment: '',
     })
     expect(approvalState.revokeDelegation).toHaveBeenCalledWith('delegation-1')
+  })
+
+  // #1311：三个裁决动作发出去的必须是后端权威小写取值（approve/reject/return）。
+  // 曾经发的是 'Approve'/'Reject'/'Resolve'——大小写不匹配 + 'Resolve' 后端根本不支持，一切裁决必 400。
+  it.each([
+    ['驳回', 'reject'],
+    ['退回', 'return'],
+  ])('submits the lowercase contract value for %s', async (label, expected) => {
+    const wrapper = mountApproval(['business.approvals.read', 'business.approvals.manage'])
+    await flushPromises()
+
+    const trigger = wrapper.findAll('button').find((button) => button.text().includes(label))!
+    await trigger.trigger('click')
+    const decisionForm = wrapper
+      .findAll('form')
+      .find((form) => form.find('#approval-comment').exists())!
+    await decisionForm.trigger('submit')
+    await flushPromises()
+
+    expect(approvalState.resolveTask).toHaveBeenCalledWith({
+      chainId: 'chain-1',
+      stepNo: 10,
+      decision: expected,
+      comment: '',
+    })
+  })
+
+  it('surfaces the server rejection reason instead of the generic retry copy', async () => {
+    // 后端非法取值的 400 会给出中文领域消息（列出合法值），分层透传必须原样带到 toast 上。
+    approvalState.resolveTask.mockRejectedValueOnce({
+      message: '审批裁决取值非法，只能是 approve（同意）、reject（驳回）或 return（退回）。',
+    })
+    const wrapper = mountApproval(['business.approvals.read', 'business.approvals.manage'])
+    await flushPromises()
+
+    const approve = wrapper.findAll('button').find((button) => button.text().includes('通过'))!
+    await approve.trigger('click')
+    await flushPromises()
+
+    expect(approvalState.toastError).toHaveBeenCalledWith(
+      '审批处理失败：审批裁决取值非法，只能是 approve（同意）、reject（驳回）或 return（退回）。',
+    )
   })
 
   it('keeps records visible but hides task/delegation actions without manage permission', async () => {

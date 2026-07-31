@@ -27,6 +27,7 @@ import {
   recordBusinessConsoleErpPurchaseReceiptMutationOptions,
   releaseBusinessConsoleErpDeliveryOrderMutationOptions,
   releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions,
+  type BusinessConsoleCreateErpSalesOrderResponse,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
   type BusinessConsoleErpDeliveryOrderItem,
@@ -521,8 +522,13 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
     refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
-    createSalesOrder: (payload: { quotationNo: string; siteCode: string; salesOrderNo?: string }) =>
-      createMutation.mutateAsync({
+    // 返回转换结果：reusedExistingOrder 为 true 表示报价已转出，本次幂等带回既有订单号而未新建。
+    createSalesOrder: async (payload: {
+      quotationNo: string
+      siteCode: string
+      salesOrderNo?: string
+    }): Promise<BusinessConsoleCreateErpSalesOrderResponse | null> => {
+      const envelope = await createMutation.mutateAsync({
         body: {
           organizationId: businessContext.organizationId,
           environmentId: businessContext.environmentId,
@@ -531,7 +537,9 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
           salesOrderNo: payload.salesOrderNo || null,
           idempotencyKey: makeIdempotencyKey(),
         },
-      }),
+      })
+      return envelope?.data ?? null
+    },
     createSalesOrderPending: createMutation.isLoading,
     createSalesOrderError: createMutation.error,
     // salesOrderNo 走路由参数；请求体只带组织范围（StartedBy 由 Gateway 从 principal 注入）。

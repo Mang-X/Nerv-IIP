@@ -6461,6 +6461,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     totalAmount?: number;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem>;
     createdAtUtc?: string;
+    convertedSalesOrderNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem = {
@@ -6514,6 +6515,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpSalesOr
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpSalesOrderResponse = {
     salesOrderId?: string;
+    salesOrderNo?: string;
+    reusedExistingOrder?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpSalesOrderRequest = {

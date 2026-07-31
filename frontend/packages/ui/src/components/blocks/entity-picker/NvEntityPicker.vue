@@ -59,6 +59,21 @@ const props = withDefaults(
      * ——这样既能显示真正的人读编码，`value` 又仍然回传内部 id。
      */
     showCode?: boolean
+    /**
+     * 搜索词（`v-model:search`）。**只在 `serverSearch` 打开时才需要传**——
+     * 那时搜索词要拿去发请求，必须由调用方持有。
+     */
+    search?: string
+    /**
+     * 目录由服务端按搜索词过滤（`serverSearch`）。
+     *
+     * **目录条数超过一页时必须打开**：只拉前 N 条再本地过滤，等于「第 N+1 条起永远选不到」，
+     * 新建的条目会凭空消失。打开后本组件不再本地过滤，`options` 就是当前搜索结果；
+     * 调用方负责去抖并把搜索词发给服务端，并把匹配总数传进 `totalCount`。
+     */
+    serverSearch?: boolean
+    /** 服务端搜索时目录的匹配总数（用于「显示 N / 共 M 条」的如实提示）。 */
+    totalCount?: number
     id?: string
     ariaLabel?: string
     class?: HTMLAttributes['class']
@@ -72,10 +87,14 @@ const props = withDefaults(
     disabled: false,
     clearable: false,
     showCode: true,
+    serverSearch: false,
   },
 )
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string): void
+  (e: 'update:search', value: string): void
+}>()
 
 const open = ref(false)
 
@@ -201,8 +220,12 @@ function clear() {
           :loading="loading"
           :search-aria-label="searchAriaLabel"
           :show-code="showCode"
+          :search="search"
+          :server-search="serverSearch"
+          :total-count="totalCount"
           dense
           @pick="pick"
+          @update:search="emit('update:search', $event)"
         />
       </PopoverContent>
     </PopoverPortal>
@@ -224,8 +247,12 @@ function clear() {
         :loading="loading"
         :search-aria-label="searchAriaLabel"
         :show-code="showCode"
+        :search="search"
+        :server-search="serverSearch"
+        :total-count="totalCount"
         :dense="false"
         @pick="pick"
+        @update:search="emit('update:search', $event)"
       />
     </NvDialogContent>
   </component>

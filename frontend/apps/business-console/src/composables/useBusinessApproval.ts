@@ -24,6 +24,7 @@ import {
   type BusinessConsoleApprovalTemplateStepItem,
   type BusinessConsoleStartApprovalChainEnvelope,
 } from '@nerv-iip/api-client'
+import type { ApprovalDecisionValue } from '@/data/approvalReference'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
@@ -90,7 +91,11 @@ export interface ApprovalTemplatePayload {
 export interface ApprovalDecisionPayload {
   chainId: string
   stepNo: number
-  decision: string
+  /**
+   * 只接受权威小写取值：Gateway 契约把 `decision` 声明成自由 `string`，类型层不设防，
+   * 所以由这里的联合类型充当前端的「契约闸门」（#1311）。
+   */
+  decision: ApprovalDecisionValue
   comment?: string
 }
 
