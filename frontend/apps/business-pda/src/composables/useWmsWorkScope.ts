@@ -5,6 +5,7 @@ import {
   type BusinessConsoleWmsWorkScopeCatalogEnvelope,
   type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
+import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, shallowRef, watch } from 'vue'
 
@@ -17,17 +18,6 @@ export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
 export interface WmsWorkScopeOption {
   label: string
   value: string
-}
-
-function scopeValue(kind: string, id: string) {
-  return `${kind}:${id}`
-}
-
-function parseScope(value: string | undefined) {
-  if (!value) return undefined
-  const separator = value.indexOf(':')
-  if (separator <= 0 || separator === value.length - 1) return undefined
-  return { kind: value.slice(0, separator), id: value.slice(separator + 1) }
 }
 
 function normalizeScope(
@@ -90,7 +80,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
   const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
     authorizedScopes.value.map((scope) => ({
       label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
-      value: scopeValue(scope.scopeKind, scope.scopeId),
+      value: formatWorkScopeKey(scope.scopeKind, scope.scopeId),
     })),
   )
 
@@ -99,13 +89,13 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
     (options) => {
       if (options.some((option) => option.value === selectedScopeKey.value)) return
       selectedScopeKey.value =
-        options.find((option) => parseScope(option.value)?.kind === 'self')?.value ??
+        options.find((option) => parseWorkScopeKey(option.value)?.kind === 'self')?.value ??
         options[0]?.value
     },
     { immediate: true, flush: 'sync' },
   )
 
-  const parsedSelection = computed(() => parseScope(selectedScopeKey.value))
+  const parsedSelection = computed(() => parseWorkScopeKey(selectedScopeKey.value))
   const hasSelection = computed(
     () =>
       hasTenant.value &&
