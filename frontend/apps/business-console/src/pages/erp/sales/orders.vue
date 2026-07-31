@@ -46,6 +46,7 @@ import {
   erpReadState,
   firstQueryParam,
   formatAmount,
+  formatDate,
   pickerInvalidClass,
   readCount,
 } from '../shared'
@@ -87,6 +88,21 @@ watch(
   { immediate: true },
 )
 
+/** 这张订单的承诺交期，取自紧急度读面（同一批已取回的数据），没有就是没有，不编。 */
+function dueUtcOf(row: BusinessConsoleErpSalesOrderItem) {
+  if (!row.salesOrderNo) return undefined
+  return (
+    orderUrgencies.byReference.value.get(row.salesOrderNo)?.timeCriticality?.dueUtc ?? undefined
+  )
+}
+/** 已逾期的交期标红：销售看这一列就是为了先发现哪张要爆。 */
+function isOverdue(row: BusinessConsoleErpSalesOrderItem) {
+  const due = dueUtcOf(row)
+  if (!due) return false
+  const parsed = Date.parse(due)
+  return Number.isFinite(parsed) && parsed < Date.now()
+}
+
 const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
     key: 'salesOrderNo',
@@ -100,6 +116,15 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
     accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
   },
   { key: 'status', header: '状态', width: 'w-28' },
+  // 交期是销售员看订单的第一眼信息，此前整列缺失（GH#1292 第 1 项）。
+  // 销售订单读面本身不带交期，但紧急度读面（本页已在取）带 timeCriticality.dueUtc，
+  // 正是这张订单的承诺交期——直接用它，不新增契约。
+  {
+    key: 'dueUtc',
+    header: '交期',
+    width: 'w-32',
+    accessor: (r) => dueUtcOf(r),
+  },
   { key: 'urgency', header: '紧急度', width: 'w-28' },
   {
     key: 'totalAmount',
@@ -118,7 +143,11 @@ const releasedCount = computed(
 const amount = computed(() =>
   orders.salesOrders.value.reduce((sum, order) => sum + (order.totalAmount ?? 0), 0),
 )
-// 金额只能按已取回的这一页加总，所以把口径写进副行而不是冒充全量。
+/**
+ * 数字口径（GH#1292 第 2 项）：按状态分档与金额合计**只有当前页能算**，一律带「本页」前缀，
+ * 副行再写清是哪一页的多少张，绝不和页头的服务端总数混成同一口径被读成全局 KPI。
+ * 全量口径只有一处：页头 `count`（服务端总数）。
+ */
 const readState = computed(() =>
   erpReadState({
     noun: '销售订单',
@@ -132,22 +161,28 @@ const readState = computed(() =>
   }),
 )
 
+/** 「本页第 N 页 · 共 M 张」——所有分页口径指标共用的同一句副行，读者一眼知道这数字管多大范围。 */
+const pageScopeMeta = computed(
+  () =>
+    `第 ${page.value} 页 ${orders.salesOrders.value.length} 张 · 全部 ${orders.salesOrdersTotal.value} 张`,
+)
+
 const orderCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'released',
-    label: '已释放订单',
+    label: '本页已释放订单',
     value: readCount(readState.value, releasedCount.value),
     unit: readState.value.trustworthy ? '张' : '',
-    meta: readState.value.trustworthy ? '已下达到履约环节' : readState.value.emptyMessage,
+    meta: readState.value.trustworthy
+      ? `已下达到履约环节 · ${pageScopeMeta.value}`
+      : readState.value.emptyMessage,
   },
   {
     key: 'amount',
-    label: '订单金额',
+    label: '本页订单金额',
     // 取不到订单时显 `—`：¥0.00 会被读成"这一批确实没金额"。
     value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
-    meta: readState.value.trustworthy
-      ? `当前列表 ${orders.salesOrders.value.length} 张订单合计`
-      : readState.value.emptyMessage,
+    meta: readState.value.trustworthy ? pageScopeMeta.value : readState.value.emptyMessage,
   },
 ])
 
@@ -300,6 +335,11 @@ async function submit() {
         <PartnerNameCell :code="row.customerCode" />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-dueUtc="{ row }">
+        <span class="tabular-nums" :class="isOverdue(row) ? 'text-destructive' : undefined">{{
+          formatDate(dueUtcOf(row))
+        }}</span>
+      </template>
       <template #cell-urgency="{ row }">
         <OrderUrgencyBadge
           :order-reference="row.salesOrderNo ?? ''"

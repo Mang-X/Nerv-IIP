@@ -8,7 +8,7 @@ import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@lucide/vue'
 import { computed, reactive } from 'vue'
 import { BLOCK_LABELS, BLOCK_TOKENS } from '../../model/blocks'
 import { deriveLegendSemantics, FULL_LEGEND_SEMANTICS } from '../../model/legend'
-import type { ScheduleModel } from '../../model/types'
+import type { ScheduleModel, TimeScale } from '../../model/types'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +16,11 @@ const props = withDefaults(
     view?: 'order' | 'resource'
     /** 当前图上的模型。给出时图例只列模型里真实存在的语义;不给时按"全部可能"展示(文档/演示)。 */
     model?: ScheduleModel
+    /**
+     * 当前时间刻度。班次边界这类**随刻度出现/消失**的语义要靠它才推得准:
+     * 日级视图下班次竖线一条都画不出来,图例就不该列(走查台账 #41)。
+     */
+    scale?: TimeScale
   }>(),
   { view: 'order' },
 )
@@ -57,7 +62,7 @@ interface LegendItem {
 // 有模型就照模型说话;没有模型(组件库文档 / 演示挂载)才用包内的「全部可能」常量,
 // 组件自己不再手写一份语义形状。
 const semantics = computed(() =>
-  props.model ? deriveLegendSemantics(props.model) : FULL_LEGEND_SEMANTICS,
+  props.model ? deriveLegendSemantics(props.model, Date.now(), props.scale) : FULL_LEGEND_SEMANTICS,
 )
 
 const groups = computed<{ key: GroupKey; label: string; items: LegendItem[] }[]>(() => {

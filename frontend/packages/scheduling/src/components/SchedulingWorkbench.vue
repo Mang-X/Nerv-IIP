@@ -279,6 +279,7 @@ async function onRelease() {
       :categories="legendCategories"
       :view="view"
       :model="workingModel"
+      :scale="scale"
     />
   </div>
 </template>

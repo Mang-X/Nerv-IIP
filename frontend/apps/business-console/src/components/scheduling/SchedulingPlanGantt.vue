@@ -521,7 +521,13 @@ function formatDateTime(value: string) {
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-card">
-        <SchedulingLegend :categories="legendCategories" view="resource" :model="model" />
+        <!-- 图例要知道当前刻度:班次边界在日级视图下一条都画不出来,不能照列(台账 #41)。 -->
+        <SchedulingLegend
+          :categories="legendCategories"
+          view="resource"
+          :model="model"
+          :scale="scale"
+        />
         <p class="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
           点击工序块在右侧查看该工序详情；整方案信息走「方案明细」。只读视图不支持拖拽或改派，编辑请回「排程总览」草案工作区。
         </p>

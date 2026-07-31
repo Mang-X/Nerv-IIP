@@ -405,7 +405,9 @@ function formatError(error: unknown) {
               发布新版本
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-3xl">
+          <!-- 工序行数不定，弹框高度会超出视口（实测 970.75px > 950px）：内部滚动，
+               别让「发布」按钮被挤到屏幕外够不着（GH#1292 第 7 项）。 -->
+          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工艺路线新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
