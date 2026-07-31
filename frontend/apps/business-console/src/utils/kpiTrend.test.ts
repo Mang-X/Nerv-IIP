@@ -203,10 +203,36 @@ describe('buildKpiTrend', () => {
     expect(trend!.delta).toEqual(deltaFrom(series, { kind: 'count', polarity: undefined }))
   })
 
-  it('标签与数据点等长', () => {
-    const trend = buildKpiTrend('erp.payable', 900, { points: 21 })
-    expect(trend!.seriesLabels).toHaveLength(trend!.series.length)
-    expect(trend!.series).toHaveLength(21)
+  it('真实走势才给日期标签，合成形状不给', () => {
+    // 合成：形状是示意，不该挂确切日期——挂了就成了「07-19 余额 125 万」这种
+    // 可被同产品另一页证伪的断言
+    const synthetic = buildKpiTrend('erp.payable', 900, { points: 21 })
+    expect(synthetic!.series).toHaveLength(21)
+    expect(synthetic!.seriesLabels).toBeUndefined()
+    expect(synthetic!.synthetic).toBe(true)
+
+    // 真实：标签与数据点等长
+    const real = buildKpiTrend('erp.real-labeled', 60, {
+      realSeries: [10, 20, 35, 60],
+      kind: 'count',
+    })
+    expect(real!.seriesLabels).toHaveLength(real!.series.length)
+    expect(real!.synthetic).toBe(false)
+  })
+
+  it('负值不生成「前 13 天恒为 0 + 末点悬崖」的退化线', () => {
+    for (const [key, current] of [
+      ['inv.available.neg', -5000],
+      ['erp.amount.neg', -7],
+    ] as const) {
+      const trend = buildKpiTrend(key, current, { kind: 'amount' })
+      const series = trend!.series
+      expect(series[series.length - 1]).toBe(current)
+      // 主干不许被夹到 0：负值场景下除末点外至少有一个非零点
+      expect(series.slice(0, -1).some((point) => point !== 0)).toBe(true)
+      // 全程同号，不该跨零
+      expect(series.every((point) => point <= 0)).toBe(true)
+    }
   })
 
   it('可用的真实走势优先于补形状', () => {

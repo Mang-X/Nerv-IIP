@@ -28,8 +28,17 @@ export type KpiTrendKind = 'count' | 'amount' | 'rate'
 export interface KpiTrend {
   /** 迷你图数据点，末点 === 卡片当前值。 */
   series: number[]
-  /** 逐点日期标签「MM-DD」，与 series 等长。 */
-  seriesLabels: string[]
+  /**
+   * 逐点日期标签「MM-DD」，与 series 等长。
+   *
+   * **只有真实走势才有**。合成形状不给标签——形状是示意，日期是断言：
+   * 一旦把编出来的点挂上「07-19」这种确切日期并允许悬停查询，它就从
+   * 「最近在涨」变成了「07-19 的余额是 125 万」，而同一指标在明细页
+   * 走真实数据，两页对同一天会给出矛盾数字，产品内部即可证伪。
+   */
+  seriesLabels?: string[]
+  /** 该走势是否为合成形状（非真实明细算出）。调用方据此决定是否给查询入口。 */
+  synthetic: boolean
   /** 变化幅度，由 series 首尾算出；点数不足或无法计算时为 undefined。 */
   delta?: NvMetricDelta
   /** 迷你图左下角：观察窗口，如「近 14 日」。 */
@@ -191,6 +200,14 @@ export function shapeSeries(
   // 当前值为 0 时任何"走势"都是编的：给一条平线，delta 会自然退化成持平。
   if (current === 0) return Array.from({ length: points }, () => 0)
 
+  // 负值（可用量超发、金额红冲）：quantize 对 count/amount 一律 Math.max(0, …)，
+  // 直接生成会把主干全夹到 0、末点再覆盖回负值，画出「前 13 天恒为 0，今天掉到 -5000」
+  // 这种悬崖线——既难看，又凭空断言了「前 13 天都是 0」这个业务事实。
+  // 按绝对值生成形状再整体取负，保住走势形态。
+  if (current < 0) {
+    return shapeSeries(key, -current, options).map((point) => -point)
+  }
+
   const kind = options.kind ?? 'count'
   const swing = options.swing ?? 0.18
   const wobble = options.wobble ?? 0.035
@@ -334,15 +351,20 @@ export function buildKpiTrend(
   if (value === undefined) return undefined
 
   const points = Math.max(2, options.points ?? DEFAULT_POINTS)
-  const series = isUsableSeries(options.realSeries)
-    ? alignSeriesTo(options.realSeries, value)
+  // 局部变量而非 options.realSeries：类型守卫的窄化只对被判定的那个绑定生效
+  const real = options.realSeries
+  const usable = isUsableSeries(real)
+  const series = usable
+    ? alignSeriesTo(real, value)
     : shapeSeries(key, value, { ...options, points })
   if (series.length < 2) return undefined
 
   const delta = deltaFrom(series, { kind: options.kind, polarity: options.polarity })
   return {
     series,
-    seriesLabels: dailyLabels(series.length, options.endDate),
+    // 合成形状不给日期标签，调用方据此关掉悬停查询（见 KpiTrend.seriesLabels 注释）
+    seriesLabels: usable ? dailyLabels(series.length, options.endDate) : undefined,
+    synthetic: !usable,
     delta,
     footStart: `近 ${points} 日`,
     footEnd: delta ? `较 ${points} 日前 ${delta.value}` : '',

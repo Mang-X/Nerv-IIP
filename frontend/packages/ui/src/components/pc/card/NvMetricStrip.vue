@@ -65,11 +65,27 @@ function chartData(cell: NvMetricStripCell) {
  * screen-reader users would get a decorative blank. Mirror the points as text
  * the way NvMetricCard's sparkline zone does.
  */
+/**
+ * A series is only a *record* when the caller supplied real dates for it.
+ * Without labels the line is an indicative shape, so we must not expose a
+ * per-point lookup — neither by crosshair nor by reading the values aloud.
+ */
+function hasDatedSeries(cell: NvMetricStripCell) {
+  return (cell.seriesLabels?.length ?? 0) === (cell.series?.length ?? 0)
+    && (cell.series?.length ?? 0) > 1
+}
+
 function chartAriaLabel(cell: NvMetricStripCell) {
   const unit = cell.seriesUnit ?? ''
-  const points = (cell.series ?? []).map(
-    (v, i) => `${cell.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
-  )
+  const series = cell.series ?? []
+  if (!hasDatedSeries(cell)) {
+    // Shape-only: state the direction, never a dated value.
+    const first = series[0]
+    const last = series[series.length - 1]
+    const direction = last > first ? '上升' : last < first ? '下降' : '持平'
+    return `${cell.label} 走势示意，${series.length} 期，整体${direction}`
+  }
+  const points = series.map((v, i) => `${cell.seriesLabels?.[i]}: ${v}${unit}`)
   return `${cell.label} 趋势，${points.length} 期：${points.join('；')}`
 }
 </script>
@@ -136,7 +152,7 @@ function chartAriaLabel(cell: NvMetricStripCell) {
       >
         <NvAreaChart
           minimal
-          crosshair
+          :crosshair="hasDatedSeries(cell)"
           :data="chartData(cell)"
           :height="34"
           :value-suffix="cell.seriesUnit ?? ''"

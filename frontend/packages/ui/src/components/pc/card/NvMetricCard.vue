@@ -128,12 +128,25 @@ const defaultChartData = computed(() =>
 )
 /** `icon` cards plot the same series inline (no crosshair — the strip is 64px wide). */
 const iconChartData = computed(() => (props.variant === 'icon' ? defaultChartData.value : []))
-/** Text equivalent of the inline sparkline — it has no crosshair to reveal the points. */
+/**
+ * Text equivalent of the inline sparkline — it has no crosshair to reveal the points.
+ *
+ * A series is only a *record* when the caller supplied real dates. Without
+ * labels the line is an indicative shape, so the text equivalent states the
+ * direction rather than reading dated values aloud — otherwise screen-reader
+ * users get precise "facts" that sighted users cannot even see.
+ */
 const seriesAriaLabel = computed(() => {
   const unit = props.seriesUnit ?? ''
-  const points = (props.series ?? []).map(
-    (v, i) => `${props.seriesLabels?.[i] ?? i + 1}: ${v}${unit}`,
-  )
+  const series = props.series ?? []
+  const dated = (props.seriesLabels?.length ?? 0) === series.length && series.length > 1
+  if (!dated) {
+    const first = series[0]
+    const last = series[series.length - 1]
+    const direction = last > first ? '上升' : last < first ? '下降' : '持平'
+    return `${props.label} 走势示意，${series.length} 期，整体${direction}`
+  }
+  const points = series.map((v, i) => `${props.seriesLabels?.[i]}: ${v}${unit}`)
   return `${props.label} 趋势，${points.length} 期：${points.join('；')}`
 })
 </script>
