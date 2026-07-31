@@ -90,7 +90,7 @@ public sealed class MaintenanceEndpointContractTests
                 "fixed",
                 "equipment-failure",
                 10,
-                [new MaintenanceSparePartInput("SKU-BEARING", tooLargeForNumeric18Scale6, "EA")],
+                [new MaintenanceSparePartInput("SKU-BEARING", tooLargeForNumeric18Scale6, "pcs")],
                 SparePartCostAmount: tooLargeForNumeric18Scale6,
                 ExternalServiceCostAmount: tooLargeForNumeric18Scale6,
                 CostCurrencyCode: "CNY"));
@@ -622,7 +622,7 @@ public sealed class MaintenanceEndpointContractTests
         await dbContext.SaveChangesAsync();
 
         var sparePartId = await new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
-            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -636,7 +636,7 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(workOrder.Id, item.WorkOrderId);
         Assert.Equal("SPARE-001", item.SkuCode);
         Assert.Equal(2m, item.Quantity);
-        Assert.Equal("EA", item.UomCode);
+        Assert.Equal("pcs", item.UomCode);
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
     }
 
@@ -651,7 +651,7 @@ public sealed class MaintenanceEndpointContractTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
-                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs"),
                 CancellationToken.None));
 
         Assert.Equal("Completed maintenance work orders are immutable.", exception.Message);

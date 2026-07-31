@@ -36,7 +36,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
@@ -54,7 +54,7 @@ definePage({
 const quotations = useErpQuotations()
 // 客户与物料从主数据目录里选，报价一开出就挂在真实客户与真实物料上。
 const { customerOptions, partnersPending } = useErpPartnerCatalog()
-const { skuOptions, skusPending } = useErpItemCatalog()
+const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
 // 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
 const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(quotations.filters, {
@@ -135,16 +135,27 @@ const form = reactive({
   customerCode: '',
   expiresOn: '',
   skuCode: '',
+  uomCode: '',
   quantity: '1',
   unitPrice: '0',
   requiredDate: '',
 })
+// 报价单位默认跟随物料的基本单位；用户仍可改成销售包装单位。
+// 曾踩坑：这里写死一个通用单位，遇到按 kg / l 计量的物料，后端单位换算找不到换算关系直接 500。
+watch(
+  () => form.skuCode,
+  (skuCode) => {
+    const baseUom = baseUomBySku.value.get(skuCode.trim())
+    if (baseUom) form.uomCode = baseUom
+  },
+)
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
   customerCode: !form.customerCode.trim(),
   expiresOn: !form.expiresOn,
   skuCode: !form.skuCode.trim(),
+  uomCode: !form.uomCode.trim(),
   requiredDate: !form.requiredDate,
   quantity: !(Number(form.quantity) > 0),
   unitPrice: !(Number(form.unitPrice) >= 0),
@@ -155,6 +166,7 @@ function openDialog() {
   form.customerCode = ''
   form.expiresOn = ''
   form.skuCode = ''
+  form.uomCode = ''
   form.quantity = '1'
   form.unitPrice = '0'
   form.requiredDate = ''
@@ -175,7 +187,7 @@ async function submit() {
         {
           lineNo: '10',
           skuCode: form.skuCode.trim(),
-          uomCode: 'EA',
+          uomCode: form.uomCode.trim(),
           quantity,
           unitPrice,
           requiredDate: form.requiredDate,
@@ -357,6 +369,23 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               />
             </NvField>
             <NvField>
+              <NvFieldLabel for="erp-quo-uom">
+                单位 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvEntityPicker
+                id="erp-quo-uom"
+                v-model="form.uomCode"
+                :options="uomOptions"
+                title="选择单位"
+                placeholder="选择报价单位"
+                source-text="数据来自基础数据计量单位；选定物料后默认带出基本单位"
+                empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
+                :loading="uomsPending"
+                aria-label="单位"
+                :class="pickerInvalidClass(showErrors && invalid.uomCode)"
+              />
+            </NvField>
+            <NvField>
               <NvFieldLabel for="erp-quo-required">
                 需求日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
@@ -395,7 +424,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择客户与物料，填写有效期与需求日期，并给出正数数量与非负单价。
+            请选择客户、物料与单位，填写有效期与需求日期，并给出正数数量与非负单价。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

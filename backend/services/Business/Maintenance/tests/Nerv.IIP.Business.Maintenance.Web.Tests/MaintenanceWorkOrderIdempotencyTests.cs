@@ -298,7 +298,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
                 "equipment-failure",
                 10,
                 [
-                    new MaintenanceSparePartInput("sku|二", 1.25m, "ea"),
+                    new MaintenanceSparePartInput("sku|二", 1.25m, "kg"),
                     new MaintenanceSparePartInput("sku|一", 2.5m, "pcs"),
                 ],
                 IdempotencyKey: "maintenance-canonical-001");
@@ -314,7 +314,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
                     SpareParts =
                     [
                         new MaintenanceSparePartInput(" SKU|一 ", 2.50m, " PCS "),
-                        new MaintenanceSparePartInput(" SKU|二 ", 1.250m, " EA "),
+                        new MaintenanceSparePartInput(" SKU|二 ", 1.250m, " KG "),
                     ],
                 },
                 CancellationToken.None);

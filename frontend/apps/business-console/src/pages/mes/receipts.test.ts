@@ -12,6 +12,16 @@ vi.mock('@/composables/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
+      // 登记单位来自成品物料主档的基本单位；这里给两个不同单位的成品做稳定桩。
+      baseUomBySku: computed(
+        () =>
+          new Map([
+            ['FG-1', 'pcs'],
+            ['FG-2', 'kg'],
+          ]),
+      ),
+      resolveBaseUom: (code?: string | null) =>
+        code ? { 'FG-1': 'pcs', 'FG-2': 'kg' }[code.trim()] : undefined,
       resolveSkuName: () => undefined,
       resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
       skuByCode: computed(() => new Map<string, string>()),
