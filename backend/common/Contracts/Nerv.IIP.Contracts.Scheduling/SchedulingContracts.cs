@@ -144,6 +144,19 @@ public enum SchedulingMaterialConstraintModeContract
     Hard = 1
 }
 
+/// <summary>
+/// 工艺路线上「该工序需要质检」这一标记的排产口径:软约束(默认)= 照排 + 预警级冲突,
+/// 质量放行由 MES/质量侧在开工与流转时把关;硬约束 = 沿用旧行为,带质检标记的工序直接不可排。
+/// 产品裁决与物料(#1318)、设备状态未知(#1325)同源:质检要求是开工/放行门槛,不是排产门槛。
+/// 注意:真实下达的质量封锁(<see cref="SchedulingQualityBlockContract"/>,针对具体工序或资源)
+/// 在两种口径下都是硬阻,不受此开关影响——那是已经发生的封锁,不是路线上的常规检验要求。
+/// </summary>
+public enum SchedulingQualityConstraintModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
+
 public sealed record SchedulingQualityBlockContract(
     string ScopeType,
     string ScopeId,
