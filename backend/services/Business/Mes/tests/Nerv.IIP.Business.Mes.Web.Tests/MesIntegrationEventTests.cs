@@ -8,11 +8,20 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIntegrationEventTests
 {
+    /// <summary>对齐库存世界观种子的成品仓事实（SITE-001 / WH-WB-FG-01，#1331）。</summary>
+    private static readonly IMesFinishedGoodsReceiptLocationResolver FinishedGoodsLocationResolver =
+        new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions
+        {
+            SiteCode = "SITE-001",
+            LocationCode = "WH-WB-FG-01",
+        });
+
     [Fact]
     public void Manual_dispatch_clear_reason_converter_maps_every_domain_reason_to_wire_contract()
     {
@@ -132,17 +141,43 @@ public sealed class MesIntegrationEventTests
             12.34m);
 
         var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
-        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);
         Assert.Equal("FGR-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("SKU-FG", integrationEvent.Payload.SkuCode);
+        Assert.Equal("SITE-001", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WH-WB-FG-01", integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
         Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_converter_fails_explicitly_when_location_unconfigured()
+    {
+        var request = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-002",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null,
+            12.34m);
+        var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
+        var converter = new FinishedGoodsReceiptRequestedIntegrationEventConverter(
+            new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions()));
+
+        var exception = Assert.Throws<KnownException>(() => converter.Convert(domainEvent));
+
+        Assert.Contains("FINISHED_GOODS_LOCATION_UNCONFIGURED", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -164,7 +199,7 @@ public sealed class MesIntegrationEventTests
         request.ApplyCapitalizedUnitCost(12.34m);
 
         var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
-        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);

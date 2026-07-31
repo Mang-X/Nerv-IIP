@@ -25,6 +25,14 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class MesInventoryLineSideTransferAcceptanceTests
 {
+    /// <summary>完工入库目标位置：对齐库存世界观种子的成品仓事实（SITE-001 / WH-WB-FG-01，#1331）。</summary>
+    private static readonly IMesFinishedGoodsReceiptLocationResolver FinishedGoodsLocationResolver =
+        new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions
+        {
+            SiteCode = "SITE-001",
+            LocationCode = "WH-WB-FG-01",
+        });
+
     [Fact]
     public async Task Mes_work_order_cancel_releases_inventory_reservation_and_returns_received_line_side_material_idempotently()
     {
@@ -272,7 +280,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 ProducedLotNo: "LOT-FG-483"),
             CancellationToken.None);
         var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
-        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
 
         await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
@@ -283,6 +291,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var ledger = Assert.Single(inventoryDb.StockLedgers);
         Assert.Equal("FGR", receiptRequest.RequestNo[..3]);
         Assert.Equal("SKU-FG-483", movement.SkuCode);
+        // 完工入库落到种子成品仓命名空间（#1331），不再是臆造的 finished-goods/receiving。
+        Assert.Equal("SITE-001", ledger.SiteCode);
+        Assert.Equal("WH-WB-FG-01", ledger.LocationCode);
+        // 幂等键遵稳定键约定：来自聚合的 mes:finished-goods-receipt:{org}:{env}:{requestNo}。
+        Assert.Equal(
+            $"mes:finished-goods-receipt:org-001:env-dev:{receiptRequest.RequestNo}",
+            receiptEvent.Payload.IdempotencyKey);
         Assert.Equal(8m, movement.Quantity);
         Assert.Equal(12.34m, movement.UnitCost);
         Assert.Equal(98.72m, movement.MovementAmount);
@@ -798,7 +813,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 ProducedLotNo: "LOT-FG-541"),
             CancellationToken.None);
         var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
-        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
         await mesDb.SaveChangesAsync();
 
