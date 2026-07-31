@@ -1953,6 +1953,45 @@
     },
     {
       "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}",
+      "operationId": "getMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/actions",
+      "operationId": "transitionMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "transitionBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment",
+      "operationId": "assignMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
       "method": "POST",
       "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/complete",
       "operationId": "completeMaintenanceWorkOrder",

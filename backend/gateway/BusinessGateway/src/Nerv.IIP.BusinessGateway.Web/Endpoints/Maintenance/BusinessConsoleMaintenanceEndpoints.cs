@@ -5,6 +5,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
+using System.Net;
 using System.Text.Json;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Maintenance;
@@ -85,11 +86,17 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessMaintenanceClient maintenance,
     IBusinessMasterDataClient masterData,
     BusinessGatewayDataScopeFilter dataScopeFilter,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceWorkOrderListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
         auth,
         BusinessGatewayPermissions.MaintenanceWorkOrdersRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.EnvironmentId;
@@ -99,10 +106,17 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scopedRequest = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
-            request,
-            AuthorizationResult?.DataScope,
-            cancellationToken);
+        var scopedRequest = string.IsNullOrWhiteSpace(request.ScopeKind) && string.IsNullOrWhiteSpace(request.ScopeId)
+            ? await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
+                request,
+                AuthorizationResult?.DataScope,
+                cancellationToken)
+            : await MaintenanceWorkScopeAccess.ScopeRequestAsync(
+                workScopeResolver,
+                AuthorizationResult,
+                request,
+                BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
+                cancellationToken);
         var response = await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
         var items = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
             response.Items,
@@ -122,11 +136,17 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
     IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceContextRequest, BusinessConsoleMaintenanceWorkOrderItem>(
         auth,
         BusinessGatewayPermissions.MaintenanceWorkOrdersRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMaintenanceContextRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMaintenanceContextRequest request) => request.EnvironmentId;
@@ -140,6 +160,21 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(request.ScopeKind) || !string.IsNullOrWhiteSpace(request.ScopeId))
+        {
+            await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+                workScopeResolver,
+                maintenance,
+                tokenProvider.BearerToken,
+                AuthorizationResult,
+                request.OrganizationId,
+                request.EnvironmentId,
+                BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
+                request.ScopeKind,
+                request.ScopeId,
+                Route<string>("workOrderId")!,
+                cancellationToken);
+        }
         var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, Route<string>("workOrderId")!, request, cancellationToken);
         var enriched = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
             [workOrder],
@@ -150,6 +185,224 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
             cancellationToken);
         return enriched.Single();
     }
+}
+
+[Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment")]
+[BusinessGatewayOperationId("assignBusinessConsoleMaintenanceWorkOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class AssignBusinessConsoleMaintenanceWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleAssignMaintenanceWorkOrderRequest, BusinessConsoleMaintenanceWorkOrderActionResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode => BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+    protected override string OrganizationId(BusinessConsoleAssignMaintenanceWorkOrderRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleAssignMaintenanceWorkOrderRequest request) => request.EnvironmentId;
+    protected override string? ResourceType(BusinessConsoleAssignMaintenanceWorkOrderRequest request) => "maintenance-work-order";
+    protected override string? ResourceId(BusinessConsoleAssignMaintenanceWorkOrderRequest request) => Route<string>("workOrderId");
+
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderActionResponse> ForwardAsync(
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MaintenanceWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            scope,
+            Route<string>("workOrderId")!,
+            cancellationToken);
+        await MaintenanceWorkScopeAccess.EnsureAssignmentTargetsAsync(
+            masterData,
+            tokenProvider.BearerToken,
+            request,
+            scope,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+        return await maintenance.AssignWorkOrderAsync(
+            tokenProvider.BearerToken,
+            Route<string>("workOrderId")!,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v1/maintenance/work-orders/{workOrderId}/actions")]
+[BusinessGatewayOperationId("transitionBusinessConsoleMaintenanceWorkOrder")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status403Forbidden)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class TransitionBusinessConsoleMaintenanceWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTransitionMaintenanceWorkOrderRequest, BusinessConsoleMaintenanceWorkOrderActionResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode => BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+    protected override string OrganizationId(BusinessConsoleTransitionMaintenanceWorkOrderRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleTransitionMaintenanceWorkOrderRequest request) => request.EnvironmentId;
+    protected override string? ResourceType(BusinessConsoleTransitionMaintenanceWorkOrderRequest request) => "maintenance-work-order";
+    protected override string? ResourceId(BusinessConsoleTransitionMaintenanceWorkOrderRequest request) => Route<string>("workOrderId");
+
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderActionResponse> ForwardAsync(
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MaintenanceWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            scope,
+            Route<string>("workOrderId")!,
+            cancellationToken);
+        return await maintenance.TransitionWorkOrderAsync(
+            tokenProvider.BearerToken,
+            Route<string>("workOrderId")!,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+    }
+}
+
+internal static class MaintenanceWorkScopeAccess
+{
+    public static async Task<BusinessConsoleMaintenanceWorkOrderListRequest> ScopeRequestAsync(
+        PrincipalWorkScopeResolver resolver,
+        BusinessGatewayAuthorizationResult? authorization,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        var scope = await resolver.ResolveAsync(
+            authorization, request.OrganizationId, request.EnvironmentId, permissionCode,
+            request.ScopeKind, request.ScopeId, cancellationToken);
+        return Apply(request, scope);
+    }
+
+    public static async Task EnsureWorkOrderAccessAsync(
+        PrincipalWorkScopeResolver resolver,
+        IBusinessMaintenanceClient maintenance,
+        string internalToken,
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? scopeKind,
+        string? scopeId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await resolver.ResolveAsync(
+            authorization, organizationId, environmentId, permissionCode, scopeKind, scopeId, cancellationToken);
+        await EnsureWorkOrderAccessAsync(maintenance, internalToken, organizationId, environmentId, scope, workOrderId, cancellationToken);
+    }
+
+    public static async Task EnsureWorkOrderAccessAsync(
+        IBusinessMaintenanceClient maintenance,
+        string internalToken,
+        string organizationId,
+        string environmentId,
+        PrincipalWorkScopeSelection scope,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var response = await maintenance.ListWorkOrdersAsync(
+            internalToken,
+            Apply(new BusinessConsoleMaintenanceWorkOrderListRequest(
+                organizationId, environmentId, Take: 1, WorkOrderId: workOrderId), scope),
+            cancellationToken);
+        if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
+    public static async Task EnsureAssignmentTargetsAsync(
+        IBusinessMasterDataClient masterData,
+        string internalToken,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        PrincipalWorkScopeSelection scope,
+        string principalId,
+        CancellationToken cancellationToken)
+    {
+        if (scope.Kind == "self")
+        {
+            if (!string.Equals(request.TechnicianUserId, principalId, StringComparison.Ordinal)
+                || !string.IsNullOrWhiteSpace(request.TeamId))
+            {
+                throw Forbidden();
+            }
+            return;
+        }
+        if (scope.Kind == "team")
+        {
+            if (!string.Equals(request.TeamId, scope.Id, StringComparison.Ordinal))
+            {
+                throw Forbidden();
+            }
+            if (!string.IsNullOrWhiteSpace(request.TechnicianUserId))
+            {
+                var members = await masterData.ListTeamMembersAsync(
+                    internalToken,
+                    new BusinessConsoleListTeamMembersRequest(request.OrganizationId, request.EnvironmentId, scope.Id),
+                    cancellationToken);
+                if (!members.Members.Any(x => x.Active && string.Equals(x.UserId, request.TechnicianUserId, StringComparison.Ordinal)))
+                {
+                    throw Forbidden();
+                }
+            }
+            return;
+        }
+        if (scope.Kind != "organization")
+        {
+            throw Forbidden();
+        }
+    }
+
+    private static BusinessConsoleMaintenanceWorkOrderListRequest Apply(
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
+        PrincipalWorkScopeSelection scope) => scope.Kind switch
+    {
+        "self" => request with { AssignedTechnicianUserIds = string.Join(',', scope.AssignedUserIds), AssignedTeamIds = null },
+        "team" => request with { AssignedTechnicianUserIds = null, AssignedTeamIds = string.Join(',', scope.TeamIds) },
+        "organization" => request with { AssignedTechnicianUserIds = null, AssignedTeamIds = null },
+        _ => throw Forbidden(),
+    };
+
+    private static BusinessServiceProxyException Forbidden() => new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
 }
 
 internal static class MaintenanceDeviceAssetWarrantyEnricher
@@ -560,6 +813,10 @@ public sealed class BusinessConsoleMaintenanceContextRequestValidator : Validato
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).MaximumLength(40);
+        RuleFor(x => x.ScopeId).MaximumLength(150);
+        RuleFor(x => x).Must(x => string.IsNullOrWhiteSpace(x.ScopeKind) == string.IsNullOrWhiteSpace(x.ScopeId))
+            .WithMessage("scopeKind and scopeId must be supplied together");
     }
 }
 
@@ -571,6 +828,54 @@ public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<B
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleAssignMaintenanceWorkOrderRequestValidator
+    : Validator<BusinessConsoleAssignMaintenanceWorkOrderRequest>
+{
+    public BusinessConsoleAssignMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId))
+            .WithMessage("technicianUserId or teamId is required");
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(40);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleTransitionMaintenanceWorkOrderRequestValidator
+    : Validator<BusinessConsoleTransitionMaintenanceWorkOrderRequest>
+{
+    public BusinessConsoleTransitionMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Action).IsInEnum();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.ScopeKind).NotEmpty().MaximumLength(40);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Result).MaximumLength(2000);
+        RuleFor(x => x.DowntimeReasonCode).MaximumLength(100);
+        RuleFor(x => x.DowntimeMinutes).GreaterThanOrEqualTo(0).When(x => x.DowntimeMinutes is not null);
+        RuleFor(x => x.ActualLaborMinutes).GreaterThan(0).When(x => x.ActualLaborMinutes is not null);
+        RuleFor(x => x.SparePartCostAmount).GreaterThanOrEqualTo(0).When(x => x.SparePartCostAmount is not null);
+        RuleFor(x => x.ExternalServiceCostAmount).GreaterThanOrEqualTo(0).When(x => x.ExternalServiceCostAmount is not null);
+        RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
+        RuleForEach(x => x.SpareParts).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UomCode).MaximumLength(30);
+        });
     }
 }
 
@@ -598,6 +903,13 @@ public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Va
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.Status).MaximumLength(40);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.ScopeKind).MaximumLength(40);
+        RuleFor(x => x.ScopeId).MaximumLength(150);
+        RuleFor(x => x).Must(x => string.IsNullOrWhiteSpace(x.ScopeKind) == string.IsNullOrWhiteSpace(x.ScopeId))
+            .WithMessage("scopeKind and scopeId must be supplied together");
     }
 }
 

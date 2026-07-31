@@ -5630,6 +5630,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     supplierPartnerCode?: string | null;
     actualTechnicianUserId?: string | null;
     sourceReferenceId?: string | null;
+    assignedTeamId?: string | null;
+    version?: number;
+    allowedActions?: Array<string> | null;
+    lifecycle?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
+    action?: string;
+    fromStatus?: string;
+    toStatus?: string;
+    actorPrincipalId?: string;
+    technicianUserId?: string | null;
+    teamId?: string | null;
+    reason?: string;
+    resultingVersion?: number;
+    occurredAtUtc?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
@@ -5643,6 +5659,51 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkO
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceContextRequest = {
     [key: string]: never;
 };
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkOrderActionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderActionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderActionResponse = {
+    workOrderId?: string;
+    status?: string;
+    version?: number;
+    changedAtUtc?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignMaintenanceWorkOrderRequest = {
+    organizationId: string;
+    environmentId: string;
+    technicianUserId?: string | null;
+    teamId?: string | null;
+    reason: string;
+    idempotencyKey: string;
+    expectedVersion?: number;
+    scopeKind: string;
+    scopeId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTransitionMaintenanceWorkOrderRequest = {
+    organizationId: string;
+    environmentId: string;
+    action?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction;
+    reason: string;
+    idempotencyKey: string;
+    expectedVersion?: number;
+    scopeKind: string;
+    scopeId: string;
+    result?: string | null;
+    downtimeReasonCode?: string | null;
+    downtimeMinutes?: number | null;
+    spareParts?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput> | null;
+    actualLaborMinutes?: number | null;
+    sparePartCostAmount?: number | null;
+    externalServiceCostAmount?: number | null;
+    costCurrencyCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction = 'accept' | 'start' | 'pause' | 'waitForParts' | 'resume' | 'complete' | 'verify' | 'close' | 'cancel';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenancePlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenancePlanResponse | null;
@@ -17388,6 +17449,14 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
         skip?: number;
         take?: number;
         deviceAssetIds?: string | null;
+        status?: string | null;
+        deviceAssetId?: string | null;
+        keyword?: string | null;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+        assignedTechnicianUserIds?: string | null;
+        assignedTeamIds?: string | null;
+        workOrderId?: string | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders';
 };
@@ -17507,6 +17576,8 @@ export type GetBusinessConsoleMaintenanceWorkOrderData = {
     query: {
         organizationId: string;
         environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders/{workOrderId}';
 };
@@ -17536,6 +17607,78 @@ export type GetBusinessConsoleMaintenanceWorkOrderResponses = {
 };
 
 export type GetBusinessConsoleMaintenanceWorkOrderResponse = GetBusinessConsoleMaintenanceWorkOrderResponses[keyof GetBusinessConsoleMaintenanceWorkOrderResponses];
+
+export type AssignBusinessConsoleMaintenanceWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignMaintenanceWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment';
+};
+
+export type AssignBusinessConsoleMaintenanceWorkOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type AssignBusinessConsoleMaintenanceWorkOrderError = AssignBusinessConsoleMaintenanceWorkOrderErrors[keyof AssignBusinessConsoleMaintenanceWorkOrderErrors];
+
+export type AssignBusinessConsoleMaintenanceWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkOrderActionResponse;
+};
+
+export type AssignBusinessConsoleMaintenanceWorkOrderResponse = AssignBusinessConsoleMaintenanceWorkOrderResponses[keyof AssignBusinessConsoleMaintenanceWorkOrderResponses];
+
+export type TransitionBusinessConsoleMaintenanceWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTransitionMaintenanceWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/work-orders/{workOrderId}/actions';
+};
+
+export type TransitionBusinessConsoleMaintenanceWorkOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type TransitionBusinessConsoleMaintenanceWorkOrderError = TransitionBusinessConsoleMaintenanceWorkOrderErrors[keyof TransitionBusinessConsoleMaintenanceWorkOrderErrors];
+
+export type TransitionBusinessConsoleMaintenanceWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkOrderActionResponse;
+};
+
+export type TransitionBusinessConsoleMaintenanceWorkOrderResponse = TransitionBusinessConsoleMaintenanceWorkOrderResponses[keyof TransitionBusinessConsoleMaintenanceWorkOrderResponses];
 
 export type ListBusinessConsoleMaintenancePlansData = {
     body?: never;

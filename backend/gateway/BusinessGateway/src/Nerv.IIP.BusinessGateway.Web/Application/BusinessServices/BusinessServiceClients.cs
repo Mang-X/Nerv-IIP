@@ -1270,6 +1270,20 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleMaintenanceContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMaintenanceWorkOrderActionResponse> AssignWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
         BusinessConsoleMaintenancePlanListRequest request,
@@ -6223,7 +6237,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("skip", request.Skip),
                 ("take", request.Take),
-                ("deviceAssetIds", request.DeviceAssetIds)),
+                ("deviceAssetIds", request.DeviceAssetIds),
+                ("status", request.Status),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("keyword", request.Keyword),
+                ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
+                ("assignedTeamIds", request.AssignedTeamIds),
+                ("workOrderId", request.WorkOrderId)),
             null,
             cancellationToken);
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
@@ -6242,7 +6262,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.ExternalServiceCostAmount,
                 workOrder.CostCurrencyCode,
                 ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
-                SourceReferenceId: workOrder.SourceReferenceId)).ToArray(),
+                SourceReferenceId: workOrder.SourceReferenceId,
+                AssignedTeamId: workOrder.AssignedTeamId,
+                Version: workOrder.Version)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -6254,12 +6276,138 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceContextRequest request,
         CancellationToken cancellationToken)
     {
-        var workOrders = await ListWorkOrdersAsync(internalBearerToken, new BusinessConsoleMaintenanceWorkOrderListRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
-        return workOrders.Items.SingleOrDefault(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal))
-            ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.NotFound,
-                "maintenance-work-order-not-found");
+        var detail = await SendAsync<DownstreamMaintenanceWorkOrderDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+        return MapWorkOrder(detail.WorkOrder) with
+        {
+            AllowedActions = detail.AllowedActions,
+            Lifecycle = detail.Lifecycle.Select(x => new BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
+                x.Action, x.FromStatus, x.ToStatus, x.ActorPrincipalId, x.TechnicianUserId, x.TeamId,
+                x.Reason, x.ResultingVersion, x.OccurredAtUtc)).ToArray(),
+        };
     }
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> AssignWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) =>
+        SendLifecycleActionAsync(
+            internalBearerToken,
+            workOrderId,
+            "/assignment",
+            new DownstreamAssignMaintenanceWorkOrderRequest(
+                workOrderId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                actorPrincipalId,
+                request.TechnicianUserId,
+                request.TeamId,
+                request.Reason,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            "maintenance.work-order.assign",
+            request.IdempotencyKey,
+            cancellationToken);
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) =>
+        SendLifecycleActionAsync(
+            internalBearerToken,
+            workOrderId,
+            "/actions",
+            new DownstreamTransitionMaintenanceWorkOrderRequest(
+                workOrderId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Action,
+                actorPrincipalId,
+                request.Reason,
+                request.IdempotencyKey,
+                request.ExpectedVersion,
+                request.Result,
+                request.DowntimeReasonCode,
+                request.DowntimeMinutes,
+                request.SpareParts,
+                request.ActualLaborMinutes,
+                request.SparePartCostAmount,
+                request.ExternalServiceCostAmount,
+                request.CostCurrencyCode),
+            $"maintenance.work-order.{request.Action.ToString().ToLowerInvariant()}",
+            request.IdempotencyKey,
+            cancellationToken);
+
+    private async Task<BusinessConsoleMaintenanceWorkOrderActionResponse> SendLifecycleActionAsync<TRequest>(
+        string internalBearerToken,
+        string workOrderId,
+        string routeSuffix,
+        TRequest request,
+        string operationType,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMaintenanceWorkOrderActionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}{routeSuffix}",
+            request,
+            cancellationToken);
+        var responseId = FormatJsonScalar(response.WorkOrderId);
+        if (!Guid.TryParse(responseId, out var parsedResponseId)
+            || parsedResponseId == Guid.Empty
+            || !Guid.TryParse(workOrderId, out var parsedRequestId)
+            || parsedRequestId != parsedResponseId
+            || string.IsNullOrWhiteSpace(response.Status)
+            || response.Version < 0
+            || response.ChangedAtUtc == default)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            responseId,
+            response.Status,
+            response.Version,
+            response.ChangedAtUtc,
+            BusinessConsoleOperationReceipts.Confirmed(
+                operationType,
+                "maintenance",
+                "maintenance-work-order",
+                responseId,
+                response.ChangedAtUtc,
+                response.Status,
+                idempotencyKey));
+    }
+
+    private static BusinessConsoleMaintenanceWorkOrderItem MapWorkOrder(DownstreamMaintenanceWorkOrderListItem workOrder) =>
+        new(
+            FormatJsonScalar(workOrder.WorkOrderId),
+            workOrder.DeviceAssetId,
+            workOrder.Priority,
+            workOrder.Status,
+            workOrder.SourceAlarmId,
+            null,
+            workOrder.OpenedAtUtc,
+            workOrder.AssignedTechnicianUserId,
+            workOrder.EstimatedLaborMinutes,
+            workOrder.ActualLaborMinutes,
+            workOrder.SparePartCostAmount,
+            workOrder.ExternalServiceCostAmount,
+            workOrder.CostCurrencyCode,
+            ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
+            SourceReferenceId: workOrder.SourceReferenceId,
+            AssignedTeamId: workOrder.AssignedTeamId,
+            Version: workOrder.Version);
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
@@ -6578,7 +6726,60 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         decimal? ExternalServiceCostAmount = null,
         string? CostCurrencyCode = null,
         string? ActualTechnicianUserId = null,
-        string? SourceReferenceId = null);
+        string? SourceReferenceId = null,
+        string? AssignedTeamId = null,
+        int Version = 0);
+
+    private sealed record DownstreamMaintenanceWorkOrderDetail(
+        DownstreamMaintenanceWorkOrderListItem WorkOrder,
+        IReadOnlyCollection<DownstreamMaintenanceWorkOrderLifecycleEvent> Lifecycle,
+        IReadOnlyCollection<string> AllowedActions);
+
+    private sealed record DownstreamMaintenanceWorkOrderLifecycleEvent(
+        string Action,
+        string FromStatus,
+        string ToStatus,
+        string ActorPrincipalId,
+        string? TechnicianUserId,
+        string? TeamId,
+        string Reason,
+        int ResultingVersion,
+        DateTimeOffset OccurredAtUtc);
+
+    private sealed record DownstreamAssignMaintenanceWorkOrderRequest(
+        string WorkOrderId,
+        string OrganizationId,
+        string EnvironmentId,
+        string ActorPrincipalId,
+        string? TechnicianUserId,
+        string? TeamId,
+        string Reason,
+        string IdempotencyKey,
+        int ExpectedVersion);
+
+    private sealed record DownstreamTransitionMaintenanceWorkOrderRequest(
+        string WorkOrderId,
+        string OrganizationId,
+        string EnvironmentId,
+        BusinessConsoleMaintenanceWorkOrderAction Action,
+        string ActorPrincipalId,
+        string Reason,
+        string IdempotencyKey,
+        int ExpectedVersion,
+        string? Result,
+        string? DowntimeReasonCode,
+        int? DowntimeMinutes,
+        IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput>? SpareParts,
+        int? ActualLaborMinutes,
+        decimal? SparePartCostAmount,
+        decimal? ExternalServiceCostAmount,
+        string? CostCurrencyCode);
+
+    private sealed record DownstreamMaintenanceWorkOrderActionResponse(
+        JsonElement WorkOrderId,
+        string Status,
+        DateTimeOffset ChangedAtUtc,
+        int Version);
 
     private sealed record DownstreamMaintenancePlanListItem(
         JsonElement PlanId,

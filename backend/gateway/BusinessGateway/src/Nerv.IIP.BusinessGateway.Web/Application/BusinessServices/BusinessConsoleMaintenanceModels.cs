@@ -2,7 +2,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleMaintenanceContextRequest(
     string OrganizationId,
-    string EnvironmentId);
+    string EnvironmentId,
+    string? ScopeKind = null,
+    string? ScopeId = null);
 
 public sealed record BusinessConsoleMaintenanceListRequest(
     string OrganizationId,
@@ -22,7 +24,64 @@ public sealed record BusinessConsoleMaintenanceWorkOrderListRequest(
     string EnvironmentId,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null);
+
+public enum BusinessConsoleMaintenanceWorkOrderAction
+{
+    Accept = 0,
+    Start = 1,
+    Pause = 2,
+    WaitForParts = 3,
+    Resume = 4,
+    Complete = 5,
+    Verify = 6,
+    Close = 7,
+    Cancel = 8,
+}
+
+public sealed record BusinessConsoleAssignMaintenanceWorkOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion,
+    string ScopeKind,
+    string ScopeId);
+
+public sealed record BusinessConsoleTransitionMaintenanceWorkOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    BusinessConsoleMaintenanceWorkOrderAction Action,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion,
+    string ScopeKind,
+    string ScopeId,
+    string? Result = null,
+    string? DowntimeReasonCode = null,
+    int? DowntimeMinutes = null,
+    IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput>? SpareParts = null,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
+
+public sealed record BusinessConsoleMaintenanceWorkOrderActionResponse(
+    string WorkOrderId,
+    string Status,
+    int Version,
+    DateTimeOffset ChangedAtUtc,
+    BusinessConsoleOperationReceipt OperationReceipt);
 
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
@@ -141,7 +200,22 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     DateOnly? WarrantyExpiresOn = null,
     string? SupplierPartnerCode = null,
     string? ActualTechnicianUserId = null,
-    string? SourceReferenceId = null);
+    string? SourceReferenceId = null,
+    string? AssignedTeamId = null,
+    int Version = 0,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null);
+
+public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
+    string Action,
+    string FromStatus,
+    string ToStatus,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    int ResultingVersion,
+    DateTimeOffset OccurredAtUtc);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,

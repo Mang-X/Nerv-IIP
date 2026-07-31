@@ -249,6 +249,51 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_self_queue_is_derived_from_authenticated_principal_and_rejects_forged_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], SelfIds: ["user-admin"]),
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-001",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MaintenanceWorkOrdersRead]),
+            ]);
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self", "user-admin", "Current worker", "worker-user", [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var allowed = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+        Assert.Equal("user-admin", maintenance.LastWorkOrderListRequest!.AssignedTechnicianUserIds);
+        Assert.True(auth.LastRequirement!.IncludePrincipalContext);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+
+        var forbidden = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=forged-user");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Equal("user-admin", maintenance.LastWorkOrderListRequest.AssignedTechnicianUserIds);
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_list_enriches_distinct_device_assets_once()
     {
         var maintenance = new RecordingMaintenanceFacadeClient
@@ -1009,6 +1054,19 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("lifecycle-conflict", document.RootElement.GetProperty("message").GetString());
     }
 
+    private static BusinessMasterDataPrincipalWorkContextResponse PrincipalWorkContext(
+        params BusinessMasterDataWorkContextCandidateScope[] candidates) => new(
+            "resolved",
+            null,
+            [],
+            [],
+            [],
+            [],
+            [],
+            candidates,
+            candidates.Select(x => x.Kind).Distinct(StringComparer.Ordinal).ToArray(),
+            []);
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
@@ -1188,6 +1246,26 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
         return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
     }
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> AssignWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, "Open", request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("assign-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, "Open")));
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, request.Action.ToString(), request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("transition-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, request.Action.ToString())));
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,

@@ -272,7 +272,8 @@ public sealed record CompleteMaintenanceWorkOrderCommand(
 public sealed record MaintenanceWorkOrderCommandResult(
     MaintenanceWorkOrderId WorkOrderId,
     MaintenanceWorkOrderStatus Status,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    int Version = 0);
 
 public sealed class CompleteMaintenanceWorkOrderCommandLock : ICommandLock<CompleteMaintenanceWorkOrderCommand>
 {

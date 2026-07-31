@@ -14029,6 +14029,26 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
         return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
     }
 
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> AssignWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, "Open", request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("assign-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, "Open")));
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, request.Action.ToString(), request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("transition-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, request.Action.ToString())));
+
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceWorkOrderListRequest request,

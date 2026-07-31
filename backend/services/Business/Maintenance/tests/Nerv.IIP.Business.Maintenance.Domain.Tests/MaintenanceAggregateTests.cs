@@ -80,12 +80,71 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
-    public void Completed_work_order_is_terminal()
+    public void Closed_work_order_is_terminal()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
-        workOrder.Complete("fixed", "minor-stop", 5, []);
+        workOrder.Assign("technician-001", "team-001");
+        workOrder.Accept("technician-001");
+        workOrder.StartWork();
+        workOrder.Finish("fixed", "minor-stop", 5, [], "technician-001");
+        workOrder.Verify();
+        workOrder.Close();
 
         Assert.Throws<InvalidOperationException>(() => workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "again"));
+    }
+
+    [Fact]
+    public void Work_order_supports_auditable_assignment_and_full_repair_lifecycle()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "high",
+            "reporter-001");
+
+        workOrder.Assign("technician-001", "team-001");
+        Assert.Equal("technician-001", workOrder.AssignedTechnicianUserId);
+        Assert.Equal("team-001", workOrder.AssignedTeamId);
+        Assert.Equal(1, workOrder.Version);
+
+        workOrder.Accept("technician-001");
+        Assert.Equal(MaintenanceWorkOrderStatus.Accepted, workOrder.Status);
+        workOrder.StartWork();
+        Assert.Equal(MaintenanceWorkOrderStatus.InProgress, workOrder.Status);
+        workOrder.Pause(waitingForParts: false);
+        Assert.Equal(MaintenanceWorkOrderStatus.Paused, workOrder.Status);
+        workOrder.Resume();
+        workOrder.Pause(waitingForParts: true);
+        Assert.Equal(MaintenanceWorkOrderStatus.WaitingForParts, workOrder.Status);
+        workOrder.Resume();
+        workOrder.Finish("fixed", "equipment-failure", 20, [], "technician-001");
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
+        workOrder.Verify();
+        Assert.Equal(MaintenanceWorkOrderStatus.Verified, workOrder.Status);
+        workOrder.Close();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Closed, workOrder.Status);
+        Assert.Equal(10, workOrder.Version);
+    }
+
+    [Fact]
+    public void Lifecycle_rejects_out_of_order_and_terminal_actions()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "high",
+            "reporter-001");
+
+        Assert.Throws<InvalidOperationException>(() => workOrder.StartWork());
+
+        workOrder.Cancel();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Cancelled, workOrder.Status);
+        Assert.Throws<InvalidOperationException>(() => workOrder.Assign("technician-001", "team-001"));
+        Assert.Throws<InvalidOperationException>(() => workOrder.Accept("technician-001"));
     }
 
     [Fact]

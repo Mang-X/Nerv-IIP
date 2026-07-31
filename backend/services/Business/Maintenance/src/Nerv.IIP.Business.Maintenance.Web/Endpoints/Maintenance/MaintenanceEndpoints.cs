@@ -109,6 +109,42 @@ public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<Com
     }
 }
 
+public sealed class AssignMaintenanceWorkOrderRequestValidator : Validator<AssignMaintenanceWorkOrderRequest>
+{
+    public AssignMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class TransitionMaintenanceWorkOrderRequestValidator : Validator<TransitionMaintenanceWorkOrderRequest>
+{
+    public TransitionMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Action).IsInEnum().NotEqual(MaintenanceWorkOrderAction.Assign);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        When(x => x.Action == MaintenanceWorkOrderAction.Complete, () =>
+        {
+            RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
+            RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.DowntimeMinutes).NotNull().GreaterThan(0);
+        });
+    }
+}
+
 public sealed record CompleteMaintenanceWorkOrderResponse(
     MaintenanceWorkOrderId WorkOrderId,
     string Status,
@@ -123,7 +159,47 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? EnvironmentId,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null);
+
+public sealed record GetMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record AssignMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion);
+
+public sealed record TransitionMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenanceWorkOrderAction Action,
+    string ActorPrincipalId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion,
+    string? Result = null,
+    string? DowntimeReasonCode = null,
+    int? DowntimeMinutes = null,
+    IReadOnlyCollection<MaintenanceSparePartInput>? SpareParts = null,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
 
 public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
@@ -322,7 +398,78 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
             req.EnvironmentId,
             req.Skip,
             req.Take,
-            req.DeviceAssetIds), ct);
+            req.DeviceAssetIds,
+            req.Status,
+            req.DeviceAssetId,
+            req.Keyword,
+            req.AssignedTechnicianUserIds,
+            req.AssignedTeamIds,
+            req.WorkOrderId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<GetMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderDetail>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<GetMaintenanceWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(GetMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetMaintenanceWorkOrderQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AssignMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<AssignMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderCommandResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<AssignMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AssignMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new AssignMaintenanceWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ActorPrincipalId,
+            req.TechnicianUserId,
+            req.TeamId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class TransitionMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<TransitionMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderCommandResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<TransitionMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(TransitionMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new TransitionMaintenanceWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Action,
+            req.ActorPrincipalId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.Result,
+            req.DowntimeReasonCode,
+            req.DowntimeMinutes,
+            req.SpareParts,
+            req.ActualLaborMinutes,
+            req.SparePartCostAmount,
+            req.ExternalServiceCostAmount,
+            req.CostCurrencyCode), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -556,6 +703,9 @@ public static class MaintenanceEndpointContracts
         new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
+        new(typeof(GetMaintenanceWorkOrderEndpoint), "GET", "/api/business/v1/maintenance/work-orders/{workOrderId}", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceWorkOrder"),
+        new(typeof(AssignMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "assignMaintenanceWorkOrder"),
+        new(typeof(TransitionMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/actions", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "transitionMaintenanceWorkOrder"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(UpdateMaintenancePlanEndpoint), "PUT", "/api/business/v1/maintenance/plans/{planId}", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
