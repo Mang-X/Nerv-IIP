@@ -258,6 +258,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);
@@ -522,6 +523,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new ApproveQuotationCommandHandler(dbContext).Handle(
             new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-BLOCK"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-CREDIT", "CUST-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-CREDIT", "DO-CREDIT", "CUST-001", 50m, "CNY"),
             CancellationToken.None);
@@ -569,6 +571,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-002", "RCV-002", "SUP-002", 225.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);
@@ -604,6 +607,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);

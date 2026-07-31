@@ -89,12 +89,21 @@ public sealed record PostStockMovementRequest(
     int? ShelfLifeDays = null,
     DateOnly? AsOfDate = null,
     bool AllowExpiredStock = false,
-    bool ExpiryOverridePermissionGranted = false);
+    bool ExpiryOverridePermissionGranted = false,
+    string? TransferInSiteCode = null,
+    string? TransferInLocationCode = null,
+    decimal? TransferInQuantity = null);
 
 /// <summary>
 /// Posted movement result. For an idempotency replay whose movement exists but whose ledger row is absent, quantities are returned as zero and no empty ledger is created.
+/// A transfer posting returns both legs: the outbound leg in MovementId/OnHandQuantity and the inbound leg in TransferInMovementId/TransferInOnHandQuantity.
 /// </summary>
-public sealed record PostStockMovementResponse(string MovementId, decimal OnHandQuantity, decimal AvailableQuantity);
+public sealed record PostStockMovementResponse(
+    string MovementId,
+    decimal OnHandQuantity,
+    decimal AvailableQuantity,
+    string? TransferInMovementId = null,
+    decimal? TransferInOnHandQuantity = null);
 
 public sealed record GetStockAvailabilityRequest(
     string OrganizationId,
@@ -339,8 +348,16 @@ public sealed class PostStockMovementEndpoint(ISender sender)
                 InventoryPermissionCodes.ExpiredStockOverride,
                 req.OrganizationId,
                 req.EnvironmentId,
-                req.IdempotencyKey)), ct);
-        await Send.OkAsync(new PostStockMovementResponse(result.MovementId.ToString(), result.OnHandQuantity, result.AvailableQuantity).AsResponseData(), cancellation: ct);
+                req.IdempotencyKey),
+            req.TransferInSiteCode,
+            req.TransferInLocationCode,
+            req.TransferInQuantity), ct);
+        await Send.OkAsync(new PostStockMovementResponse(
+            result.MovementId.ToString(),
+            result.OnHandQuantity,
+            result.AvailableQuantity,
+            result.TransferInMovementId?.ToString(),
+            result.TransferInOnHandQuantity).AsResponseData(), cancellation: ct);
     }
 }
 

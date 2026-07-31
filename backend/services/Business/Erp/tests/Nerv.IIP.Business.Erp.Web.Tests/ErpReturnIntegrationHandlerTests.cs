@@ -243,6 +243,7 @@ public sealed class ErpReturnIntegrationHandlerTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         await CreateReleasedSalesOrderAsync(dbContext);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-RMA-REJECT-001", "CUST-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-RMA-REJECT-001", "DO-RMA-REJECT-001", "CUST-001", 200m, "CNY"),
             CancellationToken.None);
