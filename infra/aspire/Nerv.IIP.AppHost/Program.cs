@@ -415,9 +415,15 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
-    .WithEnvironment("Inventory__DefaultSiteCode", "production")
-    .WithEnvironment("Inventory__SiteCodes__0", "warehouse")
-    .WithEnvironment("Inventory__SiteCodes__1", "production")
+    // 站点/库位必须与库存种子事实一致（SITE-001 + WH-WB-*）：MES 过去按 warehouse/production +
+    // line-side 臆造位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。
+    .WithEnvironment("Inventory__DefaultSiteCode", "SITE-001")
+    .WithEnvironment("Inventory__SiteCodes__0", "SITE-001")
+    .WithEnvironment("Inventory__SiteCode", "SITE-001")
+    .WithEnvironment("Inventory__SourceLocationCodes__0", "WH-WB-RM-01")
+    .WithEnvironment("Inventory__SourceLocationCodes__1", "WH-WB-SF-01")
+    .WithEnvironment("Inventory__SourceLocationCodes__2", "WH-WB-FG-01")
+    .WithEnvironment("Inventory__LineSideLocationCode", "WH-WB-LINE-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)

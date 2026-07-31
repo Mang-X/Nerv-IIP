@@ -23,8 +23,12 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string materialLotId,
         string uomCode,
         decimal consumedQuantity,
-        string materialIssueRequestNo)
+        string materialIssueRequestNo,
+        string? siteCode = null,
+        string? locationCode = null)
     {
+        SiteCode = string.IsNullOrWhiteSpace(siteCode) ? null : siteCode.Trim();
+        LocationCode = string.IsNullOrWhiteSpace(locationCode) ? null : locationCode.Trim();
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         ReportNo = DomainGuard.Required(reportNo, nameof(reportNo));
@@ -52,6 +56,24 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
     public string UomCode { get; private set; } = string.Empty;
     public decimal ConsumedQuantity { get; private set; }
     public string MaterialIssueRequestNo { get; private set; } = string.Empty;
+
+    /// <summary>耗料所在站点：取领料单落库的线边目标站点，禁止在转换器里硬编码。</summary>
+    public string? SiteCode { get; private set; }
+
+    /// <summary>耗料所在库位：取领料单落库的线边目标库位。</summary>
+    public string? LocationCode { get; private set; }
+
+    /// <summary>取耗料库位；缺失即为领料单未落库位，宁可显式失败也不臆造。</summary>
+    public (string SiteCode, string LocationCode) RequireLocation()
+    {
+        if (string.IsNullOrWhiteSpace(SiteCode) || string.IsNullOrWhiteSpace(LocationCode))
+        {
+            throw new InvalidOperationException(
+                $"报工耗料缺少线边库位，无法向库存过账，ReportNo = {ReportNo}, MaterialIssueRequestNo = {MaterialIssueRequestNo}");
+        }
+
+        return (SiteCode, LocationCode);
+    }
     public string? InventoryPostingFailureCode { get; private set; }
     public string? InventoryPostingFailureMessage { get; private set; }
     public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
@@ -66,7 +88,9 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string materialLotId,
         string uomCode,
         decimal consumedQuantity,
-        string materialIssueRequestNo)
+        string materialIssueRequestNo,
+        string? siteCode = null,
+        string? locationCode = null)
     {
         DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
         var consumption = new ProductionReportMaterialConsumption(
@@ -79,7 +103,9 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
             materialLotId,
             uomCode,
             consumedQuantity,
-            materialIssueRequestNo);
+            materialIssueRequestNo,
+            siteCode,
+            locationCode);
         consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
         return consumption;
     }
@@ -99,7 +125,9 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
             original.MaterialLotId,
             original.UomCode,
             -original.ConsumedQuantity,
-            original.MaterialIssueRequestNo);
+            original.MaterialIssueRequestNo,
+            original.SiteCode,
+            original.LocationCode);
         consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
         return consumption;
     }

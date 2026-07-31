@@ -61,6 +61,14 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
+builder.Services.AddSingleton(new MesMaterialSupplyLocationOptions
+{
+    SiteCode = builder.Configuration["Inventory:SiteCode"] ?? builder.Configuration["Inventory:DefaultSiteCode"] ?? string.Empty,
+    SourceLocationCodes = ResolveSourceLocationCodes(builder.Configuration),
+    LineSideSiteCode = builder.Configuration["Inventory:LineSideSiteCode"],
+    LineSideLocationCode = builder.Configuration["Inventory:LineSideLocationCode"] ?? string.Empty,
+});
+builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<LeaderDemoSeedService>();
@@ -274,6 +282,27 @@ static Uri ResolveServiceBaseAddress(
     }
 
     throw new InvalidOperationException($"{configurationKey} is required outside Development.");
+}
+
+static IReadOnlyList<string> ResolveSourceLocationCodes(IConfiguration configuration)
+{
+    var sectionValues = configuration.GetSection("Inventory:SourceLocationCodes")
+        .Get<string[]>()
+        ?.Where(x => !string.IsNullOrWhiteSpace(x))
+        .Select(x => x.Trim())
+        .ToArray();
+    if (sectionValues is { Length: > 0 })
+    {
+        return sectionValues;
+    }
+
+    var delimited = configuration["Inventory:SourceLocationCodes"];
+    if (string.IsNullOrWhiteSpace(delimited))
+    {
+        return [];
+    }
+
+    return delimited.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 }
 
 static IReadOnlyCollection<string>? ResolveSiteCodes(IConfiguration configuration)

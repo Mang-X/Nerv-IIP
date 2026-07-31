@@ -359,7 +359,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         request.ClearDomainEvents();
 
-        request.ConfirmLineSideReceipt(
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, 
             DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
             2m,
             "LOT-001");
@@ -387,7 +387,7 @@ public sealed class MesAggregateTests
             5m,
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         // A line-side receipt may be confirmed without a material lot.
-        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
         request.ClearDomainEvents();
 
         // Received material without a lot cannot be returned to warehouse stock (#557); cancelling

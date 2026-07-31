@@ -274,7 +274,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
                     x.MaterialId == lot.MaterialId &&
                     x.MaterialLotId == lot.MaterialLotId)
-                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity })
+                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity, x.TargetSiteCode, x.TargetLocationCode })
                 .SingleOrDefaultAsync(cancellationToken);
             if (materialIssueRequest is null)
             {
@@ -305,7 +305,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialLotId,
                 materialIssueRequest.UomCode,
                 lot.ConsumedQuantity,
-                lot.MaterialIssueRequestNo));
+                lot.MaterialIssueRequestNo,
+                // 耗料位置来自领料单落库的线边库位（#1322），不再硬编码 production/line-side。
+                materialIssueRequest.TargetSiteCode,
+                materialIssueRequest.TargetLocationCode));
         }
 
         workOrder.RegisterCostReport(consumedMaterialLots.Count);
