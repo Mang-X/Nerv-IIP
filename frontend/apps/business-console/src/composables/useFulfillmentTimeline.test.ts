@@ -16,7 +16,7 @@ import {
   matchDemandSource,
   matchPlanningSuggestion,
   matchProductionPlanRow,
-  matchSuggestionWorkOrderNo,
+  matchSuggestionWorkOrder,
   normalizeScope,
   peggingSuggestionIds,
   resolveRecordNode,
@@ -172,16 +172,47 @@ describe('MRP pegging → 建议 → MES 工单（含合批）', () => {
   it('合批工单：两张订单都定位到同一张工单号', () => {
     for (const salesOrderNo of ['SO-A', 'SO-B']) {
       const ids = peggingSuggestionIds(matchDemandPeggings(mergedPeggings, salesOrderNo))
-      expect(matchSuggestionWorkOrderNo(mergedSuggestions, ids)).toBe('WO-20260731-000001')
+      const workOrder = matchSuggestionWorkOrder(mergedSuggestions, ids)
+      expect(workOrder).toEqual({
+        suggestionId: MERGED_SUGGESTION_ID,
+        workOrderNo: 'WO-20260731-000001',
+      })
       expect(matchPlanningSuggestion(mergedSuggestions, ids)?.skuCode).toBe('SKU-FG-100')
-      expect(matchProductionPlanRow(mergedPlanRows, ids, salesOrderNo)?.status).toBe('released')
+      expect(matchProductionPlanRow(mergedPlanRows, workOrder?.suggestionId)?.status).toBe(
+        'released',
+      )
     }
   })
 
+  // 演示者一定会多跑几次 MRP：接受建议后再跑一次，本单会多出一条尚未被接受的新建议，
+  // 而工单挂在旧建议上。只看最新一条就会把工单节点误判成空态。
+  it('重跑 MRP：新建议未接受时，工单节点仍由旧建议点亮', () => {
+    const NEW_SUGGESTION_ID = '0199e1f3-0000-7000-8000-000000000002'
+    // 扫描窗内「新运行在前」
+    const idsAfterRerun = [NEW_SUGGESTION_ID, MERGED_SUGGESTION_ID]
+    const suggestions: BusinessConsolePlanningSuggestionItem[] = [
+      ...mergedSuggestions,
+      { suggestionId: NEW_SUGGESTION_ID, skuCode: 'SKU-FG-100', quantity: 100, status: 'open' },
+    ]
+
+    // 展示取最新那条建议……
+    expect(matchPlanningSuggestion(suggestions, idsAfterRerun)?.suggestionId).toBe(
+      NEW_SUGGESTION_ID,
+    )
+    // ……但工单沿列表往回找，仍然点亮。
+    const workOrder = matchSuggestionWorkOrder(suggestions, idsAfterRerun)
+    expect(workOrder).toEqual({
+      suggestionId: MERGED_SUGGESTION_ID,
+      workOrderNo: 'WO-20260731-000001',
+    })
+    // 生产计划行也跟着解析出的那条建议走，而不是最新那条。
+    expect(matchProductionPlanRow(mergedPlanRows, workOrder?.suggestionId)?.status).toBe('released')
+    expect(matchProductionPlanRow(mergedPlanRows, NEW_SUGGESTION_ID)).toBeUndefined()
+  })
+
   it('下游引用码值大小写/分隔符两种口径都认', () => {
-    const ids = [MERGED_SUGGESTION_ID]
     expect(
-      matchSuggestionWorkOrderNo(
+      matchSuggestionWorkOrder(
         [
           {
             suggestionId: MERGED_SUGGESTION_ID,
@@ -190,15 +221,15 @@ describe('MRP pegging → 建议 → MES 工单（含合批）', () => {
             downstreamDocumentId: 'WO-20260731-000001',
           },
         ],
-        ids,
-      ),
+        [MERGED_SUGGESTION_ID],
+      )?.workOrderNo,
     ).toBe('WO-20260731-000001')
   })
 
   it('别的下游单据（采购申请）不冒充工单，未接受的建议如实空态', () => {
     const ids = [MERGED_SUGGESTION_ID]
     expect(
-      matchSuggestionWorkOrderNo(
+      matchSuggestionWorkOrder(
         [
           {
             suggestionId: MERGED_SUGGESTION_ID,
@@ -211,19 +242,29 @@ describe('MRP pegging → 建议 → MES 工单（含合批）', () => {
       ),
     ).toBeUndefined()
     expect(
-      matchSuggestionWorkOrderNo([{ suggestionId: MERGED_SUGGESTION_ID, status: 'open' }], ids),
+      matchSuggestionWorkOrder([{ suggestionId: MERGED_SUGGESTION_ID, status: 'open' }], ids),
     ).toBeUndefined()
-    expect(matchSuggestionWorkOrderNo(mergedSuggestions, [])).toBeUndefined()
+    expect(matchSuggestionWorkOrder(mergedSuggestions, [])).toBeUndefined()
     expect(matchPlanningSuggestion(mergedSuggestions, [])).toBeUndefined()
   })
 
   it('合批工单的首条需求引用是别的订单号，不能拿来把本单排除掉', () => {
-    expect(
-      matchProductionPlanRow(mergedPlanRows, [MERGED_SUGGESTION_ID], 'SO-B')?.sourceDocumentId,
-    ).toBe(MERGED_SUGGESTION_ID)
-    // 无建议时退回按销售单号兜底命中
-    expect(matchProductionPlanRow(mergedPlanRows, [], 'SO-A')).toBeDefined()
-    expect(matchProductionPlanRow(mergedPlanRows, [], 'SO-B')).toBeUndefined()
+    expect(matchProductionPlanRow(mergedPlanRows, MERGED_SUGGESTION_ID)?.sourceDocumentId).toBe(
+      MERGED_SUGGESTION_ID,
+    )
+  })
+
+  // 行上没有工单号，兜底命中无从校验是不是解析出来的那张工单——宁可不贴状态，也不贴错状态。
+  it('不按销售单号兜底贴状态：别的工单的行不会被贴到本节点', () => {
+    const otherWorkOrderRow: BusinessConsoleMesProductionPlanRow = {
+      productionPlanId: 'another-suggestion',
+      sourceDocumentId: 'another-suggestion',
+      sourceDemandReference: 'SO-A',
+      skuId: 'SKU-FG-100',
+      status: 'closed',
+    }
+    expect(matchProductionPlanRow([otherWorkOrderRow], MERGED_SUGGESTION_ID)).toBeUndefined()
+    expect(matchProductionPlanRow(mergedPlanRows, undefined)).toBeUndefined()
   })
 })
 

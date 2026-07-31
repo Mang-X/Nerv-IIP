@@ -52,8 +52,10 @@ import { bindBusinessContext, hasBusinessContext } from './businessContextBindin
 
 /**
  * MRP pegging 只能按 runId 查，而运行历史没有「按需求源找运行」的读面。
- * 因此从最新一次运行开始向前扫这么多次运行，命中即停——既能覆盖「刚跑完又跑一次」，
- * 又不会把整段运行历史都拉一遍。扫完仍无命中即如实空态，绝不按相似编号猜测。
+ * 因此从最新一次运行开始向前扫这么多次运行，**每一次都看、不提前收工**——
+ * 接受建议后再跑一次 MRP，工单仍挂在旧建议上，只看最新一次就会把工单节点误判成空态。
+ * 窗口保持小，避免把整段运行历史都拉一遍；扫完仍无命中即如实空态（文案里说明只看了最近
+ * 若干次运行，不下「尚未产生」这种越界结论），绝不按相似编号猜测。
  */
 export const FULFILLMENT_MRP_RUN_SCAN_LIMIT = 5
 
@@ -234,55 +236,62 @@ function normalizeReferenceToken(value: string | null | undefined): string {
   return (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-/** 建议本体匹配：suggestionId 命中本单 pegging 的建议集合。 */
+/**
+ * 建议本体匹配：按 `suggestionIds` 的顺序（扫描窗内**新运行在前**）优先取新的那条，
+ * 而不是按服务端返回顺序——重跑 MRP 后，本单最新一次的建议才是计划员看到的那条。
+ */
 export function matchPlanningSuggestion(
   items: readonly BusinessConsolePlanningSuggestionItem[] | undefined,
   suggestionIds: readonly string[],
 ): BusinessConsolePlanningSuggestionItem | undefined {
-  if (suggestionIds.length === 0) return undefined
-  return (items ?? []).find((item) => {
-    const id = item.suggestionId?.trim()
-    return Boolean(id) && suggestionIds.includes(id!)
-  })
+  for (const suggestionId of suggestionIds) {
+    const matched = (items ?? []).find((item) => item.suggestionId?.trim() === suggestionId)
+    if (matched) return matched
+  }
+  return undefined
 }
 
 /**
  * 建议 → MES 工单：接受建议时后端把工单号回写为建议的下游引用
  * （downstreamService=BusinessMes / downstreamDocumentType=WorkOrder / downstreamDocumentId=工单号）。
  * 只认这三项齐备的行，绝不把别的下游单据（采购申请）当工单。
+ *
+ * **重跑 MRP 后不能只看最新一条建议**：接受建议后再跑一次 MRP，本单会多出一条尚未被接受的
+ * 新建议，而工单挂在**旧**建议上。所以这里遍历扫描窗内命中的全部建议，取第一条真正带工单
+ * 引用的——否则工单明明在，节点却显示空态。
  */
-export function matchSuggestionWorkOrderNo(
+export function matchSuggestionWorkOrder(
   items: readonly BusinessConsolePlanningSuggestionItem[] | undefined,
   suggestionIds: readonly string[],
-): string | undefined {
-  if (suggestionIds.length === 0) return undefined
-  for (const item of items ?? []) {
-    const id = item.suggestionId?.trim()
-    if (!id || !suggestionIds.includes(id)) continue
-    if (normalizeReferenceToken(item.downstreamService) !== 'businessmes') continue
-    if (normalizeReferenceToken(item.downstreamDocumentType) !== 'workorder') continue
-    const workOrderNo = item.downstreamDocumentId?.trim()
-    if (workOrderNo) return workOrderNo
+): { suggestionId: string; workOrderNo: string } | undefined {
+  for (const suggestionId of suggestionIds) {
+    for (const item of items ?? []) {
+      if (item.suggestionId?.trim() !== suggestionId) continue
+      if (normalizeReferenceToken(item.downstreamService) !== 'businessmes') continue
+      if (normalizeReferenceToken(item.downstreamDocumentType) !== 'workorder') continue
+      const workOrderNo = item.downstreamDocumentId?.trim()
+      if (workOrderNo) return { suggestionId, workOrderNo }
+    }
   }
   return undefined
 }
 
 /**
- * 生产计划行（即带来源引用的 MES 工单）匹配：`sourceDocumentId === suggestionId`。
+ * 生产计划行（即带来源引用的 MES 工单）匹配：**只认** `sourceDocumentId === 解析出工单号的那条建议`。
  *
- * 合批工单的 `sourceDemandReference` 只是需求引用集合里的**第一条**，可能是别的订单号，
- * 因此它只能作为补充命中口径，绝不能拿来把本单排除掉。
+ * 不做「按销售单号兜底」：行上根本没有工单号（`productionPlanId` 就是 `sourceDocumentId`），
+ * 无从校验兜底命中的行是不是解析出来的那张工单——合批 / 一单多工单时很容易把**别的工单**的
+ * 状态贴到本节点上。宁可不贴状态，也不贴错状态。
+ *
+ * 反过来，合批工单的 `sourceDemandReference` 只是需求引用集合里的**第一条**，可能是别的订单号，
+ * 因此它绝不能用来把本单排除掉——只在关联键说明里如实标注「合批」。
  */
 export function matchProductionPlanRow(
   rows: readonly BusinessConsoleMesProductionPlanRow[] | undefined,
-  suggestionIds: readonly string[],
-  salesOrderNo: string | undefined,
+  suggestionId: string | undefined,
 ): BusinessConsoleMesProductionPlanRow | undefined {
-  return (rows ?? []).find((row) => {
-    const sourceDocumentId = row.sourceDocumentId?.trim()
-    if (sourceDocumentId && suggestionIds.includes(sourceDocumentId)) return true
-    return Boolean(salesOrderNo) && row.sourceDemandReference?.trim() === salesOrderNo
-  })
+  if (!suggestionId) return undefined
+  return (rows ?? []).find((row) => row.sourceDocumentId?.trim() === suggestionId)
 }
 
 /** MRP 建议节点的记录：命中的 pegging 行 + （若仍在建议列表里）建议本体。 */
@@ -500,7 +509,11 @@ export function useFulfillmentTimeline(
       salesOrderNo.value ?? '',
       scanRunIds.value.join('|'),
     ],
+    // 扫描窗内**每一次**运行都要看，命中不提前收工：接受建议后再跑 MRP，本单会多出一条
+    // 尚未被接受的新建议，而工单挂在旧建议上——只看最新一次运行就会把工单节点误判成空态。
+    // 结果按「新运行在前」排列，展示取最新、找工单则沿列表往回找。
     query: async () => {
+      const collected: BusinessConsoleMrpPeggingItem[] = []
       for (const runId of scanRunIds.value) {
         const data = await runNodeSource<{ items?: BusinessConsoleMrpPeggingItem[] } | null>(
           async () => {
@@ -516,10 +529,9 @@ export function useFulfillmentTimeline(
             }
           },
         )
-        const matched = matchDemandPeggings(data?.items, salesOrderNo.value)
-        if (matched.length > 0) return matched
+        collected.push(...matchDemandPeggings(data?.items, salesOrderNo.value))
       }
-      return [] as BusinessConsoleMrpPeggingItem[]
+      return collected
     },
     enabled: hasScope.value && scanRunIds.value.length > 0,
   }))
@@ -530,11 +542,18 @@ export function useFulfillmentTimeline(
   const mrpError = computed(() => mrpRunsQuery.error.value ?? peggingQuery.error.value)
   const mrpLoading = computed(() => mrpRunsQuery.isLoading.value || peggingQuery.isLoading.value)
 
-  // —— 建议本体（拿人读的 SKU/数量/状态与下游工单引用；suggestionId 是 GUID，不上屏）——
+  // —— 建议本体（拿人读的 SKU/数量与下游工单引用；suggestionId 是 GUID，不上屏）——
+  //
+  // 服务端过滤只到 `status`：建议读面的契约没有 suggestionId / keyword / runId 参数
+  // （见 types.gen.ts 的 ListBusinessConsolePlanningSuggestionsData），
+  // 想把「按 id 取一条」下推到服务端目前做不到。这里用 `status: 'Accepted'` 做真实的
+  // 服务端收敛——只有被接受的建议才会回写下游工单引用，未接受的拉回来也没用；
+  // 待读面支持按 id / 需求源过滤后应换成精确查询。
   const suggestionQuery = useQuery(() => ({
     key: [
       'fulfillment',
       'planning-suggestions',
+      'accepted',
       ctx.organizationId,
       ctx.environmentId,
       suggestionIds.value.join('|'),
@@ -542,7 +561,11 @@ export function useFulfillmentTimeline(
     query: () =>
       runNodeSource<{ items?: BusinessConsolePlanningSuggestionItem[] } | null>(async () => {
         const { data, error, response } = await listBusinessConsolePlanningSuggestions({
-          query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+          query: {
+            organizationId: ctx.organizationId,
+            environmentId: ctx.environmentId,
+            status: 'Accepted',
+          },
           throwOnError: false,
         })
         return {
@@ -557,8 +580,8 @@ export function useFulfillmentTimeline(
   const matchedSuggestion = computed(() =>
     matchPlanningSuggestion(suggestionQuery.data.value?.items, suggestionIds.value),
   )
-  const workOrderNo = computed(() =>
-    matchSuggestionWorkOrderNo(suggestionQuery.data.value?.items, suggestionIds.value),
+  const matchedWorkOrder = computed(() =>
+    matchSuggestionWorkOrder(suggestionQuery.data.value?.items, suggestionIds.value),
   )
 
   // —— 4. APS/排程紧急度（OrderUrgency.businessReference === salesOrderNo）——
@@ -590,8 +613,9 @@ export function useFulfillmentTimeline(
   }))
 
   // —— 5. MES 工单：来源引用行（生产计划读面即「带来源引用的工单」）补齐工单当前状态 ——
-  // keyword 优先用 suggestionId（对合批工单也只有这一条能精确命中），退回销售单号兜底。
-  const planKeyword = computed(() => suggestionIds.value[0] ?? salesOrderNo.value)
+  // keyword 必须用**解析出工单号的那条建议**的 id：用最新建议或销售单号去搜，回来的可能是
+  // 另一张工单的行，状态就贴错人了。没解析出工单时这一跳直接不发请求。
+  const planKeyword = computed(() => matchedWorkOrder.value?.suggestionId)
   const productionPlanQuery = useQuery(() => ({
     key: [
       'fulfillment',
@@ -623,8 +647,7 @@ export function useFulfillmentTimeline(
   const matchedPlanRow = computed(() =>
     matchProductionPlanRow(
       productionPlanQuery.data.value?.items,
-      suggestionIds.value,
-      salesOrderNo.value,
+      matchedWorkOrder.value?.suggestionId,
     ),
   )
 
@@ -714,9 +737,9 @@ export function useFulfillmentTimeline(
     const mrpSuggestionRecord: MrpSuggestionRecord | undefined = pegging
       ? { pegging, ...(matchedSuggestion.value ? { suggestion: matchedSuggestion.value } : {}) }
       : undefined
-    const mesWorkOrderRecord: MesWorkOrderRecord | undefined = workOrderNo.value
+    const mesWorkOrderRecord: MesWorkOrderRecord | undefined = matchedWorkOrder.value
       ? {
-          workOrderNo: workOrderNo.value,
+          workOrderNo: matchedWorkOrder.value.workOrderNo,
           ...(matchedPlanRow.value ? { planRow: matchedPlanRow.value } : {}),
         }
       : undefined
@@ -775,8 +798,11 @@ export function useFulfillmentTimeline(
           linkLabel: `demandSourceReference = ${record.pegging.demandSourceReference ?? '-'}`,
           drill: { path: '/planning' },
         }),
+        // 空态不能绝对化：只扫了最近若干次运行，更早的运行没看过，说「尚未产生」是越界结论。
         pendingNote:
-          'MRP 运行后按需求源生成建议，并把本销售订单 peg 到建议上（pegging.demandSourceReference = 销售单号），当前尚未产生。',
+          scanRunIds.value.length > 0
+            ? `最近 ${scanRunIds.value.length} 次 MRP 运行内没有找到与本单的关联（更早的运行未在查询范围内）。`
+            : 'MRP 运行后按需求源生成建议，并把本销售订单 peg 到建议上（pegging.demandSourceReference = 销售单号），当前尚未运行。',
         source: 'Planning · MRP 运行与 pegging 读面',
       }),
       resolveRecordNode<BusinessConsoleOrderUrgency>({
@@ -812,7 +838,9 @@ export function useFulfillmentTimeline(
           drill: { path: `/mes/work-orders/${encodeURIComponent(record.workOrderNo)}` },
         }),
         pendingNote:
-          '计划员在需求与计划工作台接受 MRP 建议后才会开出 MES 工单（建议的下游引用即工单号），当前尚未开单。',
+          suggestionIds.value.length > 0
+            ? '本单已有 MRP 建议，但建议尚未被接受为 MES 工单（工单号回写在建议的下游引用上），当前尚未开单。'
+            : '计划员在需求与计划工作台接受 MRP 建议后才会开出 MES 工单（建议的下游引用即工单号），当前尚未开单。',
         source: 'Planning · 建议下游引用 + MES 工单来源引用',
       }),
       unlinkedNode('production-report'),
