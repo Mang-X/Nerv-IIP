@@ -82,6 +82,7 @@ const {
   scopeOptions,
   selectedScopeLabel,
   hasSelection: putawayScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   error: workScopeError,
   refresh: refreshWorkScopes,
@@ -375,7 +376,7 @@ function firstQuery(value: unknown) {
       "
       failure-explanation="WMS 收货作业范围或上架任务未成功返回，请重试。"
       :empty-explanation="
-        putawayScopeReady ? '当前作业范围没有上架任务。' : '作业范围目录未就绪，未发起查询。'
+        putawayScopeReady ? '当前作业范围没有上架任务。' : workScopeUnreadyMessage
       "
     />
 
@@ -435,7 +436,9 @@ function firstQuery(value: unknown) {
       :error="putawayTasksError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择业务范围，再查看上架任务。"
+      :awaiting-scope-message="
+        workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看上架任务。'
+      "
       :searchable="false"
       :column-settings="false"
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"

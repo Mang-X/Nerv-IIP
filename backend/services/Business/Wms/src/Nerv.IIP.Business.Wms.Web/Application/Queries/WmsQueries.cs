@@ -46,7 +46,8 @@ public sealed record ListWarehouseOperationalCandidatesQuery(
     string? Keyword = null,
     string? SkuCode = null,
     string? LocationCode = null,
-    int Take = 50) : IQuery<WarehouseOperationalCandidatesResponse>;
+    int Take = 50,
+    bool SiteWideScope = false) : IQuery<WarehouseOperationalCandidatesResponse>;
 
 public static class WarehouseOperationalCandidateDomains
 {
@@ -113,7 +114,9 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                organizationWideScope: false,
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return empty;
@@ -348,6 +351,7 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             WmsOwnershipScopeKind.Pool => query.Where(order =>
                 order.AssignedPoolCode != null
                 && scope.Values.Contains(order.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
 
@@ -362,6 +366,7 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             WmsOwnershipScopeKind.Pool => query.Where(order =>
                 order.AssignedPoolCode != null
                 && scope.Values.Contains(order.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
 
@@ -376,6 +381,7 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             WmsOwnershipScopeKind.Pool => query.Where(task =>
                 task.AssignedPoolCode != null
                 && scope.Values.Contains(task.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
 
@@ -390,6 +396,7 @@ public sealed class ListWarehouseOperationalCandidatesQueryHandler(
             WmsOwnershipScopeKind.Pool => query.Where(execution =>
                 execution.AssignedPoolCode != null
                 && scope.Values.Contains(execution.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
 
@@ -502,7 +509,8 @@ public sealed record ListInboundOrdersQuery(
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false) : IQuery<ListInboundOrdersResponse>;
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListInboundOrdersResponse>;
 
 public sealed record ListInboundOrdersResponse(IReadOnlyCollection<InboundOrderListItem> Items, int Total);
 
@@ -560,7 +568,9 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return new ListInboundOrdersResponse([], 0);
@@ -573,6 +583,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             WmsOwnershipScopeKind.Pool => query.Where(x =>
                 x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
         var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
@@ -658,7 +669,8 @@ public sealed record ListOutboundOrdersQuery(
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false) : IQuery<ListOutboundOrdersResponse>;
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListOutboundOrdersResponse>;
 
 public sealed record ListOutboundOrdersResponse(IReadOnlyCollection<OutboundOrderListItem> Items, int Total);
 
@@ -715,7 +727,9 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return new ListOutboundOrdersResponse([], 0);
@@ -728,6 +742,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             WmsOwnershipScopeKind.Pool => query.Where(x =>
                 x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
         var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
@@ -908,7 +923,8 @@ public sealed record ListWarehouseTasksQuery(
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
     bool OrganizationWideScope = false,
-    string? ActorPrincipalId = null) : IQuery<ListWarehouseTasksResponse>;
+    string? ActorPrincipalId = null,
+    bool SiteWideScope = false) : IQuery<ListWarehouseTasksResponse>;
 
 public sealed record ListWarehouseTasksResponse(IReadOnlyCollection<WarehouseTaskFact> Items, int Total);
 
@@ -952,7 +968,9 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return new ListWarehouseTasksResponse([], 0);
@@ -965,6 +983,7 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             WmsOwnershipScopeKind.Pool => query.Where(x =>
                 x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
         var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
@@ -1144,35 +1163,78 @@ internal static class WmsOwnershipQueryFilters
             .ToArray()
         ?? [];
 
+    /// <summary>
+    /// 归属模式是三选一，用一个枚举表达，不用两个布尔互相约束——布尔组合能拼出
+    /// 「既组织全量又站点整站」这种无意义状态，读代码的人要靠分支顺序才能反推真实语义。
+    /// </summary>
+    public static WmsOwnershipScopeMode ModeOf(
+        bool organizationWideScope,
+        bool siteWideScope) =>
+        organizationWideScope
+            ? WmsOwnershipScopeMode.OrganizationWide
+            : siteWideScope
+                ? WmsOwnershipScopeMode.SiteWide
+                : WmsOwnershipScopeMode.Assignment;
+
     public static bool TryResolve(
         IEnumerable<string>? operatorUserIds,
         IEnumerable<string>? poolCodes,
         IEnumerable<string>? siteCodes,
-        bool organizationWideScope,
+        WmsOwnershipScopeMode mode,
         out WmsOwnershipScope scope)
     {
         var operators = Normalize(operatorUserIds);
         var pools = Normalize(poolCodes);
-        _ = Normalize(siteCodes);
-        var activeModes = (operators.Length > 0 ? 1 : 0)
+        var sites = Normalize(siteCodes);
+        var assignmentModes = (operators.Length > 0 ? 1 : 0)
             + (pools.Length > 0 ? 1 : 0);
-        if (organizationWideScope || activeModes != 1)
+        switch (mode)
         {
-            scope = default;
-            return false;
-        }
+            // 组织全量读面不成立，永远 fail closed。
+            case WmsOwnershipScopeMode.OrganizationWide:
+                scope = default;
+                return false;
 
-        scope = operators.Length > 0
-            ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
-            : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
-        return true;
+            // 站点范围：站内整站作业面，不再按作业池/操作人收窄，但必须有明确站点边界。
+            case WmsOwnershipScopeMode.SiteWide when sites.Length > 0 && assignmentModes == 0:
+                scope = new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites);
+                return true;
+
+            case WmsOwnershipScopeMode.SiteWide:
+                scope = default;
+                return false;
+
+            // 归属范围：操作人与作业池二选一，既不能同时给也不能都不给。
+            case WmsOwnershipScopeMode.Assignment when assignmentModes == 1:
+                scope = operators.Length > 0
+                    ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
+                    : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
+                return true;
+
+            default:
+                scope = default;
+                return false;
+        }
     }
+}
+
+internal enum WmsOwnershipScopeMode
+{
+    /// <summary>按 self / work-pool 归属收窄。</summary>
+    Assignment,
+
+    /// <summary>按 IAM 精确站点授权覆盖整站。</summary>
+    SiteWide,
+
+    /// <summary>组织全量——不成立，只用于显式拒绝。</summary>
+    OrganizationWide,
 }
 
 internal enum WmsOwnershipScopeKind
 {
     Operator,
     Pool,
+    Site,
 }
 
 internal readonly record struct WmsOwnershipScope(
@@ -1191,7 +1253,8 @@ public sealed record ListCountExecutionsQuery(
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
     IReadOnlyCollection<string>? SiteCodes = null,
-    bool OrganizationWideScope = false) : IQuery<ListCountExecutionsResponse>;
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListCountExecutionsResponse>;
 
 public sealed record ListCountExecutionsResponse(IReadOnlyCollection<CountExecutionFact> Items, int Total);
 
@@ -1232,7 +1295,9 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                request.OrganizationWideScope,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return new ListCountExecutionsResponse([], 0);
@@ -1245,6 +1310,7 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             WmsOwnershipScopeKind.Pool => query.Where(x =>
                 x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
             _ => query.Where(_ => false),
         };
         var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
@@ -1460,7 +1526,8 @@ public sealed record ListReceivingQualityGatesQuery(
     string? InboundOrderNo = null,
     IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
     IReadOnlyCollection<string>? AssignedPoolCodes = null,
-    IReadOnlyCollection<string>? SiteCodes = null) : IQuery<ListReceivingQualityGatesResponse>;
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool SiteWideScope = false) : IQuery<ListReceivingQualityGatesResponse>;
 
 public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
 
@@ -1510,7 +1577,9 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
                 request.SiteCodes,
-                organizationWideScope: false,
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
                 out var ownershipScope))
         {
             return new ListReceivingQualityGatesResponse([], 0);
@@ -1543,6 +1612,7 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
                     WmsOwnershipScopeKind.Pool =>
                         exactOrder.AssignedPoolCode is not null
                         && ownershipScope.Values.Contains(exactOrder.AssignedPoolCode),
+                    WmsOwnershipScopeKind.Site => true,
                     _ => false,
                 };
                 if (!ownershipMatches || !siteCodes.Contains(exactOrder.SiteCode))
@@ -1561,6 +1631,7 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
             WmsOwnershipScopeKind.Pool => orderQuery.Where(x =>
                 x.AssignedPoolCode != null
                 && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => orderQuery,
             _ => orderQuery.Where(_ => false),
         };
         orderQuery = orderQuery.Where(x => siteCodes.Contains(x.SiteCode));

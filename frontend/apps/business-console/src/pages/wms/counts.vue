@@ -105,6 +105,7 @@ const {
   scopeOptions,
   selectedScopeLabel,
   hasSelection: countScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   error: workScopeError,
   refresh: refreshWorkScopes,
@@ -481,9 +482,7 @@ function refreshAll() {
         countExecutionsHasFailedResponse || Boolean(countExecutionsError) || Boolean(workScopeError)
       "
       failure-explanation="WMS 盘点作业范围或盘点任务未成功返回，请重试。"
-      :empty-explanation="
-        countScopeReady ? '当前作业范围没有盘点任务。' : '作业范围目录未就绪，未发起查询。'
-      "
+      :empty-explanation="countScopeReady ? '当前作业范围没有盘点任务。' : workScopeUnreadyMessage"
     />
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
@@ -567,7 +566,7 @@ function refreshAll() {
       :error="countExecutionsError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
-      awaiting-scope-message="请先在顶部选择业务范围，再查看盘点单。"
+      :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看盘点单。'"
       empty-message="暂无盘点单。"
       @retry="refreshCountExecutions"
     >
