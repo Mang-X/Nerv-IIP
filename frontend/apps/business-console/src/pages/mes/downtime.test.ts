@@ -152,6 +152,7 @@ describe('MES downtime recovery entry', () => {
     expect(body.organizationId).toBe('org')
     expect(body.environmentId).toBe('dev')
     expect(body.recoveredAtUtc).toBeTruthy()
-    expect(body.idempotencyKey).toContain('downtime-recover-DT-0001')
+    // #1219：幂等键对同一停机事件稳定（不含时间戳），二次点击不产生新键。
+    expect(body.idempotencyKey).toBe('downtime-recover-DT-0001')
   })
 })

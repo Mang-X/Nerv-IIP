@@ -154,7 +154,9 @@ async function confirmRecover() {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
       recoveredAtUtc: new Date().toISOString(),
-      idempotencyKey: `downtime-recover-${row.downtimeEventId}-${Date.now()}`,
+      // #1219 稳定幂等键：同一停机事件的恢复是同一业务意图，键不掺时间戳，
+      // 重复点击/重试由后端幂等或 KnownException 兜住。
+      idempotencyKey: `downtime-recover-${row.downtimeEventId}`,
     })
     notifySuccess('停机已恢复，该工作中心的开工拦截已解除。')
     recoverTarget.value = null
