@@ -37,8 +37,14 @@ public static class WorldHistoryWarehouseOpsSpec
 {
     #region 现场作业池与演示人员
 
-    /// <summary>库管吴桂芳在 IAM 中的稳定 principal id。</summary>
+    /// <summary>库管吴桂芳在 IAM 中的稳定 principal id（当前队列的直派对象）。</summary>
     public const string DemoWarehousePrincipalId = "user-emp-049";
+
+    /// <summary>仓储主管 EMP-048 的稳定 principal id（设定集 §5 仓储物流部首位）。</summary>
+    public const string WarehouseSupervisorPrincipalId = "user-emp-048";
+
+    /// <summary>演示用平台管理员（与 <c>IamSeedOptions.AdminUserId</c> 同字面量）。</summary>
+    public const string DemoAdministratorPrincipalId = "user-admin";
 
     public const string ReceivingPoolCode = "POOL-WMS-RECEIVING";
     public const string ShippingPoolCode = "POOL-WMS-SHIPPING";
@@ -59,6 +65,37 @@ public static class WorldHistoryWarehouseOpsSpec
     ];
 
     /// <summary>
+    /// 三个作业池的成员：**账面上干过活的人，系统里就必须有资格干活**。
+    ///
+    /// 成员集合 = 历史单据的全部执行人，即 4 名库管
+    /// （<see cref="WorldHistoryPhase2Spec.Storekeepers"/> = <c>user-emp-049..052</c>，
+    /// 正是 <c>WorldHistoryWmsSpec</c> / <c>WorldHistoryCountSpec</c> 里 <c>ExecutorUserId</c> 的取值域）。
+    /// 修复前三个池各只有 emp049 一人，于是「4 个人干了一年的活、系统里 1 个人有资格干活」。
+    ///
+    /// <para>
+    /// 裁决点一 · **成员资格是现场作业资格，不是访问权限**，因此仓储主管与演示管理员
+    /// **刻意不入池**——他们不是现场作业员。两件事让这个取舍既成立又免费：
+    /// ① 读面：<c>site</c> 范围由 IAM 精确站点授权直接成立（#1343），管理员/主管本就能看整站；
+    /// ② 写面：<c>AuthorizeAssignmentAsync</c> 只要求**派工人**有站点授权 + 作业池存在，
+    /// 唯有**被指派人**必须是有效成员——主管派工不需要自己在池里。
+    /// 资格判定因此保持单一口径，不开任何 admin 旁路。
+    /// </para>
+    /// <para>
+    /// 裁决点二 · **把管理员写进池子会帮倒忙**。<c>GetCatalogAsync</c> 里 <c>self</c>（「我的任务」）
+    /// 只在有成员资格时才出现，**且排在目录最前**，而前端默认取首项。管理员一旦入池，
+    /// 六个仓储页的默认范围就从「整站」变成「我的任务」；而当前队列的直派对象只有 emp049，
+    /// 于是 403 被换成了**空态**——比修复前更糟。这条是实测结论，不是推演。
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> WorkPoolPrincipalIds =
+    [
+        .. WorldHistoryPhase2Spec.Storekeepers
+            .Select(person => person.UserId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal),
+    ];
+
+    /// <summary>
     /// 一部分开放任务直接派给 emp049，其余留在作业池供现场认领。
     /// 判定只依赖业务号，缩放和写入顺序不会改变同一资源的归属。
     /// </summary>
@@ -74,8 +111,9 @@ public static class WorldHistoryWarehouseOpsSpec
     /// 每类两条是验收下限：第一条可直派 emp049，第二条留在池内待领。
     /// 所有业务字段来自世界观 SKU / 库位 / 批次规则，时间只依赖 as-of 日期。
     /// </summary>
-    public static WorldHistoryWarehouseCurrentQueueSpec BuildCurrentQueue(DateOnly asOfDate)
+    public static WorldHistoryWarehouseCurrentQueueSpec BuildCurrentQueue(DateOnly asOfDate, double scale)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(scale);
         var queueDate = WorldHistoryWmsSpec.ClampToHistory(
             asOfDate < WorldHistoryCalendar.GoLiveDate
                 ? WorldHistoryCalendar.GoLiveDate
@@ -84,7 +122,9 @@ public static class WorldHistoryWarehouseOpsSpec
                 ? WorldHistoryCalendar.GoLiveDate
                 : asOfDate);
         var dateSegment = queueDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        var inventoryDimensions = WorldHistoryCountSpec.Dimensions.Take(6).ToArray();
+        // 当前队列只用让给它的那段维度：未回单的盘点任务一律避开这几条，
+        // 否则演示当天「先拣货、再确认盘点」会把盘点快照版本捅穿（#1374）。
+        var inventoryDimensions = WorldHistoryCountSpec.CurrentQueueDimensions;
 
         var receiptOrders = inventoryDimensions
             .Take(2)
@@ -152,10 +192,61 @@ public static class WorldHistoryWarehouseOpsSpec
                     queueDate))
             .ToArray();
 
+        // #1374 · 发货出库单：演示「销售发货 → 拣货 → 复核 → 发运」这条最核心的仓储链路，
+        // 此前四张当前队列出库单**全是领料**，一个可点的发货对象都没有。
+        // 这些单挂在 ERP 已开未发运的发货单上（订单阶段 PendingShipment），
+        // 拣的正是那几张单自己的完工入库批——成品在库、发货单已开、就差仓库动手。
+        var deliveryOrders = BuildPendingShipmentDrafts(asOfDate, scale, queueDate);
+
         return new WorldHistoryWarehouseCurrentQueueSpec(
             receiptOrders,
             putawayOrders,
-            [.. reviewOrders, .. pickingOrders]);
+            [.. reviewOrders, .. pickingOrders, .. deliveryOrders]);
+    }
+
+    /// <summary>
+    /// 待发运的发货出库单：与 ERP 侧 <c>PendingShipment</c> 阶段的订单一一对应。
+    ///
+    /// <para>
+    /// 裁决点 · **单号仍走 <c>OB-WQ-</c> 段，源单据号才是真的 <c>DO-2026-#####</c>**。
+    /// 历史校验器按 <c>OB-WQ-</c> 前缀整体豁免当前队列；若这里直接用 <c>OB-DO-2026-#####</c>，
+    /// 单子会掉进历史通道，被「历史出库单必须已完成」当场判失败。
+    /// 号段隔离与业务可追溯因此分工：单号负责隔离，<c>SourceDocumentId</c> 负责追溯。
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<WorldHistoryCurrentOutboundQueueDraft> BuildPendingShipmentDrafts(
+        DateOnly asOfDate,
+        double scale,
+        DateOnly queueDate)
+    {
+        var drafts = new List<WorldHistoryCurrentOutboundQueueDraft>(WorldHistorySpec.PendingShipmentOrderCount);
+        var pendingOrders = WorldHistorySpec.BuildOrderPlans(asOfDate, scale)
+            .Where(plan => plan.HasPendingShipment)
+            .OrderBy(plan => plan.Index)
+            .ToArray();
+
+        for (var position = 0; position < pendingOrders.Length; position++)
+        {
+            var order = pendingOrders[position];
+            var deliveryOrderNo = WorldHistorySpec.DeliveryOrderNo(order.Index);
+            var outboundOrderNo = $"{CurrentOutboundOrderPrefix}C-SHIP-{deliveryOrderNo}";
+            drafts.Add(new WorldHistoryCurrentOutboundQueueDraft(
+                OutboundOrderNo: outboundOrderNo,
+                SourceDocumentType: WorldHistoryWmsSpec.DeliveryOrderSourceType,
+                SourceDocumentId: deliveryOrderNo,
+                SkuCode: order.SkuCode,
+                UomCode: WorldHistorySpec.UomCode,
+                Quantity: order.Quantity,
+                PickFromLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
+                PickToLocationCode: WorldHistoryPhase2Spec.ShippingStagingLocationCode,
+                LotNo: WorldHistoryMesSpec.ProducedLotNo(order.WorkOrderNo),
+                WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(outboundOrderNo, 1),
+                // 至少留一张待复核：拣完等复核与还没拣，是发货链上两个不同的可演示切面。
+                ReviewReady: position == 0,
+                CreatedAtUtc: QueueMoment(queueDate, deliveryOrderNo)));
+        }
+
+        return drafts;
     }
 
     public static bool IsCurrentQueueInboundOrder(string inboundOrderNo) =>

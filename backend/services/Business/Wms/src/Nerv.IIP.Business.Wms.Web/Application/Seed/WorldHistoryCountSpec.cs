@@ -99,6 +99,30 @@ public static class WorldHistoryCountSpec
         return [.. dimensions.OrderBy(x => x.SkuCode, StringComparer.Ordinal)];
     }
 
+    /// <summary>
+    /// 让给 WMS「当前队列」的维度片段数——演示当日可执行的收货 / 上架 / 拣货 / 复核就落在这几条上
+    /// （<c>WorldHistoryWarehouseOpsSpec.BuildCurrentQueue</c> 取的正是 <see cref="CurrentQueueDimensions"/>）。
+    /// </summary>
+    public const int CurrentQueueDimensionCount = 6;
+
+    /// <summary>当前队列占用的维度：演示当天会被真实拣货 / 收货流水改写台账版本。</summary>
+    public static readonly IReadOnlyList<WorldHistoryCountDimension> CurrentQueueDimensions =
+        [.. Dimensions.Take(CurrentQueueDimensionCount)];
+
+    /// <summary>
+    /// 仍未回单（<see cref="WorldHistoryCountOutcome.Open"/>）的盘点任务可用的维度。
+    ///
+    /// **必须与 <see cref="CurrentQueueDimensions"/> 不相交**（#1374 的次生脆弱性）：
+    /// 盘点任务把下发时的 <c>LedgerVersion</c> 存成 <c>ExpectedLedgerVersion</c>，确认差异时逐字比对；
+    /// 演示当天只要在同一维度上先拣一次货，<c>LedgerVersion++</c> 就把快照捅穿，
+    /// 「先拣货、再确认盘点」这条最自然的演示动线会当场判需复盘。
+    /// 注意这条承诺**只覆盖 Open 任务**：待审批（PendingApproval）任务的
+    /// <c>ConfirmApprovedAdjustment</c> 同样走版本闸门，它们仍可能落在当前队列维度上而被拣货捅穿。
+    /// 当前该动线多半点不起来（Approval 侧没为 <c>CNT-2026-####</c> 种审批链），故留作跟进而非在此收口。
+    /// </summary>
+    public static readonly IReadOnlyList<WorldHistoryCountDimension> OpenCountDimensions =
+        [.. Dimensions.Skip(CurrentQueueDimensionCount)];
+
     /// <summary>期初批次号：与库存域 <c>WorldHistoryInventorySpec.OpeningLotNo</c> 同字面量。</summary>
     public static string OpeningLotNo(string skuCode)
     {
@@ -169,12 +193,14 @@ public static class WorldHistoryCountSpec
             var countNo = CountNo(ordinal);
             var day = days[(index / CountsPerCountDay) % days.Count];
             var random = new WorldHistoryRandom($"count-plan:{countNo}");
-            var dimension = random.Pick(Dimensions);
-            var expectedQuantity = random.NextQuantity(200, 4000, 50);
-
             var outcome = index >= total - openTail
                 ? WorldHistoryCountOutcome.Open
                 : ResolveOutcome(index);
+            // 未回单的盘点避开当前队列维度（见 OpenCountDimensions 的注释）。
+            // `Pick` 无论列表多长都只消费一次抽样，因此换列表不会挪动后续字段的随机流。
+            var dimension = random.Pick(
+                outcome == WorldHistoryCountOutcome.Open ? OpenCountDimensions : Dimensions);
+            var expectedQuantity = random.NextQuantity(200, 4000, 50);
             // 只有走到审批的盘点才有差异：账实相符是 0，作废与在盘的从未实盘、同样是 0。
             var variance = outcome is WorldHistoryCountOutcome.PendingApproval or WorldHistoryCountOutcome.RecountRequired
                 ? (random.Chance(0.45d) ? -1m : 1m) * random.NextInt(1, 9)

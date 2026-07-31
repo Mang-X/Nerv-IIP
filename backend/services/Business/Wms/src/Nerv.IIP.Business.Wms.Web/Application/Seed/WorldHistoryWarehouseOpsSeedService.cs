@@ -44,6 +44,7 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
             organizationId,
             environmentId,
             asOfDate,
+            scale,
             cancellationToken);
         var (workPools, memberships) = await SeedWorkPoolsAsync(
             organizationId,
@@ -248,9 +249,10 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
         string organizationId,
         string environmentId,
         DateOnly asOfDate,
+        double scale,
         CancellationToken cancellationToken)
     {
-        var spec = WorldHistoryWarehouseOpsSpec.BuildCurrentQueue(asOfDate);
+        var spec = WorldHistoryWarehouseOpsSpec.BuildCurrentQueue(asOfDate, scale);
         var inboundDrafts = spec.ReceiptOrders
             .Concat(spec.PutawayOrders)
             .ToArray();
@@ -460,29 +462,34 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
             poolsWritten++;
         }
 
+        var principalIds = WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds.ToArray();
         var existingMemberships = (await dbContext.WarehouseWorkPoolMemberships
                 .AsNoTracking()
                 .Where(membership => membership.OrganizationId == organizationId
                     && membership.EnvironmentId == environmentId
-                    && membership.PrincipalId
-                        == WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId
+                    && principalIds.Contains(membership.PrincipalId)
                     && poolCodes.Contains(membership.PoolCode))
-                .Select(membership => membership.PoolCode)
+                .Select(membership => new { membership.PoolCode, membership.PrincipalId })
                 .ToArrayAsync(cancellationToken))
+            .Select(row => MembershipKey(row.PoolCode, row.PrincipalId))
             .ToHashSet(StringComparer.Ordinal);
         var membershipsWritten = 0;
-        foreach (var spec in WorldHistoryWarehouseOpsSpec.WorkPools
-                     .Where(spec => !existingMemberships.Contains(spec.PoolCode)))
+        foreach (var spec in WorldHistoryWarehouseOpsSpec.WorkPools)
         {
-            var membership = WarehouseWorkPoolMembership.Create(
-                organizationId,
-                environmentId,
-                spec.PoolCode,
-                WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId,
-                effectiveFromUtc);
-            dbContext.WarehouseWorkPoolMemberships.Add(membership);
-            Backdate(membership, entity => entity.CreatedAtUtc, effectiveFromUtc);
-            membershipsWritten++;
+            foreach (var principalId in principalIds
+                         .Where(principalId =>
+                             !existingMemberships.Contains(MembershipKey(spec.PoolCode, principalId))))
+            {
+                var membership = WarehouseWorkPoolMembership.Create(
+                    organizationId,
+                    environmentId,
+                    spec.PoolCode,
+                    principalId,
+                    effectiveFromUtc);
+                dbContext.WarehouseWorkPoolMemberships.Add(membership);
+                Backdate(membership, entity => entity.CreatedAtUtc, effectiveFromUtc);
+                membershipsWritten++;
+            }
         }
 
         if (poolsWritten + membershipsWritten > 0)
@@ -493,6 +500,10 @@ public sealed class WorldHistoryWarehouseOpsSeedService(ApplicationDbContext dbC
         dbContext.ChangeTracker.Clear();
         return (poolsWritten, membershipsWritten);
     }
+
+    /// <summary>作业池成员资格的唯一键（池 × 主体），供幂等补写与校验器共用。</summary>
+    private static string MembershipKey(string poolCode, string principalId) =>
+        $"{poolCode}|{principalId}";
 
     private async Task<WorldHistoryWarehouseAssignmentSeedReport> SeedWarehouseAssignmentsAsync(
         string organizationId,
@@ -1124,29 +1135,51 @@ public sealed class WorldHistoryWarehouseOpsValidator(ApplicationDbContext dbCon
             }
         }
 
+        // 期望口径不是「只有 emp049 有资格」——那是把缺陷锁成契约（PC 端仓储域会因此整域 403）。
+        // 真正的不变量有两条：① 账面上干过活的人（历史单据/盘点的全部 ExecutorUserId）
+        // 必须在每个池里都有有效资格；② 演示要用的主管与管理员同样是在册成员。
         var memberships = await dbContext.WarehouseWorkPoolMemberships
             .AsNoTracking()
             .Where(membership => membership.OrganizationId == organizationId
                 && membership.EnvironmentId == environmentId
-                && membership.PrincipalId == WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId
                 && poolCodes.Contains(membership.PoolCode))
             .ToArrayAsync(cancellationToken);
+        var historicalExecutorIds = WorldHistoryPhase2Spec.Storekeepers
+            .Select(person => person.UserId)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var spec in WorldHistoryWarehouseOpsSpec.WorkPools)
         {
-            var membership = memberships.SingleOrDefault(candidate =>
-                string.Equals(candidate.PoolCode, spec.PoolCode, StringComparison.Ordinal));
-            if (membership is null)
+            var effectivePrincipalIds = memberships
+                .Where(membership =>
+                    string.Equals(membership.PoolCode, spec.PoolCode, StringComparison.Ordinal)
+                    && membership.IsEffectiveAt(upperBound))
+                .Select(membership => membership.PrincipalId)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var missingExecutors = historicalExecutorIds
+                .Except(effectivePrincipalIds, StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (missingExecutors.Length > 0)
             {
                 failures.Add(
-                    $"库管 {WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId} 缺少作业池 {spec.PoolCode} 资格。");
-                continue;
+                    $"作业池 {spec.PoolCode} 在 {asOfDate:yyyy-MM-dd} 未覆盖历史单据的执行人 " +
+                    $"{string.Join("、", missingExecutors)}——账面上干过活的人在系统里没有资格干活。");
             }
 
-            if (!membership.IsEffectiveAt(upperBound))
+            // 反向也要守：成员资格是**现场作业资格**，主管与管理员不该在池里。
+            // 他们一旦入池，「我的任务」会挤进范围目录首位并成为前端默认，而直派对象只有 emp049，
+            // 六个仓储页对管理员就从「整站满数据」变成**空态**——比修复前的 403 更糟
+            // （见 WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds 裁决点二）。
+            var unexpectedMembers = effectivePrincipalIds
+                .Except(WorldHistoryWarehouseOpsSpec.WorkPoolPrincipalIds, StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (unexpectedMembers.Length > 0)
             {
                 failures.Add(
-                    $"库管 {WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId} 在 {asOfDate:yyyy-MM-dd} " +
-                    $"不具备作业池 {spec.PoolCode} 的有效资格。");
+                    $"作业池 {spec.PoolCode} 混进了非现场作业员 {string.Join("、", unexpectedMembers)}" +
+                    "——他们会把「我的任务」顶成默认范围，令仓储页默认空态。");
             }
         }
 

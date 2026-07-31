@@ -498,6 +498,64 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
     }
 
+    /// <summary>
+    /// 已完工待发货（#1374）：发货单已开、停在 released，因而**必须**没有已发数量、
+    /// 没有应收、没有任何凭证——这些都要等演示当场发运后走真实路径产生。
+    ///
+    /// 与兄弟分支同一姿势，按**库内既有事实**分流（发货单有没有发运时间），不按计划阶段。
+    /// </summary>
+    private static void CheckPendingShipmentChain(
+        string salesOrderNo,
+        WorldHistoryOrderPlan plan,
+        OrderProjection order,
+        DeliveryProjection delivery,
+        Dictionary<string, ReceivableProjection> receivables,
+        HashSet<string> voucherNos,
+        List<string> failures)
+    {
+        // 这里**不**加「计划阶段必须是 PendingShipment」的交叉断言。
+        // 试过，会误杀：同一个库在更晚的日期重跑时，订单总数变大把老单的计划阶段往前推
+        // （待发货 → 已结案），而库里那三行早已写定、不会重写——
+        // `Validator_still_passes_when_the_same_database_is_reseeded_on_a_later_date` 当场变红。
+        // 这正是本文件开头那条原则的适用场景：**按库内既有事实分流，不按计划阶段**。
+        // 「一张本该已发运的单只剩未发运发货单」这个洞改由 CheckLedgerTotals 的**条数上界**兜住，
+        // 那条断言同样只用库内事实，因此不受重跑漂移影响。
+        if (!string.Equals(delivery.Status, "released", StringComparison.Ordinal))
+        {
+            failures.Add(
+                $"{salesOrderNo} 的发货单 {delivery.DeliveryOrderNo} 没有发运时间，状态却是 '{delivery.Status}'，应为 released。");
+        }
+
+        if (Math.Abs(delivery.ShippedQuantity) > AmountTolerance)
+        {
+            failures.Add(
+                $"{salesOrderNo} 的发货单尚未发运，却已记录发出数量 {delivery.ShippedQuantity}。");
+        }
+
+        // `DeliveryOrder.Release` 会在开单时就把数量登记到订单行上（`SalesOrder.RegisterDelivery`），
+        // 因此订单的「已发数量」在开单即等于订单量——这是聚合既有语义，不是待发货态的破绽。
+        // 真正区分发没发运的是发货单自己的 ShippedQuantity / ShippedAtUtc。
+        if (Math.Abs(order.DeliveredQuantity - plan.Quantity) > AmountTolerance)
+        {
+            failures.Add(
+                $"{salesOrderNo} 已开发货单，订单登记的发货数量 {order.DeliveredQuantity} 与计划 {plan.Quantity} 不符。");
+        }
+
+        if (receivables.ContainsKey(salesOrderNo))
+        {
+            failures.Add($"{salesOrderNo} 尚未发运却存在应收——收入要等发运后才确认。");
+        }
+
+        foreach (var voucherNo in new[]
+                 {
+                     WorldHistorySpec.RevenueVoucherNo(plan.Index),
+                     WorldHistorySpec.CollectionVoucherNo(plan.Index),
+                 }.Where(voucherNos.Contains))
+        {
+            failures.Add($"{salesOrderNo} 尚未发运却存在凭证 {voucherNo}。");
+        }
+    }
+
     private static void CheckDeliveredChain(
         string salesOrderNo,
         WorldHistoryOrderPlan plan,
@@ -513,6 +571,14 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         if (!deliveries.TryGetValue(salesOrderNo, out var delivery))
         {
             failures.Add($"{salesOrderNo} 应已发货却没有发货单。");
+            return;
+        }
+
+        // #1374 · 已开未发运的发货单走待发货分支，别拿「必须 completed + 必须有应收」去误杀它。
+        if (delivery.ShippedAtUtc is null)
+        {
+            CheckPendingShipmentChain(
+                salesOrderNo, plan, order, delivery, receivables, voucherNos, failures);
             return;
         }
 
@@ -631,6 +697,21 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                     $"（{plans.Count} 单样本下容差 ±{tolerance:P1}）。");
             }
         }
+
+        // #1374 · 已完工待发货是**定额**而不是比例：它的存在只为给演示留几个可操作对象。
+        // 用比例卡它没有意义（3/4413 落在任何容差里都成立），因此直接卡条数——
+        // 一旦有人把 PromotePendingShipments 改坏，发货链会重新退回「零可操作对象」，这里必须红。
+        var pendingShipments = plans.Count(plan => plan.Stage == WorldHistoryOrderStage.PendingShipment);
+        var expectedPendingShipments = Math.Min(
+            WorldHistorySpec.PendingShipmentOrderCount,
+            plans.Count(plan => plan.Stage is WorldHistoryOrderStage.Shipped
+                or WorldHistoryOrderStage.PendingShipment));
+        if (pendingShipments != expectedPendingShipments)
+        {
+            failures.Add(
+                $"已完工待发货的订单有 {pendingShipments} 张，期望 {expectedPendingShipments} 张" +
+                "——发货链要靠它才有可操作对象。");
+        }
     }
 
     /// <summary>
@@ -644,10 +725,28 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         Dictionary<string, CashReceiptProjection> cashReceipts,
         List<string> failures)
     {
-        // 应收总额 = 所有已发货订单的金额之和。
-        var expectedReceivable = deliveries.Keys
-            .Where(orders.ContainsKey)
-            .Sum(salesOrderNo => orders[salesOrderNo].TotalAmount);
+        // #1374 · 未发运的发货单是**定额留给演示的可操作对象**，不是一种可以随处出现的状态。
+        // 上界卡死之后，「某张本该已发运的单只写出了发货单、丢了应收与凭证」会表现为多出一张
+        // 未发运发货单而被抓住——而这条只用库内事实，因此同一个库在更晚日期重跑时不会误杀
+        // （那三行还是那三行，条数不变）。
+        var unshippedDeliveries = deliveries.Values
+            .Where(delivery => delivery.ShippedAtUtc is null)
+            .Select(delivery => delivery.DeliveryOrderNo)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (unshippedDeliveries.Length > WorldHistorySpec.PendingShipmentOrderCount)
+        {
+            failures.Add(
+                $"未发运的发货单有 {unshippedDeliveries.Length} 张，超过待发货定额 " +
+                $"{WorldHistorySpec.PendingShipmentOrderCount} 张：{string.Join("、", unshippedDeliveries.Take(5))}" +
+                "——多出来的多半是该发运却丢了应收与凭证的单。");
+        }
+
+        // 应收总额 = 所有**已发运**订单的金额之和。
+        // #1374：已开未发运的发货单不确认收入，因此按 ShippedAtUtc 而不是「有没有发货单」来算。
+        var expectedReceivable = deliveries
+            .Where(entry => entry.Value.ShippedAtUtc is not null && orders.ContainsKey(entry.Key))
+            .Sum(entry => orders[entry.Key].TotalAmount);
         var actualReceivable = receivables.Values.Sum(x => x.Amount);
         if (Math.Abs(expectedReceivable - actualReceivable) > AmountTolerance)
         {

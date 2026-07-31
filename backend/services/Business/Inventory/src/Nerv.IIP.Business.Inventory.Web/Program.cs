@@ -181,30 +181,14 @@ try
                 app.Logger.LogInformation("World-history sample: {Movement}", line);
             }
 
-            // 盘点块必须排在流水块之后：盘点任务的维度与期望台账版本都取自真实落库的台账。
-            var countReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryCountSeedService>().SeedAsync(
-                leaderDemoOrganizationId,
-                leaderDemoEnvironmentId,
-                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            app.Logger.LogInformation(
-                "World-history inventory count seed completed: {Tasks} count tasks, {Adjustments} count adjustments, " +
-                "{Skipped} plans skipped for a missing ledger dimension; validator checked {CheckedTasks} tasks " +
-                "({PendingApproval} pending approval, {Recount} recount required, {Cancelled} cancelled, {Open} open) " +
-                "and {CheckedAdjustments} adjustments totalling {VarianceAmount} in variance value.",
-                countReport.StockCountTasksWritten,
-                countReport.StockCountAdjustmentsWritten,
-                countReport.PlansSkippedWithoutLedger,
-                countReport.Validation.StockCountTasksChecked,
-                countReport.Validation.PendingApprovalTasksChecked,
-                countReport.Validation.RecountRequiredTasksChecked,
-                countReport.Validation.CancelledTasksChecked,
-                countReport.Validation.OpenTasksChecked,
-                countReport.Validation.StockCountAdjustmentsChecked,
-                countReport.Validation.VarianceAmountTotal);
-
-            // 预留块同样排在流水块之后：预留的维度取自真实落库的台账。
+            // 预留块排在流水块之后：预留的维度取自真实落库的台账。
             // 它只动 ReservedQuantity / LedgerVersion，绝不改现存量、绝不写流水（校验器 fail-closed）。
+            //
+            // #1374 · **预留必须排在盘点之前**。`StockLedger.Reserve` 会 `LedgerVersion++`，
+            // 而盘点任务把下发时的 `LedgerVersion` 存成 `ExpectedLedgerVersion`，确认差异时逐字比对
+            // （`StockCountTask.ConfirmAdjustment`）。两块的维度 100% 重叠（都是 22 条期初批），
+            // 先盘点后预留会把每一张盘点任务的快照版本当场捅穿——62 张任务一出生即死单。
+            // 顺序不是风格问题：盘点块的校验器现在硬断言两者相等（见 WorldHistoryCountValidator）。
             var reservationReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryReservationSeedService>().SeedAsync(
                 leaderDemoOrganizationId,
                 leaderDemoEnvironmentId,
@@ -228,6 +212,29 @@ try
             {
                 app.Logger.LogInformation("World-history reservation sample: {Reservation}", line);
             }
+
+            // 盘点块必须排在流水块与预留块之后：盘点任务的维度与期望台账版本都取自真实落库的台账，
+            // 而快照必须是**本次 seed 落幕时**的版本，否则任务一出生就过期（见上方 #1374 注释）。
+            var countReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryCountSeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory count seed completed: {Tasks} count tasks, {Adjustments} count adjustments, " +
+                "{Skipped} plans skipped for a missing ledger dimension; validator checked {CheckedTasks} tasks " +
+                "({PendingApproval} pending approval, {Recount} recount required, {Cancelled} cancelled, {Open} open) " +
+                "and {CheckedAdjustments} adjustments totalling {VarianceAmount} in variance value.",
+                countReport.StockCountTasksWritten,
+                countReport.StockCountAdjustmentsWritten,
+                countReport.PlansSkippedWithoutLedger,
+                countReport.Validation.StockCountTasksChecked,
+                countReport.Validation.PendingApprovalTasksChecked,
+                countReport.Validation.RecountRequiredTasksChecked,
+                countReport.Validation.CancelledTasksChecked,
+                countReport.Validation.OpenTasksChecked,
+                countReport.Validation.StockCountAdjustmentsChecked,
+                countReport.Validation.VarianceAmountTotal);
         }
     }
 
