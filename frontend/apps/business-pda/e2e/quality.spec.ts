@@ -1,4 +1,5 @@
 import { expect, test, type Route } from '@playwright/test'
+import { INSPECTION_TASK_SOURCE_TYPES } from '@nerv-iip/business-core'
 import { principal, routeBusinessConsoleApi, routeConsoleApi, seedStoredSession } from './fixtures'
 
 const QUALITY_BASE = '/api/business-console/v1/quality'
@@ -60,7 +61,7 @@ function filteredTaskFacts(url: URL, state: { claimed: boolean; completed: boole
     taskFacts(state, {
       inspectionTaskId: 'TASK-OLD-641',
       inspectionPlanId: 'PLAN-OLD-641',
-      sourceType: 'shipment',
+      sourceType: 'final',
       sourceService: 'erp',
       sourceDocumentId: 'SO-OLD-641',
       skuCode: 'SKU-OLD-641',
@@ -128,6 +129,8 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
   const listResponses: Array<{
     requestUrl: string
     ids: string[]
+    sourceTypes: string[]
+    sources: Array<{ sourceType: string; sourceService: string }>
     total: number
     assignedInspectorUserIds: Array<string | null | undefined>
   }> = []
@@ -149,6 +152,11 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
       listResponses.push({
         requestUrl: url.toString(),
         ids: items.map((item) => String(item.inspectionTaskId)),
+        sourceTypes: items.map((item) => String(item.sourceType)),
+        sources: items.map((item) => ({
+          sourceType: String(item.sourceType),
+          sourceService: String(item.sourceService),
+        })),
         total: items.length,
         assignedInspectorUserIds: items.map((item) => item.assignedInspectorUserId),
       })
@@ -268,6 +276,16 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
   })
   expect(initialResponse?.ids).toContain(OLD_TASK_ID)
   expect(initialResponse?.total).toBe(3)
+  expect(
+    initialResponse?.sourceTypes.every((sourceType) =>
+      INSPECTION_TASK_SOURCE_TYPES.includes(sourceType),
+    ),
+  ).toBe(true)
+  expect(initialResponse?.sources).toEqual([
+    { sourceType: 'receiving', sourceService: 'wms' },
+    { sourceType: 'final', sourceService: 'erp' },
+    { sourceType: 'operation', sourceService: 'mes' },
+  ])
   expect(initialResponse?.assignedInspectorUserIds).toEqual([
     principal.principalId,
     principal.principalId,
