@@ -2568,6 +2568,24 @@ export type {
 export type BusinessConsolePrincipalWorkContextRequest =
   import('./generated/business-console').GetBusinessConsolePrincipalWorkContextData['query']
 
+// MAN-631 / #1392: auditable Maintenance assignment and lifecycle actions.
+export {
+  assignBusinessConsoleMaintenanceWorkOrder,
+  assignBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  transitionBusinessConsoleMaintenanceWorkOrder,
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions,
+} from './generated/business-console'
+
+export type {
+  AssignBusinessConsoleMaintenanceWorkOrderData,
+  TransitionBusinessConsoleMaintenanceWorkOrderData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignMaintenanceWorkOrderRequest as BusinessConsoleAssignMaintenanceWorkOrderRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTransitionMaintenanceWorkOrderRequest as BusinessConsoleTransitionMaintenanceWorkOrderRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction as BusinessConsoleMaintenanceWorkOrderAction,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderActionResponse as BusinessConsoleMaintenanceWorkOrderActionResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem as BusinessConsoleMaintenanceWorkOrderLifecycleEventItem,
+} from './generated/business-console'
+
 // MAN-629 / #1166: WMS 可信作业范围、受控派工与人工任务生命周期。
 export {
   getBusinessConsoleWmsReceiptWorkScopes,

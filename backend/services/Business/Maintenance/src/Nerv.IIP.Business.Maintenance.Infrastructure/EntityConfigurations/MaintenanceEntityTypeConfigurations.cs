@@ -23,6 +23,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.FailureModeCode).HasColumnName("failure_mode_code").HasMaxLength(100).HasComment("Structured failure mode code captured from alarm or inspection context.");
         builder.Property(x => x.FailureCauseCode).HasColumnName("failure_cause_code").HasMaxLength(100).HasComment("Structured failure cause code captured from alarm or inspection context.");
         builder.Property(x => x.AssignedTechnicianUserId).HasColumnName("assigned_technician_user_id").HasMaxLength(150).HasComment("Assigned technician user reference owned outside Maintenance.");
+        builder.Property(x => x.AssignedTeamId).HasColumnName("assigned_team_id").HasMaxLength(150).HasComment("Assigned maintenance team reference owned by MasterData.");
         builder.Property(x => x.ActualTechnicianUserId).HasColumnName("actual_technician_user_id").HasMaxLength(150).HasComment("Actual primary technician user reference recorded at completion and owned outside Maintenance.");
         builder.Property(x => x.EstimatedLaborMinutes).HasColumnName("estimated_labor_minutes").HasComment("Estimated technician labor minutes.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
@@ -42,8 +43,24 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.CostCurrencyCode).HasColumnName("cost_currency_code").HasMaxLength(10).HasComment("Currency code for summarized maintenance cost fields.");
         builder.Property(x => x.RepairStartedAtUtc).HasColumnName("repair_started_at_utc").HasComment("UTC time when effective repair work started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
+        builder.Property(x => x.AcceptedAtUtc).HasColumnName("accepted_at_utc").HasComment("UTC time when the assigned technician accepted the work order.");
+        builder.Property(x => x.VerifiedAtUtc).HasColumnName("verified_at_utc").HasComment("UTC time when repair outcome was verified.");
+        builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the verified work order was closed.");
+        builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the work order was cancelled.");
+        builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken().HasComment("Optimistic concurrency version advanced by every state-changing work-order command.");
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_status_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_device_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTechnicianUserId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTeamId, x.OpenedAtUtc })
+            .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
+        // The five lower(column) substring predicates in ListMaintenanceWorkOrdersQueryHandler are backed by
+        // PostgreSQL pg_trgm GIN expression indexes in AddMaintenanceKeywordSearchIndexes. EF cannot model
+        // expression indexes, so that provider-specific query support stays migration-owned.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
         // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })
@@ -56,6 +73,34 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
     {
         builder.Property<string>("OrganizationId").HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id.");
         builder.Property<string>("EnvironmentId").HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id.");
+    }
+}
+
+public sealed class MaintenanceWorkOrderLifecycleEventEntityTypeConfiguration
+    : IEntityTypeConfiguration<MaintenanceWorkOrderLifecycleEvent>
+{
+    public void Configure(EntityTypeBuilder<MaintenanceWorkOrderLifecycleEvent> builder)
+    {
+        builder.ToTable("maintenance_work_order_lifecycle_events", table =>
+            table.HasComment("Append-only auditable maintenance assignment and lifecycle action receipts."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Lifecycle event id.");
+        MaintenanceWorkOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.WorkOrderId).HasColumnName("maintenance_work_order_id").IsRequired().HasComment("Owning maintenance work order id.");
+        builder.Property(x => x.Action).HasColumnName("action").HasConversion<string>().HasMaxLength(50).IsRequired().HasComment("Assignment or lifecycle action.");
+        builder.Property(x => x.FromStatus).HasColumnName("from_status").HasConversion<string>().HasMaxLength(50).IsRequired().HasComment("Authoritative status before the action.");
+        builder.Property(x => x.ToStatus).HasColumnName("to_status").HasConversion<string>().HasMaxLength(50).IsRequired().HasComment("Authoritative status after the action.");
+        builder.Property(x => x.ActorPrincipalId).HasColumnName("actor_principal_id").HasMaxLength(150).IsRequired().HasComment("Authenticated principal that performed the action.");
+        builder.Property(x => x.TechnicianUserId).HasColumnName("technician_user_id").HasMaxLength(150).HasComment("Technician responsible at this action step.");
+        builder.Property(x => x.TeamId).HasColumnName("team_id").HasMaxLength(150).HasComment("Maintenance team responsible at this action step.");
+        builder.Property(x => x.Reason).HasColumnName("reason").HasMaxLength(500).IsRequired().HasComment("Business reason for the action.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(150).IsRequired().HasComment("Intent-level idempotency key.");
+        builder.Property(x => x.PayloadFingerprint).HasColumnName("payload_fingerprint").HasMaxLength(64).IsRequired().HasComment("SHA-256 fingerprint used to reject same-key different-payload replays.");
+        builder.Property(x => x.ResultingVersion).HasColumnName("resulting_version").IsRequired().HasComment("Work-order version after the action.");
+        builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").IsRequired().HasComment("Authoritative UTC action time.");
+        builder.HasOne<MaintenanceWorkOrder>().WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OccurredAtUtc });
     }
 }
 

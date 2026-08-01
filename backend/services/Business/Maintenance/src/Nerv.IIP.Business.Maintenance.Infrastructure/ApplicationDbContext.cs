@@ -16,6 +16,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 {
     public DbSet<MaintenanceWorkOrder> MaintenanceWorkOrders => Set<MaintenanceWorkOrder>();
     public DbSet<SparePartLine> SparePartLines => Set<SparePartLine>();
+    public DbSet<MaintenanceWorkOrderLifecycleEvent> MaintenanceWorkOrderLifecycleEvents => Set<MaintenanceWorkOrderLifecycleEvent>();
     public DbSet<MaintenancePlan> MaintenancePlans => Set<MaintenancePlan>();
     public DbSet<MaintenanceInspection> MaintenanceInspections => Set<MaintenanceInspection>();
     public DbSet<MaintenanceInspectionMeasurement> MaintenanceInspectionMeasurements => Set<MaintenanceInspectionMeasurement>();

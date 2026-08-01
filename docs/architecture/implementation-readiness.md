@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Maintenance 工单执行生命周期 M2（MAN-631 / #1168）
+
+BusinessMaintenance 工单在兼容既有 `Open -> Completed` 一步完工链路的同时，新增可审计执行状态机：`Open -> Accepted -> InProgress -> Paused/WaitingForParts -> InProgress -> Completed -> Verified -> Closed`，并允许完成前取消为 `Cancelled`。分派和每次状态动作都要求期望版本、业务原因与意图级 `idempotencyKey`；同键同载荷返回原结果，同键异载荷和版本冲突均 fail closed。追加式生命周期事件保存前后状态、认证主体、当时技师/班组、原因、结果版本和权威时间；关闭与取消是终态。
+
+BusinessGateway 以 `business.maintenance.work-orders.read/manage` 暴露工单详情、分派和统一动作 facade，并在每次显式 self/team 队列或动作中实时复用 MAN-627 主体作业上下文。客户端不能声明 actor；Gateway 从认证结果注入 principal。self 仅投影当前 principal 的指派工单，team 仅投影已授权班组，伪造或不支持的范围返回 403。服务端列表现支持 status、device、keyword、assigned technician/team 过滤且在分页前应用；详情返回 server-derived `allowedActions` 与完整生命周期审计。三个新增服务 endpoint 均登记 `exposed`，OpenAPI 与生成客户端同步刷新。
+
 ## 一线写操作幂等与权威回执（MAN-625 / #1162）
 
 MES 工序开始、暂停、恢复和完成，Quality 检验任务提交，以及 Maintenance 报修建单和一步完工现在都使用意图级 `idempotencyKey`。同一意图在超时后以同键重试，服务端持久绑定完整载荷指纹与首次结果；同键同载荷返回同一权威业务 ID、状态和时间，同键异载荷 fail closed，并以资源级分布式锁及数据库唯一冲突恢复收敛并发。WMS 盘点完成同时覆盖本地事件和 Inventory RPC 两条路径，持久保存 movement receipt，使超时重放不会再次调整库存。既有 WMS 入库完成、出库复核和报警搁置幂等实现保持不变；报警确认继续使用 first-write-wins 语义。

@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
+using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -31,11 +32,15 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(21, contracts.Length);
+        Assert.Equal(25, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "assignMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "probeMaintenanceWorkOrderAssignmentReplay");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/actions" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "transitionMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/plans/{planId}" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "updateMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
@@ -102,6 +107,76 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "External service cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part quantity must fit numeric(18,6).");
+    }
+
+    [Fact]
+    public async Task Assignment_replay_probe_is_read_only_and_returns_only_exact_receipts()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-REPLAY-PROBE", "high", "reporter-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var assignment = new AssignMaintenanceWorkOrderCommand(
+            "org-001",
+            "env-dev",
+            workOrder.Id,
+            "dispatcher-001",
+            "technician-001",
+            "team-001",
+            "dispatch",
+            "assignment-probe-key",
+            0);
+        var originalReceipt = await new AssignMaintenanceWorkOrderCommandHandler(dbContext)
+            .Handle(assignment, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var versionBeforeProbes = workOrder.Version;
+        var eventsBeforeProbes = await dbContext.MaintenanceWorkOrderLifecycleEvents.CountAsync();
+        var handler = new ProbeMaintenanceWorkOrderAssignmentReplayQueryHandler(dbContext);
+
+        var exact = await handler.Handle(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+            assignment.OrganizationId,
+            assignment.EnvironmentId,
+            assignment.WorkOrderId,
+            assignment.ActorPrincipalId,
+            assignment.TechnicianUserId,
+            assignment.TeamId,
+            assignment.Reason,
+            assignment.IdempotencyKey,
+            assignment.ExpectedVersion), CancellationToken.None);
+        Assert.True(exact.Found);
+        Assert.Equal(originalReceipt, exact.Receipt);
+
+        var notFound = await handler.Handle(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+            assignment.OrganizationId,
+            assignment.EnvironmentId,
+            assignment.WorkOrderId,
+            assignment.ActorPrincipalId,
+            assignment.TechnicianUserId,
+            assignment.TeamId,
+            assignment.Reason,
+            "unused-assignment-key",
+            assignment.ExpectedVersion), CancellationToken.None);
+        Assert.False(notFound.Found);
+        Assert.Null(notFound.Receipt);
+
+        await Assert.ThrowsAsync<MaintenanceIdempotencyConflictException>(() => handler.Handle(
+            new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+                assignment.OrganizationId,
+                assignment.EnvironmentId,
+                assignment.WorkOrderId,
+                assignment.ActorPrincipalId,
+                "different-technician",
+                assignment.TeamId,
+                assignment.Reason,
+                assignment.IdempotencyKey,
+                assignment.ExpectedVersion),
+            CancellationToken.None));
+
+        Assert.Equal(versionBeforeProbes, workOrder.Version);
+        Assert.Equal(eventsBeforeProbes, await dbContext.MaintenanceWorkOrderLifecycleEvents.CountAsync());
+        Assert.False(dbContext.ChangeTracker.HasChanges());
     }
 
     [Fact]

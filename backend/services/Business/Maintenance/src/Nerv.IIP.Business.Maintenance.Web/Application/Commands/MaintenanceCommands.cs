@@ -271,8 +271,10 @@ public sealed record CompleteMaintenanceWorkOrderCommand(
 
 public sealed record MaintenanceWorkOrderCommandResult(
     MaintenanceWorkOrderId WorkOrderId,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<MaintenanceWorkOrderStatus>))]
     MaintenanceWorkOrderStatus Status,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    int Version = 0);
 
 public sealed class CompleteMaintenanceWorkOrderCommandLock : ICommandLock<CompleteMaintenanceWorkOrderCommand>
 {
@@ -282,9 +284,15 @@ public sealed class CompleteMaintenanceWorkOrderCommandLock : ICommandLock<Compl
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new CommandLockSettings(
-            $"business-maintenance:work-order-complete:{command.WorkOrderId}",
+            MaintenanceWorkOrderCommandLockKeys.For(command.WorkOrderId),
             MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
     }
+}
+
+internal static class MaintenanceWorkOrderCommandLockKeys
+{
+    public static string For(MaintenanceWorkOrderId workOrderId) =>
+        $"business-maintenance:work-order:{workOrderId}";
 }
 
 public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValidator<CompleteMaintenanceWorkOrderCommand>
@@ -384,7 +392,8 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             workOrder.Id,
             workOrder.Status,
             workOrder.CompletedAtUtc
-                ?? throw new KnownException("Maintenance completion did not record an authoritative completion time."));
+                ?? throw new KnownException("Maintenance completion did not record an authoritative completion time."),
+            workOrder.Version);
         AddCompletionIdempotencyRecord(workOrder, request, result);
         return result;
     }
@@ -421,15 +430,27 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             throw new MaintenanceIdempotencyConflictException();
         }
 
-        var parts = existing.Code.Split('|', 2, StringSplitOptions.TrimEntries);
-        if (parts.Length != 2 ||
+        var parts = existing.Code.Split('|', 3, StringSplitOptions.TrimEntries);
+        if (parts.Length is not (2 or 3) ||
             !Enum.TryParse<MaintenanceWorkOrderStatus>(parts[0], out var status) ||
+            !Enum.IsDefined(status) ||
             !DateTimeOffset.TryParseExact(
                 parts[1],
                 "O",
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind,
-                out var changedAtUtc))
+                out var changedAtUtc) ||
+            changedAtUtc == default)
+        {
+            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+        }
+
+        var storedVersion = workOrder.Version;
+        if (parts.Length == 3 && (!int.TryParse(
+                parts[2],
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out storedVersion) || storedVersion < 0))
         {
             throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
         }
@@ -437,7 +458,8 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
         return new MaintenanceWorkOrderCommandResult(
             request.WorkOrderId,
             status,
-            changedAtUtc);
+            changedAtUtc,
+            storedVersion);
     }
 
     private void AddCompletionIdempotencyRecord(
@@ -456,7 +478,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             workOrder.EnvironmentId,
             CompleteRuleKey,
             idempotencyKey,
-            $"{result.Status}|{result.ChangedAtUtc:O}",
+            $"{result.Status}|{result.ChangedAtUtc:O}|{result.Version}",
             CompletionFingerprint(request),
             result.ChangedAtUtc));
     }

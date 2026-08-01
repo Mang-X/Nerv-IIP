@@ -246,8 +246,8 @@ PlatformGateway 的 Console Observability facade 在查询 VictoriaLogs 前，�
 | `business.iiot.device-control.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备控制命令下发结果、历史与控制通道绑定；MAN-438/#792 BusinessGateway device-control command get/list 与 binding list facade 强制该权限。 |
 | `business.iiot.device-control.write` | `user` / `external-client` | environment + resource + capability | 下发审批门禁的设备控制命令（写值/启停/参数下发）；MAN-438/#792 BusinessGateway device-control command create facade 强制该权限；不表达直连 PLC/DCS/SCADA 控制授权。 |
 | `business.iiot.device-control.manage` | `user` / `external-client` | environment + resource | 维护设备控制通道绑定（设备 → 连接器主机/实例路由目标）；MAN-438/#792 BusinessGateway device-control binding create-or-update/disable facade 强制该权限，与命令下发 `.write` 分离以防止有下发权限的角色篡改路由。 |
-| `business.maintenance.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看维修工单、故障、停机和维修结果；#207 设备运行事实相关但当前 Gateway equipment facade 未额外强制该权限。 |
-| `business.maintenance.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、分派、完成维修工单。 |
+| `business.maintenance.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看维修工单、故障、停机、维修结果与生命周期审计；MAN-631 显式 self/team 队列每次实时校验主体作业范围，#207 Gateway equipment facade 仍未额外强制该权限。 |
+| `business.maintenance.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、分派、接单、开始、暂停/待料、恢复、完成、验证、关闭或取消维修工单；MAN-631 Gateway 写面从认证结果注入 actor 并实时校验 self/team 范围。 |
 | `business.maintenance.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看保养计划、点检计划和执行记录；#207 availability 合并维护窗口时由下游 Maintenance/domain catalog 使用，当前 Gateway equipment facade 未额外强制该权限。 |
 | `business.maintenance.plans.manage` | `user` / `external-client` | environment + resource | 创建、调整和关闭保养计划、点检计划。 |
 
