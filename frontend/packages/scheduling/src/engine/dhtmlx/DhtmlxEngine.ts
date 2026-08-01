@@ -1440,6 +1440,8 @@ export class DhtmlxEngine implements SchedulingEngine {
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
       const resourcesByLane = new Map<string, Set<string>>()
+      const configuredLanes = model.groupValues?.[dim] ?? []
+      for (const lane of configuredLanes) groups.set(lane.id, lane.label)
       // 用资源播种泳道,保证空泳道常驻——拖走最后一个工序时该行不消失。但仅当资源本身就是
       // 该维度的成员时才播种:若工序携带的维度 id(如 WC-*)与资源 id(如设备 DEV-*)分属两个
       // 空间,播种全部资源会生出一批永远为空的设备泳道垫在最上方,把真正有工序的泳道挤出首屏。
@@ -1473,10 +1475,11 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
       // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
       const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))
+      const groupOrder = new Map(configuredLanes.map((lane, index) => [lane.id, index]))
       const sortedGroups = [...groups.entries()].sort(
         (a, b) =>
-          (resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
-          (resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER),
+          (groupOrder.get(a[0]) ?? resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
+          (groupOrder.get(b[0]) ?? resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER),
       )
       // 本批泳道指标先攒起来,循环末尾一次性判定哪些指标真有数据(#1399 M8)。
       const laneKpis: Array<LaneTask['kpi']> = []
