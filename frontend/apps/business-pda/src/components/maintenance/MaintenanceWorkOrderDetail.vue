@@ -31,8 +31,8 @@ const blockReasons = computed(() => props.workOrder.blockReasons ?? [])
 const lifecycle = computed(() => props.workOrder.lifecycle ?? [])
 const assignment = computed(() => {
   const parts = [
-    props.workOrder.assignedTechnicianUserId ? '已指派维修人员' : '未指派维修人员',
-    props.workOrder.assignedTeamId ? '已指派维修班组' : undefined,
+    props.workOrder.assignedTechnicianUserId ? '当前维修人员' : '未指派维修人员',
+    props.workOrder.assignedTeamId ? '班组信息已记录但不可解析' : undefined,
   ].filter((part): part is string => Boolean(part))
   return parts.join(' · ')
 })
@@ -81,18 +81,18 @@ const assignment = computed(() => {
       data-testid="maintenance-read-only-state"
       class="rounded-xl border border-brand/30 bg-brand/5 p-4 text-sm"
     >
-      <h2 class="font-semibold text-foreground">{{ terminal ? '终态只读' : '权威只读详情' }}</h2>
+      <h2 class="font-semibold text-foreground">{{ terminal ? '终态只读' : '工单详情只读' }}</h2>
       <p class="mt-1 text-muted-foreground">
         {{
           terminal
             ? '工单已进入终态，仅可查看。'
-            : '本页面只展示服务端返回的动作资格，不在客户端推断或执行生命周期动作。'
+            : '本页面只展示系统确认的动作资格，不自行推断或执行生命周期动作。'
         }}
       </p>
     </section>
 
     <section class="space-y-2 rounded-xl border border-border bg-card p-4">
-      <h2 class="text-sm font-semibold text-foreground">服务端允许动作</h2>
+      <h2 class="text-sm font-semibold text-foreground">当前可执行动作</h2>
       <div v-if="allowedActions.length" class="flex flex-wrap gap-2">
         <NvMobileTag v-for="action in allowedActions" :key="action" variant="brand">
           {{ maintenanceWorkOrderActionLabel(action) }}

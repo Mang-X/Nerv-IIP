@@ -637,24 +637,6 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
 
   // ---- 设备运维（报修/点检/报警查看） ----
-  const deviceResourceMatch = pathname.match(
-    /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
-  )
-  if (deviceResourceMatch) {
-    const deviceAssetId = decodeURIComponent(deviceResourceMatch[1])
-    const device = deviceAssets.find((item) => item.deviceAssetId === deviceAssetId)
-    if (!device) return fulfillJson(route, { success: false, message: '设备不存在', data: null })
-    return fulfillJson(
-      route,
-      envelope({
-        resourceType: 'device-asset',
-        ...device,
-        organizationId: principal.organizationId,
-        environmentId: principal.environmentId,
-      }),
-    )
-  }
-
   // 报修设备选择器：principal scope + 服务端 keyword/skip/take，有界返回。
   if (pathname === '/api/business-console/v1/master-data/device-assets') {
     const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toLowerCase()
@@ -663,6 +645,7 @@ export async function routeBusinessConsoleApi(route: Route) {
     const matched = keyword
       ? deviceAssets.filter(
           (item) =>
+            item.deviceAssetId.toLowerCase().includes(keyword) ||
             item.displayName.toLowerCase().includes(keyword) ||
             item.code.toLowerCase().includes(keyword),
         )

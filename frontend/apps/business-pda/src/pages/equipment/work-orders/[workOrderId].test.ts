@@ -105,8 +105,8 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
-    expect(wrapper.text()).toContain('已指派维修人员')
-    expect(wrapper.text()).toContain('已指派维修班组')
+    expect(wrapper.text()).toContain('当前维修人员')
+    expect(wrapper.text()).toContain('班组信息已记录但不可解析')
     expect(wrapper.text()).toContain('操作人已记录')
     expect(wrapper.text()).toContain('来源：报警报修创建结果')
     expect(wrapper.text()).not.toContain('WO-DETAIL')
@@ -121,6 +121,26 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('待处理 → 已接单')
     expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
     expect(wrapper.findAll('button').some((button) => button.text() === '取消')).toBe(false)
+  })
+
+  it.each([
+    [{}, '未指派维修人员'],
+    [{ assignedTechnicianUserId: 'principal-1' }, '当前维修人员'],
+    [{ assignedTeamId: 'team-a' }, '未指派维修人员 · 班组信息已记录但不可解析'],
+  ])('renders truthful self assignment without exposing identifiers', async (assignment, label) => {
+    state.workOrder = {
+      workOrderId: 'WO-DETAIL',
+      deviceAssetId: 'device-1',
+      status: 'open',
+      priority: 'medium',
+      ...assignment,
+    }
+
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain(label)
+    expect(wrapper.text()).not.toContain('principal-1')
+    expect(wrapper.text()).not.toContain('team-a')
   })
 
   it('shows a terminal work order as read-only even when stale actions are present', async () => {
@@ -150,6 +170,9 @@ describe('maintenance work-order authoritative detail page', () => {
 
     expect(state.requestedId?.value).toBe('invalid-id')
     expect(wrapper.text()).toContain('工单不可查看')
+    expect(wrapper.text()).toContain('当前账号不可查看')
+    expect(wrapper.text()).not.toContain('Self')
+    expect(wrapper.text()).not.toContain('服务端')
     expect(wrapper.text()).not.toContain('MWO-2026-0042')
   })
 })

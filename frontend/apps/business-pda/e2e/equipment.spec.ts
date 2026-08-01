@@ -21,6 +21,13 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await page.setViewportSize({ width: 375, height: 812 })
   const listRequests: URL[] = []
   const detailRequests: URL[] = []
+  const deviceDirectoryRequests: URL[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/business-console/v1/master-data/device-assets') {
+      deviceDirectoryRequests.push(url)
+    }
+  })
   const workOrders = Array.from({ length: 25 }, (_, index) => ({
     workOrderId: `WO-SELF-${index + 1}`,
     sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
@@ -130,6 +137,10 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     'WS-1 · LINE-A · ST-9',
   )
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('当前维修人员')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
+    '班组信息已记录但不可解析',
+  )
   await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
   await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
     principal.principalId,
@@ -138,6 +149,15 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(detailRequests).toHaveLength(1)
   expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  expect(
+    deviceDirectoryRequests.some(
+      (url) =>
+        url.searchParams.get('keyword') === 'device-asset-cnc-01' &&
+        url.searchParams.get('includeDisabled') === 'false' &&
+        url.searchParams.get('skip') === '0' &&
+        url.searchParams.get('take') === '20',
+    ),
+  ).toBe(true)
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 

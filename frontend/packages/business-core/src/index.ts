@@ -46,6 +46,8 @@ export {
   maintenanceWorkOrderStatusOptions,
   inspectionResultLabel,
   inspectionResultLabels,
+  isMaintenanceWorkOrderStatusCode,
+  normalizeMaintenanceWorkOrderStatusFilter,
 } from './labels/equipmentLabels'
 export type { MaintenanceWorkOrderStatusCode } from './labels/equipmentLabels'
 export {

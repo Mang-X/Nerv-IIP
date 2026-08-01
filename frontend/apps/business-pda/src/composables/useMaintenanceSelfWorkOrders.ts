@@ -1,11 +1,16 @@
 import {
   getBusinessConsoleMaintenanceWorkOrderQueryOptions,
-  getBusinessConsoleMasterDataResourceDetailQueryOptions,
+  listBusinessConsoleDeviceAssetsQueryOptions,
   listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
   type BusinessConsoleMaintenanceWorkOrderItem,
-  type BusinessConsoleMasterDataResourceDetail,
+  type BusinessConsoleResourceItem,
+  type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
+import {
+  normalizeMaintenanceWorkOrderStatusFilter,
+  type MaintenanceWorkOrderStatusCode,
+} from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -36,7 +41,7 @@ type WorkOrderDetailEnvelope =
   | undefined
 
 export interface MaintenanceSelfWorkOrderFilters {
-  status: string
+  status: '' | MaintenanceWorkOrderStatusCode
   deviceAssetId: string
   keyword: string
 }
@@ -93,7 +98,7 @@ export function useMaintenanceSelfWorkOrders() {
   })
   const listQueryParameters = () => ({
     ...scope.queryScope(),
-    status: normalized(filters.status),
+    status: normalized(normalizeMaintenanceWorkOrderStatusFilter(filters.status)),
     deviceAssetId: normalized(filters.deviceAssetId),
     keyword: normalized(filters.keyword),
   })
@@ -123,7 +128,7 @@ export function useMaintenanceSelfWorkOrders() {
   })
   const identity = computed(
     () =>
-      `${scope.scopeKey.value}:${filters.status.trim()}:${filters.deviceAssetId.trim()}:${filters.keyword.trim()}`,
+      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${filters.deviceAssetId.trim()}:${filters.keyword.trim()}`,
   )
   const pager = useTaskListPagination<BusinessConsoleMaintenanceWorkOrderItem>({
     identity,
@@ -193,28 +198,37 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
 
   const deviceAssetId = computed(() => workOrder.value?.deviceAssetId?.trim() ?? '')
   const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
+  const deviceIdentity = computed(() =>
+    deviceEnabled.value ? `${scope.scopeKey.value}:device:${deviceAssetId.value}` : '',
+  )
   const deviceQuery = useQuery(() => ({
-    ...getBusinessConsoleMasterDataResourceDetailQueryOptions({
-      path: {
-        resourceType: 'device-asset',
-        code: deviceAssetId.value,
-      },
+    ...listBusinessConsoleDeviceAssetsQueryOptions({
       query: {
         organizationId: scope.organizationId.value,
         environmentId: scope.environmentId.value,
+        includeDisabled: false,
+        keyword: deviceAssetId.value,
+        skip: 0,
+        take: PAGE_SIZE,
       },
     }),
     enabled: deviceEnabled.value,
   }))
-  const device = computed<BusinessConsoleMasterDataResourceDetail | undefined>(() => {
-    const envelope = deviceQuery.data.value as
-      | { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null }
-      | undefined
-    const item = envelope?.success === true ? envelope.data : undefined
-    if (!item || item.resourceType !== 'device-asset') return undefined
-    if (item.organizationId && item.organizationId !== scope.organizationId.value) return undefined
-    if (item.environmentId && item.environmentId !== scope.environmentId.value) return undefined
-    return item
+  const deviceResponse = useScopeBoundListResponse(
+    () => deviceQuery.data.value as BusinessConsoleResourceListEnvelope | undefined,
+    deviceIdentity,
+    deviceEnabled,
+  )
+  const device = computed<BusinessConsoleResourceItem | undefined>(() => {
+    const envelope = deviceResponse.value
+    if (envelope?.success !== true) return undefined
+    const exactItems = (envelope.data?.resources ?? []).filter(
+      (item) =>
+        item.active !== false &&
+        typeof item.deviceAssetId === 'string' &&
+        item.deviceAssetId.trim() === deviceAssetId.value,
+    )
+    return exactItems.length === 1 ? exactItems[0] : undefined
   })
   const hasSuccessfulResponse = computed(() => Boolean(workOrder.value))
   const hasFailedResponse = computed(

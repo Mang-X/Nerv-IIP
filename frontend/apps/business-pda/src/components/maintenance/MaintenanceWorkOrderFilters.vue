@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { maintenanceWorkOrderStatusOptions } from '@nerv-iip/business-core'
+import {
+  maintenanceWorkOrderStatusOptions,
+  type MaintenanceWorkOrderStatusCode,
+} from '@nerv-iip/business-core'
 import {
   NvListRow,
   NvMobileButton,
@@ -10,7 +13,7 @@ import {
 
 defineProps<{ deviceLabel?: string }>()
 const emit = defineEmits<{ chooseDevice: [] }>()
-const status = defineModel<string>('status', { required: true })
+const status = defineModel<'' | MaintenanceWorkOrderStatusCode>('status', { required: true })
 const deviceAssetId = defineModel<string>('deviceAssetId', { required: true })
 const keyword = defineModel<string>('keyword', { required: true })
 

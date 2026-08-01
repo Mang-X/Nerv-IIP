@@ -50,14 +50,12 @@ function backToList() {
     </div>
 
     <div v-else-if="pending && !workOrder" class="p-8 text-center text-sm text-muted-foreground">
-      正在重新校验工单详情…
+      正在读取工单详情…
     </div>
 
     <div v-else-if="hasFailedResponse || error || !workOrder" class="space-y-3 p-4">
       <h2 class="font-semibold text-foreground">工单不可查看</h2>
-      <p class="text-sm text-muted-foreground">
-        工单可能已失效、超出当前维修人员 Self 范围，或服务端未成功返回。
-      </p>
+      <p class="text-sm text-muted-foreground">当前账号不可查看该工单，或工单已失效。</p>
       <RetryableListError
         :error="error"
         :pending="pending"

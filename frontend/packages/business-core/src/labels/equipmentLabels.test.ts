@@ -5,11 +5,13 @@ import {
   alarmSeverityLabel,
   equipmentStateLabel,
   inspectionResultLabel,
+  isMaintenanceWorkOrderStatusCode,
   maintenanceWorkOrderActionLabel,
   maintenanceWorkOrderBlockReasonLabel,
   maintenancePriorityLabel,
   maintenanceWorkOrderStatusLabel,
   maintenanceWorkOrderStatusOptions,
+  normalizeMaintenanceWorkOrderStatusFilter,
 } from './equipmentLabels'
 
 describe('alarmSeverityLabel', () => {
@@ -28,6 +30,14 @@ describe('alarmSeverityLabel', () => {
     expect(alarmSeverityLabel('boom')).toBe('未知级别')
     expect(alarmSeverityLabel(null)).toBe('未知级别')
     expect(alarmSeverityLabel(undefined)).toBe('未知级别')
+  })
+
+  it('validates restored filter values against the shared lifecycle catalog', () => {
+    expect(isMaintenanceWorkOrderStatusCode('accepted')).toBe(true)
+    expect(isMaintenanceWorkOrderStatusCode('frozen')).toBe(false)
+    expect(normalizeMaintenanceWorkOrderStatusFilter('inProgress')).toBe('inProgress')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(' frozen ')).toBe('')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(undefined)).toBe('')
   })
 })
 
@@ -156,7 +166,7 @@ describe('maintenance work-order action and block-reason labels', () => {
     expect(maintenanceWorkOrderBlockReasonLabel('work-scope-not-authorized')).toContain('工作范围')
     expect(maintenanceWorkOrderBlockReasonLabel('unknown-status')).toContain('无法识别')
     expect(maintenanceWorkOrderBlockReasonLabel('new-server-code')).toBe(
-      '服务端已禁止动作，原因暂不可识别。',
+      '当前不可执行操作，具体原因暂不可识别。',
     )
   })
 })

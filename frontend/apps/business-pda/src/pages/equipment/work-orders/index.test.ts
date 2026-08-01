@@ -4,6 +4,8 @@ import { computed, reactive, shallowRef } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
+
 const state = vi.hoisted(() => ({
   scopeReady: false,
   hasSuccessfulResponse: false,
@@ -94,7 +96,9 @@ describe('maintenance self work-order queue page', () => {
     ]
     const { wrapper, router } = await mountPage()
 
-    expect(wrapper.text()).toContain('当前维修人员（服务端 Self 范围）')
+    expect(wrapper.text()).toContain('分派给当前维修人员')
+    expect(wrapper.text()).not.toContain('Self')
+    expect(wrapper.text()).not.toContain('服务端')
     expect(wrapper.text()).toContain('设备已关联')
     expect(wrapper.text()).not.toContain('device-1')
     await wrapper.get('[data-testid="maintenance-work-order-row"]').trigger('click')
@@ -111,5 +115,17 @@ describe('maintenance self work-order queue page', () => {
 
     expect(state.filters.deviceAssetId).toBe('device-1')
     expect(wrapper.text()).toContain('一号数控机床')
+  })
+
+  it('drops an unknown status restored from session state', async () => {
+    state.scopeReady = true
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(TaskListShell).vm.$emit('restore', {
+      filters: { status: 'future-server-state', deviceAssetId: '', keyword: '' },
+    })
+    await flushPromises()
+
+    expect(state.filters.status).toBe('')
   })
 })

@@ -105,6 +105,22 @@ export const maintenanceWorkOrderStatusOptions = [
 export type MaintenanceWorkOrderStatusCode =
   (typeof maintenanceWorkOrderStatusOptions)[number]['value']
 
+export function isMaintenanceWorkOrderStatusCode(
+  value: unknown,
+): value is MaintenanceWorkOrderStatusCode {
+  return (
+    typeof value === 'string' &&
+    maintenanceWorkOrderStatusOptions.some((option) => option.value === value)
+  )
+}
+
+export function normalizeMaintenanceWorkOrderStatusFilter(
+  value: unknown,
+): '' | MaintenanceWorkOrderStatusCode {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  return isMaintenanceWorkOrderStatusCode(normalized) ? normalized : ''
+}
+
 export const maintenanceWorkOrderStatusLabels: Record<string, string> = Object.fromEntries(
   maintenanceWorkOrderStatusOptions.map(({ value, label }) => [value.toLowerCase(), label]),
 )
@@ -134,8 +150,8 @@ export function maintenanceWorkOrderActionLabel(value: string | null | undefined
 /** Maintenance 服务与 BusinessGateway 返回的动作阻塞原因。 */
 export const maintenanceWorkOrderBlockReasonLabels: Record<string, string> = {
   'terminal-status': '工单已进入终态，仅可查看。',
-  'completion-data-incomplete': '完工数据不完整，服务端未开放后续动作。',
-  'unknown-status': '工单状态无法识别，服务端已禁止动作。',
+  'completion-data-incomplete': '完工数据不完整，当前不可执行后续动作。',
+  'unknown-status': '工单状态无法识别，当前不可执行操作。',
   'assigned-technician-required': '仅当前指派的维修人员可执行该动作。',
   'manage-permission-required': '当前账号没有维护动作权限。',
   'work-scope-required': '当前账号缺少执行动作所需的工作范围。',
@@ -143,7 +159,11 @@ export const maintenanceWorkOrderBlockReasonLabels: Record<string, string> = {
 }
 
 export function maintenanceWorkOrderBlockReasonLabel(value: string | null | undefined): string {
-  return lookup(maintenanceWorkOrderBlockReasonLabels, value, '服务端已禁止动作，原因暂不可识别。')
+  return lookup(
+    maintenanceWorkOrderBlockReasonLabels,
+    value,
+    '当前不可执行操作，具体原因暂不可识别。',
+  )
 }
 
 /** 点检结果（pass/fail）。 */

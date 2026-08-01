@@ -53,7 +53,9 @@ describe('PDA tasks page', () => {
     expect(wrapper.text()).toContain('生产作业')
     expect(wrapper.text()).toContain('我的质检任务')
     expect(wrapper.text()).toContain('维修工单')
-    expect(wrapper.text()).toContain('服务端按当前维修人员 Self 范围返回')
+    expect(wrapper.text()).toContain('查看分派给当前维修人员的工单与设备位置')
+    expect(wrapper.text()).not.toContain('Self')
+    expect(wrapper.text()).not.toContain('服务端')
     expect(wrapper.text()).not.toContain('我的维修工单')
     expect(wrapper.text()).not.toContain('我的生产任务')
     expect(wrapper.text()).not.toContain('暂无派给我的生产任务')
@@ -61,7 +63,7 @@ describe('PDA tasks page', () => {
 
     const production = wrapper.get('a[href="/mes/operation"]')
     expect(production.text()).toContain('生产作业')
-    expect(production.attributes('aria-label')).toBe('生产作业，服务端按当前主体与授权作业范围过滤')
+    expect(production.attributes('aria-label')).toBe('生产作业，查看当前账号可执行的生产作业')
 
     const maintenance = wrapper.get('a[href="/equipment/work-orders"]')
     expect(maintenance.text()).toContain('维修工单')

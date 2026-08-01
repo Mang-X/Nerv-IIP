@@ -25,8 +25,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'maintenance-detail', request }],
     query: vi.fn(),
   })),
-  getBusinessConsoleMasterDataResourceDetailQueryOptions: vi.fn((request) => ({
-    key: [{ _id: 'device-detail', request }],
+  listBusinessConsoleDeviceAssetsQueryOptions: vi.fn((request) => ({
+    key: [{ _id: 'device-directory', request }],
     query: vi.fn(),
   })),
   getConsolePrincipal: vi.fn(),
@@ -106,7 +106,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(api.queryFactories.get('maintenance-list')?.().enabled).toBe(false)
     expect(detail.enabled.value).toBe(false)
     expect(api.queryFactories.get('maintenance-detail')?.().enabled).toBe(false)
-    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
   })
 
   it('binds status, device, keyword, and first-page pagination to the server self query', async () => {
@@ -130,6 +130,18 @@ describe('useMaintenanceSelfWorkOrders', () => {
         skip: 0,
         take: 20,
       },
+    })
+  })
+
+  it('drops an unknown restored status instead of sending it to the service', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+
+    ;(result.filters as { status: string }).status = 'future-server-state'
+    await nextTick()
+
+    expect(requestFor('maintenance-list')).toEqual({
+      query: expect.not.objectContaining({ status: expect.anything() }),
     })
   })
 
@@ -195,7 +207,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     })
   })
 
-  it('rejects a late old-ID response and accepts only exact device metadata for the current detail', async () => {
+  it('binds device lookup to scope and requested stable ID, rejecting code matches and late old responses', async () => {
     seedPrincipal()
     const routeId = shallowRef('WO-NEW')
     const result = useMaintenanceSelfWorkOrderDetail(routeId)
@@ -206,11 +218,14 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
-    expect(requestFor('device-detail')).toEqual({
-      path: { resourceType: 'device-asset', code: '' },
+    expect(requestFor('device-directory')).toEqual({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        includeDisabled: false,
+        keyword: '',
+        skip: 0,
+        take: 20,
       },
     })
 
@@ -220,28 +235,90 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.workOrder.value?.workOrderId).toBe('WO-NEW')
-    expect(requestFor('device-detail')).toEqual({
-      path: { resourceType: 'device-asset', code: 'device-new' },
+    expect(requestFor('device-directory')).toEqual({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        includeDisabled: false,
+        keyword: 'device-new',
+        skip: 0,
+        take: 20,
       },
     })
 
-    api.data.get('device-detail')!.value = {
+    api.data.get('device-directory')!.value = {
       success: true,
       data: {
-        resourceType: 'device-asset',
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        displayName: '一号数控机床',
-        workshopCode: 'WS-1',
+        resources: [
+          {
+            deviceAssetId: 'device-old',
+            code: 'device-new',
+            displayName: '迟到的旧设备',
+            workshopCode: 'WS-OLD',
+          },
+        ],
+        total: 1,
+      },
+    }
+    await nextTick()
+    expect(result.device.value).toBeUndefined()
+
+    api.data.get('device-directory')!.value = {
+      success: true,
+      data: {
+        resources: [
+          { deviceAssetId: 'device-new', code: 'CNC-NEW', displayName: '重复设备一' },
+          { deviceAssetId: ' device-new ', code: 'CNC-NEW-2', displayName: '重复设备二' },
+        ],
+        total: 2,
+      },
+    }
+    await nextTick()
+    expect(result.device.value).toBeUndefined()
+
+    api.data.get('device-directory')!.value = {
+      success: true,
+      data: {
+        resources: [
+          {
+            deviceAssetId: 'device-new',
+            code: 'CNC-NEW',
+            displayName: '一号数控机床',
+            workshopCode: 'WS-1',
+          },
+        ],
+        total: 1,
       },
     }
     await nextTick()
     expect(result.device.value).toMatchObject({
+      deviceAssetId: 'device-new',
+      code: 'CNC-NEW',
       displayName: '一号数控机床',
       workshopCode: 'WS-1',
     })
+
+    routeId.value = 'WO-LATEST'
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: { workOrderId: 'WO-LATEST', deviceAssetId: 'device-latest' },
+    }
+    await nextTick()
+    expect(result.device.value).toBeUndefined()
+
+    api.data.get('device-directory')!.value = {
+      success: true,
+      data: {
+        resources: [
+          {
+            deviceAssetId: 'device-new',
+            code: 'CNC-NEW',
+            displayName: '迟到的一号数控机床',
+          },
+        ],
+      },
+    }
+    await nextTick()
+    expect(result.device.value).toBeUndefined()
   })
 })

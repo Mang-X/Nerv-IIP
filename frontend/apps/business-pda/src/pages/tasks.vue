@@ -43,8 +43,8 @@ const warehouseEntrances = computed(() => {
           <PdaNavigationCell
             to="/mes/operation"
             title="生产作业"
-            note="服务端按当前主体与授权作业范围过滤"
-            accessible-name="生产作业，服务端按当前主体与授权作业范围过滤"
+            note="查看当前账号可执行的生产作业"
+            accessible-name="生产作业，查看当前账号可执行的生产作业"
           >
             <template #icon><Factory /></template>
           </PdaNavigationCell>
@@ -58,7 +58,7 @@ const warehouseEntrances = computed(() => {
             data-testid="quality-self-tasks"
             to="/quality/tasks"
             title="我的质检任务"
-            note="服务端按当前主体 Self 范围返回"
+            note="查看分派给当前账号的质检任务"
           >
             <template #icon><ClipboardCheck /></template>
           </PdaNavigationCell>
@@ -72,7 +72,7 @@ const warehouseEntrances = computed(() => {
             data-testid="maintenance-self-work-orders"
             to="/equipment/work-orders"
             title="维修工单"
-            note="维修工单与设备位置均已授权，服务端按当前维修人员 Self 范围返回"
+            note="查看分派给当前维修人员的工单与设备位置"
           >
             <template #icon><Wrench /></template>
           </PdaNavigationCell>

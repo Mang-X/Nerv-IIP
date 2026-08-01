@@ -14,7 +14,7 @@ function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
   return [
     item.deviceAssetId?.trim() ? '设备已关联' : '设备未标识',
     `优先级 ${maintenancePriorityLabel(item.priority)}`,
-    item.assignedTechnicianUserId ? '已指派维修人员' : '未指派维修人员',
+    item.assignedTechnicianUserId ? '当前维修人员' : '未指派维修人员',
   ].join(' · ')
 }
 </script>

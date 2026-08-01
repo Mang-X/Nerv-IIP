@@ -8,6 +8,7 @@ import type {
   BusinessConsoleMaintenanceWorkOrderItem,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
+import { normalizeMaintenanceWorkOrderStatusFilter } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvNavBar } from '@nerv-iip/ui-mobile'
 import { computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
@@ -37,8 +38,8 @@ const devicePickerOpen = shallowRef(false)
 const selectedDeviceLabel = shallowRef('')
 const scopeLabel = computed(() => {
   if (!scopeReady.value) return '个人维修范围未就绪'
-  if (hasSuccessfulResponse.value) return '当前维修人员（服务端 Self 范围）/ 当前业务环境'
-  return '正在核验当前维修人员 Self 范围'
+  if (hasSuccessfulResponse.value) return '分派给当前维修人员 / 当前业务环境'
+  return '正在读取当前维修人员的工单'
 })
 const filterState = computed(() => ({
   status: filters.status,
@@ -58,7 +59,7 @@ function openDetail(item: BusinessConsoleMaintenanceWorkOrderItem) {
 
 function restoreState(state: { filters: Record<string, unknown> }) {
   const restored = state.filters
-  filters.status = typeof restored.status === 'string' ? restored.status : ''
+  filters.status = normalizeMaintenanceWorkOrderStatusFilter(restored.status)
   filters.deviceAssetId = typeof restored.deviceAssetId === 'string' ? restored.deviceAssetId : ''
   filters.keyword = typeof restored.keyword === 'string' ? restored.keyword : ''
   if (!filters.deviceAssetId) selectedDeviceLabel.value = ''
@@ -73,7 +74,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
       <TaskListShell
         :state-key="`maintenance-self-work-orders:${principalId}`"
         :scope="scopeLabel"
-        source="维修工单服务（服务端 Self 范围）"
+        source="维修工单"
         :loaded="loaded"
         :total="total"
         :has-more="hasMore"
@@ -84,7 +85,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         :error="error"
         :load-more-error="loadMoreError"
         error-test-id="maintenance-self-work-orders-error"
-        failure-explanation="当前维修人员范围未得到服务端成功响应，不展示旧队列。"
+        failure-explanation="未成功读取当前维修人员的工单，不展示之前的队列。"
         :filter-state="filterState"
         :empty-description="
           scopeReady
