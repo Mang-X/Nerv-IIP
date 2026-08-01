@@ -91,6 +91,64 @@ test('任务列表壳：375×812 服务端筛选、20 条分页与返回状态�
   expect(restored.scrollTop).toBeGreaterThanOrEqual(deepTarget - 1)
 })
 
+test('任务列表壳：375×812 深恢复次页失败停止自旋，显式重试后继续恢复', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.mes-operation-tasks',
+      JSON.stringify({ filters: { status: '' }, scrollTop: 2_400 }),
+    )
+  })
+  const tasks = Array.from({ length: 60 }, (_, index) => ({
+    operationTaskId: `OP-RETRY-${index + 1}`,
+    workOrderId: `WO-RETRY-${index + 1}`,
+    status: 'InProgress',
+    operationSequence: index + 1,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+  }))
+  const attempts = new Map<number, number>()
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    const url = new URL(route.request().url())
+    const skip = Number(url.searchParams.get('skip') ?? 0)
+    const take = Number(url.searchParams.get('take') ?? 20)
+    attempts.set(skip, (attempts.get(skip) ?? 0) + 1)
+    if (skip === 20 && attempts.get(skip) === 1) {
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'persistent page failure' }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items: tasks.slice(skip, skip + take), total: tasks.length },
+      }),
+    })
+  })
+
+  await page.goto('/mes/operation')
+  await expect(page.getByTestId('task-list-load-error')).toBeVisible()
+  await expect.poll(() => attempts.get(20) ?? 0).toBe(1)
+  await page.waitForTimeout(600)
+  expect(attempts.get(20)).toBe(1)
+
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await expect.poll(() => attempts.get(20) ?? 0).toBe(2)
+  await expect(page.getByTestId('task-list-load-error')).toBeHidden()
+  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 40 / 共 60')
+
+  const scroller = page.locator('[data-slot="pull-refresh"] .nv-m-pr-scroll')
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeGreaterThanOrEqual(2_399)
+  expect(attempts.get(20)).toBe(2)
+  expect(attempts.get(40) ?? 0).toBe(0)
+})
+
 // #1297：PDA 侧作业范围闭环。后端不带 scopeKind/scopeId 只回授权清单、selectedScope 恒空，
 // 所以「操作工登录后能不能拿到工序/工单数据」完全取决于前端是否走完
 // 「清单 → 选择 → 带参重核验」。这条断言的是范围参数真的进了业务查询，且换范围会重取。

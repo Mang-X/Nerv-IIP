@@ -174,10 +174,7 @@ function usePagedAccumulator<TSource, TItem>(
         reset()
         return
       }
-      if (value.success !== true) {
-        reset()
-        return
-      }
+      if (value.success !== true) return
       acceptPage(value, 0, TASK_PAGE_SIZE)
     },
     { immediate: true, flush: 'sync' },
@@ -371,7 +368,11 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -384,6 +385,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     if (
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
@@ -617,7 +619,11 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -630,6 +636,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     if (
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
@@ -1040,7 +1047,12 @@ function useWmsWarehouseTasks(
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadingMore.value = false
+    loadMoreError.value = undefined
+    queryError.value = undefined
     refreshing.value = true
     try {
       let confirmedAction: Awaited<ReturnType<typeof verifyUnconfirmedTaskAction>>
@@ -1069,6 +1081,7 @@ function useWmsWarehouseTasks(
     if (
       !scope.hasScope.value ||
       tasksQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
@@ -1511,7 +1524,11 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await executionsQuery.refetch()
@@ -1524,6 +1541,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     if (
       !scope.hasScope.value ||
       executionsQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {

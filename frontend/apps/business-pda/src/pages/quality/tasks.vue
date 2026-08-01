@@ -38,6 +38,7 @@ const {
   loadMore,
   ensureAllLoaded,
   pending,
+  refreshing = shallowRef(false),
   error,
   refresh,
   reasonCodes,
@@ -166,6 +167,7 @@ function openNcr() {
       :loaded="loaded"
       :has-more="hasMore"
       :pending="pending"
+      :refreshing="refreshing"
       :error="error"
       :scope="qualityScope"
       :scope-ready="scopeReady"

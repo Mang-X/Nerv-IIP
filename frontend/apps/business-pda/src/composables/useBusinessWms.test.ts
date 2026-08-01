@@ -203,21 +203,30 @@ const pagingErrorCases = [
     name: 'inbound',
     id: 'listBusinessConsoleWmsInboundOrders',
     list: coladaState.listInbound,
-    create: () => useWmsInbound(),
+    create: () => {
+      const result = useWmsInbound()
+      return { rows: result.orders, ...result }
+    },
     makeItem: (index: number) => ({ inboundOrderId: `inbound-${index}`, status: 'Open' }),
   },
   {
     name: 'outbound',
     id: 'listBusinessConsoleWmsOutboundOrders',
     list: coladaState.listOutbound,
-    create: () => useWmsOutbound(),
+    create: () => {
+      const result = useWmsOutbound()
+      return { rows: result.orders, ...result }
+    },
     makeItem: (index: number) => ({ outboundOrderId: `outbound-${index}`, status: 'Open' }),
   },
   {
     name: 'picking',
     id: 'listBusinessConsoleWmsPickingTasks',
     list: coladaState.listPicking,
-    create: () => useWmsPicking(),
+    create: () => {
+      const result = useWmsPicking()
+      return { rows: result.tasks, ...result }
+    },
     makeItem: (index: number) => ({
       warehouseTaskId: `picking-${index}`,
       status: 'Open',
@@ -228,7 +237,10 @@ const pagingErrorCases = [
     name: 'putaway',
     id: 'listBusinessConsoleWmsPutawayTasks',
     list: coladaState.listPutaway,
-    create: () => useWmsPutaway(),
+    create: () => {
+      const result = useWmsPutaway()
+      return { rows: result.tasks, ...result }
+    },
     makeItem: (index: number) => ({
       warehouseTaskId: `putaway-${index}`,
       status: 'Open',
@@ -239,7 +251,10 @@ const pagingErrorCases = [
     name: 'count',
     id: 'listBusinessConsoleWmsCountExecutions',
     list: coladaState.listCount,
-    create: () => useWmsCount(),
+    create: () => {
+      const result = useWmsCount()
+      return { rows: result.executions, ...result }
+    },
     makeItem: (index: number) => ({ countExecutionId: `count-${index}`, status: 'Open' }),
   },
 ] as const
@@ -1186,6 +1201,38 @@ describe('PDA WMS composables', () => {
     },
   )
 
+  it('keeps the complete picking snapshot when refresh resolves with success:false', async () => {
+    const oldPage = (skip: number) =>
+      Array.from({ length: 20 }, (_, index) => ({
+        warehouseTaskId: `picking-${skip + index}`,
+        status: 'Open',
+        allowedActions: [],
+      }))
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: { items: oldPage(0), total: 40 },
+    })
+    coladaState.listPicking.mockResolvedValueOnce({
+      data: { success: true, data: { items: oldPage(20), total: 40 } },
+    })
+    const result = useWmsPicking()
+    await result.loadMore()
+
+    coladaState.refetchById
+      .get('listBusinessConsoleWmsPickingTasks')!
+      .mockImplementationOnce(async () => {
+        coladaState.queryDataRefById.get('listBusinessConsoleWmsPickingTasks')!.value = {
+          success: false,
+          message: 'refresh rejected',
+        }
+        await nextTick()
+      })
+    await result.refresh()
+
+    expect(result.tasks.value).toHaveLength(40)
+    expect(result.total.value).toBe(40)
+  })
+
   it.each(pagingErrorCases)(
     'records a rejected current-scope $name page in the appropriate error channel',
     async ({ id, list, create, makeItem }) => {
@@ -1311,7 +1358,7 @@ describe('PDA WMS composables', () => {
     expect(result.tasks.value).toEqual([])
   })
 
-  it('clears accumulated rows before refresh and every task scope/filter dimension change', async () => {
+  it('clears accumulated rows on every task scope/filter dimension change', async () => {
     const initialEnvelope = () => ({
       success: true,
       data: {
@@ -1321,12 +1368,6 @@ describe('PDA WMS composables', () => {
     })
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', initialEnvelope())
     const result = useWmsPicking()
-
-    const refreshPromise = result.refresh()
-    expect(result.tasks.value).toEqual([])
-    expect(result.filters.skip).toBe(0)
-    expect(result.filters.take).toBe(20)
-    await refreshPromise
 
     for (const change of [
       () => (result.scopeKey.value = 'work-pool:WMS-SITE-001'),
@@ -1348,6 +1389,46 @@ describe('PDA WMS composables', () => {
       expect(result.filters.take).toBe(20)
     }
   })
+
+  it.each(pagingErrorCases)(
+    'keeps all loaded $name rows when same-identity refresh fails and replaces them after success',
+    async ({ id, list, create, makeItem }) => {
+      const oldPage = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: oldPage(0), total: 40 },
+      })
+      list.mockResolvedValueOnce({
+        data: { success: true, data: { items: oldPage(20), total: 40 } },
+      })
+      const result = create()
+      await result.loadMore()
+      expect(result.rows.value).toHaveLength(40)
+
+      const refreshFailure = new Error(`${id}: refresh failed`)
+      coladaState.refetchById.get(id)!.mockRejectedValueOnce(refreshFailure)
+      await expect(result.refresh()).rejects.toBe(refreshFailure)
+      expect(result.rows.value).toHaveLength(40)
+
+      const freshPage = Array.from({ length: 20 }, (_, index) => makeItem(100 + index))
+      coladaState.refetchById.get(id)!.mockImplementationOnce(async () => {
+        coladaState.queryDataRefById.get(id)!.value = {
+          success: true,
+          data: { items: freshPage, total: 20 },
+        }
+        await nextTick()
+      })
+      await result.refresh()
+
+      expect(result.rows.value).toHaveLength(20)
+      expect(result.rows.value).toEqual(
+        expect.arrayContaining(freshPage.map((item) => expect.objectContaining(item))),
+      )
+      expect(result.filters.skip).toBe(0)
+      expect(result.filters.take).toBe(20)
+    },
+  )
 
   it('re-reads the exact picking task and starts it with trusted scope, version and stable key', async () => {
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {

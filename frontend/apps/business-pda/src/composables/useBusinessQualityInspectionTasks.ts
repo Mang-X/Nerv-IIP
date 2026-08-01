@@ -137,11 +137,12 @@ export function useBusinessQualityInspectionTasks() {
     skip: 0,
     take: DEFAULT_TAKE,
   })
+  const normalizedKeyword = computed(() => filters.keyword?.trim() || undefined)
   const listIdentity = computed(() =>
     JSON.stringify([
       scopeKey.value,
       filters.status ?? null,
-      filters.keyword ?? null,
+      normalizedKeyword.value ?? null,
       filters.sourceType ?? null,
       filters.overdue ?? null,
     ]),
@@ -155,7 +156,7 @@ export function useBusinessQualityInspectionTasks() {
         scopeKind: 'self',
         scopeId: inspectorUserId.value,
         status: filters.status,
-        keyword: filters.keyword || undefined,
+        keyword: normalizedKeyword.value,
         sourceType: filters.sourceType || undefined,
         overdue: filters.overdue,
         skip: filters.skip,
@@ -195,21 +196,26 @@ export function useBusinessQualityInspectionTasks() {
   )
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
+  const baseTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  const total = shallowRef(0)
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
   const nextSkip = shallowRef(0)
   const loadingMore = shallowRef(false)
+  const refreshing = shallowRef(false)
   const loadMoreError = shallowRef<unknown>()
   let paginationEpoch = 0
   watch(
     [
       scopeKey,
       () => filters.status,
-      () => filters.keyword,
+      normalizedKeyword,
       () => filters.sourceType,
       () => filters.overdue,
     ],
     () => {
       paginationEpoch += 1
+      baseTasks.value = []
+      total.value = 0
       extraTasks.value = []
       filters.skip = 0
       filters.take = DEFAULT_TAKE
@@ -222,9 +228,12 @@ export function useBusinessQualityInspectionTasks() {
   watch(
     currentResponse,
     (response) => {
+      if (response?.success !== true) return
       paginationEpoch += 1
+      baseTasks.value = listItems<BusinessConsoleQualityInspectionTaskItem>(response)
+      total.value = listTotal(response)
       extraTasks.value = []
-      nextSkip.value = listItems<BusinessConsoleQualityInspectionTaskItem>(response).length
+      nextSkip.value = baseTasks.value.length
       loadingMore.value = false
       loadMoreError.value = undefined
     },
@@ -253,9 +262,6 @@ export function useBusinessQualityInspectionTasks() {
     },
   })
 
-  const baseTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
-    listItems<BusinessConsoleQualityInspectionTaskItem>(currentResponse.value),
-  )
   const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
     if (extraTasks.value.length === 0) return baseTasks.value
     const seen = new Set(baseTasks.value.map((t) => t.inspectionTaskId))
@@ -266,7 +272,6 @@ export function useBusinessQualityInspectionTasks() {
     })
     return [...baseTasks.value, ...uniqueExtra]
   })
-  const total = computed(() => listTotal(currentResponse.value))
   const loaded = computed(() => tasks.value.length)
   const hasMore = computed(() => nextSkip.value < total.value)
 
@@ -278,7 +283,7 @@ export function useBusinessQualityInspectionTasks() {
       environmentId: environmentId.value,
       principalId: inspectorUserId.value,
       status: filters.status,
-      keyword: filters.keyword,
+      keyword: normalizedKeyword.value,
       sourceType: filters.sourceType,
       overdue: filters.overdue,
     }
@@ -290,7 +295,7 @@ export function useBusinessQualityInspectionTasks() {
       paginationEpoch === execution.epoch &&
       listIdentity.value === execution.key &&
       filters.status === execution.status &&
-      filters.keyword === execution.keyword &&
+      normalizedKeyword.value === execution.keyword &&
       filters.sourceType === execution.sourceType &&
       filters.overdue === execution.overdue &&
       inspectorUserId.value === execution.principalId
@@ -310,7 +315,7 @@ export function useBusinessQualityInspectionTasks() {
         scopeKind: 'self',
         scopeId: execution.principalId,
         status: execution.status,
-        keyword: execution.keyword || undefined,
+        keyword: execution.keyword,
         sourceType: execution.sourceType || undefined,
         overdue: execution.overdue,
         skip,
@@ -329,7 +334,7 @@ export function useBusinessQualityInspectionTasks() {
    * 封顶 MAX_TAKE（后端验证器上限），超出部分按页拉取聚合到 `extraTasks`，不把 take 扩过上限。
    */
   async function loadMore() {
-    if (!scopeReady.value || !hasMore.value || loadingMore.value) return
+    if (!scopeReady.value || !hasMore.value || refreshing.value || loadingMore.value) return
     const execution = capturePaginationScope()
     loadingMore.value = true
     loadMoreError.value = undefined
@@ -376,10 +381,18 @@ export function useBusinessQualityInspectionTasks() {
   }
 
   async function refresh() {
+    if (!scopeReady.value) return
     paginationEpoch += 1
-    extraTasks.value = []
+    filters.skip = 0
+    filters.take = DEFAULT_TAKE
+    loadingMore.value = false
     loadMoreError.value = undefined
-    return scopeReady.value ? listQuery.refetch() : Promise.resolve()
+    refreshing.value = true
+    try {
+      return await listQuery.refetch()
+    } finally {
+      refreshing.value = false
+    }
   }
 
   /**
@@ -574,6 +587,7 @@ export function useBusinessQualityInspectionTasks() {
     hasMore,
     loadingMore,
     loadMoreError,
+    refreshing,
     loadMore,
     ensureAllLoaded,
     pending: listQuery.isLoading,

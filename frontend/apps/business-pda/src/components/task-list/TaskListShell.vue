@@ -131,10 +131,17 @@ function onScrollRestored(result: { requested: number; actual: number; max: numb
     return
   }
 
+  if (props.loadMoreError) return
+
   if (!props.loadingMore && !restoreLoadRequested) {
     restoreLoadRequested = true
     emit('loadMore')
   }
+}
+
+function retryLoadMore() {
+  restoreLoadRequested = true
+  emit('retryLoadMore')
 }
 
 watch(() => props.filterState, persistState, { deep: true })
@@ -221,7 +228,7 @@ onMounted(async () => {
           :pending="loadingMore"
           fallback="下一页加载失败，请重试。"
           :test-id="errorTestId"
-          @retry="emit('retryLoadMore')"
+          @retry="retryLoadMore"
         />
       </div>
 
@@ -229,7 +236,7 @@ onMounted(async () => {
         v-if="loaded > 0"
         parent-scroll
         :model-value="loadingMore"
-        :finished="!hasMore"
+        :finished="!hasMore || Boolean(partialError)"
         @load="emit('loadMore')"
       />
     </NvPullRefresh>

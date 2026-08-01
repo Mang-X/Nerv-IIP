@@ -24,6 +24,7 @@ const props = withDefaults(
     loaded: number
     hasMore: boolean
     pending: boolean
+    refreshing?: boolean
     error: unknown
     scope?: string
     scopeReady?: boolean
@@ -50,6 +51,7 @@ const props = withDefaults(
     sourceType: undefined,
     overdue: undefined,
     loadingMore: false,
+    refreshing: false,
     loadMoreError: undefined,
     loadAll: undefined,
   },
@@ -198,7 +200,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
     :has-more="props.hasMore"
     :updated-at="props.updatedAt"
     :pending="props.pending"
-    :refreshing="props.pending && props.loaded > 0"
+    :refreshing="props.refreshing"
     :loading-more="props.loadingMore"
     :error="listError"
     :load-more-error="props.loadMoreError"

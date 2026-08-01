@@ -239,4 +239,77 @@ describe('TaskListShell', () => {
       scrollTop: 900,
     })
   })
+
+  it('深滚动恢复的持续次页失败停止自动重试，只允许用户显式重试一次并在成功后继续恢复', async () => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.deep-restore-retry',
+      JSON.stringify({ filters: { status: 'pending' }, scrollTop: 900 }),
+    )
+    const wrapper = mount(TaskListShell, {
+      props: {
+        stateKey: 'deep-restore-retry',
+        scope: '当前账号 Self',
+        source: '任务服务',
+        loaded: 20,
+        total: 60,
+        pending: false,
+        refreshing: false,
+        loadingMore: false,
+        filterState: { status: 'pending' },
+      },
+      global: {
+        stubs: {
+          PullRefresh: {
+            name: 'NvPullRefresh',
+            emits: ['refresh', 'scroll', 'scrollRestored'],
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const reportTruncatedRestore = async () => {
+      wrapper.getComponent({ name: 'NvPullRefresh' }).vm.$emit('scrollRestored', {
+        requested: 900,
+        actual: 180,
+        max: 180,
+      })
+      await wrapper.vm.$nextTick()
+    }
+
+    await reportTruncatedRestore()
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+
+    await wrapper.setProps({ loadingMore: true })
+    await wrapper.setProps({ loadingMore: false, loadMoreError: new Error('page-2 failed') })
+    await reportTruncatedRestore()
+    await wrapper.setProps({ loaded: 20 })
+    await reportTruncatedRestore()
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+
+    wrapper.getComponent({ name: 'RetryableListError' }).vm.$emit('retry')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('retryLoadMore')).toHaveLength(1)
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+
+    await wrapper.setProps({ loadingMore: true, loadMoreError: undefined })
+    await wrapper.setProps({ loadingMore: false, loaded: 40 })
+    await reportTruncatedRestore()
+    expect(wrapper.emitted('loadMore')).toHaveLength(2)
+
+    await wrapper.setProps({ loadingMore: true })
+    await wrapper.setProps({ loadingMore: false, loaded: 60 })
+    wrapper.getComponent({ name: 'NvPullRefresh' }).vm.$emit('scrollRestored', {
+      requested: 900,
+      actual: 900,
+      max: 980,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('loadMore')).toHaveLength(2)
+    expect(
+      JSON.parse(sessionStorage.getItem('nerv-iip.business-pda.task-list.deep-restore-retry')!),
+    ).toEqual({ filters: { status: 'pending' }, scrollTop: 900 })
+  })
 })

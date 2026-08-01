@@ -49,6 +49,22 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).toContain('质检待检任务服务（当前账号 Self 范围，状态：待检）')
   })
 
+  it('passes the independent refresh lifecycle to the shared task-list shell', () => {
+    const wrapper = mount(QualityTaskListStep, {
+      props: {
+        tasks: [task({ inspectionTaskId: 'T1' })],
+        total: 1,
+        loaded: 1,
+        hasMore: false,
+        pending: false,
+        refreshing: true,
+        error: null,
+      },
+    })
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
   it('renders a retryable response failure instead of a business empty state', () => {
     const wrapper = mount(QualityTaskListStep, {
       props: {
