@@ -1187,7 +1187,7 @@ describe('PDA WMS composables', () => {
   )
 
   it.each(pagingErrorCases)(
-    'still exposes a rejected current-scope $name page',
+    'records a rejected current-scope $name page in the appropriate error channel',
     async ({ id, list, create, makeItem }) => {
       coladaState.queryDataById.set(id, {
         success: true,
@@ -1201,7 +1201,40 @@ describe('PDA WMS composables', () => {
       const result = create()
 
       await expect(result.loadMore()).rejects.toBe(currentFailure)
-      expect(result.error.value).toBe(currentFailure)
+      expect(result.loadMoreError.value).toBe(currentFailure)
+      const usesSplitTaskError = id.includes('PickingTasks') || id.includes('PutawayTasks')
+      expect(result.error.value).toBe(usesSplitTaskError ? undefined : currentFailure)
+    },
+  )
+
+  it.each(pagingErrorCases.filter(({ name }) => name === 'picking' || name === 'putaway'))(
+    'clears the split $name load-more error after a successful retry',
+    async ({ id, list, create, makeItem }) => {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => makeItem(index)),
+          total: 40,
+        },
+      })
+      const currentFailure = new Error(`${id}: current loadMore failure`)
+      list.mockRejectedValueOnce(currentFailure).mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: Array.from({ length: 20 }, (_, index) => makeItem(index + 20)),
+            total: 40,
+          },
+        },
+      })
+      const result = create()
+
+      await expect(result.loadMore()).rejects.toBe(currentFailure)
+      expect(result.loadMoreError.value).toBe(currentFailure)
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeUndefined()
     },
   )
 

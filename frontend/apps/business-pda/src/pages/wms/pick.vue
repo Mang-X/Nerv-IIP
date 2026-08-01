@@ -31,6 +31,8 @@ const {
   error,
   refreshing,
   loadingMore,
+  loadMoreError,
+  lastUpdatedAt,
   actionPending,
   actionUnconfirmed,
   actionConfirmedSequence,
@@ -93,6 +95,8 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :pending="pending"
         :refreshing="refreshing"
         :loading-more="loadingMore"
+        :load-more-error="loadMoreError"
+        :updated-at="lastUpdatedAt"
         :current-principal-id="principalId"
         :scope-options="scopeOptions"
         :location-options="candidates.locationOptions.value"

@@ -64,6 +64,7 @@ const completedTask = {
 function mountView(
   tasks = [openTask, inProgressTask, completedTask],
   taskType: 'picking' | 'putaway' = 'picking',
+  overrides: Record<string, unknown> = {},
 ) {
   return mount(WarehouseTaskExecutionView, {
     attachTo: document.body,
@@ -84,6 +85,7 @@ function mountView(
         { label: '仓储一组', value: 'team:TEAM-WMS-01' },
         { label: '一号仓库', value: 'site:SITE-001' },
       ],
+      ...overrides,
     },
   })
 }
@@ -93,6 +95,7 @@ describe('WarehouseTaskExecutionView', () => {
     vi.restoreAllMocks()
     intersectionState.callback = undefined
     document.body.innerHTML = ''
+    sessionStorage.clear()
   })
 
   it('显示后端任务事实与范围、状态筛选，不暴露 GUID 或原始状态码', () => {
@@ -159,6 +162,55 @@ describe('WarehouseTaskExecutionView', () => {
     expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
     expect(wrapper.findComponent(TaskListShell).exists()).toBe(true)
+  })
+
+  it('由 TaskListShell 托管全部筛选、元数据、分页错误与实际滚动位置恢复', async () => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.wms-picking-tasks',
+      JSON.stringify({
+        filters: {
+          scopeKey: 'team:TEAM-WMS-01',
+          status: 'InProgress',
+          keyword: 'PK-RESTORED',
+          locationCode: 'A-09',
+          lotNo: 'LOT-09',
+          candidateSearchKeyword: '候选-09',
+        },
+        scrollTop: 184,
+      }),
+    )
+    const loadMoreError = new Error('next page failed')
+    const wrapper = mountView([], 'picking', {
+      keyword: 'PK-CURRENT',
+      locationCode: 'A-01',
+      lotNo: 'LOT-01',
+      candidateSearchKeyword: '候选-01',
+      updatedAt: '2026-08-01T08:00:00.000Z',
+      loadMoreError,
+    })
+    await nextTick()
+    await nextTick()
+
+    const shell = wrapper.getComponent(TaskListShell)
+    expect(shell.props('showMeta')).toBe(true)
+    expect(shell.props('updatedAt')).toBe('2026-08-01T08:00:00.000Z')
+    expect(shell.props('loadMoreError')).toBe(loadMoreError)
+    expect(shell.props('filterState')).toEqual({
+      scopeKey: 'self:emp049',
+      status: 'Open',
+      keyword: 'PK-CURRENT',
+      locationCode: 'A-01',
+      lotNo: 'LOT-01',
+      candidateSearchKeyword: '候选-01',
+    })
+    expect(shell.find('[data-testid="wms-task-filters"]').exists()).toBe(true)
+    expect((wrapper.get('.nv-m-pr-scroll').element as HTMLElement).scrollTop).toBe(184)
+    expect(wrapper.emitted('update:scopeKey')?.at(-1)).toEqual(['team:TEAM-WMS-01'])
+    expect(wrapper.emitted('update:status')?.at(-1)).toEqual(['InProgress'])
+    expect(wrapper.emitted('update:keyword')?.at(-1)).toEqual(['PK-RESTORED'])
+    expect(wrapper.emitted('update:locationCode')?.at(-1)).toEqual(['A-09'])
+    expect(wrapper.emitted('update:lotNo')?.at(-1)).toEqual(['LOT-09'])
+    expect(wrapper.emitted('update:candidateSearchKeyword')?.at(-1)).toEqual(['候选-09'])
   })
 
   it('终态任务不可进入操作，待执行任务只提供开始', async () => {

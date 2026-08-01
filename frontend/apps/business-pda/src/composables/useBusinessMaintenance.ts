@@ -25,7 +25,8 @@ import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useTaskListPagination } from './useTaskListPagination'
 
-const DEFAULT_TAKE = 20
+const WORK_ORDER_PAGE_SIZE = 20
+const AUXILIARY_LIST_TAKE = 100
 
 export interface MaintenanceListFilters {
   status?: string
@@ -91,9 +92,9 @@ export function useBusinessMaintenance() {
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
   const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
-  const workOrderFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
-  const inspectionFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
-  const planFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
+  const workOrderFilters = reactive<MaintenanceListFilters>({ skip: 0, take: WORK_ORDER_PAGE_SIZE })
+  const inspectionFilters = reactive<MaintenanceListFilters>({ skip: 0, take: AUXILIARY_LIST_TAKE })
+  const planFilters = reactive<MaintenanceListFilters>({ skip: 0, take: AUXILIARY_LIST_TAKE })
 
   const scopedQuery = (filters: MaintenanceListFilters) => ({
     organizationId: organizationId.value,
@@ -163,7 +164,7 @@ export function useBusinessMaintenance() {
   const workOrderPager = useTaskListPagination<MaintenanceWorkOrderItem>({
     identity: workOrderIdentity,
     firstPage: firstWorkOrderPage,
-    pageSize: DEFAULT_TAKE,
+    pageSize: WORK_ORDER_PAGE_SIZE,
     itemKey: (item) => item.workOrderId ?? '',
     fetchPage: async ({ skip, take }) => {
       const { data } = await listBusinessConsoleMaintenanceWorkOrders({
@@ -254,7 +255,7 @@ export function useBusinessMaintenance() {
   // 客户端扫码过滤；当扫码命中第一页之外时，调用方据 plansTotal 加载更多页。
   function loadMorePlans() {
     if (planFilters.take < plansTotal.value) {
-      planFilters.take += DEFAULT_TAKE
+      planFilters.take += AUXILIARY_LIST_TAKE
     }
   }
 

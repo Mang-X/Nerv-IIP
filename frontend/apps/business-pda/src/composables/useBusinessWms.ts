@@ -1091,6 +1091,7 @@ function useWmsWarehouseTasks(
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
           requestedSkip,
@@ -1321,9 +1322,8 @@ function useWmsWarehouseTasks(
     tasks: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => tasksQuery.isLoading.value || scope.pending.value),
-    error: computed(
-      () => actionError.value ?? loadMoreError.value ?? tasksQuery.error.value ?? scope.error.value,
-    ),
+    error: computed(() => actionError.value ?? tasksQuery.error.value ?? scope.error.value),
+    loadMoreError,
     refreshing,
     loadingMore,
     actionPending,

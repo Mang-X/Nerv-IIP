@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import RetryableListError from '@/components/RetryableListError.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import { PDA_WAREHOUSE_TASK_STATUS_OPTIONS } from '@/data/wmsReference'
@@ -66,6 +65,7 @@ const props = withDefaults(
     pending: boolean
     refreshing: boolean
     loadingMore: boolean
+    updatedAt?: string | null
     currentPrincipalId?: string
     status?: string
     scopeKey?: string
@@ -85,12 +85,14 @@ const props = withDefaults(
     candidateScanOverrides?: Readonly<Partial<Record<'location' | 'lot', string>>>
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
+    loadMoreError?: unknown
     actionPending?: boolean
     actionUnconfirmed?: boolean
     actionConfirmedSequence?: number
   }>(),
   {
     currentPrincipalId: undefined,
+    updatedAt: null,
     status: undefined,
     scopeKey: undefined,
     keyword: undefined,
@@ -109,6 +111,7 @@ const props = withDefaults(
     candidateScanOverrides: () => ({}),
     scopeOptions: () => [],
     error: undefined,
+    loadMoreError: undefined,
     actionPending: false,
     actionUnconfirmed: false,
     actionConfirmedSequence: 0,
@@ -161,6 +164,14 @@ const keywordModel = computed<string>({
   get: () => props.keyword ?? '',
   set: (value) => emit('update:keyword', value || undefined),
 })
+const filterState = computed(() => ({
+  scopeKey: props.scopeKey ?? '',
+  status: props.status ?? '',
+  keyword: props.keyword ?? '',
+  locationCode: props.locationCode ?? '',
+  lotNo: props.lotNo ?? '',
+  candidateSearchKeyword: props.candidateSearchKeyword,
+}))
 const selectedActions = computed(() => selectedTask.value?.allowedActions ?? [])
 const canStart = computed(() => selectedActions.value.includes('start'))
 const canProgress = computed(() => selectedActions.value.includes('progress'))
@@ -173,6 +184,16 @@ const scanActive = computed(() => !actionSheetOpen.value && !numberKeyboardOpen.
 
 function forwardCandidateScanOverride(target: 'location' | 'lot', value: string | undefined) {
   emit('candidateScanOverrideChange', target, value)
+}
+
+function restoreTaskListState(state: { filters: Record<string, unknown> }) {
+  const optionalValue = (key: string) => String(state.filters[key] ?? '') || undefined
+  emit('update:scopeKey', optionalValue('scopeKey'))
+  emit('update:status', optionalValue('status'))
+  emit('update:keyword', optionalValue('keyword'))
+  emit('update:locationCode', optionalValue('locationCode'))
+  emit('update:lotNo', optionalValue('lotNo'))
+  emit('update:candidateSearchKeyword', String(state.filters.candidateSearchKeyword ?? ''))
 }
 
 function taskTitle(task: WarehouseTaskExecutionItem) {
@@ -313,64 +334,68 @@ function emitQuantityAction(action: 'progress' | 'complete') {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="space-y-3 border-b border-border bg-card px-4 py-3">
-      <NvSearchBar v-model="keywordModel" :placeholder="`搜索任务号、源单号或物料`" />
-      <WmsOperationalCandidatePicker
-        :location-code="locationCode"
-        :lot-no="lotNo"
-        :location-options="locationOptions"
-        :lot-options="lotOptions"
-        :ready="candidateReady"
-        :source-label="candidateSourceLabel"
-        :as-of-utc="candidateAsOfUtc"
-        :freshness-utc="candidateFreshnessUtc"
-        :truncated="candidateTruncated"
-        :pending="candidatePending"
-        :error="candidateError"
-        :search-keyword="candidateSearchKeyword"
-        :scan-overrides="candidateScanOverrides"
-        :active="scanActive"
-        @update:location-code="emit('update:locationCode', $event)"
-        @update:lot-no="emit('update:lotNo', $event)"
-        @update:search-keyword="emit('update:candidateSearchKeyword', $event)"
-        @scan-override-change="forwardCandidateScanOverride"
-        @retry="emit('candidateRetry')"
-      />
-      <NvMobileDropdownMenu>
-        <NvMobileDropdownMenuItem
-          v-if="scopeDropdownOptions.length > 0"
-          v-model="scopeModel"
-          title="作业范围"
-          :options="scopeDropdownOptions"
-        />
-        <NvMobileDropdownMenuItem v-model="statusModel" title="任务状态" :options="statusOptions" />
-      </NvMobileDropdownMenu>
-    </div>
-
-    <RetryableListError
-      v-if="error"
-      class="mx-4 mt-3"
-      :error="error"
-      :pending="pending"
-      fallback="任务操作或加载失败，请重试；若状态已变化，刷新后继续。"
-      test-id="error-banner"
-      @retry="emit('retry')"
-    />
-
     <TaskListShell
       :state-key="`wms-${taskType}-tasks`"
       scope="当前授权 WMS 作业范围"
       source="WMS 仓储任务服务"
       :loaded="tasks.length"
       :total="total"
+      :updated-at="updatedAt"
       :pending="pending"
       :refreshing="refreshing"
       :loading-more="loadingMore"
-      :show-meta="false"
+      :error="error"
+      :load-more-error="loadMoreError"
+      error-test-id="error-banner"
+      failure-explanation="任务服务或任务操作未成功返回；已加载数据不会被清空。"
+      :filter-state="filterState"
       empty-description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
       @refresh="emit('refresh')"
       @load-more="emit('loadMore')"
+      @retry="emit('retry')"
+      @retry-load-more="emit('loadMore')"
+      @restore="restoreTaskListState"
     >
+      <template #filters>
+        <div data-testid="wms-task-filters" class="space-y-3 px-4 py-3">
+          <NvSearchBar v-model="keywordModel" :placeholder="`搜索任务号、源单号或物料`" />
+          <WmsOperationalCandidatePicker
+            :location-code="locationCode"
+            :lot-no="lotNo"
+            :location-options="locationOptions"
+            :lot-options="lotOptions"
+            :ready="candidateReady"
+            :source-label="candidateSourceLabel"
+            :as-of-utc="candidateAsOfUtc"
+            :freshness-utc="candidateFreshnessUtc"
+            :truncated="candidateTruncated"
+            :pending="candidatePending"
+            :error="candidateError"
+            :search-keyword="candidateSearchKeyword"
+            :scan-overrides="candidateScanOverrides"
+            :active="scanActive"
+            @update:location-code="emit('update:locationCode', $event)"
+            @update:lot-no="emit('update:lotNo', $event)"
+            @update:search-keyword="emit('update:candidateSearchKeyword', $event)"
+            @scan-override-change="forwardCandidateScanOverride"
+            @retry="emit('candidateRetry')"
+          />
+          <NvMobileDropdownMenu>
+            <NvMobileDropdownMenuItem
+              v-if="scopeDropdownOptions.length > 0"
+              v-model="scopeModel"
+              title="作业范围"
+              :options="scopeDropdownOptions"
+            />
+            <NvMobileDropdownMenuItem
+              v-model="statusModel"
+              title="任务状态"
+              :options="statusOptions"
+            />
+          </NvMobileDropdownMenu>
+        </div>
+      </template>
+
       <div class="divide-y divide-border">
         <NvListRow
           v-for="task in tasks"

@@ -5,6 +5,8 @@ import { computed, reactive, shallowRef } from 'vue'
 const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
+const loadMoreError = shallowRef<unknown>()
+const lastUpdatedAt = shallowRef('2026-08-01T08:00:00.000Z')
 const actionPending = shallowRef(false)
 const actionUnconfirmed = shallowRef(false)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
@@ -41,6 +43,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     error: shallowRef(),
     refreshing: shallowRef(false),
     loadingMore: shallowRef(false),
+    loadMoreError,
+    lastUpdatedAt,
     actionPending,
     actionUnconfirmed,
     refresh,
@@ -93,16 +97,26 @@ describe('WMS 拣货作业页', () => {
       global: {
         stubs: {
           WarehouseTaskExecutionView: {
-            props: ['title', 'taskType', 'tasks', 'total', 'status', 'scopeKey', 'scopeOptions'],
+            props: [
+              'title',
+              'taskType',
+              'tasks',
+              'total',
+              'status',
+              'scopeKey',
+              'scopeOptions',
+              'updatedAt',
+              'loadMoreError',
+            ],
             template:
-              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}</div>',
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}</div>',
           },
         },
       },
     })
 
     expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
-      '拣货|picking|2|self:emp049|Open|PK-2026-0001',
+      '拣货|picking|2|self:emp049|Open|PK-2026-0001|2026-08-01T08:00:00.000Z|false',
     )
   })
 

@@ -99,6 +99,14 @@ beforeEach(() => {
 })
 
 describe('PDA equipment repair page', () => {
+  it('describes only the fields that the maintenance keyword query really searches', () => {
+    const wrapper = mount(RepairPage)
+
+    const placeholder = wrapper.get('[data-testid="work-order-keyword"]').attributes('placeholder')
+    expect(placeholder).toBe('搜索设备、来源或负责人')
+    expect(placeholder).not.toContain('工单')
+  })
+
   it.each([
     ['high', '高'],
     ['medium', '中'],

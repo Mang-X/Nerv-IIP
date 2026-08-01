@@ -88,6 +88,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.OpenedAtUtc)
+            .ThenByDescending(x => x.Id)
             .Select(x => new MaintenanceWorkOrderListItem(
                 x.Id,
                 x.DeviceAssetId,

@@ -423,7 +423,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
                 v-model.trim="workOrderFilters.keyword"
                 data-testid="work-order-keyword"
                 type="search"
-                placeholder="搜索设备或工单"
+                placeholder="搜索设备、来源或负责人"
                 class="min-h-touch rounded-lg border border-border bg-background px-3 text-base"
               />
               <select
