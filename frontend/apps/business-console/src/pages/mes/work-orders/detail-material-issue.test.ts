@@ -146,6 +146,7 @@ function mountDetail(permissionCodes: string[]) {
               {{ column.key === 'wmsRequestId' ? '' : column.accessor ? column.accessor(row) : row[column.key] }}
             </span>
             <slot name="cell-wmsRequestId" :row="row" />
+            <slot name="cell-actions" :row="row" />
           </div></div>`,
         },
         NvButton: { template: '<button><slot /></button>' },
@@ -374,5 +375,27 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     expect(visibleText).toContain('未指定')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('线边收料 400 时把服务端的具体原因渲染到收料表单', async () => {
+    const message = 'MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求577pcs，候选库位合计可用0pcs。'
+    state.materialIssueRequests.push({
+      requestId: 'MIR-001',
+      workOrderId: 'WO-1',
+      materialId: 'RM-SPR-02',
+      requestedQuantity: 577,
+      receivedQuantity: 0,
+      status: 'Requested',
+      materialLotId: 'LOT-RM-SPR-02-WO-2026-03395',
+    })
+    state.confirmLineSideReceipt.mockRejectedValueOnce({ message })
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+
+    await wrapper.find('[data-testid="receive-material-MIR-001"]').trigger('click')
+    const vm = wrapper.vm as unknown as { submitReceipt: () => Promise<void> }
+    await vm.submitReceipt()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-side-receipt-error"]').text()).toContain(message)
   })
 })

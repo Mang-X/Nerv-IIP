@@ -405,6 +405,45 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void MaterialIssueRequest_waits_for_every_split_warehouse_posting_before_receipt_is_received()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SPLIT",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-001",
+                "WH-WB-RM-01",
+                "SITE-001",
+                "WH-WB-LINE-01",
+                [
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-RM-01", "LOT-A", 3m),
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-SF-01", "LOT-B", 2m),
+                ]),
+            DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
+            5m,
+            "LOT-WO");
+
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 0);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, DateTimeOffset.Parse("2026-05-23T08:32:00Z"));
+        Assert.Equal(0m, request.ReceivedQuantity);
+
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 1);
+
+        Assert.Equal(5m, request.ReceivedQuantity);
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+    }
+
+    [Fact]
     public void MaterialIssueRequest_cancel_of_received_material_without_lot_is_a_business_rule_violation()
     {
         var request = MaterialIssueRequest.Create(

@@ -8964,6 +8964,29 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_http_client_preserves_safe_chinese_business_message_from_http_400()
+    {
+        const string downstreamMessage = "MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求577pcs，候选库位合计可用0pcs。";
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.BadRequest, new
+        {
+            success = false,
+            message = downstreamMessage,
+            code = 400,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            Issue355CreateSkuRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal(downstreamMessage, ex.Message);
+    }
+
+    [Fact]
     public async Task Master_data_http_client_does_not_expose_plain_text_downstream_error_bodies()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)

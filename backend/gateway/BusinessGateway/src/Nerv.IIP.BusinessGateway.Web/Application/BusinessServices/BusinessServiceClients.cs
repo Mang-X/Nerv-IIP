@@ -1886,9 +1886,10 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    response.StatusCode,
-                    await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken));
+                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken);
+                throw response.StatusCode == HttpStatusCode.BadRequest
+                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
+                    : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
             }
 
             try

@@ -283,6 +283,7 @@ const issueForm = reactive({
   idempotencyKey: '',
 })
 const receiveOpen = ref(false)
+const receiveError = ref('')
 const receiveForm = reactive({
   requestId: '',
   quantity: '',
@@ -360,6 +361,7 @@ function canReceive(row: MaterialIssueRow) {
 
 function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
+  receiveError.value = ''
   receiveForm.requestId = row.requestId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
@@ -392,6 +394,7 @@ async function submitIssue() {
 
 async function submitReceipt() {
   if (!canSubmitReceipt.value || confirmLineSideReceiptPending.value) return
+  receiveError.value = ''
   const receivedQuantity = receiveForm.quantity.trim() ? Number(receiveForm.quantity) : undefined
   try {
     await confirmLineSideReceipt(receiveForm.requestId, {
@@ -403,6 +406,7 @@ async function submitReceipt() {
     notifySuccess('已确认线边收料。')
     void refreshMaterialReadiness()
   } catch (error) {
+    receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
   }
 }
@@ -1106,6 +1110,14 @@ function formatError(error: unknown) {
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
         <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="receiveError"
+            class="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
+            data-testid="line-side-receipt-error"
+            role="alert"
+          >
+            {{ receiveError }}
+          </p>
           <NvField>
             <NvFieldLabel for="receive-quantity">收料数量</NvFieldLabel>
             <NvInput
