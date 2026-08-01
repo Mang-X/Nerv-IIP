@@ -452,22 +452,61 @@ describe('business operation receipt confirmation', () => {
       },
     } as never)
     const path =
-      '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&countExecutionId=count-1'
+      '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&scopeKind=work-pool&scopeId=POOL-A&countExecutionId=count-1'
 
     await expect(
-      readBusinessConsoleOperationState(path, {
-        operationType: 'wms.count-execution.complete',
-        resourceId: 'count-1',
-      }),
+      readBusinessConsoleOperationState(
+        path,
+        {
+          operationType: 'wms.count-execution.complete',
+          resourceId: 'count-1',
+        },
+        { scopeKind: 'work-pool', scopeId: 'POOL-A' },
+      ),
     ).resolves.toMatchObject({ success: true })
     expect(listBusinessConsoleWmsCountExecutions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-1',
         environmentId: 'env-1',
         countExecutionId: 'count-1',
+        scopeKind: 'work-pool',
+        scopeId: 'POOL-A',
       },
       throwOnError: true,
     })
+  })
+
+  it.each([
+    {
+      name: 'missing receipt scope',
+      path: '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&countExecutionId=count-1',
+      scope: { scopeKind: 'work-pool', scopeId: 'POOL-A' },
+    },
+    {
+      name: 'different frozen scope',
+      path: '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&scopeKind=site&scopeId=SITE-A&countExecutionId=count-1',
+      scope: { scopeKind: 'work-pool', scopeId: 'POOL-A' },
+    },
+    {
+      name: 'missing frozen scope',
+      path: '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&scopeKind=work-pool&scopeId=POOL-A&countExecutionId=count-1',
+      scope: undefined,
+    },
+    {
+      name: 'unsupported frozen scope',
+      path: '/api/business-console/v1/wms/count-executions?organizationId=org-1&environmentId=env-1&scopeKind=organization&scopeId=org-1&countExecutionId=count-1',
+      scope: { scopeKind: 'organization', scopeId: 'org-1' },
+    },
+  ])('rejects WMS readback with $name before issuing a generated GET', async ({ path, scope }) => {
+    vi.mocked(listBusinessConsoleWmsCountExecutions).mockClear()
+    await expect(
+      readBusinessConsoleOperationState(
+        path,
+        { operationType: 'wms.count-execution.complete', resourceId: 'count-1' },
+        scope,
+      ),
+    ).rejects.toThrow('作业范围')
+    expect(listBusinessConsoleWmsCountExecutions).not.toHaveBeenCalled()
   })
 
   it('rejects an operation/path mismatch before any generated GET is called', async () => {

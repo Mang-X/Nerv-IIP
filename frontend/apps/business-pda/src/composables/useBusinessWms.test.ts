@@ -629,6 +629,7 @@ describe('PDA WMS composables', () => {
           expectedOperationType: operationType,
           expectedIdempotencyKey: 'KEY-OLD',
           expectedResourceId: resourceId,
+          readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
         })
         expect(peekPendingBusinessIntent(intentScope)?.idempotencyKey).toBe('KEY-OLD')
       } finally {
@@ -760,6 +761,9 @@ describe('PDA WMS composables', () => {
       expect(coladaState.lastMutationVars.get(mutationId)).toMatchObject({
         query: SCOPE,
         body: expectedBody,
+      })
+      expect(vi.mocked(confirmBusinessConsoleOperation).mock.calls.at(-1)?.[1]).toMatchObject({
+        readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
       })
     },
   )

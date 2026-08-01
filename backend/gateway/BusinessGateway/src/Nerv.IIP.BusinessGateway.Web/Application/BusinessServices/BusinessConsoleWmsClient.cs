@@ -382,7 +382,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             "inbound-order",
             inboundOrderId,
             request.IdempotencyKey,
-            $"/api/business-console/v1/wms/inbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&inboundOrderId={Uri.EscapeDataString(inboundOrderId)}",
+            $"/api/business-console/v1/wms/inbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&scopeKind={Uri.EscapeDataString(request.ScopeKind)}&scopeId={Uri.EscapeDataString(request.ScopeId)}&inboundOrderId={Uri.EscapeDataString(inboundOrderId)}",
             cancellationToken);
 
     public Task<BusinessConsoleCreateWmsOutboundOrderResponse> CreateOutboundOrderAsync(
@@ -522,7 +522,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             "outbound-order",
             outboundOrderId,
             request.IdempotencyKey,
-            $"/api/business-console/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&outboundOrderId={Uri.EscapeDataString(outboundOrderId)}",
+            $"/api/business-console/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&scopeKind={Uri.EscapeDataString(request.ScopeKind)}&scopeId={Uri.EscapeDataString(request.ScopeId)}&outboundOrderId={Uri.EscapeDataString(outboundOrderId)}",
             cancellationToken);
 
     public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
@@ -583,7 +583,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             "count-execution",
             countExecutionId,
             request.IdempotencyKey,
-            $"/api/business-console/v1/wms/count-executions?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&countExecutionId={Uri.EscapeDataString(countExecutionId)}",
+            $"/api/business-console/v1/wms/count-executions?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&scopeKind={Uri.EscapeDataString(request.ScopeKind)}&scopeId={Uri.EscapeDataString(request.ScopeId)}&countExecutionId={Uri.EscapeDataString(countExecutionId)}",
             cancellationToken);
 
     private async Task<BusinessConsoleCompleteWmsMovementResponse> CompleteMovementAsync(
