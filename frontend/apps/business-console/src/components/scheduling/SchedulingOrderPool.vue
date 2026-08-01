@@ -97,7 +97,7 @@ function setPriority(workOrderId: string, value: string | number) {
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="font-semibold">待排工单池</h2>
-        <p class="text-sm text-muted-foreground">从 MES 权威工单中一次选择最多 500 条。</p>
+        <p class="text-sm text-muted-foreground">从 MES 权威工单中一次选择最多 10 条。批量越大排程耗时越长，超过上限会被拒绝。</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <!-- 作业范围选择入口由宿主页面注入（与 MES 工单页共享同一份选择）。 -->
