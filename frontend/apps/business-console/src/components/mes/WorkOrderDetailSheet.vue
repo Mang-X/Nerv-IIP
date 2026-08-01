@@ -19,7 +19,7 @@ import {
   resolveScheduleState,
 } from '@/composables/mes/useMesTaskSemantics'
 import {
-  describeMesReadinessReason,
+  describeMesReadinessReasons,
   useMesDispatchTasks,
   useMesOperationTasks,
   useMesWorkOrderDetail,
@@ -115,9 +115,7 @@ const operations = computed(() =>
 )
 type OperationRow = (typeof operations)['value'][number]
 
-const blockingReasons = computed(() =>
-  (detail.value?.blockingReasons ?? []).map(describeMesReadinessReason),
-)
+const blockingReasons = computed(() => describeMesReadinessReasons(detail.value?.blockingReasons))
 
 // 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
 const materialRows = computed(() =>

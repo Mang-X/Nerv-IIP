@@ -6,7 +6,11 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReason,
+  describeMesReadinessReasons,
+  useMesProductionPlans,
+} from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -125,7 +129,7 @@ const sortedPlans = computed(() => {
 const pagedPlans = computed(() => sortedPlans.value)
 
 const selectedBlockingReasons = computed(() =>
-  (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason),
+  describeMesReadinessReasons(selectedPlan.value?.blockingReasons),
 )
 const selectedPlanBlocked = computed(
   () =>

@@ -107,6 +107,23 @@ vi.mock('@/composables/useBusinessMes', () => ({
     label: code || '未检',
     nextStep: '请按质量或设备处理要求跟进。',
   }),
+  // 同码合并版（#1418）：页面改用它渲染阻塞项，桩要跟着真实模块的导出面走。
+  describeMesReadinessReasons: (codes?: readonly string[] | null) => {
+    const seen = new Map<
+      string,
+      { code: string; label: string; detail: string; nextStep: string }
+    >()
+    for (const code of codes ?? []) {
+      if (seen.has(code)) continue
+      seen.set(code, {
+        code,
+        label: code || '未检',
+        detail: '',
+        nextStep: '请按质量或设备处理要求跟进。',
+      })
+    }
+    return [...seen.values()]
+  },
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   useMesWorkOrderProducedLots: () => ({
     // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
