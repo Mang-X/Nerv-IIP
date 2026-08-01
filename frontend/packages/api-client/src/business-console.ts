@@ -2474,6 +2474,21 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition as BusinessConsoleMesTelemetryCandidateTransition,
 } from './generated/business-console'
 
+// MAN-632 / #1169: unified owner-backed searchable directory contract.
+export {
+  listBusinessConsoleSearchableDirectory,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
+} from './generated/business-console'
+
+export type {
+  ListBusinessConsoleSearchableDirectoryData,
+  ListBusinessConsoleSearchableDirectoryResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryRequest as BusinessConsoleSearchableDirectoryRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryResponse as BusinessConsoleSearchableDirectoryResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryItem as BusinessConsoleSearchableDirectoryItem,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchableDirectoryResponse as BusinessConsoleSearchableDirectoryEnvelope,
+} from './generated/business-console'
+
 export {
   getBusinessConsoleTelemetryConnectorTagCoverage,
   getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,

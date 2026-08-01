@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 跨业务可搜索目录契约（MAN-632 / #1169）
+
+BusinessGateway 新增统一可搜索目录读面，覆盖人员、班组、设备、工作中心、工位、车间、库位、物料、批次/序列号、缺陷码、报废/停机/维护原因和优先级。Gateway 不复制权威事实：MasterData、Inventory、Quality、Maintenance 各自完成组织/环境、关键字、受支持范围和分页过滤；请求类型动态选择且只检查对应 owner 权限。IAM 返回的 permission-aware scope grants 会在 owner 调用前再次裁决：无显式 scope 时只有 organization-wide grant 可保持组织级查询，或从唯一且与该目录兼容的受限 grant 安全派生 effective scope；多 grant、scope 不兼容、越权、畸形 grant 和下游坏响应均 fail closed。所有候选返回稳定 ID、可读显示、来源、authority type、确定性 code 排序及解释；`rankingMode=recent|suggested` 在没有可信使用/推荐事实时显式报告 ranking unavailable，并继续使用可解释的 code fallback，不冒充推荐结果；未知 mode、无法表示的页偏移在授权和下游调用前拒绝。排序不进入数量、计量、决策或根因。Maintenance reason 明示复用 downtime authority；priority 是 MasterData 保留但不预置的 FactoryCustom CodeSet，未配置时显式 unavailable，不伪造枚举。
+
+Inventory 新增 `/api/inventory/v1/directory` owner endpoint，location/batch/serial 在 PostgreSQL 侧先按 scope/keyword/positive stock 去重、计数和分页；location 的可选 SKU 过滤通过同组织、环境、site、location 的正库存 ledger 在 total/page 前执行。batch/serial 的公开 ID 使用 UTF-8 字节长度前缀复合编码，业务 code/display/context 与 opaque ID 分离，含冒号、Unicode、前导零及跨 site 查询均不碰撞且保持稳定。真实 PostgreSQL 18 测试在无连接环境变量时自建带 owner/run label 的独立 Docker container/volume，Docker 原子分配本地端口，执行 migrations、owner query 与生产 EF count/page 查询的参数化 EXPLAIN；以代表性数据 `ANALYZE` 后由真实 planner 在 `enable_seqscan=on` 下自然选择既有 tenant/site/SKU 索引。并行 fixture 端口隔离且各自清理后 label 下容器和卷均为零。外部 `NERV_IIP_TEST_POSTGRES` 只作为可选覆盖，不再作为该证明的 skip 条件。
+
 ## Maintenance 工单执行生命周期 M2（MAN-631 / #1168）
 
 BusinessMaintenance 工单在兼容既有 `Open -> Completed` 一步完工链路的同时，新增可审计执行状态机：`Open -> Accepted -> InProgress -> Paused/WaitingForParts -> InProgress -> Completed -> Verified -> Closed`，并允许完成前取消为 `Cancelled`。分派和每次状态动作都要求期望版本、业务原因与意图级 `idempotencyKey`；同键同载荷返回原结果，同键异载荷和版本冲突均 fail closed。追加式生命周期事件保存前后状态、认证主体、当时技师/班组、原因、结果版本和权威时间；关闭与取消是终态。
