@@ -147,6 +147,14 @@ Self scope，待领取行先原子 claim 再进入录入，状态和不可操作
 PC 既有提交路径只删除旧 `inspectorUserId` / principal gate 契约残留。世界观历史 seed 对既有
 pending 未归属任务做幂等回填，新任务沿用事实检验员归属。
 
+PDA Quality 执行闭环（MAN-640 / #1177）直接消费上述服务端契约：Self 列表把状态、来源类型、
+来源服务、关键字和超期条件全部下传，服务端过滤后才计算 `total` 与分页；扫码只更新关键字条件，
+不再通过客户端遍历全部分页判定命中。提交继续使用稳定意图键和 Gateway 权威回执，但 PDA 只有在
+按 `inspectionTaskId` 回读到 `completed` 且关联记录与写响应一致、再按 `inspectionRecordId` 回读到
+`passed` / `rejected` / `conditional-release` 权威记录后才结束该意图并展示结果。mock 浏览器验收固定
+375×812 覆盖服务端筛选、领取、逐特性录入、提交及两段强 ID 回读；真实栈证据必须另行通过公开
+BusinessGateway 取得，不能用 mock、HTTP 200 或客户端预判替代。
+
 ## Quality 报工待检计划主链前置（MAN-578 / #1046）
 
 `leader-demo-main-chain` 在 MES 报工前通过 BusinessGateway 的受权公开 facade 创建并激活 run-scoped Quality inspection plan；plan 精确绑定当前 organization、environment、动态 finished SKU、work center、`category=operation` 和 `documentType=operation-task`，不使用数据库直写、固定旧 SKU、测试专用旁路或宽松匹配。Quality 服务既有 create/activate endpoint 未改变，本次把两者在 facade matrix 中从 `deferred` 提升为 `exposed`，并同步 BusinessGateway OpenAPI 与 generated client。激活按聚合边界重新加载 plan 时显式包含 characteristics，仍由领域规则拒绝无特性 plan；BusinessGateway 按 Quality 的真实 string strong-ID wire shape 解析创建响应并构造激活请求，空值与非法 GUID 继续 fail closed。MES `OperationTaskCompleted` consumer 的 envelope 校验、trigger idempotency key、来源业务键去重、唯一索引冲突处理和无 active plan 时直接返回的 fail-closed 语义保持不变；主链证据只在同一 work order、operation task 和 run-scoped SKU 恰好出现一条 inspection task 时确认该节点。

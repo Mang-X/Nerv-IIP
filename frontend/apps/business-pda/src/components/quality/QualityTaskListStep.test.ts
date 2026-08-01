@@ -1,8 +1,8 @@
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { NvListRow, NvMobileDropdownMenuItem, NvScanBar } from '@nerv-iip/ui-mobile'
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import QualityTaskListStep from './QualityTaskListStep.vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
@@ -87,99 +87,33 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).not.toContain('暂无待检任务')
   })
 
-  it('scan direct: an exact/unique source-document or SKU hit auto-selects the task', async () => {
-    const wrapper = mountList([
-      task({
-        inspectionTaskId: 'T1',
-        sourceDocumentId: 'RCV-1001',
-        skuCode: 'SKU-A',
-        dueAtUtc: FUTURE,
-      }),
-      task({
-        inspectionTaskId: 'T2',
-        sourceType: 'final',
-        sourceDocumentId: 'WO-2',
-        skuCode: 'SKU-B',
-        dueAtUtc: FUTURE,
-      }),
-    ])
-    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-1001')
-    expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T1' })
-  })
-
-  it('keeps status visible and emits server-backed keyword/source/status filters', async () => {
+  it('keeps all filters server-backed, including source service and scan keyword', async () => {
     const wrapper = mountList([task({ inspectionTaskId: 'T1' })])
-    const status = wrapper.findAllComponents(NvMobileDropdownMenuItem)[0]
+    const dropdowns = wrapper.findAllComponents(NvMobileDropdownMenuItem)
+    const status = dropdowns[0]
+    const sourceService = dropdowns.find((item) => item.props('title') === '来源服务')
 
     expect(status?.props('title')).toBe('任务状态')
     status?.vm.$emit('update:modelValue', 'in-progress')
+    sourceService?.vm.$emit('update:modelValue', 'mes')
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'WO-9001')
     await wrapper.get('[data-testid="chip-operation"]').trigger('click')
 
     expect(wrapper.emitted('update:status')?.at(-1)).toEqual(['in-progress'])
     expect(wrapper.emitted('update:keyword')?.at(-1)).toEqual(['WO-9001'])
     expect(wrapper.emitted('update:sourceType')?.at(-1)).toEqual(['operation'])
-  })
-
-  it('scan direct: cross-page hit loads all then auto-selects the task', async () => {
-    // 目标任务在未加载分页（loaded 集合无命中，hasMore=true）→ loadAll 后跨页直达。
-    const target = task({
-      inspectionTaskId: 'T99',
-      sourceDocumentId: 'RCV-9999',
-      skuCode: 'SKU-Z',
-      dueAtUtc: FUTURE,
-    })
-    const loaded = [task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', dueAtUtc: FUTURE })]
-    const loadAll = vi.fn().mockResolvedValue([...loaded, target])
-    const wrapper = mount(QualityTaskListStep, {
-      props: {
-        tasks: loaded,
-        total: 2,
-        loaded: 1,
-        hasMore: true,
-        pending: false,
-        error: null,
-        loadAll,
-      },
-    })
-    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-9999')
-    await flushPromises()
-    expect(loadAll).toHaveBeenCalledTimes(1)
-    expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T99' })
-  })
-
-  it('scan direct: a current-page match plus a later-page match is not globally unique → no select', async () => {
-    // 首页已有 1 个同 SKU 命中，后续页还有另一个同 SKU 命中 → 全量下非唯一，不得误选首页任务。
-    const loaded = [task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', skuCode: 'SKU-DUP' })]
-    const loadAll = vi
-      .fn()
-      .mockResolvedValue([
-        ...loaded,
-        task({ inspectionTaskId: 'T2', sourceDocumentId: 'RCV-2', skuCode: 'SKU-DUP' }),
-      ])
-    const wrapper = mount(QualityTaskListStep, {
-      props: {
-        tasks: loaded,
-        total: 2,
-        loaded: 1,
-        hasMore: true,
-        pending: false,
-        error: null,
-        loadAll,
-      },
-    })
-    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'SKU-DUP')
-    await flushPromises()
-    expect(loadAll).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('update:sourceService')?.at(-1)).toEqual(['mes'])
     expect(wrapper.emitted('select')).toBeUndefined()
   })
 
-  it('scan without a unique hit filters instead of navigating', async () => {
+  it('never loads all pages or navigates from a client-only scan match', async () => {
     const wrapper = mountList([
-      task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', skuCode: 'SHARED' }),
-      task({ inspectionTaskId: 'T2', sourceDocumentId: 'RCV-2', skuCode: 'SHARED' }),
+      task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1001', skuCode: 'SKU-A' }),
     ])
-    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'SHARED')
+
+    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-1001')
+
+    expect(wrapper.emitted('update:keyword')?.at(-1)).toEqual(['RCV-1001'])
     expect(wrapper.emitted('select')).toBeUndefined()
   })
 

@@ -12,6 +12,8 @@ const coladaState = vi.hoisted(() => ({
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   submit: vi.fn(),
   claim: vi.fn(),
+  getTask: vi.fn(),
+  getRecord: vi.fn(),
   listPlain: vi.fn(),
   listOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
@@ -23,7 +25,10 @@ const coladaState = vi.hoisted(() => ({
 // `@nerv-iip/api-client` barrel; mock it here. Auth-API functions are stubbed
 // because `@/stores/auth` lazily references them (never called — we only $patch).
 vi.mock('@nerv-iip/api-client', () => ({
+  BusinessOperationUnconfirmedError: class BusinessOperationUnconfirmedError extends Error {},
   confirmBusinessConsoleOperation: vi.fn(async (value) => value),
+  getBusinessConsoleQualityInspectionTask: coladaState.getTask,
+  getBusinessConsoleQualityInspectionRecord: coladaState.getRecord,
   listBusinessConsoleQualityInspectionTasks: coladaState.listPlain,
   listBusinessConsoleQualityInspectionTasksQueryOptions: coladaState.listOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions: vi.fn(() => ({
@@ -108,10 +113,38 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function taskReadback(
+  inspectionTaskId = 'TASK-1',
+  status = 'in-progress',
+  inspectionRecordId: string | null = null,
+) {
+  return {
+    data: {
+      success: true,
+      data: {
+        task: {
+          inspectionTaskId,
+          inspectionRecordId,
+          status,
+          assignedInspectorUserId: 'user-admin',
+          version: status === 'completed' ? 4 : 3,
+          allowedActions: status === 'in-progress' ? ['submit-inspection'] : [],
+          blockReasons: [],
+        },
+      },
+    },
+  }
+}
+
 describe('useBusinessQualityInspectionTasks', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    coladaState.submit.mockReset()
+    coladaState.claim.mockReset()
+    coladaState.getTask.mockReset()
+    coladaState.getRecord.mockReset()
+    coladaState.listPlain.mockReset()
     coladaState.queryOptionsById.clear()
     coladaState.queryFactoryById.clear()
     coladaState.dataById.clear()
@@ -123,6 +156,27 @@ describe('useBusinessQualityInspectionTasks', () => {
         status: 'in-progress',
         assignedInspectorUserId: 'user-admin',
         version: 3,
+      },
+    })
+    coladaState.submit.mockResolvedValue({
+      success: true,
+      data: {
+        inspectionRecordId: 'RECORD-1',
+        result: 'passed',
+      },
+    })
+    coladaState.getTask
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-1'))
+    coladaState.getRecord.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          inspectionRecordId: 'RECORD-1',
+          result: 'passed',
+          nonconformanceReportId: null,
+          resultLines: [],
+        },
       },
     })
     coladaState.listPlain.mockImplementation(
@@ -194,6 +248,7 @@ describe('useBusinessQualityInspectionTasks', () => {
 
     result.filters.keyword = 'WO-9001'
     result.filters.sourceType = 'operation'
+    result.filters.sourceService = 'mes'
     result.filters.overdue = true
     await nextTick()
     coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
@@ -209,9 +264,62 @@ describe('useBusinessQualityInspectionTasks', () => {
         take: 20,
         keyword: 'WO-9001',
         sourceType: 'operation',
+        sourceService: 'mes',
         overdue: true,
       }),
     })
+  })
+
+  it('does not expose a full-dataset loader that can bypass server paging', () => {
+    seedPrincipal()
+
+    const result = useBusinessQualityInspectionTasks()
+
+    expect(result).not.toHaveProperty('ensureAllLoaded')
+  })
+
+  it('reads back the completed task and exact inspection record before returning a result', async () => {
+    seedPrincipal()
+    coladaState.submit.mockResolvedValueOnce({
+      success: true,
+      data: {
+        inspectionRecordId: 'RECORD-1',
+        result: 'passed',
+      },
+    })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    const result = await submitInspection('TASK-1', LINES)
+
+    expect(coladaState.getTask).toHaveBeenNthCalledWith(1, {
+      path: { inspectionTaskId: 'TASK-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      },
+      throwOnError: true,
+    })
+    expect(coladaState.getTask).toHaveBeenNthCalledWith(2, {
+      path: { inspectionTaskId: 'TASK-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'self',
+        scopeId: 'user-admin',
+      },
+      throwOnError: true,
+    })
+    expect(coladaState.getRecord).toHaveBeenCalledWith({
+      path: { inspectionRecordId: 'RECORD-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+      throwOnError: true,
+    })
+    expect(result.data).toMatchObject({ inspectionRecordId: 'RECORD-1', result: 'passed' })
   })
 
   it('normalizes keyword once for query identity and every pagination request', async () => {
@@ -292,43 +400,11 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('round-trips claim through the exact in-progress readback before allowing submit', async () => {
     seedPrincipal()
-    coladaState.listPlain
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            items: [
-              {
-                inspectionTaskId: 'TASK-1',
-                status: 'in-progress',
-                assignedInspectorUserId: 'user-admin',
-                version: 4,
-                allowedActions: ['submit-inspection'],
-                blockReasons: [],
-              },
-            ],
-            total: 1,
-          },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            items: [
-              {
-                inspectionTaskId: 'TASK-1',
-                status: 'in-progress',
-                assignedInspectorUserId: 'user-admin',
-                version: 4,
-                allowedActions: ['submit-inspection'],
-                blockReasons: [],
-              },
-            ],
-            total: 1,
-          },
-        },
-      })
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-1'))
     const { claimTask, submitInspection } = useBusinessQualityInspectionTasks()
 
     const claimed = await claimTask({
@@ -343,22 +419,10 @@ describe('useBusinessQualityInspectionTasks', () => {
       inspectionTaskId: 'TASK-1',
       status: 'in-progress',
       assignedInspectorUserId: 'user-admin',
-      version: 4,
+      version: 3,
       allowedActions: ['submit-inspection'],
     })
-    expect(coladaState.listPlain).toHaveBeenCalledTimes(2)
-    expect(coladaState.listPlain).toHaveBeenNthCalledWith(1, {
-      query: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        scopeKind: 'self',
-        scopeId: 'user-admin',
-        inspectionTaskId: 'TASK-1',
-        skip: 0,
-        take: 2,
-      },
-      throwOnError: true,
-    })
+    expect(coladaState.getTask).toHaveBeenCalledTimes(3)
     expect(coladaState.submit).toHaveBeenCalledTimes(1)
   })
 
@@ -442,10 +506,17 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('reuses the same submit key after timeout and rotates it after a confirmed success', async () => {
     seedPrincipal()
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValueOnce(taskReadback('TASK-1', 'completed', 'RECORD-1'))
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-1'))
     coladaState.submit
       .mockRejectedValueOnce(new TypeError('network failed'))
-      .mockResolvedValueOnce({ success: true, data: {} })
-      .mockResolvedValueOnce({ success: true, data: {} })
+      .mockResolvedValueOnce({ success: true, data: { inspectionRecordId: 'RECORD-1' } })
+      .mockResolvedValueOnce({ success: true, data: { inspectionRecordId: 'RECORD-1' } })
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
     await expect(submitInspection('TASK-1', LINES)).rejects.toThrow('network failed')
@@ -459,39 +530,16 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('replays the same submit key after a lost committed response when self readback is completed', async () => {
     seedPrincipal()
-    coladaState.listPlain
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            items: [
-              {
-                inspectionTaskId: 'TASK-LOST-COMMIT',
-                status: 'in-progress',
-                inspectionRecordId: null,
-                allowedActions: ['submit-inspection'],
-              },
-            ],
-            total: 1,
-          },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: {
-            items: [
-              {
-                inspectionTaskId: 'TASK-LOST-COMMIT',
-                status: 'completed',
-                inspectionRecordId: 'RECORD-COMMITTED',
-                allowedActions: [],
-              },
-            ],
-            total: 1,
-          },
-        },
-      })
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback('TASK-LOST-COMMIT'))
+      .mockResolvedValue(taskReadback('TASK-LOST-COMMIT', 'completed', 'RECORD-COMMITTED'))
+    coladaState.getRecord.mockResolvedValue({
+      data: {
+        success: true,
+        data: { inspectionRecordId: 'RECORD-COMMITTED', result: 'passed' },
+      },
+    })
     coladaState.submit
       .mockRejectedValueOnce(new TypeError('response lost after commit'))
       .mockResolvedValueOnce({
@@ -512,9 +560,14 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('clears the submit intent after a determinate 422 so the next attempt uses a new key', async () => {
     seedPrincipal()
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback('TASK-DETERMINATE'))
+      .mockResolvedValueOnce(taskReadback('TASK-DETERMINATE'))
+      .mockResolvedValue(taskReadback('TASK-DETERMINATE', 'completed', 'RECORD-1'))
     coladaState.submit
       .mockRejectedValueOnce({ status: 422, message: 'invalid inspection result' })
-      .mockResolvedValueOnce({ success: true, data: {} })
+      .mockResolvedValueOnce({ success: true, data: { inspectionRecordId: 'RECORD-1' } })
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
     await expect(submitInspection('TASK-DETERMINATE', LINES)).rejects.toMatchObject({ status: 422 })
@@ -542,78 +595,24 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('re-reads the exact task and does not submit after another inspector completed it', async () => {
     seedPrincipal()
-    coladaState.listPlain.mockResolvedValue({
-      data: {
-        success: true,
-        data: {
-          items: [
-            {
-              inspectionTaskId: 'TASK-1',
-              status: 'completed',
-              inspectionRecordId: 'RECORD-OTHER',
-              allowedActions: [],
-            },
-          ],
-          total: 1,
-        },
-      },
-    })
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-OTHER'))
     const { submitInspection } = useBusinessQualityInspectionTasks()
 
     await expect(submitInspection('TASK-1', LINES)).rejects.toThrow('状态已被其他操作更新')
 
-    expect(coladaState.listPlain).toHaveBeenCalledWith({
+    expect(coladaState.getTask).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-1' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         scopeKind: 'self',
         scopeId: 'user-admin',
-        inspectionTaskId: 'TASK-1',
-        skip: 0,
-        take: 2,
       },
       throwOnError: true,
     })
     expect(coladaState.submit).not.toHaveBeenCalled()
-  })
-
-  it('ensureAllLoaded paginates with take <= 200 when total exceeds the backend cap', async () => {
-    // 回归：total > 200 时不得把 take 直接扩到 total（后端验证器上限 200 会整段失败），
-    // 而是受限分页迭代聚合全量。
-    seedPrincipal()
-    const taskAt = (i: number) => ({ inspectionTaskId: `T${i}`, sourceType: 'receiving' })
-    // 基础查询已加载前 200 条，total=450。
-    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
-      value: {
-        success: true,
-        data: { items: Array.from({ length: 200 }, (_, i) => taskAt(i)), total: 450 },
-      },
-    })
-    coladaState.listPlain.mockImplementation(
-      async ({ query }: { query: { skip: number; take: number } }) => ({
-        data: {
-          success: true,
-          data: {
-            items: Array.from({ length: Math.min(query.take, 450 - query.skip) }, (_, i) =>
-              taskAt(query.skip + i),
-            ),
-            total: 450,
-          },
-        },
-      }),
-    )
-
-    const { ensureAllLoaded } = useBusinessQualityInspectionTasks()
-    const all = await ensureAllLoaded()
-
-    expect(all).toHaveLength(450)
-    // 每次分页请求 take 都不超上限 200。
-    expect(coladaState.listPlain).toHaveBeenCalledTimes(2)
-    for (const call of coladaState.listPlain.mock.calls) {
-      expect(call[0].query.take).toBeLessThanOrEqual(200)
-    }
-    expect(coladaState.listPlain.mock.calls[0][0].query.skip).toBe(200)
-    expect(coladaState.listPlain.mock.calls[1][0].query.skip).toBe(400)
   })
 
   it('advances the server offset by raw page rows while deduplicating overlapping task ids', async () => {
@@ -823,7 +822,7 @@ describe('useBusinessQualityInspectionTasks', () => {
     })
 
     const result = useBusinessQualityInspectionTasks()
-    await result.ensureAllLoaded()
+    await result.loadMore()
     expect(result.tasks.value).toHaveLength(2)
     expect(result.hasSuccessfulResponse.value).toBe(true)
 
@@ -860,7 +859,7 @@ describe('useBusinessQualityInspectionTasks', () => {
     coladaState.listPlain.mockReturnValue(oldPage.promise)
 
     const result = useBusinessQualityInspectionTasks()
-    const loadPromise = result.ensureAllLoaded()
+    const loadPromise = result.loadMore()
     expect(coladaState.listPlain).toHaveBeenCalledWith({
       query: expect.objectContaining({
         organizationId: 'org-001',
@@ -881,7 +880,7 @@ describe('useBusinessQualityInspectionTasks', () => {
       },
     })
 
-    await expect(loadPromise).resolves.toEqual([])
+    await expect(loadPromise).resolves.toBeUndefined()
     expect(result.tasks.value).toEqual([])
     expect(result.total.value).toBe(0)
   })
@@ -903,7 +902,8 @@ describe('useBusinessQualityInspectionTasks', () => {
 
     const result = useBusinessQualityInspectionTasks()
 
-    await expect(result.ensureAllLoaded()).rejects.toThrow('下一页查询失败')
+    await result.loadMore()
     expect(result.tasks.value).toHaveLength(1)
+    expect(result.loadMoreError.value).toMatchObject({ message: '下一页查询失败' })
   })
 })

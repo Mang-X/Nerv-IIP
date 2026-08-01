@@ -4,8 +4,8 @@ import { NvMobileButton, NvScanBar } from '@nerv-iip/ui-mobile'
 defineProps<{
   scanKeyword: string
   sourceTypeFilter: string | null
-  /** 来源筛选 chips（type/label/count 已由容器按扫码筛选后的集合计数）。 */
-  chips: Array<{ type: string; label: string; count: number }>
+  /** 来源筛选 chips；任务数由服务端筛选与分页裁决，不以当前已加载页冒充总量。 */
+  chips: Array<{ type: string; label: string }>
 }>()
 const emit = defineEmits<{
   scan: [value: string]
@@ -45,7 +45,7 @@ const emit = defineEmits<{
       :data-testid="`chip-${chip.type}`"
       @click="emit('pickSourceType', chip.type)"
     >
-      {{ chip.label }} {{ chip.count }}
+      {{ chip.label }}
     </NvMobileButton>
   </div>
 </template>
