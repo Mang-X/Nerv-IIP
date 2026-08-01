@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggrega
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 
@@ -189,6 +190,67 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
             .SingleAsync(cancellationToken);
         var eligibility = MaintenanceWorkOrderEligibility.Evaluate(workOrder.Status, completionDataComplete);
         return new MaintenanceWorkOrderDetail(workOrder, lifecycle, eligibility.AllowedActions, eligibility.BlockReasons);
+    }
+}
+
+public sealed record ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenanceWorkOrderId WorkOrderId,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion) : IQuery<MaintenanceWorkOrderAssignmentReplayProbeResult>;
+
+public sealed record MaintenanceWorkOrderAssignmentReplayProbeResult(
+    bool Found,
+    MaintenanceWorkOrderCommandResult? Receipt);
+
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayQueryValidator
+    : AbstractValidator<ProbeMaintenanceWorkOrderAssignmentReplayQuery>
+{
+    public ProbeMaintenanceWorkOrderAssignmentReplayQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty();
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ProbeMaintenanceWorkOrderAssignmentReplayQuery, MaintenanceWorkOrderAssignmentReplayProbeResult>
+{
+    public async Task<MaintenanceWorkOrderAssignmentReplayProbeResult> Handle(
+        ProbeMaintenanceWorkOrderAssignmentReplayQuery request,
+        CancellationToken cancellationToken)
+    {
+        var assignment = new AssignMaintenanceWorkOrderCommand(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.ActorPrincipalId,
+            request.TechnicianUserId,
+            request.TeamId,
+            request.Reason,
+            request.IdempotencyKey,
+            request.ExpectedVersion);
+        var receipt = await LifecycleReplay.FindAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.IdempotencyKey,
+            AssignMaintenanceWorkOrderCommandHandler.Fingerprint(assignment),
+            cancellationToken);
+        return new MaintenanceWorkOrderAssignmentReplayProbeResult(receipt is not null, receipt);
     }
 }
 
@@ -634,7 +696,7 @@ public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDb
             .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.TechnicianUserId == null || (x.ActualTechnicianUserId ?? x.AssignedTechnicianUserId) == request.TechnicianUserId)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Completed)
+            .Where(x => x.CompletedAtUtc != null)
             .Select(x => new
             {
                 x.DeviceAssetId,

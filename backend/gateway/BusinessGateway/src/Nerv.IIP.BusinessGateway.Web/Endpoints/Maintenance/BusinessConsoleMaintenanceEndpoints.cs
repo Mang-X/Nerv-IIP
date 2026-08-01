@@ -318,6 +318,16 @@ public sealed class AssignBusinessConsoleMaintenanceWorkOrderEndpoint(
             scope,
             Route<string>("workOrderId")!,
             cancellationToken);
+        var replay = await maintenance.ProbeAssignmentReplayAsync(
+            tokenProvider.BearerToken,
+            Route<string>("workOrderId")!,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+        if (replay is not null)
+        {
+            return replay;
+        }
         await MaintenanceWorkScopeAccess.EnsureAssignmentTargetsAsync(
             masterData,
             tokenProvider.BearerToken,

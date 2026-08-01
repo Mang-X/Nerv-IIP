@@ -125,6 +125,24 @@ public sealed class AssignMaintenanceWorkOrderRequestValidator : Validator<Assig
     }
 }
 
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayRequestValidator
+    : Validator<ProbeMaintenanceWorkOrderAssignmentReplayRequest>
+{
+    public ProbeMaintenanceWorkOrderAssignmentReplayRequestValidator()
+    {
+        RuleFor(x => x.WorkOrderId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+    }
+}
+
 public sealed class TransitionMaintenanceWorkOrderRequestValidator : Validator<TransitionMaintenanceWorkOrderRequest>
 {
     public TransitionMaintenanceWorkOrderRequestValidator()
@@ -173,6 +191,17 @@ public sealed record GetMaintenanceWorkOrderRequest(
     string EnvironmentId);
 
 public sealed record AssignMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion);
+
+public sealed record ProbeMaintenanceWorkOrderAssignmentReplayRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string OrganizationId,
     string EnvironmentId,
@@ -432,6 +461,33 @@ public sealed class AssignMaintenanceWorkOrderEndpoint(ISender sender)
     public override async Task HandleAsync(AssignMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new AssignMaintenanceWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ActorPrincipalId,
+            req.TechnicianUserId,
+            req.TeamId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayEndpoint(ISender sender)
+    : MaintenanceEndpoint<
+        ProbeMaintenanceWorkOrderAssignmentReplayRequest,
+        ResponseData<MaintenanceWorkOrderAssignmentReplayProbeResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<ProbeMaintenanceWorkOrderAssignmentReplayEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(
+        ProbeMaintenanceWorkOrderAssignmentReplayRequest req,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
@@ -706,6 +762,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
         new(typeof(GetMaintenanceWorkOrderEndpoint), "GET", "/api/business/v1/maintenance/work-orders/{workOrderId}", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceWorkOrder"),
         new(typeof(AssignMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "assignMaintenanceWorkOrder"),
+        new(typeof(ProbeMaintenanceWorkOrderAssignmentReplayEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "probeMaintenanceWorkOrderAssignmentReplay"),
         new(typeof(TransitionMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/actions", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "transitionMaintenanceWorkOrder"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(UpdateMaintenancePlanEndpoint), "PUT", "/api/business/v1/maintenance/plans/{planId}", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenancePlan"),

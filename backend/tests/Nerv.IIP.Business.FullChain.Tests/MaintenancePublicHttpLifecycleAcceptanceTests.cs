@@ -36,6 +36,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
     private const string OrganizationId = "org-man631-http";
     private const string EnvironmentId = "env-man631-http";
     private const string PrincipalId = "user-admin";
+    private const string AlternateTechnicianId = "user-alternate";
+    private const string TeamId = "team-man631-http";
     private const string InternalToken = "man631-public-chain-internal-token";
 
     [Fact]
@@ -62,7 +64,14 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
 
         var downstreamCapture = new DownstreamCapture();
         var gatewayLogs = new ErrorLogCapture();
-        await using var gatewayFactory = CreateGatewayFactory(maintenanceFactory, downstreamCapture, gatewayLogs);
+        var authorization = new AllowedAuthorizationClient();
+        var masterDataState = new MasterDataState();
+        await using var gatewayFactory = CreateGatewayFactory(
+            maintenanceFactory,
+            downstreamCapture,
+            gatewayLogs,
+            authorization,
+            masterDataState);
         using var browser = gatewayFactory.CreateClient();
         browser.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -95,7 +104,7 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             organizationId = OrganizationId,
             environmentId = EnvironmentId,
             technicianUserId = PrincipalId,
-            teamId = (string?)null,
+            teamId = TeamId,
             reason = "dispatch-to-on-duty-technician",
             idempotencyKey = "man631-http-assign",
             expectedVersion = version,
@@ -132,6 +141,9 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             () => $"Maintenance transport: {downstreamCapture}; Gateway logs: {gatewayLogs}");
         AssertConfirmedReceipt(acceptData, workOrderId!);
 
+        masterDataState.PrimaryWorkerActive = false;
+        masterDataState.PrimaryMembershipCurrent = false;
+        var authorizationChecksBeforeReplay = authorization.CheckCount;
         var delayedAssignmentReplay = await PostActionAsync(
             browser,
             workOrderId!,
@@ -143,22 +155,51 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         Assert.Equal(assignData.GetProperty("changedAtUtc").GetDateTimeOffset(),
             delayedAssignmentReplay.GetProperty("changedAtUtc").GetDateTimeOffset());
         AssertConfirmedReceipt(delayedAssignmentReplay, workOrderId!);
+        Assert.Equal(authorizationChecksBeforeReplay + 1, authorization.CheckCount);
 
-        var newAssignment = await browser.PostAsJsonAsync(
-            $"/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment",
+        var createWithInvalidTarget = await DataAsync(await browser.PostAsJsonAsync(
+            "/api/business-console/v1/maintenance/work-orders",
+            new
+            {
+                organizationId = OrganizationId,
+                environmentId = EnvironmentId,
+                deviceAssetId = "DEV-MAN631-HTTP-INVALID-TARGET",
+                priority = "normal",
+                openedBy = "browser-invalid-target",
+                idempotencyKey = "man631-http-create-invalid-target",
+            }));
+        var invalidTargetWorkOrderId = createWithInvalidTarget.GetProperty("workOrderId").GetString();
+        var freshInvalidAssignment = await browser.PostAsJsonAsync(
+            $"/api/business-console/v1/maintenance/work-orders/{invalidTargetWorkOrderId}/assignment",
             new
             {
                 organizationId = OrganizationId,
                 environmentId = EnvironmentId,
                 technicianUserId = PrincipalId,
-                teamId = (string?)null,
-                reason = "different-assignment-after-accept",
-                idempotencyKey = "man631-http-assign-new",
-                expectedVersion = 1,
+                teamId = TeamId,
+                reason = "fresh-invalid-target",
+                idempotencyKey = "man631-http-assign-invalid-target",
+                expectedVersion = 0,
                 scopeKind = "organization",
                 scopeId = OrganizationId,
             });
-        Assert.Equal(HttpStatusCode.Conflict, newAssignment.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, freshInvalidAssignment.StatusCode);
+
+        var changedPayloadReplay = await browser.PostAsJsonAsync(
+            $"/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment",
+            new
+            {
+                organizationId = OrganizationId,
+                environmentId = EnvironmentId,
+                technicianUserId = AlternateTechnicianId,
+                teamId = (string?)null,
+                reason = "dispatch-to-on-duty-technician",
+                idempotencyKey = "man631-http-assign",
+                expectedVersion = 0,
+                scopeKind = "organization",
+                scopeId = OrganizationId,
+            });
+        Assert.Equal(HttpStatusCode.Conflict, changedPayloadReplay.StatusCode);
 
         foreach (var step in new[]
                  {
@@ -257,7 +298,9 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
     private static WebApplicationFactory<GatewayProgram> CreateGatewayFactory(
         WebApplicationFactory<MaintenanceProgram> maintenanceFactory,
         DownstreamCapture capture,
-        ErrorLogCapture logCapture) =>
+        ErrorLogCapture logCapture,
+        AllowedAuthorizationClient authorization,
+        MasterDataState masterDataState) =>
         new WebApplicationFactory<GatewayProgram>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureLogging(logging => logging.AddProvider(logCapture));
@@ -270,9 +313,9 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(new AllowedAuthorizationClient());
+                services.AddSingleton<IBusinessGatewayAuthorizationClient>(authorization);
                 services.RemoveAll<IBusinessMasterDataClient>();
-                services.AddSingleton(MasterDataProxy.Create());
+                services.AddSingleton(MasterDataProxy.Create(masterDataState));
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new StaticInternalServiceTokenProvider(InternalToken));
                 services.RemoveAll<IBusinessMaintenanceClient>();
@@ -420,11 +463,16 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
 
     private sealed class AllowedAuthorizationClient : IBusinessGatewayAuthorizationClient
     {
+        private int checkCount;
+
+        public int CheckCount => Volatile.Read(ref checkCount);
+
         public Task<BusinessGatewayAuthorizationResult> CheckAsync(
             string bearerToken,
             BusinessGatewayPermissionRequirement requirement,
             CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref checkCount);
             Assert.False(string.IsNullOrWhiteSpace(bearerToken));
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(BusinessGatewayAuthorizationResult.Allowed(
@@ -447,8 +495,14 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
 
     private class MasterDataProxy : DispatchProxy
     {
-        public static IBusinessMasterDataClient Create() =>
-            DispatchProxy.Create<IBusinessMasterDataClient, MasterDataProxy>();
+        private MasterDataState state = null!;
+
+        public static IBusinessMasterDataClient Create(MasterDataState state)
+        {
+            var proxy = DispatchProxy.Create<IBusinessMasterDataClient, MasterDataProxy>();
+            ((MasterDataProxy)(object)proxy).state = state;
+            return proxy;
+        }
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
@@ -463,7 +517,7 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                         ["organization"], []),
                 nameof(IBusinessMasterDataClient.GetResourceDetailAsync) => ResourceDetail(args),
                 nameof(IBusinessMasterDataClient.ListTeamMembersAsync) =>
-                    new BusinessConsoleTeamMemberListResponse([], 0),
+                    TeamMembers(args),
                 nameof(IBusinessMasterDataClient.ListWorkersAsync) => WorkerDirectory(args),
                 _ => throw new NotSupportedException(
                     $"MAN-631 public chain did not expect MasterData call '{targetMethod.Name}'."),
@@ -474,32 +528,53 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                 .Invoke(null, [result]);
         }
 
-        private static BusinessConsoleMasterDataResourceDetail ResourceDetail(object?[]? args)
+        private BusinessConsoleMasterDataResourceDetail ResourceDetail(object?[]? args)
         {
             var request = Assert.IsType<BusinessConsoleMasterDataResourceRequest>(args![1]);
             return new BusinessConsoleMasterDataResourceDetail(
                 request.ResourceType,
                 request.Code,
                 request.Code,
-                true,
+                request.ResourceType != "team" || state.TeamActive,
                 "man631-http-v1",
                 request.OrganizationId,
                 request.EnvironmentId);
         }
 
-        private static BusinessConsoleWorkerDirectoryResponse WorkerDirectory(object?[]? args)
+        private BusinessConsoleTeamMemberListResponse TeamMembers(object?[]? args)
+        {
+            var request = Assert.IsType<BusinessConsoleListTeamMembersRequest>(args![1]);
+            Assert.Equal(OrganizationId, request.OrganizationId);
+            Assert.Equal(EnvironmentId, request.EnvironmentId);
+            Assert.Equal(TeamId, request.TeamCode);
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            return new BusinessConsoleTeamMemberListResponse(
+                [new BusinessConsoleTeamMemberItem(
+                    TeamId,
+                    PrincipalId,
+                    false,
+                    today.AddDays(-30),
+                    state.PrimaryMembershipCurrent ? null : today.AddDays(-1),
+                    state.PrimaryMembershipCurrent,
+                    "man631-membership-v1")],
+                1);
+        }
+
+        private BusinessConsoleWorkerDirectoryResponse WorkerDirectory(object?[]? args)
         {
             var request = Assert.IsType<BusinessConsoleWorkerDirectoryRequest>(args![1]);
             Assert.Equal(OrganizationId, request.OrganizationId);
             Assert.Equal(EnvironmentId, request.EnvironmentId);
-            Assert.Equal(PrincipalId, request.UserId);
             Assert.Equal("active", request.EmploymentStatus);
+            var active = request.UserId == AlternateTechnicianId
+                || (request.UserId == PrincipalId && state.PrimaryWorkerActive);
             return new BusinessConsoleWorkerDirectoryResponse(
-                1,
+                active ? 1 : 0,
                 2,
                 1,
-                [new BusinessConsoleWorkerDirectoryItem(
-                    PrincipalId,
+                active
+                    ? [new BusinessConsoleWorkerDirectoryItem(
+                    request.UserId!,
                     "EMP-MAN631",
                     "MAN-631 technician",
                     null,
@@ -510,8 +585,18 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                     true,
                     [],
                     [],
-                    "man631-worker-v1")]);
+                    "man631-worker-v1")]
+                    : []);
         }
+    }
+
+    private sealed class MasterDataState
+    {
+        public bool PrimaryWorkerActive { get; set; } = true;
+
+        public bool PrimaryMembershipCurrent { get; set; } = true;
+
+        public bool TeamActive { get; set; } = true;
     }
 
     private static class PublicGatewayToken

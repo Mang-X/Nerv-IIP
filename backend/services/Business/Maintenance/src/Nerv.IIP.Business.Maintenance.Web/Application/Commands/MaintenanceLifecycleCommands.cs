@@ -120,7 +120,7 @@ public sealed class AssignMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         return new MaintenanceWorkOrderCommandResult(workOrder.Id, workOrder.Status, changedAtUtc, workOrder.Version);
     }
 
-    private static string Fingerprint(AssignMaintenanceWorkOrderCommand request) =>
+    internal static string Fingerprint(AssignMaintenanceWorkOrderCommand request) =>
         MaintenanceIdempotencyFingerprints.Hash(new
         {
             WorkOrderId = request.WorkOrderId.ToString(),

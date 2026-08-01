@@ -14064,6 +14064,13 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
             new BusinessConsoleOperationReceipt("assign-maintenance-work-order", "maintenance", "maintenance-work-order",
                 workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, "Open")));
 
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse?> ProbeAssignmentReplayAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult<BusinessConsoleMaintenanceWorkOrderActionResponse?>(null);
+
     public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,

@@ -1277,6 +1277,13 @@ public interface IBusinessMaintenanceClient
         string actorPrincipalId,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMaintenanceWorkOrderActionResponse?> ProbeAssignmentReplayAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,
@@ -6343,6 +6350,53 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             cancellationToken);
     }
 
+    public async Task<BusinessConsoleMaintenanceWorkOrderActionResponse?> ProbeAssignmentReplayAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        var probe = await SendAsync<DownstreamMaintenanceAssignmentReplayProbeResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/internal/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}/assignment-replay-probe",
+            new DownstreamProbeMaintenanceWorkOrderAssignmentReplayRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                actorPrincipalId,
+                request.TechnicianUserId,
+                request.TeamId,
+                request.Reason,
+                request.IdempotencyKey,
+                request.ExpectedVersion),
+            cancellationToken,
+            LifecycleJsonOptions);
+        if (!probe.Found)
+        {
+            if (probe.Receipt is not null)
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "downstream-invalid-response");
+            }
+            return null;
+        }
+        if (probe.Receipt is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return MapLifecycleActionResponse(
+            workOrderId,
+            probe.Receipt,
+            "maintenance.work-order.assign",
+            request.IdempotencyKey,
+            "Open",
+            request.ExpectedVersion);
+    }
+
     public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,
@@ -6394,6 +6448,23 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             request,
             cancellationToken,
             LifecycleJsonOptions);
+        return MapLifecycleActionResponse(
+            workOrderId,
+            response,
+            operationType,
+            idempotencyKey,
+            expectedStatus,
+            expectedVersion);
+    }
+
+    private static BusinessConsoleMaintenanceWorkOrderActionResponse MapLifecycleActionResponse(
+        string workOrderId,
+        DownstreamMaintenanceWorkOrderActionResponse response,
+        string operationType,
+        string idempotencyKey,
+        string expectedStatus,
+        int expectedVersion)
+    {
         var responseId = FormatMaintenanceWorkOrderId(response.WorkOrderId);
         if (!Guid.TryParse(responseId, out var parsedResponseId)
             || parsedResponseId == Guid.Empty
@@ -6861,6 +6932,20 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string Reason,
         string IdempotencyKey,
         int ExpectedVersion);
+
+    private sealed record DownstreamProbeMaintenanceWorkOrderAssignmentReplayRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string ActorPrincipalId,
+        string? TechnicianUserId,
+        string? TeamId,
+        string Reason,
+        string IdempotencyKey,
+        int ExpectedVersion);
+
+    private sealed record DownstreamMaintenanceAssignmentReplayProbeResponse(
+        bool Found,
+        DownstreamMaintenanceWorkOrderActionResponse? Receipt);
 
     private sealed record DownstreamTransitionMaintenanceWorkOrderRequest(
         DownstreamMaintenanceWorkOrderId WorkOrderId,

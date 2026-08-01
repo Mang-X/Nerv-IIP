@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.DistributedLocking;
 using NetCorePal.Extensions.DistributedLocks;
 using Npgsql;
@@ -17,6 +18,68 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 
 public sealed class MaintenanceLifecycleDockerAcceptanceTests
 {
+    [Fact]
+    public async Task Reliability_summary_retains_one_completion_through_verified_and_closed_without_counting_incomplete_work()
+    {
+        await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();
+        await using var provider = await CreateMaintenanceProviderAsync(dependencies.PostgresConnectionString);
+        var organizationId = $"org-man631-summary-{Guid.CreateVersion7():N}";
+        const string environmentId = "env-man631";
+        const string deviceAssetId = "DEV-MAN631-SUMMARY";
+        var windowStart = DateTimeOffset.UtcNow.AddHours(-1);
+        var windowEnd = DateTimeOffset.UtcNow.AddHours(1);
+
+        MaintenanceWorkOrderId completedId;
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var completed = MaintenanceWorkOrder.OpenManual(
+                organizationId, environmentId, deviceAssetId, "high", "reporter-001", "tech-001", 40);
+            completed.Accept("tech-001");
+            completed.StartWork();
+            completed.Finish(
+                "fixed", "equipment-failure", 10, [], "tech-001",
+                actualLaborMinutes: 35,
+                sparePartCostAmount: 120m,
+                externalServiceCostAmount: 30m,
+                costCurrencyCode: "CNY");
+            completedId = completed.Id;
+
+            var open = MaintenanceWorkOrder.OpenManual(
+                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 11);
+            var accepted = MaintenanceWorkOrder.OpenManual(
+                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 12);
+            accepted.Accept("tech-001");
+            var inProgress = MaintenanceWorkOrder.OpenManual(
+                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 13);
+            inProgress.Accept("tech-001");
+            inProgress.StartWork();
+
+            db.MaintenanceWorkOrders.AddRange(completed, open, accepted, inProgress);
+            await db.SaveChangesAsync();
+        }
+
+        await AssertReliabilitySummaryAsync(provider, organizationId, environmentId, deviceAssetId, windowStart, windowEnd);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var completed = await db.MaintenanceWorkOrders.SingleAsync(x => x.Id == completedId);
+            completed.Verify();
+            await db.SaveChangesAsync();
+        }
+        await AssertReliabilitySummaryAsync(provider, organizationId, environmentId, deviceAssetId, windowStart, windowEnd);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var verified = await db.MaintenanceWorkOrders.SingleAsync(x => x.Id == completedId);
+            verified.Close();
+            await db.SaveChangesAsync();
+        }
+        await AssertReliabilitySummaryAsync(provider, organizationId, environmentId, deviceAssetId, windowStart, windowEnd);
+    }
+
     [Fact]
     public async Task Keyword_substring_query_uses_the_real_postgres_trigram_indexes()
     {
@@ -256,6 +319,34 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         new(
             new StackExchangeRedisCommandLockStore(connection.GetDatabase(), "business-maintenance"),
             TimeProvider.System);
+
+    private static async Task AssertReliabilitySummaryAsync(
+        ServiceProvider provider,
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var response = await new QueryMaintenanceReliabilitySummaryQueryHandler(db).Handle(
+            new QueryMaintenanceReliabilitySummaryQuery(
+                organizationId,
+                environmentId,
+                windowStart,
+                windowEnd,
+                DeviceAssetId: deviceAssetId),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal(1, item.WorkOrderCount);
+        Assert.Equal(40, item.EstimatedLaborMinutes);
+        Assert.Equal(35, item.ActualLaborMinutes);
+        Assert.Equal(120m, item.SparePartCostAmount);
+        Assert.Equal(30m, item.ExternalServiceCostAmount);
+        Assert.Equal(150m, item.TotalCostAmount);
+    }
 
     private static async Task<SeededLifecycleWorkOrder> SeedWorkOrderAsync(
         ServiceProvider provider,

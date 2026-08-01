@@ -1993,6 +1993,14 @@
     {
       "service": "Maintenance",
       "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe",
+      "operationId": "probeMaintenanceWorkOrderAssignmentReplay",
+      "classification": "internal",
+      "rationale": "Read-only service contract used by BusinessGateway to distinguish an exact persisted assignment replay from a first assignment before validating mutable dispatch targets; it never creates a receipt or changes work-order state."
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
       "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/complete",
       "operationId": "completeMaintenanceWorkOrder",
       "classification": "exposed",

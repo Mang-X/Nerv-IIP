@@ -96,14 +96,14 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
 | Inventory           |      16 |       9 |        2 |        5 |
-| Maintenance         |      24 |      19 |        5 |        0 |
+| Maintenance         |      25 |      19 |        5 |        1 |
 | MasterData          |      49 |      41 |        4 |        4 |
 | Mes                 |      55 |      52 |        3 |        0 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **412** | **341** |   **48** |   **23** |
+| **Total**           | **413** | **341** |   **48** |   **24** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -194,6 +194,7 @@ three separate public contracts.
 | Inventory           | POST   | `/api/inventory/v1/reservations/fefo`                                        | Service-to-service FEFO reservation API consumed by WMS (#412).                                                                     |
 | Inventory           | POST   | `/api/inventory/v1/reservations/{reservationId}/release`                     | Service-to-service reservation release API consumed by WMS outbound cancel (#412).                                                  |
 | Inventory           | POST   | `/api/inventory/v1/status-transfers`                                         | Internal controlled-status transition driven by Quality inspection-result events; not a direct Console action.                      |
+| Maintenance         | POST   | `/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe` | Read-only BusinessGateway lookup for an exact persisted assignment receipt before mutable target validation; it never creates a receipt or changes work-order state. |
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | Service-to-service public credit read consumed by ERP sales-order credit check (#436).                                              |
 | MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data resolve consumed by other business services.                                                |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | Service-to-service batch reference-data validate consumed by other business services.                                               |
