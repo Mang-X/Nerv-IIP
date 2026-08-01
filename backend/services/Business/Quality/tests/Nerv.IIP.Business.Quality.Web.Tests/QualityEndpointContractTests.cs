@@ -24,6 +24,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityEndpointContractTests
 {
     [Fact]

@@ -12,6 +12,7 @@ using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityInspectionTaskNotificationConsumerTests
 {
     [Fact]

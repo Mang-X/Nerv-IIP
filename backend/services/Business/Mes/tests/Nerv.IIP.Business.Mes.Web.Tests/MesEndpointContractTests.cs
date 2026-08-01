@@ -27,6 +27,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesEndpointContractTests
 {
     [Fact]

@@ -14,6 +14,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ProductEngineeringStartupGovernanceTests
 {
     [Fact]

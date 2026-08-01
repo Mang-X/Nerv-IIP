@@ -21,6 +21,7 @@ using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryDeviceControlCommandTests
 {
     [Fact]

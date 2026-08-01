@@ -19,6 +19,7 @@ using StackExchange.Redis;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceCommandLockTests
 {
     [Fact]

@@ -12,6 +12,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityStartupGovernanceTests
 {
     [Fact]

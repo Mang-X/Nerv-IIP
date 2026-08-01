@@ -12,6 +12,7 @@ using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class AppHubConnectorHostNotificationConsumerTests
 {
     [Fact]

@@ -14,6 +14,7 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceEventHandlerTests
 {
     [Fact]

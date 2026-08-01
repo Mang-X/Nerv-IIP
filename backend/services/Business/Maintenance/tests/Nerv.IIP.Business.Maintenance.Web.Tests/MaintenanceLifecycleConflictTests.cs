@@ -16,6 +16,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceLifecycleConflictTests
 {
     [Fact]

@@ -12,6 +12,7 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ApprovalCompletedConsumerReliabilityTests
 {
     [Fact]

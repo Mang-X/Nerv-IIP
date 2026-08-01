@@ -18,13 +18,7 @@ using System.Net.Sockets;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class NotificationCapOutboxAcceptanceCollection
-{
-    public const string Name = "Notification CAP acceptance";
-}
-
-[Collection(NotificationCapOutboxAcceptanceCollection.Name)]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class NotificationCapOutboxAcceptanceTests
 {
     private const string TopicName = "OperationTaskFailedIntegrationEvent";

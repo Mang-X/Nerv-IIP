@@ -23,6 +23,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataLifecycleAuditTests
 {
     [Theory]

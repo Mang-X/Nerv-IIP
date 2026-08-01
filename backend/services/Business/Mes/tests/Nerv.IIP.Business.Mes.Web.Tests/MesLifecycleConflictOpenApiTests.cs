@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesLifecycleConflictOpenApiTests
 {
     [Fact]

@@ -4,10 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
-[CollectionDefinition("notification-startup", DisableParallelization = true)]
-public sealed class NotificationStartupCollection;
-
-[Collection("notification-startup")]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class NotificationStartupTests
 {
     [Theory]

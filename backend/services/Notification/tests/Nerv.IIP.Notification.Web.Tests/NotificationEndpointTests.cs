@@ -18,6 +18,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class NotificationEndpointTests
 {
     [Fact]
