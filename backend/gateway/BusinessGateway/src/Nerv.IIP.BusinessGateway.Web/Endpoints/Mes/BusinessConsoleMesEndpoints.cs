@@ -1000,37 +1000,57 @@ public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
         BusinessGatewayAuthorizationResult? authorization,
         BusinessConsoleMesOperationTaskListRequest request,
         string permissionCode,
-        CancellationToken cancellationToken)
-    {
-        var scope = await workScopeResolver.ResolveAsync(
+        CancellationToken cancellationToken) =>
+        await ResolveRequestCoreAsync(
+            workScopeResolver,
             authorization,
-            request.OrganizationId,
-            request.EnvironmentId,
+            new OperationTaskListInput(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Status,
+                request.Keyword,
+                request.WorkCenterId,
+                request.ShiftId,
+                request.DeviceAssetId,
+                request.WorkOrderId,
+                request.Skip,
+                request.Take,
+                request.ScopeKind,
+                request.ScopeId,
+                request.OperationTaskId),
             permissionCode,
-            request.ScopeKind,
-            request.ScopeId,
             cancellationToken);
-        return new BusinessMesOperationTaskListRequest(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.Status,
-            request.Keyword,
-            request.WorkCenterId,
-            request.ShiftId,
-            request.DeviceAssetId,
-            request.WorkOrderId,
-            request.Skip,
-            request.Take,
-            Join(scope.AssignedUserIds),
-            Join(scope.TeamIds),
-            Join(scope.WorkCenterIds),
-            OperationTaskId: request.OperationTaskId);
-    }
 
     internal static async Task<BusinessMesOperationTaskListRequest> ResolveRequestAsync(
         PrincipalWorkScopeResolver workScopeResolver,
         BusinessGatewayAuthorizationResult? authorization,
         BusinessConsoleMesReportableOperationTaskListRequest request,
+        string permissionCode,
+        CancellationToken cancellationToken) =>
+        await ResolveRequestCoreAsync(
+            workScopeResolver,
+            authorization,
+            new OperationTaskListInput(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Status,
+                request.Keyword,
+                request.WorkCenterId,
+                request.ShiftId,
+                request.DeviceAssetId,
+                request.WorkOrderId,
+                request.Skip,
+                request.Take,
+                request.ScopeKind,
+                request.ScopeId,
+                OperationTaskId: null),
+            permissionCode,
+            cancellationToken);
+
+    private static async Task<BusinessMesOperationTaskListRequest> ResolveRequestCoreAsync(
+        PrincipalWorkScopeResolver workScopeResolver,
+        BusinessGatewayAuthorizationResult? authorization,
+        OperationTaskListInput request,
         string permissionCode,
         CancellationToken cancellationToken)
     {
@@ -1055,8 +1075,24 @@ public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
             request.Take,
             Join(scope.AssignedUserIds),
             Join(scope.TeamIds),
-            Join(scope.WorkCenterIds));
+            Join(scope.WorkCenterIds),
+            request.OperationTaskId);
     }
+
+    private sealed record OperationTaskListInput(
+        string OrganizationId,
+        string EnvironmentId,
+        string? Status,
+        string? Keyword,
+        string? WorkCenterId,
+        string? ShiftId,
+        string? DeviceAssetId,
+        string? WorkOrderId,
+        int Skip,
+        int Take,
+        string? ScopeKind,
+        string? ScopeId,
+        string? OperationTaskId);
 
     private static string? Join(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));

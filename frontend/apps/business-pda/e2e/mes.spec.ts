@@ -382,6 +382,68 @@ test('工序执行：same-route query push 与 back/forward 始终只打开当�
   ).toBeVisible()
 })
 
+test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个相似 ID 挤出首屏的任务', async ({
+  page,
+}) => {
+  const targetOperationTaskId = 'OP-COLLISION-2'
+  const workOrderId = 'WO-COLLISION'
+  const requests: Array<{ operationTaskId: string | null; keyword: string | null }> = []
+  const collisions = Array.from({ length: 21 }, (_, index) => ({
+    operationTaskId: `${targetOperationTaskId}-${String(index + 1).padStart(2, '0')}`,
+    workOrderId,
+    workOrderNo: 'MO-2026-COLLISION',
+    operationTaskNo: `OP-TASK-COLLISION-${index + 1}`,
+    status: 'Queued',
+    operationSequence: index + 1,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+    allowedActions: [],
+  }))
+  const target = {
+    operationTaskId: targetOperationTaskId,
+    workOrderId,
+    workOrderNo: 'MO-2026-COLLISION',
+    operationTaskNo: 'OP-TASK-EXACT',
+    status: 'Queued',
+    operationSequence: 99,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+    allowedActions: [],
+  }
+
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    const url = new URL(route.request().url())
+    const exact = url.searchParams.get('operationTaskId')
+    const keyword = url.searchParams.get('keyword')
+    requests.push({ operationTaskId: exact, keyword })
+    const all = [...collisions, target]
+    const matched = exact
+      ? all.filter((task) => task.operationTaskId === exact)
+      : keyword
+        ? all.filter((task) => task.operationTaskId.includes(keyword))
+        : all
+    const skip = Number(url.searchParams.get('skip') ?? 0)
+    const take = Number(url.searchParams.get('take') ?? 20)
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items: matched.slice(skip, skip + take), total: matched.length },
+      }),
+    })
+  })
+
+  await page.goto(
+    `/mes/operation?workOrderId=${workOrderId}&operationTaskId=${targetOperationTaskId}`,
+  )
+
+  await expect(
+    page.getByRole('heading', { name: 'MO-2026-COLLISION · 工序 99', exact: true }),
+  ).toBeVisible()
+  expect(requests).toContainEqual({ operationTaskId: targetOperationTaskId, keyword: null })
+})
+
 test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新 scope 响应重开', async ({ page }) => {
   let releaseScopeB!: () => void
   const scopeBReleased = new Promise<void>((resolve) => {

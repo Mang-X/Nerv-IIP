@@ -31,7 +31,7 @@ vi.mock('vue-router', async () => {
 })
 
 // --- composable mock: 2 operation tasks with different statuses ---
-type ActionOptions = { reasonCode?: string; idempotencyKey: string }
+type ActionOptions = { reasonCode?: string; idempotencyKey: string; contextIdentity?: string }
 const completeTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
@@ -44,6 +44,19 @@ const pauseTask = vi.fn(
 const resumeTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
+const captureOperationActionContextIdentity = vi.fn(
+  (action: string, workOrderId: string, operationTaskId: string) =>
+    [
+      'principal-001',
+      'org-001',
+      'env-dev',
+      'work-center',
+      'WC-A',
+      workOrderId,
+      operationTaskId,
+      `mes.operation-task.${action}`,
+    ].join('\u0000'),
+)
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
 const createSopFileDownloadGrant = vi.fn()
@@ -53,6 +66,7 @@ const filters = reactive({
   environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
+  operationTaskId: undefined as string | undefined,
 })
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
@@ -129,6 +143,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationScopeMessage: operationScopeMessageRef,
     operationScopePending: ref(false),
     operationScopeReady: operationScopeReadyRef,
+    captureOperationActionContextIdentity,
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -181,6 +196,7 @@ describe('PDA MES operation execution page', () => {
     routeGuardState.guard = undefined
     filters.keyword = undefined
     filters.workOrderId = undefined
+    filters.operationTaskId = undefined
     routeState.replaceQuery?.({})
   })
 
@@ -276,6 +292,7 @@ describe('PDA MES operation execution page', () => {
         operationTaskId: 'operation-task-internal-missing',
         workOrderNo: undefined,
         operationTaskNo: undefined,
+        operationCode: 'OP-STANDARD-20',
         deviceAssetId: 'device-asset-internal-missing',
         allowedActions: [],
       },
@@ -287,6 +304,11 @@ describe('PDA MES operation execution page', () => {
 
     expect(document.body.textContent).toContain('工单信息未提供')
     expect(document.body.textContent).toContain('工序任务信息未提供')
+    const taskDefinition = [...document.body.querySelectorAll('dt')].find(
+      (term) => term.textContent === '工序任务',
+    )?.nextElementSibling
+    expect(taskDefinition?.textContent).toBe('工序任务信息未提供')
+    expect(document.body.textContent).toContain('OP-STANDARD-20')
     expect(document.body.textContent).toContain('设备信息未提供')
     expect(document.body.textContent).not.toContain('work-order-internal-missing')
     expect(document.body.textContent).not.toContain('operation-task-internal-missing')
@@ -321,6 +343,8 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
+    expect(filters.operationTaskId).toBe('OP-2')
+    expect(filters.keyword).toBeUndefined()
     expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
     expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
@@ -344,7 +368,8 @@ describe('PDA MES operation execution page', () => {
     await nextTick()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
-    expect(filters.keyword).toBe('OP-2')
+    expect(filters.operationTaskId).toBe('OP-2')
+    expect(filters.keyword).toBeUndefined()
     expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
 
     operationTasksRef.value = [defaultTasks[1]]
@@ -691,6 +716,33 @@ describe('PDA MES operation execution page', () => {
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
+  })
+
+  it('shows a readable fail-closed result when the frozen retry context has drifted', async () => {
+    completeTask
+      .mockRejectedValueOnce(new RequestTimeoutError())
+      .mockRejectedValueOnce(
+        new Error('账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。'),
+      )
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].contextIdentity).toBe(
+      completeTask.mock.calls[0][2].contextIdentity,
+    )
+    expect(wrapper.get('[data-testid="back-to-list"]').attributes('disabled')).toBeUndefined()
   })
 
   it('removes the beforeunload guard when the operation route component is removed', async () => {

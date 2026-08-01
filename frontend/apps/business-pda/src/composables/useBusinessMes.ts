@@ -89,6 +89,7 @@ export interface MesListFilters {
   environmentId: string
   status?: string
   keyword?: string
+  operationTaskId?: string
   workOrderId?: string
   workCenterId?: string
   deviceAssetId?: string
@@ -133,6 +134,7 @@ function toListQuery(filters: MesListFilters) {
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
+    ...optionalQuery('operationTaskId', filters.operationTaskId),
     ...optionalQuery('workOrderId', filters.workOrderId),
     ...optionalQuery('workCenterId', filters.workCenterId),
     ...optionalQuery('deviceAssetId', filters.deviceAssetId),
@@ -816,9 +818,19 @@ export function useMesExactOperationTask(
 export interface OperationActionOptions {
   reasonCode?: string
   idempotencyKey: string
+  contextIdentity?: string
 }
 
 type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+
+export class MesOperationActionContextChangedError extends Error {
+  readonly code = 'mes-operation-action-context-changed'
+
+  constructor() {
+    super('账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。')
+    this.name = 'MesOperationActionContextChangedError'
+  }
+}
 
 async function readExactOperationTask(
   filters: MesScope,
@@ -874,6 +886,7 @@ export function useMesOperationTasks() {
       operationListContextIdentity.value,
       filters.status?.trim() ?? '',
       filters.keyword?.trim() ?? '',
+      filters.operationTaskId?.trim() ?? '',
       filters.workOrderId?.trim() ?? '',
       filters.workCenterId?.trim() ?? '',
       filters.deviceAssetId?.trim() ?? '',
@@ -962,6 +975,33 @@ export function useMesOperationTasks() {
     onSuccess: invalidate,
   })
 
+  function currentOperationActionContextIdentity(
+    action: OperationAction,
+    workOrderId: string,
+    operationTaskId: string,
+  ) {
+    const selectedScope = operationScope.selectedScope.value
+    return [
+      auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+      filters.organizationId.trim(),
+      filters.environmentId.trim(),
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+      workOrderId,
+      operationTaskId,
+      `mes.operation-task.${action}`,
+    ].join('\u0000')
+  }
+
+  function captureOperationActionContextIdentity(
+    action: OperationAction,
+    workOrderId: string,
+    operationTaskId: string,
+  ) {
+    operationScope.requireSelectedScope()
+    return currentOperationActionContextIdentity(action, workOrderId, operationTaskId)
+  }
+
   function actionPayload(
     operationTaskId: string,
     selectedScope: MesSelectedWorkScope,
@@ -989,6 +1029,14 @@ export function useMesOperationTasks() {
     operationTaskId: string,
     options: OperationActionOptions,
   ) {
+    const currentContextIdentity = currentOperationActionContextIdentity(
+      action,
+      workOrderId,
+      operationTaskId,
+    )
+    if (options.contextIdentity && options.contextIdentity !== currentContextIdentity) {
+      throw new MesOperationActionContextChangedError()
+    }
     const selectedScope = operationScope.requireSelectedScope()
     const scope = {
       principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
@@ -1067,6 +1115,7 @@ export function useMesOperationTasks() {
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
+    captureOperationActionContextIdentity,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,

@@ -426,15 +426,33 @@ describe('pda useBusinessMes composables', () => {
     } as never)
 
     const result = useMesOperationTasks()
+    ;(
+      result.filters as typeof result.filters & {
+        operationTaskId?: string
+      }
+    ).operationTaskId = 'ot-exact-beyond-first-page'
+    result.filters.keyword = undefined
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.()
+    await nextTick()
+    coladaState.queryDataRefById.get('listBusinessConsoleMesOperationTasks')!.value = {
+      success: true,
+      data: { items: [{ operationTaskId: 'ot-1' }], total: 2 },
+    }
+    await nextTick()
     await result.loadMore()
 
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toHaveBeenCalledWith({
-      query: expect.objectContaining({ skip: 0, take: 20 }),
+      query: expect.objectContaining({
+        operationTaskId: 'ot-exact-beyond-first-page',
+        skip: 0,
+        take: 20,
+      }),
     })
     expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledWith({
       query: expect.objectContaining({
         skip: 1,
         take: 20,
+        operationTaskId: 'ot-exact-beyond-first-page',
       }),
       throwOnError: true,
     })
@@ -1389,6 +1407,80 @@ describe('pda useBusinessMes composables', () => {
 
     expect(mutateAsync).toHaveBeenCalledTimes(2)
     expect(mutateAsync.mock.calls[1]?.[0].body.idempotencyKey).toBe('op-replay-applied-1')
+  })
+
+  it('fails closed before replay when the principal changes after an unconfirmed result', async () => {
+    receiptState.confirm.mockRejectedValueOnce(new TypeError('response lost'))
+    const mes = useMesOperationTasks() as ReturnType<typeof useMesOperationTasks> & {
+      captureOperationActionContextIdentity: (
+        action: 'start',
+        workOrderId: string,
+        operationTaskId: string,
+      ) => string
+    }
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    const contextIdentity = mes.captureOperationActionContextIdentity('start', 'wo-1', 'ot-reentry')
+    const request = { idempotencyKey: 'principal-drift-key', contextIdentity }
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow('response lost')
+    reactiveAuthState.principal = {
+      principalId: 'user-002',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    await nextTick()
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow(
+      '账号、组织、环境或作业范围已变化',
+    )
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed before replay when the manage scope changes after an unconfirmed result', async () => {
+    receiptState.confirm.mockRejectedValueOnce(new TypeError('response lost'))
+    const mes = useMesOperationTasks() as ReturnType<typeof useMesOperationTasks> & {
+      captureOperationActionContextIdentity: (
+        action: 'start',
+        workOrderId: string,
+        operationTaskId: string,
+      ) => string
+    }
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    const contextIdentity = mes.captureOperationActionContextIdentity('start', 'wo-1', 'ot-reentry')
+    const request = { idempotencyKey: 'scope-drift-key', contextIdentity }
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow('response lost')
+    coladaState.queryDataRefById.get(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+    )!.value = {
+      success: true,
+      data: { selectedScope: { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' } },
+    }
+    await nextTick()
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow(
+      '账号、组织、环境或作业范围已变化',
+    )
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports context drift before scope validation when the manage scope disappears', async () => {
+    receiptState.confirm.mockRejectedValueOnce(new TypeError('response lost'))
+    const mes = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    const contextIdentity = mes.captureOperationActionContextIdentity('start', 'wo-1', 'ot-reentry')
+    const request = { idempotencyKey: 'scope-removed-key', contextIdentity }
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow('response lost')
+    coladaState.queryDataRefById.get(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+    )!.value = { success: true, data: { selectedScope: null } }
+    await nextTick()
+
+    await expect(mes.startTask('wo-1', 'ot-reentry', request)).rejects.toThrow(
+      '账号、组织、环境或作业范围已变化',
+    )
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
   })
 
   it('starts an operation task forwarding an optional reason code with the caller-supplied key', async () => {

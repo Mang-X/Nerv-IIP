@@ -1676,6 +1676,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user-admin", mes.LastReportableOperationTaskListRequest!.AssignedUserIds);
+        Assert.Null(mes.LastReportableOperationTaskListRequest.OperationTaskId);
         Assert.Equal(BusinessGatewayPermissions.MesReportingRead, auth.LastRequirement!.PermissionCode);
         Assert.True(auth.LastRequirement.IncludePrincipalContext);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);

@@ -855,12 +855,16 @@ export async function routeBusinessConsoleApi(route: Route) {
   // 可报工工序精确回读（报工写前的权威事实来源）——与工序任务列表同一份数据、同样的分页。
   if (pathname === `${base}/reportable-operation-tasks` || pathname === `${base}/operation-tasks`) {
     const workOrderId = requestUrl.searchParams.get('workOrderId')
-    const scopedItems =
+    const operationTaskId = requestUrl.searchParams.get('operationTaskId')?.trim()
+    const workOrderScopedItems =
       workOrderId === 'WO-501'
         ? mesManyOperationTasks
         : workOrderId
           ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
           : mesOperationTasks
+    const scopedItems = operationTaskId
+      ? workOrderScopedItems.filter((task) => task.operationTaskId === operationTaskId)
+      : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
     const items = scopedItems.slice(skip, skip + take)
