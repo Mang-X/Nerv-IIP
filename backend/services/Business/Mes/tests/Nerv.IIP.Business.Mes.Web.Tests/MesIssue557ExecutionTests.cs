@@ -431,6 +431,56 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
+    public async Task Non_output_operation_report_rejects_cumulative_good_quantity_above_twenty_percent()
+    {
+        await using var dbContext = CreateDbContext(nameof(Non_output_operation_report_rejects_cumulative_good_quantity_above_twenty_percent));
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-OVER-001",
+            "SKU-FG",
+            "PV-001",
+            100m,
+            1,
+            Utc("2026-06-30T08:00:00Z"),
+            "PCS",
+            overReceiptTolerancePercent: 50m);
+        workOrder.MarkReleased();
+        workOrder.Start(Utc("2026-06-29T08:00:00Z"));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create(
+                "org-001", "env-dev", "WO-OVER-001", "OP-10",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-10", [],
+                Utc("2026-06-29T08:00:00Z"), TimeSpan.FromHours(1),
+                Utc("2026-06-29T08:00:00Z"), null),
+            OperationTask.Create(
+                "org-001", "env-dev", "WO-OVER-001", "OP-20",
+                OperationTaskLifecycleStatus.Queued, 20, "WC-20", [],
+                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "RPT-OVER-001", "WO-OVER-001", "OP-10",
+            100m, 0m, false, Utc("2026-06-29T09:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001", "env-dev", "WO-OVER-001", "OP-10",
+                    GoodQuantity: 20.000001m,
+                    ScrapQuantity: 0m,
+                    CompletesOperation: true,
+                    ReportedAtUtc: Utc("2026-06-29T10:00:00Z")),
+                CancellationToken.None));
+
+        Assert.Contains("生产工单 WO-OVER-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("工序 OP-10", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("累计合格数量", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整本次合格数量或工单计划量", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dbContext.ProductionReports);
+    }
+
+    [Fact]
     public async Task Output_operation_report_auto_generates_output_lot_and_persists_genealogy_breakpoint()
     {
         await using var dbContext = CreateDbContext(nameof(Output_operation_report_auto_generates_output_lot_and_persists_genealogy_breakpoint));
