@@ -403,6 +403,37 @@ describe('pda useBusinessMes composables', () => {
     ).toBe(false)
   })
 
+  it('loads MES operation tasks in bounded pages and sends filters to the server', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', {
+      success: true,
+      data: { items: [{ operationTaskId: 'ot-1' }], total: 2 },
+    })
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: { items: [{ operationTaskId: 'ot-2' }], total: 2 },
+      },
+    } as never)
+
+    const result = useMesOperationTasks()
+    await result.loadMore()
+
+    expect(listBusinessConsoleMesOperationTasksQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ skip: 0, take: 20 }),
+    })
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        skip: 1,
+        take: 20,
+      }),
+      throwOnError: true,
+    })
+    expect(result.operationTasks.value.map((task) => task.operationTaskId)).toEqual([
+      'ot-1',
+      'ot-2',
+    ])
+  })
+
   it('does not manually refresh work-order, operation, or report lists without org/env scope', async () => {
     authState.principal = undefined
 

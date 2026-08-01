@@ -63,8 +63,10 @@ import {
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
+import { useTaskListPagination } from './useTaskListPagination'
 
 const DEFAULT_TAKE = 100
+const TASK_LIST_PAGE_SIZE = 20
 const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'
 const MES_OPERATIONS_MANAGE_PERMISSION = 'business.mes.operations.manage'
 const MES_REPORTING_READ_PERMISSION = 'business.mes.reporting.read'
@@ -848,6 +850,7 @@ async function readExactOperationTask(
 export function useMesOperationTasks() {
   const auth = useAuthStore()
   const filters = defaultFilters()
+  filters.take = TASK_LIST_PAGE_SIZE
   const operationListScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_READ_PERMISSION)
   const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
@@ -870,8 +873,6 @@ export function useMesOperationTasks() {
       filters.workOrderId?.trim() ?? '',
       filters.workCenterId?.trim() ?? '',
       filters.deviceAssetId?.trim() ?? '',
-      filters.skip,
-      filters.take,
     ].join(':')
   })
 
@@ -900,6 +901,40 @@ export function useMesOperationTasks() {
     scopeReady,
     operationTasksQuery.isLoading,
   )
+  const firstTaskPage = computed(() => {
+    const envelope = currentResponse.value as
+      | BusinessConsoleMesOperationTaskListEnvelope
+      | undefined
+    if (envelope?.success !== true) return undefined
+    return {
+      items: envelope.data?.items ?? [],
+      total: envelope.data?.total ?? 0,
+    }
+  })
+  const taskPager = useTaskListPagination<BusinessConsoleMesOperationTaskRow>({
+    identity: operationTasksIdentity,
+    firstPage: firstTaskPage,
+    pageSize: TASK_LIST_PAGE_SIZE,
+    itemKey: (task) => task.operationTaskId ?? '',
+    fetchPage: async ({ skip, take }) => {
+      const selectedScope = operationListScope.selectedScope.value
+      if (!selectedScope) throw new Error(operationListScope.scopeMessage.value)
+      const { data } = await listBusinessConsoleMesOperationTasks({
+        query: {
+          ...toListQuery({ ...filters, skip, take }),
+          scopeKind: selectedScope.kind,
+          scopeId: selectedScope.id,
+        },
+        throwOnError: true,
+      })
+      const envelope = data as BusinessConsoleMesOperationTaskListEnvelope | undefined
+      if (envelope?.success !== true) {
+        throw new Error(envelope?.message?.trim() || '工序任务下一页加载失败，请重试。')
+      }
+      return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 }
+    },
+    refreshFirstPage: operationTasksQuery.refetch,
+  })
 
   const invalidate = () =>
     void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks']).catch(
@@ -989,13 +1024,14 @@ export function useMesOperationTasks() {
 
   return {
     filters,
-    operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
-      envelopeItems<
-        BusinessConsoleMesOperationTaskRow,
-        BusinessConsoleMesOperationTaskListEnvelope
-      >(currentResponse.value),
-    ),
-    total: computed(() => envelopeTotal(currentResponse.value)),
+    operationTasks: taskPager.items,
+    total: taskPager.total,
+    loaded: taskPager.loaded,
+    hasMore: taskPager.hasMore,
+    loadingMore: taskPager.loadingMore,
+    refreshing: taskPager.refreshing,
+    loadMoreError: taskPager.loadMoreError,
+    loadMore: taskPager.loadMore,
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
@@ -1009,7 +1045,7 @@ export function useMesOperationTasks() {
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
-    refresh: () => (scopeReady.value ? operationTasksQuery.refetch() : Promise.resolve()),
+    refresh: () => (scopeReady.value ? taskPager.refresh() : Promise.resolve()),
     cancelPendingTasks: () =>
       queryCache.cancelQueries({
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),

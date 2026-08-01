@@ -11,9 +11,9 @@ vi.mock('vue-router', () => ({
 }))
 
 // ---- useBusinessEquipmentAlarms mock ------------------------------------------
-const filters = reactive<{ deviceAssetId?: string; skip: number; take: number }>({
+const filters = reactive<{ deviceAssetId?: string; status?: string; skip: number; take: number }>({
   skip: 0,
-  take: 100,
+  take: 20,
 })
 const RAISED = {
   alarmEventId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -39,11 +39,13 @@ const alarms = ref<Array<Record<string, unknown>>>([RAISED, ACKED])
 const total = computed(() => alarms.value.length)
 const error = ref<unknown>(null)
 const pending = ref(false)
+const refreshing = ref(false)
 const scopeReady = ref(true)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
+const loadMore = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
 const shelve = vi.fn(
   async (
@@ -64,6 +66,10 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     filters,
     alarms,
     total,
+    loaded: computed(() => alarms.value.length),
+    loadingMore: ref(false),
+    loadMoreError: ref<unknown>(),
+    loadMore,
     organizationId,
     environmentId,
     scopeReady,
@@ -71,6 +77,7 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     hasSuccessfulResponse: computed(() => !pending.value && !error.value),
     hasFailedResponse: computed(() => false),
     pending,
+    refreshing,
     error,
     refresh,
     acknowledge,
@@ -89,12 +96,30 @@ beforeEach(() => {
   shelve.mockReset()
   shelve.mockResolvedValue({ success: true })
   filters.deviceAssetId = undefined
+  filters.status = undefined
   error.value = null
   pending.value = false
+  refreshing.value = false
   alarms.value = [RAISED, ACKED]
 })
 
 describe('PDA equipment alarms page', () => {
+  it('用具名的 NvUI 状态筛选器替代无名称原生 select', () => {
+    const wrapper = mount(AlarmsPage)
+
+    expect(wrapper.find('select[data-testid="alarm-status-filter"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="alarm-status-filter"]').text()).toContain('全部状态')
+  })
+
+  it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
+    const wrapper = mount(AlarmsPage)
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(false)
+    refreshing.value = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
   it('renders alarm rows with device, alarm code and Chinese severity (no raw code)', () => {
     const wrapper = mount(AlarmsPage)
     const text = wrapper.text()

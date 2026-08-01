@@ -12,8 +12,8 @@ import {
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -25,11 +25,14 @@ import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
+  NvMobileDropdownMenu,
+  NvMobileDropdownMenuItem,
   NvMobileResult,
   NvMobileToast,
   NvScanBar,
+  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -46,6 +49,11 @@ const {
   filters,
   operationTasks,
   total,
+  loaded = computed(() => operationTasks.value.length),
+  loadingMore = shallowRef(false),
+  refreshing = shallowRef(false),
+  loadMoreError = shallowRef<unknown>(),
+  loadMore = () => Promise.resolve(),
   pending,
   error,
   startTask,
@@ -125,6 +133,11 @@ const showOperationTasksEmpty = computed(
     !hasFailedResponse.value &&
     hasSuccessfulResponse.value &&
     operationTasks.value.length === 0,
+)
+const operationListError = computed(() =>
+  error.value || hasFailedResponse.value
+    ? (error.value ?? new Error('工序任务服务未成功返回'))
+    : undefined,
 )
 const {
   filters: sopFilters,
@@ -210,6 +223,30 @@ const toast = reactive({ show: false, message: '', type: 'error' as const })
 const availableActions = computed(() => actionsFor(selected.value?.status))
 
 const scanActive = computed(() => selected.value === null && result.value === null)
+const statusOptions: DropdownOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '待开始', value: 'queued' },
+  { label: '进行中', value: 'inProgress' },
+  { label: '已暂停', value: 'paused' },
+  { label: '已阻塞', value: 'blocked' },
+  { label: '已完成', value: 'completed' },
+]
+const statusModel = computed<string | number>({
+  get: () => filters.status ?? '',
+  set: (value) => (filters.status = String(value) || undefined),
+})
+const taskFilterState = computed(() => ({
+  status: filters.status ?? '',
+  keyword: filters.keyword ?? '',
+}))
+
+function restoreTaskListState(state: { filters: Record<string, unknown> }) {
+  if (hasAnyTaskDeepLink.value) return
+  const status = state.filters.status
+  const keyword = state.filters.keyword
+  filters.status = typeof status === 'string' && status ? status : undefined
+  filters.keyword = typeof keyword === 'string' && keyword ? keyword : undefined
+}
 
 function rowTitle(task: Task) {
   const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
@@ -465,74 +502,86 @@ function formatDate(value?: string | null) {
       </template>
     </NvMobileResult>
 
-    <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+    <TaskListShell
+      v-else
+      state-key="mes-operation-tasks"
+      :scope="mesScope"
+      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
+      :loaded="loaded"
+      :total="total"
+      :updated-at="lastUpdatedAt"
+      :pending="pending"
+      :refreshing="refreshing"
+      :loading-more="loadingMore"
+      :error="operationListError"
+      :load-more-error="loadMoreError"
+      :filter-state="taskFilterState"
+      :empty-description="mesEmptyExplanation"
+      error-test-id="operation-tasks-error"
+      failure-explanation="工序任务服务未成功返回，请刷新重试。"
+      @refresh="() => refresh()"
+      @retry="() => refresh()"
+      @load-more="loadMore"
+      @retry-load-more="loadMore"
+      @restore="restoreTaskListState"
+    >
+      <template #filters>
+        <div class="space-y-3 px-4 py-3">
+          <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+          <MesWorkScopeFilter permission-code="business.mes.operations.read" />
+          <NvMobileDropdownMenu>
+            <NvMobileDropdownMenuItem
+              v-model="statusModel"
+              title="任务状态"
+              :options="statusOptions"
+            />
+          </NvMobileDropdownMenu>
+          <p
+            v-if="deepLinkMessage"
+            data-testid="operation-deep-link-message"
+            class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
+            {{ deepLinkMessage }}
+          </p>
+          <p
+            v-if="operationListScopeMessage"
+            data-testid="operation-list-scope-message"
+            class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
+            {{ operationListScopeMessage }}
+          </p>
+          <p
+            v-if="operationListScopeReady && operationScopeMessage"
+            data-testid="operation-scope-message"
+            class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
+            {{ operationScopeMessage }}
+          </p>
+        </div>
+      </template>
 
-      <MesWorkScopeFilter permission-code="business.mes.operations.read" />
+      <div class="space-y-4 p-4">
+        <div
+          v-if="showOperationTasksEmpty"
+          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+        >
+          当前主体授权作业范围内暂无工序任务
+        </div>
 
-      <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
-      <p
-        v-if="deepLinkMessage"
-        data-testid="operation-deep-link-message"
-        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
-        role="alert"
-      >
-        {{ deepLinkMessage }}
-      </p>
-      <p
-        v-if="operationListScopeMessage"
-        data-testid="operation-list-scope-message"
-        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
-        role="alert"
-      >
-        {{ operationListScopeMessage }}
-      </p>
-      <p
-        v-if="operationListScopeReady && operationScopeMessage"
-        data-testid="operation-scope-message"
-        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
-        role="alert"
-      >
-        {{ operationScopeMessage }}
-      </p>
-      <ListScopeMeta
-        :scope="mesScope"
-        source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
-        :loaded="operationTasks.length"
-        :total="total"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="工序任务服务未成功返回，请刷新重试。"
-        :empty="!operationListScopeReady || showOperationTasksEmpty"
-        :empty-explanation="mesEmptyExplanation"
-      />
-
-      <RetryableListError
-        v-if="error || hasFailedResponse"
-        :error="error ?? '工序任务服务未成功返回'"
-        :pending="pending"
-        fallback="加载工序任务失败，请下拉刷新或重试。"
-        test-id="operation-tasks-error"
-        @retry="() => refresh()"
-      />
-
-      <div
-        v-else-if="showOperationTasksEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-      >
-        当前主体授权作业范围内暂无工序任务
+        <div v-else class="overflow-hidden rounded-lg border border-border">
+          <NvListRow
+            v-for="task in visibleOperationTasks"
+            :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
+            :title="rowTitle(task)"
+            :subtitle="rowSubtitle(task)"
+            @select="openSheet(task)"
+          />
+        </div>
       </div>
-
-      <div v-else class="overflow-hidden rounded-lg border border-border">
-        <NvListRow
-          v-for="task in visibleOperationTasks"
-          :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
-          :title="rowTitle(task)"
-          :subtitle="rowSubtitle(task)"
-          @select="openSheet(task)"
-        />
-      </div>
-    </div>
+    </TaskListShell>
 
     <!-- 动作面板 -->
     <NvBottomSheet

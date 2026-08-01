@@ -1,50 +1,53 @@
 <script setup lang="ts">
-import { NvPullRefresh } from '@nerv-iip/ui-mobile'
-import { useIntersectionObserver } from '@vueuse/core'
-import { computed, useTemplateRef } from 'vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 
-const props = defineProps<{
-  refreshing: boolean
-  loadingMore: boolean
-  pending: boolean
-  loaded: number
-  total: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    stateKey?: string
+    refreshing: boolean
+    loadingMore: boolean
+    pending: boolean
+    loaded: number
+    total: number
+    emptyDescription?: string
+    filterState?: Record<string, unknown>
+    error?: unknown
+    loadMoreError?: unknown
+  }>(),
+  { stateKey: 'wms-task-list', emptyDescription: '当前筛选范围暂无任务。' },
+)
 
 const emit = defineEmits<{
   refresh: []
   loadMore: []
+  restore: [state: { filters: Record<string, unknown> }]
+  retry: []
+  retryLoadMore: []
 }>()
-
-const hasMore = computed(() => props.loaded < props.total)
-const loadMoreSentinel = useTemplateRef<HTMLElement>('loadMoreSentinel')
-
-useIntersectionObserver(
-  loadMoreSentinel,
-  ([entry]) => {
-    if (entry?.isIntersecting && hasMore.value && !props.pending && !props.loadingMore) {
-      emit('loadMore')
-    }
-  },
-  { rootMargin: '80px 0px' },
-)
 </script>
 
 <template>
-  <NvPullRefresh
-    data-testid="pull-refresh"
-    class="min-h-0 flex-1"
-    :model-value="refreshing"
+  <TaskListShell
+    :state-key="props.stateKey"
+    scope="当前授权 WMS 作业范围"
+    source="WMS 作业服务"
+    :loaded="loaded"
+    :total="total"
+    :pending="pending"
+    :refreshing="refreshing"
+    :loading-more="loadingMore"
+    :show-meta="false"
+    :empty-description="emptyDescription"
+    :filter-state="filterState"
+    :error="error"
+    :load-more-error="loadMoreError"
+    error-test-id="error-banner"
     @refresh="emit('refresh')"
+    @load-more="emit('loadMore')"
+    @restore="emit('restore', $event)"
+    @retry="emit('retry')"
+    @retry-load-more="emit('retryLoadMore')"
   >
     <slot />
-    <div
-      v-if="loaded > 0"
-      ref="loadMoreSentinel"
-      data-testid="load-more-sentinel"
-      class="flex min-h-12 items-center justify-center py-3 text-sm text-muted-foreground"
-    >
-      {{ loadingMore ? '加载中…' : hasMore ? '继续上滑加载' : '没有更多了' }}
-    </div>
-  </NvPullRefresh>
+  </TaskListShell>
 </template>

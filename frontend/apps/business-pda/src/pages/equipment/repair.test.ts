@@ -1,7 +1,7 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
@@ -33,16 +33,22 @@ const workOrders = ref<Array<Record<string, unknown>>>([
 ])
 const workOrdersError = ref<unknown>(null)
 const workOrdersPending = ref(false)
+const workOrdersRefreshing = ref(false)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const scopeReady = ref(true)
 const workOrdersLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshWorkOrders = vi.fn(async () => {})
+const loadMoreWorkOrders = vi.fn(async () => {})
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useBusinessMaintenance: () => ({
     workOrders,
     workOrdersTotal: computed(() => workOrders.value.length),
+    workOrdersLoaded: computed(() => workOrders.value.length),
+    workOrdersLoadingMore: ref(false),
+    workOrdersLoadMoreError: ref<unknown>(),
+    loadMoreWorkOrders,
     organizationId,
     environmentId,
     scopeReady,
@@ -52,9 +58,10 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     ),
     workOrdersHasFailedResponse: computed(() => false),
     workOrdersPending,
+    workOrdersRefreshing,
     workOrdersError,
     refreshWorkOrders,
-    workOrderFilters: { skip: 0, take: 100 },
+    workOrderFilters: reactive({ skip: 0, take: 20, status: undefined, keyword: undefined }),
     createWorkOrder,
     createPending,
   }),
@@ -91,9 +98,30 @@ beforeEach(() => {
   createPending.value = false
   workOrdersError.value = null
   workOrdersPending.value = false
+  workOrdersRefreshing.value = false
 })
 
 describe('PDA equipment repair page', () => {
+  it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
+    const wrapper = mount(RepairPage)
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(false)
+    workOrdersRefreshing.value = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
+  it('describes only the fields that the maintenance keyword query really searches', () => {
+    const wrapper = mount(RepairPage)
+
+    const searchbox = wrapper.get('input[aria-label="维修工单关键字"]')
+    const placeholder = searchbox.attributes('placeholder')
+    expect(placeholder).toBe('搜索设备、来源或负责人')
+    expect(placeholder).not.toContain('工单')
+    expect(wrapper.find('select[data-testid="work-order-status"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="work-order-status"]').text()).toContain('全部状态')
+  })
+
   it.each([
     ['high', '高'],
     ['medium', '中'],
@@ -229,7 +257,9 @@ describe('PDA equipment repair page', () => {
   it('surfaces a work-orders error banner', () => {
     workOrdersError.value = new Error('boom')
     const wrapper = mount(RepairPage)
-    expect(wrapper.find('[data-testid="work-orders-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="task-list-retained-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('下一页加载失败')
+    expect(wrapper.text()).toContain('DEV-1001')
   })
 
   it('submits a new repair with an operation key but WITHOUT org/env/openedBy', async () => {
