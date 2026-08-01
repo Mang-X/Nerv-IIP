@@ -18,9 +18,11 @@ import type { RefOption } from './masterDataReference'
  * （模板 / 历史链 / 委托）用的码值，且语义就是被审对象「不合格品处置」。
  */
 export const NCR_DISPOSITION_DOCUMENT_TYPE = 'ncr-disposition'
+export const ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE = 'engineering-change-order'
+export const ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE = 'APT-WB-ECO-001'
 
 export const APPROVAL_DOCUMENT_TYPE_OPTIONS: RefOption[] = [
-  { value: 'engineering-change-order', label: '工程变更单' },
+  { value: ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE, label: '工程变更单' },
   { value: NCR_DISPOSITION_DOCUMENT_TYPE, label: '不合格品处置' },
   { value: 'purchase-order', label: '采购订单' },
 ]

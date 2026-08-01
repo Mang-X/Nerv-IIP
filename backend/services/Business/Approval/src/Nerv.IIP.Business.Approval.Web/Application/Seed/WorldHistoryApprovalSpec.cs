@@ -55,6 +55,11 @@ public static class WorldHistoryApprovalSpec
     public const string StockCountVarianceTemplateCode = ApprovalTemplateCodes.StockCountVariance;
     public const string StockCountVarianceDocumentType = ApprovalDocumentTypes.StockCountVariance;
 
+    /// <summary>工程变更发布审批模板；不挂历史链，只保证新 ECO 可走现有审批发起链路。</summary>
+    public const string EngineeringChangeTemplateCode = ApprovalTemplateCodes.EngineeringChangeOrder;
+    public const string EngineeringChangeDocumentType = ApprovalDocumentTypes.EngineeringChangeOrder;
+    public const string EngineeringChangeSourceService = ApprovalSourceServices.ProductEngineering;
+
     /// <summary>本引擎产出/引用的全部号段前缀，供隔离性回归测试断言不与固定演示事实相交。</summary>
     public static readonly string[] NumberSegmentPrefixes = ["PO-2026-", "NCR-2026-", "APT-WB-"];
 

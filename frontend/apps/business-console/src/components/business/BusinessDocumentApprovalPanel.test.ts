@@ -242,6 +242,37 @@ describe('business document approval panel', () => {
     expect(approvalState.toastSuccess).toHaveBeenCalledWith('审批链已发起')
   })
 
+  it('prefers the canonical engineering change template when starting a new chain', async () => {
+    approvalState.templates = [
+      {
+        templateCode: 'fallback-template',
+        documentType: 'engineering-change-order',
+        isActive: true,
+      },
+      { templateCode: 'APT-WB-ECO-001', documentType: 'engineering-change-order', isActive: true },
+    ]
+    const wrapper = mount(BusinessDocumentApprovalPanel, {
+      props: {
+        modelValue: '',
+        sourceService: 'product-engineering',
+        documentType: 'engineering-change-order',
+        documentId: 'ECO-20260801-000001',
+        preferredTemplateCode: 'APT-WB-ECO-001',
+      },
+      global: { stubs: uiStubs },
+    })
+
+    await findButton(wrapper, '发起审批')!.trigger('click')
+    await flushPromises()
+
+    expect(approvalState.startChain).toHaveBeenCalledWith({
+      templateCode: 'APT-WB-ECO-001',
+      sourceService: 'product-engineering',
+      documentType: 'engineering-change-order',
+      documentId: 'ECO-20260801-000001',
+    })
+  })
+
   it('shows an explicit failure when the approval facade returns a soft-failed envelope', async () => {
     approvalState.startChain.mockResolvedValueOnce({ success: false, data: null } as any)
     const wrapper = mount(BusinessDocumentApprovalPanel, {

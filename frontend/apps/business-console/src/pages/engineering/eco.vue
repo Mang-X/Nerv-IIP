@@ -14,6 +14,10 @@ import {
 } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE,
+  ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE,
+} from '@/data/approvalReference'
+import {
   NvButton,
   NvDataTable,
   NvDatePicker,
@@ -219,6 +223,7 @@ interface AffectedRow {
   versionId: string
 }
 interface EcoForm {
+  changeNumber: string
   reason: string
   approvalReferenceId: string
   effectiveDate: string | null
@@ -229,6 +234,7 @@ function blankAffected(): AffectedRow {
 }
 function blankForm(): EcoForm {
   return {
+    changeNumber: '',
     reason: '',
     approvalReferenceId: '',
     effectiveDate: today(),
@@ -253,6 +259,7 @@ watch(
 )
 
 const reasonValid = computed(() => form.reason.trim().length > 0)
+const changeNumberValid = computed(() => form.changeNumber.trim().length > 0)
 const approvalValid = computed(() => form.approvalReferenceId.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function affectedValid(row: AffectedRow) {
@@ -262,7 +269,12 @@ const affectedListValid = computed(
   () => form.affectedVersions.length > 0 && form.affectedVersions.every(affectedValid),
 )
 const canSubmit = computed(
-  () => reasonValid.value && approvalValid.value && effectiveValid.value && affectedListValid.value,
+  () =>
+    changeNumberValid.value &&
+    reasonValid.value &&
+    approvalValid.value &&
+    effectiveValid.value &&
+    affectedListValid.value,
 )
 const canPreview = computed(() => effectiveValid.value && affectedListValid.value)
 const impactNodes = computed(() => impactPreview.value?.nodes ?? [])
@@ -310,6 +322,7 @@ async function submitForm() {
   const body: BusinessConsoleReleaseEngineeringChangeRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
+    changeNumber: form.changeNumber.trim(),
     reason: form.reason.trim(),
     approvalReferenceId: form.approvalReferenceId.trim(),
     effectiveDate: form.effectiveDate ?? undefined,
@@ -429,9 +442,29 @@ function riskTone(severity?: string | null): StatusTone {
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本 ID。
               </p>
+              <p
+                v-if="showErrors && !changeNumberValid"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                请先填写变更号，审批链必须绑定到同一个 ECO 单据。
+              </p>
 
               <FormSectionTitle>变更信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3">
+                <NvField :data-invalid="showErrors && !changeNumberValid">
+                  <NvFieldLabel for="eco-change-number"
+                    >变更号 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="eco-change-number"
+                    v-model="form.changeNumber"
+                    placeholder="例如 ECO-20260801-000001"
+                  />
+                  <p class="text-xs text-muted-foreground">
+                    先确定本次 ECO 号，审批链会以此单号绑定；审批通过后再发布变更。
+                  </p>
+                </NvField>
                 <NvField :data-invalid="showErrors && !reasonValid">
                   <NvFieldLabel for="eco-reason"
                     >变更原因 <span class="text-destructive">*</span></NvFieldLabel
@@ -446,8 +479,10 @@ function riskTone(severity?: string | null): StatusTone {
                   v-model="form.approvalReferenceId"
                   title="变更审批链"
                   source-service="product-engineering"
-                  document-type="engineering-change-order"
-                  :allow-start="false"
+                  :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
+                  :document-id="form.changeNumber || undefined"
+                  :preferred-template-code="ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE"
+                  :allow-start="true"
                 />
                 <p
                   v-if="showErrors && !approvalValid"
@@ -690,7 +725,7 @@ function riskTone(severity?: string | null): StatusTone {
               :model-value="viewTarget.approvalReferenceId ?? ''"
               title="变更审批链"
               source-service="product-engineering"
-              document-type="engineering-change-order"
+              :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
               :document-id="viewTarget.changeNumber ?? undefined"
               :allow-start="false"
             />

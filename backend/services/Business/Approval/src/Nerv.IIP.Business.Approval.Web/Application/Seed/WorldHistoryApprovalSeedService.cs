@@ -85,7 +85,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
 
     #region 审批模板
 
-    /// <summary>按 <c>TemplateCode</c> 幂等补齐两张世界观审批模板；已存在的一律不动（保留租户事实）。</summary>
+    /// <summary>按 <c>TemplateCode</c> 幂等补齐五张世界观审批模板；已存在的一律不动（保留租户事实）。</summary>
     private async Task<int> SeedTemplatesAsync(
         string organizationId,
         string environmentId,
@@ -97,6 +97,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             WorldHistoryApprovalSpec.NcrTemplateCode,
             WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
             WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
+            WorldHistoryApprovalSpec.EngineeringChangeTemplateCode,
         };
         var existing = (await dbContext.ApprovalTemplates
                 .AsNoTracking()
@@ -199,6 +200,30 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
                     new ApprovalTemplateStepDefinition(
                         StepNo: 1,
                         StepName: "盘点差异核准",
+                        ParallelGroupKey: null,
+                        ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
+                        ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                        DueInHours: StepDueInHours),
+                ]);
+            dbContext.ApprovalTemplates.Add(template);
+            Backdate(template, x => x.CreatedAtUtc, goLiveUtc);
+            Backdate(template, x => x.UpdatedAtUtc, goLiveUtc);
+            written++;
+        }
+
+        if (!existing.Contains(WorldHistoryApprovalSpec.EngineeringChangeTemplateCode))
+        {
+            var template = ApprovalTemplate.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryApprovalSpec.EngineeringChangeTemplateCode,
+                WorldHistoryApprovalSpec.EngineeringChangeDocumentType,
+                version: 1,
+                isActive: true,
+                [
+                    new ApprovalTemplateStepDefinition(
+                        StepNo: 1,
+                        StepName: "工程变更评审",
                         ParallelGroupKey: null,
                         ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
                         ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
