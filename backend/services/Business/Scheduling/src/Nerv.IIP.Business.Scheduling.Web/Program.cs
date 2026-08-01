@@ -93,7 +93,10 @@ try
     // 非法值在启动期直接失败,不静默回落到更宽松的一侧。
     var materialConstraintMode = SchedulingMaterialConstraintModeResolver.Resolve(
         builder.Configuration[SchedulingMaterialConstraintModeResolver.ConfigurationKey]);
-    builder.Services.AddSingleton(new FiniteCapacityScheduler(materialConstraintMode));
+    // 质检口径:默认软约束(工艺路线上标了要检的工序照排 + 预警级冲突),真实下达的质量封锁仍硬阻。
+    var qualityConstraintMode = SchedulingQualityConstraintModeResolver.Resolve(
+        builder.Configuration[SchedulingQualityConstraintModeResolver.ConfigurationKey]);
+    builder.Services.AddSingleton(new FiniteCapacityScheduler(materialConstraintMode, qualityConstraintMode));
     // 设备状态未知口径:默认软约束(无快照/快照过期照排 + 设备数据风险标记),真实停机/维护仍硬阻。
     builder.Services.AddSingleton(new SchedulingEquipmentUnknownModeOption(
         SchedulingEquipmentUnknownModeResolver.Resolve(

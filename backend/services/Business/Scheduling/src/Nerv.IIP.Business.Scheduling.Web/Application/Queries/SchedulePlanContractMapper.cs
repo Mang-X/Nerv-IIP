@@ -133,7 +133,14 @@ public static class SchedulePlanContractMapper
             MaterialRisks: materialRisks,
             EquipmentRisks: equipmentRisks);
 
-        return SchedulePlanCalendarProjector.Attach(contract, problem);
+        // 日历仍从问题快照投影(它在适配前后一致);设备不可用窗口必须用随方案落库的那份——
+        // 问题快照里的 UnavailabilityWindows 恒为空(适配发生在落库之后),#1409。
+        // 落库前生成的历史方案没有这份数据,退化回问题快照投影,不编造。
+        var persistedBlockWindows = DeserializeRiskCollection<SchedulePlanBlockWindowContract>(plan.BlockWindowsJson);
+        var withCalendars = SchedulePlanCalendarProjector.Attach(contract, problem);
+        return persistedBlockWindows.Count > 0
+            ? withCalendars with { BlockWindows = persistedBlockWindows }
+            : withCalendars;
     }
 
     private static ScheduleChangeContract ToChangeSummary(
@@ -250,7 +257,8 @@ public static class SchedulePlanContractMapper
                     x.Message))
                 .ToArray(),
             JsonSerializer.Serialize(plan.MaterialRisks ?? [], SchedulingJson.Options),
-            JsonSerializer.Serialize(plan.EquipmentRisks ?? [], SchedulingJson.Options));
+            JsonSerializer.Serialize(plan.EquipmentRisks ?? [], SchedulingJson.Options),
+            JsonSerializer.Serialize(plan.BlockWindows ?? [], SchedulingJson.Options));
     }
 
     private static IReadOnlyCollection<T> DeserializeRiskCollection<T>(string? json)

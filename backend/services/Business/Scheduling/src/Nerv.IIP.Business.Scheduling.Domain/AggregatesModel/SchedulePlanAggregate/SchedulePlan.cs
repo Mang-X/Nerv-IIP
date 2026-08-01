@@ -79,7 +79,8 @@ public sealed record GeneratedSchedulePlanSnapshot(
     IReadOnlyList<GeneratedScheduleConflictSnapshot> Conflicts,
     IReadOnlyList<GeneratedUnscheduledOperationSnapshot> UnscheduledOperations,
     string MaterialRisksJson = "[]",
-    string EquipmentRisksJson = "[]");
+    string EquipmentRisksJson = "[]",
+    string BlockWindowsJson = "[]");
 
 public sealed record GeneratedSchedulePlanMetricsSnapshot(
     int ScheduledOperationCount,
@@ -266,6 +267,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         Status = SchedulePlanLifecycleStatus.Generated;
         MaterialRisksJson = NormalizeJsonArray(plan.MaterialRisksJson);
         EquipmentRisksJson = NormalizeJsonArray(plan.EquipmentRisksJson);
+        BlockWindowsJson = NormalizeJsonArray(plan.BlockWindowsJson);
         ApplyMetrics(plan.Metrics);
 
         foreach (var assignment in plan.Assignments)
@@ -322,6 +324,14 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public decimal AverageResourceUtilization { get; private set; }
     public string MaterialRisksJson { get; private set; } = "[]";
     public string EquipmentRisksJson { get; private set; } = "[]";
+
+    /// <summary>
+    /// 生成时刻真正参与排程的设备不可用窗口(维护/停机/换线)快照。
+    /// 必须随方案落库,不能在重读时从 <c>ProblemJson</c> 投影:问题快照存的是「设备可用性适配之前」
+    /// 的原始输入,其 UnavailabilityWindows 恒为空(#1409)。也不能在读面重新查一次设备可用性——
+    /// 那会让历史方案的遮罩带跟着「此刻」的设备状态漂移,同一个方案每次打开都不一样。
+    /// </summary>
+    public string BlockWindowsJson { get; private set; } = "[]";
     public IReadOnlyCollection<SchedulePlanAssignment> Assignments => assignments;
     public IReadOnlyCollection<SchedulePlanResourceLoad> ResourceLoads => resourceLoads;
     public IReadOnlyCollection<SchedulePlanConflict> Conflicts => conflicts;
@@ -424,6 +434,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         GeneratedAtUtc = plan.GeneratedAtUtc;
         MaterialRisksJson = NormalizeJsonArray(plan.MaterialRisksJson);
         EquipmentRisksJson = NormalizeJsonArray(plan.EquipmentRisksJson);
+        BlockWindowsJson = NormalizeJsonArray(plan.BlockWindowsJson);
         ApplyMetrics(plan.Metrics);
         assignments.Clear();
         resourceLoads.Clear();
