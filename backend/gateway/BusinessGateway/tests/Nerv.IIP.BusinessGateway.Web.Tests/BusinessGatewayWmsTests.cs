@@ -116,10 +116,10 @@ public sealed class BusinessGatewayWmsTests
         var completedInbound = await client.CompleteInboundOrderAsync("internal-token-001", "inbound-order-001", ValidCompleteInboundRequest(), CancellationToken.None);
         await client.CreateOutboundOrderAsync("internal-token-001", ValidOutboundRequest(), CancellationToken.None);
         await client.CreatePickingTaskAsync("internal-token-001", "outbound-order-001", ValidPickingRequest(), CancellationToken.None);
-        await client.CompleteOutboundOrderAsync("internal-token-001", "outbound-order-001", ValidCompleteOutboundRequest(), CancellationToken.None);
+        var completedOutbound = await client.CompleteOutboundOrderAsync("internal-token-001", "outbound-order-001", ValidCompleteOutboundRequest(), CancellationToken.None);
         await client.RetryOutboundInventoryPostingAsync("internal-token-001", "outbound-order-001", ValidRetryOutboundRequest(), CancellationToken.None);
         await client.CreateCountExecutionAsync("internal-token-001", ValidCreateCountRequest(), CancellationToken.None);
-        await client.CompleteCountExecutionAsync("internal-token-001", "count-execution-001", ValidCompleteCountRequest(), CancellationToken.None);
+        var completedCount = await client.CompleteCountExecutionAsync("internal-token-001", "count-execution-001", ValidCompleteCountRequest(), CancellationToken.None);
         await client.DispatchWcsTaskAsync("internal-token-001", "warehouse-task-001", ValidDispatchWcsRequest(), CancellationToken.None);
         await client.FailWcsTaskAsync("internal-token-001", "EXT-001", ValidFailWcsRequest(), CancellationToken.None);
         await client.CompleteWcsTaskAsync("internal-token-001", "EXT-001", ValidCompleteWcsRequest(), CancellationToken.None);
@@ -164,6 +164,15 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("complete-in-001", completedInbound.OperationReceipt?.IdempotencyKey);
         Assert.True(completedInbound.OperationReceipt?.ReadbackRequired);
         Assert.False(completedInbound.OperationReceipt?.StateConfirmed);
+        Assert.Equal(
+            "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin&inboundOrderId=inbound-order-001",
+            completedInbound.OperationReceipt?.ReadbackPath);
+        Assert.Equal(
+            "/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool&scopeId=POOL-A&outboundOrderId=outbound-order-001",
+            completedOutbound.OperationReceipt?.ReadbackPath);
+        Assert.Equal(
+            "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A&countExecutionId=count-execution-001",
+            completedCount.OperationReceipt?.ReadbackPath);
 
         using var createInboundBody = JsonDocument.Parse(handler.RequestBodies[0]!);
         var createInboundLine = createInboundBody.RootElement.GetProperty("lines")[0];
@@ -2590,8 +2599,8 @@ public sealed class BusinessGatewayWmsTests
             "env-dev",
             "user-admin",
             ["S1"],
-            "self",
-            "user-admin",
+            "work-pool",
+            "POOL-A",
             1,
             "PACK-001",
             true,
@@ -2610,8 +2619,8 @@ public sealed class BusinessGatewayWmsTests
             "env-dev",
             "user-admin",
             ["S1"],
-            "self",
-            "user-admin",
+            "site",
+            "SITE-A",
             1,
             1,
             "complete-count-001");

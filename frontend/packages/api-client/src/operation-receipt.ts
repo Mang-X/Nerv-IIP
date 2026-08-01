@@ -337,6 +337,24 @@ function requireExactResource(url: URL, name: string, resourceId: string) {
   return value
 }
 
+function requireExactWmsReadbackScope(url: URL, scope?: BusinessConsoleOperationReadbackScope) {
+  const scopeKind = scope?.scopeKind?.trim()
+  const scopeId = scope?.scopeId?.trim()
+  if (!scopeKind || !scopeId) throw new Error('WMS 回读缺少冻结的作业范围')
+  if (!['self', 'work-pool', 'site'].includes(scopeKind)) {
+    throw new Error('WMS 回读包含不支持的作业范围')
+  }
+
+  const receiptScopeKind = url.searchParams.get('scopeKind')?.trim()
+  const receiptScopeId = url.searchParams.get('scopeId')?.trim()
+  if (!receiptScopeKind || !receiptScopeId) throw new Error('WMS 回读地址缺少作业范围')
+  if (receiptScopeKind !== scopeKind || receiptScopeId !== scopeId) {
+    throw new Error('WMS 回读地址的作业范围与冻结意图不一致')
+  }
+
+  return { scopeKind, scopeId }
+}
+
 /**
  * Dispatches only the frozen operation/readback pairs through generated SDK
  * methods. The server-provided path is evidence to validate, never a URL to
@@ -354,20 +372,16 @@ export async function readBusinessConsoleOperationState(
   const url = new URL(path, 'http://business-console.local')
   const organizationId = requiredQuery(url, 'organizationId')
   const environmentId = requiredQuery(url, 'environmentId')
-  // 受范围治理的读面必须带作业范围，否则网关直接 403（#1397）。
-  const scopeQuery = {
-    ...(scope?.scopeKind?.trim() ? { scopeKind: scope.scopeKind.trim() } : {}),
-    ...(scope?.scopeId?.trim() ? { scopeId: scope.scopeId.trim() } : {}),
-  }
 
   if (
     operationType === 'wms.inbound-order.complete' &&
     url.pathname === '/api/business-console/v1/wms/inbound-orders'
   ) {
     const inboundOrderId = requireExactResource(url, 'inboundOrderId', resourceId)
+    const readbackScope = requireExactWmsReadbackScope(url, scope)
     return (
       await listBusinessConsoleWmsInboundOrders({
-        query: { organizationId, environmentId, inboundOrderId, ...scopeQuery },
+        query: { organizationId, environmentId, inboundOrderId, ...readbackScope },
         throwOnError: true,
       })
     ).data
@@ -378,9 +392,10 @@ export async function readBusinessConsoleOperationState(
     url.pathname === '/api/business-console/v1/wms/outbound-orders'
   ) {
     const outboundOrderId = requireExactResource(url, 'outboundOrderId', resourceId)
+    const readbackScope = requireExactWmsReadbackScope(url, scope)
     return (
       await listBusinessConsoleWmsOutboundOrders({
-        query: { organizationId, environmentId, outboundOrderId, ...scopeQuery },
+        query: { organizationId, environmentId, outboundOrderId, ...readbackScope },
         throwOnError: true,
       })
     ).data
@@ -391,9 +406,10 @@ export async function readBusinessConsoleOperationState(
     url.pathname === '/api/business-console/v1/wms/count-executions'
   ) {
     const countExecutionId = requireExactResource(url, 'countExecutionId', resourceId)
+    const readbackScope = requireExactWmsReadbackScope(url, scope)
     return (
       await listBusinessConsoleWmsCountExecutions({
-        query: { organizationId, environmentId, countExecutionId, ...scopeQuery },
+        query: { organizationId, environmentId, countExecutionId, ...readbackScope },
         throwOnError: true,
       })
     ).data

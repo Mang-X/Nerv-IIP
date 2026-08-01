@@ -560,6 +560,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
             expectedOperationType: 'wms.inbound-order.complete',
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceId: inboundOrderId,
+            readbackScope: { scopeKind: frozen.scopeKind, scopeId: frozen.scopeId },
           },
         ),
       )
@@ -818,6 +819,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
             expectedOperationType: 'wms.outbound-order.complete',
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceId: outboundOrderId,
+            readbackScope: { scopeKind: frozen.scopeKind, scopeId: frozen.scopeId },
           },
         ),
       )
@@ -1739,6 +1741,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
             expectedOperationType: 'wms.count-execution.complete',
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceId: countExecutionId,
+            readbackScope: { scopeKind: frozen.scopeKind, scopeId: frozen.scopeId },
           },
         ),
       )
