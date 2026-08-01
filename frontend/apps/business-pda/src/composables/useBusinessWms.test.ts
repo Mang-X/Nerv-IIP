@@ -1552,7 +1552,8 @@ describe('PDA WMS composables', () => {
 
     await expect(result.executeTask(intent)).rejects.toBe(unconfirmed)
     expect(result.actionUnconfirmed.value).toBe(true)
-    expect(result.error.value).toBe(unconfirmed)
+    expect(result.actionError.value).toBe(unconfirmed)
+    expect(result.error.value).toBeUndefined()
 
     coladaState.listPicking.mockResolvedValue({
       data: {
@@ -1575,6 +1576,7 @@ describe('PDA WMS composables', () => {
 
     await expect(result.refresh()).resolves.toMatchObject({ confirmedAction: 'start' })
     expect(result.actionUnconfirmed.value).toBe(false)
+    expect(result.actionError.value).toBeUndefined()
     expect(result.error.value).toBeUndefined()
     expect(result.actionConfirmedSequence.value).toBe(1)
     expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledTimes(1)

@@ -981,6 +981,7 @@ function useWmsWarehouseTasks(
   const loadingMore = shallowRef(false)
   const actionPending = shallowRef(false)
   const actionError = shallowRef<unknown>()
+  const queryError = shallowRef<unknown>()
   const unconfirmedTaskAction = shallowRef<FrozenWarehouseTaskAction>()
   const actionConfirmedSequence = shallowRef(0)
   const actionUnconfirmed = computed(() => unconfirmedTaskAction.value !== undefined)
@@ -1021,6 +1022,7 @@ function useWmsWarehouseTasks(
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
     loadMoreError.value = undefined
+    queryError.value = undefined
     page.reset()
   }
 
@@ -1040,13 +1042,21 @@ function useWmsWarehouseTasks(
     if (!scope.hasScope.value) return
     resetPaging()
     refreshing.value = true
+    let confirmedAction: Awaited<ReturnType<typeof verifyUnconfirmedTaskAction>>
     try {
-      const confirmedAction = await verifyUnconfirmedTaskAction()
+      confirmedAction = await verifyUnconfirmedTaskAction()
+    } catch (error) {
+      actionError.value = error
+      throw error
+    }
+
+    try {
       await tasksQuery.refetch()
+      queryError.value = undefined
       if (!unconfirmedTaskAction.value) actionError.value = undefined
       return confirmedAction ? { confirmedAction } : {}
     } catch (error) {
-      actionError.value = error
+      queryError.value = error
       throw error
     } finally {
       refreshing.value = false
@@ -1322,8 +1332,9 @@ function useWmsWarehouseTasks(
     tasks: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => tasksQuery.isLoading.value || scope.pending.value),
-    error: computed(() => actionError.value ?? tasksQuery.error.value ?? scope.error.value),
+    error: computed(() => queryError.value ?? tasksQuery.error.value ?? scope.error.value),
     loadMoreError,
+    actionError,
     refreshing,
     loadingMore,
     actionPending,

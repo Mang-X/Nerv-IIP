@@ -6,6 +6,7 @@ const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
 const loadMoreError = shallowRef<unknown>()
+const actionError = shallowRef<unknown>()
 const lastUpdatedAt = shallowRef('2026-08-01T08:00:00.000Z')
 const actionPending = shallowRef(false)
 const actionUnconfirmed = shallowRef(false)
@@ -44,6 +45,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     refreshing: shallowRef(false),
     loadingMore: shallowRef(false),
     loadMoreError,
+    actionError,
     lastUpdatedAt,
     actionPending,
     actionUnconfirmed,
@@ -83,6 +85,7 @@ describe('WMS 上架作业页', () => {
     scopeKey.value = 'self:emp049'
     actionPending.value = false
     actionUnconfirmed.value = false
+    actionError.value = { message: '上架任务操作失败' }
     routeGuardState.guard = undefined
   })
 
@@ -106,16 +109,17 @@ describe('WMS 上架作业页', () => {
               'status',
               'updatedAt',
               'loadMoreError',
+              'actionError',
             ],
             template:
-              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}</div>',
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}|{{ Boolean(actionError) }}</div>',
           },
         },
       },
     })
 
     expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
-      '上架|putaway|1|self:emp049|Open|PA-2026-0001|2026-08-01T08:00:00.000Z|false',
+      '上架|putaway|1|self:emp049|Open|PA-2026-0001|2026-08-01T08:00:00.000Z|false|true',
     )
   })
 

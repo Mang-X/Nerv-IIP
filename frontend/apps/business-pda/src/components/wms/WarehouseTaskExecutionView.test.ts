@@ -164,6 +164,27 @@ describe('WarehouseTaskExecutionView', () => {
     expect(wrapper.findComponent(TaskListShell).exists()).toBe(true)
   })
 
+  it('已有任务时独立呈现真实动作错误，绝不冒充下一页失败', () => {
+    const wrapper = mountView([openTask], 'picking', {
+      actionError: { message: '任务状态已被其他操作更新，请刷新后重试' },
+    })
+
+    expect(wrapper.get('[data-testid="action-error-banner"]').text()).toContain(
+      '任务状态已被其他操作更新，请刷新后重试',
+    )
+    expect(wrapper.text()).not.toContain('下一页加载失败')
+  })
+
+  it('下一页失败只显示分页错误文案，不显示动作错误', () => {
+    const wrapper = mountView([openTask], 'picking', {
+      total: 40,
+      loadMoreError: { message: '仓储任务下一页读取失败' },
+    })
+
+    expect(wrapper.get('[data-testid="task-list-load-error"]').text()).toContain('下一页加载失败')
+    expect(wrapper.find('[data-testid="action-error-banner"]').exists()).toBe(false)
+  })
+
   it('由 TaskListShell 托管全部筛选、元数据、分页错误与实际滚动位置恢复', async () => {
     sessionStorage.setItem(
       'nerv-iip.business-pda.task-list.wms-picking-tasks',
@@ -180,7 +201,7 @@ describe('WarehouseTaskExecutionView', () => {
       }),
     )
     const loadMoreError = new Error('next page failed')
-    const wrapper = mountView([], 'picking', {
+    const wrapper = mountView([openTask], 'picking', {
       keyword: 'PK-CURRENT',
       locationCode: 'A-01',
       lotNo: 'LOT-01',
@@ -188,6 +209,8 @@ describe('WarehouseTaskExecutionView', () => {
       updatedAt: '2026-08-01T08:00:00.000Z',
       loadMoreError,
     })
+    await nextTick()
+    await nextTick()
     await nextTick()
     await nextTick()
 

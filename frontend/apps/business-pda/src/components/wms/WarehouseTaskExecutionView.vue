@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
+import RetryableListError from '@/components/RetryableListError.vue'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import { PDA_WAREHOUSE_TASK_STATUS_OPTIONS } from '@/data/wmsReference'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
@@ -86,6 +87,7 @@ const props = withDefaults(
     scopeOptions?: WarehouseTaskScopeOption[]
     error?: unknown
     loadMoreError?: unknown
+    actionError?: unknown
     actionPending?: boolean
     actionUnconfirmed?: boolean
     actionConfirmedSequence?: number
@@ -112,6 +114,7 @@ const props = withDefaults(
     scopeOptions: () => [],
     error: undefined,
     loadMoreError: undefined,
+    actionError: undefined,
     actionPending: false,
     actionUnconfirmed: false,
     actionConfirmedSequence: 0,
@@ -334,6 +337,16 @@ function emitQuantityAction(action: 'progress' | 'complete') {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
+    <RetryableListError
+      v-if="actionError"
+      class="mx-4 my-3 shrink-0"
+      :error="actionError"
+      :pending="actionPending"
+      fallback="任务操作失败，请刷新核实后重试。"
+      test-id="action-error-banner"
+      @retry="emit('retry')"
+    />
+
     <TaskListShell
       :state-key="`wms-${taskType}-tasks`"
       scope="当前授权 WMS 作业范围"
@@ -347,7 +360,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
       :error="error"
       :load-more-error="loadMoreError"
       error-test-id="error-banner"
-      failure-explanation="任务服务或任务操作未成功返回；已加载数据不会被清空。"
+      failure-explanation="任务服务未成功返回；已加载数据不会被清空。"
       :filter-state="filterState"
       empty-description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
       @refresh="emit('refresh')"

@@ -73,6 +73,29 @@ describe('TaskListShell', () => {
     expect(initial.find('[data-testid="task-list-initial-error"]').exists()).toBe(true)
   })
 
+  it('已有数据时把查询失败呈现为刷新错误，绝不冒充下一页失败', () => {
+    const wrapper = mount(TaskListShell, {
+      props: {
+        stateKey: 'wms-picking-tasks',
+        scope: '当前授权 WMS 作业范围',
+        source: 'WMS 仓储任务服务',
+        loaded: 20,
+        total: 45,
+        pending: false,
+        refreshing: false,
+        loadingMore: false,
+        error: { message: '任务刷新被网关拒绝' },
+      },
+      slots: { default: '<div data-testid="kept-row">已加载任务</div>' },
+    })
+
+    expect(wrapper.get('[data-testid="kept-row"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="task-list-retained-error"]').text()).toContain(
+      '任务刷新被网关拒绝',
+    )
+    expect(wrapper.text()).not.toContain('下一页加载失败')
+  })
+
   it('离开后恢复筛选状态和列表滚动位置', async () => {
     sessionStorage.setItem(
       'nerv-iip.business-pda.task-list.quality-tasks',
@@ -97,5 +120,52 @@ describe('TaskListShell', () => {
     expect(wrapper.emitted('restore')?.[0]).toEqual([
       { filters: { status: 'inProgress', keyword: 'WO-9' }, scrollTop: 286 },
     ])
+  })
+
+  it('先恢复筛选，首屏数据和列表高度就绪后只应用一次真实滚动位置', async () => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.mes-operation-tasks',
+      JSON.stringify({ filters: { status: 'inProgress' }, scrollTop: 286 }),
+    )
+    const wrapper = mount(TaskListShell, {
+      props: {
+        stateKey: 'mes-operation-tasks',
+        scope: '当前工作中心',
+        source: 'MES 工序任务服务',
+        loaded: 0,
+        total: 45,
+        pending: true,
+        refreshing: false,
+        loadingMore: false,
+        filterState: { status: '' },
+      },
+      slots: { default: '<div style="height: 1600px">任务列表</div>' },
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const scroller = wrapper.get('.nv-m-pr-scroll').element as HTMLElement
+    expect(wrapper.emitted('restore')?.[0]).toEqual([
+      { filters: { status: 'inProgress' }, scrollTop: 286 },
+    ])
+    expect(scroller.scrollTop).toBe(0)
+
+    await wrapper.setProps({ pending: false, loaded: 0 })
+    await wrapper.vm.$nextTick()
+    expect(scroller.scrollTop).toBe(0)
+
+    await wrapper.setProps({ loaded: 20 })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(scroller.scrollTop).toBe(286)
+
+    scroller.scrollTop = 144
+    await wrapper.get('.nv-m-pr-scroll').trigger('scroll')
+    await wrapper.setProps({ loaded: 40 })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(scroller.scrollTop).toBe(144)
   })
 })

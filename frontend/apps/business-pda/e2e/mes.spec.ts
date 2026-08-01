@@ -58,6 +58,7 @@ test('任务列表壳：375×812 服务端筛选、20 条分页与返回状态�
   await page.goto('/me')
   await page.goBack()
   await expect(page.getByRole('button', { name: '进行中' })).toBeVisible()
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
   const restored = await page.evaluate(() =>
     JSON.parse(
       sessionStorage.getItem('nerv-iip.business-pda.task-list.mes-operation-tasks') ?? '{}',

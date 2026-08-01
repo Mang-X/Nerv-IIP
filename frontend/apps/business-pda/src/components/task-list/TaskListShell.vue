@@ -2,7 +2,7 @@
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { NvInfiniteList, NvMobileEmpty, NvPullRefresh } from '@nerv-iip/ui-mobile'
-import { computed, onMounted, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, shallowRef, watch } from 'vue'
 
 interface PersistedTaskListState {
   filters: Record<string, unknown>
@@ -49,12 +49,13 @@ const emit = defineEmits<{
 }>()
 
 const scrollTop = shallowRef(0)
+const pendingRestoredScrollTop = shallowRef<number>()
+let restoredScrollApplied = false
 const storageKey = computed(() => `nerv-iip.business-pda.task-list.${props.stateKey}`)
 const hasMore = computed(() => props.loaded < props.total)
 const initialError = computed(() => (props.loaded === 0 ? props.error : undefined))
-const partialError = computed(
-  () => props.loadMoreError ?? (props.loaded > 0 ? props.error : undefined),
-)
+const retainedError = computed(() => (props.loaded > 0 ? props.error : undefined))
+const partialError = computed(() => props.loadMoreError)
 const isEmpty = computed(
   () => !props.pending && !initialError.value && props.loaded === 0 && props.total === 0,
 )
@@ -88,17 +89,43 @@ function onScroll(value: number) {
   persistState()
 }
 
-function retryPartialError() {
-  if (props.loadMoreError) emit('retryLoadMore')
-  else emit('retry')
+async function applyPendingRestoredScroll() {
+  const target = pendingRestoredScrollTop.value
+  if (
+    target === undefined ||
+    restoredScrollApplied ||
+    props.pending ||
+    (target > 0 && props.loaded === 0)
+  ) {
+    return
+  }
+
+  await nextTick()
+  if (
+    pendingRestoredScrollTop.value !== target ||
+    restoredScrollApplied ||
+    props.pending ||
+    (target > 0 && props.loaded === 0)
+  ) {
+    return
+  }
+
+  scrollTop.value = target
+  restoredScrollApplied = true
+  pendingRestoredScrollTop.value = undefined
 }
 
 watch(() => props.filterState, persistState, { deep: true })
-onMounted(() => {
+watch([() => props.pending, () => props.loaded], () => void applyPendingRestoredScroll(), {
+  flush: 'post',
+})
+onMounted(async () => {
   const restored = readState()
   if (!restored) return
-  scrollTop.value = restored.scrollTop
+  pendingRestoredScrollTop.value = restored.scrollTop
   emit('restore', restored)
+  await nextTick()
+  await applyPendingRestoredScroll()
 })
 </script>
 
@@ -115,7 +142,7 @@ onMounted(() => {
         :loaded="loaded"
         :total="total"
         :updated-at="updatedAt"
-        :failed="Boolean(initialError || partialError)"
+        :failed="Boolean(initialError || retainedError || partialError)"
         :failure-explanation="failureExplanation"
         :empty="isEmpty"
         :empty-explanation="emptyDescription"
@@ -143,6 +170,16 @@ onMounted(() => {
       <NvMobileEmpty v-if="isEmpty" :description="emptyDescription" />
       <slot v-else />
 
+      <RetryableListError
+        v-if="retainedError"
+        class="mx-4 my-3"
+        :error="retainedError"
+        :pending="refreshing"
+        fallback="任务刷新失败，已加载数据保留。"
+        test-id="task-list-retained-error"
+        @retry="emit('retry')"
+      />
+
       <div
         v-if="partialError"
         data-testid="task-list-load-error"
@@ -154,7 +191,7 @@ onMounted(() => {
           :pending="loadingMore"
           fallback="下一页加载失败，请重试。"
           :test-id="errorTestId"
-          @retry="retryPartialError"
+          @retry="emit('retryLoadMore')"
         />
       </div>
 
