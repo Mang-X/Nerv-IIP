@@ -351,6 +351,8 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -420,6 +422,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
           requestedSkip,
@@ -609,6 +612,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -678,6 +683,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
           requestedSkip,
@@ -1043,6 +1049,8 @@ function useWmsWarehouseTasks(
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     queryError.value = undefined
     page.reset()
@@ -1529,6 +1537,8 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -1596,6 +1606,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
           requestedSkip,

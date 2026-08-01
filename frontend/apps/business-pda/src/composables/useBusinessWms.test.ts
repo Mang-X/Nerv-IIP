@@ -259,6 +259,11 @@ const pagingErrorCases = [
   },
 ] as const
 
+const pagingIdentityResetCases = pagingErrorCases.flatMap((testCase) => [
+  { ...testCase, resetKind: 'filter' as const },
+  { ...testCase, resetKind: 'scope' as const },
+])
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -1479,6 +1484,92 @@ describe('PDA WMS composables', () => {
       await newLoad
 
       expect(result.loadingMore.value).toBe(false)
+    },
+  )
+
+  it.each(pagingIdentityResetCases)(
+    'lets a new $name load-more own the guard after a $resetKind reset invalidates an older request',
+    async ({ id, list, create, makeItem, resetKind }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const oldRequest = deferred<{ data: unknown }>()
+      const newRequest = deferred<{ data: unknown }>()
+      list.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+      const result = create()
+
+      const oldLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+
+      if (resetKind === 'filter') {
+        result.filters.keyword = 'NEW'
+      } else {
+        result.scopeKey.value = 'work-pool:WMS-SITE-001'
+      }
+      await nextTick()
+      expect(result.loadingMore.value).toBe(false)
+
+      coladaState.queryDataRefById.get(id)!.value = {
+        success: true,
+        data: { items: page(100), total: 60 },
+      }
+      await nextTick()
+
+      const newLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+      expect(list).toHaveBeenCalledTimes(2)
+
+      if (resetKind === 'filter') {
+        oldRequest.resolve({
+          data: { success: true, data: { items: page(20), total: 60 } },
+        })
+        await oldLoad
+      } else {
+        const staleFailure = new Error(`${id}: stale page failed`)
+        oldRequest.reject(staleFailure)
+        await expect(oldLoad).rejects.toBe(staleFailure)
+        expect(result.loadMoreError.value).toBeUndefined()
+      }
+
+      expect(result.loadingMore.value).toBe(true)
+      await result.loadMore()
+      expect(list).toHaveBeenCalledTimes(2)
+
+      newRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await newLoad
+
+      expect(result.loadingMore.value).toBe(false)
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'clears the $name page error after an explicit retry succeeds and appends rows',
+    async ({ id, list, create, makeItem }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const failure = new Error(`${id}: page failed`)
+      list.mockRejectedValueOnce(failure).mockResolvedValueOnce({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      const result = create()
+
+      await expect(result.loadMore()).rejects.toBe(failure)
+      expect(result.loadMoreError.value).toBe(failure)
+      expect(result.rows.value).toHaveLength(20)
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeUndefined()
+      expect(result.rows.value).toHaveLength(40)
     },
   )
 
