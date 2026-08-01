@@ -728,9 +728,6 @@ export function useFulfillmentTimeline(
   const nodes = computed<FulfillmentNode[]>(() => {
     const so = salesOrderNo.value
     const demand = matchDemandSource(demandQuery.data.value?.items, so)
-    const urgency = urgencyQuery.data.value?.find(
-      (item) => item.businessReference === so || item.orderId === so,
-    )
     const delivery = matchedDeliveries.value[0]
     const receivable = receivableQuery.data.value ?? undefined
     const pegging = matchedPeggings.value[0]
@@ -805,24 +802,6 @@ export function useFulfillmentTimeline(
             : 'MRP 运行后按需求源生成建议，并把本销售订单 peg 到建议上（pegging.demandSourceReference = 销售单号），当前尚未运行。',
         source: 'Planning · MRP 运行与 pegging 读面',
       }),
-      resolveRecordNode<BusinessConsoleOrderUrgency>({
-        key: 'schedule-urgency',
-        title: 'APS / 排程紧急度',
-        enabled: hasScope.value,
-        loading: urgencyQuery.isLoading.value,
-        error: urgencyQuery.error.value,
-        record: urgency,
-        present: (record) => ({
-          businessNo: record.businessReference ?? record.orderId ?? undefined,
-          detailStatus: record.level ?? undefined,
-          updatedAt: record.calculatedAtUtc ?? undefined,
-          linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
-          drill: { path: '/scheduling' },
-        }),
-        pendingNote:
-          '进入排程后由 APS 计算订单紧急度（OrderUrgency.businessReference = 销售单号，#1053），当前尚未生成。',
-        source: 'Scheduling · 订单紧急度读面',
-      }),
       resolveRecordNode<MesWorkOrderRecord>({
         key: 'mes-work-order',
         title: 'MES 工单',
@@ -891,6 +870,40 @@ export function useFulfillmentTimeline(
     ]
   })
 
+  /**
+   * 参考指标（不在因果链上）。
+   *
+   * 排程紧急度按 businessReference = 销售单号直接计算交期紧迫度，**不依赖 MRP 是否运行**。
+   * 它曾被摆进因果时间线中间，出现「MRP 建议尚未产生、下一格却已有 APS 结论」的假因果
+   * （#1418 B1，owner 亲验点名），故拆出因果链单独成区，由 UI 明示「独立于上游环节计算」。
+   */
+  const referenceNodes = computed<FulfillmentNode[]>(() => {
+    const so = salesOrderNo.value
+    const urgency = urgencyQuery.data.value?.find(
+      (item) => item.businessReference === so || item.orderId === so,
+    )
+    return [
+      resolveRecordNode<BusinessConsoleOrderUrgency>({
+        key: 'schedule-urgency',
+        title: '排程紧急度',
+        enabled: hasScope.value,
+        loading: urgencyQuery.isLoading.value,
+        error: urgencyQuery.error.value,
+        record: urgency,
+        present: (record) => ({
+          businessNo: record.businessReference ?? record.orderId ?? undefined,
+          detailStatus: record.level ?? undefined,
+          updatedAt: record.calculatedAtUtc ?? undefined,
+          linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
+          drill: { path: '/scheduling' },
+        }),
+        pendingNote:
+          '排程侧尚未按本销售单号计算紧急度。该指标按交期直接计算（OrderUrgency.businessReference = 销售单号，#1053），与上方各环节进度无关。',
+        source: 'Scheduling · 订单紧急度读面（按交期独立计算，不依赖 MRP / 工单进度）',
+      }),
+    ]
+  })
+
   const pending = computed(
     () =>
       demandQuery.isLoading.value ||
@@ -947,5 +960,5 @@ export function useFulfillmentTimeline(
     void receivableQuery.refetch()
   }
 
-  return { nodes, pending, hasScope, salesOrderNo, retry, refreshAll }
+  return { nodes, referenceNodes, pending, hasScope, salesOrderNo, retry, refreshAll }
 }
