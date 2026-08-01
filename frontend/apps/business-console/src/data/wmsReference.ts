@@ -96,3 +96,38 @@ export const wmsInboundOrderStatusLabel = (value?: string | null) =>
   labelOf(WMS_INBOUND_ORDER_STATUS_OPTIONS, value)
 export const wmsOutboundOrderStatusLabel = (value?: string | null) =>
   labelOf(WMS_OUTBOUND_ORDER_STATUS_OPTIONS, value)
+
+/**
+ * 仓库任务「为什么不能操作」的中文说明（#1397 / 台账 #82）。
+ *
+ * 后端每行任务都回 `allowedActions` + `blockReasons`；PC 端过去两者都没用，于是
+ * 「两张待执行任务都没有任何按钮」，页面也不说为什么。这里把代码翻成人话，
+ * 让「派给别人了」和「已经结束了」在界面上长得不一样。
+ *
+ * 文案与 PDA 的 `WarehouseTaskExecutionView.vue` 保持一致——同一个代码在两个端
+ * 说法不同，现场对不上话。
+ */
+const WAREHOUSE_TASK_BLOCK_REASON_LABELS: Record<string, string> = {
+  TASK_TERMINAL: '任务已结束，不可继续操作',
+  TASK_TYPE_NOT_MANUALLY_EXECUTABLE: '该任务类型不支持人工执行',
+  ACTOR_CONTEXT_MISSING: '取不到当前操作人身份，请重新登录后重试',
+  TASK_NOT_ASSIGNED_TO_WORK_POOL: '任务尚未分配作业池，请先由当班负责人分配',
+  TASK_ASSIGNED_TO_ANOTHER_OPERATOR: '任务已派给其他人员，请联系当班负责人改派',
+  TASK_EXECUTION_CLAIMED_BY_WCS: '任务已由 WCS 接管，请在自动化设备侧处理',
+  TASK_EXECUTION_CLAIMED_BY_ANOTHER_OPERATOR: '任务正由其他人员执行',
+  TASK_EXECUTION_NOT_CLAIMED: '任务尚未开始执行',
+}
+
+/** 单条阻断原因的中文；未登记的代码原样回落，不吞数据也不编话。 */
+export const warehouseTaskBlockReasonLabel = (reason?: string | null) => {
+  const trimmed = reason?.trim()
+  if (!trimmed) return ''
+  return WAREHOUSE_TASK_BLOCK_REASON_LABELS[trimmed] ?? `当前任务不可操作（${trimmed}）`
+}
+
+/** 多条阻断原因合成一句；无原因时返回空串，由调用方决定要不要显示。 */
+export const warehouseTaskBlockReasonText = (reasons?: readonly string[] | null) =>
+  (reasons ?? [])
+    .map((reason) => warehouseTaskBlockReasonLabel(reason))
+    .filter(Boolean)
+    .join('；')

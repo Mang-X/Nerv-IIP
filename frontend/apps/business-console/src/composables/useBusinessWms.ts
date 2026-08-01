@@ -22,6 +22,10 @@ import {
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsPickingTasksQueryOptions,
+  listBusinessConsoleWmsPickingTasks,
+  startBusinessConsoleWmsPickingTask,
+  completeBusinessConsoleWmsPickingTask,
+  reportBusinessConsoleWmsPickingTaskException,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
   type BusinessConsoleCreateWmsCountExecutionRequest,
@@ -528,6 +532,8 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
           expectedOperationType: 'wms.inbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: inboundOrderId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })
@@ -726,6 +732,8 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
           expectedOperationType: 'wms.outbound-order.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: outboundOrderId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })
@@ -958,6 +966,74 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
     },
   })
 
+  const actionPending = shallowRef(false)
+
+  /**
+   * 拣货任务动作的「先读权威、再动手」执行器。
+   *
+   * 为什么不走 `statusActionGate`：`business-core` 里没有 warehouse-task 域，而后端每行已经
+   * 回了 `allowedActions` / `blockReasons`——那是把派工、作业范围、状态机三件事一起算过的
+   * 权威结论。再在前端抄一份状态表，只会多一处会漂移的真相（台账里「测试把错误固化成契约」
+   * 那类问题的同源）。所以这里直接以服务端的 `allowedActions` 为闸门。
+   *
+   * 版本号也必须来自这次重读而不是列表里那行的旧快照：中间被别人改过就该撞 409，
+   * 而不是拿着过期版本去覆盖。
+   */
+  async function runPickingAction<TData>(
+    warehouseTaskId: string,
+    taskNo: string | null | undefined,
+    action: 'start' | 'complete' | 'exception',
+    command: (context: { expectedVersion: number; scopeKind: string; scopeId: string }) => Promise<{
+      data?: TData
+      error?: unknown
+      response?: Readonly<{ status: number }>
+    }>,
+  ) {
+    const scope = trustedWorkScope(filters)
+    actionPending.value = true
+    try {
+      const latest = await listBusinessConsoleWmsPickingTasks({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...scope,
+          // 列表读面没有按 id 过滤的入参，用人读任务号收窄后再按 id 精确匹配。
+          ...(taskNo?.trim() ? { keyword: taskNo.trim() } : {}),
+          skip: 0,
+          take: 50,
+        },
+        throwOnError: false,
+      })
+      const authoritative = exactSuccessfulItem<BusinessConsoleWmsWarehouseTaskItem>(
+        latest,
+        (candidate) => candidate.warehouseTaskId === warehouseTaskId,
+      )
+      if (!authoritative || !(authoritative.allowedActions ?? []).includes(action)) {
+        throw new LifecycleStateChangedError('preflight')
+      }
+
+      const result = await command({
+        expectedVersion: requireVersion(authoritative),
+        ...scope,
+      })
+      if (result.response?.status === 409) throw new LifecycleStateChangedError('conflict')
+      const envelopeError =
+        result.data &&
+        typeof result.data === 'object' &&
+        'success' in result.data &&
+        (result.data as { success?: boolean }).success === false
+          ? result.data
+          : undefined
+      if (result.error !== undefined || envelopeError !== undefined) {
+        throw result.error ?? envelopeError
+      }
+      await refetchWithWmsListScope(filters, pickingTasksQuery)
+      return result.data
+    } finally {
+      actionPending.value = false
+    }
+  }
+
   return {
     filters,
     pickingTasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
@@ -984,6 +1060,71 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
       }),
     createPickingPending: createMutation.isLoading,
     createPickingError: createMutation.error,
+    pickingActionPending: actionPending,
+    startPicking: (task: BusinessConsoleWmsWarehouseTaskItem) =>
+      runPickingAction(task.warehouseTaskId!, task.taskNo, 'start', (context) =>
+        startBusinessConsoleWmsPickingTask({
+          path: { warehouseTaskId: task.warehouseTaskId! },
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            scopeKind: context.scopeKind,
+            scopeId: context.scopeId,
+          },
+          body: {
+            idempotencyKey: createWmsIdempotencyKey(),
+            expectedVersion: context.expectedVersion,
+          },
+          throwOnError: false,
+        }),
+      ),
+    completePicking: (
+      task: BusinessConsoleWmsWarehouseTaskItem,
+      payload: { executedQuantity: number; differenceReason?: string },
+    ) =>
+      runPickingAction(task.warehouseTaskId!, task.taskNo, 'complete', (context) =>
+        completeBusinessConsoleWmsPickingTask({
+          path: { warehouseTaskId: task.warehouseTaskId! },
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            scopeKind: context.scopeKind,
+            scopeId: context.scopeId,
+          },
+          body: {
+            idempotencyKey: createWmsIdempotencyKey(),
+            expectedVersion: context.expectedVersion,
+            executedQuantity: payload.executedQuantity,
+            // 少拣必须带原因，否则后端 422 `picking-difference-reason-required`。
+            ...(payload.differenceReason?.trim()
+              ? { differenceReason: payload.differenceReason.trim() }
+              : {}),
+          },
+          throwOnError: false,
+        }),
+      ),
+    reportPickingException: (
+      task: BusinessConsoleWmsWarehouseTaskItem,
+      payload: { exceptionCode: string; reason: string },
+    ) =>
+      runPickingAction(task.warehouseTaskId!, task.taskNo, 'exception', (context) =>
+        reportBusinessConsoleWmsPickingTaskException({
+          path: { warehouseTaskId: task.warehouseTaskId! },
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            scopeKind: context.scopeKind,
+            scopeId: context.scopeId,
+          },
+          body: {
+            idempotencyKey: createWmsIdempotencyKey(),
+            expectedVersion: context.expectedVersion,
+            exceptionCode: payload.exceptionCode,
+            reason: payload.reason,
+          },
+          throwOnError: false,
+        }),
+      ),
   }
 }
 
@@ -1116,6 +1257,8 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
           expectedOperationType: 'wms.count-execution.complete',
           expectedIdempotencyKey: pending.idempotencyKey,
           expectedResourceId: countExecutionId,
+          // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
+          readbackScope: commandScope,
         })
         return envelope
       })

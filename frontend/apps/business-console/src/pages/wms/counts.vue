@@ -123,7 +123,9 @@ const { page, pageSize } = usePagedList(filters, {
 // 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeCatalog()
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
+  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
+})
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
