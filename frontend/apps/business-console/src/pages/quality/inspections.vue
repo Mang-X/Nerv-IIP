@@ -334,7 +334,14 @@ watch(
 )
 // 从待检任务行进入时来源字段全部由任务带出——只读呈现，不给用户改的错觉。
 const recordContextItems = computed(() => [
-  { label: '检验方案', value: recordForm.inspectionPlanId },
+  // 方案标识是 GUID，直接甩给用户等于没说（#1418）。目录里已备好 id → 人读方案号的映射，
+  // 走它回显；映射尚未加载或方案已归档时才退回标识本身。
+  {
+    label: '检验方案',
+    value:
+      planCatalog.inspectionPlanCodeById.value.get(recordForm.inspectionPlanId) ??
+      recordForm.inspectionPlanId,
+  },
   { label: '来源类型', value: sourceTypeLabel(recordForm.sourceType) },
   { label: '来源单据', value: recordForm.sourceDocumentId },
   { label: '物料', value: recordForm.skuCode },
@@ -839,7 +846,10 @@ function isPresent(value: string | undefined | null): value is string {
     </NvDataTable>
 
     <NvDialog v-model:open="recordSheetOpen">
-      <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+      <!-- 高度不再由调用点写死：`NvDialogContent` 已改成遮罩层滚动、本体不定高。
+           原先 `max-h-[85vh] overflow-y-auto` 把弹框锁在 765px（900px 视口），
+           校验面板一 sticky 就压住第二行特性输入区、第三行「行程」被顶出可视区（#1418）。 -->
+      <NvDialogContent class="sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>创建检验记录</NvDialogTitle>
           <!-- 检验对象由下方只读区或来源字段呈现；此处仅供读屏播报。 -->
@@ -1148,8 +1158,13 @@ function isPresent(value: string | undefined | null): value is string {
           </NvFieldGroup>
 
           <!-- 按钮为什么灰，就在按钮边上说清楚：禁用态与这份清单同源，不存在「无红字却提交不了」。
-               贴着页脚 sticky，弹框再高也不会把「还差什么」滚出视野（走查 #85 同处）。 -->
-          <div class="sticky bottom-0 grid gap-3 bg-background pt-2">
+               贴着页脚 sticky，弹框再高也不会把「还差什么」滚出视野（走查 #85 同处）。
+               这一整块（校验清单 + 操作按钮）才是 sticky 单元，所以负外边距铺到弹框
+               `p-6` 的内边距边缘、底色取 `bg-card` 与弹框同色；此前用 `bg-background`
+               会露出一条色差，两侧也会漏出滚动内容（#1418）。 -->
+          <div
+            class="sticky bottom-0 z-10 -mx-6 -mb-6 grid gap-3 rounded-b-xl bg-card px-6 pt-3 pb-6"
+          >
             <div
               v-if="submitBlockers.length"
               id="record-submit-blockers"
@@ -1162,7 +1177,11 @@ function isPresent(value: string | undefined | null): value is string {
               </ul>
             </div>
 
-            <NvDialogFooter>
+            <!-- 外层 div 已经是 sticky 单元，页脚在其内部退回普通流，避免双层 sticky
+                 与重复的负外边距/圆角/底色叠加。 -->
+            <NvDialogFooter
+              class="static mx-0 mt-0 mb-0 rounded-none bg-transparent px-0 pt-0 pb-0"
+            >
               <NvButton type="button" variant="outline" @click="recordSheetOpen = false"
                 >取消</NvButton
               >

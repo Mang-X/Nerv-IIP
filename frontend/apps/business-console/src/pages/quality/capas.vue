@@ -319,7 +319,11 @@ function actionRowKey(row: QualityCapaActionItem) {
           </NvSheetDescription>
         </NvSheetHeader>
 
-        <div class="grid content-start gap-4 px-4 pb-4">
+        <!-- `grid-cols-1` 把隐式的 auto 轨道换成 `minmax(0,1fr)`；`[&>*]:min-w-0` 解掉栅格子项
+             默认的 `min-width:auto`。两者缺一，8D 措施明细那张 5 列表格就会按「内容最小宽」
+             把整块内容撑到 780px —— 抽屉只有 512px，右侧 285px 溢出到视口外（#1418）。
+             钉住之后表格在自带的 overflow-auto 里横向滚动，抽屉本身不再被顶破。 -->
+        <div class="grid grid-cols-1 content-start gap-4 px-4 pb-4 [&>*]:min-w-0">
           <p
             v-if="detailErrorMessage"
             class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
@@ -382,7 +386,7 @@ function actionRowKey(row: QualityCapaActionItem) {
               </div>
             </dl>
 
-            <section class="grid gap-2">
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
               <h3 class="text-sm font-semibold text-foreground">8D 措施明细</h3>
               <NvDataTable
                 :columns="actionColumns"
@@ -406,7 +410,7 @@ function actionRowKey(row: QualityCapaActionItem) {
               </NvDataTable>
             </section>
 
-            <section class="grid gap-2">
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
               <h3 class="text-sm font-semibold text-foreground">效果验证与关单</h3>
               <dl class="grid gap-3 sm:grid-cols-2">
                 <div class="rounded-lg border bg-card p-3 sm:col-span-2">
