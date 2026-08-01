@@ -5,10 +5,9 @@ import { simulateScanGun } from './support/scan-gun'
 
 // L2 真实栈仿真走查——quality 链路只读 smoke（方案文档 §8 M1b）。
 // 无任何 page.route mock：真实 IAM 登录 → 真实 BusinessGateway 待检任务列表 → S1 常驻直扫。
-// 只读约束：本 spec 不做任何写操作（不选提交、不进入执行表单提交路径；
-// 扫码直达执行步仅触发检验计划特性 GET 读取）。写路径归 M1c。
+// 只读约束：本 spec 不做任何写操作，扫码只更新服务端 keyword 筛选。写路径归 M1c。
 
-test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻直扫触发筛选/直达', async ({
+test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻直扫触发服务端筛选', async ({
   page,
 }) => {
   await assertLiveStackReachable()
@@ -22,7 +21,7 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
   await expect(page.getByTestId('tasks-error')).toHaveCount(0)
 
   // S1 前提断言：ScanBar 挂载后焦点常驻（不做任何点击/聚焦操作）。
-  const scanInput = page.locator('input[placeholder^="扫来源单据"]')
+  const scanInput = page.getByPlaceholder('扫描或输入来源单据 / SKU 以筛选')
   await expect(scanInput).toBeVisible()
   await expect(scanInput).toBeFocused()
 
@@ -51,9 +50,7 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
   // S1 常驻直扫：不 focus、不 fill，DOM 层键盘楔入近似（突发字符流 + Enter 后缀）。
   await simulateScanGun(page, code)
 
-  // 扫码值经 ScanBar 进入并触发行为：
-  // - 全局唯一命中 → 直达执行步（头部步骤指示「第 2/3 步」；只读，不提交）；
-  // - 非唯一/未命中 → 退化为关键字筛选（「筛选：<code>」banner）。
-  // 两者都证明字符流完整进入 ScanBar 且 scan 事件被消费。
-  await expect(page.getByText(`筛选：${code}`).or(page.getByText('第 2/3 步'))).toBeVisible()
+  // 扫码值只作为服务端 keyword 条件；操作员仍需等待列表并显式选行。
+  await expect(page.getByText(`筛选：${code}`)).toBeVisible()
+  await expect(page.getByText('第 2/3 步')).toHaveCount(0)
 })

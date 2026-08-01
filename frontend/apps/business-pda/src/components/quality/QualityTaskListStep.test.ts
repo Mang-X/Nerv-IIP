@@ -106,6 +106,14 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.emitted('select')).toBeUndefined()
   })
 
+  it('labels scanning as server-side filtering rather than direct navigation', () => {
+    const wrapper = mountList([task({ inspectionTaskId: 'T1' })])
+
+    expect(wrapper.findComponent(NvScanBar).props('placeholder')).toBe(
+      '扫描或输入来源单据 / SKU 以筛选',
+    )
+  })
+
   it('never loads all pages or navigates from a client-only scan match', async () => {
     const wrapper = mountList([
       task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1001', skuCode: 'SKU-A' }),

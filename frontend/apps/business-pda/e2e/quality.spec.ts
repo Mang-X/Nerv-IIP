@@ -5,12 +5,16 @@ const QUALITY_BASE = '/api/business-console/v1/quality'
 const TASK_ID = 'TASK-640'
 const PLAN_ID = 'PLAN-640'
 const RECORD_ID = 'RECORD-640'
+const OLD_TASK_ID = 'TASK-OLD-640'
 
 function envelope<T>(data: T) {
   return { success: true, message: null, data }
 }
 
-function taskFacts(state: { claimed: boolean; completed: boolean }) {
+function taskFacts(
+  state: { claimed: boolean; completed: boolean },
+  overrides: Record<string, unknown> = {},
+) {
   return {
     inspectionTaskId: TASK_ID,
     inspectionPlanId: PLAN_ID,
@@ -26,13 +30,70 @@ function taskFacts(state: { claimed: boolean; completed: boolean }) {
     dueAtUtc: '2026-07-31T00:00:00.000Z',
     createdAtUtc: '2026-07-30T00:00:00.000Z',
     inspectionRecordId: state.completed ? RECORD_ID : null,
-    assignedInspectorUserId: state.claimed || state.completed ? principal.principalId : null,
+    // The real Self query applies AssignedUserId == principalId before pagination.
+    assignedInspectorUserId: principal.principalId,
     assignedTeamId: 'team-a',
     version: state.completed ? 3 : state.claimed ? 2 : 1,
     isOverdue: true,
     allowedActions: state.completed ? [] : state.claimed ? ['submit-inspection'] : ['claim'],
     blockReasons: [],
+    ...overrides,
   }
+}
+
+function filteredTaskFacts(url: URL, state: { claimed: boolean; completed: boolean }) {
+  const candidates = [
+    taskFacts(state, {
+      inspectionTaskId: OLD_TASK_ID,
+      inspectionPlanId: 'PLAN-OLD-640',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      sourceDocumentId: 'RCV-OLD-640',
+      skuCode: 'SKU-OLD-640',
+      dueAtUtc: '2026-08-20T00:00:00.000Z',
+      inspectionRecordId: null,
+      status: 'pending',
+      version: 1,
+      isOverdue: false,
+      allowedActions: ['claim'],
+    }),
+    taskFacts(state, {
+      inspectionTaskId: 'TASK-OLD-641',
+      inspectionPlanId: 'PLAN-OLD-641',
+      sourceType: 'shipment',
+      sourceService: 'erp',
+      sourceDocumentId: 'SO-OLD-641',
+      skuCode: 'SKU-OLD-641',
+      dueAtUtc: '2026-08-21T00:00:00.000Z',
+      inspectionRecordId: null,
+      status: 'pending',
+      version: 1,
+      isOverdue: false,
+      allowedActions: ['claim'],
+    }),
+    taskFacts(state),
+  ]
+  const status = url.searchParams.get('status')
+  const sourceType = url.searchParams.get('sourceType')
+  const sourceService = url.searchParams.get('sourceService')
+  const keyword = url.searchParams.get('keyword')?.trim().toLowerCase()
+  const overdue = url.searchParams.get('overdue') === 'true'
+  return candidates.filter((task) => {
+    if (status && task.status !== status) return false
+    if (sourceType && task.sourceType !== sourceType) return false
+    if (sourceService && task.sourceService !== sourceService) return false
+    if (
+      keyword &&
+      ![task.sourceDocumentId, task.skuCode].some((value) =>
+        String(value ?? '')
+          .toLowerCase()
+          .includes(keyword),
+      )
+    ) {
+      return false
+    }
+    return !overdue || task.isOverdue === true
+  })
 }
 
 function confirmedReceipt(idempotencyKey: string) {
@@ -64,7 +125,14 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
 }) => {
   const state = { claimed: false, completed: false }
   const listRequests: string[] = []
+  const listResponses: Array<{
+    requestUrl: string
+    ids: string[]
+    total: number
+    assignedInspectorUserIds: Array<string | null | undefined>
+  }> = []
   const readbacks: string[] = []
+  let claimRequest: { query: URLSearchParams; body: Record<string, unknown> } | undefined
   let submittedBody: Record<string, unknown> | undefined
 
   await page.route('**/api/business-console/v1/quality/**', async (route: Route) => {
@@ -77,7 +145,14 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
 
     if (method === 'GET' && pathname === `${QUALITY_BASE}/inspection-tasks`) {
       listRequests.push(url.toString())
-      return fulfill(envelope({ items: [taskFacts(state)], total: 1 }))
+      const items = filteredTaskFacts(url, state)
+      listResponses.push({
+        requestUrl: url.toString(),
+        ids: items.map((item) => String(item.inspectionTaskId)),
+        total: items.length,
+        assignedInspectorUserIds: items.map((item) => item.assignedInspectorUserId),
+      })
+      return fulfill(envelope({ items, total: items.length }))
     }
     if (method === 'GET' && pathname === `${QUALITY_BASE}/reason-codes`) {
       return fulfill(envelope({ items: [], total: 0 }))
@@ -85,6 +160,7 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
     if (method === 'POST' && pathname === `${QUALITY_BASE}/inspection-tasks/${TASK_ID}/claim`) {
       state.claimed = true
       const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+      claimRequest = { query: new URLSearchParams(url.search), body }
       return fulfill(
         envelope({
           inspectionTaskId: TASK_ID,
@@ -184,12 +260,43 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
   await page.goto('/quality/tasks')
   await expect(page.getByRole('heading', { name: '检验任务' })).toBeVisible()
 
+  await expect(page.getByText('来源单 RCV-OLD-640')).toBeVisible()
+  await expect(page.getByText('已加载 3 / 共 3')).toBeVisible()
+  const initialResponse = listResponses.find((response) => {
+    const query = new URL(response.requestUrl).searchParams
+    return query.get('status') === 'pending' && !query.has('sourceType')
+  })
+  expect(initialResponse?.ids).toContain(OLD_TASK_ID)
+  expect(initialResponse?.total).toBe(3)
+  expect(initialResponse?.assignedInspectorUserIds).toEqual([
+    principal.principalId,
+    principal.principalId,
+    principal.principalId,
+  ])
+
+  await page.getByRole('button', { name: '待领取', exact: true }).click()
+  await page.getByRole('button', { name: '进行中', exact: true }).first().click()
+  await expect
+    .poll(() =>
+      listRequests.some(
+        (requestUrl) => new URL(requestUrl).searchParams.get('status') === 'in-progress',
+      ),
+    )
+    .toBe(true)
+  await expect(
+    page
+      .getByText('当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。')
+      .last(),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '进行中', exact: true }).first().click()
+  await page.getByRole('button', { name: '待领取', exact: true }).click()
+
   await page.getByTestId('chip-operation').click()
   await page.getByRole('button', { name: '全部来源服务' }).click()
   await page.getByRole('button', { name: 'MES', exact: true }).click()
   await page.getByRole('button', { name: '全部时效' }).click()
   await page.getByRole('button', { name: '仅看超期' }).click()
-  const scan = page.locator('input[placeholder^="扫来源单据"]')
+  const scan = page.getByPlaceholder('扫描或输入来源单据 / SKU 以筛选')
   await scan.fill('WO-9001')
   await scan.press('Enter')
 
@@ -211,7 +318,52 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
       }),
     )
     .toBe(true)
+  await expect(page.getByText('来源单 RCV-OLD-640')).toHaveCount(0)
+  await expect(page.getByText('来源单 WO-9001')).toBeVisible()
+  await expect(page.getByText('已加载 1 / 共 1')).toBeVisible()
   await expect(page.getByTestId('task-row')).toHaveCount(1)
+  const fullyFilteredResponse = listResponses.find((response) => {
+    const query = new URL(response.requestUrl).searchParams
+    return (
+      query.get('status') === 'pending' &&
+      query.get('sourceType') === 'operation' &&
+      query.get('sourceService') === 'mes' &&
+      query.get('keyword') === 'WO-9001' &&
+      query.get('overdue') === 'true'
+    )
+  })
+  expect(fullyFilteredResponse).toMatchObject({ ids: [TASK_ID], total: 1 })
+
+  listRequests.length = 0
+  listResponses.length = 0
+  await page.goto('/')
+  await page.goto('/quality/tasks')
+  await expect(page.getByRole('heading', { name: '检验任务' })).toBeVisible()
+  await expect(page.getByText('筛选：WO-9001')).toBeVisible()
+  await expect(page.getByRole('button', { name: '待领取', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '仅看超期', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'MES', exact: true })).toBeVisible()
+  await expect(page.getByTestId('chip-operation')).toHaveClass(/bg-brand/)
+  await expect
+    .poll(() =>
+      listResponses.some((response) => {
+        const query = new URL(response.requestUrl).searchParams
+        return (
+          query.get('scopeKind') === 'self' &&
+          query.get('scopeId') === principal.principalId &&
+          query.get('status') === 'pending' &&
+          query.get('sourceType') === 'operation' &&
+          query.get('sourceService') === 'mes' &&
+          query.get('keyword') === 'WO-9001' &&
+          query.get('overdue') === 'true' &&
+          response.ids.join(',') === TASK_ID &&
+          response.total === 1
+        )
+      }),
+    )
+    .toBe(true)
+  await expect(page.getByText('来源单 RCV-OLD-640')).toHaveCount(0)
+  await expect(page.getByText('来源单 WO-9001')).toBeVisible()
   await page.getByTestId('task-row').click()
 
   await expect(page.getByText('第 2/3 步')).toBeVisible()
@@ -228,6 +380,12 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
   expect(submittedBody).toMatchObject({
     idempotencyKey: expect.stringMatching(/^quality-submit-/),
     resultLines: [expect.objectContaining({ characteristicCode: 'OD', measuredValue: 10 })],
+  })
+  expect(claimRequest?.query.get('scopeKind')).toBe('self')
+  expect(claimRequest?.query.get('scopeId')).toBe(principal.principalId)
+  expect(claimRequest?.body).toMatchObject({
+    idempotencyKey: expect.stringMatching(/^quality-claim-/),
+    expectedVersion: 1,
   })
   expect(readbacks.filter((path) => path.endsWith(`/inspection-tasks/${TASK_ID}`)).length).toBe(3)
   expect(readbacks.at(-1)).toBe(`${QUALITY_BASE}/inspection-records/${RECORD_ID}`)

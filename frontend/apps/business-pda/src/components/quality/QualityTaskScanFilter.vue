@@ -16,7 +16,7 @@ const emit = defineEmits<{
 
 <template>
   <!-- 扫码输入 + 关键字筛选提示 + 来源类型 chips -->
-  <NvScanBar placeholder="扫来源单据 / SKU 直达" @scan="(v) => emit('scan', v)" />
+  <NvScanBar placeholder="扫描或输入来源单据 / SKU 以筛选" @scan="(v) => emit('scan', v)" />
 
   <div
     v-if="scanKeyword"

@@ -25,7 +25,18 @@ const coladaState = vi.hoisted(() => ({
 // `@nerv-iip/api-client` barrel; mock it here. Auth-API functions are stubbed
 // because `@/stores/auth` lazily references them (never called — we only $patch).
 vi.mock('@nerv-iip/api-client', () => ({
-  BusinessOperationUnconfirmedError: class BusinessOperationUnconfirmedError extends Error {},
+  BusinessOperationUnconfirmedError: class BusinessOperationUnconfirmedError extends Error {
+    readonly code = 'business-operation-unconfirmed'
+
+    constructor(
+      message: string,
+      readonly operationType?: string,
+      readonly readbackPath?: string,
+    ) {
+      super(message)
+      this.name = 'BusinessOperationUnconfirmedError'
+    }
+  },
   confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   getBusinessConsoleQualityInspectionTask: coladaState.getTask,
   getBusinessConsoleQualityInspectionRecord: coladaState.getRecord,
@@ -552,6 +563,65 @@ describe('useBusinessQualityInspectionTasks', () => {
       'response lost after commit',
     )
     await submitInspection('TASK-LOST-COMMIT', LINES)
+
+    expect(coladaState.submit).toHaveBeenCalledTimes(2)
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
+  })
+
+  it('retains the submit intent when the completed task points at a different record', async () => {
+    seedPrincipal()
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValueOnce(taskReadback('TASK-1', 'completed', 'RECORD-WRONG'))
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-1'))
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-1', LINES)).rejects.toMatchObject({
+      code: 'business-operation-unconfirmed',
+    })
+    await submitInspection('TASK-1', LINES)
+
+    expect(coladaState.submit).toHaveBeenCalledTimes(2)
+    const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
+    expect(coladaState.submit.mock.calls[1][0].body.idempotencyKey).toBe(firstKey)
+  })
+
+  it.each([
+    ['success:false envelope', { data: { success: false, data: null } }],
+    [
+      'invalid result',
+      {
+        data: {
+          success: true,
+          data: { inspectionRecordId: 'RECORD-1', result: 'unknown' },
+        },
+      },
+    ],
+  ])('retains the submit intent after an unconfirmed record readback: %s', async (_, response) => {
+    seedPrincipal()
+    coladaState.getTask
+      .mockReset()
+      .mockResolvedValueOnce(taskReadback())
+      .mockResolvedValueOnce(taskReadback('TASK-1', 'completed', 'RECORD-1'))
+      .mockResolvedValue(taskReadback('TASK-1', 'completed', 'RECORD-1'))
+    coladaState.getRecord
+      .mockReset()
+      .mockResolvedValueOnce(response)
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: { inspectionRecordId: 'RECORD-1', result: 'passed' },
+        },
+      })
+    const { submitInspection } = useBusinessQualityInspectionTasks()
+
+    await expect(submitInspection('TASK-1', LINES)).rejects.toMatchObject({
+      code: 'business-operation-unconfirmed',
+    })
+    await submitInspection('TASK-1', LINES)
 
     expect(coladaState.submit).toHaveBeenCalledTimes(2)
     const firstKey = coladaState.submit.mock.calls[0][0].body.idempotencyKey
