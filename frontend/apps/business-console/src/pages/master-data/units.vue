@@ -93,6 +93,10 @@ const DIMENSION_OPTIONS: Option[] = [
   { value: 'volume', label: '体积' },
   { value: 'weight', label: '重量' },
   { value: 'time', label: '时间' },
+  { value: 'force', label: '力' },
+  { value: 'torque', label: '扭矩' },
+  { value: 'pressure', label: '压力' },
+  { value: 'ratio', label: '比率' },
 ]
 // 取整方式（系统枚举常量）。
 const ROUNDING_OPTIONS: Option[] = [
