@@ -170,15 +170,15 @@ onMounted(async () => {
       <NvMobileEmpty v-if="isEmpty" :description="emptyDescription" />
       <slot v-else />
 
-      <RetryableListError
-        v-if="retainedError"
-        class="mx-4 my-3"
-        :error="retainedError"
-        :pending="refreshing"
-        fallback="任务刷新失败，已加载数据保留。"
-        test-id="task-list-retained-error"
-        @retry="emit('retry')"
-      />
+      <div v-if="retainedError" data-testid="task-list-retained-error" class="mx-4 my-3">
+        <RetryableListError
+          :error="retainedError"
+          :pending="refreshing"
+          fallback="任务刷新失败，已加载数据保留。"
+          :test-id="errorTestId"
+          @retry="emit('retry')"
+        />
+      </div>
 
       <div
         v-if="partialError"

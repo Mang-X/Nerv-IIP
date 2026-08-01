@@ -242,7 +242,8 @@ describe('PDA equipment repair page', () => {
   it('surfaces a work-orders error banner', () => {
     workOrdersError.value = new Error('boom')
     const wrapper = mount(RepairPage)
-    expect(wrapper.find('[data-testid="task-list-load-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="task-list-retained-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('下一页加载失败')
     expect(wrapper.text()).toContain('DEV-1001')
   })
 

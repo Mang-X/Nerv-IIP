@@ -89,7 +89,7 @@ describe('TaskListShell', () => {
       slots: { default: '<div data-testid="kept-row">已加载任务</div>' },
     })
 
-    expect(wrapper.get('[data-testid="kept-row"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="kept-row"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="task-list-retained-error"]').text()).toContain(
       '任务刷新被网关拒绝',
     )
