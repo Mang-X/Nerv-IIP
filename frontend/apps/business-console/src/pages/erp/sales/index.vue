@@ -5,6 +5,7 @@ import { useErpOpportunities } from '@/composables/useBusinessErp'
 import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { buildKpiTrend, seriesFromDatedItems } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -89,22 +90,48 @@ const readState = computed(() =>
   }),
 )
 
-const opportunityCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'active',
-    label: '跟进中机会',
-    value: readCount(readState.value, activeCount.value),
-    unit: readState.value.trustworthy ? '个' : '',
-    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
-  },
-  {
-    key: 'customers',
-    label: '涉及客户',
-    value: readCount(readState.value, customerCount.value),
-    unit: readState.value.trustworthy ? '家' : '',
-    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
-  },
-])
+const opportunityCells = computed<NvMetricStripCell[]>(() => {
+  // 机会明细带 openedAtUtc，跟进中机会走真实开立节奏；
+  // 涉及客户是去重口径，按天累加会把同一客户重复计进桶里，只能补形状。
+  const active = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.opportunities', activeCount.value, {
+        kind: 'count',
+        realSeries: seriesFromDatedItems(opportunities.items.value, {
+          date: (o) => o.openedAtUtc,
+          value: () => 1,
+          mode: 'cumulative',
+        }),
+      })
+    : undefined
+  const customers = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.opportunityCustomers', customerCount.value, { kind: 'count' })
+    : undefined
+
+  return [
+    {
+      key: 'active',
+      label: '跟进中机会',
+      value: readCount(readState.value, activeCount.value),
+      unit: readState.value.trustworthy ? '个' : '',
+      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+      delta: active?.delta,
+      series: active?.series,
+      seriesLabels: active?.seriesLabels,
+      seriesUnit: '个',
+    },
+    {
+      key: 'customers',
+      label: '涉及客户',
+      value: readCount(readState.value, customerCount.value),
+      unit: readState.value.trustworthy ? '家' : '',
+      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+      delta: customers?.delta,
+      series: customers?.series,
+      seriesLabels: customers?.seriesLabels,
+      seriesUnit: '家',
+    },
+  ]
+})
 
 const open = shallowRef(false)
 const form = reactive({ customerCode: '', topic: '' })
