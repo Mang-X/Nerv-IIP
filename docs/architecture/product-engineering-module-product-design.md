@@ -22,7 +22,7 @@
 | EBOM | `release`（整批 Lines[]，内部 Draft→Release 一气呵成） | `list`（**不含行明细**） | **不可** | list 无行、无 get-by-id |
 | MBOM | `release`（整批 MaterialLines[]+RecipeLines[]，须引用已发布 EBOM） | `list`（**含 MaterialLines**，不含 RecipeLines） | **不可** | 无 RecipeLines、无 get |
 | 工艺路线 Routing | `release`（整批 Operations[]=seq/workCenter/name/stdMinutes） | `list`（**不含工序明细**） | **不可** | 无工序、无 get |
-| 工程变更 ECO/ECN | `release`（Open→Approve→Affect→Release 一步到位，带 AffectedVersions[]） | `list` + `get` + `impact-preview` | — | 无真实审批态；发布前影响预览只读 |
+| 工程变更 ECO/ECN | `release`（Open→Approve→Affect→Release 一步到位，带 AffectedVersions[]） | `list` + `get` + `impact-preview` | — | 发布前影响预览只读 |
 | 生产版本 ProductionVersion | `create`/`update`/`archive` | `list`（全字段）+ `resolve`（SKU+日期+批量→命中版本） | n/a | **唯一完整 CRUD** |
 | MES 就绪度 | — | `getMesProductEngineeringReadiness` | — | — |
 
@@ -47,7 +47,7 @@ Phase 3（#628 / MAN-337 已补）
 └─ ECO 预览   /engineering/eco                  [发布前 affected downstream preview：MBOM/Routing/PV/MRP/MES/APS 候选] ✅
 规划中（依赖后端 #397，未交付前用字典过渡，不假做）
 └─ 标准工序   /engineering/standard-operations  [工序主数据：默认工作中心+标准工时]  ⏳ #397
-注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。2026-07-02 起，Business Console 的 ECO 发布/查看入口接入 BusinessApproval 真实审批链选择与状态查看，`approvalReferenceId` 由真实 `chainId` 关联，不再提供自由文本审批参考；这不改变 ProductEngineering 自身 release 校验。影响预览不自动修改下游单据。文档 fileId 为文本登记，文件上传端点未接入。
+注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。2026-07-02 起，Business Console 的 ECO 发布/查看入口接入 BusinessApproval 真实审批链选择与状态查看，`approvalReferenceId` 由真实 `chainId` 关联，不再提供自由文本审批参考；这不改变 ProductEngineering 自身 release 校验。2026-08-01 起，审批链已打通：用户可在 ECO 发布页填写变更号（`changeNumber` 必填），直接发起新审批（`APT-WB-ECO-001` 模板自动推荐）或选已有链（须同 ECO 号、租户、来源 `product-engineering`、单据类型 `engineering-change-order`、已审批通过），后端发布时校验模板码与审批链一致性；审批通过后才可发布变更。影响预览不自动修改下游单据。文档 fileId 为文本登记，文件上传端点未接入。
 
 ### 标准工序（工序主数据，⏳ 规划，依赖 #397）
 - **问题**：当前工艺路线的工序名走通用数据字典（`reference-data`，`codeSet=operation`），只有 code+名，**无默认工作中心/标准工时**；建路线时每行工作中心、工时仍逐行手填。成熟系统（SAP 标准工序 CA21 / 参考工序集 CA11、Oracle Standard Operations）把工序建模为**独立工程主数据**，预绑默认工作中心+标准工时+控制码，选工序即带出默认值。
@@ -69,7 +69,7 @@ Phase 3（#628 / MAN-337 已补）
 1. **全实体无 get-by-id**；EBOM/Routing list 不回行/工序明细，MBOM list 缺 RecipeLines → 查看详情只能看版本头。补 `GET .../engineering-boms/{code}/{rev}`、`.../routings/{code}/{rev}` 等返回完整明细。
 2. **工程文档无 list/get**（仅 register）→ 文档页 Phase 1 建不了。补 `GET .../documents`。
 3. **工程物料无 list/get**（仅 create-revision）→ 物料页 Phase 1 建不了。补 `GET .../items`。
-4. **ECO 无真实审批态**（后端一步 release）→ 页面不能假造草稿/待审状态；若要真审批流则拆 Open/Approve/Release 状态机。
+4. **ECO 审批流**（已打通，#1433）：审批模板 `APT-WB-ECO-001` 已补，页面可发起/关联审批链（绑 ECO 号），后端 release 校验模板码、审批状态、ECO 号一致性；后端仍一步 release（无独立草稿态），但审批环节已可正常走。
 5. **BOM 对比 / 影响预览**：#628 / MAN-337 已补 `GET .../engineering/boms/diff` 与 `POST .../engineering/engineering-changes/impact-preview`，只做结构化预览，不自动修改下游单据。
 6. 状态枚举对账：前端统一用 `Published`（非 `Released`）。
 7. **数据字典 codeSet 审计**（**#397**，已按标准系统建模定结论）：reference-data 里被塞进字典的主数据/配置对象 → 丢结构。
