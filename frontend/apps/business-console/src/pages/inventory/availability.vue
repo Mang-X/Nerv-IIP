@@ -31,6 +31,7 @@ import {
   WAREHOUSE_SERIAL_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
 import {
   formatInventoryExpiryDate,
@@ -103,6 +104,7 @@ const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: tr
 const { resolvePartner } = useBusinessPartnerNames()
 // 选物料之前先给一块跨物料的真实事实：全厂效期风险（库存域唯一只要工厂就能出行的读面）。
 const {
+  overviewError,
   overviewExpiredCount,
   overviewNearExpiryCount,
   overviewPending,
@@ -204,6 +206,26 @@ const overviewFacets = computed(() => [
   { key: 'sku', label: '涉及物料', value: overviewSkuCount.value },
 ])
 const siteSelected = computed(() => (filters.siteCode ?? '').trim().length > 0)
+/**
+ * 效期风险批次数的走势**只是形状**：库存域没有历史读面，日期字段全是批次属性
+ * （效期/生产日期），台账本身不带时间轴，算不出真的环比。当前值仍是后端真值，
+ * 末点就落在卡片那个数上。没选工厂 / 还在读 / 读失败时一律不画——
+ * 那三种情况下的 0 不是事实，不配挂一个"持平"。
+ */
+const expiryRiskTrend = computed(() =>
+  siteSelected.value && !overviewPending.value && !overviewError.value
+    ? buildKpiTrend('inventory.expiryRisk', overviewTotalCount.value, {
+        kind: 'count',
+        polarity: 'lower-better',
+      })
+    : undefined,
+)
+/** 同理：可用量也只补形状；读不出可用量时（未加载/失败）不挂趋势。 */
+const availableTrend = computed(() =>
+  availabilityPending.value || availabilityError.value || !availability.value
+    ? undefined
+    : buildKpiTrend('inventory.available', availableQuantity.value, { kind: 'amount' }),
+)
 /**
  * 计数三态：数不出来就别说「0 条」——0 是一个结论，只有真的查成功才配下。
  * 未选范围 / 加载中 / 失败各说各的，别让一次 500 长得跟「本厂真没有库存」一样。
@@ -475,6 +497,7 @@ async function refreshCurrentView() {
         :value="overviewPending ? '—' : overviewTotalCount"
         unit="批"
         :tone="overviewExpiredCount > 0 ? 'danger' : 'neutral'"
+        :trend="expiryRiskTrend?.delta"
         :facets="overviewFacets"
       />
       <section class="grid content-start gap-2 rounded-md border bg-card p-4">
@@ -503,14 +526,30 @@ async function refreshCurrentView() {
         </p>
       </section>
     </div>
-    <NvMetricRing
-      v-else
-      class="lg:max-w-md"
-      label="现存量构成"
-      :value="formatQuantity(onHandQuantity)"
-      :center-caption="filters.uomCode ? `现存量 · ${formatUom(filters.uomCode)}` : '现存量'"
-      :segments="stockSegments"
-    />
+    <!--
+      选中物料后的单物料口径：左边现存量构成是真实构成关系，右边可用量的**当前值**
+      同样是后端真值，只有那条走势线是补的形状（库存域无历史读面）。
+    -->
+    <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <NvMetricRing
+        label="现存量构成"
+        :value="formatQuantity(onHandQuantity)"
+        :center-caption="filters.uomCode ? `现存量 · ${formatUom(filters.uomCode)}` : '现存量'"
+        :segments="stockSegments"
+      />
+      <NvMetricCard
+        variant="sparkline"
+        label="可用量"
+        :value="availabilityPending ? '—' : formatQuantity(availableQuantity)"
+        :unit="filters.uomCode ? formatUom(filters.uomCode) : undefined"
+        :trend="availableTrend?.delta"
+        :series="availableTrend?.series"
+        :series-labels="availableTrend?.seriesLabels"
+        :series-unit="filters.uomCode ? formatUom(filters.uomCode) : undefined"
+        :foot-start="availableTrend?.footStart"
+        :foot-end="availableTrend?.footEnd"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
