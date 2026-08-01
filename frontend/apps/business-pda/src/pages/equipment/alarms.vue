@@ -6,8 +6,7 @@ import {
   statusActionGate,
 } from '@nerv-iip/business-core'
 import { describeRequestError } from '@/api/request-timeout'
-import RetryableListError from '@/components/RetryableListError.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
   ALARM_SHELVE_DURATIONS_MINUTES,
   useBusinessEquipmentAlarms,
@@ -48,6 +47,10 @@ const {
   filters,
   alarms,
   total,
+  loaded,
+  loadingMore,
+  loadMoreError,
+  loadMore,
   organizationId,
   environmentId,
   scopeReady,
@@ -66,14 +69,18 @@ const alarmScope = computed(() =>
 )
 const alarmTotal = computed(() => total.value)
 const alarmScopeReady = computed(() => scopeReady.value)
-const showAlarmEmpty = computed(
-  () =>
-    !pending.value &&
-    !error.value &&
-    !hasFailedResponse.value &&
-    hasSuccessfulResponse.value &&
-    alarms.value.length === 0,
+const alarmListError = computed(
+  () => error.value ?? (hasFailedResponse.value ? '设备报警服务未成功返回' : undefined),
 )
+const alarmFilterState = computed(() => ({
+  deviceAssetId: filters.deviceAssetId ?? '',
+  status: filters.status ?? '',
+}))
+
+function restoreAlarmState(state: { filters: Record<string, unknown> }) {
+  filters.deviceAssetId = String(state.filters.deviceAssetId ?? '') || undefined
+  filters.status = String(state.filters.status ?? '') || undefined
+}
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -346,70 +353,64 @@ function showToast(message: string, type: 'success' | 'error') {
       </div>
     </template>
 
-    <div class="space-y-4 p-4">
-      <!-- 按设备过滤 -->
-      <section class="space-y-2">
-        <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
-        <div
-          v-if="filteredDevice"
-          class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
-        >
-          <span class="truncate text-foreground">仅显示设备 {{ filteredDevice }}</span>
-          <button
-            data-testid="clear-filter"
-            type="button"
-            class="ml-3 shrink-0 rounded-md border border-border px-3 py-1 text-sm text-foreground"
-            @click="clearFilter"
-          >
-            清除筛选
-          </button>
-        </div>
-      </section>
-
-      <!-- 报警列表 -->
-      <section class="space-y-2">
-        <h2 class="text-sm font-medium text-muted-foreground">设备报警</h2>
-        <ListScopeMeta
-          :scope="alarmScope"
-          source="设备报警服务（组织/环境范围）"
-          :loaded="alarms.length"
-          :total="alarmTotal"
-          :updated-at="lastUpdatedAt"
-          :failed="hasFailedResponse"
-          failure-explanation="设备报警服务未成功返回，请刷新重试。"
-          :empty="!alarmScopeReady || showAlarmEmpty"
-          :empty-explanation="
-            alarmScopeReady
-              ? '当前组织/环境范围没有未解除设备报警。'
-              : '缺少组织或环境范围，未发起查询。'
-          "
-        />
-
-        <RetryableListError
-          v-if="error || hasFailedResponse"
-          :error="error ?? '设备报警服务未成功返回'"
-          :pending="pending"
-          fallback="报警加载失败，请稍后重试。"
-          test-id="alarms-error"
-          @retry="() => refresh()"
-        />
-
-        <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
-          加载中…
-        </div>
-
-        <div
-          v-else-if="!alarmScopeReady || showAlarmEmpty"
-          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-        >
-          {{
-            alarmScopeReady ? '暂无设备报警（当前组织/环境范围）' : '缺少组织或环境范围，未发起查询'
-          }}
-        </div>
+    <div class="flex min-h-0 flex-1 flex-col">
+      <TaskListShell
+        state-key="equipment-alarms"
+        :scope="alarmScope"
+        source="设备报警服务（组织/环境范围）"
+        :loaded="loaded"
+        :total="alarmTotal"
+        :updated-at="lastUpdatedAt"
+        :pending="pending"
+        :refreshing="false"
+        :loading-more="loadingMore"
+        :error="alarmListError"
+        :load-more-error="loadMoreError"
+        error-test-id="alarms-error"
+        failure-explanation="设备报警服务未成功返回，请刷新重试。"
+        :filter-state="alarmFilterState"
+        :empty-description="
+          alarmScopeReady
+            ? '暂无设备报警（当前组织/环境范围没有符合筛选条件的记录）。'
+            : '缺少组织或环境范围，未发起查询。'
+        "
+        @refresh="refresh"
+        @retry="refresh"
+        @load-more="loadMore"
+        @retry-load-more="loadMore"
+        @restore="restoreAlarmState"
+      >
+        <template #filters>
+          <div class="space-y-2 p-3">
+            <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
+            <div class="flex gap-2">
+              <select
+                v-model="filters.status"
+                data-testid="alarm-status-filter"
+                class="min-h-touch flex-1 rounded-lg border border-border bg-background px-3 text-base"
+              >
+                <option value="">全部状态</option>
+                <option value="raised">未确认</option>
+                <option value="acknowledged">已确认</option>
+                <option value="shelved">已搁置</option>
+                <option value="cleared">已解除</option>
+              </select>
+              <button
+                v-if="filteredDevice"
+                data-testid="clear-filter"
+                type="button"
+                class="min-h-touch shrink-0 rounded-lg border border-border px-3 text-sm"
+                @click="clearFilter"
+              >
+                清除设备
+              </button>
+            </div>
+          </div>
+        </template>
 
         <!-- 行非交互（避免行内交互控件嵌套在 role=button 行内导致键盘冒泡/辅助技术歧义）；
              确认/搁置/详情均为行内同级控件。 -->
-        <div v-else class="overflow-hidden rounded-lg border border-border">
+        <div class="overflow-hidden rounded-lg border border-border">
           <NvListRow
             v-for="item in alarms"
             :key="item.alarmEventId"
@@ -467,7 +468,7 @@ function showToast(message: string, type: 'success' | 'error') {
             </template>
           </NvListRow>
         </div>
-      </section>
+      </TaskListShell>
     </div>
 
     <!-- 确认弹层（轻量二次确认）-->

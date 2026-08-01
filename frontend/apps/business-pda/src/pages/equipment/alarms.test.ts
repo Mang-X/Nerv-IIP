@@ -11,9 +11,9 @@ vi.mock('vue-router', () => ({
 }))
 
 // ---- useBusinessEquipmentAlarms mock ------------------------------------------
-const filters = reactive<{ deviceAssetId?: string; skip: number; take: number }>({
+const filters = reactive<{ deviceAssetId?: string; status?: string; skip: number; take: number }>({
   skip: 0,
-  take: 100,
+  take: 20,
 })
 const RAISED = {
   alarmEventId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -44,6 +44,7 @@ const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
+const loadMore = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
 const shelve = vi.fn(
   async (
@@ -64,6 +65,10 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     filters,
     alarms,
     total,
+    loaded: computed(() => alarms.value.length),
+    loadingMore: ref(false),
+    loadMoreError: ref<unknown>(),
+    loadMore,
     organizationId,
     environmentId,
     scopeReady,
@@ -89,6 +94,7 @@ beforeEach(() => {
   shelve.mockReset()
   shelve.mockResolvedValue({ success: true })
   filters.deviceAssetId = undefined
+  filters.status = undefined
   error.value = null
   pending.value = false
   alarms.value = [RAISED, ACKED]

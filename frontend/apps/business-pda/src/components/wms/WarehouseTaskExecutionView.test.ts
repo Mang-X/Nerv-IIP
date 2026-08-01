@@ -1,9 +1,10 @@
 import { mount } from '@vue/test-utils'
-import { NvBottomSheet, NvNumberKeyboard, NvPullRefresh, NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvNumberKeyboard, NvScanBar } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import WarehouseTaskExecutionView from './WarehouseTaskExecutionView.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 
 const intersectionState = vi.hoisted(() => ({
   callback: undefined as ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined,
@@ -151,13 +152,13 @@ describe('WarehouseTaskExecutionView', () => {
   it('下拉刷新与滑到底部加载更多均通过事件交给页面编排', async () => {
     const wrapper = mountView()
 
-    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
-    intersectionState.callback?.([{ isIntersecting: true }])
+    wrapper.getComponent(TaskListShell).vm.$emit('refresh')
+    wrapper.getComponent(TaskListShell).vm.$emit('loadMore')
     await nextTick()
 
     expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
-    expect(wrapper.findComponent({ name: 'NvInfiniteList' }).exists()).toBe(false)
+    expect(wrapper.findComponent(TaskListShell).exists()).toBe(true)
   })
 
   it('终态任务不可进入操作，待执行任务只提供开始', async () => {

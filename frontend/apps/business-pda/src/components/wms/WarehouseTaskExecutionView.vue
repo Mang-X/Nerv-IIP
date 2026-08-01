@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import { PDA_WAREHOUSE_TASK_STATUS_OPTIONS } from '@/data/wmsReference'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
@@ -10,15 +11,12 @@ import {
   NvMobileButton,
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
-  NvMobileEmpty,
   NvMobileTag,
   NvNumberKeyboard,
-  NvPullRefresh,
   NvSearchBar,
   type DropdownOption,
 } from '@nerv-iip/ui-mobile'
-import { useIntersectionObserver } from '@vueuse/core'
-import { computed, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 export interface WarehouseTaskExecutionItem {
   warehouseTaskId: string
@@ -163,8 +161,6 @@ const keywordModel = computed<string>({
   get: () => props.keyword ?? '',
   set: (value) => emit('update:keyword', value || undefined),
 })
-const hasMore = computed(() => props.tasks.length < props.total)
-const loadMoreSentinel = useTemplateRef<HTMLElement>('loadMoreSentinel')
 const selectedActions = computed(() => selectedTask.value?.allowedActions ?? [])
 const canStart = computed(() => selectedActions.value.includes('start'))
 const canProgress = computed(() => selectedActions.value.includes('progress'))
@@ -178,16 +174,6 @@ const scanActive = computed(() => !actionSheetOpen.value && !numberKeyboardOpen.
 function forwardCandidateScanOverride(target: 'location' | 'lot', value: string | undefined) {
   emit('candidateScanOverrideChange', target, value)
 }
-
-useIntersectionObserver(
-  loadMoreSentinel,
-  ([entry]) => {
-    if (entry?.isIntersecting && hasMore.value && !props.pending && !props.loadingMore) {
-      emit('loadMore')
-    }
-  },
-  { rootMargin: '80px 0px' },
-)
 
 function taskTitle(task: WarehouseTaskExecutionItem) {
   return `任务 ${task.taskNo || task.sourceOrderNo || ''}`.trim()
@@ -371,18 +357,21 @@ function emitQuantityAction(action: 'progress' | 'complete') {
       @retry="emit('retry')"
     />
 
-    <NvPullRefresh
-      data-testid="pull-refresh"
-      class="min-h-0 flex-1"
-      :model-value="refreshing"
+    <TaskListShell
+      :state-key="`wms-${taskType}-tasks`"
+      scope="当前授权 WMS 作业范围"
+      source="WMS 仓储任务服务"
+      :loaded="tasks.length"
+      :total="total"
+      :pending="pending"
+      :refreshing="refreshing"
+      :loading-more="loadingMore"
+      :show-meta="false"
+      empty-description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
       @refresh="emit('refresh')"
+      @load-more="emit('loadMore')"
     >
-      <NvMobileEmpty
-        v-if="!pending && !error && tasks.length === 0"
-        description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
-      />
-
-      <div v-else class="divide-y divide-border">
+      <div class="divide-y divide-border">
         <NvListRow
           v-for="task in tasks"
           :key="task.warehouseTaskId"
@@ -412,16 +401,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
           </template>
         </NvListRow>
       </div>
-
-      <div
-        v-if="tasks.length > 0"
-        ref="loadMoreSentinel"
-        data-testid="load-more-sentinel"
-        class="flex min-h-12 items-center justify-center py-3 text-sm text-muted-foreground"
-      >
-        {{ loadingMore ? '加载中…' : hasMore ? '继续上滑加载' : '没有更多了' }}
-      </div>
-    </NvPullRefresh>
+    </TaskListShell>
 
     <NvBottomSheet
       :open="actionSheetOpen"

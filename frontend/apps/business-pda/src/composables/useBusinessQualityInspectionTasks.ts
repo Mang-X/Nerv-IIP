@@ -35,7 +35,7 @@ import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { makeIdempotencyKey } from './makeIdempotencyKey'
 
-const DEFAULT_TAKE = 100
+const DEFAULT_TAKE = 20
 /** facade / Quality 查询验证器的 take 上限——超页数据靠受限分页迭代聚合，不把 take 扩过上限。 */
 const MAX_TAKE = 200
 
@@ -44,6 +44,9 @@ const PENDING_STATUS = 'pending'
 
 export interface InspectionTaskFilters {
   status: string
+  keyword?: string
+  sourceType?: string
+  overdue?: boolean
   skip: number
   take: number
 }
@@ -143,6 +146,9 @@ export function useBusinessQualityInspectionTasks() {
         scopeKind: 'self',
         scopeId: inspectorUserId.value,
         status: filters.status,
+        keyword: filters.keyword || undefined,
+        sourceType: filters.sourceType || undefined,
+        overdue: filters.overdue,
         skip: filters.skip,
         take: filters.take,
       },
@@ -181,12 +187,24 @@ export function useBusinessQualityInspectionTasks() {
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  const loadingMore = shallowRef(false)
+  const loadMoreError = shallowRef<unknown>()
   let paginationEpoch = 0
   watch(
-    [scopeKey, () => filters.status],
+    [
+      scopeKey,
+      () => filters.status,
+      () => filters.keyword,
+      () => filters.sourceType,
+      () => filters.overdue,
+    ],
     () => {
       paginationEpoch += 1
       extraTasks.value = []
+      filters.skip = 0
+      filters.take = DEFAULT_TAKE
+      loadingMore.value = false
+      loadMoreError.value = undefined
     },
     { flush: 'sync' },
   )
@@ -219,7 +237,12 @@ export function useBusinessQualityInspectionTasks() {
   const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
     if (extraTasks.value.length === 0) return baseTasks.value
     const seen = new Set(baseTasks.value.map((t) => t.inspectionTaskId))
-    return [...baseTasks.value, ...extraTasks.value.filter((t) => !seen.has(t.inspectionTaskId))]
+    const uniqueExtra = extraTasks.value.filter((task) => {
+      if (seen.has(task.inspectionTaskId)) return false
+      seen.add(task.inspectionTaskId)
+      return true
+    })
+    return [...baseTasks.value, ...uniqueExtra]
   })
   const total = computed(() => listTotal(currentResponse.value))
   const loaded = computed(() => tasks.value.length)
@@ -233,6 +256,9 @@ export function useBusinessQualityInspectionTasks() {
       environmentId: environmentId.value,
       principalId: inspectorUserId.value,
       status: filters.status,
+      keyword: filters.keyword,
+      sourceType: filters.sourceType,
+      overdue: filters.overdue,
     }
   }
 
@@ -242,6 +268,9 @@ export function useBusinessQualityInspectionTasks() {
       paginationEpoch === execution.epoch &&
       scopeKey.value === execution.key &&
       filters.status === execution.status &&
+      filters.keyword === execution.keyword &&
+      filters.sourceType === execution.sourceType &&
+      filters.overdue === execution.overdue &&
       inspectorUserId.value === execution.principalId
     )
   }
@@ -259,6 +288,9 @@ export function useBusinessQualityInspectionTasks() {
         scopeKind: 'self',
         scopeId: execution.principalId,
         status: execution.status,
+        keyword: execution.keyword || undefined,
+        sourceType: execution.sourceType || undefined,
+        overdue: execution.overdue,
         skip,
         take: Math.min(Math.max(take, 1), MAX_TAKE),
       },
@@ -275,15 +307,19 @@ export function useBusinessQualityInspectionTasks() {
    * 封顶 MAX_TAKE（后端验证器上限），超出部分按页拉取聚合到 `extraTasks`，不把 take 扩过上限。
    */
   async function loadMore() {
-    if (!scopeReady.value || !hasMore.value) return
-    if (filters.take < MAX_TAKE) {
-      filters.take = Math.min(filters.take + DEFAULT_TAKE, MAX_TAKE)
-      return
-    }
+    if (!scopeReady.value || !hasMore.value || loadingMore.value) return
     const execution = capturePaginationScope()
-    const page = await fetchPage(loaded.value, MAX_TAKE, execution)
-    if (!page || !isCurrentPaginationScope(execution)) return
-    if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
+    loadingMore.value = true
+    loadMoreError.value = undefined
+    try {
+      const page = await fetchPage(loaded.value, DEFAULT_TAKE, execution)
+      if (!page || !isCurrentPaginationScope(execution)) return
+      if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
+    } catch (error) {
+      if (isCurrentPaginationScope(execution)) loadMoreError.value = error
+    } finally {
+      if (isCurrentPaginationScope(execution)) loadingMore.value = false
+    }
   }
 
   /**
@@ -306,6 +342,13 @@ export function useBusinessQualityInspectionTasks() {
       extraTasks.value = [...extraTasks.value, ...page]
     }
     return tasks.value
+  }
+
+  async function refresh() {
+    paginationEpoch += 1
+    extraTasks.value = []
+    loadMoreError.value = undefined
+    return scopeReady.value ? listQuery.refetch() : Promise.resolve()
   }
 
   /**
@@ -498,6 +541,8 @@ export function useBusinessQualityInspectionTasks() {
     total,
     loaded,
     hasMore,
+    loadingMore,
+    loadMoreError,
     loadMore,
     ensureAllLoaded,
     pending: listQuery.isLoading,
@@ -505,7 +550,7 @@ export function useBusinessQualityInspectionTasks() {
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
-    refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
+    refresh,
     reasonCodes,
     submitInspection,
     claimTask,

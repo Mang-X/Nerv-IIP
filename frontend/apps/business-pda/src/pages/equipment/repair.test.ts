@@ -1,7 +1,7 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
@@ -38,11 +38,16 @@ const environmentId = ref('env-dev')
 const scopeReady = ref(true)
 const workOrdersLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshWorkOrders = vi.fn(async () => {})
+const loadMoreWorkOrders = vi.fn(async () => {})
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useBusinessMaintenance: () => ({
     workOrders,
     workOrdersTotal: computed(() => workOrders.value.length),
+    workOrdersLoaded: computed(() => workOrders.value.length),
+    workOrdersLoadingMore: ref(false),
+    workOrdersLoadMoreError: ref<unknown>(),
+    loadMoreWorkOrders,
     organizationId,
     environmentId,
     scopeReady,
@@ -54,7 +59,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     workOrdersPending,
     workOrdersError,
     refreshWorkOrders,
-    workOrderFilters: { skip: 0, take: 100 },
+    workOrderFilters: reactive({ skip: 0, take: 20, status: undefined, keyword: undefined }),
     createWorkOrder,
     createPending,
   }),
@@ -229,7 +234,8 @@ describe('PDA equipment repair page', () => {
   it('surfaces a work-orders error banner', () => {
     workOrdersError.value = new Error('boom')
     const wrapper = mount(RepairPage)
-    expect(wrapper.find('[data-testid="work-orders-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="task-list-load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('DEV-1001')
   })
 
   it('submits a new repair with an operation key but WITHOUT org/env/openedBy', async () => {

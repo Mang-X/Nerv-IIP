@@ -170,6 +170,37 @@ describe('useBusinessQualityInspectionTasks', () => {
     })
   })
 
+  it('uses a bounded first page and sends task filters to the server before pagination', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: { success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 2 } },
+    })
+    coladaState.listPlain.mockResolvedValue({
+      data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 2 } },
+    })
+    const result = useBusinessQualityInspectionTasks()
+
+    expect(coladaState.listOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ skip: 0, take: 20, status: 'pending' }),
+    })
+
+    result.filters.keyword = 'WO-9001'
+    result.filters.sourceType = 'operation'
+    result.filters.overdue = true
+    await nextTick()
+    await result.loadMore()
+
+    expect(coladaState.listPlain).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({
+        skip: 1,
+        take: 20,
+        keyword: 'WO-9001',
+        sourceType: 'operation',
+        overdue: true,
+      }),
+    })
+  })
+
   it('claims an assigned pending task with the trusted self scope before execution', async () => {
     seedPrincipal()
     const { claimTask } = useBusinessQualityInspectionTasks()
@@ -526,6 +557,32 @@ describe('useBusinessQualityInspectionTasks', () => {
     }
     expect(coladaState.listPlain.mock.calls[0][0].query.skip).toBe(200)
     expect(coladaState.listPlain.mock.calls[1][0].query.skip).toBe(400)
+  })
+
+  it('deduplicates overlapping offset pages by inspection task id', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'T1' }], total: 3 },
+      },
+    })
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 3 } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ inspectionTaskId: 'T2' }, { inspectionTaskId: 'T3' }], total: 3 },
+        },
+      })
+    const result = useBusinessQualityInspectionTasks()
+
+    await result.loadMore()
+    await result.loadMore()
+
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2', 'T3'])
   })
 
   it('exposes success:false and malformed raw task responses as failures instead of empty success', async () => {

@@ -40,6 +40,7 @@ frontend/
 
 - `apps/business-pda`：手持 PDA 一线作业（WMS/MES 扫码任务 + 轻量设备报修/点检），Capacitor 打包 Android APK；与 `business-console` 同源消费 `@nerv-iip/api-client` 的 business-console 稳定导出，当前只经 BusinessGateway `/api/business-console/v1/**` facade，不直连业务服务 URL，不复用 PC 菜单树。独立 `/api/mobile/v1/**` facade、mobile OpenAPI 快照和 `api-client/src/mobile.ts` 属于后续移动专用 API 轨道。
 - `packages/ui-mobile`：触摸/PDA 区块组件层（Reka UI + Tailwind + 复用 `@nerv-iip/ui` 的设计 token），按「原版零改、复制重建」doctrine 自建移动密度组件（ScanBar、TabBar、BottomSheet、ListRow 等），不 import PC FE-2 区块以避免桌面密度污染。
+- PDA 任务列表统一使用 app 内的 `TaskListShell` 组合 `NvPullRefresh` 与 `NvInfiniteList`：默认每页 20 条，筛选交给服务端，列表壳负责范围/来源/计数/更新时间、首屏与次页错误分流、会话内筛选和滚动恢复。各域 composable 只提供稳定的分页适配器；不得通过把 `take` 扩大到 100/200 冒充全量，也不得后台预取。`NvInfiniteList` 的 `parentScroll` 模式仅负责父滚动容器中的 sentinel，默认自有滚动行为保持兼容。
 - `packages/business-core`：与 PC 同源的内核——领域类型 + SOP/状态机 + 字典(CodeSet) + 命令构造器，由 `business-console` 现有 `src/data/*.ts` 有界抽取，PC 与移动端共用；PC 端逐步迁移消费，不一次性改写。
 
 `apps/business-workstation`（工位机/平板触摸操作台）为 roadmap 预留，v1 不实现。大屏只读看板已由 `apps/screen` 落地（取代原 `business-board` 占位命名，见 GitHub Epic #562）：独立 Vite app，全屏深色 `ScreenLayout` + `ScreenScaler` 等比缩放，复用 `ui` 的 screen 层组件与 `--nv-scr-*` token，不依赖 `ui-mobile`（展示态非触摸操作态）。

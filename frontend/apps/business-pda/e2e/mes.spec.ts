@@ -12,6 +12,61 @@ test.beforeEach(async ({ page }) => {
   await seedStoredSession(page)
 })
 
+test('任务列表壳：375×812 服务端筛选、20 条分页与返回状态恢复', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const requests: Array<{ skip: string | null; take: string | null; status: string | null }> = []
+  const tasks = Array.from({ length: 45 }, (_, index) => ({
+    operationTaskId: `OP-SHELL-${index + 1}`,
+    workOrderId: `WO-SHELL-${index + 1}`,
+    status: 'InProgress',
+    operationSequence: index + 1,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+  }))
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    const url = new URL(route.request().url())
+    const skip = Number(url.searchParams.get('skip') ?? 0)
+    const take = Number(url.searchParams.get('take') ?? 20)
+    requests.push({
+      skip: url.searchParams.get('skip'),
+      take: url.searchParams.get('take'),
+      status: url.searchParams.get('status'),
+    })
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items: tasks.slice(skip, skip + take), total: tasks.length },
+      }),
+    })
+  })
+
+  await page.goto('/mes/operation')
+  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 20 / 共 45')
+  expect(requests[0]).toMatchObject({ skip: '0', take: '20' })
+
+  await page.getByRole('button', { name: '全部状态' }).click()
+  await page.getByRole('button', { name: '进行中', exact: true }).click()
+  await expect.poll(() => requests.at(-1)?.status).toBe('inProgress')
+
+  const scroller = page.locator('[data-slot="pull-refresh"] .nv-m-pr-scroll')
+  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
+  await expect.poll(() => requests.some((request) => request.skip === '20')).toBe(true)
+  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 40 / 共 45')
+
+  await page.goto('/me')
+  await page.goBack()
+  await expect(page.getByRole('button', { name: '进行中' })).toBeVisible()
+  const restored = await page.evaluate(() =>
+    JSON.parse(
+      sessionStorage.getItem('nerv-iip.business-pda.task-list.mes-operation-tasks') ?? '{}',
+    ),
+  )
+  expect(restored.filters).toMatchObject({ status: 'inProgress' })
+  expect(restored.scrollTop).toBeGreaterThan(0)
+})
+
 // #1297：PDA 侧作业范围闭环。后端不带 scopeKind/scopeId 只回授权清单、selectedScope 恒空，
 // 所以「操作工登录后能不能拿到工序/工单数据」完全取决于前端是否走完
 // 「清单 → 选择 → 带参重核验」。这条断言的是范围参数真的进了业务查询，且换范围会重取。

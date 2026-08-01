@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import RetryableListError from '@/components/RetryableListError.vue'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
@@ -49,6 +48,7 @@ const {
   refreshing,
   loadingMore,
   error,
+  loadMoreError,
   refresh,
   loadMore,
   completeOutbound,
@@ -78,6 +78,20 @@ const reviewScope = computed(() =>
 )
 const reviewTotal = computed(() => total.value)
 const reviewStatusOptions = PDA_OUTBOUND_ORDER_STATUS_OPTIONS
+const taskListFilterState = computed(() => ({
+  scopeKey: scopeKey.value,
+  status: filters.status ?? '',
+  keyword: filters.keyword ?? '',
+  locationCode: filters.locationCode ?? '',
+  lotNo: filters.lotNo ?? '',
+}))
+function restoreTaskListState(state: { filters: Record<string, unknown> }) {
+  scopeKey.value = String(state.filters.scopeKey ?? scopeKey.value)
+  filters.status = String(state.filters.status ?? '') || undefined
+  filters.keyword = String(state.filters.keyword ?? '') || undefined
+  filters.locationCode = String(state.filters.locationCode ?? '') || undefined
+  filters.lotNo = String(state.filters.lotNo ?? '') || undefined
+}
 
 // 选中的出库单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')
@@ -294,18 +308,14 @@ function goHome() {
               : 'WMS 未返回可用作业范围，未发起列表查询。'
           "
         />
-
-        <RetryableListError
-          v-if="error || hasFailedResponse"
-          :error="error ?? '出库复核服务未成功返回'"
-          :pending="pending"
-          fallback="单据加载失败，请下拉重试或检查网络。"
-          test-id="error-banner"
-          @retry="refreshAll"
-        />
       </div>
 
       <WmsPagedListFrame
+        state-key="wms-outbound-review"
+        empty-description="暂无待发货单据"
+        :filter-state="taskListFilterState"
+        :error="error ?? (hasFailedResponse ? '出库复核服务未成功返回' : undefined)"
+        :load-more-error="loadMoreError"
         :refreshing="refreshing"
         :loading-more="loadingMore"
         :pending="pending"
@@ -313,6 +323,9 @@ function goHome() {
         :total="reviewTotal"
         @refresh="refreshAll"
         @load-more="loadMore"
+        @restore="restoreTaskListState"
+        @retry="refreshAll"
+        @retry-load-more="loadMore"
       >
         <div class="space-y-4 px-4 py-3">
           <div

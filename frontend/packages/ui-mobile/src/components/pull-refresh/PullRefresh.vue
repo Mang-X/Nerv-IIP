@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowDown, Loader2 } from '@lucide/vue'
 import { cn, rubberband } from '../../lib/utils'
 
@@ -9,10 +9,18 @@ import { cn, rubberband } from '../../lib/utils'
  * (Vant / tdesign-mobile style). Pointer-driven with resistance; releasing past
  * the threshold emits `refresh` and shows a spinner until `v-model` clears.
  */
-const props = withDefaults(defineProps<{ threshold?: number; class?: HTMLAttributes['class'] }>(), {
-  threshold: 56,
-})
-const emit = defineEmits<{ refresh: [] }>()
+const props = withDefaults(
+  defineProps<{
+    threshold?: number
+    scrollTop?: number
+    class?: HTMLAttributes['class']
+  }>(),
+  {
+    threshold: 56,
+    scrollTop: 0,
+  },
+)
+const emit = defineEmits<{ refresh: []; scroll: [scrollTop: number] }>()
 const loading = defineModel<boolean>({ default: false })
 
 const scroller = ref<HTMLElement>()
@@ -58,9 +66,21 @@ function onUp() {
   }
 }
 
+function restoreScrollTop(value: number) {
+  void nextTick(() => {
+    if (scroller.value) scroller.value.scrollTop = Math.max(0, value)
+  })
+}
+
+function onScroll() {
+  emit('scroll', scroller.value?.scrollTop ?? 0)
+}
+
 watch(loading, (v) => {
   if (!v) distance.value = 0
 })
+watch(() => props.scrollTop, restoreScrollTop)
+onMounted(() => restoreScrollTop(props.scrollTop))
 </script>
 
 <template>
@@ -91,7 +111,7 @@ watch(loading, (v) => {
         />
         {{ text }}
       </div>
-      <div ref="scroller" class="nv-m-pr-scroll h-full overflow-y-auto">
+      <div ref="scroller" class="nv-m-pr-scroll h-full overflow-y-auto" @scroll="onScroll">
         <slot />
       </div>
     </div>

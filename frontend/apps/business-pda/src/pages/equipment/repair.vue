@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import RetryableListError from '@/components/RetryableListError.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
@@ -36,6 +35,11 @@ const router = useRouter()
 
 const {
   workOrders,
+  workOrderFilters,
+  workOrdersLoaded,
+  workOrdersLoadingMore,
+  workOrdersLoadMoreError,
+  loadMoreWorkOrders,
   workOrdersPending,
   workOrdersError,
   refreshWorkOrders,
@@ -53,14 +57,20 @@ const maintenanceScope = computed(() =>
   scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
 )
 const maintenanceTotal = computed(() => workOrdersTotal.value)
-const showWorkOrdersEmpty = computed(
+const workOrderListError = computed(
   () =>
-    !workOrdersPending.value &&
-    !workOrdersError.value &&
-    !workOrdersHasFailedResponse.value &&
-    workOrdersHasSuccessfulResponse.value &&
-    workOrders.value.length === 0,
+    workOrdersError.value ??
+    (workOrdersHasFailedResponse.value ? '维修工单服务未成功返回' : undefined),
 )
+const workOrderFilterState = computed(() => ({
+  status: workOrderFilters.status ?? '',
+  keyword: workOrderFilters.keyword ?? '',
+}))
+
+function restoreWorkOrderState(state: { filters: Record<string, unknown> }) {
+  workOrderFilters.status = String(state.filters.status ?? '') || undefined
+  workOrderFilters.keyword = String(state.filters.keyword ?? '') || undefined
+}
 
 // 报修端点持久化逐操作幂等键；超时后仍复用同一键重试，服务端返回原工单而不重复创建。
 const {
@@ -379,56 +389,67 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       </section>
 
       <!-- 近期维修工单 -->
-      <section class="space-y-2">
+      <section class="h-[70vh] min-h-[32rem] space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期维修工单</h2>
-        <ListScopeMeta
+        <TaskListShell
+          state-key="maintenance-work-orders"
           :scope="maintenanceScope"
           source="维修工单服务（组织/环境范围，暂不支持按维修人员归属筛选）"
-          :loaded="workOrders.length"
+          :loaded="workOrdersLoaded"
           :total="maintenanceTotal"
           :updated-at="workOrdersLastUpdatedAt"
-          :failed="workOrdersHasFailedResponse"
+          :pending="workOrdersPending"
+          :refreshing="false"
+          :loading-more="workOrdersLoadingMore"
+          :error="workOrderListError"
+          :load-more-error="workOrdersLoadMoreError"
+          error-test-id="work-orders-error"
           failure-explanation="维修工单服务未成功返回，请刷新重试。"
-          :empty="!scopeReady || showWorkOrdersEmpty"
-          :empty-explanation="
+          :filter-state="workOrderFilterState"
+          :empty-description="
             scopeReady
               ? '当前组织/环境范围暂无维修工单；暂不支持按维修人员归属筛选，空态不代表个人工单。'
               : '缺少组织或环境范围，未发起查询。'
           "
-        />
-
-        <RetryableListError
-          v-if="workOrdersError || workOrdersHasFailedResponse"
-          :error="workOrdersError ?? '维修工单服务未成功返回'"
-          :pending="workOrdersPending"
-          fallback="维修工单加载失败，请稍后重试。"
-          test-id="work-orders-error"
-          @retry="() => refreshWorkOrders()"
-        />
-
-        <div
-          v-else-if="workOrdersPending"
-          class="px-4 py-6 text-center text-sm text-muted-foreground"
+          @refresh="refreshWorkOrders"
+          @retry="refreshWorkOrders"
+          @load-more="loadMoreWorkOrders"
+          @retry-load-more="loadMoreWorkOrders"
+          @restore="restoreWorkOrderState"
         >
-          加载中…
-        </div>
+          <template #filters>
+            <div class="grid grid-cols-2 gap-2 p-3">
+              <input
+                v-model.trim="workOrderFilters.keyword"
+                data-testid="work-order-keyword"
+                type="search"
+                placeholder="搜索设备或工单"
+                class="min-h-touch rounded-lg border border-border bg-background px-3 text-base"
+              />
+              <select
+                v-model="workOrderFilters.status"
+                data-testid="work-order-status"
+                class="min-h-touch rounded-lg border border-border bg-background px-3 text-base"
+              >
+                <option value="">全部状态</option>
+                <option value="open">待处理</option>
+                <option value="inProgress">处理中</option>
+                <option value="completed">已完成</option>
+                <option value="cancelled">已取消</option>
+              </select>
+            </div>
+          </template>
 
-        <div
-          v-else-if="showWorkOrdersEmpty"
-          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-        >
-          当前组织/环境范围暂无维修工单；暂不支持按维修人员归属筛选
-        </div>
-
-        <div v-else class="overflow-hidden rounded-lg border border-border">
-          <NvListRow
-            v-for="item in workOrders"
-            :key="item.workOrderId"
-            :title="item.deviceAssetId ?? '未知设备'"
-            :subtitle="workOrderSubtitle(item)"
-            :interactive="false"
-          />
-        </div>
+          <div class="overflow-hidden rounded-lg border border-border">
+            <NvListRow
+              v-for="item in workOrders"
+              :key="item.workOrderId"
+              :title="item.deviceAssetId ?? '未知设备'"
+              :subtitle="workOrderSubtitle(item)"
+              :interactive="false"
+            />
+          </div>
+        </TaskListShell>
       </section>
     </div>
 
