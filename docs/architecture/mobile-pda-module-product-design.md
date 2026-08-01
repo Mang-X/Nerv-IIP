@@ -42,7 +42,7 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务�
 - **M1 PDA 壳**：`business-pda` app + Capacitor APK 基线 + 首页（可信任务入口/应用墙/扫码分流）+ 登录/会话复用。
 - **M2 WMS 一线闭环（已建 · 5 页）**：收货入库/复核发货/盘点（写闭环 + 幂等）+ 拣货/上架（只读任务清单）五页全量落地。#374 已补 WMS 拣货、上架、盘点独立 list facade，curated barrel 已接出（`@nerv-iip/api-client`），首页 WMS 入口五项已点亮；拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete），盘点写经 count-executions complete（幂等键注入）。
 - **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)（MES facade 全就绪，无后端阻塞）。
-- **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。
+- **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。维修人员队列使用独立 `/equipment/work-orders` 路由，固定由服务端 `scopeKind=self` 绑定当前 principal，支持服务端状态/设备/关键字筛选和每页 20 条分页；详情以强 ID 重新读取同一 Self 范围，展示设备位置、版本、允许动作、阻塞原因和生命周期，但在生命周期写命令交付前保持只读。缺少 principal、组织/环境或读取权限时 fail closed，不发请求，也不使用“我的维修工单”表述。
 - **M5 扫码解析增强**：接入扫码 resolve 端点（缺口 5），强化扫码直达。
 
 路线图保留（v1 不实现，仅预留目录与边界）：工位机/平板触摸操作台 `business-workstation`、大屏看板 `business-board`、审批移动端。

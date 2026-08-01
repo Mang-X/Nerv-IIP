@@ -35,6 +35,7 @@ export const HOME_PERMISSIONS = {
   wmsCounts: 'business.wms.counts.read',
   quality: 'business.quality.inspection-records.read',
   alarms: 'business.iiot.alarms.read',
+  maintenanceWorkOrders: 'business.maintenance.work-orders.read',
 } as const
 
 const HOME_TAKE = 100

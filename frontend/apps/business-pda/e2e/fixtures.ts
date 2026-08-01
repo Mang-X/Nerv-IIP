@@ -627,6 +627,25 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
 
   // ---- 设备运维（报修/点检/报警查看） ----
+  if (
+    pathname === '/api/business-console/v1/master-data/resources/device-asset/device-asset-cnc-01'
+  ) {
+    return fulfillJson(
+      route,
+      envelope({
+        resourceType: 'device-asset',
+        code: 'CNC-01',
+        displayName: '一号数控机床',
+        organizationId: principal.organizationId,
+        environmentId: principal.environmentId,
+        active: true,
+        workshopCode: 'WS-1',
+        lineCode: 'LINE-A',
+        stationCode: 'ST-9',
+      }),
+    )
+  }
+
   // 报修设备选择器：principal scope + 服务端 keyword/skip/take，有界返回。
   if (pathname === '/api/business-console/v1/master-data/device-assets') {
     const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toLowerCase()

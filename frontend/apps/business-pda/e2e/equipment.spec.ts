@@ -1,9 +1,12 @@
 import { expect, test, type Locator } from '@playwright/test'
 import {
+  STORAGE_KEY,
   expectNoHorizontalOverflow,
+  principal,
   routeBusinessConsoleApi,
   routeConsoleApi,
   seedStoredSession,
+  session,
 } from './fixtures'
 
 // 网关 Mock + 已登录主体（含 org/env + loginName，见 fixtures.principal）。
@@ -11,6 +14,213 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
   await seedStoredSession(page)
+})
+
+test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校验', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const listRequests: URL[] = []
+  const detailRequests: URL[] = []
+  const workOrders = Array.from({ length: 25 }, (_, index) => ({
+    workOrderId: `WO-SELF-${index + 1}`,
+    sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
+    deviceAssetId: 'device-asset-cnc-01',
+    priority: 'high',
+    status: 'accepted',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    assignedTechnicianUserId: principal.principalId,
+    assignedTeamId: 'team-a',
+    version: 7,
+    allowedActions: ['start', 'cancel'],
+    blockReasons: ['manage-permission-required'],
+    lifecycle: [
+      {
+        action: 'accept',
+        fromStatus: 'open',
+        toStatus: 'accepted',
+        actorPrincipalId: principal.principalId,
+        technicianUserId: principal.principalId,
+        teamId: 'team-a',
+        reason: '现场接单',
+        resultingVersion: 7,
+        occurredAtUtc: '2026-08-02T01:02:03.000Z',
+      },
+    ],
+  }))
+
+  await page.route('**/api/business-console/v1/maintenance/work-orders**', async (route) => {
+    const url = new URL(route.request().url())
+    const base = '/api/business-console/v1/maintenance/work-orders'
+    if (route.request().method() !== 'GET') return route.fallback()
+    if (url.pathname === base) {
+      listRequests.push(url)
+      const skip = Number(url.searchParams.get('skip') ?? 0)
+      const take = Number(url.searchParams.get('take') ?? 20)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { items: workOrders.slice(skip, skip + take), total: workOrders.length },
+        }),
+      })
+    }
+    if (url.pathname === `${base}/WO-SELF-1`) {
+      detailRequests.push(url)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: workOrders[0] }),
+      })
+    }
+    return route.fallback()
+  })
+
+  await page.goto('/equipment/work-orders')
+  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 20 / 共 25')
+  expect(listRequests[0].searchParams.get('scopeKind')).toBe('self')
+  expect(listRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  expect(listRequests[0].searchParams.get('skip')).toBe('0')
+  expect(listRequests[0].searchParams.get('take')).toBe('20')
+  await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText('已接单')
+
+  await page.getByRole('searchbox', { name: '维修工单关键字' }).fill('主轴')
+  await page.getByRole('button', { name: '全部状态' }).click()
+  await page.getByRole('button', { name: '已接单', exact: true }).click()
+  await page.getByTestId('maintenance-device-filter').click()
+  await page.getByTestId('device-option-device-asset-cnc-01').click()
+  await expect
+    .poll(() => {
+      const last = listRequests.at(-1)
+      return last
+        ? {
+            scopeKind: last.searchParams.get('scopeKind'),
+            scopeId: last.searchParams.get('scopeId'),
+            status: last.searchParams.get('status'),
+            deviceAssetId: last.searchParams.get('deviceAssetId'),
+            keyword: last.searchParams.get('keyword'),
+          }
+        : undefined
+    })
+    .toEqual({
+      scopeKind: 'self',
+      scopeId: principal.principalId,
+      status: 'accepted',
+      deviceAssetId: 'device-asset-cnc-01',
+      keyword: '主轴',
+    })
+
+  const scroller = page.locator('[data-slot="pull-refresh"] .nv-m-pr-scroll')
+  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
+  await expect
+    .poll(() => listRequests.some((url) => url.searchParams.get('skip') === '20'))
+    .toBe(true)
+  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 25 / 共 25')
+
+  await page.getByTestId('maintenance-work-order-row').first().click()
+  await expect(page).toHaveURL('/equipment/work-orders/WO-SELF-1')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
+    'WS-1 · LINE-A · ST-9',
+  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
+  expect(detailRequests).toHaveLength(1)
+  expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
+  expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
+})
+
+test('维修工单：缺少当前维修人员范围时不发请求且不声称个人队列', async ({ browser }) => {
+  const isolatedContext = await browser.newContext({ viewport: { width: 375, height: 812 } })
+  const page = await isolatedContext.newPage()
+  await page.route('**/api/console/v1/**', routeConsoleApi)
+  await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
+  const principalWithoutMaintenanceRead = {
+    ...principal,
+    permissionCodes: principal.permissionCodes.filter(
+      (code) => code !== 'business.maintenance.work-orders.read',
+    ),
+  }
+  await page.route('**/api/console/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { ...session, principal: principalWithoutMaintenanceRead },
+      }),
+    }),
+  )
+  await page.route('**/api/console/v1/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: principalWithoutMaintenanceRead }),
+    }),
+  )
+  await page.addInitScript(({ key, stored }) => localStorage.setItem(key, JSON.stringify(stored)), {
+    key: STORAGE_KEY,
+    stored: {
+      principal: principalWithoutMaintenanceRead,
+      refreshToken: session.refreshToken,
+      sessionId: session.sessionId,
+    },
+  })
+  const requests: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/business-console/v1/maintenance/work-orders') {
+      requests.push(request.url())
+    }
+  })
+
+  await page.goto('/equipment/work-orders')
+
+  await expect(page.getByText('个人维修范围未就绪')).toBeVisible()
+  await expect(page.getByTestId('list-empty-explanation')).toContainText(
+    '缺少当前维修人员、组织/环境或读取权限',
+  )
+  await expect(page.getByText('我的维修工单')).toHaveCount(0)
+  expect(requests).toEqual([])
+  await isolatedContext.close()
+})
+
+test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看', async ({ page }) => {
+  const detailRequests: URL[] = []
+  await page.route(
+    '**/api/business-console/v1/maintenance/work-orders/WO-CLOSED**',
+    async (route) => {
+      const url = new URL(route.request().url())
+      detailRequests.push(url)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            workOrderId: 'WO-CLOSED',
+            sourceReferenceId: 'MWO-2026-CLOSED',
+            deviceAssetId: 'device-asset-cnc-01',
+            priority: 'medium',
+            status: 'closed',
+            version: 12,
+            allowedActions: ['start'],
+            blockReasons: ['terminal-status'],
+            lifecycle: [],
+          },
+        }),
+      })
+    },
+  )
+
+  await page.goto('/equipment/work-orders/WO-CLOSED?sourceAlarmId=ALM-9')
+
+  await expect(page.getByTestId('maintenance-read-only-state')).toContainText('终态只读')
+  await expect(page.getByTestId('maintenance-read-only-state')).toContainText(
+    '工单已进入终态，仅可查看',
+  )
+  expect(detailRequests).toHaveLength(1)
+  expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
+  expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 
 test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态单次提交', async ({ page }) => {
