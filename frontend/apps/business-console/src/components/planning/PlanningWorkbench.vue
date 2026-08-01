@@ -719,9 +719,20 @@ function formatDate(value?: string | null) {
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
 }
-function formatRatio(value?: number | null) {
+/** 比率说人话：0.02 → 「2%」、1 → 「100%」；缺值显 —。计划员看的是百分比，不是小数码。 */
+function formatPercent(value?: number | null) {
   if (value === null || value === undefined) return '—'
-  return value === 1 ? '1' : value.toString()
+  return `${Math.round(value * 10000) / 100}%`
+}
+/**
+ * 后端把公式串成 `130 - 0 - 0 = 130; scrap/yield 0.02/1`（MrpCalculator.BuildFormula）。
+ * `scrap/yield` 是英文码直出（#1418 顺带项），且信息与下方「废品率/良率」重复——
+ * 展示时只取分号前的算式部分，比率交给下方中文行。存量建议无需重算即可生效。
+ */
+function formulaMathPart(formula?: string | null) {
+  if (!formula) return '—'
+  const [mathPart] = formula.split(';')
+  return (mathPart ?? formula).trim()
 }
 function inputDegradationLabel(sources?: readonly string[] | null) {
   return sources && sources.length > 0
@@ -1264,6 +1275,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 ? orderUrgencies.byReference.value.get(row.sourceReference)
                 : undefined
             "
+            :source-unavailable="orderUrgencies.error?.value != null"
             @refresh="refreshUrgency"
           />
         </template>
@@ -1589,7 +1601,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="font-medium text-foreground">净需求公式</span>
                 <span class="font-mono tabular-nums text-muted-foreground">{{
-                  row.netRequirementExplanation.formula
+                  formulaMathPart(row.netRequirementExplanation.formula)
                 }}</span>
               </div>
               <div class="grid grid-cols-2 gap-1 sm:grid-cols-4">
@@ -1603,15 +1615,15 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 </div>
               </div>
               <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                <span>scrap {{ formatRatio(row.netRequirementExplanation.scrapRate) }}</span>
-                <span>yield {{ formatRatio(row.netRequirementExplanation.yieldRate) }}</span>
+                <span>废品率 {{ formatPercent(row.netRequirementExplanation.scrapRate) }}</span>
+                <span>良率 {{ formatPercent(row.netRequirementExplanation.yieldRate) }}</span>
                 <span
                   v-if="
                     row.netRequirementExplanation.primarySourceType === 'component' &&
                     (row.netRequirementExplanation.scrapRate ||
                       row.netRequirementExplanation.yieldRate !== 1)
                   "
-                  >scrap/yield 已计入组件毛需求</span
+                  >废品率 / 良率已计入组件毛需求</span
                 >
                 <span v-if="row.netRequirementExplanation.uomConversions?.length"
                   >单位 {{ row.netRequirementExplanation.uomConversions.join('；') }}</span

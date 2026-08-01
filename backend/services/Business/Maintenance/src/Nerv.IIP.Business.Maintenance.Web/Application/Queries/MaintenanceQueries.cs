@@ -529,7 +529,12 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
     }
 }
 
-public sealed record ListDowntimeReasonsQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<DowntimeReasonListItem>>;
+public sealed record ListDowntimeReasonsQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null) : IQuery<PagedMaintenanceListResponse<DowntimeReasonListItem>>;
 
 public sealed record DowntimeReasonListItem(DowntimeReasonId DowntimeReasonId, string OrganizationId, string EnvironmentId, string ReasonCode, string Description, string ReasonCategory, string LossCategory);
 
@@ -540,9 +545,15 @@ public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbConte
     {
         var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
         var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword.Trim().ToLowerInvariant();
         var query = dbContext.DowntimeReasons
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => keyword == null
+                || x.ReasonCode.ToLower().Contains(keyword)
+                || x.Description.ToLower().Contains(keyword)
+                || x.ReasonCategory.ToLower().Contains(keyword)
+                || x.LossCategory.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.ReasonCode)

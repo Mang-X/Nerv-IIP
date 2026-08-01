@@ -17,6 +17,9 @@ public sealed record ControlledReferenceData(string CodeSet, string Code, string
 
 public static class MasterDataDictionaryRules
 {
+    private static readonly IReadOnlySet<string> ReservedEmptyCodeSets =
+        new HashSet<string>(["priority"], StringComparer.Ordinal);
+
     public static readonly IReadOnlyCollection<ReferenceDataDictionaryEntry> StandardReferenceData =
     [
         new("material-type", "raw-material", "原材料", ReferenceDataCodeSetKind.SystemEnum),
@@ -190,7 +193,8 @@ public static class MasterDataDictionaryRules
 
     public static bool IsStandardCodeSet(string codeSet)
     {
-        return StandardReferenceData.Any(x => string.Equals(x.CodeSet, codeSet, StringComparison.Ordinal));
+        return ReservedEmptyCodeSets.Contains(codeSet) ||
+               StandardReferenceData.Any(x => string.Equals(x.CodeSet, codeSet, StringComparison.Ordinal));
     }
 
     public static bool IsSystemEnumCodeSet(string codeSet)

@@ -4,7 +4,10 @@ import { NvButton, resolveStatus } from '@nerv-iip/ui'
 import { AlertTriangleIcon, LockIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { formatDateTime } from '@/pages/erp/shared'
+// 走 utils/format 而不是 pages/erp/shared：后者是 ERP 页面的局部工具（`toLocaleString('zh-CN')`
+// → `2026/8/1 14:58:37`），共享组件跨层去拿本身是层次味道，渲染出来还和抽屉里其余时间戳
+// （`2026-08-01 14:58`）两种写法并排。
+import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ node: FulfillmentNode }>()
 const emit = defineEmits<{ retry: [] }>()
