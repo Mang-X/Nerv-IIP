@@ -179,6 +179,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 tokenProvider.BearerToken,
                 query with { Keyword = null, Skip = 0, Take = 1 },
                 cancellationToken);
+            ValidateResources(probe, request with { PageIndex = 1, PageSize = 1 }, 0);
             authorityConfigured = probe.Total > 0;
         }
 
