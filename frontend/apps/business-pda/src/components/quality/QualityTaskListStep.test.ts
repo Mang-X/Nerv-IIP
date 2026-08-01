@@ -136,6 +136,16 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.find('[data-testid="overdue-FUTURE"]').exists()).toBe(false)
   })
 
+  it('exposes each task stable id on its rendered row for response identity evidence', () => {
+    const wrapper = mountList([
+      task({ inspectionTaskId: 'TASK-IDENTITY-1', sourceDocumentId: 'RCV-IDENTITY-1' }),
+    ])
+
+    expect(wrapper.get('[data-testid="task-row"]').attributes('data-task-id')).toBe(
+      'TASK-IDENTITY-1',
+    )
+  })
+
   it('shows every stable blocker on real task rows and keeps all blocked rows non-selectable', async () => {
     const wrapper = mountList([
       task({

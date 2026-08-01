@@ -9,6 +9,7 @@ interface QualityTaskListItem {
   inspectionTaskId?: string
   sourceDocumentId?: string | null
   skuCode?: string | null
+  batchNo?: string | null
 }
 
 interface QualityTaskListEnvelope {
@@ -125,22 +126,45 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
   const filteredItems = filteredEnvelope.data?.items ?? []
   const filteredTotal = filteredEnvelope.data?.total ?? -1
   expect(filteredTotal).toBeGreaterThanOrEqual(filteredItems.length)
-  expect(
-    filteredItems.every((item) =>
-      [item.sourceDocumentId, item.skuCode].some((value) =>
-        String(value ?? '')
-          .toLowerCase()
-          .includes(code.toLowerCase()),
-      ),
-    ),
-  ).toBe(true)
 
   // 扫码值只作为服务端 keyword 条件；操作员仍需等待权威列表并显式选行。
   await expect(page.getByText(`筛选：${code}`)).toBeVisible()
   await expect(page.getByText('第 2/3 步')).toHaveCount(0)
   await expect(page.getByTestId('tasks-error')).toHaveCount(0)
   if (filteredItems.length > 0) {
-    await expect(page.getByTestId('task-row')).toHaveCount(filteredItems.length)
+    const expectedIds = filteredItems.map((item) => item.inspectionTaskId?.trim() ?? '')
+    expect(expectedIds.every(Boolean)).toBe(true)
+    expect(new Set(expectedIds).size).toBe(expectedIds.length)
+
+    const taskRows = page.getByTestId('task-row')
+    const expectedIdsSorted = [...expectedIds].sort()
+    await expect
+      .poll(() =>
+        taskRows.evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute('data-task-id') ?? '').sort(),
+        ),
+      )
+      .toEqual(expectedIdsSorted)
+
+    const renderedRows = await taskRows.evaluateAll((rows) =>
+      rows.map((row) => ({
+        inspectionTaskId: row.getAttribute('data-task-id') ?? '',
+        text: row.textContent ?? '',
+      })),
+    )
+    for (const item of filteredItems) {
+      const row = renderedRows.find(
+        (candidate) => candidate.inspectionTaskId === item.inspectionTaskId,
+      )
+      expect(row, `missing rendered task ${item.inspectionTaskId}`).toBeDefined()
+      expect(row?.text).toContain(item.skuCode?.trim() || '未知物料')
+      if (item.sourceDocumentId?.trim()) {
+        expect(row?.text).toContain(`来源单 ${item.sourceDocumentId.trim()}`)
+      }
+      if (item.batchNo?.trim()) {
+        expect(row?.text).toContain(`批次 ${item.batchNo.trim()}`)
+      }
+    }
   } else {
     expect(filteredTotal).toBe(0)
     await expect(
@@ -149,4 +173,7 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
         .last(),
     ).toBeVisible()
   }
+  await expect(page.getByTestId('list-scope-meta')).toContainText(
+    `已加载 ${filteredItems.length} / 共 ${filteredTotal}`,
+  )
 })

@@ -104,6 +104,7 @@ function canExecute(task: Task) {
       v-for="task in displayTasks"
       :key="task.inspectionTaskId"
       data-testid="task-row"
+      :data-task-id="task.inspectionTaskId"
       :title="taskTitle(task)"
       :subtitle="taskSubtitle(task)"
       :interactive="canExecute(task)"
