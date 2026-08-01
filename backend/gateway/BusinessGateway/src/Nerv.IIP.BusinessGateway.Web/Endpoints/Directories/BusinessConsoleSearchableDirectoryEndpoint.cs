@@ -180,6 +180,11 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 query with { Keyword = null, Skip = 0, Take = 1 },
                 cancellationToken);
             ValidateResources(probe, request with { PageIndex = 1, PageSize = 1 }, 0);
+            if (probe.Total > 0 && probe.Resources.Count == 0)
+            {
+                throw InvalidOwnerResponse();
+            }
+
             authorityConfigured = probe.Total > 0;
         }
 

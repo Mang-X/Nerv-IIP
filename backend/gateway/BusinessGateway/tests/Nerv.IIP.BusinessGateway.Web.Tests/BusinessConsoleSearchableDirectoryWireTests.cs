@@ -514,6 +514,37 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     }
 
     [Theory]
+    [InlineData("{\"resources\":[],\"total\":1}")]
+    [InlineData("{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{\"resources\":[],\"total\":1}}")]
+    public async Task Priority_authority_probe_requires_an_item_when_total_is_positive_for_raw_and_envelope(
+        string malformedProbePayload)
+    {
+        var targetHandler = new SequenceJsonHandler(
+            "{\"resources\":[],\"total\":0}",
+            malformedProbePayload);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant(
+                "organization",
+                "org-001",
+                BusinessGatewayPermissions.MasterDataResourcesRead,
+                organizationWide: true),
+        ]);
+        var masterData = new HttpBusinessMasterDataClient(
+            new HttpClient(targetHandler) { BaseAddress = new Uri("http://master-data.local") });
+        var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, inventoryHandler, masterData);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/priority?organizationId=org-001&environmentId=env-dev&keyword=urgent");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(2, targetHandler.RequestCount);
+    }
+
+    [Theory]
     [MemberData(nameof(MalformedOwnerPayloads))]
     public async Task Malformed_authoritative_owner_semantics_return_502_for_raw_and_envelope(
         string directoryType,
