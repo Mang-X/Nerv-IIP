@@ -19,6 +19,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]

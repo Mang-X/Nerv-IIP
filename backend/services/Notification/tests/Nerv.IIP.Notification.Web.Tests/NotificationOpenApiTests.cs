@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class NotificationOpenApiTests
 {
     [Fact]

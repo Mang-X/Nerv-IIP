@@ -22,13 +22,7 @@ using System.Reflection;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class MesCapSubscriptionCollection
-{
-    public const string Name = "MES CAP subscription";
-}
-
-[Collection(MesCapSubscriptionCollection.Name)]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "AssetUnavailableIntegrationEvent";

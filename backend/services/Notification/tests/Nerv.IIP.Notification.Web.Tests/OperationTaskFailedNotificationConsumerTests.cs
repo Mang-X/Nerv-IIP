@@ -15,6 +15,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OperationTaskFailedNotificationConsumerTests
 {
     [Fact]

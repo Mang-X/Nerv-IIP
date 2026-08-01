@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OpsOpenApiTests
 {
     [Fact]

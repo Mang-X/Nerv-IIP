@@ -19,6 +19,7 @@ using NetCorePal.Extensions.DistributedLocks;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryLifecycleConflictTests
 {
     [Fact]

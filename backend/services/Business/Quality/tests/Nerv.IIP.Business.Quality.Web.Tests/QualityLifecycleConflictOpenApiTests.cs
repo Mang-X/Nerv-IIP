@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityLifecycleConflictOpenApiTests
 {
     [Fact]

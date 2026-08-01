@@ -38,6 +38,7 @@ using SupplierReturnRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.Suppl
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class WmsEndpointContractTests
 {
     [Fact]

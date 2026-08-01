@@ -30,6 +30,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataApiContractTests
 {
     [Theory]

@@ -22,6 +22,7 @@ using Npgsql;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";

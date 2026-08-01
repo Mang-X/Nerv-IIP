@@ -3,10 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
-[CollectionDefinition("readiness", DisableParallelization = true)]
-public sealed class ReadinessCollection;
-
-[Collection("readiness")]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Theory]

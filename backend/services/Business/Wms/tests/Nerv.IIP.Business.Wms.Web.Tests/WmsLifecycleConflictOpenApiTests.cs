@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class WmsLifecycleConflictOpenApiTests
 {
     [Fact]

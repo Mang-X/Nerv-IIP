@@ -37,6 +37,7 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryEndpointContractTests
 {
     [Fact]
