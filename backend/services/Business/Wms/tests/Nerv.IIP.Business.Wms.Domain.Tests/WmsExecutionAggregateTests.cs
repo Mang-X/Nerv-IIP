@@ -420,6 +420,65 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Picking_task_overpick_within_tolerance_requires_reason_and_records_difference()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "PICK-OVER-001",
+            "OUT-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            "PACK-01",
+            100m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
+        task.Start("user-emp-049", 1);
+
+        var missingReason = Assert.Throws<ArgumentException>(() =>
+            task.Complete(105m, "user-emp-049", " ", 2));
+        task.Complete(105m, "user-emp-049", "包装换算产生合理尾差", 2);
+
+        Assert.Contains("超拣", missingReason.Message, StringComparison.Ordinal);
+        Assert.Equal(WarehouseTaskStatus.CompletedWithDifference, task.Status);
+        Assert.Equal(105m, task.ExecutedQuantity);
+        Assert.Equal("包装换算产生合理尾差", task.CompletionReason);
+    }
+
+    [Fact]
+    public void Picking_task_rejects_overpick_above_ten_percent_without_mutating_state()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "PICK-OVER-LIMIT-001",
+            "OUT-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-01",
+            "PACK-01",
+            100m,
+            assignedOperatorUserId: "user-emp-049",
+            assignedPoolCode: "POOL-SHIPPING");
+        task.Start("user-emp-049", 1);
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            task.Complete(110.000001m, "user-emp-049", "已说明原因", 2));
+
+        Assert.Contains("拣货任务", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("110", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整实拣数量", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(WarehouseTaskStatus.InProgress, task.Status);
+        Assert.Equal(0m, task.ExecutedQuantity);
+        Assert.Equal(2, task.Version);
+    }
+
+    [Fact]
     public void Putaway_task_rejects_short_completion_without_mutating_version()
     {
         var task = WarehouseTask.CreatePutaway(

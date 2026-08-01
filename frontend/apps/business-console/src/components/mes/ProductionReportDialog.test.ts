@@ -14,6 +14,7 @@ const spies = vi.hoisted(() => ({
     },
   ),
   makeIdempotencyKey: vi.fn(),
+  readProductionQuantitySnapshot: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
   notifyOperationFailure: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopeMessage: ref(scopeState.message),
     reportScopePending: ref(scopeState.pending),
     reportScopeReady: ref(scopeState.ready),
+    readProductionQuantitySnapshot: spies.readProductionQuantitySnapshot,
     refreshProductionReportState: vi.fn(async () => undefined),
   }),
 }))
@@ -101,6 +103,11 @@ describe('ProductionReportDialog — 带出式录入', () => {
     let keyIndex = 0
     spies.makeIdempotencyKey.mockReset()
     spies.makeIdempotencyKey.mockImplementation((prefix: string) => `${prefix}-test-${++keyIndex}`)
+    spies.readProductionQuantitySnapshot.mockReset()
+    spies.readProductionQuantitySnapshot.mockResolvedValue({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 0,
+    })
     spies.notifySuccess.mockClear()
     spies.notifyError.mockClear()
     scopeState.message = ''
@@ -178,6 +185,49 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(spies.recordProductionReport).not.toHaveBeenCalled()
     expect(wrapper.find('#report-good').attributes('data-invalid')).toBeDefined()
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('累计合格数量超过计划量时先醒目确认，二次确认才提交', async () => {
+    spies.readProductionQuantitySnapshot.mockResolvedValueOnce({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 40,
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+    await wrapper.find('#report-good').setValue('180')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('生产工单 WO-2026-0007')
+    expect(wrapper.text()).toContain('本次提交后累计合格数量 220')
+    expect(wrapper.text()).toContain('已超计划 10%')
+    expect(wrapper.text()).toContain('确认继续')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).toHaveBeenCalledOnce()
+    expect(spies.recordProductionReport.mock.calls[0]![0].goodQuantity).toBe(180)
+  })
+
+  it('累计合格数量超过计划量 120% 时拒绝并提示调整数量或计划量', async () => {
+    spies.readProductionQuantitySnapshot.mockResolvedValueOnce({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 40,
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+    await wrapper.find('#report-good').setValue('201')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('生产工单 WO-2026-0007')
+    expect(wrapper.text()).toContain('累计合格数量 241')
+    expect(wrapper.text()).toContain('硬上限 240')
+    expect(wrapper.text()).toContain('请调整本次合格数量或工单计划量')
   })
 
   it('未选择服务端授权作业范围时禁用提交并且不发请求', async () => {

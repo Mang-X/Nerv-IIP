@@ -277,7 +277,8 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             workOrder.RecordProductionProgress(11m, 0m, DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
 
-        Assert.Contains("tolerance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("生产工单 WO-OVER", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单超产容差", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,7 +300,34 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             workOrder.RecordProductionProgress(95m, 10m, DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
 
-        Assert.Contains("tolerance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("生产工单 WO-SCRAP", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单超产容差", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkOrder_rejects_progress_above_twenty_percent_even_when_configured_tolerance_is_higher()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-HARD-OVER-LIMIT",
+            "SKU-001",
+            "PV-001",
+            100m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            overReceiptTolerancePercent: 50m);
+        workOrder.MarkReleased();
+        workOrder.Start(DateTimeOffset.Parse("2026-05-23T08:00:00Z"));
+
+        workOrder.RecordProductionProgress(120m, 0m, DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            workOrder.RecordProductionProgress(0.000001m, 0m, DateTimeOffset.Parse("2026-05-23T09:01:00Z")));
+
+        Assert.Contains("生产工单 WO-HARD-OVER-LIMIT", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("120", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单计划量", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(120m, workOrder.CompletedQuantity);
     }
 
     [Fact]

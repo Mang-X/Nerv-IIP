@@ -59,6 +59,7 @@ const routeState = vi.hoisted(() => ({
 
 const wmsState = vi.hoisted(() => ({
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
+  completePicking: vi.fn(async () => undefined),
   refreshPickingTasks: vi.fn(async () => undefined),
 }))
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
@@ -149,12 +150,13 @@ vi.mock('@/composables/useBusinessWms', () => ({
       filters,
       pickingTasks: computed(() => [
         {
+          allowedActions: ['complete'],
           fromLocationCode: 'A-01',
           plannedQuantity: 5,
           siteCode: 'S1',
           skuCode: 'SKU-001',
           sourceOrderNo: 'OB-001',
-          status: 'created',
+          status: 'inProgress',
           taskNo: 'PICK-001',
           toLocationCode: 'STAGE-01',
           uomCode: 'EA',
@@ -164,6 +166,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
       pickingTasksError: shallowRef(undefined),
       pickingTasksPending: shallowRef(false),
       pickingTasksTotal: computed(() => 0),
+      completePicking: wmsState.completePicking,
+      pickingActionPending: shallowRef(false),
       refreshPickingTasks: wmsState.refreshPickingTasks,
     }
   },
@@ -188,7 +192,7 @@ const uiStubs = {
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvField: { template: '<div><slot /></div>' },
-  NvFieldError: true,
+  NvFieldError: { props: ['errors'], template: '<p role="alert">{{ errors?.join("；") }}</p>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
   NvInput: {
@@ -267,6 +271,44 @@ describe('WMS picking route context', () => {
 
     expect(wmsState.refreshPickingTasks).toHaveBeenCalledOnce()
     expect(candidateState.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('超拣不超过计划量 110% 时要求差异原因，填写后才提交', async () => {
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+    const completeButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '完成拣货')!
+    await completeButton.trigger('click')
+    await wrapper.get('#wms-picking-executed').setValue('5.5')
+
+    expect(wrapper.text()).toContain('差异原因')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    expect(wmsState.completePicking).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('拣货任务 PICK-001 的实拣数量超过计划量')
+
+    await wrapper.get('#wms-picking-reason').setValue('整箱包装换算产生尾差')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+
+    expect(wmsState.completePicking).toHaveBeenCalledWith(
+      expect.objectContaining({ taskNo: 'PICK-001' }),
+      { executedQuantity: 5.5, differenceReason: '整箱包装换算产生尾差' },
+    )
+  })
+
+  it('超拣超过计划量 110% 时直接拒绝并给出调整路径', async () => {
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+    const completeButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '完成拣货')!
+    await completeButton.trigger('click')
+    await wrapper.get('#wms-picking-executed').setValue('5.51')
+    await wrapper.get('#wms-picking-reason').setValue('已说明原因')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+
+    expect(wmsState.completePicking).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('拣货任务 PICK-001')
+    expect(wrapper.text()).toContain('最多可实拣 5.5')
+    expect(wrapper.text()).toContain('请调整实拣数量')
   })
 })
 vi.mock('@/composables/useWmsOperationalCandidates', async () => {
