@@ -24,6 +24,7 @@ import { useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
+import { urgencyLevelPresentation } from './useUrgencyDisplayMode'
 
 // ---------------------------------------------------------------------------
 // 履约追踪时间线（骨架先行 / MAN-518 · Refs #959）
@@ -418,12 +419,23 @@ const UNLINKED_NODES: Readonly<Partial<Record<FulfillmentNodeKey, UnlinkedNodeSp
   },
   'wms-outbound': {
     title: 'WMS 出库',
-    ruleNote: 'WMS 出库单列表契约仅暴露出库单号与状态，无发货单/销售订单来源字段，暂不关联。',
+    ruleNote: '出库单目前只记录出库单号与状态，没有回指发货单/销售订单的字段，暂不直接关联。',
   },
   voucher: {
     title: '凭证',
-    ruleNote: '会计凭证按科目借贷过账，凭证列表契约无单据级来源字段，无法稳定关联到销售订单。',
+    ruleNote: '会计凭证按科目借贷过账，不带单据级来源，因此无法稳定回溯到某一张销售订单。',
   },
+}
+
+/**
+ * 排程紧急度徽标的中文文案。
+ *
+ * 后端 `level` 是英文枚举（`highrisk` / `urgent` / …）。履约抽屉曾把原值直接摆上去，
+ * 演示里就是一枚英文徽标（#1418，owner 亲验截图时点名）。这里复用紧急度徽标同一张
+ * 中文映射，两处口径不会各说各话。
+ */
+export function describeUrgencyLevel(level?: string | null): string | undefined {
+  return level ? urgencyLevelPresentation(level).label : undefined
 }
 
 function unlinkedNode(key: FulfillmentNodeKey): FulfillmentNode {
@@ -433,7 +445,8 @@ function unlinkedNode(key: FulfillmentNodeKey): FulfillmentNode {
     title: spec?.title ?? key,
     status: 'unlinked',
     ruleNote: spec?.ruleNote,
-    source: '契约暂无稳定关联键',
+    // 面向演示观众的说法：不要把「契约/关联键」这类开发者词汇摆到抽屉里（#1418 owner 亲验）。
+    source: '本时间线暂不直接汇总 · 需从上游单据下钻',
   }
 }
 
@@ -728,9 +741,6 @@ export function useFulfillmentTimeline(
   const nodes = computed<FulfillmentNode[]>(() => {
     const so = salesOrderNo.value
     const demand = matchDemandSource(demandQuery.data.value?.items, so)
-    const urgency = urgencyQuery.data.value?.find(
-      (item) => item.businessReference === so || item.orderId === so,
-    )
     const delivery = matchedDeliveries.value[0]
     const receivable = receivableQuery.data.value ?? undefined
     const pegging = matchedPeggings.value[0]
@@ -805,24 +815,6 @@ export function useFulfillmentTimeline(
             : 'MRP 运行后按需求源生成建议，并把本销售订单 peg 到建议上（pegging.demandSourceReference = 销售单号），当前尚未运行。',
         source: 'Planning · MRP 运行与 pegging 读面',
       }),
-      resolveRecordNode<BusinessConsoleOrderUrgency>({
-        key: 'schedule-urgency',
-        title: 'APS / 排程紧急度',
-        enabled: hasScope.value,
-        loading: urgencyQuery.isLoading.value,
-        error: urgencyQuery.error.value,
-        record: urgency,
-        present: (record) => ({
-          businessNo: record.businessReference ?? record.orderId ?? undefined,
-          detailStatus: record.level ?? undefined,
-          updatedAt: record.calculatedAtUtc ?? undefined,
-          linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
-          drill: { path: '/scheduling' },
-        }),
-        pendingNote:
-          '进入排程后由 APS 计算订单紧急度（OrderUrgency.businessReference = 销售单号，#1053），当前尚未生成。',
-        source: 'Scheduling · 订单紧急度读面',
-      }),
       resolveRecordNode<MesWorkOrderRecord>({
         key: 'mes-work-order',
         title: 'MES 工单',
@@ -891,6 +883,40 @@ export function useFulfillmentTimeline(
     ]
   })
 
+  /**
+   * 参考指标（不在因果链上）。
+   *
+   * 排程紧急度按 businessReference = 销售单号直接计算交期紧迫度，**不依赖 MRP 是否运行**。
+   * 它曾被摆进因果时间线中间，出现「MRP 建议尚未产生、下一格却已有 APS 结论」的假因果
+   * （#1418 B1，owner 亲验点名），故拆出因果链单独成区，由 UI 明示「独立于上游环节计算」。
+   */
+  const referenceNodes = computed<FulfillmentNode[]>(() => {
+    const so = salesOrderNo.value
+    const urgency = urgencyQuery.data.value?.find(
+      (item) => item.businessReference === so || item.orderId === so,
+    )
+    return [
+      resolveRecordNode<BusinessConsoleOrderUrgency>({
+        key: 'schedule-urgency',
+        title: '排程紧急度',
+        enabled: hasScope.value,
+        loading: urgencyQuery.isLoading.value,
+        error: urgencyQuery.error.value,
+        record: urgency,
+        present: (record) => ({
+          businessNo: record.businessReference ?? record.orderId ?? undefined,
+          detailStatus: describeUrgencyLevel(record.level),
+          updatedAt: record.calculatedAtUtc ?? undefined,
+          linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
+          drill: { path: '/scheduling' },
+        }),
+        pendingNote:
+          '排程侧尚未按本销售单号计算紧急度。该指标按交期直接计算，与上方各环节进度无关。',
+        source: 'Scheduling · 订单紧急度读面（按交期独立计算，不依赖 MRP / 工单进度）',
+      }),
+    ]
+  })
+
   const pending = computed(
     () =>
       demandQuery.isLoading.value ||
@@ -947,5 +973,5 @@ export function useFulfillmentTimeline(
     void receivableQuery.refetch()
   }
 
-  return { nodes, pending, hasScope, salesOrderNo, retry, refreshAll }
+  return { nodes, referenceNodes, pending, hasScope, salesOrderNo, retry, refreshAll }
 }

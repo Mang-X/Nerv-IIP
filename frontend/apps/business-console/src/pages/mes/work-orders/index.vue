@@ -607,6 +607,7 @@ function isNonEmpty(value: string) {
           :urgency="
             row.workOrderId ? orderUrgencies.byReference.value.get(row.workOrderId) : undefined
           "
+          :source-unavailable="orderUrgencies.error?.value != null"
           @refresh="refreshUrgency"
         />
       </template>

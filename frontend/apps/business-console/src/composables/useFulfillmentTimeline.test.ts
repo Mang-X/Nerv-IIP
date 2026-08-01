@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyFulfillmentFailure,
   describeMrpSuggestion,
+  describeUrgencyLevel,
   describeWorkOrderLink,
   FulfillmentNodeError,
   matchDeliveryOrders,
@@ -286,6 +287,15 @@ describe('节点文案：不显裸 GUID、合批如实说明', () => {
     const record = { workOrderNo: 'WO-20260731-000001', planRow: mergedPlanRows[0]! }
     expect(describeWorkOrderLink(record, 'SO-B')).toContain('该工单为合批工单，同时承接 SO-A')
     expect(describeWorkOrderLink(record, 'SO-A')).not.toContain('合批')
+  })
+
+  // #1418：抽屉曾把后端 level 原值摆成徽标，演示里就是一枚英文 `highrisk`。
+  it('排程紧急度徽标走中文映射，绝不吐后端英文枚举', () => {
+    expect(describeUrgencyLevel('highrisk')).toBe('高风险')
+    expect(describeUrgencyLevel('urgent')).toBe('紧急')
+    expect(describeUrgencyLevel('HighRisk')).toBe('高风险')
+    expect(describeUrgencyLevel('highrisk')).not.toMatch(/[a-z]/i)
+    expect(describeUrgencyLevel(null)).toBeUndefined()
   })
 })
 
