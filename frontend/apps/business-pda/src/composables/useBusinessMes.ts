@@ -852,7 +852,7 @@ export function useMesOperationTasks() {
   const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters) && operationListScope.scopeReady.value)
-  const operationTasksIdentity = computed(() => {
+  const operationListContextIdentity = computed(() => {
     const selectedScope = operationListScope.selectedScope.value
     return [
       operationListScope.principalIdentity.value,
@@ -860,6 +860,18 @@ export function useMesOperationTasks() {
       filters.environmentId.trim(),
       selectedScope?.kind ?? '',
       selectedScope?.id ?? '',
+    ].join('\u0000')
+  })
+  const operationTasksIdentity = computed(() => {
+    return [
+      operationListContextIdentity.value,
+      filters.status?.trim() ?? '',
+      filters.keyword?.trim() ?? '',
+      filters.workOrderId?.trim() ?? '',
+      filters.workCenterId?.trim() ?? '',
+      filters.deviceAssetId?.trim() ?? '',
+      filters.skip,
+      filters.take,
     ].join(':')
   })
 
@@ -987,6 +999,7 @@ export function useMesOperationTasks() {
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
+    operationListContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,
     operationListScopePending: operationListScope.scopePending,
     operationListScopeReady: operationListScope.scopeReady,
