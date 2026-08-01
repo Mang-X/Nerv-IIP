@@ -73,7 +73,11 @@ public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMater
 /// </summary>
 public sealed record MaterialIssueRequestCreatedDomainEvent(MaterialIssueRequest MaterialIssueRequest) : IDomainEvent;
 
-public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal IssuedQuantity) : IDomainEvent;
+public sealed record MaterialIssueRequestedDomainEvent(
+    MaterialIssueRequest MaterialIssueRequest,
+    decimal IssuedQuantity,
+    MaterialTransferAllocation? SourceAllocation = null,
+    int AllocationIndex = 0) : IDomainEvent;
 
 public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;
 

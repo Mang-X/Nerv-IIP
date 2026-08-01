@@ -28,6 +28,9 @@ public static class ApprovalDocumentTypes
     /// </summary>
     public const string StockCountVariance = "inventory-count-variance";
 
+    /// <summary>工程变更单；审批模板、工程变更发起面和发布校验共用。</summary>
+    public const string EngineeringChangeOrder = "engineering-change-order";
+
     /// <summary>
     /// NCR 处置审批的**受理集合**：权威码值 + 历史别名。
     ///

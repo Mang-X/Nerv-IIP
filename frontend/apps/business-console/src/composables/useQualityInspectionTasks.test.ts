@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  assignBusinessConsoleQualityInspectionTask,
+  claimBusinessConsoleQualityInspectionTask,
   createBusinessConsoleQualityInspectionRecordFromTask,
   listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
@@ -22,6 +24,14 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  assignBusinessConsoleQualityInspectionTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  claimBusinessConsoleQualityInspectionTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   createBusinessConsoleQualityInspectionRecordFromTask: vi.fn(async () => ({
     data: { success: true },
     response: { status: 200 },
@@ -258,6 +268,42 @@ describe('quality inspection task workbench', () => {
       throwOnError: false,
     })
     expect(filters.organizationId).toBe('org-001')
+  })
+
+  it('claims an inspection task through the existing facade and invalidates the list', async () => {
+    const { claimInspectionTask } = useQualityInspectionTasks()
+
+    await claimInspectionTask('TASK-CLAIM', 7)
+
+    expect(claimBusinessConsoleQualityInspectionTask).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-CLAIM' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        expectedVersion: 7,
+        idempotencyKey: expect.stringMatching(/^quality-claim-/),
+      },
+      throwOnError: true,
+    })
+    expect(state.invalidateQueries).toHaveBeenCalled()
+  })
+
+  it('assigns an inspection task through the existing facade with a transfer reason', async () => {
+    const { assignInspectionTask } = useQualityInspectionTasks()
+
+    await assignInspectionTask('TASK-TRANSFER', 'user-emp-007', '调班改派', 9)
+
+    expect(assignBusinessConsoleQualityInspectionTask).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-TRANSFER' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        assignedInspectorUserId: 'user-emp-007',
+        reason: '调班改派',
+        expectedVersion: 9,
+        idempotencyKey: expect.stringMatching(/^quality-assignment-/),
+      },
+      throwOnError: true,
+    })
+    expect(state.invalidateQueries).toHaveBeenCalled()
   })
 
   it('does not submit a pending task when backend allowedActions only permits claim', async () => {

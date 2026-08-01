@@ -724,6 +724,34 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task List_workbench_marks_an_unassigned_organization_task_as_claimable()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(List_workbench_marks_an_unassigned_organization_task_as_claimable));
+        var task = NewTask(
+            "IN-UNASSIGNED-CLAIM",
+            "LINE-001",
+            "SKU-RM-1000",
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListInspectionTasksQueryHandler(dbContext).Handle(
+            new ListInspectionTasksQuery(
+                "org-001",
+                "env-dev",
+                InspectionTaskStatuses.Pending,
+                null,
+                ScopeKind: "organization",
+                PrincipalId: "qa-user-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(result.Items);
+        Assert.Equal(["claim"], row.AllowedActions);
+        Assert.Empty(row.BlockReasons);
+    }
+
+    [Fact]
     public async Task List_workbench_exact_task_id_precedes_paging_and_keeps_tenant_scope()
     {
         await using var dbContext = CreateDbContext(nameof(List_workbench_exact_task_id_precedes_paging_and_keeps_tenant_scope));
@@ -1114,6 +1142,50 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("qa-user-001", claim.AssignedInspectorUserId);
         Assert.Equal(3, claim.Version);
         Assert.Equal(2, await dbContext.InspectionTaskAssignmentReceipts.CountAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_claims_on_an_unassigned_task_allow_one_winner_and_report_explicit_conflict()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Concurrent_claims_on_an_unassigned_task_allow_one_winner_and_report_explicit_conflict));
+        var task = NewTask(
+            "WO-CONCURRENT-CLAIM",
+            "OP-10",
+            "SKU-FG-1000",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var first = await new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+            new ClaimInspectionTaskCommand(
+                task.Id,
+                "org-001",
+                "env-dev",
+                "qa-user-001",
+                [],
+                "claim-concurrent-001",
+                ExpectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var second = await Assert.ThrowsAsync<QualityUnprocessableException>(() =>
+            new ClaimInspectionTaskCommandHandler(dbContext).Handle(
+                new ClaimInspectionTaskCommand(
+                    task.Id,
+                    "org-001",
+                    "env-dev",
+                    "qa-user-002",
+                    [],
+                    "claim-concurrent-002",
+                    ExpectedVersion: 1),
+                CancellationToken.None));
+
+        Assert.Equal(InspectionTaskStatuses.InProgress, first.Status);
+        Assert.Equal("qa-user-001", first.AssignedInspectorUserId);
+        Assert.Equal("task-already-claimed", second.Reason);
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+        Assert.Equal(2, task.Version);
     }
 
     [Fact]

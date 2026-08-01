@@ -246,7 +246,8 @@ try
                 "World-history quality seed completed: {Plans} inspection plans, {Tasks} inspection tasks, " +
                 "{Records} inspection records ({Reinspections} reinspections), {Ncrs} nonconformance reports; " +
                 "validator checked {CheckedTasks} tasks / {CheckedCompleted} completed inspections / " +
-                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate.",
+                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate; " +
+                "pending assignment distribution: {PendingPreassigned} preassigned / {PendingUnassigned} unassigned.",
                 report.InspectionPlansWritten,
                 report.InspectionTasksWritten,
                 report.InspectionRecordsWritten,
@@ -256,7 +257,9 @@ try
                 report.Validation.CompletedInspectionsChecked,
                 report.Validation.InspectionRecordsChecked,
                 report.Validation.NonconformanceReportsChecked,
-                report.Validation.NonconformingRate);
+                report.Validation.NonconformingRate,
+                report.Validation.PendingTasksPreassigned,
+                report.Validation.PendingTasksUnassigned);
             foreach (var line in report.Validation.Sample)
             {
                 app.Logger.LogInformation("World-history sample: {Chain}", line);

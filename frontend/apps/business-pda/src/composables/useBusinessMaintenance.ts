@@ -1,6 +1,7 @@
 import {
   createBusinessConsoleMaintenanceWorkOrderMutationOptions,
   confirmBusinessConsoleOperation,
+  listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
@@ -22,10 +23,14 @@ import {
 } from '@/composables/useListFreshness'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { useTaskListPagination } from './useTaskListPagination'
 
-const DEFAULT_TAKE = 100
+const WORK_ORDER_PAGE_SIZE = 20
+const AUXILIARY_LIST_TAKE = 100
 
 export interface MaintenanceListFilters {
+  status?: string
+  keyword?: string
   skip: number
   take: number
 }
@@ -87,9 +92,9 @@ export function useBusinessMaintenance() {
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
   const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
-  const workOrderFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
-  const inspectionFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
-  const planFilters = reactive<MaintenanceListFilters>({ skip: 0, take: DEFAULT_TAKE })
+  const workOrderFilters = reactive<MaintenanceListFilters>({ skip: 0, take: WORK_ORDER_PAGE_SIZE })
+  const inspectionFilters = reactive<MaintenanceListFilters>({ skip: 0, take: AUXILIARY_LIST_TAKE })
+  const planFilters = reactive<MaintenanceListFilters>({ skip: 0, take: AUXILIARY_LIST_TAKE })
 
   const scopedQuery = (filters: MaintenanceListFilters) => ({
     organizationId: organizationId.value,
@@ -100,7 +105,11 @@ export function useBusinessMaintenance() {
 
   const workOrdersQuery = useQuery(() => ({
     ...listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
-      query: scopedQuery(workOrderFilters),
+      query: {
+        ...scopedQuery(workOrderFilters),
+        status: workOrderFilters.status || undefined,
+        keyword: workOrderFilters.keyword || undefined,
+      },
     }),
     enabled: scopeReady.value,
   }))
@@ -144,6 +153,37 @@ export function useBusinessMaintenance() {
   } = useListResponseState(plansResponse, scopeReady, plansQuery.isLoading)
 
   const plansTotal = computed(() => listTotal(plansResponse.value as ListEnvelope<unknown>))
+  const workOrderIdentity = computed(
+    () => `${scopeKey.value}:${workOrderFilters.status ?? ''}:${workOrderFilters.keyword ?? ''}`,
+  )
+  const firstWorkOrderPage = computed(() => {
+    const envelope = workOrdersResponse.value as ListEnvelope<MaintenanceWorkOrderItem>
+    if (envelope?.success !== true) return undefined
+    return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 }
+  })
+  const workOrderPager = useTaskListPagination<MaintenanceWorkOrderItem>({
+    identity: workOrderIdentity,
+    firstPage: firstWorkOrderPage,
+    pageSize: WORK_ORDER_PAGE_SIZE,
+    itemKey: (item) => item.workOrderId ?? '',
+    fetchPage: async ({ skip, take }) => {
+      const { data } = await listBusinessConsoleMaintenanceWorkOrders({
+        query: {
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
+          status: workOrderFilters.status || undefined,
+          keyword: workOrderFilters.keyword || undefined,
+          skip,
+          take,
+        },
+        throwOnError: true,
+      })
+      const envelope = data as ListEnvelope<MaintenanceWorkOrderItem>
+      if (envelope?.success !== true) throw new Error('维修工单下一页加载失败，请重试。')
+      return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 }
+    },
+    refreshFirstPage: workOrdersQuery.refetch,
+  })
 
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
@@ -215,7 +255,7 @@ export function useBusinessMaintenance() {
   // 客户端扫码过滤；当扫码命中第一页之外时，调用方据 plansTotal 加载更多页。
   function loadMorePlans() {
     if (planFilters.take < plansTotal.value) {
-      planFilters.take += DEFAULT_TAKE
+      planFilters.take += AUXILIARY_LIST_TAKE
     }
   }
 
@@ -223,20 +263,20 @@ export function useBusinessMaintenance() {
     organizationId,
     environmentId,
     scopeReady,
-    workOrders: computed<MaintenanceWorkOrderItem[]>(() =>
-      listItems<MaintenanceWorkOrderItem>(
-        workOrdersResponse.value as ListEnvelope<MaintenanceWorkOrderItem>,
-      ),
-    ),
-    workOrdersTotal: computed(() =>
-      listTotal(workOrdersResponse.value as ListEnvelope<MaintenanceWorkOrderItem>),
-    ),
+    workOrders: workOrderPager.items,
+    workOrdersTotal: workOrderPager.total,
+    workOrdersLoaded: workOrderPager.loaded,
+    workOrdersHasMore: workOrderPager.hasMore,
+    workOrdersLoadingMore: workOrderPager.loadingMore,
+    workOrdersRefreshing: workOrderPager.refreshing,
+    workOrdersLoadMoreError: workOrderPager.loadMoreError,
+    loadMoreWorkOrders: workOrderPager.loadMore,
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
     workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse,
     workOrdersHasFailedResponse,
-    refreshWorkOrders: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
+    refreshWorkOrders: () => (scopeReady.value ? workOrderPager.refresh() : Promise.resolve()),
     workOrderFilters,
     createWorkOrder,
     createPending: createMutation.isLoading,

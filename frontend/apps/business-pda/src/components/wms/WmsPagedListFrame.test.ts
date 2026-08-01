@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
-import { NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { describe, expect, it, vi } from 'vitest'
 
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import WmsPagedListFrame from './WmsPagedListFrame.vue'
 
 const intersectionState = vi.hoisted(() => ({
@@ -34,12 +34,12 @@ describe('WmsPagedListFrame', () => {
       slots: { default: '<div data-row>任务</div>' },
     })
 
-    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
-    intersectionState.callback?.([{ isIntersecting: true }])
+    wrapper.getComponent(TaskListShell).vm.$emit('refresh')
+    wrapper.getComponent(TaskListShell).vm.$emit('loadMore')
 
     expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
-    expect(wrapper.text()).toContain('继续上滑加载')
+    expect(wrapper.text()).toContain('上拉加载更多')
   })
 
   it('终页不再触发加载并明确提示没有更多', () => {

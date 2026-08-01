@@ -16,7 +16,7 @@ public sealed class MesMaterialSupplyLocationOptions
     /// <summary>库存站点编码（例如 <c>SITE-001</c>）。</summary>
     public string SiteCode { get; init; } = string.Empty;
 
-    /// <summary>发料来源候选库位，按优先级排列；实际取哪一个由库存实时持仓决定。</summary>
+    /// <summary>发料来源候选库位；解析器按库位编码升序确定分配顺序。</summary>
     public IReadOnlyList<string> SourceLocationCodes { get; init; } = [];
 
     /// <summary>线边站点编码；留空则回落到 <see cref="SiteCode"/>。</summary>
@@ -43,8 +43,9 @@ public interface IMesMaterialSupplyLocationResolver
 
 /// <summary>
 /// 来源库位解析：先按配置的候选库位顺序问库存「这个物料/批次现在真的在哪、还有多少」，
-/// 选出第一个可用量够本次收料的库位；一个都不够就显式失败（<c>MATERIAL_SOURCE_LOCATION_UNAVAILABLE</c>），
-/// 绝不退回到臆造库位去触发 Inventory 的 NEGATIVE_ON_HAND 静默回滚。
+/// 按库位编码与批次编码的确定性顺序切分来源明细；合计可用量不足就显式失败
+/// （<c>MATERIAL_SOURCE_LOCATION_UNAVAILABLE</c>），绝不退回到臆造库位去触发
+/// Inventory 的 NEGATIVE_ON_HAND 静默回滚。
 /// </summary>
 public sealed class InventoryMesMaterialSupplyLocationResolver(
     MesMaterialSupplyLocationOptions options,
@@ -64,6 +65,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (siteCode is null || lineSideLocationCode is null || candidates.Length == 0)
         {
@@ -72,11 +74,16 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
         }
 
         var lineSideSiteCode = Trimmed(options.LineSideSiteCode) ?? siteCode;
-        var sourceLocationCode = await SelectSourceLocationAsync(request, siteCode, candidates, cancellationToken);
-        return new MaterialTransferLocations(siteCode, sourceLocationCode, lineSideSiteCode, lineSideLocationCode);
+        var sourceAllocations = await SelectSourceAllocationsAsync(request, siteCode, candidates, cancellationToken);
+        return new MaterialTransferLocations(
+            siteCode,
+            sourceAllocations[0].SourceLocationCode,
+            lineSideSiteCode,
+            lineSideLocationCode,
+            sourceAllocations);
     }
 
-    private async Task<string> SelectSourceLocationAsync(
+    private async Task<IReadOnlyList<MaterialTransferAllocation>> SelectSourceAllocationsAsync(
         MesMaterialSupplyLocationRequest request,
         string siteCode,
         IReadOnlyList<string> candidates,
@@ -86,38 +93,65 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
         {
             // 仅在没有接入 Inventory 客户端的装配下成立（单测/离线夹具）：退回配置里的首选来源库位。
             // 运行时 Program.cs 一定注入 MesInventoryHttpClient，因此真实链路永远走下面的实时持仓查询。
-            return candidates[0];
+            return [new MaterialTransferAllocation(siteCode, candidates[0], request.MaterialLotId, request.Quantity)];
         }
 
-        string? bestLocationCode = null;
-        var bestQuantity = 0m;
+        var remaining = request.Quantity;
+        var availableTotal = 0m;
+        var allocations = new List<MaterialTransferAllocation>();
         foreach (var locationCode in candidates)
         {
-            var availability = await GetAvailabilityAsync(request, siteCode, locationCode, cancellationToken);
-            if (availability >= request.Quantity)
+            if (remaining <= 0m)
             {
-                return locationCode;
+                break;
             }
 
-            if (availability > bestQuantity)
+            var availability = await GetAvailabilityAsync(request, siteCode, locationCode, cancellationToken);
+            var inventoryLines = availability.Items ?? [];
+            IEnumerable<MesMaterialSupplyAvailabilityLine> lines;
+            if (inventoryLines.Count > 0)
             {
-                bestQuantity = availability;
-                bestLocationCode = locationCode;
+                lines = inventoryLines
+                    .Where(x => x.MovementAllowed && x.AvailableQuantity > 0m)
+                    .OrderBy(x => x.LotNo ?? string.Empty, StringComparer.Ordinal);
             }
+            else
+            {
+                lines = availability.AvailableQuantity > 0m
+                    ? [new MesMaterialSupplyAvailabilityLine(null, availability.AvailableQuantity)]
+                    : [];
+            }
+            foreach (var line in lines)
+            {
+                var available = Math.Max(0m, line.AvailableQuantity);
+                availableTotal += available;
+                if (remaining <= 0m)
+                {
+                    continue;
+                }
+
+                var allocated = Math.Min(remaining, available);
+                allocations.Add(new MaterialTransferAllocation(siteCode, locationCode, line.LotNo, allocated));
+                remaining -= allocated;
+            }
+        }
+
+        if (remaining <= 0m)
+        {
+            return allocations;
         }
 
         logger?.LogWarning(
-            "MES line-side receipt found no source location holding the full quantity. Material={MaterialId}, Lot={MaterialLotId}, Quantity={Quantity}, BestLocation={BestLocation}, BestAvailable={BestAvailable}",
+            "MES line-side receipt found insufficient source availability. Material={MaterialId}, Lot={MaterialLotId}, Quantity={Quantity}, AvailableTotal={AvailableTotal}",
             request.MaterialId,
             request.MaterialLotId,
             request.Quantity,
-            bestLocationCode,
-            bestQuantity);
+            availableTotal);
         throw new KnownException(
-            $"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 物料 {request.MaterialId} 在站点 {siteCode} 的候选库位（{string.Join('/', candidates)}）可用量不足 {request.Quantity:0.######} {request.UomCode}，无法发起线边收料过账。");
+            $"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求{request.Quantity:0.######}{request.UomCode}，候选库位合计可用{availableTotal:0.######}{request.UomCode}。");
     }
 
-    private async Task<decimal> GetAvailabilityAsync(
+    private async Task<MesMaterialSupplyAvailability> GetAvailabilityAsync(
         MesMaterialSupplyLocationRequest request,
         string siteCode,
         string locationCode,
@@ -132,10 +166,8 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             $"siteCode={Uri.EscapeDataString(siteCode)}",
             $"locationCode={Uri.EscapeDataString(locationCode)}",
         };
-        if (!string.IsNullOrWhiteSpace(request.MaterialLotId))
-        {
-            query.Add($"lotNo={Uri.EscapeDataString(request.MaterialLotId)}");
-        }
+        // MES 的 MaterialLotId 是线边追溯批次，不一定等于 Inventory 的来源批次。
+        // 来源批次由 Inventory 返回的 dimension lines 决定；这里不能拿工单批号精确过滤库存。
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Get,
@@ -170,7 +202,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
 
             var envelope = await response.Content
                 .ReadFromJsonAsync<MesMaterialSupplyAvailabilityEnvelope>(cancellationToken);
-            return Math.Max(0m, envelope?.Data?.AvailableQuantity ?? 0m);
+            return envelope?.Data ?? new MesMaterialSupplyAvailability(0m, []);
         }
     }
 
@@ -180,4 +212,11 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
 
 internal sealed record MesMaterialSupplyAvailabilityEnvelope(MesMaterialSupplyAvailability? Data);
 
-internal sealed record MesMaterialSupplyAvailability(decimal AvailableQuantity);
+internal sealed record MesMaterialSupplyAvailability(
+    decimal AvailableQuantity,
+    IReadOnlyList<MesMaterialSupplyAvailabilityLine>? Items);
+
+internal sealed record MesMaterialSupplyAvailabilityLine(
+    string? LotNo,
+    decimal AvailableQuantity,
+    bool MovementAllowed = true);

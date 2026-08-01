@@ -23,8 +23,9 @@ import {
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import { useTaskListPagination, type TaskListPage } from '@/composables/useTaskListPagination'
 
-const DEFAULT_TAKE = 100
+const DEFAULT_TAKE = 20
 
 /** 搁置时长档位（分钟）——交互稿固定三档：30 分钟 / 2 小时 / 8 小时。 */
 export const ALARM_SHELVE_DURATIONS_MINUTES = [30, 120, 480] as const
@@ -37,6 +38,7 @@ export interface EquipmentAlarmFilters {
   skip: number
   take: number
   deviceAssetId?: string
+  status?: string
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -159,6 +161,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
         skip: filters.skip,
         take: filters.take,
         ...optionalQuery('deviceAssetId', filters.deviceAssetId),
+        ...optionalQuery('status', filters.status),
       },
     }),
     enabled: scopeReady.value,
@@ -338,12 +341,48 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     )
   }
 
+  const firstPage = computed<TaskListPage<BusinessConsoleTelemetryAlarmEventItem> | undefined>(
+    () => {
+      const envelope = currentResponse.value as
+        | BusinessConsoleEquipmentAlarmListEnvelope
+        | undefined
+      if (envelope?.success !== true) return undefined
+      return {
+        items: envelope.data?.items ?? [],
+        total: envelope.data?.total ?? 0,
+      }
+    },
+  )
+  const listIdentity = computed(
+    () => `${scopeKey.value}:${filters.deviceAssetId ?? ''}:${filters.status ?? ''}`,
+  )
+  const pager = useTaskListPagination({
+    identity: listIdentity,
+    firstPage,
+    pageSize: DEFAULT_TAKE,
+    itemKey: (item) => item.alarmEventId ?? '',
+    fetchPage: async ({ skip, take }) => {
+      const { data } = await listBusinessConsoleEquipmentAlarms({
+        query: {
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
+          skip,
+          take,
+          ...optionalQuery('deviceAssetId', filters.deviceAssetId),
+          ...optionalQuery('status', filters.status),
+        },
+        throwOnError: true,
+      })
+      const envelope = data as BusinessConsoleEquipmentAlarmListEnvelope | undefined
+      if (envelope?.success !== true) throw new Error('报警下一页加载失败，请重试。')
+      return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 }
+    },
+    refreshFirstPage: listQuery.refetch,
+  })
+
   const alarms = computed<BusinessConsoleTelemetryAlarmEventItem[]>(() => {
-    const items = listItems<BusinessConsoleTelemetryAlarmEventItem>(
-      currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
-    )
     // 服务端已按生命周期排好；前端同口径再排一次兜底（稳定副本，不改原数组）。
-    return [...items].sort((a, b) => {
+    return [...pager.items.value].sort((a, b) => {
       const weightDiff = alarmLifecycleSortWeight(a.status) - alarmLifecycleSortWeight(b.status)
       if (weightDiff !== 0) return weightDiff
       return (b.raisedAtUtc ?? '').localeCompare(a.raisedAtUtc ?? '')
@@ -353,9 +392,12 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
   return {
     filters,
     alarms,
-    total: computed(() =>
-      listTotal(currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
-    ),
+    total: pager.total,
+    loaded: pager.loaded,
+    hasMore: pager.hasMore,
+    loadingMore: pager.loadingMore,
+    refreshing: pager.refreshing,
+    loadMoreError: pager.loadMoreError,
     organizationId,
     environmentId,
     scopeReady,
@@ -369,6 +411,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     ),
     acknowledge,
     shelve,
-    refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
+    loadMore: pager.loadMore,
+    refresh: () => (scopeReady.value ? pager.refresh() : Promise.resolve()),
   }
 }

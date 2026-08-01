@@ -140,9 +140,9 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
     key: 'requestNo',
     header: '入库单',
     cellClass: 'font-medium',
-    accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无',
+    accessor: (r) => r.requestNo?.trim() || '—',
   },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
@@ -278,7 +278,7 @@ function isNonEmpty(value: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderNo ?? row.workOrderId }}
+          {{ row.workOrderNo?.trim() || '—' }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
@@ -324,7 +324,7 @@ function isNonEmpty(value: string) {
             <RotateCcwIcon v-else aria-hidden="true" />
             重试
           </NvButton>
-          <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
+          <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderNo ?? ''}`">
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"
               @click="openWorkOrder(row.workOrderId)"

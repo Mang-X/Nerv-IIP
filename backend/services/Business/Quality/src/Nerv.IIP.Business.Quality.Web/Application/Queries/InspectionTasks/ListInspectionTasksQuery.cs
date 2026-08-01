@@ -220,7 +220,8 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
                 && authorizedTeams.Contains(x.AssignedTeamId, StringComparer.Ordinal);
             string[] allowedActions = x.Status switch
             {
-                "pending" when actorOwnsTask || (x.AssignedUserId is null && actorOwnsTeam) =>
+                "pending" when actorOwnsTask
+                    || (x.AssignedUserId is null && (x.AssignedTeamId is null || actorOwnsTeam)) =>
                     ["claim"],
                 "in-progress" when actorOwnsTask => ["submit-inspection"],
                 _ => [],

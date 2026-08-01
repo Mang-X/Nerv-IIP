@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 import SearchBar from './SearchBar.vue'
 
 describe('SearchBar', () => {
+  it('forwards an explicit accessible name to the native search input', () => {
+    const wrapper = mount(SearchBar, {
+      props: { ariaLabel: '维修工单关键字' },
+    })
+
+    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('维修工单关键字')
+  })
+
   it('keeps search, clear and cancel hit boxes at least 48px by contract', async () => {
     const wrapper = mount(SearchBar, {
       props: {

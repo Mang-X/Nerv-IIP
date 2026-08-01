@@ -5,6 +5,9 @@ import { computed, reactive, shallowRef } from 'vue'
 const executeTask = vi.fn()
 const refresh = vi.fn()
 const loadMore = vi.fn()
+const loadMoreError = shallowRef<unknown>()
+const actionError = shallowRef<unknown>()
+const lastUpdatedAt = shallowRef('2026-08-01T08:00:00.000Z')
 const actionPending = shallowRef(false)
 const actionUnconfirmed = shallowRef(false)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
@@ -41,6 +44,9 @@ vi.mock('@/composables/useBusinessWms', () => ({
     error: shallowRef(),
     refreshing: shallowRef(false),
     loadingMore: shallowRef(false),
+    loadMoreError,
+    actionError,
+    lastUpdatedAt,
     actionPending,
     actionUnconfirmed,
     refresh,
@@ -79,6 +85,7 @@ describe('WMS 拣货作业页', () => {
     scopeKey.value = 'self:emp049'
     actionPending.value = false
     actionUnconfirmed.value = false
+    actionError.value = { message: '拣货任务操作失败' }
     routeGuardState.guard = undefined
   })
 
@@ -93,16 +100,27 @@ describe('WMS 拣货作业页', () => {
       global: {
         stubs: {
           WarehouseTaskExecutionView: {
-            props: ['title', 'taskType', 'tasks', 'total', 'status', 'scopeKey', 'scopeOptions'],
+            props: [
+              'title',
+              'taskType',
+              'tasks',
+              'total',
+              'status',
+              'scopeKey',
+              'scopeOptions',
+              'updatedAt',
+              'loadMoreError',
+              'actionError',
+            ],
             template:
-              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}</div>',
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}|{{ Boolean(actionError) }}</div>',
           },
         },
       },
     })
 
     expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
-      '拣货|picking|2|self:emp049|Open|PK-2026-0001',
+      '拣货|picking|2|self:emp049|Open|PK-2026-0001|2026-08-01T08:00:00.000Z|false|true',
     )
   })
 

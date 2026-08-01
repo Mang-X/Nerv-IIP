@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils'
 withDefaults(
   defineProps<{
     placeholder?: string
+    ariaLabel?: string
     cancelable?: boolean
     class?: HTMLAttributes['class']
   }>(),
@@ -41,6 +42,7 @@ function cancel() {
         v-model="model"
         type="search"
         :placeholder="placeholder"
+        :aria-label="ariaLabel"
         class="min-h-touch w-full min-w-0 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
         @focus="focused = true"
         @keydown.enter="emit('search', model)"
