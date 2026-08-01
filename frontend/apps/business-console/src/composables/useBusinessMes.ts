@@ -25,6 +25,7 @@ import {
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
@@ -270,6 +271,38 @@ export function describeMesReadinessReason(reason: string): MesReadinessReasonDi
     detail: '',
     nextStep: '查看阻塞详情并按来源业务页面处理',
   }
+}
+
+/**
+ * 一串阻塞码 → 去重合并后的展示列表。
+ *
+ * 服务端按「每种缺料各下发一条」的粒度回 `MATERIAL_SHORTAGE:…`，前端过去直接
+ * `.map(describeMesReadinessReason)` 逐条渲染，于是同一道工序会堆出两条一模一样的
+ * 「物料缺料」——标签相同、`nextStep` 相同，操作员既看不出这是两种料，也不知道缺哪两项
+ * （#1418）。同码合并成一条，把各自的服务端说明并进 `detail`，一行说清「缺哪几项」。
+ *
+ * 只合并**同码**：不同码对应不同处理路径（`nextStep` 不同），必须各占一行。
+ */
+export function describeMesReadinessReasons(
+  reasons?: readonly string[] | null,
+): MesReadinessReasonDisplay[] {
+  const merged = new Map<string, MesReadinessReasonDisplay>()
+  const details = new Map<string, string[]>()
+  for (const raw of reasons ?? []) {
+    const display = describeMesReadinessReason(raw)
+    const bucket = details.get(display.code)
+    if (!bucket) {
+      merged.set(display.code, display)
+      details.set(display.code, display.detail ? [display.detail] : [])
+      continue
+    }
+    // 同码重复：说明去重后并进同一条，空说明不占位。
+    if (display.detail && !bucket.includes(display.detail)) bucket.push(display.detail)
+  }
+  return [...merged.values()].map((display) => ({
+    ...display,
+    detail: (details.get(display.code) ?? []).join('、'),
+  }))
 }
 
 export interface MesListFilters {
@@ -771,6 +804,11 @@ export type MesProductionReportInput = Omit<
   'organizationId' | 'environmentId' | 'scopeKind' | 'scopeId'
 >
 
+export interface MesProductionQuantitySnapshot {
+  plannedQuantity: number
+  reportedGoodQuantity: number
+}
+
 export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
@@ -787,6 +825,40 @@ export function useMesProductionReporting() {
       'listBusinessConsoleMesWorkOrders',
       'listBusinessConsoleMesOperationTasks',
     ])
+
+  async function readProductionQuantitySnapshot(
+    workOrderId: string,
+    operationTaskId: string,
+  ): Promise<MesProductionQuantitySnapshot> {
+    const normalizedWorkOrderId = workOrderId.trim()
+    const normalizedOperationTaskId = operationTaskId.trim()
+    const response = await getBusinessConsoleMesWipSummary({
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        workOrderId: normalizedWorkOrderId,
+        skip: 0,
+        take: 100,
+      },
+      throwOnError: false,
+    })
+    if (response.error !== undefined) throw response.error
+    if (!response.data?.success) {
+      throw response.data ?? new Error('生产报工累计数量读取失败')
+    }
+    const row = response.data.data?.items?.find(
+      (candidate) => candidate.operationTaskId?.trim() === normalizedOperationTaskId,
+    )
+    if (!row) {
+      throw new Error(
+        `生产工单 ${normalizedWorkOrderId} 的工序 ${normalizedOperationTaskId} 缺少累计报工数据。请刷新工序列表后重试；若仍无数据，请联系计划员核对工序。`,
+      )
+    }
+    return {
+      plannedQuantity: row.plannedQuantity ?? 0,
+      reportedGoodQuantity: row.goodQuantity ?? 0,
+    }
+  }
 
   async function recordProductionReportAction(
     body: MesProductionReportInput,
@@ -898,6 +970,7 @@ export function useMesProductionReporting() {
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,
+    readProductionQuantitySnapshot,
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,

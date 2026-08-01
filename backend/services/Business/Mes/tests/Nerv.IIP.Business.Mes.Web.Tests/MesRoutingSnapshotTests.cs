@@ -92,6 +92,39 @@ public sealed class MesRoutingSnapshotTests
     }
 
     [Fact]
+    public async Task Convert_plan_persists_the_technical_production_version_resolved_by_routing_provider()
+    {
+        const string productionVersionId = "019f855b-5cb0-7550-a509-d2ee7b021689";
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var routingProvider = new FakeRoutingSnapshotProvider(
+            MesRoutingSnapshotResult.Captured(
+                "product-engineering-http:resolved",
+                [new MesRoutingOperationSnapshot(10, "FORM", "WC-QJ", [], 30, false)],
+                productionVersionId));
+        var handler = new ConvertPlanToWorkOrderCommandHandler(
+            dbContext,
+            new RuleScheduler(),
+            null,
+            NoMaterialRequirementsProvider.Instance,
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+            routingProvider);
+
+        await handler.Handle(
+            NewCommand(DateTimeOffset.Parse("2026-07-21T08:00:00Z"), "routing-snapshot-resolved-pv") with
+            {
+                ProductionVersionId = null,
+                SkuId = "FG-QJ-S1-R",
+            },
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleAsync(CancellationToken.None);
+        Assert.Equal(productionVersionId, workOrder.ProductionVersionId);
+    }
+
+    [Fact]
     public async Task Convert_plan_without_valid_published_routing_rejects_before_creating_work_order()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -210,6 +243,107 @@ public sealed class MesRoutingSnapshotTests
         Assert.Contains("organizationId=org-001", requests[0], StringComparison.Ordinal);
         Assert.Contains("environmentId=env-dev", requests[0], StringComparison.Ordinal);
         Assert.DoesNotContain("resolve", requests[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Http_provider_resolves_missing_reference_by_scoped_sku_before_fetching_exact_snapshot()
+    {
+        const string productionVersionId = "019f855b-5cb0-7550-a509-d2ee7b021689";
+        var requests = new List<string>();
+        var httpHandler = new StubHttpMessageHandler(request =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            requests.Add(pathAndQuery);
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
+            {
+                Assert.Contains("organizationId=org-001", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("environmentId=env-dev", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("skuCode=FG-QJ-S1-R", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("effectiveDate=2026-07-21", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("lotSize=12", pathAndQuery, StringComparison.Ordinal);
+                return JsonEnvelope(new
+                {
+                    productionVersionId,
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-QJ-S1-R",
+                    mbomVersionId = "MBOM-FG-QJ-S1-R:1",
+                    routingVersionId = "ROUTE-FG-QJ-S1-R:1",
+                    effectiveDate = "2026-01-05",
+                    lotSize = 12m,
+                    status = "active",
+                });
+            }
+
+            if (pathAndQuery.StartsWith(
+                    $"/api/business/v1/engineering/production-versions/{productionVersionId}/routing-snapshot?",
+                    StringComparison.Ordinal))
+            {
+                return JsonEnvelope(new
+                {
+                    productionVersionId,
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-QJ-S1-R",
+                    productionVersionStatus = "active",
+                    routingVersionId = "ROUTE-FG-QJ-S1-R:1",
+                    routingCode = "ROUTE-FG-QJ-S1-R",
+                    routingRevision = "1",
+                    routingStatus = "Published",
+                    operations = new object[]
+                    {
+                        new
+                        {
+                            sequence = 10,
+                            workCenterCode = "WC-QJ",
+                            operationCode = "FORM",
+                            operationName = "Form",
+                            standardMinutes = 30,
+                            setupMinutes = 0,
+                            runMinutes = 30,
+                            teardownMinutes = 0,
+                            controlKey = "standard",
+                            requiresReporting = true,
+                            requiresQualityInspection = false,
+                            isOutsourced = false,
+                        },
+                    },
+                });
+            }
+
+            throw new InvalidOperationException($"Unexpected ProductEngineering request: {pathAndQuery}");
+        });
+        var snapshotProvider = new HttpMesProductEngineeringRoutingSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(httpHandler)
+            {
+                BaseAddress = new Uri("http://product-engineering"),
+            }));
+
+        var result = await snapshotProvider.GetSnapshotAsync(
+            new MesRoutingSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-QJ-S1-R",
+                null,
+                12m,
+                DateTimeOffset.Parse("2026-07-21T08:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(MesRoutingSnapshotStatus.Captured, result.Status);
+        Assert.Equal(productionVersionId, result.ProductionVersionId);
+        Assert.Equal($"product-engineering-http:{productionVersionId}:ROUTE-FG-QJ-S1-R:1", result.SourceSystem);
+        Assert.Collection(
+            result.Operations,
+            operation =>
+            {
+                Assert.Equal(10, operation.Sequence);
+                Assert.Equal("FORM", operation.OperationCode);
+                Assert.Equal("WC-QJ", operation.WorkCenterId);
+            });
+        Assert.Equal(2, requests.Count);
+        Assert.Contains("/resolve?", requests[0], StringComparison.Ordinal);
+        Assert.Contains($"/{productionVersionId}/routing-snapshot?", requests[1], StringComparison.Ordinal);
     }
 
     [Fact]

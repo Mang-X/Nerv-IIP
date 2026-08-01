@@ -9,6 +9,7 @@ import {
   conflictReasonLabel,
   ResourceSchedulerBoard,
   SchedulingLegend,
+  SchedulingToolbar,
   TaskDetailPanel,
   toModel,
   type ScheduleModel,
@@ -30,7 +31,6 @@ import {
   EyeIcon,
   SendIcon,
   ShieldAlertIcon,
-  TimerIcon,
   TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
@@ -219,6 +219,65 @@ const selectedConflicts = computed(() =>
     : [],
 )
 
+// ── 时间线控件与搜索(#1399 M4 / M5)────────────────────────────────────────────
+// 引擎侧 4 档刻度、放大缩小、定位到当前、适配窗口早就实现了,只是这个页面从没挂过工具栏,
+// 自己手搓了「自动适配/班次级/日级」三个按钮。改为直接用包内 SchedulingToolbar。
+const boardRef = shallowRef<InstanceType<typeof ResourceSchedulerBoard>>()
+function sendCommand(cmd: Parameters<NonNullable<typeof boardRef.value>['command']>[0]) {
+  boardRef.value?.command(cmd)
+}
+
+const search = shallowRef('')
+/**
+ * 命中判定跨「工单号 / 工序号 / 条上标题 / 资源 / 工作中心人话名」五个字段。
+ * 调度员嘴里的"找 03008"可能是工单号,"找精磨"是工作中心名,两种都得中——只匹配工单号
+ * 等于把一半的找法判死。大小写与首尾空格一律归一。
+ */
+const searchMatches = computed<ScheduleTask[]>(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return []
+  return (model.value?.tasks ?? []).filter((task) => {
+    if (task.type !== 'operation' || task.blockKind) return false
+    return [
+      task.orderId,
+      task.operationId,
+      task.text,
+      task.resourceId,
+      task.workCenterId,
+      task.dimensions?.workCenter?.label,
+      task.product,
+    ].some((field) => field && String(field).toLowerCase().includes(q))
+  })
+})
+const matchCount = computed(() => searchMatches.value.length)
+// 1 基游标;0 表示还没定位过。
+const matchCursor = shallowRef(0)
+
+function revealMatch(index: number) {
+  const list = searchMatches.value
+  if (!list.length) return
+  // 环形步进:搜索到底再按"下一个"应回到第一条,而不是卡住不动。
+  const next = ((index % list.length) + list.length) % list.length
+  matchCursor.value = next + 1
+  const task = list[next]
+  sendCommand({ kind: 'revealTask', taskId: task.id })
+  selectedTaskId.value = task.id
+}
+
+// 输入即高亮 + 自动跳到第一条命中。清空则退出搜索态(高亮全撤)。
+watch([search, searchMatches], () => {
+  sendCommand({ kind: 'setSearchHighlight', taskIds: searchMatches.value.map((t) => t.id) })
+  matchCursor.value = 0
+  if (searchMatches.value.length) revealMatch(0)
+})
+// 换方案时清空搜索:上一版方案的关键词留在框里,配着新方案的「无匹配」最容易被当成 bug。
+watch(
+  () => props.plan?.planId,
+  () => {
+    search.value = ''
+  },
+)
+
 const resourceCount = computed(() => model.value?.resources.length ?? 0)
 const planRange = computed(() => {
   const horizon = model.value?.horizon
@@ -329,32 +388,6 @@ function formatDateTime(value: string) {
           <p class="mt-1 text-sm text-muted-foreground">{{ planRange }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <div class="inline-flex rounded-md border bg-background p-1" aria-label="时间缩放">
-            <NvButton
-              size="sm"
-              :variant="scale === 'auto' ? 'secondary' : 'ghost'"
-              type="button"
-              @click="scale = 'auto'"
-            >
-              自动适配
-            </NvButton>
-            <NvButton
-              size="sm"
-              :variant="scale === 'hour' ? 'secondary' : 'ghost'"
-              type="button"
-              @click="scale = 'hour'"
-            >
-              <TimerIcon aria-hidden="true" />班次级
-            </NvButton>
-            <NvButton
-              size="sm"
-              :variant="scale === 'day' ? 'secondary' : 'ghost'"
-              type="button"
-              @click="scale = 'day'"
-            >
-              <CalendarDaysIcon aria-hidden="true" />日级
-            </NvButton>
-          </div>
           <NvButton size="sm" variant="outline" type="button" @click="emit('openDetail')">
             <EyeIcon aria-hidden="true" />方案明细
           </NvButton>
@@ -426,13 +459,42 @@ function formatDateTime(value: string) {
       <!-- 甘特与详情并排：详情是同一行里的一列（不是覆盖层），
            打开时甘特只是变窄，仍然可见、可点、可继续换选。 -->
       <div class="flex h-[34rem] min-h-[28rem] gap-3">
-        <div class="min-w-0 flex-1 overflow-hidden rounded-lg border bg-card p-2">
-          <ResourceSchedulerBoard
-            :model="model"
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+          <!-- 时间线工具栏。这是只读面:不给撤销/重做/解锁(canEdit=false),也不在这里发布
+               (发布走上方带失效守卫与禁用原因的「发布当前方案」,不要在工具栏再放一个)。 -->
+          <SchedulingToolbar
             :scale="scale"
             :read-only="true"
-            @task-select="selectedTaskId = $event"
+            :can-undo="false"
+            :can-redo="false"
+            :dirty="false"
+            :busy="false"
+            :can-edit="false"
+            :can-repreview="false"
+            :can-release="false"
+            searchable
+            :search="search"
+            :match-count="matchCount"
+            :match-index="matchCursor"
+            search-placeholder="搜工单 / 工序 / 工作中心"
+            @scale-change="scale = $event"
+            @zoom-in="sendCommand({ kind: 'zoomIn' })"
+            @zoom-out="sendCommand({ kind: 'zoomOut' })"
+            @today="sendCommand({ kind: 'scrollToToday' })"
+            @fit="sendCommand({ kind: 'fitToScreen' })"
+            @update:search="search = $event"
+            @search-prev="revealMatch(matchCursor - 2)"
+            @search-next="revealMatch(matchCursor)"
           />
+          <div class="min-h-0 flex-1 p-2">
+            <ResourceSchedulerBoard
+              ref="boardRef"
+              :model="model"
+              :scale="scale"
+              :read-only="true"
+              @task-select="selectedTaskId = $event"
+            />
+          </div>
         </div>
 
         <aside

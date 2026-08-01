@@ -529,8 +529,14 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.findAll('[data-task-id]')).toHaveLength(5)
     expect(wrapper.findAll('[data-conflict="true"]')).toHaveLength(1)
     expect(wrapper.findAll('[data-locked="true"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('班次级')
-    expect(wrapper.text()).toContain('日级')
+    // 时间刻度控件改由包内 SchedulingToolbar 提供（#1399 M4）：此前是页面手搓的
+    // 「自动适配 / 班次级 / 日级」三个按钮，只有 3 档；现在挂的是引擎那套完整 5 档下拉。
+    // 断言相应改成「刻度控件在、四档真实刻度都可选」——要考的是能不能换时间线，
+    // 不是按钮上写的哪两个字。
+    expect(wrapper.find('[aria-label="时间刻度"]').exists()).toBe(true)
+    expect(wrapper.findAllComponents({ name: 'NvSelectItem' }).map((item) => item.text())).toEqual(
+      expect.arrayContaining(['自适应', '小时', '日', '周', '月']),
+    )
     expect(wrapper.text()).toContain('冲突')
     expect(wrapper.text()).toContain('锁定')
     expect(wrapper.text()).not.toContain('甘特可视化待接入')
@@ -609,7 +615,13 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
-    expect(wrapper.findAllComponents({ name: 'NvSelectItem' })).toHaveLength(6)
+    // 只数**方案选择器**里的选项。原先数的是整页 NvSelectItem 总数，甘特工具栏一挂上来
+    // （#1399 M4，多 5 个刻度选项）这条就红了——它考的其实是「无 planId 的 summary 不该
+    // 变成方案选项」，与页面上还有几个别的下拉无关。按选项文本前缀锁定方案选项。
+    const planOptions = wrapper
+      .findAllComponents({ name: 'NvSelectItem' })
+      .filter((item) => item.text().startsWith('plan-'))
+    expect(planOptions).toHaveLength(6)
   })
 
   it('opens plan detail and releases the selected plan through the composable', async () => {

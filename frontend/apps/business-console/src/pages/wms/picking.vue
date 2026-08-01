@@ -265,17 +265,18 @@ async function onStart(row: PickingRow) {
   }
 }
 
-// 完成拣货要填实拣数量；少拣时后端强制要差异原因（422 picking-difference-reason-required），
-// 所以弹框在少拣时就把原因框变成必填，别等提交完再报错。
+// 完成拣货要填实拣数量；短拣与允许范围内的超拣都必须说明差异原因，超过计划量 110% 则拒绝。
+// 弹框先即时拦截，后端聚合仍是权威边界。
 const completeOpen = shallowRef(false)
 const completeError = shallowRef('')
 const completeTask = shallowRef<PickingRow | undefined>()
 const completeForm = reactive({ executedQuantity: '', differenceReason: '' })
 const completePlannedQuantity = computed(() => completeTask.value?.plannedQuantity ?? 0)
-const completeIsShort = computed(() => {
+const completeIsDifference = computed(() => {
   const value = Number(completeForm.executedQuantity)
-  return completeForm.executedQuantity !== '' && value < completePlannedQuantity.value
+  return completeForm.executedQuantity !== '' && value !== completePlannedQuantity.value
 })
+const completeMaximumQuantity = computed(() => completePlannedQuantity.value * 1.1)
 
 function openComplete(row: PickingRow) {
   completeTask.value = row
@@ -291,15 +292,17 @@ async function submitComplete() {
   if (!row) return
   const quantity = Number(completeForm.executedQuantity)
   if (completeForm.executedQuantity === '' || !Number.isFinite(quantity) || quantity < 0) {
-    completeError.value = '请填写实拣数量（0 到计划量之间）。'
+    completeError.value = `拣货任务 ${row.taskNo ?? '当前任务'} 的实拣数量无效。请填写不小于 0 的实拣数量。`
     return
   }
-  if (quantity > completePlannedQuantity.value) {
-    completeError.value = `实拣数量不能超过计划量 ${formatQuantity(completePlannedQuantity.value)}。`
+  if (quantity > completeMaximumQuantity.value) {
+    completeError.value = `拣货任务 ${row.taskNo ?? '当前任务'} 的实拣数量 ${formatQuantity(quantity)} 超过计划量 ${formatQuantity(completePlannedQuantity.value)} 的 110% 上限，最多可实拣 ${formatQuantity(completeMaximumQuantity.value)}。请调整实拣数量；如计划确需增加，请先调整出库计划后再操作。`
     return
   }
-  if (completeIsShort.value && !completeForm.differenceReason.trim()) {
-    completeError.value = '实拣少于计划量，必须填写差异原因。'
+  if (completeIsDifference.value && !completeForm.differenceReason.trim()) {
+    const differenceDirection =
+      quantity > completePlannedQuantity.value ? '超过计划量' : '少于计划量'
+    completeError.value = `拣货任务 ${row.taskNo ?? '当前任务'} 的实拣数量${differenceDirection}，必须填写差异原因。请说明短拣或超拣原因后重试。`
     return
   }
   try {
@@ -632,13 +635,13 @@ function firstQuery(value: unknown) {
                 v-model="completeForm.executedQuantity"
                 type="number"
                 min="0"
-                :max="completePlannedQuantity"
+                :max="completeMaximumQuantity"
                 step="any"
                 autocomplete="off"
               />
             </NvField>
-            <!-- 少拣才出现原因框：整单完成时多一个必填框只会拖慢现场。 -->
-            <NvField v-if="completeIsShort">
+            <!-- 短拣与超拣都是差异完成；整单按计划完成时不增加现场录入负担。 -->
+            <NvField v-if="completeIsDifference">
               <NvFieldLabel for="wms-picking-reason">差异原因</NvFieldLabel>
               <NvInput
                 id="wms-picking-reason"

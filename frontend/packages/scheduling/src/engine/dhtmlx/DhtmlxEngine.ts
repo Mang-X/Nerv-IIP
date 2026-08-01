@@ -36,6 +36,8 @@ interface DhxGantt {
   setSizes?: () => void
   destructor?: () => void
   showDate?: (date: Date) => void
+  /** 把某条任务滚进可视区(纵向到它那行、横向到它的时间)。搜索定位用。 */
+  showTask?: (id: string | number) => void
   addMarker?: (marker: Record<string, unknown>) => string
   deleteMarker?: (id: string) => void
   addLink?: (link: Record<string, unknown>) => string
@@ -84,35 +86,101 @@ function laneNameCell(t: LaneTask): string {
   const over = (t.kpi?.utilization ?? 0) > 1
   return `<div class="nerv-lane-id"><span class="nerv-lane-name">${name}</span>${over ? '<span class="nerv-lane-tag">瓶颈</span>' : ''}</div>`
 }
-// 左侧列2:产能指标(利用率 / OEE / 切换 / 待料)。
-function laneKpiCell(t: LaneTask): string {
-  const k = t.kpi
-  if (!k) return ''
-  const util = Math.round((k.utilization ?? 0) * 100)
-  const oee = Math.round((k.oee ?? 0) * 100)
-  const over = util > 100
-  const co = k.changeoverCount ?? 0
-  const risk = k.materialRisk ?? 0
-  return `<div class="nerv-lane-kpis">
-    <span class="nerv-lane-kpi"><i>利用率</i><b class="${over ? 'nerv-over' : ''}">${util}%</b></span>
-    <span class="nerv-lane-kpi"><i>OEE</i><b>${oee}%</b></span>
-    <span class="nerv-lane-kpi"><i>切换</i><b>${co}</b></span>
-    <span class="nerv-lane-kpi"><i>待料</i><b class="${risk ? 'nerv-warn' : ''}">${risk}</b></span>
-  </div>`
+export type LaneKpiKey = 'utilization' | 'oee' | 'changeoverCount' | 'materialRisk'
+export type LaneKpiVisibility = Record<LaneKpiKey, boolean>
+
+/**
+ * 某个指标是否值得上屏:**全部泳道都取不到值、或全部泳道都是 0** 就不上屏(#1399 M8)。
+ *
+ * 「OEE 0%」比没有这一列更伤——领导看见 0% 会问"设备是不是停了",而真相只是读面没透传
+ * 这个字段(根因 C)。一个恒 0 的指标不是"当前表现差",是"我们没这个数",屏幕不该混淆二者。
+ *
+ * 注意判定的是**跨全部泳道**而不是逐泳道:某条产线今天切换次数确实是 0 是有意义的读数,
+ * 只有当整列都没有非零值时才说明这个字段根本没有数据供给。
+ */
+export function resolveLaneKpiVisibility(lanes: ReadonlyArray<LaneTask['kpi']>): LaneKpiVisibility {
+  const anyNonZero = (key: LaneKpiKey) =>
+    lanes.some((k) => {
+      const v = k?.[key]
+      return typeof v === 'number' && Number.isFinite(v) && v !== 0
+    })
+  return {
+    utilization: anyNonZero('utilization'),
+    oee: anyNonZero('oee'),
+    changeoverCount: anyNonZero('changeoverCount'),
+    materialRisk: anyNonZero('materialRisk'),
+  }
 }
 
-const GRID_COLUMNS = (view: 'order' | 'resource', dimLabel = '工作中心') => {
+/** 四个指标全无数据 → 整列「产能指标」都不该出现,把宽度还给泳道名。 */
+export function hasAnyLaneKpi(visibility: LaneKpiVisibility): boolean {
+  return Object.values(visibility).some(Boolean)
+}
+
+// 左侧列2:产能指标(利用率 / OEE / 切换 / 待料)。恒 0 / 无数据的指标整项不渲染。
+function makeLaneKpiCell(getVisibility: () => LaneKpiVisibility) {
+  return (t: LaneTask): string => {
+    const k = t.kpi
+    if (!k) return ''
+    const show = getVisibility()
+    const cells: string[] = []
+    if (show.utilization) {
+      const util = Math.round((k.utilization ?? 0) * 100)
+      cells.push(
+        `<span class="nerv-lane-kpi"><i>利用率</i><b class="${util > 100 ? 'nerv-over' : ''}">${util}%</b></span>`,
+      )
+    }
+    if (show.oee) {
+      cells.push(
+        `<span class="nerv-lane-kpi"><i>OEE</i><b>${Math.round((k.oee ?? 0) * 100)}%</b></span>`,
+      )
+    }
+    if (show.changeoverCount) {
+      cells.push(`<span class="nerv-lane-kpi"><i>切换</i><b>${k.changeoverCount ?? 0}</b></span>`)
+    }
+    if (show.materialRisk) {
+      const risk = k.materialRisk ?? 0
+      cells.push(
+        `<span class="nerv-lane-kpi"><i>待料</i><b class="${risk ? 'nerv-warn' : ''}">${risk}</b></span>`,
+      )
+    }
+    return cells.length ? `<div class="nerv-lane-kpis">${cells.join('')}</div>` : ''
+  }
+}
+
+const GRID_COLUMNS = (
+  view: 'order' | 'resource',
+  dimLabel = '工作中心',
+  getKpiVisibility: () => LaneKpiVisibility = () => ({
+    utilization: true,
+    oee: true,
+    changeoverCount: true,
+    materialRisk: true,
+  }),
+) => {
   if (view === 'resource') {
+    const showKpiColumn = hasAnyLaneKpi(getKpiVisibility())
     return [
       {
         name: 'text',
         label: dimLabel,
         tree: true,
-        width: 128,
+        // 没有产能指标列时泳道名独占宽度:留一条空列比不要这列更显"没做完"。
+        width: showKpiColumn ? 128 : 252,
         resize: true,
         template: laneNameCell,
       },
-      { name: 'kpi', label: '产能指标', width: 124, resize: true, template: laneKpiCell },
+      ...(showKpiColumn
+        ? [
+            {
+              name: 'kpi',
+              label: '产能指标',
+              width: 124,
+              resize: true,
+              template: makeLaneKpiCell(getKpiVisibility),
+            },
+          ]
+        : []),
     ]
   }
   const name = { name: 'text', label: '任务名称', tree: true, width: 196, resize: true }
@@ -260,15 +328,22 @@ const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unkn
   ],
 }
 
-/** 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。 */
-function tooltipHtml(t: ScheduleTask): string {
+/**
+ * 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。
+ * 导出仅为可测:这段是拼字符串直接进 innerHTML,裸色值混进来在浏览器里很难被发现
+ * (得 hover 到恰好是插单的那一条),交给单测按 token 断言。
+ */
+export function tooltipHtml(t: ScheduleTask): string {
   const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
   const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
   const chip = (txt: string, tone: string) =>
     `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
   const badges = [
     prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
-    t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
+    // 插单走 --nv-scheduling-rush,与图例(SchedulingLegend)、工序详情(TaskDetailPanel)同一个
+    // 事实源。此前硬编码 oklch(0.7 0.17 60),与 token 的 oklch(0.68 0.18 45) 不是同一个颜色
+    // ——同语义两色,且裸值进 innerHTML 后暗色主题不跟随(#1399 M6)。
+    t.isRush ? chip('插单', 'var(--nv-scheduling-rush)') : '',
     t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
     t.materialRisk ? chip('缺料待备', 'var(--nv-scheduling-kit-warn)') : '',
@@ -338,6 +413,21 @@ export class DhtmlxEngine implements SchedulingEngine {
   private model?: ScheduleModel
   private scale: TimeScale = 'day'
   private selectedTaskId?: string
+  /**
+   * 搜索命中集。`undefined`/空 = 不在搜索态(所有条正常显示);非空 = 命中高亮、其余压暗。
+   * 用 Set 而不是每次遍历数组:资源板实测 400+ 条,task_class 每次重绘对每条都要问一次。
+   */
+  private searchHits?: Set<string>
+  /**
+   * 泳道产能指标的上屏白名单。mount 时列定义闭包引用它,setData 时按真实数据重算——
+   * 所以初值必须是"全不显示":列先建好、数据还没到,这一瞬间若默认全显示就会闪一排 0%。
+   */
+  private kpiVisibility: LaneKpiVisibility = {
+    utilization: false,
+    oee: false,
+    changeoverCount: false,
+    materialRisk: false,
+  }
   private markerId?: string
   private lastPointerY = 0
   private lastPointerX = 0
@@ -539,7 +629,15 @@ export class DhtmlxEngine implements SchedulingEngine {
     g.config.scales = this.scalesFor()
     g.clearAll()
     this.shownLinkIds = [] // clearAll 已清掉连线
-    g.parse(this.toGanttData(model))
+    // toGanttData 顺带算出本批数据里哪些泳道指标真有值(见 kpiVisibility)。列定义要在 parse
+    // 之前按结果重建:整列被去掉时泳道名列要变宽,晚于 parse 改会先闪一帧旧布局。
+    const data = this.toGanttData(model)
+    g.config.columns = GRID_COLUMNS(
+      this.options.view,
+      this.resolveDimLabel(),
+      () => this.kpiVisibility,
+    )
+    g.parse(data)
     this.refreshMarker()
     this.mirrorTaskIds()
     if (this.selectedTaskId) this.showOrderLinks(this.selectedTaskId) // 拖拽/重排后保持选中工单连线
@@ -573,6 +671,17 @@ export class DhtmlxEngine implements SchedulingEngine {
         if (command.kind === 'focusConflict')
           this.emit('conflictClicked', { taskId: command.taskId })
         break
+      case 'revealTask':
+        // showTask 同时管纵向(滚到那一行)与横向(滚到那段时间)。条不存在就什么都不做,
+        // 不要退化成 showDate:搜索结果落在已折叠/已过滤掉的行上时,乱跳视口比不动更糟。
+        if (g?.isTaskExists?.(command.taskId)) g.showTask?.(command.taskId)
+        break
+      case 'setSearchHighlight': {
+        this.searchHits = command.taskIds.length ? new Set(command.taskIds) : undefined
+        // task_class 只在重绘时重算,必须显式 render,否则输入框里字都打完了图还没变。
+        g?.render()
+        break
+      }
       case 'setReadOnly':
         this.options.readOnly = command.readOnly
         if (g) {
@@ -744,7 +853,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 默认不画连线;资源板仅在「选中某工序」时动态显示该工单的工序连线(showOrderLinks)。
     c.show_links = true
     c.highlight_critical_path = options.view === 'order'
-    c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel())
+    c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel(), () => this.kpiVisibility)
     c.scales = this.scalesFor()
     // 资源排产板小时刻度有 3 行(日期/班次/小时),抬高刻度区。
     c.scale_height = options.view === 'resource' && this.resolveScale() === 'hour' ? 70 : 50
@@ -776,6 +885,12 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (t?.hasConflict) cls.push('nerv-conflict')
       if (t?.locked) cls.push('nerv-locked')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
+      // 搜索态:命中加环、未命中压暗。工单汇总行不参与压暗——把父行也压掉会让整棵树"消失",
+      // 看起来像图加载失败。
+      if (this.searchHits && t) {
+        if (this.searchHits.has(t.id)) cls.push('nerv-search-hit')
+        else if (t.type !== 'order') cls.push('nerv-search-miss')
+      }
       return cls.join(' ')
     }
     inst.templates.grid_row_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) =>
@@ -1081,18 +1196,48 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
     tip.style.display = 'block'
     // pointermove 高频:把位置写入合并到每帧一次 rAF(避免每个事件都触发合成),用 translate 定位(GPU 层,不触发 layout)。
-    this.tipPendingX = e.clientX + 14
-    this.tipPendingY = e.clientY + 18
+    // 这里存的是**指针原始坐标**,偏移与边界翻转都留到 rAF 里算 —— 那时 tip 已完成布局,
+    // 才量得到真实尺寸。
+    this.tipPendingX = e.clientX
+    this.tipPendingY = e.clientY
     if (!this.tipRaf) {
       this.tipRaf = requestAnimationFrame(() => {
         this.tipRaf = 0
         const el = this.tipEl
         if (!el || el.style.display === 'none') return
-        el.style.transform = `translate(${Math.round(this.tipPendingX)}px, ${Math.round(this.tipPendingY)}px)`
+        el.style.transform = this.tipTransform(el)
         // 首帧就位后再淡入(display:none → block 时 transition 不生效,需分帧)。
         if (el.style.opacity !== '1') el.style.opacity = '1'
       })
     }
+  }
+
+  /**
+   * tooltip 的落位。默认摆在指针右下方,但**贴近视口右/下边缘时翻到另一侧**——
+   * 此前无条件 `指针 + (14, 18)`,鼠标停在甘特底部一行时 tooltip 直接被视口下边切掉,
+   * 正好是信息最密的那几行(#1418)。
+   *
+   * 翻转而不是简单夹取:夹到边上会让 tooltip 盖住指针下的任务条,反而挡住要看的东西。
+   * 翻转后若仍装不下(tooltip 比视口还高)再夹进边距,保证至少从顶部开始可读。
+   */
+  private tipTransform(el: HTMLElement): string {
+    const GAP_X = 14
+    const GAP_Y = 18
+    const MARGIN = 8
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    let x = this.tipPendingX + GAP_X
+    if (x + w > vw - MARGIN) x = this.tipPendingX - GAP_X - w
+    x = Math.max(MARGIN, Math.min(x, vw - MARGIN - w))
+
+    let y = this.tipPendingY + GAP_Y
+    if (y + h > vh - MARGIN) y = this.tipPendingY - GAP_Y - h
+    y = Math.max(MARGIN, Math.min(y, vh - MARGIN - h))
+
+    return `translate(${Math.round(x)}px, ${Math.round(y)}px)`
   }
 
   private hideTip(): void {
@@ -1363,6 +1508,8 @@ export class DhtmlxEngine implements SchedulingEngine {
           (resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
           (resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER),
       )
+      // 本批泳道指标先攒起来,循环末尾一次性判定哪些指标真有数据(#1399 M8)。
+      const laneKpis: Array<LaneTask['kpi']> = []
       for (const [id, label] of sortedGroups) {
         const res = resById.get(id)
         const resourceIds = resourcesByLane.get(id) ?? new Set([id])
@@ -1382,21 +1529,23 @@ export class DhtmlxEngine implements SchedulingEngine {
             ? load.assigned / load.available
             : load.utilization
           : undefined
+        const kpi =
+          res || utilization != null
+            ? {
+                utilization: res?.utilization ?? utilization,
+                oee: res?.oee,
+                changeoverCount: res?.changeoverCount,
+                materialRisk: res?.materialRisk,
+              }
+            : undefined
+        laneKpis.push(kpi)
         data.push({
           id: `lane:${id}`,
           text: label,
           type: 'project',
           render: 'split',
           open: true,
-          kpi:
-            res || utilization != null
-              ? {
-                  utilization: res?.utilization ?? utilization,
-                  oee: res?.oee,
-                  changeoverCount: res?.changeoverCount,
-                  materialRisk: res?.materialRisk,
-                }
-              : undefined,
+          kpi,
           nerv: {
             type: 'order',
             orderId: id,
@@ -1410,6 +1559,7 @@ export class DhtmlxEngine implements SchedulingEngine {
           },
         })
       }
+      this.kpiVisibility = resolveLaneKpiVisibility(laneKpis)
       for (const t of ops) data.push(this.toGanttTask(t, `lane:${laneOf(t)}`, toDate))
       // 资源视图不连工单依赖线(跨资源视觉噪声)。
       return { data, links: [] }

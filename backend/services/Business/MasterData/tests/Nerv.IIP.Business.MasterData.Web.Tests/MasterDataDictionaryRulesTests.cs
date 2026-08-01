@@ -13,6 +13,16 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class MasterDataDictionaryRulesTests
 {
     [Fact]
+    public void Priority_is_a_reserved_factory_custom_code_set_without_fabricated_seed_values()
+    {
+        Assert.True(MasterDataDictionaryRules.IsStandardCodeSet("priority"));
+        Assert.False(MasterDataDictionaryRules.IsSystemEnumCodeSet("priority"));
+        Assert.DoesNotContain(
+            MasterDataDictionaryRules.StandardReferenceData,
+            item => string.Equals(item.CodeSet, "priority", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task MasterData_seed_creates_authoritative_dictionary_codes()
     {
         await using var provider = CreateInMemoryProvider();
@@ -312,6 +322,16 @@ public sealed class MasterDataDictionaryRulesTests
             CancellationToken.None);
         Assert.Equal("packaging", skill.Code);
 
+        var priority = await handler.Handle(
+            new CreateReferenceDataCodeCommand(
+                "org-001",
+                "env-dev",
+                "priority",
+                "urgent-customer",
+                "客户加急"),
+            CancellationToken.None);
+        Assert.Equal("urgent-customer", priority.Code);
+
         var unknownCodeSet = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateReferenceDataCodeCommand(
                 "org-001",
@@ -397,7 +417,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["shelf-life-policy"] = ["expiry-controlled", "fefo", "fifo", "none"],
             ["storage-condition"] = ["ambient", "dry", "esd", "frozen", "hazardous", "refrigerated"],
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
-            ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
+            ["uom-dimension"] = ["area", "count", "force", "length", "pressure", "ratio", "time", "torque", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
             ["skill"] = ["assembly", "cnc-operation", "equipment-maintenance", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
