@@ -397,7 +397,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["shelf-life-policy"] = ["expiry-controlled", "fefo", "fifo", "none"],
             ["storage-condition"] = ["ambient", "dry", "esd", "frozen", "hazardous", "refrigerated"],
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
-            ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
+            ["uom-dimension"] = ["area", "count", "force", "length", "pressure", "ratio", "time", "torque", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
             ["skill"] = ["assembly", "cnc-operation", "equipment-maintenance", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
