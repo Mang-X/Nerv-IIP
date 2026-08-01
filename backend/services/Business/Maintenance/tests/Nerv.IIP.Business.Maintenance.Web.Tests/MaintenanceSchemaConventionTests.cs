@@ -37,6 +37,7 @@ public sealed class MaintenanceSchemaConventionTests
         {
             typeof(MaintenanceWorkOrder),
             typeof(SparePartLine),
+            typeof(MaintenanceWorkOrderLifecycleEvent),
             typeof(MaintenancePlan),
             typeof(MaintenanceInspection),
             typeof(MaintenanceInspectionMeasurement),
@@ -54,6 +55,34 @@ public sealed class MaintenanceSchemaConventionTests
         failures.AddRange(NoExternalOwnershipColumns(fixture.DbContext));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Lifecycle_event_schema_keeps_auditable_comments_indexes_and_restrictive_ownership()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var entity = Assert.IsAssignableFrom<IReadOnlyEntityType>(
+            fixture.DbContext.GetService<IDesignTimeModel>().Model
+                .FindEntityType(typeof(MaintenanceWorkOrderLifecycleEvent)));
+
+        Assert.Equal(MaintenanceFacts.Schema, entity.GetSchema());
+        Assert.Equal("maintenance_work_order_lifecycle_events", entity.GetTableName());
+        Assert.False(string.IsNullOrWhiteSpace(entity.GetComment()));
+        Assert.All(entity.GetProperties(), property =>
+            Assert.False(string.IsNullOrWhiteSpace(property.GetComment()),
+                $"Lifecycle event column '{property.GetColumnName()}' requires a comment."));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "IdempotencyKey"],
+                StringComparer.Ordinal));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "WorkOrderId", "OccurredAtUtc"],
+                StringComparer.Ordinal));
+        var workOrderForeignKey = Assert.Single(entity.GetForeignKeys(), foreignKey =>
+            foreignKey.PrincipalEntityType.ClrType == typeof(MaintenanceWorkOrder));
+        Assert.Equal(DeleteBehavior.Restrict, workOrderForeignKey.DeleteBehavior);
     }
 
     [Fact]

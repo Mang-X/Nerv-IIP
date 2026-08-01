@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using MediatR;
 using Microsoft.Extensions.Configuration;
@@ -84,6 +85,8 @@ public sealed class NervIipCommandLockBehavior<TRequest, TResponse>(
         }
 
         var handles = new List<ILockSynchronizationHandler>();
+        TResponse response = default!;
+        Exception? pipelineException = null;
         try
         {
             var lockSettingsByKey = new Dictionary<string, TimeSpan>(StringComparer.Ordinal);
@@ -119,15 +122,49 @@ public sealed class NervIipCommandLockBehavior<TRequest, TResponse>(
             }
 
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
-            return await next(linkedCancellation.Token);
+            response = await next(linkedCancellation.Token);
         }
-        finally
+        catch (Exception exception)
         {
-            for (var i = handles.Count - 1; i >= 0; i--)
+            pipelineException = exception;
+        }
+
+        var releaseExceptions = new List<Exception>();
+        for (var i = handles.Count - 1; i >= 0; i--)
+        {
+            try
             {
                 await handles[i].DisposeAsync();
             }
+            catch (Exception exception)
+            {
+                releaseExceptions.Add(exception);
+            }
         }
+
+        if (pipelineException is not null)
+        {
+            if (releaseExceptions.Count == 0)
+            {
+                ExceptionDispatchInfo.Capture(pipelineException).Throw();
+            }
+
+            throw new AggregateException(
+                "Command pipeline and distributed lock cleanup both failed.",
+                [pipelineException, .. releaseExceptions]);
+        }
+
+        if (releaseExceptions.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(releaseExceptions[0]).Throw();
+        }
+
+        if (releaseExceptions.Count > 1)
+        {
+            throw new AggregateException("Multiple distributed lock releases failed.", releaseExceptions);
+        }
+
+        return response;
     }
 
     private static IEnumerable<string> EnumerateKeys(CommandLockSettings settings)

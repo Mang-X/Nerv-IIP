@@ -90,30 +90,78 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         AssertConfirmedReceipt(createData, workOrderId!);
 
         var version = 0;
+        var assignmentRequest = new
+        {
+            organizationId = OrganizationId,
+            environmentId = EnvironmentId,
+            technicianUserId = PrincipalId,
+            teamId = (string?)null,
+            reason = "dispatch-to-on-duty-technician",
+            idempotencyKey = "man631-http-assign",
+            expectedVersion = version,
+            scopeKind = "organization",
+            scopeId = OrganizationId,
+        };
         var assignData = await PostActionAsync(
             browser,
             workOrderId!,
             "/assignment",
+            assignmentRequest,
+            "Open",
+            ++version,
+            () => $"Maintenance transport: {downstreamCapture}; Gateway logs: {gatewayLogs}");
+        AssertConfirmedReceipt(assignData, workOrderId!);
+
+        var acceptData = await PostActionAsync(
+            browser,
+            workOrderId!,
+            "/actions",
+            new
+            {
+                organizationId = OrganizationId,
+                environmentId = EnvironmentId,
+                action = "accept",
+                reason = "accept",
+                idempotencyKey = "man631-http-accept",
+                expectedVersion = version,
+                scopeKind = "organization",
+                scopeId = OrganizationId,
+            },
+            "Accepted",
+            ++version,
+            () => $"Maintenance transport: {downstreamCapture}; Gateway logs: {gatewayLogs}");
+        AssertConfirmedReceipt(acceptData, workOrderId!);
+
+        var delayedAssignmentReplay = await PostActionAsync(
+            browser,
+            workOrderId!,
+            "/assignment",
+            assignmentRequest,
+            "Open",
+            1,
+            () => $"Maintenance transport: {downstreamCapture}; Gateway logs: {gatewayLogs}");
+        Assert.Equal(assignData.GetProperty("changedAtUtc").GetDateTimeOffset(),
+            delayedAssignmentReplay.GetProperty("changedAtUtc").GetDateTimeOffset());
+        AssertConfirmedReceipt(delayedAssignmentReplay, workOrderId!);
+
+        var newAssignment = await browser.PostAsJsonAsync(
+            $"/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment",
             new
             {
                 organizationId = OrganizationId,
                 environmentId = EnvironmentId,
                 technicianUserId = PrincipalId,
                 teamId = (string?)null,
-                reason = "dispatch-to-on-duty-technician",
-                idempotencyKey = "man631-http-assign",
-                expectedVersion = version,
+                reason = "different-assignment-after-accept",
+                idempotencyKey = "man631-http-assign-new",
+                expectedVersion = 1,
                 scopeKind = "organization",
                 scopeId = OrganizationId,
-            },
-            "Open",
-            ++version,
-            () => $"Maintenance transport: {downstreamCapture}; Gateway logs: {gatewayLogs}");
-        AssertConfirmedReceipt(assignData, workOrderId!);
+            });
+        Assert.Equal(HttpStatusCode.Conflict, newAssignment.StatusCode);
 
         foreach (var step in new[]
                  {
-                     new LifecycleStep("accept", "Accepted", "man631-http-accept"),
                      new LifecycleStep("start", "InProgress", "man631-http-start"),
                      new LifecycleStep("complete", "Completed", "man631-http-complete"),
                      new LifecycleStep("verify", "Verified", "man631-http-verify"),

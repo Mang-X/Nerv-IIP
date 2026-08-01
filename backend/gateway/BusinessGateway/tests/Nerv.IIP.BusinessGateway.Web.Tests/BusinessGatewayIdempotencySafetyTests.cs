@@ -370,6 +370,60 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task Maintenance_assignment_accepts_the_original_Open_v1_receipt_after_the_detail_advances(bool enveloped)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        using var httpClient = new HttpClient(new DelayedAssignmentReplayHandler(workOrderId, enveloped))
+        {
+            BaseAddress = new Uri("http://downstream.local"),
+        };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var replay = await client.AssignWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleAssignMaintenanceWorkOrderRequest(
+                "org-001", "env-dev", "tech-001", null, "dispatch", "assign-confirmation", 0,
+                "organization", "org-001"),
+            "dispatcher-001",
+            CancellationToken.None);
+
+        Assert.Equal(workOrderId, replay.WorkOrderId);
+        Assert.Equal("Open", replay.Status);
+        Assert.Equal(1, replay.Version);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-01T08:01:00Z"), replay.ChangedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(false, "{\"value\":\"route-id\"}")]
+    [InlineData(true, "{\"id\":\"00000000-0000-0000-0000-000000000000\"}")]
+    [InlineData(false, "{\"id\":\"11111111-1111-1111-1111-111111111111\"}")]
+    public async Task Maintenance_assignment_fails_closed_before_posting_when_the_authoritative_detail_is_malformed(
+        bool enveloped,
+        string responseWorkOrderIdJson)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        var handler = new InvalidAssignmentPreReadHandler(workOrderId, responseWorkOrderIdJson, enveloped);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://downstream.local"),
+        };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await AssertInvalidResponseAsync(() => client.AssignWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleAssignMaintenanceWorkOrderRequest(
+                "org-001", "env-dev", "tech-001", null, "dispatch", "assign-confirmation", 0,
+                "organization", "org-001"),
+            "dispatcher-001",
+            CancellationToken.None));
+        Assert.Equal(0, handler.PostCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Alarm_action_rejects_a_downstream_resource_that_does_not_match_the_route(bool enveloped)
     {
         using var httpClient = Client("""{"alarmEventId":"alarm-other"}""", enveloped);
@@ -473,6 +527,51 @@ public sealed class BusinessGatewayIdempotencySafetyTests
             var raw = request.Method == HttpMethod.Get
                 ? $$"""{"workOrder":{"workOrderId":{"id":"{{workOrderId}}"},"deviceAssetId":"DEV-001","priority":"high","status":"Open","openedAtUtc":"2026-08-01T08:00:00Z","version":0},"lifecycle":[],"allowedActions":["assign"]}"""
                 : $$"""{"workOrderId":"{{workOrderId}}","status":"Accepted","version":1,"changedAtUtc":"2026-08-01T08:01:00Z"}""";
+            var body = enveloped ? $$"""{"success":true,"data":{{raw}},"message":"","code":0}""" : raw;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    private sealed class DelayedAssignmentReplayHandler(string workOrderId, bool enveloped) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var raw = request.Method == HttpMethod.Get
+                ? $$"""{"workOrder":{"workOrderId":{"id":"{{workOrderId}}"},"deviceAssetId":"DEV-001","priority":"high","status":"Accepted","openedAtUtc":"2026-08-01T08:00:00Z","version":2},"lifecycle":[],"allowedActions":["start"]}"""
+                : $$"""{"workOrderId":"{{workOrderId}}","status":"Open","version":1,"changedAtUtc":"2026-08-01T08:01:00Z"}""";
+            var body = enveloped ? $$"""{"success":true,"data":{{raw}},"message":"","code":0}""" : raw;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    private sealed class InvalidAssignmentPreReadHandler(
+        string workOrderId,
+        string responseWorkOrderIdJson,
+        bool enveloped) : HttpMessageHandler
+    {
+        public int PostCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request.Method == HttpMethod.Post)
+            {
+                PostCount++;
+            }
+            var raw = request.Method == HttpMethod.Get
+                ? MaintenanceDetailBody(responseWorkOrderIdJson)
+                : $$"""{"workOrderId":"{{workOrderId}}","status":"Open","version":1,"changedAtUtc":"2026-08-01T08:01:00Z"}""";
             var body = enveloped ? $$"""{"success":true,"data":{{raw}},"message":"","code":0}""" : raw;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

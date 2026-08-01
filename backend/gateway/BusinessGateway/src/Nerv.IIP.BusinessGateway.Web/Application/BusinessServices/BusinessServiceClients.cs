@@ -6338,7 +6338,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.ExpectedVersion),
             "maintenance.work-order.assign",
             request.IdempotencyKey,
-            authoritativeBefore.Status,
+            "Open",
             request.ExpectedVersion,
             cancellationToken);
     }

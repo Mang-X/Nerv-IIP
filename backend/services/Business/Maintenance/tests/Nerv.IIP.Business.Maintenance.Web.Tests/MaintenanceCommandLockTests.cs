@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -394,6 +395,83 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Command_lock_behavior_attempts_every_reverse_release_and_stops_all_renewals_when_releases_fail()
+    {
+        var store = new ReleaseFailingStore(["a-key", "z-key"]);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            store,
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(20));
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
+            distributedLock);
+
+        try
+        {
+            var exception = await Record.ExceptionAsync(() => behavior.Handle(
+                new MultiKeyLockedCommand(),
+                async _ =>
+                {
+                    await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                    return Unit.Value;
+                },
+                CancellationToken.None));
+            var aggregate = Assert.IsType<AggregateException>(exception);
+            Assert.Equal(
+                ["release failed: z-key", "release failed: a-key"],
+                aggregate.InnerExceptions.Select(error => error.Message));
+            Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+
+            var renewalCountsAfterRelease = store.RenewalCounts;
+            await Task.Delay(100);
+            Assert.Equal(renewalCountsAfterRelease, store.RenewalCounts);
+        }
+        finally
+        {
+            store.RejectRenewals();
+            await Task.Delay(50);
+        }
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_aggregates_handler_then_release_failures_without_masking_either()
+    {
+        var store = new ReleaseFailingStore(["z-key"]);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            store,
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(20));
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
+            distributedLock);
+
+        try
+        {
+            var exception = await Record.ExceptionAsync(() => behavior.Handle(
+                new MultiKeyLockedCommand(),
+                async _ =>
+                {
+                    await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                    throw new ApplicationException("handler failed");
+                },
+                CancellationToken.None));
+            var aggregate = Assert.IsType<AggregateException>(exception);
+            Assert.Collection(
+                aggregate.InnerExceptions,
+                error => Assert.IsType<ApplicationException>(error),
+                error => Assert.Equal("release failed: z-key", Assert.IsType<InvalidOperationException>(error).Message));
+            Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+        }
+        finally
+        {
+            store.RejectRenewals();
+            await Task.Delay(50);
+        }
+    }
+
+    [Fact]
     public async Task Command_lock_behavior_keeps_the_single_key_command_contract()
     {
         var distributedLock = new RecordingDistributedLock();
@@ -411,6 +489,23 @@ public sealed class MaintenanceCommandLockTests
             CancellationToken.None);
 
         Assert.Equal(["acquire:only-key", "handler", "release:only-key"], distributedLock.Events);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_preserves_a_single_release_exception_type()
+    {
+        var distributedLock = new RecordingDistributedLock(failReleaseOnKey: "only-key");
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["only-key"])],
+            distributedLock);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ => Task.FromResult(Unit.Value),
+            CancellationToken.None));
+
+        Assert.Equal("synthetic lock release failure", exception.Message);
+        Assert.Equal(["acquire:only-key", "release:only-key"], distributedLock.Events);
     }
 
     [Fact]
@@ -540,9 +635,65 @@ public sealed class MaintenanceCommandLockTests
         }
     }
 
+    private sealed class ReleaseFailingStore(IReadOnlyCollection<string> failingKeys) : IRedisCommandLockStore
+    {
+        private readonly ConcurrentDictionary<string, int> renewalCounts = new(StringComparer.Ordinal);
+        private readonly ConcurrentQueue<string> releaseEvents = new();
+        private readonly HashSet<string> failingKeys = new(failingKeys, StringComparer.Ordinal);
+        private readonly TaskCompletionSource allKeysRenewed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile bool rejectRenewals;
+
+        public Task AllKeysRenewed => allKeysRenewed.Task;
+
+        public IReadOnlyCollection<string> ReleaseEvents => releaseEvents.ToArray();
+
+        public IReadOnlyDictionary<string, int> RenewalCounts =>
+            renewalCounts.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            renewalCounts.AddOrUpdate(key, 1, static (_, count) => count + 1);
+            if (renewalCounts.ContainsKey("a-key") && renewalCounts.ContainsKey("z-key"))
+            {
+                allKeysRenewed.TrySetResult();
+            }
+            return Task.FromResult(!rejectRenewals);
+        }
+
+        public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
+        {
+            releaseEvents.Enqueue($"release:{key}");
+            if (failingKeys.Contains(key))
+            {
+                throw new InvalidOperationException($"release failed: {key}");
+            }
+            return Task.CompletedTask;
+        }
+
+        public void RejectRenewals() => rejectRenewals = true;
+    }
+
     private sealed class RecordingDistributedLock(
         string? failOnKey = null,
-        bool cancelOnFailure = false) : IDistributedLock
+        bool cancelOnFailure = false,
+        string? failReleaseOnKey = null) : IDistributedLock
     {
         public List<string> Events { get; } = [];
 
@@ -573,7 +724,8 @@ public sealed class MaintenanceCommandLockTests
                 }
                 throw new InvalidOperationException("synthetic lock acquisition failure");
             }
-            return ValueTask.FromResult<ILockSynchronizationHandler?>(new RecordingHandle(key, Events));
+            return ValueTask.FromResult<ILockSynchronizationHandler?>(
+                new RecordingHandle(key, Events, failReleaseOnKey));
         }
 
         public async ValueTask<ILockSynchronizationHandler> AcquireAsync(
@@ -583,7 +735,10 @@ public sealed class MaintenanceCommandLockTests
             await TryAcquireAsync(key, timeout ?? TimeSpan.FromSeconds(30), cancellationToken)
                 ?? throw new TimeoutException($"Could not acquire {key}.");
 
-        private sealed class RecordingHandle(string key, List<string> events) : ILockSynchronizationHandler
+        private sealed class RecordingHandle(
+            string key,
+            List<string> events,
+            string? failReleaseOnKey) : ILockSynchronizationHandler
         {
             public CancellationToken HandleLostToken => CancellationToken.None;
 
@@ -592,6 +747,10 @@ public sealed class MaintenanceCommandLockTests
             public ValueTask DisposeAsync()
             {
                 events.Add($"release:{key}");
+                if (string.Equals(key, failReleaseOnKey, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("synthetic lock release failure");
+                }
                 return ValueTask.CompletedTask;
             }
         }
