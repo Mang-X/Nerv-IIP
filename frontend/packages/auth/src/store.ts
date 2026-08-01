@@ -33,6 +33,18 @@ export interface CreateAuthStoreOptions {
   storeId: string
 }
 
+export type LogoutRevokeResult =
+  | { status: 'revoked' }
+  | { status: 'failed' }
+  | { status: 'timed-out' }
+  | { status: 'no-session' }
+
+export interface LogoutAndRevokeOptions {
+  timeoutMs?: number
+}
+
+const DEFAULT_LOGOUT_REVOKE_TIMEOUT_MS = 3_000
+
 export function createAuthStore(options: CreateAuthStoreOptions) {
   const { api, messages, storageKey, storeId } = options
 
@@ -132,6 +144,32 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       clearSession('logout')
       if (token) {
         void api.logoutConsole(token, { sessionId: currentSessionId }).catch(() => undefined)
+      }
+    }
+
+    async function logoutAndRevoke(
+      logoutOptions: LogoutAndRevokeOptions = {},
+    ): Promise<LogoutRevokeResult> {
+      const token = accessToken.value
+      const currentSessionId = sessionId.value
+      clearSession('logout')
+      if (!token || !currentSessionId) return { status: 'no-session' }
+
+      const timeoutMs = Math.max(0, logoutOptions.timeoutMs ?? DEFAULT_LOGOUT_REVOKE_TIMEOUT_MS)
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        return await Promise.race<LogoutRevokeResult>([
+          api.logoutConsole(token, { sessionId: currentSessionId }).then(
+            () => ({ status: 'revoked' }),
+            () => ({ status: 'failed' }),
+          ),
+          new Promise((resolve) => {
+            timeout = setTimeout(() => resolve({ status: 'timed-out' }), timeoutMs)
+            unrefTimer(timeout)
+          }),
+        ])
+      } finally {
+        if (timeout) clearTimeout(timeout)
       }
     }
 
@@ -269,6 +307,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       loadPrincipal,
       login,
       logout,
+      logoutAndRevoke,
       principal,
       refreshSession,
       refreshToken,

@@ -458,6 +458,14 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnName("average_resource_utilization")
                         .HasComment("Total assigned minutes divided by total available minutes across resource load windows.");
 
+                    b.Property<string>("BlockWindowsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("block_windows_json")
+                        .HasComment("Immutable JSON snapshot of equipment unavailability (maintenance/downtime) windows that actually constrained this plan.");
+
                     b.Property<int>("ContractVersion")
                         .HasColumnType("integer")
                         .HasColumnName("contract_version")

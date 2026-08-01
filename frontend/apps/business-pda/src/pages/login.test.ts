@@ -3,9 +3,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const push = vi.fn()
+const routeQuery = vi.hoisted(() => ({ value: {} as Record<string, string> }))
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({
+    get query() {
+      return routeQuery.value
+    },
+  }),
 }))
 
 const login = vi.fn(async () => {})
@@ -21,6 +26,7 @@ describe('PDA login page', () => {
     push.mockClear()
     login.mockReset()
     login.mockImplementation(async () => {})
+    routeQuery.value = {}
   })
 
   it('logs in and navigates home on submit', async () => {
@@ -48,5 +54,17 @@ describe('PDA login page', () => {
     const submit = wrapper.get('button[type="submit"]')
     expect(submit.attributes('disabled')).toBeUndefined()
     expect(submit.text()).toBe('登录')
+  })
+
+  it.each([
+    ['failed', '网络不可用，当前设备已退出，但服务器会话撤销失败'],
+    ['timed-out', '服务器会话撤销超时，当前设备已安全退出'],
+  ])('explains a %s remote logout outcome without blocking a new login', (status, message) => {
+    routeQuery.value = { logout: status }
+
+    const wrapper = mount(LoginPage)
+
+    expect(wrapper.text()).toContain(message)
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 })

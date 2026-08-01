@@ -22,13 +22,34 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    // 计量单位表原先只有重量/计数/体积/时间四个量纲，质检特性要的力（N）、长度（mm）一个都没有——
+    // 检验方案自己写着「1080–1320 N」，主数据里却查不到 N（#1396 / 走查 #80）。这里补齐质检常用量纲。
+    // 逐码 upsert，新增码对既有库是纯增量且幂等，不需要重建库；下次服务启动播种时生效。
     private static readonly UomSeed[] Units =
     [
         new("kg", "千克", "weight", 3, "half-up"),
         new("g", "克", "weight", 3, "half-up"),
         new("pcs", "件", "count", 0, "half-up"),
         new("l", "升", "volume", 3, "half-up"),
-        new("min", "分钟", "time", 0, "half-up")
+        new("min", "分钟", "time", 0, "half-up"),
+        new("s", "秒", "time", 0, "half-up"),
+        new("m", "米", "length", 3, "half-up"),
+        new("mm", "毫米", "length", 3, "half-up"),
+        new("N", "牛顿", "force", 3, "half-up"),
+        new("Nm", "牛·米", "torque", 3, "half-up"),
+        new("MPa", "兆帕", "pressure", 3, "half-up"),
+        new("%", "百分比", "ratio", 2, "half-up")
+    ];
+
+    private static readonly DateOnly UomConversionEffectiveFrom = new(2026, 1, 1);
+
+    // 同量纲内的换算关系：检验记录允许「录入单位 ≠ 方案单位」但必须有换算行兜底，
+    // 否则领域层直接拒收（InspectionRecord 的单位一致性校验）。
+    private static readonly UomConversionSeed[] UomConversions =
+    [
+        new("kg", "g", 1000m, 3),
+        new("m", "mm", 1000m, 3),
+        new("min", "s", 60m, 0)
     ];
 
     private static readonly ShiftSeed[] Shifts =
@@ -241,24 +262,27 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             }
         }
 
-        if (!await dbContext.UomConversions.AnyAsync(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                x.FromUomCode == "kg" &&
-                x.ToUomCode == "g" &&
-                x.EffectiveFrom == new DateOnly(2026, 1, 1),
-                cancellationToken))
+        foreach (var item in UomConversions)
         {
-            dbContext.UomConversions.Add(UomConversion.Create(
-                organizationId,
-                environmentId,
-                "kg",
-                "g",
-                1000m,
-                0m,
-                3,
-                "half-up",
-                new DateOnly(2026, 1, 1)));
+            if (!await dbContext.UomConversions.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.FromUomCode == item.FromUomCode &&
+                    x.ToUomCode == item.ToUomCode &&
+                    x.EffectiveFrom == UomConversionEffectiveFrom,
+                    cancellationToken))
+            {
+                dbContext.UomConversions.Add(UomConversion.Create(
+                    organizationId,
+                    environmentId,
+                    item.FromUomCode,
+                    item.ToUomCode,
+                    item.Factor,
+                    0m,
+                    item.Precision,
+                    "half-up",
+                    UomConversionEffectiveFrom));
+            }
         }
 
         foreach (var item in Shifts)
@@ -436,6 +460,8 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
     }
 
     private sealed record UomSeed(string Code, string Name, string DimensionType, int Precision, string RoundingMode);
+
+    private sealed record UomConversionSeed(string FromUomCode, string ToUomCode, decimal Factor, int Precision);
 
     private sealed record ShiftSeed(string Code, string Name, TimeOnly StartsAt, TimeOnly EndsAt, int PaidMinutes);
 

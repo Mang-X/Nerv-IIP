@@ -36,10 +36,15 @@ test('盘点: select CN-1, enter counted quantity, confirm, see success result',
 
   await page.getByText('盘点 CN-1').click()
 
-  // Enter 实盘数量 in the teleported sheet, then confirm.
+  // Enter 实盘数量 through the mobile numeric keyboard, then confirm.
   const counted = page.getByTestId('counted-quantity')
   await expect(counted).toBeVisible()
-  await counted.fill('98')
+  await counted.click()
+  const keyboard = page.locator('[data-slot="number-keyboard"]')
+  await expect(keyboard).toBeVisible()
+  await keyboard.getByRole('button', { name: '9', exact: true }).click()
+  await keyboard.getByRole('button', { name: '8', exact: true }).click()
+  await keyboard.getByRole('button', { name: '完成' }).click()
 
   const confirm = page.getByTestId('confirm-complete')
   await expect(confirm).toBeEnabled()
@@ -55,7 +60,7 @@ test('拣货 read-only: task PK-1 shows Chinese status (no raw code / GUID)', as
   await expect(page.getByRole('heading', { name: '拣货' })).toBeVisible()
   // Task number + Chinese status surface; raw engineering code never does.
   await expect(page.getByText('任务 PK-1')).toBeVisible()
-  await expect(page.getByText('待执行')).toBeVisible()
+  await expect(page.getByText('待执行', { exact: true }).first()).toBeVisible()
 
   const body = await page.locator('body').innerText()
   expect(body).not.toContain('pending')

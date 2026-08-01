@@ -10159,6 +10159,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public Exception? DetailFailure { get; init; }
 
+    public BusinessConsoleMasterDataResourceDetail? ResourceDetailResponse { get; set; }
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -10219,7 +10221,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             throw DetailFailure;
         }
 
-        return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
+        return Task.FromResult(
+            ResourceDetailResponse ?? ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
@@ -10422,6 +10425,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             "2026-01-01T00:00:00.0000000Z"),
     ];
 
+    public IReadOnlyCollection<BusinessConsoleTeamMemberItem> TeamMembers { get; set; } =
+    [
+        new BusinessConsoleTeamMemberItem("team-001", "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1"),
+    ];
+
     public Task<BusinessConsoleResourceItem> CreateWorkerAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkerRequest request,
@@ -10439,13 +10447,27 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken)
     {
         LastListWorkersRequest = request;
-        var items = string.IsNullOrWhiteSpace(request.UserId)
-            ? WorkerDirectory
-            : WorkerDirectory.Where(x => x.UserId == request.UserId).ToArray();
+        IEnumerable<BusinessConsoleWorkerDirectoryItem> query = WorkerDirectory;
+        if (!string.IsNullOrWhiteSpace(request.UserId))
+        {
+            query = query.Where(x => string.Equals(x.UserId, request.UserId, StringComparison.Ordinal));
+        }
+        if (!string.IsNullOrWhiteSpace(request.EmploymentStatus))
+        {
+            query = query.Where(x => string.Equals(
+                x.EmploymentStatus,
+                request.EmploymentStatus,
+                StringComparison.OrdinalIgnoreCase));
+        }
+        if (!request.IncludeDisabled)
+        {
+            query = query.Where(x => x.Active);
+        }
+        var items = query.ToArray();
         return Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
             request.PageIndex,
             request.PageSize,
-            items.Count,
+            items.Length,
             items));
     }
 
@@ -10513,9 +10535,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastListTeamMembersRequest = request;
+        var members = TeamMembers
+            .Where(x => string.Equals(x.TeamCode, request.TeamCode, StringComparison.Ordinal))
+            .ToArray();
         return Task.FromResult(new BusinessConsoleTeamMemberListResponse(
-            [new BusinessConsoleTeamMemberItem(request.TeamCode, "user-001", true, new DateOnly(2026, 1, 1), null, true, "v1")],
-            1));
+            members,
+            members.Length));
     }
 
     public Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
@@ -14028,6 +14053,33 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
     }
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> AssignWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, "Open", request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("assign-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, "Open")));
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse?> ProbeAssignmentReplayAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleAssignMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult<BusinessConsoleMaintenanceWorkOrderActionResponse?>(null);
+
+    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
+        string actorPrincipalId,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
+            workOrderId, request.Action.ToString(), request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
+            new BusinessConsoleOperationReceipt("transition-maintenance-work-order", "maintenance", "maintenance-work-order",
+                workOrderId, "confirmed", true, false, request.IdempotencyKey, DateTimeOffset.UtcNow, request.Action.ToString())));
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,

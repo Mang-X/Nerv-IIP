@@ -7,10 +7,33 @@ public partial record MaintenanceWorkOrderId : IGuidStronglyTypedId;
 
 public partial record SparePartLineId : IGuidStronglyTypedId;
 
+public partial record MaintenanceWorkOrderLifecycleEventId : IGuidStronglyTypedId;
+
+public enum MaintenanceWorkOrderAction
+{
+    Assign = 0,
+    Accept = 1,
+    Start = 2,
+    Pause = 3,
+    WaitForParts = 4,
+    Resume = 5,
+    Complete = 6,
+    Verify = 7,
+    Close = 8,
+    Cancel = 9,
+}
+
 public enum MaintenanceWorkOrderStatus
 {
     Open = 0,
     Completed = 1,
+    Accepted = 2,
+    InProgress = 3,
+    Paused = 4,
+    WaitingForParts = 5,
+    Verified = 6,
+    Closed = 7,
+    Cancelled = 8,
 }
 
 public static class MaintenanceWorkOrderSourceTypes
@@ -84,6 +107,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? FailureModeCode { get; private set; }
     public string? FailureCauseCode { get; private set; }
     public string? AssignedTechnicianUserId { get; private set; }
+    public string? AssignedTeamId { get; private set; }
     public string? ActualTechnicianUserId { get; private set; }
     public int? EstimatedLaborMinutes { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
@@ -103,6 +127,11 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? CostCurrencyCode { get; private set; }
     public DateTimeOffset? RepairStartedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
+    public DateTimeOffset? AcceptedAtUtc { get; private set; }
+    public DateTimeOffset? VerifiedAtUtc { get; private set; }
+    public DateTimeOffset? ClosedAtUtc { get; private set; }
+    public DateTimeOffset? CancelledAtUtc { get; private set; }
+    public int Version { get; private set; }
     public IReadOnlyCollection<SparePartLine> SparePartLines => sparePartLines;
 
     public static MaintenanceWorkOrder OpenManual(
@@ -222,6 +251,115 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         RepairStartedAtUtc = normalizedRepairStartedAtUtc;
     }
 
+    public void Assign(string? technicianUserId, string? teamId)
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Open);
+        var normalizedTechnician = MaintenanceText.Optional(technicianUserId);
+        var normalizedTeam = MaintenanceText.Optional(teamId);
+        if (normalizedTechnician is null && normalizedTeam is null)
+        {
+            throw new ArgumentException("A technician or team assignment is required.");
+        }
+
+        AssignedTechnicianUserId = normalizedTechnician;
+        AssignedTeamId = normalizedTeam;
+        IncrementVersion();
+    }
+
+    public void Accept(string technicianUserId)
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Open);
+        var normalizedTechnician = MaintenanceText.Required(technicianUserId, nameof(technicianUserId));
+        if (AssignedTechnicianUserId is not null
+            && !string.Equals(AssignedTechnicianUserId, normalizedTechnician, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The work order is assigned to another technician.");
+        }
+
+        AssignedTechnicianUserId = normalizedTechnician;
+        Status = MaintenanceWorkOrderStatus.Accepted;
+        AcceptedAtUtc = DateTimeOffset.UtcNow;
+        IncrementVersion();
+    }
+
+    public void StartWork()
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Accepted);
+        Status = MaintenanceWorkOrderStatus.InProgress;
+        RepairStartedAtUtc ??= DateTimeOffset.UtcNow;
+        IncrementVersion();
+    }
+
+    public void Pause(bool waitingForParts)
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.InProgress);
+        Status = waitingForParts
+            ? MaintenanceWorkOrderStatus.WaitingForParts
+            : MaintenanceWorkOrderStatus.Paused;
+        IncrementVersion();
+    }
+
+    public void Resume()
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Paused, MaintenanceWorkOrderStatus.WaitingForParts);
+        Status = MaintenanceWorkOrderStatus.InProgress;
+        IncrementVersion();
+    }
+
+    public void Finish(
+        string result,
+        string downtimeReasonCode,
+        int downtimeMinutes,
+        IEnumerable<SparePartLineDraft>? spareParts,
+        string technicianUserId,
+        int? actualLaborMinutes = null,
+        decimal? sparePartCostAmount = null,
+        decimal? externalServiceCostAmount = null,
+        string? costCurrencyCode = null)
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.InProgress);
+        CompleteCore(
+            result,
+            downtimeReasonCode,
+            downtimeMinutes,
+            spareParts,
+            actualLaborMinutes,
+            sparePartCostAmount,
+            externalServiceCostAmount,
+            costCurrencyCode,
+            technicianUserId);
+        IncrementVersion();
+    }
+
+    public void Verify()
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Completed);
+        Status = MaintenanceWorkOrderStatus.Verified;
+        VerifiedAtUtc = DateTimeOffset.UtcNow;
+        IncrementVersion();
+    }
+
+    public void Close()
+    {
+        EnsureStatus(MaintenanceWorkOrderStatus.Verified);
+        Status = MaintenanceWorkOrderStatus.Closed;
+        ClosedAtUtc = DateTimeOffset.UtcNow;
+        IncrementVersion();
+    }
+
+    public void Cancel()
+    {
+        EnsureStatus(
+            MaintenanceWorkOrderStatus.Open,
+            MaintenanceWorkOrderStatus.Accepted,
+            MaintenanceWorkOrderStatus.InProgress,
+            MaintenanceWorkOrderStatus.Paused,
+            MaintenanceWorkOrderStatus.WaitingForParts);
+        Status = MaintenanceWorkOrderStatus.Cancelled;
+        CancelledAtUtc = DateTimeOffset.UtcNow;
+        IncrementVersion();
+    }
+
     public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)
     {
         EnsureOpen();
@@ -261,7 +399,31 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string? costCurrencyCode = null,
         string? actualTechnicianUserId = null)
     {
-        EnsureOpen();
+        EnsureStatus(MaintenanceWorkOrderStatus.Open, MaintenanceWorkOrderStatus.InProgress);
+        CompleteCore(
+            result,
+            downtimeReasonCode,
+            downtimeMinutes,
+            spareParts,
+            actualLaborMinutes,
+            sparePartCostAmount,
+            externalServiceCostAmount,
+            costCurrencyCode,
+            actualTechnicianUserId);
+        IncrementVersion();
+    }
+
+    private void CompleteCore(
+        string result,
+        string downtimeReasonCode,
+        int downtimeMinutes,
+        IEnumerable<SparePartLineDraft>? spareParts,
+        int? actualLaborMinutes,
+        decimal? sparePartCostAmount,
+        decimal? externalServiceCostAmount,
+        string? costCurrencyCode,
+        string? actualTechnicianUserId)
+    {
         CompletionResult = MaintenanceText.Required(result, nameof(result));
         DowntimeReasonCode = MaintenanceText.Required(downtimeReasonCode, nameof(downtimeReasonCode));
         DowntimeMinutes = MaintenanceText.Positive(downtimeMinutes, nameof(downtimeMinutes));
@@ -270,12 +432,15 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         SparePartCostAmount = NonNegative(sparePartCostAmount, nameof(sparePartCostAmount));
         ExternalServiceCostAmount = NonNegative(externalServiceCostAmount, nameof(externalServiceCostAmount));
         CostCurrencyCode = MaintenanceText.Optional(costCurrencyCode);
-        sparePartLines.Clear();
-        foreach (var part in spareParts)
+        if (spareParts is not null)
         {
-            var line = SparePartLine.Create(part);
-            sparePartLines.Add(line);
-            this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
+            sparePartLines.Clear();
+            foreach (var part in spareParts)
+            {
+                var line = SparePartLine.Create(part);
+                sparePartLines.Add(line);
+                this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
+            }
         }
 
         Status = MaintenanceWorkOrderStatus.Completed;
@@ -298,11 +463,25 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
 
     private void EnsureOpen()
     {
-        if (Status == MaintenanceWorkOrderStatus.Completed)
+        if (Status is MaintenanceWorkOrderStatus.Completed
+            or MaintenanceWorkOrderStatus.Verified
+            or MaintenanceWorkOrderStatus.Closed
+            or MaintenanceWorkOrderStatus.Cancelled
+            || !Enum.IsDefined(Status))
         {
-            throw new InvalidOperationException("Completed maintenance work orders are immutable.");
+            throw new InvalidOperationException("Finished maintenance work orders are immutable.");
         }
     }
+
+    private void EnsureStatus(params MaintenanceWorkOrderStatus[] allowed)
+    {
+        if (!Enum.IsDefined(Status) || !allowed.Contains(Status))
+        {
+            throw new InvalidOperationException($"Maintenance action is not allowed from status '{Status}'.");
+        }
+    }
+
+    private void IncrementVersion() => Version = checked(Version + 1);
 
     private static decimal? NonNegative(decimal? value, string parameterName)
     {
@@ -313,6 +492,69 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
 
         return value;
     }
+}
+
+public sealed class MaintenanceWorkOrderLifecycleEvent : Entity<MaintenanceWorkOrderLifecycleEventId>
+{
+    private MaintenanceWorkOrderLifecycleEvent()
+    {
+    }
+
+    private MaintenanceWorkOrderLifecycleEvent(
+        MaintenanceWorkOrder workOrder,
+        MaintenanceWorkOrderAction action,
+        MaintenanceWorkOrderStatus fromStatus,
+        string actorPrincipalId,
+        string? technicianUserId,
+        string? teamId,
+        string reason,
+        string idempotencyKey,
+        string payloadFingerprint,
+        DateTimeOffset occurredAtUtc)
+    {
+        OrganizationId = workOrder.OrganizationId;
+        EnvironmentId = workOrder.EnvironmentId;
+        WorkOrderId = workOrder.Id;
+        Action = action;
+        FromStatus = fromStatus;
+        ToStatus = workOrder.Status;
+        ActorPrincipalId = MaintenanceText.Required(actorPrincipalId, nameof(actorPrincipalId));
+        TechnicianUserId = MaintenanceText.Optional(technicianUserId);
+        TeamId = MaintenanceText.Optional(teamId);
+        Reason = MaintenanceText.Required(reason, nameof(reason));
+        IdempotencyKey = MaintenanceText.Required(idempotencyKey, nameof(idempotencyKey));
+        PayloadFingerprint = MaintenanceText.Required(payloadFingerprint, nameof(payloadFingerprint));
+        ResultingVersion = workOrder.Version;
+        OccurredAtUtc = occurredAtUtc.ToUniversalTime();
+    }
+
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public MaintenanceWorkOrderId WorkOrderId { get; private set; } = default!;
+    public MaintenanceWorkOrderAction Action { get; private set; }
+    public MaintenanceWorkOrderStatus FromStatus { get; private set; }
+    public MaintenanceWorkOrderStatus ToStatus { get; private set; }
+    public string ActorPrincipalId { get; private set; } = string.Empty;
+    public string? TechnicianUserId { get; private set; }
+    public string? TeamId { get; private set; }
+    public string Reason { get; private set; } = string.Empty;
+    public string IdempotencyKey { get; private set; } = string.Empty;
+    public string PayloadFingerprint { get; private set; } = string.Empty;
+    public int ResultingVersion { get; private set; }
+    public DateTimeOffset OccurredAtUtc { get; private set; }
+
+    public static MaintenanceWorkOrderLifecycleEvent Record(
+        MaintenanceWorkOrder workOrder,
+        MaintenanceWorkOrderAction action,
+        MaintenanceWorkOrderStatus fromStatus,
+        string actorPrincipalId,
+        string? technicianUserId,
+        string? teamId,
+        string reason,
+        string idempotencyKey,
+        string payloadFingerprint,
+        DateTimeOffset occurredAtUtc) =>
+        new(workOrder, action, fromStatus, actorPrincipalId, technicianUserId, teamId, reason, idempotencyKey, payloadFingerprint, occurredAtUtc);
 }
 
 public sealed class SparePartLine : Entity<SparePartLineId>

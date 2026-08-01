@@ -88,6 +88,53 @@ export const previewPlan: SchedulePlanContract = {
       endUtc: iso(20),
       isLocked: false,
     },
+    // 下游四道:装配 / 表面处理 / 包装 / 检测。补进来是为了让预览能真正**看见八个色槽**——
+    // 此前预览只有 切割/折弯/焊接/机加 四个工作中心,恰好绕开了 assy↔cut、insp↔bend、
+    // pack↔cut 三组撞色,视觉确认自然发现不了(#1399 M1)。八族齐了才是有效的分色回归面。
+    {
+      assignmentId: 'WO3-30',
+      orderId: 'WO-2026-003',
+      operationId: '部装',
+      operationSequence: 30,
+      resourceId: '装配-04',
+      workCenterId: '装配-04',
+      startUtc: iso(20),
+      endUtc: iso(24),
+      isLocked: false,
+    },
+    {
+      assignmentId: 'WO3-40',
+      orderId: 'WO-2026-003',
+      operationId: '喷涂',
+      operationSequence: 40,
+      resourceId: '涂装-05',
+      workCenterId: '涂装-05',
+      startUtc: iso(24),
+      endUtc: iso(28),
+      isLocked: false,
+    },
+    {
+      assignmentId: 'WO3-50',
+      orderId: 'WO-2026-003',
+      operationId: '终检',
+      operationSequence: 50,
+      resourceId: '检测-06',
+      workCenterId: '检测-06',
+      startUtc: iso(28),
+      endUtc: iso(31),
+      isLocked: false,
+    },
+    {
+      assignmentId: 'WO3-60',
+      orderId: 'WO-2026-003',
+      operationId: '装箱',
+      operationSequence: 60,
+      resourceId: '包装-07',
+      workCenterId: '包装-07',
+      startUtc: iso(31),
+      endUtc: iso(34),
+      isLocked: false,
+    },
   ],
   resourceLoads: [
     {

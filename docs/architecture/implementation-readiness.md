@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Maintenance 工单执行生命周期 M2（MAN-631 / #1168）
+
+BusinessMaintenance 工单在兼容既有 `Open -> Completed` 一步完工链路的同时，新增可审计执行状态机：`Open -> Accepted -> InProgress -> Paused/WaitingForParts -> InProgress -> Completed -> Verified -> Closed`，并允许完成前取消为 `Cancelled`。分派和每次状态动作都要求期望版本、业务原因与意图级 `idempotencyKey`；同键同载荷返回原结果，同键异载荷和版本冲突均 fail closed。追加式生命周期事件保存前后状态、认证主体、当时技师/班组、原因、结果版本和权威时间；关闭与取消是终态。
+
+BusinessGateway 以 `business.maintenance.work-orders.read/manage` 暴露工单详情、分派和统一动作 facade，并在每次显式 self/team 队列或动作中实时复用 MAN-627 主体作业上下文。客户端不能声明 actor；Gateway 从认证结果注入 principal。self 仅投影当前 principal 的指派工单，team 仅投影已授权班组，伪造或不支持的范围返回 403。服务端列表现支持 status、device、keyword、assigned technician/team 过滤且在分页前应用；详情返回 server-derived `allowedActions` 与完整生命周期审计。三个新增服务 endpoint 均登记 `exposed`，OpenAPI 与生成客户端同步刷新。
+
 ## 一线写操作幂等与权威回执（MAN-625 / #1162）
 
 MES 工序开始、暂停、恢复和完成，Quality 检验任务提交，以及 Maintenance 报修建单和一步完工现在都使用意图级 `idempotencyKey`。同一意图在超时后以同键重试，服务端持久绑定完整载荷指纹与首次结果；同键同载荷返回同一权威业务 ID、状态和时间，同键异载荷 fail closed，并以资源级分布式锁及数据库唯一冲突恢复收敛并发。WMS 盘点完成同时覆盖本地事件和 Inventory RPC 两条路径，持久保存 movement receipt，使超时重放不会再次调整库存。既有 WMS 入库完成、出库复核和报警搁置幂等实现保持不变；报警确认继续使用 first-write-wins 语义。
@@ -17,6 +23,12 @@ MasterData 现在按当前 IAM principal 的稳定 `userId` 解析 Worker、岗�
 IAM 授权检查按本次 `permissionCode` 返回 role/membership 来源的 permission-aware scope grants 与角色可读名称，避免多角色时把一个角色的权限与另一个角色的范围做笛卡尔积。现场范围闭集为 `self`、`team`、`work-center`、`workshop`、`organization`；现有 `site`、`production-line` grant 仅作为祖先授权来源。空 data scopes 只保留 legacy `DataScope` 兼容，不生成 grant，也绝不提升为 Organization；Platform Administrator seed 首次创建时显式写入当前 organization，4 个 PDA 演示账号的 membership 首次创建时显式写入各自 self，InMemory 与 PostgreSQL 使用同一 permission-aware 规则。为使 MAN-627 前已落库的演示身份可升级，IAM 以独立 seed manifest 执行一次性 scope backfill：仅当旧默认 seed manifest、固定 role/member ID、角色名、精确基线 permissions/roles 及空 scopes 同时成立时，分别补 Organization/Self；任何非空或自定义 permissions、roles、scopes 都保持不变。后续 seed 也不覆盖已存在授权，避免服务重启静默改写运营配置；运行期调整统一经过 IAM 管理 application service，持久记录 actor、before/after、correlation。MasterData TeamMember/Worker/Workshop/Team/ProductionLine/WorkCenter 只决定候选关系，不单独构成授权 grant，但其创建、成员增删、在岗状态或层级调整会改变最终交集，因此另以 `master_data_scope_context_audit` 在同一事务记录可信 actor、correlation/causation/operation 与授权相关 before/after；BusinessGateway 公共写链路负责透传认证 principal 和原请求追踪头，启停继续使用原 lifecycle audit。BusinessGateway 将 MasterData `candidateScopes` 与 IAM grants 交集为 `authorizedScopes`，同一 scope 聚合并保留全部稳定排序的 `authorizationPaths`。Organization grant 可覆盖当前组织候选；Workshop/Site 可推导 Team、WorkCenter、Workshop，ProductionLine 只推导 WorkCenter；Self 只接受显式 Self 或 Organization grant，Team 与 WorkCenter 不互推。未知、跨组织、DenyAll、permission 不匹配、无来源/畸形 grant、重复候选关系冲突及越权选择均 fail closed。MasterData 只从已解析且启用的 Workshop 扩展 WorkCenter，并同时验证 WorkCenter 的 Plant、Workshop、ProductionLine 三段 Site/Workshop 层级；无有效 TeamMember 时明确返回 `team-not-assigned` 与 `shift-not-assigned`，孤立或冲突工作中心只报告 issue，不生成候选。
 
 公开 `GET /api/business-console/v1/me/work-context` 只从认证结果取 principal，不接受客户端声明 userId；请求的 `permissionCode` 必须来自 BusinessGateway 编译期权限目录，且每次使用 `RealtimeRequired` 重新检查 IAM。响应携带 organization/environment、principal type、规范化角色名称、`applicablePermissionCode`、UTC `resolvedAtUtc`、candidate/authorized scopes 和可选已验证选择。`resolvedAtUtc` 表示本次实时授权检查与 MasterData 调用时快照；下游没有 SnapshotVersion 时不伪造。MasterData 连接/超时稳定返回 503，协议或坏响应返回 502，并进入公开 OpenAPI。该上下文和 `applicablePermissionCode` 不是下游动作授权凭据，每个实际读写动作仍必须按自己的 permission + scope 独立重检。服务 operation `getBusinessMasterDataPrincipalWorkContext` 通过 Gateway operation `getBusinessConsolePrincipalWorkContext` 登记为 `exposed`。
+
+## PDA 四入口、角色工作台与个人中心（MAN-633 / #1170）
+
+Business PDA 现在以固定底部四入口组织现场作业：工作台、任务、扫码、我的。工作台和任务入口直接使用当前 principal 的 `permissionCodes` 聚合多个角色的 route-ready 能力，不要求也不提供手工角色切换；相同业务路由只出现一次。工作台与任务页都不再消费客户端可控的 MES dispatch assignment 并称为“我的任务”，而是进入按当前主体与授权作业范围过滤的工序执行页；Quality 入口继续指向服务端 Self 范围任务页，WMS 只标为当前授权作业范围，不把 self/work-pool/site 工作池伪称个人任务。任务页和扫码页的作业导航使用带 `href` 的原生 RouterLink，非交互 `NvCell` 只负责品牌展示，避免导航退化为 `div role=button`。工序深链必须同时携带 `workOrderId + operationTaskId`，页面以两者精确匹配后才打开动作面板；同路由 query push/back/forward 会关闭旧 sheet、重绑定 pair 并等待新范围响应，单边、缺失或不在当前授权范围的组合都显式失败。
+
+个人中心复用 MAN-627 permission-aware work-context，按当前主体持有的 PDA 代表性权限聚合并去重可读角色、班组与授权范围，同时展示认证主体、登录名、工号、岗位、实时网络状态和 `resolvedAtUtc` 新鲜度；loading、error、partial 与确认空值分开呈现并可重试。WMS 的 receipts/shipments/counts 权限目录另外聚合可信 `self/work-pool/site` 授权选项与各作业页共享的当前选择，不用通用 work-context 推测仓储范围。退出先在本机清除认证会话，再有界等待 `logoutConsoleSession` 撤销结果；网络失败或超时仍安全回登录页并显示远端撤销状态。清理只移除 PDA 查询缓存和 `nerv-iip.business-pda.*` 持久状态，保留同源 Console 数据与待处理业务意图。扫码入口在 barcode resolve facade 尚未交付时只显示实际读取到的原码和当前权限内作业入口，不伪造对象类型或跳转结果。离线消息中心、终端舰队、独立 mobile API 和扫码解析仍不在本项范围。
 
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
@@ -234,17 +246,17 @@ DemandPlanning 同时保留当前 10 周活动需求/MPS 窗口语义，并为�
 
 #### 与设定集 §7 的形状对照（全量实测，asOfDate=2026-07-26）
 
-| 域          | 设定集目标                                                       | 实测                                                                            |
-| ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| 销售订单    | 约 3200 单（周均 105±30）                                        | **3283** 单 `SO-2026-#####`，29 周                                              |
-| 状态分布    | 已收款结案 78% / 已发货待收款 8% / 在制 9% / 已下达 3% / 废弃 2% | 2561 / 260 / — / — / 按比例撒落；**按时间轴排布**，老单结案、近单在制；另定额 3 张「已完工待发货」（#1374） |
+| 域          | 设定集目标                                                       | 实测                                                                                                                                                            |
+| ----------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 销售订单    | 约 3200 单（周均 105±30）                                        | **3283** 单 `SO-2026-#####`，29 周                                                                                                                              |
+| 状态分布    | 已收款结案 78% / 已发货待收款 8% / 在制 9% / 已下达 3% / 废弃 2% | 2561 / 260 / — / — / 按比例撒落；**按时间轴排布**，老单结案、近单在制；另定额 3 张「已完工待发货」（#1374）                                                     |
 | 发货 + 应收 | 结案单带发货单、应收与凭证链                                     | 2821 发货单（**其中 3 张已开未发运**）、2818 应收、2561 收款单、**5379 张凭证**（收入 + 收款，逐分平衡）；待发运的单不确认收入，应收与凭证只跟已发运走（#1374） |
-| 采购        | 约 480 张，节奏与生产量匹配                                      | **490** 张 `PO-2026-####`（按销售量 15% 派生，春节/月末曲线自动传导）+ 原料收货 |
-| 工单        | 约 3600 张（含内部补产）                                         | **3616** 张 = 3214 订单工单 + 402 补产 `WO-2026-R####`                          |
-| 工序任务    | 每单 6–8 道                                                      | **26511** 道（下料/阀系预装按概率跳过，得到 6/7/8 三种形态）                    |
-| 报工        | 2–5 条/工单，数量 + 工时                                         | **11722** 条，操作员取自 L0 的 25 名班组成员，工时由工序 `Complete` 计算        |
-| 齐套 / 领料 | 齐套检查记录、领料单（部分分批）                                 | **14464** 条齐套需求快照、**19856** 张领料单（40% 工单分两批领）                |
-| 完工入库    | 已过账                                                           | **3223** 张，全部 `Posted`                                                      |
+| 采购        | 约 480 张，节奏与生产量匹配                                      | **490** 张 `PO-2026-####`（按销售量 15% 派生，春节/月末曲线自动传导）+ 原料收货                                                                                 |
+| 工单        | 约 3600 张（含内部补产）                                         | **3616** 张 = 3214 订单工单 + 402 补产 `WO-2026-R####`                                                                                                          |
+| 工序任务    | 每单 6–8 道                                                      | **26511** 道（下料/阀系预装按概率跳过，得到 6/7/8 三种形态）                                                                                                    |
+| 报工        | 2–5 条/工单，数量 + 工时                                         | **11722** 条，操作员取自 L0 的 25 名班组成员，工时由工序 `Complete` 计算                                                                                        |
+| 齐套 / 领料 | 齐套检查记录、领料单（部分分批）                                 | **14464** 条齐套需求快照、**19856** 张领料单（40% 工单分两批领）                                                                                                |
+| 完工入库    | 已过账                                                           | **3223** 张，全部 `Posted`                                                                                                                                      |
 
 #### 一致性校验器（fail-closed）
 
