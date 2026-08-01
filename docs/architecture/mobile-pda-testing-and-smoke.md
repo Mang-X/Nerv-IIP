@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 33 个用例）
+### e2e spec 清单（5 个 spec / 34 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -39,7 +39,8 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
 - `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
-- `e2e/mes.spec.ts`（8）：工序执行完成（二次确认）→ 成功结果；工序执行同组件 query push 与
+- `e2e/mes.spec.ts`（9）：任务列表壳 375×812 服务端筛选、20 条分页与返回状态恢复；
+  工序执行完成（二次确认）→ 成功结果；工序执行同组件 query push 与
   浏览器 back/forward 始终关闭旧 sheet 并只打开当前 `workOrderId + operationTaskId`；报工全链 → 成功结果并
   核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
   pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
