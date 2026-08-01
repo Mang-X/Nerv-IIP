@@ -981,6 +981,7 @@ export function useMesOperationTasks() {
   async function performAction(
     action: OperationAction,
     mutation: typeof startMutation,
+    workOrderId: string,
     operationTaskId: string,
     options: OperationActionOptions,
   ) {
@@ -990,17 +991,34 @@ export function useMesOperationTasks() {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
       operationType: `mes.operation-task.${action}`,
-      payloadFingerprint: `${operationTaskId}:${selectedScope.kind}:${selectedScope.id}:${options.reasonCode ?? ''}`,
+      payloadFingerprint: `${workOrderId}:${operationTaskId}:${selectedScope.kind}:${selectedScope.id}:${options.reasonCode ?? ''}`,
     }
     const isReplay = Boolean(peekPendingBusinessIntent(scope))
     const pending = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
     try {
-      const authoritative = await readExactOperationTask(filters, operationTaskId, selectedScope)
-      assertLifecycleActionExecutable({
-        domain: 'mes-operation-task',
-        action,
-        facts: { status: authoritative?.status, idempotentReplay: isReplay },
-      })
+      const authoritative = await readExactOperationTask(
+        filters,
+        operationTaskId,
+        selectedScope,
+        workOrderId,
+      )
+      const serverAllowsAction =
+        authoritative?.allowedActions?.some(
+          (allowedAction) => allowedAction.trim().toLowerCase() === action,
+        ) ?? false
+      if (!serverAllowsAction) {
+        // A same-key replay may legitimately observe the transition's resulting state.
+        // A new intent must never reconstruct permission from status: an absent server
+        // action is authoritative and fails closed.
+        assertLifecycleActionExecutable({
+          domain: 'mes-operation-task',
+          action,
+          facts: {
+            status: isReplay ? authoritative?.status : undefined,
+            idempotentReplay: isReplay,
+          },
+        })
+      }
     } catch (error) {
       if (!isReplay) clearPendingBusinessIntent(scope)
       throw error
@@ -1050,14 +1068,14 @@ export function useMesOperationTasks() {
       queryCache.cancelQueries({
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
       }),
-    startTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('start', startMutation, operationTaskId, options),
-    pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('pause', pauseMutation, operationTaskId, options),
-    resumeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('resume', resumeMutation, operationTaskId, options),
-    completeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('complete', completeMutation, operationTaskId, options),
+    startTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('start', startMutation, workOrderId, operationTaskId, options),
+    pauseTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('pause', pauseMutation, workOrderId, operationTaskId, options),
+    resumeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('resume', resumeMutation, workOrderId, operationTaskId, options),
+    completeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('complete', completeMutation, workOrderId, operationTaskId, options),
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||

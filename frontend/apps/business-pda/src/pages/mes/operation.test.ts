@@ -1,7 +1,10 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
+import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } from 'vue'
+
+type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> & { status?: string }
 
 const push = vi.fn()
 const routeGuardState = vi.hoisted(() => ({
@@ -29,10 +32,18 @@ vi.mock('vue-router', async () => {
 
 // --- composable mock: 2 operation tasks with different statuses ---
 type ActionOptions = { reasonCode?: string; idempotencyKey: string }
-const completeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const startTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const pauseTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const resumeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
+const completeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const startTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const pauseTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const resumeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
 const createSopFileDownloadGrant = vi.fn()
@@ -56,7 +67,7 @@ const operationListContextIdentityRef = ref(
   'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
 )
 
-const defaultTasks = [
+const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
@@ -64,6 +75,9 @@ const defaultTasks = [
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
     workCenterId: 'WC-A',
+    allowedActions: ['pause', 'complete'],
+    blockReasons: [] as string[],
+    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
   },
   {
     operationTaskId: 'OP-2',
@@ -71,9 +85,12 @@ const defaultTasks = [
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    allowedActions: ['start'],
+    blockReasons: [] as string[],
+    evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
   },
 ]
-const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
+const operationTasksRef = ref<OperationTaskFixture[]>(defaultTasks)
 const tasksPendingRef = ref(false)
 const tasksRefreshingRef = ref(false)
 const tasksSuccessfulRef = ref(true)
@@ -203,6 +220,63 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
     // BottomSheet 内容 teleport 到 body
     expect(document.body.textContent).toContain('完成')
+    wrapper.unmount()
+  })
+
+  it('renders the server-evaluated pair, device, gate time, and readable blocker details', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workOrderNo: 'MO-2026-0042',
+        operationTaskNo: 'OP-TASK-0020',
+        operationCode: 'OP-CUT',
+        deviceAssetId: 'device-asset-lathe-07',
+        deviceAssetCode: 'DEV-LATHE-07',
+        deviceAssetName: '七号数控车床',
+        allowedActions: [],
+        blockReasons: [
+          'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（OP-1）',
+          'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
+          'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
+          'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
+        ],
+        evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('MO-2026-0042')
+    expect(document.body.textContent).toContain('OP-TASK-0020')
+    expect(document.body.textContent).toContain('七号数控车床（DEV-LATHE-07）')
+    expect(document.body.textContent).toContain('device-asset-lathe-07')
+    expect(document.body.textContent).toContain('2026')
+    expect(document.body.textContent).toContain('前序工序')
+    expect(document.body.textContent).toContain('物料齐套')
+    expect(document.body.textContent).toContain('设备')
+    expect(document.body.textContent).toContain('质量')
+    expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('renders lifecycle buttons only from server allowedActions instead of local status guesses', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[0],
+        status: 'InProgress',
+        allowedActions: ['resume'],
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="action-resume"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="action-pause"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="action-complete"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -405,7 +479,7 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
-  it('completes a task only after explicit confirmation, calling completeTask with the id', async () => {
+  it('completes a task only after explicit confirmation, calling completeTask with the exact pair', async () => {
     const wrapper = mount(OperationPage, { attachTo: document.body })
     const rows = wrapper.findAll('[data-row]')
     await rows[0].trigger('click')
@@ -422,16 +496,39 @@ describe('PDA MES operation execution page', () => {
     confirmBtn.click()
     await flushPromises()
     expect(completeTask).toHaveBeenCalledWith(
+      'WO-2026-0001',
       'OP-1',
       expect.objectContaining({ idempotencyKey: expect.any(String) }),
     )
-    expect(completeTask.mock.calls[0][1].idempotencyKey).toBeTruthy()
+    expect(completeTask.mock.calls[0][2].idempotencyKey).toBeTruthy()
 
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
+    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not show success for an accepted but unconfirmed operation receipt', async () => {
+    completeTask.mockRejectedValueOnce(
+      Object.assign(new Error('请求已受理，但权威状态尚未确认'), {
+        code: 'business-operation-unconfirmed',
+      }),
+    )
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('结果尚未核实')
     wrapper.unmount()
   })
 
@@ -510,8 +607,8 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(completeTask).toHaveBeenCalledTimes(2)
-    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
-    const retryKey = completeTask.mock.calls[1][1].idempotencyKey
+    const firstKey = completeTask.mock.calls[0][2].idempotencyKey
+    const retryKey = completeTask.mock.calls[1][2].idempotencyKey
     expect(firstKey).toBeTruthy()
     expect(retryKey).toBe(firstKey)
 
@@ -528,7 +625,7 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(pauseTask).toHaveBeenCalledTimes(1)
-    const pauseKey = pauseTask.mock.calls[0][1].idempotencyKey
+    const pauseKey = pauseTask.mock.calls[0][2].idempotencyKey
     expect(pauseKey).toBeTruthy()
     expect(pauseKey).not.toBe(firstKey)
     wrapper.unmount()
@@ -544,7 +641,7 @@ describe('PDA MES operation execution page', () => {
     document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
-    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
+    const firstKey = completeTask.mock.calls[0][2].idempotencyKey
     const back = wrapper.get('[data-testid="back-to-list"]')
     expect(back.attributes('disabled')).toBeDefined()
     await back.trigger('click')
@@ -556,7 +653,7 @@ describe('PDA MES operation execution page', () => {
     await wrapper.get('[data-testid="retry-action"]').trigger('click')
     await flushPromises()
     expect(completeTask).toHaveBeenCalledTimes(2)
-    expect(completeTask.mock.calls[1][1].idempotencyKey).toBe(firstKey)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstKey)
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()

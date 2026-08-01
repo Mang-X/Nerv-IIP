@@ -321,7 +321,16 @@ export const mesOperationTasks = [
     status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
+    workOrderNo: 'MO-2026-0001',
+    operationTaskNo: 'OP-TASK-0010',
+    operationCode: 'OP-CUT',
+    deviceAssetId: 'device-asset-cnc-01',
+    deviceAssetCode: 'CNC-01',
+    deviceAssetName: '一号数控机床',
     qualityStatus: 'Pending',
+    allowedActions: ['pause', 'complete', 'report'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
   },
   {
     operationTaskId: 'OP-2',
@@ -329,7 +338,21 @@ export const mesOperationTasks = [
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    workOrderNo: 'MO-2026-0001',
+    operationTaskNo: 'OP-TASK-0020',
+    operationCode: 'OP-ASSEMBLE',
+    deviceAssetId: 'device-asset-lathe-02',
+    deviceAssetCode: 'LATHE-02',
+    deviceAssetName: '二号车床',
     qualityStatus: 'Pending',
+    allowedActions: [],
+    blockReasons: [
+      'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（OP-1）',
+      'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
+      'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
+      'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
+    ],
+    evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
   },
   {
     operationTaskId: 'OP-3',
@@ -338,6 +361,9 @@ export const mesOperationTasks = [
     operationSequence: 10,
     workCenterId: 'WC-C',
     qualityStatus: 'Pending',
+    allowedActions: ['start'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:32:00.000Z',
   },
 ]
 
@@ -348,6 +374,9 @@ const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationSequence: index + 1,
   workCenterId: 'WC-MANY',
   qualityStatus: 'Pending',
+  allowedActions: ['start'],
+  blockReasons: [],
+  evaluatedAtUtc: '2026-08-02T08:33:00.000Z',
 }))
 
 function confirmedOperation(
@@ -792,6 +821,10 @@ export async function routeBusinessConsoleApi(route: Route) {
 
   if (pathname === `${base}/dispatch-tasks`) {
     return fulfillJson(route, envelope({ items: mesDispatchTasks, total: mesDispatchTasks.length }))
+  }
+
+  if (pathname === `${base}/operation-sops/current`) {
+    return fulfillJson(route, envelope({ items: [] }))
   }
 
   // Operation-task actions: start/pause/resume/complete → 成功信封 + 权威回执。

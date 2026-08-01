@@ -296,6 +296,12 @@ describe('pda useBusinessMes composables', () => {
                       query.keyword === 'ot-3' || query.keyword === 'ot-reentry'
                         ? 'Queued'
                         : 'InProgress',
+                    allowedActions:
+                      query.keyword === 'ot-3' || query.keyword === 'ot-reentry'
+                        ? ['start']
+                        : ['pause', 'complete'],
+                    blockReasons: [],
+                    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
                   },
                 ],
                 total: 1,
@@ -357,7 +363,7 @@ describe('pda useBusinessMes composables', () => {
     const firstPage = useMesOperationTasks()
     const firstMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
     await expect(
-      firstPage.startTask('ot-reentry', {
+      firstPage.startTask('wo-1', 'ot-reentry', {
         reasonCode: 'OPERATOR_READY',
         idempotencyKey: 'pda-page-key-1',
       }),
@@ -365,14 +371,14 @@ describe('pda useBusinessMes composables', () => {
 
     const returnedPage = useMesOperationTasks()
     const retryMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
-    await returnedPage.startTask('ot-reentry', {
+    await returnedPage.startTask('wo-1', 'ot-reentry', {
       reasonCode: 'OPERATOR_READY',
       idempotencyKey: 'pda-page-key-2',
     })
 
     const newIntentPage = useMesOperationTasks()
     const newIntentMutation = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
-    await newIntentPage.startTask('ot-reentry', {
+    await newIntentPage.startTask('wo-1', 'ot-reentry', {
       reasonCode: 'OPERATOR_READY',
       idempotencyKey: 'pda-page-key-3',
     })
@@ -1157,7 +1163,7 @@ describe('pda useBusinessMes composables', () => {
   it('completes an operation task forwarding the caller-supplied idempotency key', async () => {
     const { completeTask } = useMesOperationTasks()
 
-    await completeTask('ot-9', { idempotencyKey: 'op-complete-1' })
+    await completeTask('wo-1', 'ot-9', { idempotencyKey: 'op-complete-1' })
 
     expect(completeBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('completeBusinessConsoleMesOperationTask')
@@ -1192,7 +1198,7 @@ describe('pda useBusinessMes composables', () => {
 
     expect(operationScopeReady.value).toBe(false)
     await expect(
-      startTask('ot-no-scope', { idempotencyKey: 'operation-no-scope' }),
+      startTask('wo-1', 'ot-no-scope', { idempotencyKey: 'operation-no-scope' }),
       // 同上：授权清单为空的真话是「没有已授权范围」，不能说成「还没选」（#1297）。
     ).rejects.toThrow(MES_WORK_SCOPE_UNAVAILABLE_MESSAGE)
     expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
@@ -1207,9 +1213,9 @@ describe('pda useBusinessMes composables', () => {
       .mockResolvedValueOnce({ success: true, data: {} })
 
     await expect(
-      pauseTask('ot-determinate', { idempotencyKey: 'operation-key-1' }),
+      pauseTask('wo-1', 'ot-determinate', { idempotencyKey: 'operation-key-1' }),
     ).rejects.toMatchObject({ status: 422 })
-    await pauseTask('ot-determinate', { idempotencyKey: 'operation-key-2' })
+    await pauseTask('wo-1', 'ot-determinate', { idempotencyKey: 'operation-key-2' })
 
     expect(mutateAsync.mock.calls[0][0].body.idempotencyKey).toBe('operation-key-1')
     expect(mutateAsync.mock.calls[1][0].body.idempotencyKey).toBe('operation-key-2')
@@ -1227,7 +1233,7 @@ describe('pda useBusinessMes composables', () => {
     } as never)
     const { completeTask } = useMesOperationTasks()
 
-    await expect(completeTask('ot-9', { idempotencyKey: 'op-complete-1' })).rejects.toThrow(
+    await expect(completeTask('wo-1', 'ot-9', { idempotencyKey: 'op-complete-1' })).rejects.toThrow(
       '状态已被其他操作更新',
     )
 
@@ -1236,10 +1242,53 @@ describe('pda useBusinessMes composables', () => {
     ).not.toHaveBeenCalled()
   })
 
+  it('re-reads the exact strong-ID pair and rejects an action omitted by server allowedActions', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'ot-blocked',
+              workOrderId: 'wo-blocked',
+              status: 'Queued',
+              allowedActions: [],
+              blockReasons: ['MATERIAL_SHORTAGE: 物料 MAT-1 缺口 2'],
+              evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const { startTask } = useMesOperationTasks()
+
+    await expect(
+      startTask('wo-blocked', 'ot-blocked', { idempotencyKey: 'op-blocked-1' }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          workOrderId: 'wo-blocked',
+          keyword: 'ot-blocked',
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
+        }),
+      }),
+    )
+    expect(
+      coladaState.mutateById.get('startBusinessConsoleMesOperationTask'),
+    ).not.toHaveBeenCalled()
+  })
+
   it('starts an operation task forwarding an optional reason code with the caller-supplied key', async () => {
     const { startTask } = useMesOperationTasks()
 
-    await startTask('ot-3', { reasonCode: 'OPERATOR_READY', idempotencyKey: 'op-start-1' })
+    await startTask('wo-1', 'ot-3', {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'op-start-1',
+    })
 
     const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')
     expect(startBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()

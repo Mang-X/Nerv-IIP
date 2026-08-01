@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import {
-  openDownloadGrantBlob,
-  operationTaskStatusLabel,
-  statusActionGate,
-} from '@nerv-iip/business-core'
+import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
 import {
   createTimeoutFetch,
   describeRequestError,
@@ -156,16 +152,16 @@ const statusLabel = operationTaskStatusLabel
 
 type ActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
-// 只消费服务端持久化 canonical status；未知/终态固定只读。
-function actionsFor(status?: string): ActionKind[] {
-  return (['start', 'pause', 'resume', 'complete'] as const).filter(
-    (action) =>
-      statusActionGate({
-        domain: 'mes-operation-task',
-        action,
-        facts: { status },
-      }).executable,
-  )
+const recognizedActions = new Set<ActionKind>(['start', 'pause', 'resume', 'complete'])
+
+// The server is the sole source of executable actions. Unknown actions belong to
+// another surface (for example report) and remain hidden on this lifecycle panel.
+function actionsFor(task: Task | null): ActionKind[] {
+  if (!task?.allowedActions) return []
+  return task.allowedActions.flatMap((value) => {
+    const normalized = value.trim().toLowerCase() as ActionKind
+    return recognizedActions.has(normalized) ? [normalized] : []
+  })
 }
 
 const ACTION_LABELS: Record<ActionKind, string> = {
@@ -183,11 +179,18 @@ const SUCCESS_TITLES: Record<ActionKind, string> = {
   complete: '工序已完成',
 }
 
-const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Promise<unknown>> = {
-  start: (id, idempotencyKey) => startTask(id, { idempotencyKey }),
-  pause: (id, idempotencyKey) => pauseTask(id, { idempotencyKey }),
-  resume: (id, idempotencyKey) => resumeTask(id, { idempotencyKey }),
-  complete: (id, idempotencyKey) => completeTask(id, { idempotencyKey }),
+const ACTION_FNS: Record<
+  ActionKind,
+  (workOrderId: string, operationTaskId: string, idempotencyKey: string) => Promise<unknown>
+> = {
+  start: (workOrderId, operationTaskId, idempotencyKey) =>
+    startTask(workOrderId, operationTaskId, { idempotencyKey }),
+  pause: (workOrderId, operationTaskId, idempotencyKey) =>
+    pauseTask(workOrderId, operationTaskId, { idempotencyKey }),
+  resume: (workOrderId, operationTaskId, idempotencyKey) =>
+    resumeTask(workOrderId, operationTaskId, { idempotencyKey }),
+  complete: (workOrderId, operationTaskId, idempotencyKey) =>
+    completeTask(workOrderId, operationTaskId, { idempotencyKey }),
 }
 
 // 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
@@ -213,6 +216,7 @@ type ResultState = {
   title: string
   description?: string
   action: ActionKind
+  workOrderId: string
   taskId: string
 }
 const result = ref<ResultState | null>(null)
@@ -220,7 +224,31 @@ const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
 const toast = reactive({ show: false, message: '', type: 'error' as const })
 
-const availableActions = computed(() => actionsFor(selected.value?.status))
+const availableActions = computed(() => actionsFor(selected.value))
+const blockReasonDisplays = computed(() =>
+  (selected.value?.blockReasons ?? []).map((reason) => {
+    const separator = reason.indexOf(':')
+    const code = (separator > 0 ? reason.slice(0, separator) : reason).trim()
+    const detail = (separator > 0 ? reason.slice(separator + 1) : reason).trim()
+    const normalizedCode = code.toUpperCase()
+    let category = '其他门禁'
+    if (normalizedCode.includes('PREVIOUS_OPERATION')) category = '前序工序'
+    else if (normalizedCode.includes('MATERIAL')) category = '物料齐套'
+    else if (normalizedCode.includes('QUALITY')) category = '质量'
+    else if (
+      normalizedCode.includes('EQUIPMENT') ||
+      normalizedCode.includes('ALARM') ||
+      normalizedCode.includes('DOWNTIME') ||
+      normalizedCode.includes('MAINTENANCE') ||
+      normalizedCode.includes('INSPECTION') ||
+      normalizedCode.includes('SOURCE') ||
+      normalizedCode.includes('TAG_MAPPING') ||
+      normalizedCode.includes('SUBSTITUTE')
+    )
+      category = '设备'
+    return { code, category, detail: detail || '服务端未提供更多说明。' }
+  }),
+)
 
 const scanActive = computed(() => selected.value === null && result.value === null)
 const statusOptions: DropdownOption[] = [
@@ -359,7 +387,8 @@ async function runAction(action: ActionKind) {
     return
   }
   const task = selected.value
-  if (!task?.operationTaskId) return
+  if (!task?.workOrderId || !task.operationTaskId || !availableActions.value.includes(action))
+    return
   // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
   if (action === 'complete' && !confirmingComplete.value) {
     confirmingComplete.value = true
@@ -371,12 +400,20 @@ async function runAction(action: ActionKind) {
     if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
   }
   const id = task.operationTaskId
+  const workOrderId = task.workOrderId
   const key = operationKey.value
   closeSheet()
   try {
-    await ACTION_FNS[action](id, key)
+    await ACTION_FNS[action](workOrderId, id, key)
     operationResultUnknown.value = false
-    result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
+    result.value = {
+      status: 'success',
+      title: SUCCESS_TITLES[action],
+      description: `${workOrderId} · ${id}`,
+      action,
+      workOrderId,
+      taskId: id,
+    }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
@@ -386,8 +423,9 @@ async function runAction(action: ActionKind) {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
+      description: `${workOrderId} · ${id}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      workOrderId,
       taskId: id,
     }
   }
@@ -401,14 +439,21 @@ async function retry() {
   }
   const state = result.value
   if (!state) return
-  const { action, taskId } = state
+  const { action, workOrderId, taskId } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
   result.value = null
   try {
-    await ACTION_FNS[action](taskId, key)
+    await ACTION_FNS[action](workOrderId, taskId, key)
     operationResultUnknown.value = false
-    result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
+    result.value = {
+      status: 'success',
+      title: SUCCESS_TITLES[action],
+      description: `${workOrderId} · ${taskId}`,
+      action,
+      workOrderId,
+      taskId,
+    }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
@@ -418,8 +463,9 @@ async function retry() {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
+      description: `${workOrderId} · ${taskId}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      workOrderId,
       taskId,
     }
   }
@@ -445,6 +491,11 @@ function formatDate(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
+function formatDateTime(value?: string | null) {
+  if (!value) return '未提供'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
 }
 </script>
 
@@ -591,9 +642,63 @@ function formatDate(value?: string | null) {
     >
       <div v-if="selected" class="space-y-3 pb-2">
         <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(selected.status) }}</p>
+        <dl
+          class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-lg border border-border px-3 py-3 text-sm"
+        >
+          <dt class="text-muted-foreground">工单</dt>
+          <dd class="min-w-0 break-all text-foreground">
+            {{ selected.workOrderNo || selected.workOrderId }}
+            <span v-if="selected.workOrderNo" class="block text-xs text-muted-foreground">{{
+              selected.workOrderId
+            }}</span>
+          </dd>
+          <dt class="text-muted-foreground">工序任务</dt>
+          <dd class="min-w-0 break-all text-foreground">
+            {{ selected.operationTaskNo || selected.operationTaskId }}
+            <span v-if="selected.operationTaskNo" class="block text-xs text-muted-foreground">{{
+              selected.operationTaskId
+            }}</span>
+          </dd>
+          <dt class="text-muted-foreground">设备</dt>
+          <dd class="min-w-0 break-all text-foreground">
+            {{
+              selected.deviceAssetName && selected.deviceAssetCode
+                ? `${selected.deviceAssetName}（${selected.deviceAssetCode}）`
+                : selected.deviceAssetName ||
+                  selected.deviceAssetCode ||
+                  selected.deviceAssetId ||
+                  '未指定'
+            }}
+            <span
+              v-if="
+                selected.deviceAssetId && (selected.deviceAssetName || selected.deviceAssetCode)
+              "
+              class="block text-xs text-muted-foreground"
+              >{{ selected.deviceAssetId }}</span
+            >
+          </dd>
+          <dt class="text-muted-foreground">门禁评估</dt>
+          <dd class="text-foreground">{{ formatDateTime(selected.evaluatedAtUtc) }}</dd>
+        </dl>
         <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
           受派工人：{{ selected.assignedUserName }}
         </p>
+
+        <section
+          v-if="blockReasonDisplays.length"
+          data-testid="operation-block-reasons"
+          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-3"
+        >
+          <h2 class="text-sm font-semibold text-foreground">当前不能开始</h2>
+          <div
+            v-for="reason in blockReasonDisplays"
+            :key="`${reason.code}:${reason.detail}`"
+            class="rounded-md bg-card px-3 py-2"
+          >
+            <p class="text-sm font-medium text-foreground">{{ reason.category }}</p>
+            <p class="mt-1 text-sm text-muted-foreground">{{ reason.detail }}</p>
+          </div>
+        </section>
 
         <section class="space-y-2 rounded-lg border border-border px-3 py-3">
           <div class="flex items-center justify-between gap-3">

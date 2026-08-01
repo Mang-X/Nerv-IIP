@@ -34,6 +34,8 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务�
 
 **作业范围（MES 工序执行 / 报工）**：这两页的读写都由「主体已核验作业范围」把门。后端 `GET /api/business-console/v1/me/work-context` 按设计不替用户选范围——不带 `scopeKind`/`scopeId` 时只回 `authorizedScopes` 候选清单，`selectedScope` 恒空。PDA 因此走三跳闭环：取授权清单 → 选择（记住的选择仍被授权时优先，否则清单第一项）→ 带 `scopeKind`/`scopeId` 重新核验，`selectedScope` 只认服务端回填，越权选择由 Gateway 403 兜底。范围未就绪时 fail closed：不发业务查询，页面直说是「还没选」还是「一个已授权范围都没有（请管理员在 IAM 配数据范围）」，绝不反复发失败请求，也不渲染假空态。页面顶部的「作业范围」整宽下拉筛选条是唯一切换入口（44px 触发行 / 48px 选项行，单手拇指可达）；显式切换按 principal+组织+环境 记住（localStorage），并在工序执行与报工之间共享同一份选择。
 
+**当前工序门禁（MAN-637）**：工序任务的 URL、标题、详情、动作与结果使用同一 `workOrderId + operationTaskId`。详情展示工单、工序任务、设备、SOP、服务端门禁评估时间和阻塞原因；前序未完成、物料未齐套、设备不可用和质量保留分别以现场可读说明呈现。按钮只消费 MES 当前返回的 `allowedActions`，不按页面缓存中的状态猜测；服务端没有返回 `start` 时不能开始，完成态空动作保持只读。提交前再次按同一 pair 和授权范围回读，409 后关闭旧动作并刷新；只有 confirmed 回执或完成权威回读才显示成功，accepted/未确认结果提示核实且沿用原幂等意图。
+
 ## 4. 分期
 
 里程碑顺序（与 spec §11 一致）：
@@ -41,7 +43,7 @@ PDA 面向一线操作员角色，默认可见能力收敛为：**可信任务�
 - **M0 `ui-mobile` 地基**（先行）：`AppShellMobile`（含顶/底/左右三段安全区）+ ScanBar + ListRow + BottomSheet + Result 先跑通；建 `business-core` 骨架与设计 token 接入。
 - **M1 PDA 壳**：`business-pda` app + Capacitor APK 基线 + 首页（可信任务入口/应用墙/扫码分流）+ 登录/会话复用。
 - **M2 WMS 一线闭环（已建 · 5 页）**：收货入库/复核发货/盘点（写闭环 + 幂等）+ 拣货/上架（只读任务清单）五页全量落地。#374 已补 WMS 拣货、上架、盘点独立 list facade，curated barrel 已接出（`@nerv-iip/api-client`），首页 WMS 入口五项已点亮；拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete），盘点写经 count-executions complete（幂等键注入）。
-- **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)（MES facade 全就绪，无后端阻塞）。
+- **M3 MES 一线闭环（已建）**：报工/领料/完工入库/工序执行 —— MES 工序执行/报工/领料/完工入库 已建 (Plan 3)；当前工序已补齐服务端 `allowedActions` / `blockReasons` / `evaluatedAtUtc` 门禁旅程（MES facade 全就绪，无后端阻塞）。
 - **M4 设备轻量（已建）**：设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已落地设备字典点亮（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true）、设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。
 - **M5 扫码解析增强**：接入扫码 resolve 端点（缺口 5），强化扫码直达。
 

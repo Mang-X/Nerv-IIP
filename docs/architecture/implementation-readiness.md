@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## PDA 当前工序与服务端门禁演示闭环（MAN-637 / #1174）
+
+Business PDA 工序执行页现在完整消费既有 BusinessGateway/MES 权威任务行：入口查询继续由当前 principal 与实时核验的 `scopeKind/scopeId` 过滤；没有 self assignment 时页面明确展示实际的班组、工作中心、车间或组织授权范围，不把范围队列称为“我的任务”。列表、URL、详情、动作写前回读和结果始终绑定同一 `workOrderId + operationTaskId`，route query、scope 或 principal identity 变化会先关闭旧详情，只有新 identity 的成功响应能重新打开精确 pair。
+
+详情展示工单、工序任务、设备、当前 SOP、MES `blockReasons` 和 `evaluatedAtUtc`。生命周期按钮只从服务端 `allowedActions` 的 `start/pause/resume/complete` 子集生成，不再从本地 status 推导；前序、物料齐套、设备与质量阻塞以可读分类和服务端说明展示，空动作和完成态保持只读。动作提交前在同一授权范围内精确回读双强 ID 并再次核验服务端动作；409 会撤销旧 sheet/意图并刷新权威列表，`accepted`、缺失/畸形回执或未完成权威回读只显示结果未核实，不显示成功且保留同一幂等键供安全重试。此切片没有修改后端 endpoint、公开契约、OpenAPI、generated client、数据库或 facade declaration；完整报工字段、耗料批次、领料、完工入库、扫码解析、测量判定和离线队列仍不在范围内。
+
 ## 跨业务可搜索目录契约（MAN-632 / #1169）
 
 BusinessGateway 新增统一可搜索目录读面，覆盖人员、班组、设备、工作中心、工位、车间、库位、物料、批次/序列号、缺陷码、报废/停机/维护原因和优先级。Gateway 不复制权威事实：MasterData、Inventory、Quality、Maintenance 各自完成组织/环境、关键字、受支持范围和分页过滤；请求类型动态选择且只检查对应 owner 权限。IAM 返回的 permission-aware scope grants 会在 owner 调用前再次裁决：无显式 scope 时只有 organization-wide grant 可保持组织级查询，或从唯一且与该目录兼容的受限 grant 安全派生 effective scope；多 grant、scope 不兼容、越权、畸形 grant 和下游坏响应均 fail closed。所有候选返回稳定 ID、可读显示、来源、authority type、确定性 code 排序及解释；`rankingMode=recent|suggested` 在没有可信使用/推荐事实时显式报告 ranking unavailable，并继续使用可解释的 code fallback，不冒充推荐结果；未知 mode、无法表示的页偏移在授权和下游调用前拒绝。排序不进入数量、计量、决策或根因。Maintenance reason 明示复用 downtime authority；priority 是 MasterData 保留但不预置的 FactoryCustom CodeSet，未配置时显式 unavailable，不伪造枚举。

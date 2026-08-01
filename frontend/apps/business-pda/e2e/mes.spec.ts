@@ -175,6 +175,20 @@ test('作业范围：授权清单渲染成移动端选择器，切换后按新�
 })
 
 test('工序执行：列表 → 完成（二次确认）→ 成功结果', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const exactPairs: Array<{ workOrderId: string | null; operationTaskId: string | null }> = []
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() === 'GET') {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('keyword')) {
+        exactPairs.push({
+          workOrderId: url.searchParams.get('workOrderId'),
+          operationTaskId: url.searchParams.get('keyword'),
+        })
+      }
+    }
+    return routeBusinessConsoleApi(route)
+  })
   await page.goto('/mes/operation')
 
   await expect(page.getByRole('heading', { name: '工序执行' })).toBeVisible()
@@ -185,6 +199,11 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
 
   // 点行打开 BottomSheet 动作面板（teleport 到 body）。
   await row.click()
+  await expect(page.getByText('MO-2026-0001')).toBeVisible()
+  await expect(page.getByText('OP-TASK-0010')).toBeVisible()
+  await expect(page.getByText('一号数控机床（CNC-01）')).toBeVisible()
+  await expect(page.getByText('device-asset-cnc-01')).toBeVisible()
+  await expect(page.getByText(/门禁评估/)).toBeVisible()
   // Running → 可用动作含「完成」（终态、destructive）。
   const completeBtn = page.getByTestId('action-complete')
   await expect(completeBtn).toBeVisible()
@@ -199,6 +218,134 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('工序已完成')).toBeVisible()
+  await expect(result.getByText('WO-1 · OP-1')).toBeVisible()
+  await expect
+    .poll(() => exactPairs)
+    .toContainEqual({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    })
+})
+
+test('工序执行：375×812 阻塞任务展示前序/齐套/设备/质量原因且不能开始', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-2')
+
+  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 20', exact: true })).toBeVisible()
+  const blockers = page.getByTestId('operation-block-reasons')
+  await expect(blockers).toContainText('当前不能开始')
+  await expect(blockers).toContainText('前序工序')
+  await expect(blockers).toContainText('物料齐套')
+  await expect(blockers).toContainText('设备')
+  await expect(blockers).toContainText('质量')
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
+  await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
+  await expect(page.locator('html')).toHaveJSProperty('scrollWidth', 375)
+})
+
+test('工序执行：accepted/unconfirmed 回执不显示成功并保留双强 ID', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.route(
+    /\/api\/business-console\/v1\/mes\/operation-tasks\/OP-1\/complete(?:\?|$)/,
+    async (route) => {
+      const body = (route.request().postDataJSON() ?? {}) as { idempotencyKey?: string }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            operationReceipt: {
+              operationType: 'mes.operation-task.complete',
+              authority: 'business-gateway',
+              resourceType: 'mes.operation-task',
+              resourceId: 'OP-1',
+              idempotencyKey: body.idempotencyKey,
+              outcome: 'accepted',
+              stateConfirmed: false,
+              readbackRequired: true,
+              readbackMethod: 'GET',
+              readbackPath:
+                '/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&operationTaskId=OP-1',
+              changedAtUtc: '2026-08-02T08:35:00.000Z',
+            },
+          },
+        }),
+      })
+    },
+  )
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
+  await page.getByTestId('action-complete').click()
+  await page.getByTestId('confirm-complete').click()
+
+  await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
+  const errorResult = page.locator('[data-result][data-status="error"]')
+  await expect(errorResult).toBeVisible()
+  await expect(errorResult).toContainText('WO-1 · OP-1')
+  await expect(errorResult).toContainText('结果尚未核实')
+})
+
+test('工序执行：409 后权威刷新并撤销旧动作', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  let listReads = 0
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() === 'GET') listReads += 1
+    return routeBusinessConsoleApi(route)
+  })
+  await page.route(
+    /\/api\/business-console\/v1\/mes\/operation-tasks\/OP-1\/complete(?:\?|$)/,
+    async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, message: 'lifecycle-conflict', data: null }),
+      })
+    },
+  )
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
+  const readsBeforeAction = listReads
+  await page.getByTestId('action-complete').click()
+  await page.getByTestId('confirm-complete').click()
+
+  await expect(page.getByText('状态已被其他操作更新')).toBeVisible()
+  await expect(page.getByTestId('confirm-complete')).toHaveCount(0)
+  await expect(page.getByTestId('retry-action')).toHaveCount(0)
+  await expect.poll(() => listReads).toBeGreaterThan(readsBeforeAction)
+})
+
+test('工序执行：完成态服务端返回空动作时详情只读', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() !== 'GET') return routeBusinessConsoleApi(route)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'OP-DONE',
+              workOrderId: 'WO-DONE',
+              status: 'Completed',
+              operationSequence: 30,
+              workCenterId: 'WC-A',
+              qualityStatus: 'Passed',
+              allowedActions: [],
+              blockReasons: [],
+              evaluatedAtUtc: '2026-08-02T08:40:00.000Z',
+            },
+          ],
+          total: 1,
+        },
+      }),
+    })
+  })
+  await page.goto('/mes/operation?workOrderId=WO-DONE&operationTaskId=OP-DONE')
+
+  await expect(page.getByRole('heading', { name: 'WO-DONE · 工序 30', exact: true })).toBeVisible()
+  await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
+  await expect(page.locator('[data-testid^="action-"]')).toHaveCount(0)
 })
 
 test('工序执行：same-route query push 与 back/forward 始终只打开当前双强 ID', async ({ page }) => {
