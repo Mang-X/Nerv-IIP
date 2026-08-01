@@ -243,6 +243,58 @@ public sealed class MesIntegrationEventTests
     }
 
     [Fact]
+    public void Material_issue_converter_emits_one_inventory_detail_per_source_allocation()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SPLIT",
+            "WO-001",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            5m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+        request.ConfirmLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-001",
+                "WH-WB-RM-01",
+                "SITE-001",
+                "WH-WB-LINE-01",
+                [
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-RM-01", "LOT-OPENING-MAT-OIL", 3m),
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-SF-01", "LOT-PO-001", 2m),
+                ]),
+            DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
+            5m,
+            "LOT-WO-001");
+
+        var issueEvents = request.GetDomainEvents()
+            .OfType<MaterialIssueRequestedDomainEvent>()
+            .ToArray();
+        var inventoryEvents = issueEvents
+            .Select(new MaterialIssueRequestedIntegrationEventConverter().Convert)
+            .ToArray();
+
+        Assert.Equal(2, inventoryEvents.Length);
+        Assert.Collection(
+            inventoryEvents,
+            first =>
+            {
+                Assert.Equal("WH-WB-RM-01", first.Payload.LocationCode);
+                Assert.Equal("LOT-OPENING-MAT-OIL", first.Payload.LotNo);
+                Assert.Equal(-3m, first.Payload.Quantity);
+            },
+            second =>
+            {
+                Assert.Equal("WH-WB-SF-01", second.Payload.LocationCode);
+                Assert.Equal("LOT-PO-001", second.Payload.LotNo);
+                Assert.Equal(-2m, second.Payload.Quantity);
+            });
+        Assert.NotEqual(inventoryEvents[0].Payload.IdempotencyKey, inventoryEvents[1].Payload.IdempotencyKey);
+    }
+
+    [Fact]
     public void Line_side_receipt_converter_emits_inventory_inbound_request_to_production_line_side_account()
     {
         var request = MaterialIssueRequest.Create(

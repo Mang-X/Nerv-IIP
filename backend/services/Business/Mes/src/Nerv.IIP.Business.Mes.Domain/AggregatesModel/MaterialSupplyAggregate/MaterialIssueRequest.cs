@@ -1,13 +1,35 @@
 using System.Globalization;
+using System.Text.Json;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 
 public partial record MaterialIssueRequestId : IGuidStronglyTypedId;
 
+/// <summary>一次线边收料从一个库存维度分配的过账明细。</summary>
+public sealed record MaterialTransferAllocation
+{
+    public MaterialTransferAllocation(
+        string sourceSiteCode,
+        string sourceLocationCode,
+        string? sourceLotNo,
+        decimal quantity)
+    {
+        SourceSiteCode = DomainGuard.Required(sourceSiteCode, nameof(sourceSiteCode));
+        SourceLocationCode = DomainGuard.Required(sourceLocationCode, nameof(sourceLocationCode));
+        SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
+        Quantity = DomainGuard.Positive(quantity, nameof(quantity));
+    }
+
+    public string SourceSiteCode { get; }
+    public string SourceLocationCode { get; }
+    public string? SourceLotNo { get; }
+    public decimal Quantity { get; }
+}
+
 /// <summary>
 /// 一次线边调拨的真实库位组合：来源取库存实际持仓（领料来源单据或库存查询解析），
-/// 目标取工位线边库位。领域层不提供任何默认值，避免把命名空间硬编码回来。
+/// 目标取工位线边库位。来源可以拆成多个库存维度，领域层不提供任何默认值。
 /// </summary>
 public sealed record MaterialTransferLocations
 {
@@ -15,18 +37,21 @@ public sealed record MaterialTransferLocations
         string sourceSiteCode,
         string sourceLocationCode,
         string targetSiteCode,
-        string targetLocationCode)
+        string targetLocationCode,
+        IReadOnlyList<MaterialTransferAllocation>? sourceAllocations = null)
     {
         SourceSiteCode = DomainGuard.Required(sourceSiteCode, nameof(sourceSiteCode));
         SourceLocationCode = DomainGuard.Required(sourceLocationCode, nameof(sourceLocationCode));
         TargetSiteCode = DomainGuard.Required(targetSiteCode, nameof(targetSiteCode));
         TargetLocationCode = DomainGuard.Required(targetLocationCode, nameof(targetLocationCode));
+        SourceAllocations = sourceAllocations ?? [];
     }
 
     public string SourceSiteCode { get; }
     public string SourceLocationCode { get; }
     public string TargetSiteCode { get; }
     public string TargetLocationCode { get; }
+    public IReadOnlyList<MaterialTransferAllocation> SourceAllocations { get; }
 }
 
 /// <summary>线边收料两条库存过账腿：仓库发出（出库）与线边收入（入库）。</summary>
@@ -119,6 +144,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// </summary>
     public bool PendingIssueLegPosted { get; private set; }
 
+    /// <summary>本次收料需要的仓库出库明细数；多库位分配时每条明细都必须回执。</summary>
+    public int PendingIssueLegCount { get; private set; }
+
+    /// <summary>已回执的仓库出库明细序号，防止多库位回执重复计数。</summary>
+    public string PendingIssueLegPostedIndexesJson { get; private set; } = "[]";
+
     /// <summary>线边入库腿是否已回执，语义同 <see cref="PendingIssueLegPosted"/>。</summary>
     public bool PendingReceiptLegPosted { get; private set; }
 
@@ -127,6 +158,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
     /// <summary>发料来源库位（库存实际持仓库位），禁止由领域层臆造。</summary>
     public string? SourceLocationCode { get; private set; }
+
+    /// <summary>已解析的实际来源库位/批次/数量，跨异步重试持久保留。</summary>
+    public string SourceAllocationsJson { get; private set; } = "[]";
 
     /// <summary>收料目标站点（工位线边）。</summary>
     public string? TargetSiteCode { get; private set; }
@@ -214,7 +248,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         // 上一次尝试里已经有一条腿过账成功（另一条被拒），这次只是补发失败的那条腿：
         // 数量必须与在途的那一笔一致，否则两条腿会记到不同数量上。
-        var hasSettledLeg = PendingReceiptQuantity > 0m && (PendingIssueLegPosted || PendingReceiptLegPosted);
+        var hasSettledLeg = PendingReceiptQuantity > 0m && HasAnyPostedLeg();
         var quantity = receivedQuantity ?? (hasSettledLeg
             ? PendingReceiptQuantity
             : RequestedQuantity - ReceivedQuantity);
@@ -243,6 +277,31 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         TargetSiteCode = locations.TargetSiteCode;
         TargetLocationCode = locations.TargetLocationCode;
         MaterialLotId = normalizedMaterialLotId ?? MaterialLotId;
+
+        var sourceAllocations = hasSettledLeg
+            ? GetSourceAllocations(quantity)
+            : NormalizeSourceAllocations(locations, quantity, MaterialLotId);
+        if (sourceAllocations.Count == 0)
+        {
+            throw new InvalidOperationException("线边收料缺少库存来源分配明细，无法发起过账。");
+        }
+
+        SourceSiteCode = sourceAllocations[0].SourceSiteCode;
+        SourceLocationCode = sourceAllocations[0].SourceLocationCode;
+        if (!hasSettledLeg)
+        {
+            SourceAllocationsJson = JsonSerializer.Serialize(sourceAllocations);
+            PendingIssueLegCount = sourceAllocations.Count;
+            PendingIssueLegPostedIndexesJson = "[]";
+        }
+        else if (PendingIssueLegCount <= 0)
+        {
+            // Backfill the single-leg state written before split allocations were persisted.
+            SourceAllocationsJson = JsonSerializer.Serialize(sourceAllocations);
+            PendingIssueLegCount = sourceAllocations.Count;
+            PendingIssueLegPostedIndexesJson = PendingIssueLegPosted ? "[0]" : "[]";
+        }
+
         ReceiptAttempt += 1;
         PendingReceiptQuantity = quantity;
         if (!hasSettledLeg)
@@ -259,10 +318,18 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailedAtUtc = null;
         InventoryPostingRollbackKey = null;
 
-        // 只重发尚未过账的腿：已经在库存实扣过的腿不再发第二次请求。
-        if (!PendingIssueLegPosted)
+        // 只重发尚未过账的明细：已经在库存实扣过的来源批次不再发第二次请求。
+        var postedIssueIndexes = PostedIssueIndexes();
+        for (var allocationIndex = 0; allocationIndex < sourceAllocations.Count; allocationIndex++)
         {
-            AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
+            if (!postedIssueIndexes.Contains(allocationIndex))
+            {
+                AddDomainEvent(new MaterialIssueRequestedDomainEvent(
+                    this,
+                    sourceAllocations[allocationIndex].Quantity,
+                    sourceAllocations[allocationIndex],
+                    allocationIndex));
+            }
         }
 
         if (!PendingReceiptLegPosted)
@@ -283,7 +350,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     {
         ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId);
         var postingToken = PendingPostingToken!;
-        MarkInventoryPosted(postingToken, MaterialTransferLeg.WarehouseIssue, receivedAtUtc);
+        foreach (var allocationIndex in Enumerable.Range(0, PendingIssueLegCount))
+        {
+            MarkInventoryPosted(postingToken, MaterialTransferLeg.WarehouseIssue, receivedAtUtc, allocationIndex);
+        }
         MarkInventoryPosted(postingToken, MaterialTransferLeg.LineSideReceipt, receivedAtUtc);
     }
 
@@ -291,7 +361,11 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     /// 库存过账回执。两条腿都回执后才把在途数量转成 <see cref="ReceivedQuantity"/> 并翻状态。
     /// 键不匹配的回执（旧尝试或重复投递）一律忽略，因此 CAP 重复消费不会重复记账。
     /// </summary>
-    public void MarkInventoryPosted(string postingToken, MaterialTransferLeg leg, DateTimeOffset postedAtUtc)
+    public void MarkInventoryPosted(
+        string postingToken,
+        MaterialTransferLeg leg,
+        DateTimeOffset postedAtUtc,
+        int? allocationIndex = null)
     {
         // 按「收料步」匹配而非整键匹配：失败后重试会换尝试序号，旧尝试迟到的成功回执仍然必须记账，
         // 否则那条腿会被当成没过账、重试时再扣一次库存。
@@ -302,7 +376,16 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         if (leg == MaterialTransferLeg.WarehouseIssue)
         {
-            PendingIssueLegPosted = true;
+            var index = allocationIndex ?? 0;
+            if (index < 0 || index >= Math.Max(1, PendingIssueLegCount))
+            {
+                return;
+            }
+
+            var postedIndexes = PostedIssueIndexes();
+            postedIndexes.Add(index);
+            PendingIssueLegPostedIndexesJson = JsonSerializer.Serialize(postedIndexes.Order());
+            PendingIssueLegPosted = postedIndexes.Count >= Math.Max(1, PendingIssueLegCount);
         }
         else
         {
@@ -319,6 +402,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         PendingReceiptQuantity = 0m;
         PendingPostingToken = null;
         PendingIssueLegPosted = false;
+        PendingIssueLegCount = 0;
+        PendingIssueLegPostedIndexesJson = "[]";
         PendingReceiptLegPosted = false;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
         InventoryPostingFailureCode = null;
@@ -347,11 +432,13 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         if (PendingPostingToken is not null)
         {
             InventoryPostingRollbackKey = PendingPostingToken;
-            if (!PendingIssueLegPosted && !PendingReceiptLegPosted)
+            if (!HasAnyPostedLeg())
             {
                 // 两条腿都没落账：整笔在途作废，回到「还没收料」的形态。
                 PendingReceiptQuantity = 0m;
                 PendingPostingToken = null;
+                PendingIssueLegCount = 0;
+                PendingIssueLegPostedIndexesJson = "[]";
                 if (ReceivedQuantity == 0m)
                 {
                     ReceivedAtUtc = null;
@@ -386,6 +473,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
     private static string ReceiptStepOf(string token)
     {
+        var allocationSeparatorIndex = token.LastIndexOf(":p", StringComparison.Ordinal);
+        if (allocationSeparatorIndex >= 0)
+        {
+            token = token[..allocationSeparatorIndex];
+        }
+
         var separatorIndex = token.LastIndexOf(":a", StringComparison.Ordinal);
         return separatorIndex < 0 ? token : token[..separatorIndex];
     }
@@ -416,20 +509,37 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public const string LineSideReceiptKeyPrefix = "mes:line-side-receipt:";
 
     /// <summary>把跨腿归一化键转成某条腿的库存幂等键。</summary>
-    public static string BuildLegIdempotencyKey(string transferToken, MaterialTransferLeg leg)
+    public static string BuildLegIdempotencyKey(
+        string transferToken,
+        MaterialTransferLeg leg,
+        int? allocationIndex = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(transferToken);
         var suffix = transferToken.StartsWith(TransferTokenPrefix, StringComparison.OrdinalIgnoreCase)
             ? transferToken[TransferTokenPrefix.Length..]
             : transferToken;
-        return (leg == MaterialTransferLeg.WarehouseIssue ? WarehouseIssueKeyPrefix : LineSideReceiptKeyPrefix) + suffix;
+        var allocationSuffix = leg == MaterialTransferLeg.WarehouseIssue && allocationIndex is not null
+            ? $":p{allocationIndex.Value.ToString(CultureInfo.InvariantCulture)}"
+            : string.Empty;
+        return (leg == MaterialTransferLeg.WarehouseIssue ? WarehouseIssueKeyPrefix : LineSideReceiptKeyPrefix) + suffix + allocationSuffix;
     }
 
     /// <summary>把库存回执里的幂等键还原成跨腿归一化键与腿别。</summary>
     public static bool TryParseLegIdempotencyKey(string? idempotencyKey, out string transferToken, out MaterialTransferLeg leg)
     {
+        return TryParseLegIdempotencyKey(idempotencyKey, out transferToken, out leg, out _);
+    }
+
+    /// <summary>还原跨腿键，并返回仓库出库明细序号（线边入库腿为 null）。</summary>
+    public static bool TryParseLegIdempotencyKey(
+        string? idempotencyKey,
+        out string transferToken,
+        out MaterialTransferLeg leg,
+        out int? allocationIndex)
+    {
         transferToken = string.Empty;
         leg = MaterialTransferLeg.LineSideReceipt;
+        allocationIndex = null;
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return false;
@@ -439,7 +549,16 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         if (key.StartsWith(WarehouseIssueKeyPrefix, StringComparison.OrdinalIgnoreCase))
         {
             leg = MaterialTransferLeg.WarehouseIssue;
-            transferToken = TransferTokenPrefix + key[WarehouseIssueKeyPrefix.Length..];
+            var suffix = key[WarehouseIssueKeyPrefix.Length..];
+            var allocationSeparatorIndex = suffix.LastIndexOf(":p", StringComparison.Ordinal);
+            if (allocationSeparatorIndex >= 0 &&
+                int.TryParse(suffix[(allocationSeparatorIndex + 2)..], CultureInfo.InvariantCulture, out var parsedIndex))
+            {
+                allocationIndex = parsedIndex;
+                suffix = suffix[..allocationSeparatorIndex];
+            }
+
+            transferToken = TransferTokenPrefix + suffix;
             return true;
         }
 
@@ -465,8 +584,81 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
                 $"领料申请缺少调拨库位，无法向库存过账，RequestNo = {RequestNo}");
         }
 
-        return new MaterialTransferLocations(SourceSiteCode, SourceLocationCode, TargetSiteCode, TargetLocationCode);
+        return new MaterialTransferLocations(
+            SourceSiteCode,
+            SourceLocationCode,
+            TargetSiteCode,
+            TargetLocationCode,
+            GetSourceAllocations());
     }
+
+    public IReadOnlyList<MaterialTransferAllocation> GetSourceAllocations(decimal? fallbackQuantity = null)
+    {
+        if (!string.IsNullOrWhiteSpace(SourceAllocationsJson))
+        {
+            try
+            {
+                var allocations = JsonSerializer.Deserialize<List<MaterialTransferAllocation>>(SourceAllocationsJson);
+                if (allocations is { Count: > 0 })
+                {
+                    return allocations;
+                }
+            }
+            catch (JsonException)
+            {
+                // Existing records from before multi-location allocation keep using their singular source fields.
+            }
+        }
+
+        if (fallbackQuantity is > 0m &&
+            !string.IsNullOrWhiteSpace(SourceSiteCode) &&
+            !string.IsNullOrWhiteSpace(SourceLocationCode))
+        {
+            return [new MaterialTransferAllocation(SourceSiteCode, SourceLocationCode, MaterialLotId, fallbackQuantity.Value)];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<MaterialTransferAllocation> NormalizeSourceAllocations(
+        MaterialTransferLocations locations,
+        decimal quantity,
+        string? materialLotId)
+    {
+        if (locations.SourceAllocations.Count == 0)
+        {
+            return [new MaterialTransferAllocation(
+                locations.SourceSiteCode,
+                locations.SourceLocationCode,
+                materialLotId,
+                quantity)];
+        }
+
+        var allocations = locations.SourceAllocations.ToArray();
+        var total = allocations.Sum(x => x.Quantity);
+        if (total != quantity)
+        {
+            throw new InvalidOperationException(
+                $"库存来源分配数量 {total:0.######} 与收料数量 {quantity:0.######} 不一致。");
+        }
+
+        return allocations;
+    }
+
+    private HashSet<int> PostedIssueIndexes()
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<HashSet<int>>(PendingIssueLegPostedIndexesJson) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private bool HasAnyPostedLeg() =>
+        PendingIssueLegPosted || PendingReceiptLegPosted || PostedIssueIndexes().Count > 0;
 
     public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity, decimal consumedQuantity = 0m)
     {

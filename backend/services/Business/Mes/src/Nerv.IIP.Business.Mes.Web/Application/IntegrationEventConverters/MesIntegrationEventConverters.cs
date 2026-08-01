@@ -341,14 +341,20 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
     {
         var request = domainEvent.MaterialIssueRequest;
         var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        var locations = request.RequireTransferLocations();
         // 幂等键由聚合的跨腿归一化键推导：含累计收料量与「尝试序号」。失败回滚的尝试不再永久占用键，
         // 重试因此不会被 Inventory 去重当成重放（#1322）。
         var idempotencyKey = MaterialIssueRequest.BuildLegIdempotencyKey(
             request.PendingPostingToken ?? throw new InvalidOperationException(
                 $"领料申请没有在途收料尝试，无法发起仓库出库过账，RequestNo = {request.RequestNo}"),
-            MaterialTransferLeg.WarehouseIssue);
-        EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
-        var locations = request.RequireTransferLocations();
+            MaterialTransferLeg.WarehouseIssue,
+            locations.SourceAllocations.Count > 1 ? domainEvent.AllocationIndex : null);
+        var allocation = domainEvent.SourceAllocation ??
+            locations.SourceAllocations.ElementAtOrDefault(domainEvent.AllocationIndex);
+        var sourceSiteCode = allocation?.SourceSiteCode ?? locations.SourceSiteCode;
+        var sourceLocationCode = allocation?.SourceLocationCode ?? locations.SourceLocationCode;
+        var sourceLotNo = allocation is null ? request.MaterialLotId : allocation.SourceLotNo;
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
@@ -358,9 +364,9 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
             request.OperationTaskId,
             request.MaterialId,
             request.UomCode,
-            locations.SourceSiteCode,
-            locations.SourceLocationCode,
-            request.MaterialLotId,
+            sourceSiteCode,
+            sourceLocationCode,
+            sourceLotNo,
             -Math.Abs(domainEvent.IssuedQuantity),
             occurredAtUtc);
     }
