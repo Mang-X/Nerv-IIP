@@ -31,14 +31,6 @@ describe('alarmSeverityLabel', () => {
     expect(alarmSeverityLabel(null)).toBe('未知级别')
     expect(alarmSeverityLabel(undefined)).toBe('未知级别')
   })
-
-  it('validates restored filter values against the shared lifecycle catalog', () => {
-    expect(isMaintenanceWorkOrderStatusCode('accepted')).toBe(true)
-    expect(isMaintenanceWorkOrderStatusCode('frozen')).toBe(false)
-    expect(normalizeMaintenanceWorkOrderStatusFilter('inProgress')).toBe('inProgress')
-    expect(normalizeMaintenanceWorkOrderStatusFilter(' frozen ')).toBe('')
-    expect(normalizeMaintenanceWorkOrderStatusFilter(undefined)).toBe('')
-  })
 })
 
 describe('alarmLifecycleStatusLabel', () => {
@@ -134,6 +126,14 @@ describe('maintenanceWorkOrderStatusLabel', () => {
   it('falls back for unknown / empty values', () => {
     expect(maintenanceWorkOrderStatusLabel('frozen')).toBe('未知状态')
     expect(maintenanceWorkOrderStatusLabel(null)).toBe('未知状态')
+  })
+
+  it('validates restored filter values against the shared lifecycle catalog', () => {
+    expect(isMaintenanceWorkOrderStatusCode('accepted')).toBe(true)
+    expect(isMaintenanceWorkOrderStatusCode('frozen')).toBe(false)
+    expect(normalizeMaintenanceWorkOrderStatusFilter('inProgress')).toBe('inProgress')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(' frozen ')).toBe('')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(undefined)).toBe('')
   })
 })
 

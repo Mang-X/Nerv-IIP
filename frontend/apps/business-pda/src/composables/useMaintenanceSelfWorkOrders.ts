@@ -14,11 +14,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useListFreshness, useScopeBoundListResponse } from './useListFreshness'
 import { useTaskListPagination } from './useTaskListPagination'
 import {
   MAINTENANCE_READ_MODEL_PERMISSIONS,
@@ -42,6 +38,11 @@ type WorkOrderDetailEnvelope =
   | { success?: boolean; data?: BusinessConsoleMaintenanceWorkOrderItem | null }
   | undefined
 
+interface WorkOrderPage {
+  items: BusinessConsoleMaintenanceWorkOrderItem[]
+  total: number
+}
+
 export interface MaintenanceSelfWorkOrderFilters {
   status: '' | MaintenanceWorkOrderStatusCode
   deviceAssetId: string
@@ -58,6 +59,8 @@ export type AuthoritativeMaintenanceWorkOrderDetail = BusinessConsoleMaintenance
   allowedActions: string[]
   blockReasons: string[]
   lifecycle: NonNullable<BusinessConsoleMaintenanceWorkOrderItem['lifecycle']>
+  assignedTechnicianUserId: string | null
+  assignedTeamId: string | null
 }
 
 function trimToUndefined(value: string) {
@@ -70,6 +73,35 @@ function isNonBlankString(value: unknown): value is string {
 
 function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isExplicitAssignment(value: unknown) {
+  return value === null || isNonBlankString(value)
+}
+
+function parseWorkOrderPage(envelope: unknown, skip: number, take: number): WorkOrderPage {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    throw new Error('维修工单读取失败，请重试。')
+  }
+  const response = envelope as Exclude<WorkOrderListEnvelope, undefined>
+  const data = response.data
+  if (
+    response.success !== true ||
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    !Array.isArray(data.items) ||
+    !Number.isSafeInteger(data.total) ||
+    (data.total ?? -1) < 0
+  ) {
+    throw new Error('维修工单读取失败，请重试。')
+  }
+  const total = data.total as number
+  const items = data.items
+  if (items.length > take || total < skip + items.length || (skip < total && items.length === 0)) {
+    throw new Error('维修工单分页信息不一致，请重试。')
+  }
+  return { items, total }
 }
 
 function isAuthoritativeMaintenanceWorkOrderDetail(
@@ -90,6 +122,10 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     value.allowedActions.every(isNonBlankString) &&
     Array.isArray(value.blockReasons) &&
     value.blockReasons.every(isNonBlankString) &&
+    Object.hasOwn(value, 'assignedTechnicianUserId') &&
+    isExplicitAssignment(value.assignedTechnicianUserId) &&
+    Object.hasOwn(value, 'assignedTeamId') &&
+    isExplicitAssignment(value.assignedTeamId) &&
     Array.isArray(value.lifecycle) &&
     value.lifecycle.every(
       (event) =>
@@ -161,6 +197,10 @@ export function useMaintenanceSelfWorkOrders() {
     deviceAssetId: trimToUndefined(filters.deviceAssetId),
     keyword: trimToUndefined(filters.keyword),
   })
+  const identity = computed(
+    () =>
+      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${filters.deviceAssetId.trim()}:${filters.keyword.trim()}`,
+  )
 
   const listQuery = useQuery(() => ({
     ...listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
@@ -172,23 +212,18 @@ export function useMaintenanceSelfWorkOrders() {
     }),
     enabled: scope.scopeReady.value,
   }))
-  const response = useScopeBoundListResponse(
-    () => listQuery.data.value,
-    scope.scopeKey,
-    scope.scopeReady,
-  )
-  const firstPage = computed(() => {
-    const envelope = response.value as WorkOrderListEnvelope
-    if (envelope?.success !== true) return undefined
-    return {
-      items: envelope.data?.items ?? [],
-      total: envelope.data?.total ?? 0,
+  const response = useScopeBoundListResponse(() => listQuery.data.value, identity, scope.scopeReady)
+  const firstPageState = computed<{ page?: WorkOrderPage; error?: Error }>(() => {
+    if (response.value === undefined) return {}
+    try {
+      return { page: parseWorkOrderPage(response.value, 0, PAGE_SIZE) }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error : new Error('维修工单读取失败，请重试。'),
+      }
     }
   })
-  const identity = computed(
-    () =>
-      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${filters.deviceAssetId.trim()}:${filters.keyword.trim()}`,
-  )
+  const firstPage = computed(() => firstPageState.value.page)
   const pager = useTaskListPagination<BusinessConsoleMaintenanceWorkOrderItem>({
     identity,
     firstPage,
@@ -203,28 +238,42 @@ export function useMaintenanceSelfWorkOrders() {
         },
         throwOnError: true,
       })
-      const envelope = data as WorkOrderListEnvelope
-      if (envelope?.success !== true) {
-        throw new Error('维修工单下一页加载失败，请重试。')
-      }
-      return {
-        items: envelope.data?.items ?? [],
-        total: envelope.data?.total ?? 0,
-      }
+      return parseWorkOrderPage(data, skip, take)
     },
     refreshFirstPage: listQuery.refetch,
   })
-  const freshness = useListFreshness(response, scope.scopeReady)
-  const responseState = useListResponseState(response, scope.scopeReady, listQuery.isLoading)
+  const pending = computed(() => listQuery.isLoading.value || pager.refreshing.value)
+  const hasSuccessfulResponse = computed(
+    () =>
+      scope.scopeReady.value &&
+      !pending.value &&
+      !listQuery.error.value &&
+      Boolean(firstPage.value),
+  )
+  const hasFailedResponse = computed(
+    () =>
+      scope.scopeReady.value &&
+      !pending.value &&
+      Boolean(listQuery.error.value || firstPageState.value.error),
+  )
+  const error = computed(() => listQuery.error.value ?? firstPageState.value.error)
+  const freshness = useListFreshness(
+    computed(() => {
+      if (firstPage.value) return { success: true }
+      if (firstPageState.value.error) return { success: false }
+      return undefined
+    }),
+    scope.scopeReady,
+  )
   const visibleItems = computed(() =>
-    responseState.hasFailedResponse.value ? [] : pager.items.value,
+    pending.value || hasFailedResponse.value ? [] : pager.items.value,
   )
   const visibleTotal = computed(() =>
-    responseState.hasFailedResponse.value ? 0 : pager.total.value,
+    pending.value || hasFailedResponse.value ? 0 : pager.total.value,
   )
   const visibleLoaded = computed(() => visibleItems.value.length)
   const visibleHasMore = computed(
-    () => !responseState.hasFailedResponse.value && pager.hasMore.value,
+    () => !pending.value && !hasFailedResponse.value && pager.hasMore.value,
   )
 
   return {
@@ -239,11 +288,11 @@ export function useMaintenanceSelfWorkOrders() {
     loadMoreError: pager.loadMoreError,
     loadMore: pager.loadMore,
     refresh: () => (scope.scopeReady.value ? pager.refresh() : Promise.resolve()),
-    pending: listQuery.isLoading,
-    error: listQuery.error,
+    pending,
+    error,
     lastUpdatedAt: freshness,
-    hasSuccessfulResponse: responseState.hasSuccessfulResponse,
-    hasFailedResponse: responseState.hasFailedResponse,
+    hasSuccessfulResponse,
+    hasFailedResponse,
   }
 }
 
@@ -251,6 +300,9 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const scope = useMaintenanceSelfScope()
   const workOrderId = computed(() => toValue(requestedWorkOrderId).trim())
   const enabled = computed(() => scope.scopeReady.value && Boolean(workOrderId.value))
+  const detailIdentity = computed(() =>
+    enabled.value ? `${scope.scopeKey.value}:work-order:${workOrderId.value}` : '',
+  )
   const detailQuery = useQuery(() => ({
     ...getBusinessConsoleMaintenanceWorkOrderQueryOptions({
       path: { workOrderId: workOrderId.value },
@@ -258,7 +310,11 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     }),
     enabled: enabled.value,
   }))
-  const detailEnvelope = computed(() => detailQuery.data.value as WorkOrderDetailEnvelope)
+  const detailEnvelope = useScopeBoundListResponse(
+    () => detailQuery.data.value as WorkOrderDetailEnvelope,
+    detailIdentity,
+    enabled,
+  )
   const validatedWorkOrder = computed(() => {
     const envelope = detailEnvelope.value
     const item = envelope?.success === true ? envelope.data : undefined
@@ -304,6 +360,8 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     Boolean(
       validatedWorkOrder.value &&
       validatedDevice.value &&
+      !detailQuery.isLoading.value &&
+      !deviceQuery.isLoading.value &&
       !detailQuery.error.value &&
       !deviceQuery.error.value,
     ),

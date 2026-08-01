@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Browser, type Locator } from '@playwright/test'
 import {
   CREATED_MAINTENANCE_WORK_ORDER_ID,
   STORAGE_KEY,
@@ -18,6 +18,37 @@ async function expectMinimumTouchHeight(locator: Locator, minimum = 44) {
     `missing touch box for ${await locator.evaluate((element) => element.outerHTML)}`,
   ).not.toBeNull()
   expect(box!.height).toBeGreaterThanOrEqual(minimum)
+}
+
+async function createContextWithPrincipal(browser: Browser, overrides: Partial<typeof principal>) {
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+  const page = await context.newPage()
+  const scopedPrincipal = { ...principal, ...overrides }
+  await page.route('**/api/console/v1/**', routeConsoleApi)
+  await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
+  await page.route('**/api/console/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { ...session, principal: scopedPrincipal } }),
+    }),
+  )
+  await page.route('**/api/console/v1/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: scopedPrincipal }),
+    }),
+  )
+  await page.addInitScript(({ key, stored }) => localStorage.setItem(key, JSON.stringify(stored)), {
+    key: STORAGE_KEY,
+    stored: {
+      principal: scopedPrincipal,
+      refreshToken: session.refreshToken,
+      sessionId: session.sessionId,
+    },
+  })
+  return { context, page }
 }
 
 // 网关 Mock + 已登录主体（含 org/env + loginName，见 fixtures.principal）。
@@ -187,121 +218,68 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
 })
 
 test('维修工单：缺少设备位置读取权限时不发请求且不声称个人队列', async ({ browser }) => {
-  const isolatedContext = await browser.newContext({ viewport: { width: 375, height: 812 } })
-  const page = await isolatedContext.newPage()
-  await page.route('**/api/console/v1/**', routeConsoleApi)
-  await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
-  const principalWithoutLocationRead = {
-    ...principal,
+  const { context, page } = await createContextWithPrincipal(browser, {
     permissionCodes: principal.permissionCodes.filter(
       (code) => code !== 'business.masterdata.resources.read',
     ),
+  })
+  try {
+    const requests: string[] = []
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname
+      if (
+        pathname === '/api/business-console/v1/maintenance/work-orders' ||
+        pathname === '/api/business-console/v1/master-data/device-assets'
+      ) {
+        requests.push(pathname)
+      }
+    })
+
+    await page.goto('/equipment/work-orders')
+
+    await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
+    await expect(page.getByTestId('list-empty-explanation')).toContainText(
+      '当前账号暂无法查看，请重新登录或联系管理员',
+    )
+    await expect(page.getByText('我的维修工单')).toHaveCount(0)
+    expect(requests).toEqual([])
+  } finally {
+    await context.close()
   }
-  await page.route('**/api/console/v1/auth/refresh', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: { ...session, principal: principalWithoutLocationRead },
-      }),
-    }),
-  )
-  await page.route('**/api/console/v1/auth/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: principalWithoutLocationRead }),
-    }),
-  )
-  await page.addInitScript(({ key, stored }) => localStorage.setItem(key, JSON.stringify(stored)), {
-    key: STORAGE_KEY,
-    stored: {
-      principal: principalWithoutLocationRead,
-      refreshToken: session.refreshToken,
-      sessionId: session.sessionId,
-    },
-  })
-  const requests: string[] = []
-  page.on('request', (request) => {
-    const pathname = new URL(request.url()).pathname
-    if (
-      pathname === '/api/business-console/v1/maintenance/work-orders' ||
-      pathname === '/api/business-console/v1/master-data/device-assets'
-    ) {
-      requests.push(pathname)
-    }
-  })
-
-  await page.goto('/equipment/work-orders')
-
-  await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
-  await expect(page.getByTestId('list-empty-explanation')).toContainText(
-    '当前账号暂无法查看，请重新登录或联系管理员',
-  )
-  await expect(page.getByText('我的维修工单')).toHaveCount(0)
-  expect(requests).toEqual([])
-  await isolatedContext.close()
 })
 
 test('维修工单：缺少主体 ID 时列表与详情均不发业务请求', async ({ browser }) => {
-  const isolatedContext = await browser.newContext({ viewport: { width: 375, height: 812 } })
-  const page = await isolatedContext.newPage()
-  await page.route('**/api/console/v1/**', routeConsoleApi)
-  await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
-  const principalWithoutId = { ...principal, principalId: '' }
-  await page.route('**/api/console/v1/auth/refresh', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: { ...session, principal: principalWithoutId },
-      }),
-    }),
-  )
-  await page.route('**/api/console/v1/auth/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: principalWithoutId }),
-    }),
-  )
-  await page.addInitScript(({ key, stored }) => localStorage.setItem(key, JSON.stringify(stored)), {
-    key: STORAGE_KEY,
-    stored: {
-      principal: principalWithoutId,
-      refreshToken: session.refreshToken,
-      sessionId: session.sessionId,
-    },
-  })
-  const requests: string[] = []
-  page.on('request', (request) => {
-    const pathname = new URL(request.url()).pathname
-    if (
-      pathname === '/api/business-console/v1/maintenance/work-orders' ||
-      pathname.startsWith('/api/business-console/v1/maintenance/work-orders/') ||
-      pathname === '/api/business-console/v1/master-data/device-assets'
-    ) {
-      requests.push(pathname)
-    }
-  })
+  const { context, page } = await createContextWithPrincipal(browser, { principalId: '' })
+  try {
+    const requests: string[] = []
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname
+      if (
+        pathname === '/api/business-console/v1/maintenance/work-orders' ||
+        pathname.startsWith('/api/business-console/v1/maintenance/work-orders/') ||
+        pathname === '/api/business-console/v1/master-data/device-assets'
+      ) {
+        requests.push(pathname)
+      }
+    })
 
-  await page.goto('/equipment/work-orders')
+    await page.goto('/equipment/work-orders')
 
-  await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
-  await expect(page.getByTestId('list-empty-explanation')).toContainText(
-    '当前账号暂无法查看，请重新登录或联系管理员',
-  )
-  await expect(page.getByText('我的工单')).toHaveCount(0)
-  expect(requests).toEqual([])
+    await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
+    await expect(page.getByTestId('list-empty-explanation')).toContainText(
+      '当前账号暂无法查看，请重新登录或联系管理员',
+    )
+    await expect(page.getByText('我的工单')).toHaveCount(0)
+    expect(requests).toEqual([])
 
-  await page.goto('/equipment/work-orders/WO-MISSING-SCOPE')
+    await page.goto('/equipment/work-orders/WO-MISSING-SCOPE')
 
-  await expect(page.getByRole('heading', { name: '工单不可查看' })).toBeVisible()
-  await expect(page.getByText('当前账号暂无法查看，请重新登录或联系管理员。')).toBeVisible()
-  expect(requests).toEqual([])
-  await isolatedContext.close()
+    await expect(page.getByRole('heading', { name: '工单不可查看' })).toBeVisible()
+    await expect(page.getByText('当前账号暂无法查看，请重新登录或联系管理员。')).toBeVisible()
+    expect(requests).toEqual([])
+  } finally {
+    await context.close()
+  }
 })
 
 test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看', async ({ page }) => {
@@ -327,6 +305,8 @@ test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看'
             allowedActions: ['start'],
             blockReasons: ['terminal-status'],
             lifecycle: [],
+            assignedTechnicianUserId: principal.principalId,
+            assignedTeamId: 'team-a',
           },
         }),
       })
@@ -586,6 +566,8 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
             allowedActions: ['accept'],
             blockReasons: [],
             lifecycle: [],
+            assignedTechnicianUserId: null,
+            assignedTeamId: null,
           },
         }),
       })

@@ -47,6 +47,8 @@ function authoritativeWorkOrder(
     allowedActions: [],
     blockReasons: [],
     lifecycle: [],
+    assignedTechnicianUserId: null,
+    assignedTeamId: null,
     ...overrides,
   }
 }

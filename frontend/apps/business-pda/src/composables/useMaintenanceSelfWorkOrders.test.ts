@@ -93,8 +93,19 @@ function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
     allowedActions: [],
     blockReasons: [],
     lifecycle: [],
+    assignedTechnicianUserId: null,
+    assignedTeamId: null,
   }
 }
+
+const invalidListEnvelopes = [
+  ['null data', { success: true, data: null }],
+  ['missing data', { success: true }],
+  ['non-array items', { success: true, data: { items: {}, total: 0 } }],
+  ['negative total', { success: true, data: { items: [], total: -1 } }],
+  ['non-integer total', { success: true, data: { items: [], total: 0.5 } }],
+  ['inconsistent total', { success: true, data: { items: [{ workOrderId: 'WO-1' }], total: 0 } }],
+] as const
 
 describe('useMaintenanceSelfWorkOrders', () => {
   beforeEach(() => {
@@ -189,6 +200,75 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(result.total.value).toBe(0)
   })
 
+  it.each(invalidListEnvelopes)(
+    'rejects a malformed first-page envelope: %s',
+    async (_, envelope) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrders()
+
+      api.data.get('maintenance-list')!.value = envelope
+      await nextTick()
+
+      expect(result.hasSuccessfulResponse.value).toBe(false)
+      expect(result.hasFailedResponse.value).toBe(true)
+      expect(result.items.value).toEqual([])
+      expect(result.total.value).toBe(0)
+    },
+  )
+
+  it.each(invalidListEnvelopes)(
+    'rejects a malformed next-page envelope: %s',
+    async (_, envelope) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrders()
+      api.data.get('maintenance-list')!.value = {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => ({ workOrderId: `WO-${index}` })),
+          total: 21,
+        },
+      }
+      api.list.mockResolvedValueOnce({ data: envelope })
+      await nextTick()
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeInstanceOf(Error)
+      expect(result.items.value).toHaveLength(20)
+    },
+  )
+
+  it('hides retained rows while the current list identity is refreshing and keeps them hidden on failure', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: { items: [{ workOrderId: 'STALE-WO' }], total: 1 },
+    }
+    await nextTick()
+    expect(result.items.value).toHaveLength(1)
+
+    let resolveRefetch!: () => void
+    api.refetches
+      .get('maintenance-list')!
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (resolveRefetch = resolve)))
+    const refreshPromise = result.refresh()
+    await nextTick()
+
+    expect(result.pending.value).toBe(true)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.items.value).toEqual([])
+    expect(result.total.value).toBe(0)
+
+    api.data.get('maintenance-list')!.value = { success: false, data: null }
+    resolveRefetch()
+    await refreshPromise
+    await nextTick()
+
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.items.value).toEqual([])
+  })
+
   it('loads the next page with the same self scope and server filters', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
@@ -269,6 +349,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         allowedActions: [],
         blockReasons: [],
         lifecycle: [],
+        assignedTechnicianUserId: null,
+        assignedTeamId: null,
       },
     }
     await nextTick()
@@ -288,6 +370,33 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         blockReasons: [],
       },
     }
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
+  })
+
+  it.each([
+    ['technician', { assignedTeamId: null }],
+    ['team', { assignedTechnicianUserId: null }],
+    ['both', {}],
+  ])('rejects detail when the explicit %s assignment field is missing', async (_, assignments) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        ...authoritativeDetail('WO-DETAIL', 'device-1'),
+        assignedTechnicianUserId: undefined,
+        assignedTeamId: undefined,
+        ...assignments,
+      },
+    }
+    const data = (api.data.get('maintenance-detail')!.value as { data: Record<string, unknown> })
+      .data
+    if (!('assignedTechnicianUserId' in assignments)) delete data.assignedTechnicianUserId
+    if (!('assignedTeamId' in assignments)) delete data.assignedTeamId
     await nextTick()
 
     expect(result.workOrder.value).toBeUndefined()
@@ -479,5 +588,48 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await result.refresh()
 
     expect(calls).toEqual(['work-order'])
+  })
+
+  it('hides retained aggregate detail during work-order and device refreshes', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-DETAIL', 'device-1'),
+    }
+    api.data.get('device-directory')!.value = {
+      success: true,
+      data: { resources: [{ deviceAssetId: 'device-1', displayName: '旧设备' }], total: 1 },
+    }
+    await nextTick()
+    expect(result.workOrder.value?.workOrderId).toBe('WO-DETAIL')
+    expect(result.device.value?.displayName).toBe('旧设备')
+
+    api.loading.get('maintenance-detail')!.value = true
+    await nextTick()
+    expect(result.pending.value).toBe(true)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.device.value).toBeUndefined()
+
+    api.loading.get('maintenance-detail')!.value = false
+    api.errors.get('maintenance-detail')!.value = { status: 403 }
+    await nextTick()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.workOrder.value).toBeUndefined()
+
+    api.errors.get('maintenance-detail')!.value = undefined
+    api.loading.get('device-directory')!.value = true
+    await nextTick()
+    expect(result.pending.value).toBe(true)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.device.value).toBeUndefined()
+
+    api.loading.get('device-directory')!.value = false
+    api.data.get('device-directory')!.value = { success: false, data: null }
+    await nextTick()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.workOrder.value).toBeUndefined()
   })
 })

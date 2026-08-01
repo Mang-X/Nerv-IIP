@@ -41,10 +41,6 @@ const displayError = computed(
   () =>
     error.value ?? (hasFailedResponse.value ? new Error('维修工单读取失败，请重试。') : undefined),
 )
-const visibleItems = computed(() => (hasFailedResponse.value ? [] : items.value))
-const visibleTotal = computed(() => (hasFailedResponse.value ? 0 : total.value))
-const visibleLoaded = computed(() => visibleItems.value.length)
-const visibleHasMore = computed(() => !hasFailedResponse.value && hasMore.value)
 const scopeLabel = computed(() => {
   if (!scopeReady.value) return '当前账号暂无法查看维修工单'
   if (hasFailedResponse.value) return '维修工单暂不可用'
@@ -89,9 +85,9 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         :state-key="`maintenance-self-work-orders:${principalId}`"
         :scope="scopeLabel"
         source="维修工单"
-        :loaded="visibleLoaded"
-        :total="visibleTotal"
-        :has-more="visibleHasMore"
+        :loaded="loaded"
+        :total="total"
+        :has-more="hasMore"
         :updated-at="lastUpdatedAt"
         :pending="pending"
         :refreshing="refreshing"
@@ -122,7 +118,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
           />
         </template>
 
-        <MaintenanceWorkOrderList :items="visibleItems" @select="openDetail" />
+        <MaintenanceWorkOrderList :items="items" @select="openDetail" />
       </TaskListShell>
     </div>
 

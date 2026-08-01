@@ -91,15 +91,10 @@ describe('maintenance self work-order queue page', () => {
     expect(wrapper.find('[data-testid="select-device"]').exists()).toBe(false)
   })
 
-  it('shows an explicit retryable error and no rows for a rejected success envelope', async () => {
+  it('renders the composable retry error and its already-safe empty rows', async () => {
     state.scopeReady = true
     state.hasFailedResponse = true
-    state.items = [
-      {
-        workOrderId: 'STALE-WO',
-        sourceReferenceId: '不应显示的旧工单',
-      },
-    ]
+    state.items = []
 
     const { wrapper } = await mountPage()
 
@@ -108,7 +103,6 @@ describe('maintenance self work-order queue page', () => {
     )
     expect(wrapper.find('[data-testid="maintenance-work-order-row"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('暂无符合筛选条件')
-    expect(wrapper.text()).not.toContain('不应显示的旧工单')
 
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(state.refresh).toHaveBeenCalledTimes(1)
