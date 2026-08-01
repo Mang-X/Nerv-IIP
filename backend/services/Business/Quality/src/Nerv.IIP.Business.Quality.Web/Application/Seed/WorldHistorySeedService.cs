@@ -59,20 +59,9 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             var added = 0;
             foreach (var fact in batch)
             {
-                if (!existing.TryGetValue(fact.TriggerIdempotencyKey, out var existingTask))
+                if (!existing.ContainsKey(fact.TriggerIdempotencyKey))
                 {
                     WriteInspectionChain(organizationId, environmentId, fact, plans[fact.PlanCode], counters);
-                    added++;
-                }
-                else if (existingTask.Status == InspectionTaskStatuses.Pending
-                    && existingTask.AssignedUserId is null
-                    && existingTask.AssignedTeamId is null)
-                {
-                    existingTask.Assign(
-                        fact.InspectorUserId,
-                        null,
-                        existingTask.Version,
-                        fact.CreatedAtUtc);
                     added++;
                 }
             }
@@ -228,16 +217,25 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             fact.TriggerIdempotencyKey);
         dbContext.InspectionTasks.Add(task);
         counters.Tasks++;
+        if (fact.Status == WorldHistoryInspectionStatus.Pending)
+        {
+            if (WorldHistoryQualitySpec.ShouldPreAssignPendingTask(fact))
+            {
+                task.Assign(
+                    fact.InspectorUserId,
+                    null,
+                    task.Version,
+                    fact.CreatedAtUtc);
+            }
+
+            return;
+        }
+
         task.Assign(
             fact.InspectorUserId,
             null,
             task.Version,
             fact.CreatedAtUtc);
-
-        if (fact.Status == WorldHistoryInspectionStatus.Pending)
-        {
-            return;
-        }
 
         task.Claim(
             fact.InspectorUserId,

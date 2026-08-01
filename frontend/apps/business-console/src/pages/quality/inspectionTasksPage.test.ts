@@ -1,5 +1,5 @@
 import { computed, nextTick, reactive, shallowRef } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InspectionTasksPage from './inspection-tasks.vue'
 
@@ -63,6 +63,8 @@ const state = vi.hoisted(() => ({
       sourceDocumentId: 'GR-001',
       skuCode: 'SKU-001',
       dueAtUtc: '2020-01-01T00:00:00Z',
+      allowedActions: ['claim'],
+      version: 1,
     },
     {
       inspectionTaskId: 'TASK-OP',
@@ -72,6 +74,8 @@ const state = vi.hoisted(() => ({
       sourceDocumentId: 'WO-001',
       skuCode: 'SKU-002',
       dueAtUtc: '2030-01-01T00:00:00Z',
+      allowedActions: ['claim'],
+      version: 1,
     },
     {
       inspectionTaskId: 'TASK-ERP',
@@ -81,6 +85,8 @@ const state = vi.hoisted(() => ({
       sourceDocumentId: 'PR-001',
       skuCode: 'SKU-003',
       dueAtUtc: '2030-01-02T00:00:00Z',
+      allowedActions: ['claim'],
+      version: 1,
     },
     {
       inspectionTaskId: 'TASK-FINAL',
@@ -91,9 +97,16 @@ const state = vi.hoisted(() => ({
       sourceDocumentLineId: 'WO-002',
       skuCode: 'SKU-004',
       dueAtUtc: '2030-01-03T00:00:00Z',
+      allowedActions: ['claim'],
+      version: 1,
     },
   ],
   push: vi.fn(),
+  claimInspectionTask: vi.fn(async () => undefined),
+  assignInspectionTask: vi.fn(async () => undefined),
+  refreshTasks: vi.fn(),
+  workers: [] as Array<{ userId: string; displayName?: string; employeeNo?: string }>,
+  claimedRow: false,
   query: {} as Record<string, string>,
   hasLocator: false,
   initialFilters: undefined as Record<string, unknown> | undefined,
@@ -121,9 +134,21 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
     const tasks = computed(() =>
       initial.status === 'completed'
         ? []
-        : state.tasks.filter(
-            (task) => task.sourceType === filters.sourceType || filters.sourceType === 'all',
-          ),
+        : state.tasks
+            .filter(
+              (task) => task.sourceType === filters.sourceType || filters.sourceType === 'all',
+            )
+            .map((task, index) =>
+              state.claimedRow && index === 2
+                ? {
+                    ...task,
+                    allowedActions: [],
+                    blockReasons: ['task-already-claimed'],
+                    assignedInspectorUserId: 'user-emp-036',
+                    version: 2,
+                  }
+                : task,
+            ),
     )
     return {
       filters,
@@ -133,9 +158,18 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
       pending: shallowRef(false),
       error: computed(() => state.error),
       lastUpdatedAt: shallowRef('2026-07-28T10:20:30Z'),
-      refreshTasks: vi.fn(),
+      refreshTasks: state.refreshTasks,
+      claimInspectionTask: state.claimInspectionTask,
+      assignInspectionTask: state.assignInspectionTask,
     }
   },
+}))
+
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessWorkers: () => ({
+    workers: computed(() => state.workers),
+    workersPending: shallowRef(false),
+  }),
 }))
 
 // 物料筛选改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
@@ -176,11 +210,21 @@ const stubs = {
       manual: { type: Boolean, default: false },
     },
     template:
-      '<div data-testid="task-table" :data-manual="String(manual)"><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+      '<div data-testid="task-table" :data-manual="String(manual)"><div v-for="row in rows" :key="row.inspectionTaskId"><slot name="cell-sourceDocumentId" :row="row" /> {{ row.skuCode }}<slot name="cell-assignedInspectorUserId" :row="row" /><slot name="cell-dueAtUtc" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
   },
   NvField: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
   NvInput: { props: ['modelValue'], template: '<input :value="modelValue" />' },
+  NvDialog: {
+    props: ['open'],
+    template: '<div v-if="open"><slot /></div>',
+  },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<footer><slot /></footer>' },
+  NvDialogHeader: { template: '<header><slot /></header>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  WorkerSelect: { template: '<select />' },
   NvPageHeader: { template: '<header><slot /></header>' },
   NvSectionCard: {
     props: ['description', 'value'],
@@ -197,6 +241,13 @@ describe('quality inspection task workbench page', () => {
     state.hasLocator = false
     state.initialFilters = undefined
     state.pagedListOptions = undefined
+    state.claimedRow = false
+    state.workers = []
+    state.claimInspectionTask.mockReset()
+    state.claimInspectionTask.mockResolvedValue(undefined)
+    state.assignInspectionTask.mockReset()
+    state.assignInspectionTask.mockResolvedValue(undefined)
+    state.refreshTasks.mockReset()
   })
 
   it('renders real task context and an explicit overdue label', () => {
@@ -246,11 +297,15 @@ describe('quality inspection task workbench page', () => {
     expect(wrapper.text()).toContain('筛选仅按当前页匹配')
   })
 
-  it('opens the existing inspection form without inventing a source document number', async () => {
+  it('claims before opening the existing inspection form without inventing a source document number', async () => {
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })
-    const action = wrapper.findAll('button').find((button) => button.text().includes('开始检验'))
+    const action = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('认领并开始检验'))
     await action?.trigger('click')
+    await flushPromises()
 
+    expect(state.claimInspectionTask).toHaveBeenCalledWith('TASK-LATE', 1)
     expect(state.push).toHaveBeenCalledWith({
       path: '/quality/inspections',
       query: expect.objectContaining({
@@ -259,6 +314,25 @@ describe('quality inspection task workbench page', () => {
       }),
     })
     expect(state.push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sourceDocumentNo')
+  })
+
+  it('offers reassignment for a claimed task and never renders its account id', () => {
+    state.claimedRow = true
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(wrapper.get('[data-testid="inspection-task-assignee-TASK-ERP"]').text()).toBe('—')
+    expect(wrapper.text()).toContain('改派')
+    expect(wrapper.text()).not.toContain('user-emp-036')
+  })
+
+  it('renders a directory-backed holder as name and employee number', () => {
+    state.claimedRow = true
+    state.workers = [{ userId: 'user-emp-036', displayName: '张三', employeeNo: 'EMP-036' }]
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+
+    expect(wrapper.get('[data-testid="inspection-task-assignee-TASK-ERP"]').text()).toBe(
+      '张三 · EMP-036',
+    )
   })
 
   it('shows a retryable failure state instead of an empty success state', () => {

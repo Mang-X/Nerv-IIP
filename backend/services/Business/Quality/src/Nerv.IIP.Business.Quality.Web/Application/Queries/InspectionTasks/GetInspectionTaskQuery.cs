@@ -86,7 +86,8 @@ public sealed class GetInspectionTaskQueryHandler(ApplicationDbContext dbContext
         string[] actions = task.Status switch
         {
             InspectionTaskStatuses.Pending when actorOwnsTask
-                || (task.AssignedUserId is null && actorOwnsTeam) => ["claim"],
+                || (task.AssignedUserId is null
+                    && (task.AssignedTeamId is null || actorOwnsTeam)) => ["claim"],
             InspectionTaskStatuses.InProgress when actorOwnsTask => ["submit-inspection"],
             _ => [],
         };

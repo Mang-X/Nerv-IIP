@@ -196,6 +196,8 @@ public sealed class WorldHistoryQualitySeedServiceTests(ITestOutputHelper output
         output.WriteLine($"small-scale-records={first.InspectionRecordsWritten}");
         output.WriteLine($"small-scale-reinspections={first.ReinspectionRecordsWritten}");
         output.WriteLine($"small-scale-ncrs={first.NonconformanceReportsWritten}");
+        output.WriteLine($"small-scale-pending-preassigned={first.Validation.PendingTasksPreassigned}");
+        output.WriteLine($"small-scale-pending-unassigned-report={first.Validation.PendingTasksUnassigned}");
         foreach (var line in first.Validation.Sample)
         {
             output.WriteLine($"small-scale-sample: {line}");
@@ -214,6 +216,11 @@ public sealed class WorldHistoryQualitySeedServiceTests(ITestOutputHelper output
         Assert.Equal(0, second.InspectionRecordsWritten);
         Assert.Equal(0, second.NonconformanceReportsWritten);
         Assert.Equal(facts.Count, await db.InspectionTasks.CountAsync());
+        var pendingUnassigned = await db.InspectionTasks.CountAsync(x =>
+            x.Status == "pending" && x.AssignedUserId == null && x.AssignedTeamId == null);
+        output.WriteLine($"small-scale-pending-unassigned={pendingUnassigned}");
+        Assert.True(pendingUnassigned > 0, "seed must leave pending inspection tasks available for claiming");
+        Assert.Equal(pendingUnassigned, first.Validation.PendingTasksUnassigned);
         Assert.Equal(
             first.InspectionRecordsWritten + first.ReinspectionRecordsWritten,
             await db.InspectionRecords.CountAsync());

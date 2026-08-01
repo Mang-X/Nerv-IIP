@@ -1,4 +1,6 @@
 import {
+  assignBusinessConsoleQualityInspectionTask,
+  claimBusinessConsoleQualityInspectionTask,
   createBusinessConsoleQualityInspectionRecordFromTask,
   confirmBusinessConsoleOperation,
   listBusinessConsoleQualityInspectionTasks,
@@ -88,6 +90,15 @@ function newQualitySubmitIntentKey() {
       ? cryptoApi.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `quality-submit-${uniquePart}`
+}
+
+function newQualityTaskActionKey(action: 'claim' | 'assignment') {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  const uniquePart =
+    cryptoApi && typeof cryptoApi.randomUUID === 'function'
+      ? cryptoApi.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `quality-${action}-${uniquePart}`
 }
 
 export function isInspectionTaskOverdue(
@@ -251,6 +262,8 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     startInspection: taskActions.startInspection,
     startInspectionError: taskActions.startInspectionError,
     startInspectionPending: taskActions.startInspectionPending,
+    claimInspectionTask: taskActions.claimInspectionTask,
+    assignInspectionTask: taskActions.assignInspectionTask,
     refreshTasks: () => refetchWithBusinessContext(filters, tasksQuery),
   }
 }
@@ -266,6 +279,47 @@ export function useQualityInspectionTaskActions(filters: BusinessContextFields) 
         predicate: isBusinessQuery('listBusinessConsoleQualityInspectionTasks'),
       })
       .catch(ignoreBackgroundError)
+
+  async function claimInspectionTask(inspectionTaskId: string, expectedVersion: number) {
+    const result = await claimBusinessConsoleQualityInspectionTask({
+      path: { inspectionTaskId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+      body: {
+        idempotencyKey: newQualityTaskActionKey('claim'),
+        expectedVersion,
+      },
+      throwOnError: true,
+    })
+    await refreshInspectionTasks()
+    return result
+  }
+
+  async function assignInspectionTask(
+    inspectionTaskId: string,
+    assignedInspectorUserId: string,
+    reason: string,
+    expectedVersion: number,
+  ) {
+    const result = await assignBusinessConsoleQualityInspectionTask({
+      path: { inspectionTaskId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+      body: {
+        assignedInspectorUserId,
+        reason,
+        idempotencyKey: newQualityTaskActionKey('assignment'),
+        expectedVersion,
+      },
+      throwOnError: true,
+    })
+    await refreshInspectionTasks()
+    return result
+  }
 
   async function startInspection(inspectionTaskId: string, body: QualityInspectionSubmitIntent) {
     const { idempotencyKey: suppliedKey, ...intent } = body
@@ -348,6 +402,8 @@ export function useQualityInspectionTaskActions(filters: BusinessContextFields) 
   }
 
   return {
+    claimInspectionTask,
+    assignInspectionTask,
     startInspection,
     startInspectionError,
     startInspectionPending,

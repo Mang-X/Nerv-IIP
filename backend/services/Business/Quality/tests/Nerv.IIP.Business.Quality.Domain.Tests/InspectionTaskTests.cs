@@ -108,6 +108,22 @@ public sealed class InspectionTaskTests
     }
 
     [Fact]
+    public void Claim_ShouldAllowAnUnassignedPendingTask()
+    {
+        var task = NewTask();
+
+        task.Claim(
+            "qa-user-001",
+            [],
+            expectedVersion: 1,
+            DateTimeOffset.Parse("2026-07-05T08:30:00Z"));
+
+        Assert.Equal(InspectionTaskStatuses.InProgress, task.Status);
+        Assert.Equal("qa-user-001", task.AssignedUserId);
+        Assert.Equal(2, task.Version);
+    }
+
+    [Fact]
     public void Claim_ShouldTreatExplicitUserMatchAsSufficientWhenTeamAlsoDiffers()
     {
         var task = NewTask();
