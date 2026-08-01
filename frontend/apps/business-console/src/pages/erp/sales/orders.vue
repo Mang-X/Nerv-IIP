@@ -366,6 +366,7 @@ async function submit() {
           :urgency="
             row.salesOrderNo ? orderUrgencies.byReference.value.get(row.salesOrderNo) : undefined
           "
+          :source-unavailable="orderUrgencies.error?.value != null"
           @refresh="refreshUrgency"
         />
       </template>

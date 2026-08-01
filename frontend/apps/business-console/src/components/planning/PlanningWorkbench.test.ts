@@ -498,7 +498,12 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.text()).toContain('10 - 6 - 0 = 4')
     expect(wrapper.text()).toContain('需求来源')
     expect(wrapper.text()).toContain('组件毛需求')
-    expect(wrapper.text()).toContain('scrap/yield 已计入组件毛需求')
+    // #1418 顺带项：scrap/yield 英文码说人话——公式只保留算式，比率以中文百分比呈现。
+    expect(wrapper.text()).toContain('废品率 10%')
+    expect(wrapper.text()).toContain('良率 80%')
+    expect(wrapper.text()).toContain('废品率 / 良率已计入组件毛需求')
+    expect(wrapper.text()).not.toContain('scrap/yield')
+    expect(wrapper.text()).toContain('27.5 - 0 - 0 = 27.5')
     expect(wrapper.text()).toContain('SO-1001')
   })
 

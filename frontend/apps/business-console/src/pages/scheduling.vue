@@ -1034,6 +1034,7 @@ function reasonLabel(reason?: string | null) {
                         ? orderUrgencies.byReference.value.get(assignment.orderId)
                         : undefined
                     "
+                    :source-unavailable="orderUrgencies.error?.value != null"
                     @refresh="refreshUrgency"
                   />
                 </div>
