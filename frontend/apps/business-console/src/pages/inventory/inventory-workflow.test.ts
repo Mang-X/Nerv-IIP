@@ -8,6 +8,8 @@ import CountsPage from './counts.vue'
 import LotsPage from './lots.vue'
 import MovementsPage from './movements.vue'
 
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
 const inventoryState = vi.hoisted(() => ({
   availabilityFilters: undefined as Record<string, string | undefined> | undefined,
   confirmAdjustment: vi.fn(),
@@ -31,7 +33,23 @@ const inventoryState = vi.hoisted(() => ({
   notifyError: vi.fn(),
   notifyOperationFailure: vi.fn(),
   notifySuccess: vi.fn(),
+  partnerResolved: true,
 }))
+
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: (id?: string | null) =>
+        id && inventoryState.partnerResolved ? '华东客户' : undefined,
+      resolvePartnerLabel: (id?: string | null, fallback = '未指定') =>
+        id && inventoryState.partnerResolved ? '华东客户' : fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
 
 const siteStockState = vi.hoisted(() => ({
   scanMore: vi.fn(),
@@ -508,10 +526,52 @@ describe('inventory workflow pages', () => {
     inventoryState.countTaskRows = []
     inventoryState.countAdjustmentRows = []
     inventoryState.movementRows = []
+    inventoryState.partnerResolved = true
     siteStockState.scanMore.mockReset()
     siteStockState.refresh.mockReset()
     if (siteStockState.hasMore) siteStockState.hasMore.value = true
     if (siteStockState.scanning) siteStockState.scanning.value = false
+  })
+
+  it('availability read-face guard：目录可解析时显示货主名称和工单号', () => {
+    routeState.query = { workOrderId: 'WO-2026-08001' }
+    inventoryState.availabilityRows = ref([
+      {
+        locationCode: 'A-01',
+        lotNo: 'LOT-001',
+        ownerType: 'customer',
+        ownerId: '019fbb41-1111-7111-8111-111111111111',
+        qualityStatus: 'available',
+        availableQuantity: 7,
+      },
+    ])
+
+    const visibleText = mountInventoryPage(AvailabilityPage).text()
+    expect(visibleText).toContain('华东客户')
+    expect(visibleText).toContain('WO-2026-08001')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('availability read-face guard：货主目录失败和工单为技术标识时显示占位符', () => {
+    const technicalId = '019fbb41-2222-7222-8222-222222222222'
+    routeState.query = { workOrderId: technicalId }
+    inventoryState.partnerResolved = false
+    inventoryState.availabilityRows = ref([
+      {
+        locationCode: 'A-01',
+        ownerType: 'customer',
+        ownerId: technicalId,
+        qualityStatus: 'available',
+        availableQuantity: 7,
+      },
+    ])
+
+    const visibleText = mountInventoryPage(AvailabilityPage).text()
+    expect(visibleText).toContain('未解析货主')
+    expect(visibleText).toContain('返回工单')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
   })
 
   describe('全厂库存首屏（不选物料也要看到库存表）', () => {
