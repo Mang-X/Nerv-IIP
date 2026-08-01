@@ -73,12 +73,19 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         }
 
         var completedTasks = tasks.Count(x => string.Equals(x.Status, "completed", StringComparison.Ordinal));
+        var pendingTasks = tasks.Count(x => string.Equals(x.Status, "pending", StringComparison.Ordinal));
+        var pendingTasksUnassigned = tasks.Count(x =>
+            string.Equals(x.Status, "pending", StringComparison.Ordinal)
+            && x.AssignedUserId is null
+            && x.AssignedTeamId is null);
         return new WorldHistoryQualityValidationReport(
             InspectionTasksChecked: tasks.Count,
             CompletedInspectionsChecked: completedTasks,
             InspectionRecordsChecked: records.Count,
             NonconformanceReportsChecked: reports.Count,
             NonconformingRate: completedTasks == 0 ? 0d : (double)reports.Count / completedTasks,
+            PendingTasksPreassigned: pendingTasks - pendingTasksUnassigned,
+            PendingTasksUnassigned: pendingTasksUnassigned,
             Sample: BuildSample(tasks, factByTriggerKey, records, reports));
     }
 
@@ -427,6 +434,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 x.SkuCode,
                 x.Quantity,
                 x.Status,
+                x.AssignedUserId,
+                x.AssignedTeamId,
                 x.InspectionRecordId != null,
                 x.CreatedAtUtc,
                 x.StartedAtUtc,
@@ -546,6 +555,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         string SkuCode,
         decimal Quantity,
         string Status,
+        string? AssignedUserId,
+        string? AssignedTeamId,
         bool HasInspectionRecord,
         DateTimeOffset CreatedAtUtc,
         DateTimeOffset? StartedAtUtc,
@@ -589,6 +600,8 @@ public sealed record WorldHistoryQualityValidationReport(
     int InspectionRecordsChecked,
     int NonconformanceReportsChecked,
     double NonconformingRate,
+    int PendingTasksPreassigned,
+    int PendingTasksUnassigned,
     IReadOnlyList<string> Sample);
 
 /// <summary>一致性校验失败。抛出即代表 seed 失败（fail-closed）。</summary>

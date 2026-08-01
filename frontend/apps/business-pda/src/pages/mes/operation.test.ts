@@ -75,6 +75,7 @@ const defaultTasks = [
 ]
 const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
 const tasksPendingRef = ref(false)
+const tasksRefreshingRef = ref(false)
 const tasksSuccessfulRef = ref(true)
 const currentSopsRef = ref<Array<Record<string, unknown>>>([])
 const workScopeOptionsRef = ref([
@@ -92,6 +93,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     hasSuccessfulResponse: computed(() => tasksSuccessfulRef.value && !tasksErrorRef.value),
     hasFailedResponse: computed(() => false),
     pending: tasksPendingRef,
+    refreshing: tasksRefreshingRef,
     error: tasksErrorRef,
     refresh,
     startTask,
@@ -138,6 +140,7 @@ describe('PDA MES operation execution page', () => {
     refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
+    tasksRefreshingRef.value = false
     sopsErrorRef.value = null
     operationScopeMessageRef.value = ''
     operationScopeReadyRef.value = true
@@ -158,6 +161,15 @@ describe('PDA MES operation execution page', () => {
     filters.keyword = undefined
     filters.workOrderId = undefined
     routeState.replaceQuery?.({})
+  })
+
+  it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
+    const wrapper = mount(OperationPage)
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(false)
+    tasksRefreshingRef.value = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
   })
 
   function dispatchBeforeUnload() {

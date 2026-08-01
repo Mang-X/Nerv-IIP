@@ -13,6 +13,16 @@ import EquipmentAlarmsPage from './alarms.vue'
 import EquipmentDetailPage from './[deviceAssetId].vue'
 import EquipmentIndexPage from './index.vue'
 
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+const readFaceState = vi.hoisted(() => ({
+  catalogResolved: true,
+  activeAlarms: [] as Array<Record<string, unknown>>,
+  availabilityWindows: [] as Array<Record<string, unknown>>,
+  currentDeviceAssetId: 'DEV-OIL-01',
+  workOrders: undefined as Array<Record<string, unknown>> | undefined,
+  spareParts: undefined as Array<Record<string, unknown>> | undefined,
+}))
+
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
 vi.mock('@/composables/useSkuNames', async () => {
@@ -43,9 +53,17 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   const emptyIndex = computed(() => new Map<string, string>())
   return {
     useMasterDataDisplayNames: () => ({
-      resolveDevice: () => undefined,
+      resolveDevice: (code?: string | null) =>
+        code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
+        readFaceState.catalogResolved
+          ? '五轴加工中心'
+          : undefined,
       resolveLocation: () => undefined,
-      resolveWorkCenter: () => undefined,
+      resolveWorkCenter: (code?: string | null) =>
+        code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
+        readFaceState.catalogResolved
+          ? '精加工一线'
+          : undefined,
       resolveTeam: () => undefined,
       resolveUom: () => undefined,
       resolveWorkshop: () => undefined,
@@ -301,11 +319,11 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     unshelveAlarm: vi.fn(),
   }),
   useBusinessEquipmentDevice: () => ({
-    activeAlarms: computed(() => []),
-    availabilityWindows: computed(() => []),
+    activeAlarms: computed(() => readFaceState.activeAlarms),
+    availabilityWindows: computed(() => readFaceState.availabilityWindows),
     device: computed(() => ({
       currentState: {
-        deviceAssetId: 'DEV-OIL-01',
+        deviceAssetId: readFaceState.currentDeviceAssetId,
         currentState: 'running',
         isSourceFresh: true,
       },
@@ -509,13 +527,13 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     refreshReliability: vi.fn(),
   }),
   useMaintenanceSpareParts: () => ({
-    spareParts: computed(() => reviewFixture.spareParts),
+    spareParts: computed(() => readFaceState.spareParts ?? reviewFixture.spareParts),
     sparePartsError: shallowRef(),
     sparePartsPending: shallowRef(false),
     sparePartsTotal: computed(() => 1),
   }),
   useMaintenanceWorkOrders: () => ({
-    workOrders: computed(() => reviewFixture.workOrders),
+    workOrders: computed(() => readFaceState.workOrders ?? reviewFixture.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
     workOrdersTotal: computed(() => 1),
@@ -568,6 +586,12 @@ describe('equipment pages', () => {
       'business.iiot.device-control.read',
       'business.iiot.device-control.write',
     ]
+    readFaceState.catalogResolved = true
+    readFaceState.activeAlarms = []
+    readFaceState.availabilityWindows = []
+    readFaceState.currentDeviceAssetId = 'DEV-OIL-01'
+    readFaceState.workOrders = undefined
+    readFaceState.spareParts = undefined
   })
 
   it('does not expose internal organization or environment identifiers on equipment pages', () => {
@@ -693,13 +717,95 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
     expect(wrapper.text()).toContain('维护与可靠性')
-    expect(wrapper.text()).toContain('mwo-1')
+    expect(wrapper.text()).toContain('维修工单')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
     expect(wrapper.text()).toContain('insp-6')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).not.toContain('正式页面')
     expect(wrapper.text()).not.toContain('Ops')
+  })
+
+  it('equipment detail read-face guard：目录可解析时显示设备、来源与报警编号', () => {
+    const deviceId = '019fbb41-1111-7111-8111-111111111111'
+    const alarmId = '019fbb41-2222-7222-8222-222222222222'
+    const workOrderId = '019fbb41-3333-7333-8333-333333333333'
+    routeState.route!.params.deviceAssetId = deviceId
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: deviceId })
+    readFaceState.currentDeviceAssetId = deviceId
+    readFaceState.activeAlarms = [{ alarmEventId: alarmId, alarmCode: 'ALM-CNC-008' }]
+    readFaceState.availabilityWindows = [
+      {
+        availabilityStatus: 'unavailable',
+        reasonCode: 'maintenance.pm',
+        workCenterId: '019fbb41-4444-7444-8444-444444444444',
+        sourceReferenceId: workOrderId,
+        sourceReferenceLabel: '计划保养 · PM-CNC-008',
+      },
+    ]
+    readFaceState.workOrders = [
+      {
+        workOrderId,
+        deviceAssetId: deviceId,
+        sourceAlarmId: alarmId,
+        status: 'open',
+        openedAtUtc: '2026-08-01T01:00:00Z',
+      },
+    ]
+    readFaceState.spareParts = [
+      {
+        sparePartLineId: 'sp-readable',
+        workOrderId,
+        deviceAssetId: deviceId,
+        skuCode: 'BEARING-1',
+      },
+    ]
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('五轴加工中心')
+    expect(visibleText).toContain('精加工一线')
+    expect(visibleText).toContain('计划保养 · PM-CNC-008')
+    expect(visibleText).toContain('ALM-CNC-008')
+    expect(visibleText).toContain('维修工单')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('equipment detail read-face guard：目录与关联解析失败时显示占位符且不泄露 ID', () => {
+    const deviceId = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    const alarmId = '019fbb41-bbbb-7bbb-8bbb-bbbbbbbbbbbb'
+    const workOrderId = '019fbb41-cccc-7ccc-8ccc-cccccccccccc'
+    routeState.route!.params.deviceAssetId = deviceId
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: deviceId })
+    readFaceState.catalogResolved = false
+    readFaceState.currentDeviceAssetId = deviceId
+    readFaceState.activeAlarms = []
+    readFaceState.availabilityWindows = [
+      {
+        availabilityStatus: 'unavailable',
+        reasonCode: 'maintenance.pm',
+        workCenterId: deviceId,
+        sourceReferenceId: workOrderId,
+      },
+    ]
+    readFaceState.workOrders = [
+      {
+        workOrderId,
+        deviceAssetId: deviceId,
+        sourceAlarmId: alarmId,
+        status: 'open',
+        openedAtUtc: '2026-08-01T01:00:00Z',
+      },
+    ]
+    readFaceState.spareParts = [
+      { sparePartLineId: 'sp-hidden', workOrderId, deviceAssetId: deviceId, skuCode: 'BEARING-1' },
+    ]
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('—')
+    expect(visibleText).toContain('维修工单')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
   })
 
   it('renders each OEE factor as a gap-to-target bar and OEE itself as multiplied facets', () => {

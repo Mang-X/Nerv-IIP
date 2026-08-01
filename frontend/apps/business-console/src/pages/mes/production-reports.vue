@@ -9,6 +9,7 @@ import {
   useMesTelemetryProductionReportCandidates,
 } from '@/composables/useBusinessMes'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   labelFor,
   REPORT_SUSPENSION_REASON_LABELS,
@@ -19,6 +20,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -76,6 +78,7 @@ const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+const { resolveSkuLabel } = useMesDisplayNames()
 type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
 /** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
 function candidateStateText(candidate: TelemetryCandidate) {
@@ -378,12 +381,12 @@ function reReport(row: ReportRow) {
 
 const columns: NvDataTableColumn<ReportRow>[] = [
   { key: 'reportNo', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
   {
     key: 'operationTaskId',
     header: '工序任务',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无',
+    accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
@@ -485,7 +488,7 @@ async function dismissCandidate(candidateId?: string) {
           @mouseleave="clearFocus"
         >
           <div class="flex items-center gap-1.5">
-            <span>{{ row.reportNo ?? row.productionReportId ?? '无' }}</span>
+            <span>{{ row.reportNo?.trim() || '—' }}</span>
             <NvStatusBadge v-if="isReversalRow(row)" label="负向冲销" tone="danger" />
             <NvStatusBadge v-else-if="isAlreadyReversed(row)" label="已冲销" tone="warning" />
           </div>
@@ -517,7 +520,7 @@ async function dismissCandidate(candidateId?: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderNo ?? row.workOrderId }}
+          {{ row.workOrderNo?.trim() || '—' }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
@@ -615,13 +618,13 @@ async function dismissCandidate(candidateId?: string) {
             <div class="flex justify-between gap-2">
               <dt class="text-muted-foreground">工单</dt>
               <dd class="font-medium">
-                {{ reverseTarget.workOrderNo ?? reverseTarget.workOrderId ?? '无' }}
+                {{ reverseTarget.workOrderNo?.trim() || '—' }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
               <dt class="text-muted-foreground">工序任务</dt>
               <dd class="font-medium">
-                {{ reverseTarget.operationTaskNo ?? reverseTarget.operationTaskId ?? '无' }}
+                {{ reverseTarget.operationTaskNo?.trim() || '—' }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
@@ -676,8 +679,8 @@ async function dismissCandidate(candidateId?: string) {
                 :key="`${lot.materialId}-${lot.materialLotId}-${lot.materialIssueRequestNo}`"
                 class="grid gap-1 rounded-md border px-3 py-2 text-xs sm:grid-cols-2"
               >
-                <span>物料：{{ lot.materialId ?? '无' }}</span>
-                <span>物料批次：{{ lot.materialLotId ?? '无' }}</span>
+                <span>物料：{{ resolveSkuLabel(lot.materialId) }}</span>
+                <span>物料批次：{{ readFaceText(lot.materialLotId, '未指定批次') }}</span>
                 <span>
                   数量：{{ formatQuantity(lot.consumedQuantity) }} {{ lot.uomCode ?? '' }}
                 </span>
@@ -790,7 +793,7 @@ async function dismissCandidate(candidateId?: string) {
           <div class="flex flex-wrap justify-between gap-3">
             <div>
               <p class="font-medium">
-                {{ resolveDevice(candidate.deviceAssetId) ?? candidate.deviceAssetId }} ·
+                {{ resolveDevice(candidate.deviceAssetId) ?? '未指定设备' }} ·
                 {{ candidate.tagKey }}
               </p>
               <p class="text-sm text-muted-foreground">
@@ -809,13 +812,13 @@ async function dismissCandidate(candidateId?: string) {
             <label class="text-sm"
               >工单<NvInput
                 v-model="candidateWorkOrderId"
-                :placeholder="candidate.workOrderId ?? '输入真实工单号'"
+                :placeholder="readFaceText(candidate.workOrderId, '输入真实工单号')"
                 class="mt-1"
             /></label>
             <label class="text-sm"
               >工序任务<NvInput
                 v-model="candidateOperationTaskId"
-                :placeholder="candidate.operationTaskId ?? '输入真实工序任务号'"
+                :placeholder="readFaceText(candidate.operationTaskId, '输入真实工序任务号')"
                 class="mt-1"
             /></label>
             <label class="text-sm md:col-span-2"

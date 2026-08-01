@@ -364,6 +364,21 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("pending_issue_leg_posted")
                         .HasComment("Whether the warehouse outbound leg of the in-flight line-side receipt has been posted by Inventory.");
 
+                    b.Property<int>("PendingIssueLegCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("pending_issue_leg_count")
+                        .HasComment("Number of warehouse outbound posting details expected for the in-flight line-side receipt.");
+
+                    b.Property<string>("PendingIssueLegPostedIndexesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("pending_issue_leg_posted_indexes_json")
+                        .HasComment("JSON array of warehouse outbound detail indexes already acknowledged by Inventory.");
+
                     b.Property<string>("PendingPostingToken")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
@@ -426,6 +441,14 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("source_location_code")
                         .HasComment("Inventory location code the material is actually issued from, resolved from real stock holdings.");
+
+                    b.Property<string>("SourceAllocationsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("source_allocations_json")
+                        .HasComment("JSON array of actual source location, lot and quantity allocations used to emit multiple Inventory posting details.");
 
                     b.Property<string>("SourceSiteCode")
                         .HasMaxLength(100)

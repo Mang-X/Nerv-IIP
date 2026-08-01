@@ -2,11 +2,13 @@
 import type { NvDataTableColumn, NvMetricFacet } from '@nerv-iip/ui'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import {
   useQualityInspectionTasks,
   isInspectionTaskOverdue,
 } from '@/composables/useQualityInspectionTasks'
 import { useSkuNames } from '@/composables/useSkuNames'
+import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -14,15 +16,28 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   NvEntityPicker,
   NvField,
   NvFieldLabel,
+  NvInput,
   NvMetricCard,
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { AlertCircleIcon, ArrowRightIcon, ClipboardCheckIcon, RefreshCwIcon } from '@lucide/vue'
-import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
-import { computed, watch } from 'vue'
+import {
+  inlineErrorMessage,
+  isForbiddenError,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -48,6 +63,8 @@ const {
   lastUpdatedAt,
   hasSuccessfulResponse: tasksHasSuccessfulResponse,
   hasFailedResponse: tasksHasFailedResponse,
+  claimInspectionTask,
+  assignInspectionTask,
 } = useQualityInspectionTasks({
   status: 'pending',
   ...(initialSourceDocumentNo ? { sourceDocumentNo: initialSourceDocumentNo } : {}),
@@ -55,6 +72,13 @@ const {
 })
 // 待检任务只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
+const { workers } = useBusinessWorkers({ pageSize: 500 })
+const workerByUserId = computed(
+  () =>
+    new Map(
+      workers.value.filter((worker) => worker.userId).map((worker) => [worker.userId, worker]),
+    ),
+)
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
   resetOn: [() => filters.sourceType, () => filters.skuCode],
@@ -136,6 +160,60 @@ const emptyExplanation = computed(() =>
       : '当前列表为组织范围的待检任务，暂不支持按检验人员筛选；空态不代表个人待检。',
 )
 
+const claimPendingTaskId = shallowRef('')
+const assignmentDialogOpen = ref(false)
+const assignmentTask = shallowRef<BusinessConsoleQualityInspectionTaskItem>()
+const assignmentTargetUserId = ref('')
+const assignmentReason = ref('')
+const assignmentPending = ref(false)
+
+function inspectionTaskHolderLabel(task: BusinessConsoleQualityInspectionTaskItem) {
+  const worker = task.assignedInspectorUserId
+    ? workerByUserId.value.get(task.assignedInspectorUserId.trim())
+    : undefined
+  const displayName = worker?.displayName?.trim()
+  const employeeNo = worker?.employeeNo?.trim()
+  return displayName && employeeNo ? `${displayName} · ${employeeNo}` : '—'
+}
+
+function isTaskClaimedByAnother(task: BusinessConsoleQualityInspectionTaskItem) {
+  return task.blockReasons?.includes('task-already-claimed') ?? false
+}
+
+function openReassignment(task: BusinessConsoleQualityInspectionTaskItem) {
+  assignmentTask.value = task
+  assignmentTargetUserId.value = ''
+  assignmentReason.value = ''
+  assignmentDialogOpen.value = true
+}
+
+async function submitReassignment() {
+  const task = assignmentTask.value
+  const inspectionTaskId = task?.inspectionTaskId?.trim()
+  const targetUserId = assignmentTargetUserId.value.trim()
+  const reason = assignmentReason.value.trim()
+  if (!task || !inspectionTaskId || !targetUserId) {
+    notifyError(new Error('请选择改派对象'), '请选择改派对象。')
+    return
+  }
+  if (!reason) {
+    notifyError(new Error('请填写改派原因'), '请填写改派原因。')
+    return
+  }
+
+  assignmentPending.value = true
+  try {
+    await assignInspectionTask(inspectionTaskId, targetUserId, reason, task.version ?? 0)
+    notifySuccess('待检任务已改派。')
+    assignmentDialogOpen.value = false
+    await refreshTasks()
+  } catch (error) {
+    notifyOperationFailure('改派失败', error, '任务状态已变化，请刷新待检工作台后重试。')
+  } finally {
+    assignmentPending.value = false
+  }
+}
+
 watch(
   () =>
     [firstQuery(route.query.sourceDocumentNo), firstQuery(route.query.inspectionTaskId)] as const,
@@ -160,6 +238,12 @@ const columns: NvDataTableColumn<BusinessConsoleQualityInspectionTaskItem>[] = [
     accessor: (row) => sourceLabel(row.sourceType),
   },
   { key: 'skuCode', header: '物料', width: 'w-44' },
+  {
+    key: 'assignedInspectorUserId',
+    header: '当前持有人',
+    width: 'w-36',
+    accessor: (row) => inspectionTaskHolderLabel(row),
+  },
   {
     key: 'createdAtUtc',
     header: '生成时间',
@@ -221,24 +305,39 @@ function sourceDocumentRoute(task: BusinessConsoleQualityInspectionTaskItem) {
   return workOrderId ? `/mes/work-orders/${encodeURIComponent(workOrderId)}` : ''
 }
 
-function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
+// 方案选择：让“开始检验”先 claim 成功再打开表单；这样按钮语义与后端状态一致，不会留下“看似接手、实际未认领”的中间态。
+async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
   const inspectionTaskId = task.inspectionTaskId?.trim()
   if (!inspectionTaskId) return
-  void router.push({
-    path: '/quality/inspections',
-    query: {
-      inspectionTaskId,
-      sourceDocumentId: task.sourceDocumentId ?? undefined,
-      sourceType: task.sourceType ?? undefined,
-      sourceService: task.sourceService ?? undefined,
-      skuCode: task.skuCode ?? undefined,
-      inspectionPlanId: task.inspectionPlanId ?? undefined,
-      quantity: task.quantity?.toString() ?? undefined,
-      batchNo: task.batchNo ?? undefined,
-      serialNo: task.serialNo ?? undefined,
-      action: 'create',
-    },
-  })
+  if (!task.allowedActions?.includes('claim')) {
+    if (isTaskClaimedByAnother(task)) openReassignment(task)
+    return
+  }
+
+  claimPendingTaskId.value = inspectionTaskId
+  try {
+    await claimInspectionTask(inspectionTaskId, task.version ?? 0)
+    await router.push({
+      path: '/quality/inspections',
+      query: {
+        inspectionTaskId,
+        sourceDocumentId: task.sourceDocumentId ?? undefined,
+        sourceType: task.sourceType ?? undefined,
+        sourceService: task.sourceService ?? undefined,
+        skuCode: task.skuCode ?? undefined,
+        inspectionPlanId: task.inspectionPlanId ?? undefined,
+        quantity: task.quantity?.toString() ?? undefined,
+        batchNo: task.batchNo ?? undefined,
+        serialNo: task.serialNo ?? undefined,
+        action: 'create',
+      },
+    })
+  } catch (error) {
+    notifyOperationFailure('认领失败', error, '任务刚被其他检验员认领，请刷新列表后使用“改派”。')
+    await refreshTasks()
+  } finally {
+    claimPendingTaskId.value = ''
+  }
 }
 </script>
 
@@ -401,6 +500,11 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
       <template #cell-skuCode="{ row }">
         <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" />
       </template>
+      <template #cell-assignedInspectorUserId="{ row }">
+        <span :data-testid="`inspection-task-assignee-${row.inspectionTaskId}`">
+          {{ inspectionTaskHolderLabel(row) }}
+        </span>
+      </template>
       <template #cell-dueAtUtc="{ row }">
         <span
           v-if="isInspectionTaskOverdue(row)"
@@ -412,13 +516,63 @@ function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
         <span v-else>{{ formatDateTime(row.dueAtUtc) }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <NvButton size="sm" :disabled="!row.inspectionTaskId" @click="goToInspectionForm(row)">
+        <NvButton
+          v-if="row.allowedActions?.includes('claim')"
+          size="sm"
+          :disabled="!row.inspectionTaskId || claimPendingTaskId === row.inspectionTaskId"
+          @click="goToInspectionForm(row)"
+        >
           <ClipboardCheckIcon aria-hidden="true" />
-          开始检验
+          认领并开始检验
           <ArrowRightIcon aria-hidden="true" />
+        </NvButton>
+        <NvButton
+          v-if="isTaskClaimedByAnother(row)"
+          size="sm"
+          variant="outline"
+          @click="openReassignment(row)"
+        >
+          改派
         </NvButton>
       </template>
     </NvDataTable>
+
+    <NvDialog v-model:open="assignmentDialogOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>改派待检任务</NvDialogTitle>
+          <NvDialogDescription>
+            当前持有人：{{
+              assignmentTask ? inspectionTaskHolderLabel(assignmentTask) : '—'
+            }}。改派前请确认交接对象与原因。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitReassignment">
+          <NvField>
+            <NvFieldLabel for="inspection-task-assignee">改派给</NvFieldLabel>
+            <WorkerSelect
+              id="inspection-task-assignee"
+              v-model="assignmentTargetUserId"
+              placeholder="选择检验员"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="inspection-task-assignment-reason">改派原因</NvFieldLabel>
+            <NvInput
+              id="inspection-task-assignment-reason"
+              v-model="assignmentReason"
+              placeholder="例如：原检验员调班"
+            />
+          </NvField>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="assignmentDialogOpen = false">
+              取消
+            </NvButton>
+            <NvButton type="submit" :disabled="assignmentPending">确认改派</NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
 
     <p class="text-xs text-muted-foreground">
       <RouterLink class="underline underline-offset-2" to="/quality/inspections"

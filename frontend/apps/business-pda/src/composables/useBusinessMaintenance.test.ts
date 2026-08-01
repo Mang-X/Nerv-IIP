@@ -134,6 +134,15 @@ describe('useBusinessMaintenance', () => {
     expect(result.workOrdersTotal.value).toBe(0)
   })
 
+  it('keeps task paging at 20 while auxiliary inspection and plan history retain 100 rows', () => {
+    seedPrincipal()
+    const result = useBusinessMaintenance()
+
+    expect(result.workOrderFilters.take).toBe(20)
+    expect(result.inspectionFilters.take).toBe(100)
+    expect(result.planFilters.take).toBe(100)
+  })
+
   it('injects org/env/openedBy into the work-order create body — caller cannot override them', async () => {
     seedPrincipal()
     const { createWorkOrder } = useBusinessMaintenance()

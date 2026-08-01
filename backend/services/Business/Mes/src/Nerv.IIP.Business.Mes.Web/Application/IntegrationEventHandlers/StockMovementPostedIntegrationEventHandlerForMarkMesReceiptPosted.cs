@@ -45,7 +45,10 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
 
         // 线边调拨两条腿分别是出库与入库，出库腿的回执同样要收，否则「双腿都过账」永远凑不齐。
         var isMaterialTransferLeg = MaterialIssueRequest.TryParseLegIdempotencyKey(
-            integrationEvent.Payload.IdempotencyKey, out var transferToken, out var transferLeg);
+            integrationEvent.Payload.IdempotencyKey,
+            out var transferToken,
+            out var transferLeg,
+            out var allocationIndex);
 
         if (!isMaterialTransferLeg &&
             !string.Equals(integrationEvent.Payload.MovementType, "inbound", StringComparison.OrdinalIgnoreCase))
@@ -60,7 +63,12 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
 
         if (isMaterialTransferLeg)
         {
-            await MarkMaterialTransferPostedAsync(integrationEvent, transferToken, transferLeg, cancellationToken);
+            await MarkMaterialTransferPostedAsync(
+                integrationEvent,
+                transferToken,
+                transferLeg,
+                allocationIndex,
+                cancellationToken);
             return;
         }
 
@@ -93,6 +101,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
         StockMovementPostedIntegrationEvent integrationEvent,
         string transferToken,
         MaterialTransferLeg transferLeg,
+        int? allocationIndex,
         CancellationToken cancellationToken)
     {
         var materialRequest = await dbContext.MaterialIssueRequests.SingleOrDefaultAsync(
@@ -105,7 +114,11 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             return;
         }
 
-        materialRequest.MarkInventoryPosted(transferToken, transferLeg, integrationEvent.Payload.PostedAtUtc);
+        materialRequest.MarkInventoryPosted(
+            transferToken,
+            transferLeg,
+            integrationEvent.Payload.PostedAtUtc,
+            allocationIndex);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

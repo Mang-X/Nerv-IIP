@@ -203,21 +203,30 @@ const pagingErrorCases = [
     name: 'inbound',
     id: 'listBusinessConsoleWmsInboundOrders',
     list: coladaState.listInbound,
-    create: () => useWmsInbound(),
+    create: () => {
+      const result = useWmsInbound()
+      return { rows: result.orders, ...result }
+    },
     makeItem: (index: number) => ({ inboundOrderId: `inbound-${index}`, status: 'Open' }),
   },
   {
     name: 'outbound',
     id: 'listBusinessConsoleWmsOutboundOrders',
     list: coladaState.listOutbound,
-    create: () => useWmsOutbound(),
+    create: () => {
+      const result = useWmsOutbound()
+      return { rows: result.orders, ...result }
+    },
     makeItem: (index: number) => ({ outboundOrderId: `outbound-${index}`, status: 'Open' }),
   },
   {
     name: 'picking',
     id: 'listBusinessConsoleWmsPickingTasks',
     list: coladaState.listPicking,
-    create: () => useWmsPicking(),
+    create: () => {
+      const result = useWmsPicking()
+      return { rows: result.tasks, ...result }
+    },
     makeItem: (index: number) => ({
       warehouseTaskId: `picking-${index}`,
       status: 'Open',
@@ -228,7 +237,10 @@ const pagingErrorCases = [
     name: 'putaway',
     id: 'listBusinessConsoleWmsPutawayTasks',
     list: coladaState.listPutaway,
-    create: () => useWmsPutaway(),
+    create: () => {
+      const result = useWmsPutaway()
+      return { rows: result.tasks, ...result }
+    },
     makeItem: (index: number) => ({
       warehouseTaskId: `putaway-${index}`,
       status: 'Open',
@@ -239,10 +251,28 @@ const pagingErrorCases = [
     name: 'count',
     id: 'listBusinessConsoleWmsCountExecutions',
     list: coladaState.listCount,
-    create: () => useWmsCount(),
+    create: () => {
+      const result = useWmsCount()
+      return { rows: result.executions, ...result }
+    },
     makeItem: (index: number) => ({ countExecutionId: `count-${index}`, status: 'Open' }),
   },
 ] as const
+
+const pagingIdentityResetCases = pagingErrorCases.flatMap((testCase) => [
+  { ...testCase, resetKind: 'filter' as const },
+  { ...testCase, resetKind: 'scope' as const },
+])
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 describe('PDA WMS composables', () => {
   beforeEach(() => {
@@ -1186,8 +1216,40 @@ describe('PDA WMS composables', () => {
     },
   )
 
+  it('keeps the complete picking snapshot when refresh resolves with success:false', async () => {
+    const oldPage = (skip: number) =>
+      Array.from({ length: 20 }, (_, index) => ({
+        warehouseTaskId: `picking-${skip + index}`,
+        status: 'Open',
+        allowedActions: [],
+      }))
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: { items: oldPage(0), total: 40 },
+    })
+    coladaState.listPicking.mockResolvedValueOnce({
+      data: { success: true, data: { items: oldPage(20), total: 40 } },
+    })
+    const result = useWmsPicking()
+    await result.loadMore()
+
+    coladaState.refetchById
+      .get('listBusinessConsoleWmsPickingTasks')!
+      .mockImplementationOnce(async () => {
+        coladaState.queryDataRefById.get('listBusinessConsoleWmsPickingTasks')!.value = {
+          success: false,
+          message: 'refresh rejected',
+        }
+        await nextTick()
+      })
+    await result.refresh()
+
+    expect(result.tasks.value).toHaveLength(40)
+    expect(result.total.value).toBe(40)
+  })
+
   it.each(pagingErrorCases)(
-    'still exposes a rejected current-scope $name page',
+    'records a rejected current-scope $name page in the appropriate error channel',
     async ({ id, list, create, makeItem }) => {
       coladaState.queryDataById.set(id, {
         success: true,
@@ -1201,7 +1263,39 @@ describe('PDA WMS composables', () => {
       const result = create()
 
       await expect(result.loadMore()).rejects.toBe(currentFailure)
-      expect(result.error.value).toBe(currentFailure)
+      expect(result.loadMoreError.value).toBe(currentFailure)
+      expect(result.error.value).toBeUndefined()
+    },
+  )
+
+  it.each(pagingErrorCases.filter(({ name }) => name === 'picking' || name === 'putaway'))(
+    'clears the split $name load-more error after a successful retry',
+    async ({ id, list, create, makeItem }) => {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => makeItem(index)),
+          total: 40,
+        },
+      })
+      const currentFailure = new Error(`${id}: current loadMore failure`)
+      list.mockRejectedValueOnce(currentFailure).mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: Array.from({ length: 20 }, (_, index) => makeItem(index + 20)),
+            total: 40,
+          },
+        },
+      })
+      const result = create()
+
+      await expect(result.loadMore()).rejects.toBe(currentFailure)
+      expect(result.loadMoreError.value).toBe(currentFailure)
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeUndefined()
     },
   )
 
@@ -1279,7 +1373,7 @@ describe('PDA WMS composables', () => {
     expect(result.tasks.value).toEqual([])
   })
 
-  it('clears accumulated rows before refresh and every task scope/filter dimension change', async () => {
+  it('clears accumulated rows on every task scope/filter dimension change', async () => {
     const initialEnvelope = () => ({
       success: true,
       data: {
@@ -1289,12 +1383,6 @@ describe('PDA WMS composables', () => {
     })
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', initialEnvelope())
     const result = useWmsPicking()
-
-    const refreshPromise = result.refresh()
-    expect(result.tasks.value).toEqual([])
-    expect(result.filters.skip).toBe(0)
-    expect(result.filters.take).toBe(20)
-    await refreshPromise
 
     for (const change of [
       () => (result.scopeKey.value = 'work-pool:WMS-SITE-001'),
@@ -1316,6 +1404,174 @@ describe('PDA WMS composables', () => {
       expect(result.filters.take).toBe(20)
     }
   })
+
+  it.each(pagingErrorCases)(
+    'keeps all loaded $name rows when same-identity refresh fails and replaces them after success',
+    async ({ id, list, create, makeItem }) => {
+      const oldPage = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: oldPage(0), total: 40 },
+      })
+      list.mockResolvedValueOnce({
+        data: { success: true, data: { items: oldPage(20), total: 40 } },
+      })
+      const result = create()
+      await result.loadMore()
+      expect(result.rows.value).toHaveLength(40)
+
+      const refreshFailure = new Error(`${id}: refresh failed`)
+      coladaState.refetchById.get(id)!.mockRejectedValueOnce(refreshFailure)
+      await expect(result.refresh()).rejects.toBe(refreshFailure)
+      expect(result.rows.value).toHaveLength(40)
+
+      const freshPage = Array.from({ length: 20 }, (_, index) => makeItem(100 + index))
+      coladaState.refetchById.get(id)!.mockImplementationOnce(async () => {
+        coladaState.queryDataRefById.get(id)!.value = {
+          success: true,
+          data: { items: freshPage, total: 20 },
+        }
+        await nextTick()
+      })
+      await result.refresh()
+
+      expect(result.rows.value).toHaveLength(20)
+      expect(result.rows.value).toEqual(
+        expect.arrayContaining(freshPage.map((item) => expect.objectContaining(item))),
+      )
+      expect(result.filters.skip).toBe(0)
+      expect(result.filters.take).toBe(20)
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'keeps the current $name load-more guard owned by the newest request after refresh invalidates an older request',
+    async ({ id, list, create, makeItem }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const oldRequest = deferred<{ data: unknown }>()
+      const newRequest = deferred<{ data: unknown }>()
+      list.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+      const result = create()
+
+      const oldLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+
+      await result.refresh()
+      expect(result.loadingMore.value).toBe(false)
+
+      const newLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+      expect(list).toHaveBeenCalledTimes(2)
+
+      oldRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await oldLoad
+
+      expect(result.loadingMore.value).toBe(true)
+      await result.loadMore()
+      expect(list).toHaveBeenCalledTimes(2)
+
+      newRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await newLoad
+
+      expect(result.loadingMore.value).toBe(false)
+    },
+  )
+
+  it.each(pagingIdentityResetCases)(
+    'lets a new $name load-more own the guard after a $resetKind reset invalidates an older request',
+    async ({ id, list, create, makeItem, resetKind }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const oldRequest = deferred<{ data: unknown }>()
+      const newRequest = deferred<{ data: unknown }>()
+      list.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+      const result = create()
+
+      const oldLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+
+      if (resetKind === 'filter') {
+        result.filters.keyword = 'NEW'
+      } else {
+        result.scopeKey.value = 'work-pool:WMS-SITE-001'
+      }
+      await nextTick()
+      expect(result.loadingMore.value).toBe(false)
+
+      coladaState.queryDataRefById.get(id)!.value = {
+        success: true,
+        data: { items: page(100), total: 60 },
+      }
+      await nextTick()
+
+      const newLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+      expect(list).toHaveBeenCalledTimes(2)
+
+      if (resetKind === 'filter') {
+        oldRequest.resolve({
+          data: { success: true, data: { items: page(20), total: 60 } },
+        })
+        await oldLoad
+      } else {
+        const staleFailure = new Error(`${id}: stale page failed`)
+        oldRequest.reject(staleFailure)
+        await expect(oldLoad).rejects.toBe(staleFailure)
+        expect(result.loadMoreError.value).toBeUndefined()
+      }
+
+      expect(result.loadingMore.value).toBe(true)
+      await result.loadMore()
+      expect(list).toHaveBeenCalledTimes(2)
+
+      newRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await newLoad
+
+      expect(result.loadingMore.value).toBe(false)
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'clears the $name page error after an explicit retry succeeds and appends rows',
+    async ({ id, list, create, makeItem }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const failure = new Error(`${id}: page failed`)
+      list.mockRejectedValueOnce(failure).mockResolvedValueOnce({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      const result = create()
+
+      await expect(result.loadMore()).rejects.toBe(failure)
+      expect(result.loadMoreError.value).toBe(failure)
+      expect(result.rows.value).toHaveLength(20)
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeUndefined()
+      expect(result.rows.value).toHaveLength(40)
+    },
+  )
 
   it('re-reads the exact picking task and starts it with trusted scope, version and stable key', async () => {
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
@@ -1519,7 +1775,8 @@ describe('PDA WMS composables', () => {
 
     await expect(result.executeTask(intent)).rejects.toBe(unconfirmed)
     expect(result.actionUnconfirmed.value).toBe(true)
-    expect(result.error.value).toBe(unconfirmed)
+    expect(result.actionError.value).toBe(unconfirmed)
+    expect(result.error.value).toBeUndefined()
 
     coladaState.listPicking.mockResolvedValue({
       data: {
@@ -1542,9 +1799,49 @@ describe('PDA WMS composables', () => {
 
     await expect(result.refresh()).resolves.toMatchObject({ confirmedAction: 'start' })
     expect(result.actionUnconfirmed.value).toBe(false)
+    expect(result.actionError.value).toBeUndefined()
     expect(result.error.value).toBeUndefined()
     expect(result.actionConfirmedSequence.value).toBe(1)
     expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears refreshing when authoritative verification of an unconfirmed action fails', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const unconfirmed = Object.assign(new Error('unconfirmed'), {
+      code: 'business-operation-unconfirmed',
+    })
+    coladaState.startPicking.mockRejectedValueOnce(unconfirmed)
+    const result = useWmsPicking()
+
+    await expect(
+      result.executeTask({ action: 'start', task: result.tasks.value[0]! }),
+    ).rejects.toBe(unconfirmed)
+    const verificationFailure = new Error('authoritative verification failed')
+    coladaState.listPicking.mockRejectedValueOnce(verificationFailure)
+    const listRefetch = coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')!
+
+    const refreshPromise = result.refresh()
+    expect(result.refreshing.value).toBe(true)
+    await expect(refreshPromise).rejects.toBe(verificationFailure)
+    expect(result.actionError.value).toBe(verificationFailure)
+    expect(result.error.value).toBeUndefined()
+    expect(result.loadMoreError.value).toBeUndefined()
+    expect(listRefetch).not.toHaveBeenCalled()
+    expect(result.refreshing.value).toBe(false)
   })
 
   it('keeps a confirmed start successful when only the follow-up list refresh fails', async () => {
