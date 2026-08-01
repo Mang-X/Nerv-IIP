@@ -170,6 +170,11 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     workers: computed(() => state.workers),
     workersPending: shallowRef(false),
   }),
+  // 必须与真实模块的导出对齐，漏一个页面就拿到 undefined。
+  // 这个 mock 原来只桩 useBusinessWorkers，于是页面写死 `pageSize: 500` 越过网关上限
+  // （InclusiveBetween(1,200)）也测不出来——真机上整列「当前持有人」静默变 `—`，
+  // 第五轮走查才发现（见 WORKER_DIRECTORY_MAX_PAGE_SIZE 注释）。
+  WORKER_DIRECTORY_MAX_PAGE_SIZE: 200,
 }))
 
 // 物料筛选改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
