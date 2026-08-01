@@ -89,17 +89,61 @@ export function maintenancePriorityLabel(value: string | null | undefined): stri
   return lookup(maintenancePriorityLabels, value, '未知优先级')
 }
 
-/** 维修工单状态（CMMS 生命周期：open→inProgress→completed/closed/cancelled）。 */
-export const maintenanceWorkOrderStatusLabels: Record<string, string> = {
-  open: '待处理',
-  inprogress: '处理中',
-  completed: '已完成',
-  closed: '已关闭',
-  cancelled: '已取消',
-}
+/** 维修工单状态目录（Maintenance MAN-631 完整生命周期，供筛选与展示共用）。 */
+export const maintenanceWorkOrderStatusOptions = [
+  { value: 'open', label: '待处理' },
+  { value: 'accepted', label: '已接单' },
+  { value: 'inProgress', label: '处理中' },
+  { value: 'paused', label: '已暂停' },
+  { value: 'waitingForParts', label: '等待备件' },
+  { value: 'completed', label: '已完成' },
+  { value: 'verified', label: '已验证' },
+  { value: 'closed', label: '已关闭' },
+  { value: 'cancelled', label: '已取消' },
+] as const
+
+export type MaintenanceWorkOrderStatusCode =
+  (typeof maintenanceWorkOrderStatusOptions)[number]['value']
+
+export const maintenanceWorkOrderStatusLabels: Record<string, string> = Object.fromEntries(
+  maintenanceWorkOrderStatusOptions.map(({ value, label }) => [value.toLowerCase(), label]),
+)
 
 export function maintenanceWorkOrderStatusLabel(value: string | null | undefined): string {
   return lookup(maintenanceWorkOrderStatusLabels, value, '未知状态')
+}
+
+/** Maintenance 聚合支持的完整生命周期动作。 */
+export const maintenanceWorkOrderActionLabels: Record<string, string> = {
+  assign: '指派',
+  accept: '接单',
+  start: '开工',
+  pause: '暂停',
+  waitforparts: '等待备件',
+  resume: '恢复',
+  complete: '完成',
+  verify: '验证',
+  close: '关闭',
+  cancel: '取消',
+}
+
+export function maintenanceWorkOrderActionLabel(value: string | null | undefined): string {
+  return lookup(maintenanceWorkOrderActionLabels, value, '未识别动作')
+}
+
+/** Maintenance 服务与 BusinessGateway 返回的动作阻塞原因。 */
+export const maintenanceWorkOrderBlockReasonLabels: Record<string, string> = {
+  'terminal-status': '工单已进入终态，仅可查看。',
+  'completion-data-incomplete': '完工数据不完整，服务端未开放后续动作。',
+  'unknown-status': '工单状态无法识别，服务端已禁止动作。',
+  'assigned-technician-required': '仅当前指派的维修人员可执行该动作。',
+  'manage-permission-required': '当前账号没有维护动作权限。',
+  'work-scope-required': '当前账号缺少执行动作所需的工作范围。',
+  'work-scope-not-authorized': '当前账号未获授权进入执行动作所需的工作范围。',
+}
+
+export function maintenanceWorkOrderBlockReasonLabel(value: string | null | undefined): string {
+  return lookup(maintenanceWorkOrderBlockReasonLabels, value, '服务端已禁止动作，原因暂不可识别。')
 }
 
 /** 点检结果（pass/fail）。 */

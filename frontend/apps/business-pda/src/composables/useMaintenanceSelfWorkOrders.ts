@@ -51,7 +51,9 @@ function useMaintenanceSelfScope() {
   const environmentId = computed(() => auth.principal?.environmentId?.trim() ?? '')
   const principalId = computed(() => auth.principal?.principalId?.trim() ?? '')
   const permissions = computed(() => new Set(auth.principal?.permissionCodes ?? []))
-  const canRead = computed(() => permissions.value.has(MAINTENANCE_READ_PERMISSION))
+  const canReadMaintenance = computed(() => permissions.value.has(MAINTENANCE_READ_PERMISSION))
+  const canReadDevice = computed(() => permissions.value.has(DEVICE_READ_PERMISSION))
+  const canRead = computed(() => canReadMaintenance.value && canReadDevice.value)
   const scopeReady = computed(
     () =>
       Boolean(organizationId.value && environmentId.value && principalId.value) && canRead.value,
@@ -74,6 +76,8 @@ function useMaintenanceSelfScope() {
     principalId,
     permissions,
     canRead,
+    canReadMaintenance,
+    canReadDevice,
     scopeReady,
     scopeKey,
     queryScope,
@@ -188,10 +192,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   })
 
   const deviceAssetId = computed(() => workOrder.value?.deviceAssetId?.trim() ?? '')
-  const canReadDevice = computed(() => scope.permissions.value.has(DEVICE_READ_PERMISSION))
-  const deviceEnabled = computed(
-    () => enabled.value && canReadDevice.value && Boolean(deviceAssetId.value),
-  )
+  const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
   const deviceQuery = useQuery(() => ({
     ...getBusinessConsoleMasterDataResourceDetailQueryOptions({
       path: {
@@ -230,7 +231,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     enabled,
     workOrder,
     device,
-    canReadDevice,
+    canReadDevice: scope.canReadDevice,
     pending: detailQuery.isLoading,
     error: detailQuery.error,
     hasSuccessfulResponse,

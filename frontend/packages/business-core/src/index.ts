@@ -35,13 +35,19 @@ export {
   alarmSeverityLabels,
   equipmentStateLabel,
   equipmentStateLabels,
+  maintenanceWorkOrderActionLabel,
+  maintenanceWorkOrderActionLabels,
+  maintenanceWorkOrderBlockReasonLabel,
+  maintenanceWorkOrderBlockReasonLabels,
   maintenancePriorityLabel,
   maintenancePriorityLabels,
   maintenanceWorkOrderStatusLabel,
   maintenanceWorkOrderStatusLabels,
+  maintenanceWorkOrderStatusOptions,
   inspectionResultLabel,
   inspectionResultLabels,
 } from './labels/equipmentLabels'
+export type { MaintenanceWorkOrderStatusCode } from './labels/equipmentLabels'
 export {
   COMMON_INSPECTION_CHARACTERISTICS,
   createMeasurementDraft,

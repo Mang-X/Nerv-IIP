@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test'
 
 export const STORAGE_KEY = 'nerv-iip.business-pda.auth'
+export const CREATED_MAINTENANCE_WORK_ORDER_ID = '33333333-3333-3333-3333-333333333333'
 
 export const principal = {
   principalId: 'principal-1',
@@ -60,6 +61,15 @@ const deviceAssets = [
     active: true,
     workshopCode: 'WS-2',
     lineCode: 'LINE-B',
+  },
+  {
+    deviceAssetId: 'DEV-A',
+    code: 'DEV-A',
+    displayName: '装配线冲压机',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-1',
   },
 ]
 
@@ -627,21 +637,20 @@ export async function routeBusinessConsoleApi(route: Route) {
   }
 
   // ---- 设备运维（报修/点检/报警查看） ----
-  if (
-    pathname === '/api/business-console/v1/master-data/resources/device-asset/device-asset-cnc-01'
-  ) {
+  const deviceResourceMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
+  )
+  if (deviceResourceMatch) {
+    const deviceAssetId = decodeURIComponent(deviceResourceMatch[1])
+    const device = deviceAssets.find((item) => item.deviceAssetId === deviceAssetId)
+    if (!device) return fulfillJson(route, { success: false, message: '设备不存在', data: null })
     return fulfillJson(
       route,
       envelope({
         resourceType: 'device-asset',
-        code: 'CNC-01',
-        displayName: '一号数控机床',
+        ...device,
         organizationId: principal.organizationId,
         environmentId: principal.environmentId,
-        active: true,
-        workshopCode: 'WS-1',
-        lineCode: 'LINE-A',
-        stationCode: 'ST-9',
       }),
     )
   }
@@ -676,10 +685,10 @@ export async function routeBusinessConsoleApi(route: Route) {
       return fulfillJson(
         route,
         envelope({
-          workOrderId: 'WO-M-new',
+          workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
           operationReceipt: confirmedOperation(
             'maintenance.work-order.create',
-            'WO-M-new',
+            CREATED_MAINTENANCE_WORK_ORDER_ID,
             body.idempotencyKey,
             'open',
           ),

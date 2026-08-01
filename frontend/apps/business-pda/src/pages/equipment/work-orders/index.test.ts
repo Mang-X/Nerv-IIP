@@ -95,6 +95,8 @@ describe('maintenance self work-order queue page', () => {
     const { wrapper, router } = await mountPage()
 
     expect(wrapper.text()).toContain('当前维修人员（服务端 Self 范围）')
+    expect(wrapper.text()).toContain('设备已关联')
+    expect(wrapper.text()).not.toContain('device-1')
     await wrapper.get('[data-testid="maintenance-work-order-row"]').trigger('click')
     await flushPromises()
 

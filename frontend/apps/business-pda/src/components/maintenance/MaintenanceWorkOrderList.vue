@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-client'
+import { maintenancePriorityLabel, maintenanceWorkOrderStatusLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileTag } from '@nerv-iip/ui-mobile'
-
-import { maintenancePriorityText, maintenanceStatusLabel } from './maintenanceWorkOrderPresentation'
 
 defineProps<{ items: BusinessConsoleMaintenanceWorkOrderItem[] }>()
 const emit = defineEmits<{ select: [workOrder: BusinessConsoleMaintenanceWorkOrderItem] }>()
@@ -13,9 +12,9 @@ function title(item: BusinessConsoleMaintenanceWorkOrderItem) {
 
 function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
   return [
-    item.deviceAssetId?.trim() || '设备未标识',
-    `优先级 ${maintenancePriorityText(item.priority)}`,
-    item.assignedTechnicianUserId ? `已指派 ${item.assignedTechnicianUserId}` : '未指派维修人员',
+    item.deviceAssetId?.trim() ? '设备已关联' : '设备未标识',
+    `优先级 ${maintenancePriorityLabel(item.priority)}`,
+    item.assignedTechnicianUserId ? '已指派维修人员' : '未指派维修人员',
   ].join(' · ')
 }
 </script>
@@ -34,7 +33,7 @@ function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
     >
       <template #trailing>
         <NvMobileTag variant="default">
-          {{ maintenanceStatusLabel(item.status) }}
+          {{ maintenanceWorkOrderStatusLabel(item.status) }}
         </NvMobileTag>
       </template>
     </NvListRow>

@@ -12,7 +12,10 @@ const identity = usePdaIdentity()
 const canSeeMesOperations = computed(() => identity.can(HOME_PERMISSIONS.mesOperations))
 const canSeeQualitySelfTasks = computed(() => identity.can(HOME_PERMISSIONS.quality))
 const canSeeMaintenanceSelfQueue = computed(() =>
-  identity.can(HOME_PERMISSIONS.maintenanceWorkOrders),
+  Boolean(
+    identity.can(HOME_PERMISSIONS.maintenanceWorkOrders) &&
+    identity.can(HOME_PERMISSIONS.masterDataResources),
+  ),
 )
 const warehouseEntrances = computed(() => {
   const entries: Array<{ title: string; note: string; route: string }> = []
@@ -69,7 +72,7 @@ const warehouseEntrances = computed(() => {
             data-testid="maintenance-self-work-orders"
             to="/equipment/work-orders"
             title="维修工单"
-            note="服务端按当前维修人员 Self 范围返回"
+            note="维修工单与设备位置均已授权，服务端按当前维修人员 Self 范围返回"
           >
             <template #icon><Wrench /></template>
           </PdaNavigationCell>

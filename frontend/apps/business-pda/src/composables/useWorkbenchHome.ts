@@ -36,6 +36,7 @@ export const HOME_PERMISSIONS = {
   quality: 'business.quality.inspection-records.read',
   alarms: 'business.iiot.alarms.read',
   maintenanceWorkOrders: 'business.maintenance.work-orders.read',
+  masterDataResources: 'business.masterdata.resources.read',
 } as const
 
 const HOME_TAKE = 100

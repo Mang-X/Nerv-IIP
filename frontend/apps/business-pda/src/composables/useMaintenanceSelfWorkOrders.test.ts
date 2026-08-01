@@ -96,6 +96,19 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(result.items.value).toEqual([])
   })
 
+  it('fails closed when maintenance read exists without device location read permission', () => {
+    seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] })
+
+    const list = useMaintenanceSelfWorkOrders()
+    const detail = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+
+    expect(list.scopeReady.value).toBe(false)
+    expect(api.queryFactories.get('maintenance-list')?.().enabled).toBe(false)
+    expect(detail.enabled.value).toBe(false)
+    expect(api.queryFactories.get('maintenance-detail')?.().enabled).toBe(false)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
   it('binds status, device, keyword, and first-page pagination to the server self query', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()

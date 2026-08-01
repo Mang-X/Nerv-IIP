@@ -97,14 +97,22 @@ describe('maintenance work-order authoritative detail page', () => {
       stationCode: 'ST-9',
     }
 
-    const wrapper = await mountPage('/equipment/work-orders/WO-DETAIL?sourceAlarmId=ALM-9')
+    const wrapper = await mountPage(
+      '/equipment/work-orders/WO-DETAIL?source=repair&sourceAlarmId=ALM-9',
+    )
 
     expect(state.requestedId?.value).toBe('WO-DETAIL')
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
-    expect(wrapper.text()).toContain('principal-1')
-    expect(wrapper.text()).toContain('team-a')
+    expect(wrapper.text()).toContain('已指派维修人员')
+    expect(wrapper.text()).toContain('已指派维修班组')
+    expect(wrapper.text()).toContain('操作人已记录')
+    expect(wrapper.text()).toContain('来源：报警报修创建结果')
+    expect(wrapper.text()).not.toContain('WO-DETAIL')
+    expect(wrapper.text()).not.toContain('device-1')
+    expect(wrapper.text()).not.toContain('principal-1')
+    expect(wrapper.text()).not.toContain('team-a')
     expect(wrapper.text()).toContain('版本 7')
     expect(wrapper.text()).toContain('开工')
     expect(wrapper.text()).toContain('取消')

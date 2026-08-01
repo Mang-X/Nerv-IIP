@@ -134,6 +134,20 @@ describe('useBusinessMaintenance', () => {
     expect(result.workOrdersTotal.value).toBe(0)
   })
 
+  it('requires both maintenance and master-data reads before offering authoritative detail', () => {
+    seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] })
+    const result = useBusinessMaintenance()
+    expect(result.canReadWorkOrderDetail.value).toBe(false)
+
+    seedPrincipal({
+      permissionCodes: [
+        'business.maintenance.work-orders.read',
+        'business.masterdata.resources.read',
+      ],
+    })
+    expect(result.canReadWorkOrderDetail.value).toBe(true)
+  })
+
   it('keeps task paging at 20 while auxiliary inspection and plan history retain 100 rows', () => {
     seedPrincipal()
     const result = useBusinessMaintenance()

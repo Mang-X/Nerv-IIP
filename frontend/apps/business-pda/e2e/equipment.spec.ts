@@ -1,5 +1,6 @@
 import { expect, test, type Locator } from '@playwright/test'
 import {
+  CREATED_MAINTENANCE_WORK_ORDER_ID,
   STORAGE_KEY,
   expectNoHorizontalOverflow,
   principal,
@@ -82,6 +83,12 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(listRequests[0].searchParams.get('skip')).toBe('0')
   expect(listRequests[0].searchParams.get('take')).toBe('20')
   await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText('已接单')
+  await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
+    'device-asset-cnc-01',
+  )
+  await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
+    principal.principalId,
+  )
 
   await page.getByRole('searchbox', { name: '维修工单关键字' }).fill('主轴')
   await page.getByRole('button', { name: '全部状态' }).click()
@@ -123,21 +130,26 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     'WS-1 · LINE-A · ST-9',
   )
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
+    principal.principalId,
+  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('team-a')
   expect(detailRequests).toHaveLength(1)
   expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 
-test('维修工单：缺少当前维修人员范围时不发请求且不声称个人队列', async ({ browser }) => {
+test('维修工单：缺少设备位置读取权限时不发请求且不声称个人队列', async ({ browser }) => {
   const isolatedContext = await browser.newContext({ viewport: { width: 375, height: 812 } })
   const page = await isolatedContext.newPage()
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
-  const principalWithoutMaintenanceRead = {
+  const principalWithoutLocationRead = {
     ...principal,
     permissionCodes: principal.permissionCodes.filter(
-      (code) => code !== 'business.maintenance.work-orders.read',
+      (code) => code !== 'business.masterdata.resources.read',
     ),
   }
   await page.route('**/api/console/v1/auth/refresh', (route) =>
@@ -146,7 +158,7 @@ test('维修工单：缺少当前维修人员范围时不发请求且不声称�
       contentType: 'application/json',
       body: JSON.stringify({
         success: true,
-        data: { ...session, principal: principalWithoutMaintenanceRead },
+        data: { ...session, principal: principalWithoutLocationRead },
       }),
     }),
   )
@@ -154,13 +166,13 @@ test('维修工单：缺少当前维修人员范围时不发请求且不声称�
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: principalWithoutMaintenanceRead }),
+      body: JSON.stringify({ success: true, data: principalWithoutLocationRead }),
     }),
   )
   await page.addInitScript(({ key, stored }) => localStorage.setItem(key, JSON.stringify(stored)), {
     key: STORAGE_KEY,
     stored: {
-      principal: principalWithoutMaintenanceRead,
+      principal: principalWithoutLocationRead,
       refreshToken: session.refreshToken,
       sessionId: session.sessionId,
     },
@@ -176,7 +188,7 @@ test('维修工单：缺少当前维修人员范围时不发请求且不声称�
 
   await expect(page.getByText('个人维修范围未就绪')).toBeVisible()
   await expect(page.getByTestId('list-empty-explanation')).toContainText(
-    '缺少当前维修人员、组织/环境或读取权限',
+    '缺少当前维修人员、组织/环境、维修工单读取权限或设备位置读取权限',
   )
   await expect(page.getByText('我的维修工单')).toHaveCount(0)
   expect(requests).toEqual([])
@@ -441,9 +453,33 @@ test('点检：数字键盘录入（含负号）+ 超差警示 + 提交确认', 
   await expect(page.getByText('点检已记录')).toBeVisible()
 })
 
-test('报警 → 报修穿透：行详情「去报修」带 deviceAssetId + sourceAlarmId 跳报修页', async ({
-  page,
-}) => {
+test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文并按 Self 重校验', async ({ page }) => {
+  const detailRequests: URL[] = []
+  await page.route(
+    `**/api/business-console/v1/maintenance/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}**`,
+    async (route) => {
+      const url = new URL(route.request().url())
+      detailRequests.push(url)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
+            sourceReferenceId: 'MWO-2026-CREATED',
+            deviceAssetId: 'DEV-A',
+            priority: 'high',
+            status: 'open',
+            version: 1,
+            allowedActions: ['accept'],
+            blockReasons: [],
+            lifecycle: [],
+          },
+        }),
+      })
+    },
+  )
   await page.goto('/equipment/alarms')
   await expect(page.getByRole('heading', { name: '查看报警' })).toBeVisible()
 
@@ -464,6 +500,27 @@ test('报警 → 报修穿透：行详情「去报修」带 deviceAssetId + sour
   // 穿透后报修页设备已预填
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-A')
   await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-1')
+
+  await page.getByTestId('priority-trigger').click()
+  await page.getByRole('button', { name: '高', exact: true }).click()
+  await page.getByTestId('submit').click()
+  await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
+  await page.getByTestId('view-created-work-order').click()
+
+  await expect(page).toHaveURL(
+    new RegExp(`/equipment/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}\\?`),
+  )
+  const detailUrl = new URL(page.url())
+  expect(detailUrl.searchParams.get('source')).toBe('repair')
+  expect(detailUrl.searchParams.get('sourceAlarmId')).toBe('ALM-1')
+  await expect(page.getByTestId('maintenance-source-context')).toHaveText('来源：报警报修创建结果')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('装配线冲压机')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
+    'WS-1 · LINE-A · ST-1',
+  )
+  expect(detailRequests).toHaveLength(1)
+  expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
+  expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
 })
 
 test('首页 → 报修：点应用墙「报修」跳 /equipment/repair', async ({ page }) => {

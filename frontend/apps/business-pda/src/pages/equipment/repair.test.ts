@@ -5,7 +5,7 @@ import { computed, reactive, ref } from 'vue'
 import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
-const push = vi.fn()
+const push = vi.fn(() => Promise.resolve())
 const route = { query: {} as Record<string, string> }
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -15,6 +15,7 @@ vi.mock('vue-router', () => ({
 // ---- useBusinessMaintenance mock ----------------------------------------------
 const createWorkOrder = vi.fn(async (_input: Record<string, unknown>) => ({}))
 const createPending = ref(false)
+const canReadWorkOrderDetail = ref(true)
 const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '11111111-1111-1111-1111-111111111111',
@@ -64,6 +65,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     workOrderFilters: reactive({ skip: 0, take: 20, status: undefined, keyword: undefined }),
     createWorkOrder,
     createPending,
+    canReadWorkOrderDetail,
   }),
 }))
 
@@ -92,10 +94,14 @@ async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | 
 beforeEach(() => {
   push.mockClear()
   createWorkOrder.mockClear()
-  createWorkOrder.mockResolvedValue({})
+  createWorkOrder.mockResolvedValue({
+    success: true,
+    data: { workOrderId: '33333333-3333-3333-3333-333333333333' },
+  })
   refreshWorkOrders.mockClear()
   route.query = {}
   createPending.value = false
+  canReadWorkOrderDetail.value = true
   workOrdersError.value = null
   workOrdersPending.value = false
   workOrdersRefreshing.value = false
@@ -321,6 +327,33 @@ describe('PDA equipment repair page', () => {
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('报修已提交')
+  })
+
+  it('opens the confirmed strong-ID detail from alarm-sourced repair success', async () => {
+    route.query = { deviceAssetId: 'DEV-9', sourceAlarmId: 'ALM-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="view-created-work-order"]').trigger('click')
+
+    expect(push).toHaveBeenCalledWith({
+      path: '/equipment/work-orders/33333333-3333-3333-3333-333333333333',
+      query: { source: 'repair', sourceAlarmId: 'ALM-9' },
+    })
+  })
+
+  it('does not offer detail navigation without both maintenance and device location reads', async () => {
+    canReadWorkOrderDetail.value = false
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    canReadWorkOrderDetail.value = true
   })
 
   it('shows an error Result with retry when submit fails', async () => {

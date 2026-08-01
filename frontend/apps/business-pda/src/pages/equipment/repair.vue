@@ -9,6 +9,7 @@ import {
   maintenancePriorityLabel,
   maintenancePriorityLabels,
   maintenanceWorkOrderStatusLabel,
+  maintenanceWorkOrderStatusOptions,
   repairOrderFlow,
   type RepairCtx,
 } from '@nerv-iip/business-core'
@@ -22,7 +23,6 @@ import {
   NvMobileResult,
   NvScanBar,
   NvSearchBar,
-  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -50,6 +50,7 @@ const {
   refreshWorkOrders,
   createWorkOrder,
   createPending,
+  canReadWorkOrderDetail,
   organizationId,
   environmentId,
   scopeReady,
@@ -83,12 +84,9 @@ const workOrderStatusModel = computed<string | number>({
     workOrderFilters.status = String(value) || undefined
   },
 })
-const workOrderStatusOptions: DropdownOption[] = [
+const workOrderStatusOptions = [
   { label: '全部状态', value: '' },
-  { label: '待处理', value: 'open' },
-  { label: '处理中', value: 'inProgress' },
-  { label: '已完成', value: 'completed' },
-  { label: '已取消', value: 'cancelled' },
+  ...maintenanceWorkOrderStatusOptions,
 ]
 
 function restoreWorkOrderState(state: { filters: Record<string, unknown> }) {
@@ -120,6 +118,7 @@ const operationKey = ref('')
 const operationFingerprint = ref('')
 const submittedIntent = ref<RepairIntent | null>(null)
 const intentLocked = ref(false)
+const createdWorkOrderId = ref('')
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 目录选择 -----------------------
 const queryDeviceAssetId = computed(() => {
@@ -254,12 +253,16 @@ async function submit() {
   }
   operationFingerprint.value = fingerprint
   submittedIntent.value = intent
-  await run(() =>
-    createWorkOrder({
+  await run(async () => {
+    const response = await createWorkOrder({
       ...intent,
       idempotencyKey: operationKey.value,
-    }),
-  )
+    })
+    const workOrderId = response.data?.workOrderId?.trim()
+    if (!workOrderId) throw new Error('维修工单创建回执缺少工单标识，请刷新核实。')
+    createdWorkOrderId.value = workOrderId
+    return response
+  })
 }
 
 function retrySubmission() {
@@ -273,6 +276,7 @@ function resetForm() {
   operationFingerprint.value = ''
   submittedIntent.value = null
   intentLocked.value = false
+  createdWorkOrderId.value = ''
   form.deviceAssetId = queryDeviceAssetId.value
   form.priority = ''
   form.assetUnavailableReason = ''
@@ -288,6 +292,19 @@ function resetForm() {
 
 function goBack() {
   router.push('/').catch(() => {})
+}
+
+function viewCreatedWorkOrder() {
+  if (!createdWorkOrderId.value || !canReadWorkOrderDetail.value) return
+  router
+    .push({
+      path: `/equipment/work-orders/${encodeURIComponent(createdWorkOrderId.value)}`,
+      query: {
+        source: 'repair',
+        ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
+      },
+    })
+    .catch(() => {})
 }
 
 function workOrderSubtitle(item: { priority?: string; status?: string; openedAtUtc?: string }) {
@@ -318,6 +335,16 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       description="维修工单已创建，等待处理。"
     >
       <template #actions>
+        <NvMobileButton
+          v-if="createdWorkOrderId && canReadWorkOrderDetail"
+          data-testid="view-created-work-order"
+          variant="primary"
+          size="lg"
+          block
+          @click="viewCreatedWorkOrder"
+        >
+          查看工单详情
+        </NvMobileButton>
         <NvMobileButton variant="primary" size="lg" block @click="resetForm">
           继续报修
         </NvMobileButton>

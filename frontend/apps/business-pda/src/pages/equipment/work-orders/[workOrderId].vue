@@ -14,6 +14,12 @@ const requestedWorkOrderId = computed(() => {
   const value = route.params.workOrderId
   return typeof value === 'string' ? value.trim() : ''
 })
+const sourceContext = computed(() => {
+  if (route.query.source !== 'repair') return ''
+  return typeof route.query.sourceAlarmId === 'string'
+    ? '来源：报警报修创建结果'
+    : '来源：报修创建结果'
+})
 const { scopeReady, workOrder, device, pending, error, hasFailedResponse, refresh } =
   useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId)
 
@@ -39,7 +45,7 @@ function backToList() {
     >
       <h2 class="font-semibold text-foreground">工单不可查看</h2>
       <p class="mt-2 text-sm text-muted-foreground">
-        当前维修人员、组织/环境、读取权限或工单标识未就绪，未发起详情查询。
+        当前维修人员、组织/环境、维修工单读取权限、设备位置读取权限或工单标识未就绪，未发起详情查询。
       </p>
     </div>
 
@@ -61,6 +67,15 @@ function backToList() {
       />
     </div>
 
-    <MaintenanceWorkOrderDetail v-else :work-order="workOrder" :device="device" />
+    <div v-else>
+      <p
+        v-if="sourceContext"
+        data-testid="maintenance-source-context"
+        class="mx-4 mt-4 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-sm text-muted-foreground"
+      >
+        {{ sourceContext }}
+      </p>
+      <MaintenanceWorkOrderDetail :work-order="workOrder" :device="device" />
+    </div>
   </NvAppShellMobile>
 </template>

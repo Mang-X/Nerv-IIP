@@ -4,18 +4,20 @@ import type {
   BusinessConsoleMasterDataResourceDetail,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
+import {
+  maintenancePriorityLabel,
+  maintenanceWorkOrderActionLabel,
+  maintenanceWorkOrderBlockReasonLabel,
+  maintenanceWorkOrderStatusLabel,
+} from '@nerv-iip/business-core'
 import { NvMobileTag } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 import {
   formatMaintenanceDateTime,
   isMaintenanceTerminal,
-  maintenanceActionLabel,
-  maintenanceBlockReasonLabel,
   maintenanceDeviceLocation,
   maintenanceDeviceTitle,
-  maintenancePriorityText,
-  maintenanceStatusLabel,
 } from './maintenanceWorkOrderPresentation'
 
 const props = defineProps<{
@@ -29,10 +31,8 @@ const blockReasons = computed(() => props.workOrder.blockReasons ?? [])
 const lifecycle = computed(() => props.workOrder.lifecycle ?? [])
 const assignment = computed(() => {
   const parts = [
-    props.workOrder.assignedTechnicianUserId
-      ? `维修人员 ${props.workOrder.assignedTechnicianUserId}`
-      : '未指派维修人员',
-    props.workOrder.assignedTeamId ? `班组 ${props.workOrder.assignedTeamId}` : undefined,
+    props.workOrder.assignedTechnicianUserId ? '已指派维修人员' : '未指派维修人员',
+    props.workOrder.assignedTeamId ? '已指派维修班组' : undefined,
   ].filter((part): part is string => Boolean(part))
   return parts.join(' · ')
 })
@@ -52,10 +52,9 @@ const assignment = computed(() => {
           >
             {{ workOrder.sourceReferenceId || '维修工单详情' }}
           </h2>
-          <p class="mt-1 break-all text-xs text-muted-foreground">ID {{ workOrder.workOrderId }}</p>
         </div>
         <NvMobileTag :variant="terminal ? 'default' : 'brand'">
-          {{ maintenanceStatusLabel(workOrder.status) }}
+          {{ maintenanceWorkOrderStatusLabel(workOrder.status) }}
         </NvMobileTag>
       </div>
 
@@ -68,7 +67,7 @@ const assignment = computed(() => {
         <dt class="text-muted-foreground">位置</dt>
         <dd class="break-words text-foreground">{{ maintenanceDeviceLocation(device) }}</dd>
         <dt class="text-muted-foreground">优先级</dt>
-        <dd class="text-foreground">{{ maintenancePriorityText(workOrder.priority) }}</dd>
+        <dd class="text-foreground">{{ maintenancePriorityLabel(workOrder.priority) }}</dd>
         <dt class="text-muted-foreground">指派</dt>
         <dd class="break-words text-foreground">{{ assignment }}</dd>
         <dt class="text-muted-foreground">版本</dt>
@@ -96,14 +95,14 @@ const assignment = computed(() => {
       <h2 class="text-sm font-semibold text-foreground">服务端允许动作</h2>
       <div v-if="allowedActions.length" class="flex flex-wrap gap-2">
         <NvMobileTag v-for="action in allowedActions" :key="action" variant="brand">
-          {{ maintenanceActionLabel(action) }}
+          {{ maintenanceWorkOrderActionLabel(action) }}
         </NvMobileTag>
       </div>
       <p v-else class="text-sm text-muted-foreground">无可执行动作</p>
 
       <div v-if="blockReasons.length" class="space-y-1 pt-2">
         <p v-for="reason in blockReasons" :key="reason" class="text-sm text-destructive">
-          {{ maintenanceBlockReasonLabel(reason) }}
+          {{ maintenanceWorkOrderBlockReasonLabel(reason) }}
         </p>
       </div>
     </section>
@@ -117,14 +116,14 @@ const assignment = computed(() => {
           class="border-l-2 border-brand/30 pl-3"
         >
           <p class="text-sm font-medium text-foreground">
-            {{ maintenanceStatusLabel(event.fromStatus) }} →
-            {{ maintenanceStatusLabel(event.toStatus) }}
+            {{ maintenanceWorkOrderStatusLabel(event.fromStatus) }} →
+            {{ maintenanceWorkOrderStatusLabel(event.toStatus) }}
           </p>
           <p class="mt-1 text-sm text-muted-foreground">
-            {{ maintenanceActionLabel(event.action) }} · {{ event.reason || '原因未记录' }}
+            {{ maintenanceWorkOrderActionLabel(event.action) }} · {{ event.reason || '原因未记录' }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            {{ event.actorPrincipalId || '操作人未记录' }} · 版本
+            {{ event.actorPrincipalId ? '操作人已记录' : '操作人未记录' }} · 版本
             {{ event.resultingVersion ?? '未记录' }} ·
             {{ formatMaintenanceDateTime(event.occurredAtUtc) }}
           </p>

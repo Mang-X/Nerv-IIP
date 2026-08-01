@@ -3,7 +3,7 @@ import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const permissions = vi.hoisted(() => ({ maintenanceRead: true }))
+const permissions = vi.hoisted(() => ({ maintenanceRead: true, masterDataRead: true }))
 
 vi.mock('@/composables/useWorkbenchHome', () => ({
   HOME_PERMISSIONS: {
@@ -13,12 +13,14 @@ vi.mock('@/composables/useWorkbenchHome', () => ({
     wmsShipments: 'business.wms.shipments.read',
     wmsCounts: 'business.wms.counts.read',
     maintenanceWorkOrders: 'business.maintenance.work-orders.read',
+    masterDataResources: 'business.masterdata.resources.read',
   },
   usePdaIdentity: () => ({
     can: (permission: string) =>
       permission.includes('quality') ||
       permission.includes('mes') ||
-      (permissions.maintenanceRead && permission.includes('maintenance')),
+      (permissions.maintenanceRead && permission.includes('maintenance')) ||
+      (permissions.masterDataRead && permission.includes('masterdata')),
   }),
   useMyDispatchTasks: () => {
     throw new Error('the task hub must not consume client-filtered personal dispatch facts')
@@ -30,6 +32,7 @@ import TasksPage from './tasks.vue'
 describe('PDA tasks page', () => {
   beforeEach(() => {
     permissions.maintenanceRead = true
+    permissions.masterDataRead = true
   })
 
   it('uses truthful scoped task entrances without claiming client-filtered MES rows are personal', async () => {
@@ -81,5 +84,19 @@ describe('PDA tasks page', () => {
 
     expect(wrapper.find('a[href="/equipment/work-orders"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('维修任务')
+  })
+
+  it('hides the maintenance self queue when device location read permission is unavailable', async () => {
+    permissions.masterDataRead = false
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/tasks', component: TasksPage }],
+    })
+    await router.push('/tasks')
+    await router.isReady()
+
+    const wrapper = mount(TasksPage, { global: { plugins: [router] } })
+
+    expect(wrapper.find('a[href="/equipment/work-orders"]').exists()).toBe(false)
   })
 })

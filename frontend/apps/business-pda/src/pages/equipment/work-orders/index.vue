@@ -48,8 +48,7 @@ const filterState = computed(() => ({
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   filters.deviceAssetId = device.deviceAssetId
-  selectedDeviceLabel.value =
-    device.displayName?.trim() || device.code?.trim() || device.deviceAssetId
+  selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'
 }
 
 function openDetail(item: BusinessConsoleMaintenanceWorkOrderItem) {
@@ -90,7 +89,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         :empty-description="
           scopeReady
             ? '当前维修人员暂无符合筛选条件的维修工单。'
-            : '缺少当前维修人员、组织/环境或读取权限，未发起查询。'
+            : '缺少当前维修人员、组织/环境、维修工单读取权限或设备位置读取权限，未发起查询。'
         "
         @refresh="refresh"
         @retry="refresh"

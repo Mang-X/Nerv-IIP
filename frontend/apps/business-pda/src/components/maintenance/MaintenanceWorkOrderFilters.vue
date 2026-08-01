@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { maintenanceWorkOrderStatusOptions } from '@nerv-iip/business-core'
 import {
   NvListRow,
   NvMobileButton,
@@ -13,18 +14,7 @@ const status = defineModel<string>('status', { required: true })
 const deviceAssetId = defineModel<string>('deviceAssetId', { required: true })
 const keyword = defineModel<string>('keyword', { required: true })
 
-const statusOptions = [
-  { label: '全部状态', value: '' },
-  { label: '待处理', value: 'open' },
-  { label: '已接单', value: 'accepted' },
-  { label: '处理中', value: 'inProgress' },
-  { label: '已暂停', value: 'paused' },
-  { label: '等待备件', value: 'waitingForParts' },
-  { label: '已完成', value: 'completed' },
-  { label: '已验证', value: 'verified' },
-  { label: '已关闭', value: 'closed' },
-  { label: '已取消', value: 'cancelled' },
-]
+const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkOrderStatusOptions]
 </script>
 
 <template>
@@ -47,7 +37,7 @@ const statusOptions = [
       <NvListRow
         data-testid="maintenance-device-filter"
         title="设备"
-        :subtitle="deviceAssetId ? deviceLabel || deviceAssetId : '全部设备'"
+        :subtitle="deviceAssetId ? deviceLabel || '已选择设备' : '全部设备'"
         @select="emit('chooseDevice')"
       />
     </div>
