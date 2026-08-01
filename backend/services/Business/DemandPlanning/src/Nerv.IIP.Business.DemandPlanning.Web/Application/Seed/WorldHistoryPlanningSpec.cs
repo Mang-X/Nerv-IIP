@@ -396,10 +396,20 @@ public static class WorldHistoryPlanningSpec
         foreach (var plan in plans.OrderBy(plan => plan.Index))
         {
             var timeline = WorldHistoryTimeline.For(plan, asOfDate);
-            var componentSkuCode = plan.SkuCode.StartsWith("FG-QJ-", StringComparison.Ordinal)
-                ? "RM-OIL-01"
-                : "RM-OIL-02";
-            const decimal quantityPerParent = 0.65m;
+            // #1408 · 「已下达待开工」档正是 MES 侧留出齐套缺口的那一批，缺口刻意压在采购件
+            // （悬架弹簧 RM-SPR-##）上。这批单的采购建议必须指向**真正缺的那个料**，否则演示走到
+            // 「MRP 建议采购 → 请购 → 采购订单 → 收货 → 齐套转绿」时会出现「建议采购 A、
+            // 收到 A、缺的还是 B」的穿帮。其余执行档保持原有的减振油建议不动：采购物料与生产
+            // 用料的**整体**因果重建（按 BOM 反推重写全部采购）是 #1379 的范围，本次只接通
+            // 演示要走的那一段，不扩到全世界。
+            var isShortageCohort = plan.Stage == WorldHistoryOrderStage.Released;
+            var componentSkuCode = isShortageCohort
+                ? ShortageComponentSkuCode(plan.SkuCode)
+                : plan.SkuCode.StartsWith("FG-QJ-", StringComparison.Ordinal)
+                    ? "RM-OIL-01"
+                    : "RM-OIL-02";
+            var quantityPerParent = isShortageCohort ? 1m : 0.65m;
+            var uomCode = isShortageCohort ? UomCode : "l";
             const decimal scrapRate = 0.02m;
             var gross = plan.Quantity * quantityPerParent;
             var planned = Math.Max(0.1m, decimal.Ceiling(gross * (1m + scrapRate)));
@@ -424,10 +434,39 @@ public static class WorldHistoryPlanningSpec
                 CreatedAtUtc: runCompletedAtUtc,
                 AcceptedAtUtc: null,
                 SuggestionType: PlannedPurchaseSuggestionType,
-                UomCode: "l",
+                UomCode: uomCode,
                 ParentSkuCode: plan.SkuCode);
         }
     }
+
+    /// <summary>
+    /// 「已下达待开工」档缺的那个采购件（悬架弹簧）——与 MES 侧
+    /// <c>WorldHistoryMesSpec.Components(skuCode)</c> 的第 4 项**同一公式**（#1408）。
+    ///
+    /// <para>
+    /// 这里只复算这一个组件码，不把 MES 的整张主料表搬过来：DemandPlanning 需要的是
+    /// 「缺的是哪个料」这一个事实，多复制一行都是多一处会漂的字面量。
+    /// 公式漂移由 <c>WorldHistoryShortageComponentGoldenVector</c> 逐字比对拦住。
+    /// </para>
+    /// </summary>
+    public static string ShortageComponentSkuCode(string finishedGoodSkuCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(finishedGoodSkuCode);
+        var platformIndex = 0;
+        for (var index = 0; index < FinishedGoodPlatformCodes.Length; index++)
+        {
+            if (finishedGoodSkuCode.Contains($"-{FinishedGoodPlatformCodes[index]}-", StringComparison.Ordinal))
+            {
+                platformIndex = index;
+                break;
+            }
+        }
+
+        return $"RM-SPR-{(platformIndex % 4) + 1:D2}";
+    }
+
+    /// <summary>L0 §4 的 6 个车型平台，顺序即 platformIndex（与 MES <c>WorldHistoryMesSpec</c> 同序）。</summary>
+    private static readonly string[] FinishedGoodPlatformCodes = ["P1", "P2", "S1", "S2", "M1", "E1"];
 
     private static IEnumerable<WorldHistorySuggestionFact> BuildForecastSuggestions(
         IReadOnlyList<WorldHistoryForecastFact> forecasts,

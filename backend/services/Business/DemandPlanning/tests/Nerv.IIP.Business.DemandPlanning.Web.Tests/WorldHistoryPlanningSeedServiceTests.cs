@@ -104,6 +104,68 @@ public sealed class WorldHistoryPlanningSeedServiceTests(ITestOutputHelper outpu
                 link.ComponentSkuCode == candidate.SkuCode));
     }
 
+    /// <summary>
+    /// #1408 · 「已下达待开工」档的采购建议必须指向 MES 侧真正缺的那个采购件（悬架弹簧）。
+    ///
+    /// <para>
+    /// 修复前所有采购建议一律是减振油 <c>RM-OIL-0#</c>——与 MES 的主料表毫无交集（#1379），
+    /// 演示走到「MRP 建议采购 → 请购 → 收货 → 齐套转绿」时必然穿帮：建议采购的料补不上缺的那一项。
+    /// 这里既钉住组件码，也钉住计量单位与用量口径。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Released_cohort_purchase_suggestions_target_the_material_that_is_actually_short()
+    {
+        var facts = WorldHistoryPlanningSpec.BuildPlanningFacts(AsOfDate, 1.0d);
+        var plans = WorldHistorySpec.BuildOrderPlans(AsOfDate, 1.0d)
+            .Where(plan => plan.Stage == WorldHistoryOrderStage.Released)
+            .ToDictionary(plan => plan.SalesOrderNo, StringComparer.Ordinal);
+        Assert.NotEmpty(plans);
+
+        var purchases = facts.MrpRuns
+            .SelectMany(run => run.Suggestions)
+            .Where(x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType)
+            .Where(x => plans.ContainsKey(x.DemandSourceReference))
+            .ToArray();
+        Assert.NotEmpty(purchases);
+
+        foreach (var purchase in purchases)
+        {
+            var plan = plans[purchase.DemandSourceReference];
+            Assert.Equal(WorldHistoryPlanningSpec.ShortageComponentSkuCode(plan.SkuCode), purchase.SkuCode);
+            Assert.StartsWith("RM-SPR-", purchase.SkuCode, StringComparison.Ordinal);
+            // 弹簧按台套一件一件配，不是按升计量的油品。
+            Assert.Equal(WorldHistoryPlanningSpec.UomCode, purchase.UomCode);
+            Assert.Equal(plan.Quantity, purchase.GrossQuantity);
+            Assert.Equal(plan.SkuCode, purchase.ParentSkuCode);
+        }
+
+        // 其余执行档保持原有的减振油建议：整体因果重建是 #1379 的范围，本次不扩到全世界。
+        Assert.Contains(
+            facts.MrpRuns.SelectMany(run => run.Suggestions),
+            x => x.SuggestionType == WorldHistoryPlanningSpec.PlannedPurchaseSuggestionType &&
+                x.SkuCode.StartsWith("RM-OIL-", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 「缺的是哪个采购件」这条公式在 MES 与 DemandPlanning 两侧各写了一份，必须逐字一致。
+    /// 两侧原有用例都只断言条数与类型——条数恰恰是这种漂移唯一不改变的量。
+    /// </summary>
+    [Fact]
+    public void Shortage_component_matches_the_cross_service_golden_vector()
+    {
+        var pairs = WorldHistoryShortageComponentGoldenVector.FinishedGoodSkus
+            .Select(sku => (
+                FinishedGoodSku: sku,
+                ComponentSku: WorldHistoryPlanningSpec.ShortageComponentSkuCode(sku)))
+            .ToArray();
+
+        Assert.All(pairs, pair => Assert.StartsWith("RM-SPR-", pair.ComponentSku, StringComparison.Ordinal));
+        Assert.Equal(
+            WorldHistoryShortageComponentGoldenVector.Digest,
+            WorldHistoryShortageComponentGoldenVector.DigestOf(pairs));
+    }
+
     [Fact]
     public void Fact_stream_is_deterministic_for_the_same_inputs()
     {
