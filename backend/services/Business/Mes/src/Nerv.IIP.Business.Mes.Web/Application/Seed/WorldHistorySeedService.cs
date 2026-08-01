@@ -114,7 +114,10 @@ public sealed class WorldHistorySeedService(
     /// <summary>销售订单阶段 → 工单执行深度。</summary>
     private static WorldHistoryExecution ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecution.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecution.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecution.Partial,
         _ => WorldHistoryExecution.ReleasedOnly,
     };
@@ -131,8 +134,14 @@ public sealed class WorldHistorySeedService(
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
-        // 补产只挂在已结案/已发货的订单后面：补的是已交付批次里的不良件。
-        var candidates = plans.Where(plan => plan.HasDelivery).ToArray();
+        // 补产只挂在已完工入库的订单后面：补的是已产出批次里的不良件。
+        //
+        // #1374 · 判据必须与四份 `WorldHistoryPhase2Spec` 的候选池**逐字一致**（同为 IsProductionClosed）。
+        // 挑选公式 `candidates[(seq-1) * candidates.Length / reworkCount]` 是按下标切片的：
+        // 两侧 candidates.Length 只要差一个，从某个 seq 起下标就整体错位，同一个 WO-2026-R####
+        // 会在 MES 与 Inventory/Wms/Quality/BarcodeLabel 之间取到**不同的来源订单**，
+        // SKU、数量、时间线全不一致——而两侧测试都只断言条数，谁也发现不了（审计 T2 复制圈外零保障）。
+        var candidates = plans.Where(plan => plan.IsProductionClosed).ToArray();
         var reworkCount = (int)Math.Round(plans.Count * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         if (candidates.Length == 0 || reworkCount == 0)
         {
@@ -256,7 +265,7 @@ public sealed class WorldHistorySeedService(
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
 
         var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
-        WriteMaterialFacts(organizationId, environmentId, plan, timeline, execution, tasks);
+        WriteMaterialFacts(organizationId, environmentId, plan, workOrder, timeline, execution, tasks);
 
         if (execution == WorldHistoryExecution.ReleasedOnly)
         {
@@ -413,10 +422,31 @@ public sealed class WorldHistorySeedService(
 
     #region 齐套需求与领料
 
+    /// <summary>
+    /// 齐套需求 + 领料 + **开工门禁的证明位**。
+    ///
+    /// <para>
+    /// 本引擎直写聚合、不走命令也不派发领域事件（见类型头注释），因此运行时挂在
+    /// 「工单下达」命令上的齐套副作用在种子世界里一次都不会发生 ——
+    /// <c>MaterialReadinessGuards.EnsureRequirementSnapshotsAsync</c> 会在下达时
+    /// 写需求行**并**在工单上盖下证明位，而这里必须原样补上后半截，否则
+    /// <c>MaterialRequirementSnapshotStatus</c> 恒为 null，
+    /// <c>MesOperationTaskActionReadinessEvaluator</c> 对全世界工单
+    /// 一律加 <c>MATERIAL_REQUIREMENT_SNAPSHOT_MISSING</c>，逐工序「开工」按钮全被拦
+    /// （总览的缺料计数走纯数量口径，于是出现「缺料 0 却开不了工」的矛盾观感，#1373）。
+    /// </para>
+    /// <para>
+    /// 需求行挂 <c>OperationTaskId = null</c>（工单级齐套），与运行时快照提供方
+    /// （<c>MesMaterialRequirementSnapshotProvider</c> 的行一律不带工序）逐字一致。
+    /// 挂在首序任务上会让门禁在 OP-20 及之后取不到任何需求行，把期望证明位翻成
+    /// <c>no-requirements</c>，与工单上的 <c>captured</c> 对不上——照样全拦。
+    /// </para>
+    /// </summary>
     private void WriteMaterialFacts(
         string organizationId,
         string environmentId,
         WorldHistoryWorkOrderPlan plan,
+        WorkOrder workOrder,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
         IReadOnlyList<OperationTaskWindow> tasks)
@@ -432,7 +462,8 @@ public sealed class WorldHistorySeedService(
                 organizationId,
                 environmentId,
                 plan.WorkOrderNo,
-                kittingTask.Task.OperationTaskId,
+                // 工单级齐套：全部工序共用同一份需求快照（与运行时快照提供方同形）。
+                operationTaskId: null,
                 component.SkuCode,
                 materialLotId: $"LOT-{component.SkuCode}-{plan.WorkOrderNo}",
                 requiredQuantity: required,
@@ -443,6 +474,17 @@ public sealed class WorldHistorySeedService(
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
                 capturedAtUtc: capturedAtUtc);
             dbContext.MaterialRequirements.Add(requirement);
+        }
+
+        // 证明位与工单的生产版本绑定（聚合内部即以 ProductionVersionId 落章）：
+        // 工艺版本解析失败时本引擎会整体抛错停机，这里的空值分支只对离线夹具成立。
+        if (!string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        {
+            workOrder.RecordMaterialRequirementSnapshot(
+                components.Count == 0
+                    ? WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus
+                    : WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+                capturedAtUtc);
         }
 
         if (execution == WorldHistoryExecution.ReleasedOnly)

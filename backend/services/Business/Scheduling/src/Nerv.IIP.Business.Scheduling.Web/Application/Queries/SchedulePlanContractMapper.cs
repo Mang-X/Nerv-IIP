@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
@@ -14,6 +15,14 @@ public static class SchedulePlanContractMapper
     public static SchedulePlanContract ToContract(SchedulePlan plan, SchedulingProblemContract? problem = null)
     {
         var status = ToContractStatus(plan.Status);
+        var materialRisks = DeserializeRiskCollection<SchedulePlanMaterialRiskContract>(plan.MaterialRisksJson);
+        var equipmentRisks = DeserializeRiskCollection<SchedulePlanEquipmentRiskContract>(plan.EquipmentRisksJson);
+        var materialRiskKeys = materialRisks
+            .Select(x => (x.OrderId, x.OperationId))
+            .ToHashSet();
+        var equipmentRiskKeys = equipmentRisks
+            .Select(x => (x.OrderId, x.OperationId))
+            .ToHashSet();
         var assignments = plan.Assignments
             .OrderBy(x => x.StartUtc)
             .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
@@ -76,7 +85,9 @@ public static class SchedulePlanContractMapper
                 plan.OnTimeRate,
                 plan.AverageResourceUtilization,
                 plan.LockedOperationCount,
-                plan.OptimizableOperationCount),
+                plan.OptimizableOperationCount,
+                MaterialRiskOperationCount: materialRiskKeys.Count,
+                EquipmentRiskOperationCount: equipmentRiskKeys.Count),
             Assignments: assignments,
             ResourceLoads: plan.ResourceLoads
                 .OrderBy(x => x.WindowStartUtc)
@@ -115,10 +126,21 @@ public static class SchedulePlanContractMapper
                     EndUtc: x.EndUtc,
                     Status: status,
                     HasConflict: hasConflict,
-                    ConflictReasonCode: hasConflict ? conflict!.ReasonCode : null);
-            }).ToArray());
+                    ConflictReasonCode: hasConflict ? conflict!.ReasonCode : null,
+                    HasMaterialRisk: materialRiskKeys.Contains(key),
+                    HasEquipmentRisk: equipmentRiskKeys.Contains(key));
+            }).ToArray(),
+            MaterialRisks: materialRisks,
+            EquipmentRisks: equipmentRisks);
 
-        return SchedulePlanCalendarProjector.Attach(contract, problem);
+        // 日历仍从问题快照投影(它在适配前后一致);设备不可用窗口必须用随方案落库的那份——
+        // 问题快照里的 UnavailabilityWindows 恒为空(适配发生在落库之后),#1409。
+        // 落库前生成的历史方案没有这份数据,退化回问题快照投影,不编造。
+        var persistedBlockWindows = DeserializeRiskCollection<SchedulePlanBlockWindowContract>(plan.BlockWindowsJson);
+        var withCalendars = SchedulePlanCalendarProjector.Attach(contract, problem);
+        return persistedBlockWindows.Count > 0
+            ? withCalendars with { BlockWindows = persistedBlockWindows }
+            : withCalendars;
     }
 
     private static ScheduleChangeContract ToChangeSummary(
@@ -233,7 +255,20 @@ public static class SchedulePlanContractMapper
                     x.OperationId,
                     ToDomainReasonCode(x.ReasonCode),
                     x.Message))
-                .ToArray());
+                .ToArray(),
+            JsonSerializer.Serialize(plan.MaterialRisks ?? [], SchedulingJson.Options),
+            JsonSerializer.Serialize(plan.EquipmentRisks ?? [], SchedulingJson.Options),
+            JsonSerializer.Serialize(plan.BlockWindows ?? [], SchedulingJson.Options));
+    }
+
+    private static IReadOnlyCollection<T> DeserializeRiskCollection<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<T[]>(json, SchedulingJson.Options) ?? [];
     }
 
     public static ScheduleConflictReasonCodeContract ToContractReasonCode(ScheduleConflictReasonCode reasonCode)

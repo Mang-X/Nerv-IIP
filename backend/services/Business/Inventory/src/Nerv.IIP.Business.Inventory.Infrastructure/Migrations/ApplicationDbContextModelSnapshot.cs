@@ -711,6 +711,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("quantity")
                         .HasComment("Signed movement quantity.");
 
+                    b.Property<decimal?>("RequestedUnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("requested_unit_cost")
+                        .HasComment("Unit cost as supplied to the posting call, never overwritten by valuation; null means costing was left to the ledger. Idempotency payload comparison uses this column instead of unit_cost. Exception: the synthesized transfer inbound leg and the status-transfer-in leg are constructed with the source ledger moving-average cost, so those rows carry a derived value here; their payload is not compared today, and any future inbound-leg comparison must first make those two call sites pass the real caller value.");
+
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -755,7 +761,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("unit_cost")
-                        .HasComment("Optional movement unit cost used for moving-average valuation.");
+                        .HasComment("Effective movement unit cost after moving-average valuation; outbound is always rewritten with the ledger moving-average cost, so this is a derived fact rather than caller payload.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()

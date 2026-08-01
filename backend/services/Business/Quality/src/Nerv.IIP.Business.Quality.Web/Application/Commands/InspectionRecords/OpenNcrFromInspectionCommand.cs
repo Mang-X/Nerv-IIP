@@ -28,7 +28,7 @@ public sealed class OpenNcrFromInspectionCommandHandler(
     public async Task<NonconformanceReportId> Handle(OpenNcrFromInspectionCommand request, CancellationToken cancellationToken)
     {
         var record = await inspectionRecordRepository.GetAsync(request.InspectionRecordId, cancellationToken)
-            ?? throw new KnownException($"Inspection record '{request.InspectionRecordId}' was not found.");
+            ?? throw new KnownException($"找不到检验记录 {request.InspectionRecordId}，请在检验记录页确认记录编号后重试。");
         var ncrCode = await codeGenerator.NextAsync(record.OrganizationId, record.EnvironmentId, cancellationToken);
         var ncr = NonconformanceReport.OpenFromInspection(
             ncrCode,

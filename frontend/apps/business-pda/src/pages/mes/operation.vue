@@ -13,6 +13,7 @@ import {
 } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -28,8 +29,8 @@ import {
   NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -53,6 +54,7 @@ const {
   completeTask,
   actionPending,
   operationListScope,
+  operationListContextIdentity,
   operationListScopeMessage,
   operationListScopeReady,
   operationScopeMessage,
@@ -62,6 +64,41 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useMesOperationTasks()
+const route = useRoute()
+const router = useRouter()
+
+function queryString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const requestedWorkOrderId = computed(() => queryString(route.query.workOrderId))
+const requestedOperationTaskId = computed(() => queryString(route.query.operationTaskId))
+const hasCompleteTaskDeepLink = computed(() =>
+  Boolean(requestedWorkOrderId.value && requestedOperationTaskId.value),
+)
+const hasAnyTaskDeepLink = computed(() =>
+  Boolean(requestedWorkOrderId.value || requestedOperationTaskId.value),
+)
+const hasInvalidTaskDeepLink = computed(
+  () => hasAnyTaskDeepLink.value && !hasCompleteTaskDeepLink.value,
+)
+const deepLinkIdentity = computed(
+  () =>
+    `${operationListContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+)
+const deepLinkMessage = ref('')
+
+const visibleOperationTasks = computed(() =>
+  hasInvalidTaskDeepLink.value
+    ? []
+    : hasCompleteTaskDeepLink.value
+      ? operationTasks.value.filter(
+          (task) =>
+            task.workOrderId === requestedWorkOrderId.value &&
+            task.operationTaskId === requestedOperationTaskId.value,
+        )
+      : operationTasks.value,
+)
 const workScopeKindLabels: Record<string, string> = {
   self: '本人',
   team: '班组',
@@ -97,8 +134,6 @@ const {
   refresh: refreshSops,
   createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
-
-const router = useRouter()
 
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
 const downloadFetch = createTimeoutFetch()
@@ -203,6 +238,46 @@ function openSheet(task: Task) {
   sopFilters.routingRevision = ''
   sopFilters.asOfDate = ''
 }
+
+const deepLinkOpenedIdentity = ref('')
+watch(
+  [requestedWorkOrderId, requestedOperationTaskId, operationListContextIdentity],
+  ([workOrderId, operationTaskId]) => {
+    closeSheet()
+    if (!operationResultUnknown.value) result.value = null
+    deepLinkOpenedIdentity.value = ''
+    deepLinkMessage.value = ''
+    const completePair = Boolean(workOrderId && operationTaskId)
+    filters.workOrderId = completePair ? workOrderId : undefined
+    filters.keyword = completePair ? operationTaskId : undefined
+    if ((workOrderId || operationTaskId) && !completePair) {
+      deepLinkMessage.value = '工序任务链接缺少工单或任务标识，无法安全打开。'
+    }
+  },
+  { immediate: true },
+)
+watch(
+  [visibleOperationTasks, pending, hasSuccessfulResponse, deepLinkIdentity],
+  ([tasks, isPending, successful, identity]) => {
+    if (
+      !hasCompleteTaskDeepLink.value ||
+      deepLinkOpenedIdentity.value === identity ||
+      isPending ||
+      !successful
+    )
+      return
+    const exactTask = tasks[0]
+    if (!exactTask) {
+      deepLinkMessage.value = '未在当前主体授权作业范围内找到指定工序任务。'
+      return
+    }
+    deepLinkMessage.value = ''
+    deepLinkOpenedIdentity.value = identity
+    openSheet(exactTask)
+  },
+  { immediate: true },
+)
+
 function closeSheet() {
   selected.value = null
   confirmingComplete.value = false
@@ -393,7 +468,17 @@ function formatDate(value?: string | null) {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
 
+      <MesWorkScopeFilter permission-code="business.mes.operations.read" />
+
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
+      <p
+        v-if="deepLinkMessage"
+        data-testid="operation-deep-link-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ deepLinkMessage }}
+      </p>
       <p
         v-if="operationListScopeMessage"
         data-testid="operation-list-scope-message"
@@ -440,7 +525,7 @@ function formatDate(value?: string | null) {
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
         <NvListRow
-          v-for="task in operationTasks"
+          v-for="task in visibleOperationTasks"
           :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
           :title="rowTitle(task)"
           :subtitle="rowSubtitle(task)"

@@ -191,7 +191,8 @@ public static class WorldHistoryQualitySpec
                 LinkedWorkOrderNo: null));
         }
 
-        foreach (var order in WorldHistorySpec.BuildOrderPlans(asOfDate, scale).Where(plan => plan.HasDelivery))
+        // #1374：出货检验在完工装箱环节成立，与发运与否无关。
+        foreach (var order in WorldHistorySpec.BuildOrderPlans(asOfDate, scale).Where(plan => plan.IsProductionClosed))
         {
             drafts.Add(new InspectionDraft(
                 SourceType: "final",

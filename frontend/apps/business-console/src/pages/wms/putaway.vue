@@ -110,7 +110,9 @@ const { page, pageSize } = usePagedList(filters, {
   ],
 })
 // 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
+  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
+})
 // 入库单是真实读面（只要组织/环境即可列出），上架任务必须挂在已存在的入库单下。
 const {
   filters: inboundOrderFilters,

@@ -458,6 +458,14 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnName("average_resource_utilization")
                         .HasComment("Total assigned minutes divided by total available minutes across resource load windows.");
 
+                    b.Property<string>("BlockWindowsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("block_windows_json")
+                        .HasComment("Immutable JSON snapshot of equipment unavailability (maintenance/downtime) windows that actually constrained this plan.");
+
                     b.Property<int>("ContractVersion")
                         .HasColumnType("integer")
                         .HasColumnName("contract_version")
@@ -469,6 +477,14 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("environment_id")
                         .HasComment("Business environment id.");
+
+                    b.Property<string>("EquipmentRisksJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("equipment_risks_json")
+                        .HasComment("Immutable JSON snapshot of equipment data risks emitted with the generated plan.");
 
                     b.Property<DateTimeOffset>("GeneratedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -489,6 +505,14 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("makespan_minutes")
                         .HasComment("Minutes between the earliest resource occupancy start and latest assignment end.");
+
+                    b.Property<string>("MaterialRisksJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("material_risks_json")
+                        .HasComment("Immutable JSON snapshot of material risks and nested shortages emitted with the generated plan.");
 
                     b.Property<decimal>("OnTimeRate")
                         .HasPrecision(18, 6)

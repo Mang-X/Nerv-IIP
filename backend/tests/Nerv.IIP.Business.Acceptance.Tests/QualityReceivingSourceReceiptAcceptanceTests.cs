@@ -26,7 +26,9 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
             NewInspectionCommand("RCV-MISSING", "SKU-RM-1000", 1m),
             CancellationToken.None));
 
-        Assert.Contains("source", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // #1357 中文化后改为中文事实断言：必须点名缺失的来源单据号，而不只是含 "source" 字样
+        Assert.Contains("RCV-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("来源单据", exception.Message, StringComparison.Ordinal);
         Assert.Empty(qualityDb.InspectionRecords);
     }
 
@@ -60,7 +62,9 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
             NewInspectionCommand("RCV-OVER-QTY", "SKU-RM-1000", 3m),
             CancellationToken.None));
 
-        Assert.Contains("quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // #1357 中文化后改为中文事实断言：必须点名单据与数量口径，而不只是含 "quantity" 字样
+        Assert.Contains("RCV-OVER-QTY", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("数量", exception.Message, StringComparison.Ordinal);
         Assert.Empty(qualityDb.InspectionRecords);
     }
 

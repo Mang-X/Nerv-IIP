@@ -97,15 +97,18 @@ const recordSheetOpen = shallowRef(false)
 const recordCreatedFromLocatedPlanId = shallowRef('')
 const characteristicsAppliedPlanId = shallowRef('')
 
+// 业务范围（组织/环境）不进 recordForm：它由 businessContext store 异步落到 filters 上，
+// 而 `<script setup>` 里取一次 `filters.organizationId` 只是**建表时的字符串快照**——
+// BusinessLayout 要等 principal 到位才 patchContext，页面 setup 早于它执行，快照因此永远是空串。
+// 旧写法把这对空串塞进提交前置条件，弹框里又没有任何组织/环境输入位，于是「提交检验记录」
+// 恒为禁用且页面不报红（#1396 / 走查 #79）。范围一律现取 filters，与列表读面同一份真相。
 const recordForm = reactive({
-  organizationId: filters.organizationId,
-  environmentId: filters.environmentId,
   inspectionPlanId: '',
   sourceType: 'operation',
   sourceService: 'mes-operation',
   sourceDocumentId: '',
   skuCode: 'SKU-001',
-  inspectedQuantity: '1',
+  inspectedQuantity: '1' as NumericFieldValue,
   batchNo: '',
   serialNo: '',
   dispositionReason: '',
@@ -356,23 +359,62 @@ const validResultLines = computed(() =>
       hasRequiredDefectContext(line),
   ),
 )
-const canCreateRecord = computed(
-  () =>
-    hasBusinessContext(filters) &&
-    (!isInspectionTaskFlow.value || inspectionTaskSubmissionAllowed.value) &&
-    (isInspectionTaskFlow.value ||
-      (isNonEmpty(recordForm.organizationId) && isNonEmpty(recordForm.environmentId))) &&
-    isNonEmpty(recordForm.sourceType) &&
-    isNonEmpty(recordForm.sourceService) &&
-    isNonEmpty(recordForm.sourceDocumentId) &&
-    isNonEmpty(recordForm.skuCode) &&
-    inspectedQuantity.value !== undefined &&
-    inspectedQuantity.value > 0 &&
-    (!requiresDispositionReason.value || isNonEmpty(recordForm.dispositionReason)) &&
-    (!isInspectionTaskFlow.value ||
-      (!planCharacteristicsPending.value && !planCharacteristicsError.value)) &&
-    validResultLines.value.length > 0,
-)
+// 提交前置条件收口成一份**会上屏的**清单：按钮为什么灰，页面就得逐条说出来。
+// 旧写法是一串布尔与，任一项不满足按钮即灰、界面却不说缺什么——检验员只能干瞪眼（走查 #79）。
+// 规则：`submitBlockers` 为空 ⟺ 可提交，两者由同一份数据推出，不可能再出现「无红字却提交不了」。
+const submitBlockers = computed<string[]>(() => {
+  const blockers: string[] = []
+  if (!hasBusinessContext(filters)) {
+    blockers.push('业务范围（组织 / 环境）尚未就绪，请在顶部业务范围条选择组织与环境。')
+  }
+  if (isInspectionTaskFlow.value && !inspectionTaskSubmissionAllowed.value) {
+    blockers.push(
+      '该待检任务当前不允许提交检验（可能已被他人接手或已闭合），请返回待检工作台重新选取任务。',
+    )
+  }
+  if (!isNonEmpty(recordForm.sourceType)) blockers.push('请选择来源类型。')
+  if (!isNonEmpty(recordForm.sourceService)) blockers.push('请选择来源服务。')
+  if (!isNonEmpty(recordForm.sourceDocumentId)) blockers.push('请填写来源单据号。')
+  if (!isNonEmpty(recordForm.skuCode)) blockers.push('请选择被检物料 SKU。')
+  if (inspectedQuantity.value === undefined || inspectedQuantity.value <= 0) {
+    blockers.push('检验数量必须是大于 0 的数值。')
+  }
+  if (isInspectionTaskFlow.value && planCharacteristicsPending.value) {
+    blockers.push('检验特性与规格仍在加载，请稍候。')
+  }
+  if (isInspectionTaskFlow.value && planCharacteristicsError.value) {
+    blockers.push('检验特性与规格加载失败，请点上方「重试」重新加载后再提交。')
+  }
+  // 逐行点名：只说「有行没填完」等于没说，检验员得知道是第几行、缺哪一项。
+  recordForm.resultLines.forEach((line, index) => {
+    const name = line.characteristicName.trim() || line.characteristicCode.trim()
+    const label = name ? `第 ${index + 1} 行「${name}」` : `第 ${index + 1} 行`
+    if (!isNonEmpty(line.characteristicCode)) {
+      blockers.push(`${label}：请先选择检验特性。`)
+      return
+    }
+    if (isVariableLine(line) && toMeasuredNumber(line.measuredValue) === undefined) {
+      blockers.push(`${label}：请填写数值测量值。`)
+    }
+    if (!isVariableLine(line) && !isNonEmpty(line.observedValue)) {
+      blockers.push(`${label}：请填写实测值。`)
+    }
+    if (line.result !== 'passed' && !isNonEmpty(line.defectReason)) {
+      blockers.push(`${label}：结果不是「合格」时必须选择缺陷原因。`)
+    }
+    if (
+      line.result === 'conditional-release' &&
+      (toOptionalNumber(line.defectQuantity) ?? 0) <= 0
+    ) {
+      blockers.push(`${label}：让步放行必须填写大于 0 的缺陷数量。`)
+    }
+  })
+  if (requiresDispositionReason.value && !isNonEmpty(recordForm.dispositionReason)) {
+    blockers.push('存在不合格 / 让步放行的特性，必须选择处置原因。')
+  }
+  return blockers
+})
+const canCreateRecord = computed(() => submitBlockers.value.length === 0)
 
 // 检验方案读面只回编码（SKU-… / WC-… / DEV-…），中文名在主数据里，按编码 join 出来。
 const { resolveSkuName } = useSkuNames()
@@ -389,6 +431,13 @@ const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
+// `<input type="number">` 的 v-model 回写的是 **number**，不是 string——测量值/缺陷数量这两个
+// 数字输入位因此会把行上的字段从 '' 变成 1210 这样的数值。旧代码把它们一律当 string 处理，
+// `toMeasuredNumber` 上来就 `.trim()`，一录入测量值就抛 TypeError，校验计算整条挂掉：
+// 按钮永远算不出「可提交」，页面也不报错——这正是 #79「填满了还是灰的、还没有红字」的第二个真因。
+// 这里把数字位的类型说实话，取值一律经 `toMeasuredNumber` / `toOptionalNumber` 归一。
+type NumericFieldValue = string | number
+
 function emptyLine() {
   return {
     characteristicCode: '',
@@ -396,11 +445,11 @@ function emptyLine() {
     observedValue: '',
     // 计量型（variable）特性提交契约要求数值 measuredValue，缺失后端直接拒（#1326）；
     // characteristicType 从方案特性清单带出，驱动「数值输入 vs 文本输入」的切换。
-    measuredValue: '',
+    measuredValue: '' as NumericFieldValue,
     characteristicType: '',
     unitCode: '',
     defectReason: '',
-    defectQuantity: '',
+    defectQuantity: '' as NumericFieldValue,
     characteristicName: '',
     specification: '',
   }
@@ -459,15 +508,49 @@ function onCharacteristicCodeChange(line: ReturnType<typeof emptyLine>, value: s
   }
   line.characteristicName = characteristic.name ?? ''
   line.characteristicType = characteristic.characteristicType ?? ''
-  if (characteristic.unitCode) line.unitCode = characteristic.unitCode
+  // 换特性必须换单位，包括「换成无量纲特性」：旧写法只在新特性有单位时才覆盖，
+  // 于是从「阻尼力（N）」切到「渗漏检查（无单位）」会把 N 留在行上一起提交。
+  line.unitCode = characteristic.unitCode ?? ''
   line.specification = formatSpecification(characteristic)
+}
+
+// 检验特性的单位不是「随便从计量单位表里挑一个」，而是**该特性自己的量纲**：
+// 检验方案给每条特性写死了 unitCode（阻尼力 N、行程 mm），计数型特性则根本无量纲（null）。
+// 后端也是这么判的——单位与方案不一致且无换算关系时直接拒收
+// （InspectionRecord.cs「unit ... does not match plan unit」）。
+// 旧写法给每一行都套全局计量单位目录，而目录里只有 g/kg/l/min/pcs：
+// 规格文案写着「1080–1320 N」，候选里却没有 N，检验员只能选个错的（走查 #80）。
+// 现在：计划内特性 → 单位由特性派生、只读呈现；计划外特性 → 才回落到计量单位目录自由选。
+function planCharacteristicOf(code: string) {
+  const normalized = code.trim().toLowerCase()
+  if (!normalized) return undefined
+  return planCharacteristics.value.find(
+    (item) => (item.characteristicCode ?? '').trim().toLowerCase() === normalized,
+  )
+}
+type UnitPolicy =
+  | { mode: 'derived'; unitCode: string }
+  | { mode: 'dimensionless' }
+  | { mode: 'free' }
+function unitPolicyFor(line: { characteristicCode: string }): UnitPolicy {
+  const characteristic = planCharacteristicOf(line.characteristicCode)
+  if (!characteristic) return { mode: 'free' }
+  const unitCode = (characteristic.unitCode ?? '').trim()
+  return unitCode ? { mode: 'derived', unitCode } : { mode: 'dimensionless' }
+}
+/** 派生单位在计量单位目录里有中文名就显「中文名（码）」，查不到就只显码——不编造名字。 */
+function unitDisplay(unitCode: string) {
+  const known = uomCatalog.uomOptions.value.find((option) => option.value === unitCode)
+  return known?.label && known.label !== unitCode ? `${known.label}（${unitCode}）` : unitCode
 }
 // 计量型（variable）特性：录数值测量值、提交 measuredValue；计数型（attribute）录文本实测值。
 function isVariableLine(line: { characteristicType: string }) {
   return line.characteristicType.trim().toLowerCase() === 'variable'
 }
 // 测量值必须显式录入：空串不许被 Number('') === 0 吞成合法的 0（区别于 toOptionalNumber）。
-function toMeasuredNumber(value: string) {
+// 数字输入位会直接回写 number，所以这里先认类型再谈 trim。
+function toMeasuredNumber(value: NumericFieldValue) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
   const trimmed = value.trim()
   if (!trimmed) return undefined
   const parsed = Number(trimmed)
@@ -560,8 +643,8 @@ async function submitInspectionRecord() {
     return
   }
   const body: BusinessConsoleCreateInspectionRecordRequest = {
-    organizationId: recordForm.organizationId.trim(),
-    environmentId: recordForm.environmentId.trim(),
+    organizationId: filters.organizationId.trim(),
+    environmentId: filters.environmentId.trim(),
     inspectionPlanId: optionalText(recordForm.inspectionPlanId),
     sourceType: recordForm.sourceType.trim(),
     sourceService: recordForm.sourceService.trim(),
@@ -613,14 +696,14 @@ function splitCsv(value: string) {
     .filter(Boolean)
   return values.length ? values : undefined
 }
-function toOptionalNumber(value: string) {
+function toOptionalNumber(value: NumericFieldValue) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
 function hasRequiredDefectContext(line: {
   result: string
   defectReason: string
-  defectQuantity: string
+  defectQuantity: NumericFieldValue
 }) {
   if (line.result === 'passed') return true
   if (!isNonEmpty(line.defectReason)) return false
@@ -968,9 +1051,25 @@ function isPresent(value: string | undefined | null): value is string {
                     规格：{{ line.specification }}
                   </NvFieldDescription>
                 </NvField>
+                <!-- 单位由特性的量纲派生：计划内特性只读带出，计划外特性才回落到计量单位目录。 -->
                 <NvField>
                   <NvFieldLabel :for="`unit-code-${index}`">单位</NvFieldLabel>
+                  <p
+                    v-if="unitPolicyFor(line).mode === 'derived'"
+                    :id="`unit-code-${index}`"
+                    class="flex h-9 items-center text-sm font-medium text-foreground"
+                  >
+                    {{ unitDisplay(line.unitCode) }}
+                  </p>
+                  <p
+                    v-else-if="unitPolicyFor(line).mode === 'dimensionless'"
+                    :id="`unit-code-${index}`"
+                    class="flex h-9 items-center text-sm text-muted-foreground"
+                  >
+                    无量纲
+                  </p>
                   <NvEntityPicker
+                    v-else
                     :id="`unit-code-${index}`"
                     v-model="line.unitCode"
                     :options="uomCatalog.uomOptions.value"
@@ -981,6 +1080,9 @@ function isPresent(value: string | undefined | null): value is string {
                     clearable
                     :aria-label="`第 ${index + 1} 个特性单位`"
                   />
+                  <NvFieldDescription v-if="unitPolicyFor(line).mode === 'derived'">
+                    来自检验方案，不可更改
+                  </NvFieldDescription>
                 </NvField>
                 <NvField class="md:col-span-2">
                   <NvFieldLabel :for="`defect-reason-${index}`">缺陷原因</NvFieldLabel>
@@ -1045,16 +1147,36 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
           </NvFieldGroup>
 
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="recordSheetOpen = false"
-              >取消</NvButton
+          <!-- 按钮为什么灰，就在按钮边上说清楚：禁用态与这份清单同源，不存在「无红字却提交不了」。
+               贴着页脚 sticky，弹框再高也不会把「还差什么」滚出视野（走查 #85 同处）。 -->
+          <div class="sticky bottom-0 grid gap-3 bg-background pt-2">
+            <div
+              v-if="submitBlockers.length"
+              id="record-submit-blockers"
+              class="grid gap-1 rounded-lg border border-destructive/40 bg-destructive/10 p-3"
+              role="alert"
             >
-            <NvButton type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">
-              <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
-              <ClipboardCheckIcon v-else aria-hidden="true" />
-              提交检验记录
-            </NvButton>
-          </NvDialogFooter>
+              <p class="text-sm font-medium text-destructive">还差这些才能提交检验记录：</p>
+              <ul class="grid list-disc gap-1 pl-5 text-sm text-destructive">
+                <li v-for="(blocker, index) in submitBlockers" :key="index">{{ blocker }}</li>
+              </ul>
+            </div>
+
+            <NvDialogFooter>
+              <NvButton type="button" variant="outline" @click="recordSheetOpen = false"
+                >取消</NvButton
+              >
+              <NvButton
+                type="submit"
+                :aria-describedby="submitBlockers.length ? 'record-submit-blockers' : undefined"
+                :disabled="createInspectionRecordPending || !canCreateRecord"
+              >
+                <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
+                <ClipboardCheckIcon v-else aria-hidden="true" />
+                提交检验记录
+              </NvButton>
+            </NvDialogFooter>
+          </div>
         </form>
       </NvDialogContent>
     </NvDialog>

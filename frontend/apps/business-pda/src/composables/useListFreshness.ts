@@ -45,7 +45,10 @@ export function useScopeBoundListResponse<TResponse>(
         responseScopeKey.value = currentScopeKey
       }
     },
-    { immediate: true, flush: 'sync' },
+    // A query cache can publish the restored key's value immediately before the
+    // reactive scope identity updates during browser back/forward. Post-flush binds
+    // against the final identity without ever reusing unchanged stale-scope data.
+    { immediate: true, flush: 'post' },
   )
 
   return computed(() =>

@@ -78,17 +78,51 @@ public static class SchedulingEquipmentUnknownModeResolver
 }
 
 /// <summary>
+/// 质检口径的配置解析。与物料/设备两个口径同样绝不静默回落——回落方向同样更宽松。
+/// </summary>
+public static class SchedulingQualityConstraintModeResolver
+{
+    public const string ConfigurationKey = "Scheduling:QualityConstraintMode";
+
+    public static SchedulingQualityConstraintModeContract Resolve(string? configuredValue)
+    {
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return SchedulingQualityConstraintModeContract.Soft;
+        }
+
+        if (Enum.TryParse<SchedulingQualityConstraintModeContract>(
+                configuredValue.Trim(),
+                ignoreCase: true,
+                out var parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"{ConfigurationKey}='{configuredValue}' 不是合法的质检约束口径。合法值:" +
+            $"{string.Join(" / ", Enum.GetNames<SchedulingQualityConstraintModeContract>())};留空即默认 " +
+            $"{SchedulingQualityConstraintModeContract.Soft}(带质检标记的工序照排 + 预警级冲突)。" +
+            "真实下达的质量封锁在两种口径下都是硬阻。");
+    }
+}
+
+/// <summary>
 /// APS lite 有限产能排程器。
 /// 物料口径按产品裁决走软约束(默认):缺料工单照排,只在计划里带出「物料风险」,
 /// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
 /// 保留旧的「缺料即不可排」行为,供需要严格口径的环境按配置切回。
 /// </summary>
 public sealed class FiniteCapacityScheduler(
-    SchedulingMaterialConstraintModeContract materialConstraintMode = SchedulingMaterialConstraintModeContract.Soft)
+    SchedulingMaterialConstraintModeContract materialConstraintMode = SchedulingMaterialConstraintModeContract.Soft,
+    SchedulingQualityConstraintModeContract qualityConstraintMode = SchedulingQualityConstraintModeContract.Soft)
 {
     public const string AlgorithmVersion = "aps-lite-v1";
 
     public SchedulingMaterialConstraintModeContract MaterialConstraintMode { get; } = materialConstraintMode;
+
+    public SchedulingQualityConstraintModeContract QualityConstraintMode { get; } = qualityConstraintMode;
 
     public SchedulePlanContract Schedule(
         SchedulingProblemContract problem,
@@ -107,7 +141,7 @@ public sealed class FiniteCapacityScheduler(
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
-        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode);
+        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode);
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
         return state.ToPlan();
@@ -354,6 +388,7 @@ file sealed class SchedulerState
     private readonly DateTimeOffset generatedAtUtc;
     private readonly Dictionary<string, SchedulingResourceContract> resources;
     private readonly Dictionary<string, SchedulingCalendarContract> calendars;
+    private readonly Dictionary<string, IReadOnlyList<SchedulingTimeWindowContract>> continuousWindowsByCalendar = new(StringComparer.Ordinal);
     private readonly Dictionary<OperationKey, SchedulingOperationContract> operationByKey;
     private readonly List<ScheduleAssignmentContract> assignments = [];
     private readonly List<ScheduleConflictContract> conflicts = [];
@@ -363,6 +398,7 @@ file sealed class SchedulerState
     private readonly List<SchedulePlanMaterialRiskContract> materialRisks = [];
     private readonly List<SchedulePlanEquipmentRiskContract> equipmentRisks = [];
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
+    private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
@@ -370,12 +406,14 @@ file sealed class SchedulerState
         SchedulingProblemContract problem,
         string planId,
         DateTimeOffset generatedAtUtc,
-        SchedulingMaterialConstraintModeContract materialConstraintMode)
+        SchedulingMaterialConstraintModeContract materialConstraintMode,
+        SchedulingQualityConstraintModeContract qualityConstraintMode)
     {
         this.problem = problem;
         this.planId = planId;
         this.generatedAtUtc = generatedAtUtc;
         this.materialConstraintMode = materialConstraintMode;
+        this.qualityConstraintMode = qualityConstraintMode;
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
         operationByKey = problem.Orders
@@ -389,9 +427,10 @@ file sealed class SchedulerState
         SchedulingProblemContract problem,
         string planId,
         DateTimeOffset generatedAtUtc,
-        SchedulingMaterialConstraintModeContract materialConstraintMode)
+        SchedulingMaterialConstraintModeContract materialConstraintMode,
+        SchedulingQualityConstraintModeContract qualityConstraintMode)
     {
-        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode);
+        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode);
     }
 
     public void ReserveLockedAssignments()
@@ -724,10 +763,25 @@ file sealed class SchedulerState
             return null;
         }
 
+        // 质检口径:路线上的「该工序需要质检」是开工/放行门槛,不是排产门槛(与物料 #1318、
+        // 设备状态未知 #1325 同一裁决)。软约束(默认)下照排,只登记预警级冲突提示开工前需质量放行;
+        // 硬约束下沿用旧行为,直接判为不可排。
+        // 注意:这里只管路线上的常规检验标记;真实下达的质量封锁在下面单独处理,两种口径下都是硬阻。
         if (!string.IsNullOrWhiteSpace(item.Operation.QualityBlockReason))
         {
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, QualityBlockMessage(item.Operation.QualityBlockReason));
-            return null;
+            if (qualityConstraintMode == SchedulingQualityConstraintModeContract.Hard)
+            {
+                AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, QualityBlockMessage(item.Operation.QualityBlockReason));
+                return null;
+            }
+
+            AddConflict(
+                ScheduleConflictReasonCodeContract.Quality,
+                ScheduleConflictSeverityContract.Warning,
+                item.Order.OrderId,
+                item.Operation.OperationId,
+                null,
+                QualityGateWarningMessage(item.Operation.QualityBlockReason));
         }
 
         // 物料口径:齐套是开工门槛,不是排产门槛。
@@ -903,9 +957,7 @@ file sealed class SchedulerState
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
         var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
-        foreach (var shift in calendar.ShiftWindows
-                     .OrderBy(x => x.StartUtc)
-                     .ThenBy(x => x.EndUtc)
+        foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
@@ -1152,7 +1204,48 @@ file sealed class SchedulerState
     private bool IsInsideCalendar(SchedulingResourceContract resource, DateTimeOffset startUtc, DateTimeOffset endUtc)
     {
         return calendars.TryGetValue(resource.CalendarId, out var calendar)
-            && calendar.ShiftWindows.Any(x => x.StartUtc <= startUtc && x.EndUtc >= endUtc);
+            && ContinuousWindows(calendar).Any(x => x.StartUtc <= startUtc && x.EndUtc >= endUtc);
+    }
+
+    /// <summary>
+    /// 把日历里首尾相接或互相重叠的班次窗口合并成「连续可生产区间」。
+    ///
+    /// 为什么必须合并:班次是排班口径,不是产能边界。早班 08:00–20:00 与晚班 20:00–08:00 本就
+    /// 首尾相接、连班生产,一道 16 小时的工序在现场是跨班次连做下去的;而排程侧要求整道工序落在
+    /// 同一条窗口里(工序不可拆,<c>SplitPolicy = NonSplittable</c>),不合并就会把这类工序判成
+    /// 「班次日历里没有能容纳该工序时长的完整窗口」而整条工艺路线级联未排(#1399 M9)。
+    /// 同一份种子还会把多套班次(DAY/NIGHT 与 EARLY/MIDDLE)同时铺到每个工作日上,窗口之间
+    /// 大量重叠,不合并连「同一时刻算几个窗口」都说不清。
+    ///
+    /// 只用于可行性判定与排入点搜索。问题快照与读面投影仍然保留逐班次的原始窗口,
+    /// 这样图例上的「班次边界」和日历投影不受影响。
+    /// </summary>
+    private IReadOnlyList<SchedulingTimeWindowContract> ContinuousWindows(SchedulingCalendarContract calendar)
+    {
+        if (continuousWindowsByCalendar.TryGetValue(calendar.CalendarId, out var cached))
+        {
+            return cached;
+        }
+
+        var merged = new List<SchedulingTimeWindowContract>();
+        foreach (var window in calendar.ShiftWindows.OrderBy(x => x.StartUtc).ThenBy(x => x.EndUtc))
+        {
+            if (merged.Count > 0 && window.StartUtc <= merged[^1].EndUtc)
+            {
+                // 相接(==)也要合并:20:00 结束的早班与 20:00 开始的晚班之间没有停产间隙。
+                if (window.EndUtc > merged[^1].EndUtc)
+                {
+                    merged[^1] = merged[^1] with { EndUtc = window.EndUtc };
+                }
+
+                continue;
+            }
+
+            merged.Add(window);
+        }
+
+        continuousWindowsByCalendar[calendar.CalendarId] = merged;
+        return merged;
     }
 
     private ScheduleConflictReasonCodeContract InferNoFeasibleSlotReason(
@@ -1203,7 +1296,7 @@ file sealed class SchedulerState
     {
         if (!calendars.TryGetValue(resource.CalendarId, out var calendar)) return false;
         var duration = TimeSpan.FromMinutes(operation.DurationMinutes);
-        foreach (var shift in calendar.ShiftWindows.Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
+        foreach (var shift in ContinuousWindows(calendar).Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
             var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
@@ -1228,7 +1321,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
-        return calendar.ShiftWindows
+        return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc)
             .Any(shift =>
             {
@@ -1249,7 +1342,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
-        return calendar.ShiftWindows
+        return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart)
             .Any(shift =>
             {
@@ -1276,9 +1369,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
-        foreach (var shift in calendar.ShiftWindows
-                     .OrderBy(x => x.StartUtc)
-                     .ThenBy(x => x.EndUtc)
+        foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
@@ -1318,9 +1409,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
-        foreach (var shift in calendar.ShiftWindows
-                     .OrderBy(x => x.StartUtc)
-                     .ThenBy(x => x.EndUtc)
+        foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
@@ -1798,6 +1887,17 @@ file sealed class SchedulerState
         return string.IsNullOrWhiteSpace(reasonCode)
             ? "质量限制：该工序被质量放行卡住。"
             : $"质量限制（{reasonCode}）：需先完成质量放行。";
+    }
+
+    /// <summary>
+    /// 软口径下「路线要求质检」的提示语。措辞要和硬口径明确区分:这道工序**已经排进计划**了,
+    /// 需要人做的是开工/流转前走质量放行,而不是"它没能排进来"。
+    /// </summary>
+    private static string QualityGateWarningMessage(string? reasonCode)
+    {
+        return string.IsNullOrWhiteSpace(reasonCode)
+            ? "该工序需要质量放行：已排入计划，开工前请先完成质检。"
+            : $"该工序需要质量放行（{reasonCode}）：已排入计划，开工前请先完成质检。";
     }
 
     private static bool Overlaps(DateTimeOffset start1, DateTimeOffset end1, DateTimeOffset start2, DateTimeOffset end2)

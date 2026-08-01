@@ -18,6 +18,8 @@ type OperationListQuery = {
   environmentId: string
   scopeKind?: string
   scopeId?: string
+  keyword?: string
+  workOrderId?: string
 }
 
 const sdkState = vi.hoisted(() => ({
@@ -94,9 +96,11 @@ async function createHarness() {
     environmentId: 'env-dev',
   } as never
 
+  let harnessTasks: ReturnType<typeof useMesOperationTasks> | undefined
   const Harness = defineComponent({
     setup() {
       const tasks = useMesOperationTasks()
+      harnessTasks = tasks
       return () =>
         h(
           'div',
@@ -116,7 +120,8 @@ async function createHarness() {
     },
   })
   await flushPromises()
-  return { auth, wrapper }
+  if (!harnessTasks) throw new Error('工序任务 harness 未初始化')
+  return { auth, wrapper, tasks: harnessTasks }
 }
 
 describe('PDA MES operation-list principal scope identity', () => {
@@ -174,5 +179,47 @@ describe('PDA MES operation-list principal scope identity', () => {
     })
     await flushPromises()
     expect(wrapper.text()).toBe('WC-B|OP-B|1|fresh')
+  })
+
+  it('ignores an old same-scope response after the route pair filters change', async () => {
+    const { wrapper, tasks } = await createHarness()
+    resolveWorkContext('business.mes.operations.read', 0, 'WC-A')
+    resolveWorkContext('business.mes.operations.manage', 0, 'WC-A')
+    await flushPromises()
+
+    const oldRequest = sdkState.operationListRequests.find(
+      (request) => !request.query.workOrderId && !request.query.keyword,
+    )
+    expect(oldRequest).toBeDefined()
+    if (!oldRequest) throw new Error('旧筛选请求未发起')
+
+    tasks.filters.workOrderId = 'WO-B'
+    tasks.filters.keyword = 'OP-B'
+    await flushPromises()
+
+    const currentRequest = sdkState.operationListRequests.find(
+      (request) => request.query.workOrderId === 'WO-B' && request.query.keyword === 'OP-B',
+    )
+    expect(currentRequest).toBeDefined()
+    if (!currentRequest) throw new Error('新双强 ID 筛选请求未发起')
+    currentRequest.resolve({
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'OP-B', workOrderId: 'WO-B', status: 'Queued' }],
+        total: 1,
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toBe('WC-A|OP-B|1|fresh')
+
+    oldRequest.resolve({
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'OP-A-LATE', workOrderId: 'WO-A', status: 'InProgress' }],
+        total: 99,
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toBe('WC-A|OP-B|1|fresh')
   })
 })

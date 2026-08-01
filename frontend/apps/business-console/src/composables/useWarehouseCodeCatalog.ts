@@ -14,7 +14,7 @@
  * 页面需另给「手动录入新库位」的出路——派生目录只覆盖已有编码，不能挡住开新库位。
  */
 import type { EntityPickerOption } from '@nerv-iip/ui'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import {
   useWmsCountExecutions,
   useWmsOutboundOrders,
@@ -79,14 +79,58 @@ function toOptions(map: Map<string, CodeAccumulator>): EntityPickerOption[] {
     })
 }
 
+/** 派生目录的作业范围来源：由调用页把自己已选定的 WMS 作业范围透进来。 */
+export interface WarehouseCodeCatalogScope {
+  scopeKind?: string
+  scopeId?: string
+}
+
+export interface UseWarehouseCodeCatalogOptions {
+  /**
+   * 页面当前选定的 WMS 作业范围。
+   *
+   * 为什么必须给（#1397 / 台账 #83）：这四个派生目录读面在网关侧是**范围受限**的，
+   * 不带 `scopeKind`/`scopeId` 一律 403。此前这里不带范围直接开查，于是每个 WMS 页面
+   * 都在后台刷 4 条 403——页面靠自己的分页读面兜住了，所以只表现为控制台噪声。
+   *
+   * 不传则**不发请求**（而不是发出去挨 403）：这条是仓库既定口径——
+   * 「必需范围为空的 facade 调用要么不发、要么给明确空态，绝不反复失败」。
+   */
+  scope?: () => WarehouseCodeCatalogScope
+}
+
 /**
  * @param extraLines 页面已加载的库存/单据行，作为额外来源并入目录
+ * @param options 作业范围来源；不给则派生目录留空（不发请求），只用 `extraLines`
  */
-export function useWarehouseCodeCatalog(extraLines?: () => WarehouseCodeSourceLine[]) {
-  const putaway = useWmsPutawayTasks({ take: CATALOG_TAKE })
-  const picking = useWmsPickingTasks({ take: CATALOG_TAKE })
-  const counts = useWmsCountExecutions({ take: CATALOG_TAKE })
-  const outbound = useWmsOutboundOrders({ take: CATALOG_TAKE })
+export function useWarehouseCodeCatalog(
+  extraLines?: () => WarehouseCodeSourceLine[],
+  options: UseWarehouseCodeCatalogOptions = {},
+) {
+  // workScopeRequired 让这四条查询在范围为空时**自我抑制**，不会发出注定 403 的请求。
+  const putaway = useWmsPutawayTasks({ take: CATALOG_TAKE, workScopeRequired: true })
+  const picking = useWmsPickingTasks({ take: CATALOG_TAKE, workScopeRequired: true })
+  const counts = useWmsCountExecutions({ take: CATALOG_TAKE, workScopeRequired: true })
+  const outbound = useWmsOutboundOrders({ take: CATALOG_TAKE, workScopeRequired: true })
+
+  if (options.scope) {
+    watch(
+      options.scope,
+      (scope) => {
+        for (const filters of [
+          putaway.filters,
+          picking.filters,
+          counts.filters,
+          outbound.filters,
+        ]) {
+          filters.scopeKind = scope?.scopeKind
+          filters.scopeId = scope?.scopeId
+          filters.skip = 0
+        }
+      },
+      { immediate: true, deep: true, flush: 'sync' },
+    )
+  }
 
   const locationMap = computed(() => {
     const map = new Map<string, CodeAccumulator>()

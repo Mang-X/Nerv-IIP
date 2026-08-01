@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAgg
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using System.Globalization;
 using System.Text;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Seed;
@@ -354,6 +355,18 @@ public sealed class WorldHistoryCountValidator(ApplicationDbContext dbContext)
             failures.Add($"台账残留盘点冻结（{frozen}），会挡住演示当场的一切库存操作。");
         }
 
+        // #1374 · 快照版本必须等于台账当前版本，否则任务一出生即死单：
+        // `StockCountTask.ConfirmAdjustment` / `ConfirmApprovedAdjustment` 逐字比对
+        // `ExpectedLedgerVersion` 与 `StockLedger.LedgerVersion`，不等直接判 RecountRequired 并抛。
+        // 这条断言同时是「盘点块必须排在预留块之后」的门禁——预留会 `LedgerVersion++`，
+        // 两块维度 100% 重叠，顺序一旦倒回去这里立刻红。
+        await CheckSnapshotVersionsAsync(
+            organizationId,
+            environmentId,
+            tasks,
+            failures,
+            cancellationToken);
+
         if (failures.Count > 0)
         {
             throw new WorldHistoryCountConsistencyException(failures);
@@ -368,6 +381,77 @@ public sealed class WorldHistoryCountValidator(ApplicationDbContext dbContext)
             StockCountAdjustmentsChecked: adjustments.Length,
             VarianceAmountTotal: adjustments.Sum(x => x.VarianceAmount));
     }
+
+    /// <summary>
+    /// 逐条核对盘点任务的 <c>ExpectedLedgerVersion</c> 与其台账维度的当前 <c>LedgerVersion</c>。
+    ///
+    /// 只核对**还能被确认**的任务：已作废的任务不会再走确认闸门，它的快照版本过期无害。
+    /// </summary>
+    private async Task CheckSnapshotVersionsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<StockCountTask> tasks,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var confirmable = tasks
+            .Where(task => !string.Equals(task.Status, StockCountTaskStatuses.Cancelled, StringComparison.Ordinal))
+            .ToArray();
+        if (confirmable.Length == 0)
+        {
+            return;
+        }
+
+        var skuCodes = confirmable.Select(task => task.SkuCode).Distinct(StringComparer.Ordinal).ToArray();
+        var locationCodes = confirmable.Select(task => task.LocationCode).Distinct(StringComparer.Ordinal).ToArray();
+        // 分组而不是 ToDictionary：台账唯一索引有 13 列，比盘点任务能表达的维度**多出**
+        // ProductionDate / ExpiryDate 两列（FEFO 效期已进模型，见迁移 AddInventoryBatchExpiryFefo）。
+        // 同一盘点维度下因此可能真的存在多条只差效期的台账行，`ToDictionary` 会当场抛
+        // ArgumentException 把启动打挂——那是把领域上的多义性变成崩溃。这里保留候选集按领域语义判定。
+        var ledgersByDimension = (await dbContext.StockLedgers
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    skuCodes.Contains(x.SkuCode) && locationCodes.Contains(x.LocationCode))
+                .ToArrayAsync(cancellationToken))
+            .GroupBy(DimensionKeyOf, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        foreach (var task in confirmable)
+        {
+            if (!ledgersByDimension.TryGetValue(DimensionKeyOf(task), out var candidates))
+            {
+                failures.Add($"盘点任务 {task.CountTaskCode} 挂在库里不存在的台账维度上，确认差异必抛维度不匹配。");
+                continue;
+            }
+
+            // 任务表达不了效期维度。同一维度出现多行台账是运行期本就不支持的状态
+            // ——ConfirmStockCountAdjustmentCommand 用同样 11 列做 SingleOrDefaultAsync，
+            // 真出现多行会先抛 "Sequence contains more than one element"，走不到 EnsureSameDimension。
+            // 这里按维度分组、任一条对上版本即通过，是刻意选择「不因该既有隐患崩在启动路径上」，
+            // 而不是在复刻领域语义（实际比运行期更宽）。
+            if (Array.Exists(candidates, ledger => ledger.LedgerVersion == task.ExpectedLedgerVersion))
+            {
+                continue;
+            }
+
+            var actualVersions = string.Join(
+                "、",
+                candidates.Select(ledger => ledger.LedgerVersion.ToString(CultureInfo.InvariantCulture)));
+            failures.Add(
+                $"盘点任务 {task.CountTaskCode} 的快照版本 {task.ExpectedLedgerVersion} 与台账当前版本（{actualVersions}）" +
+                "均不一致——该任务一出生即死单，确认差异会直接判需复盘。");
+        }
+    }
+
+    // 与领域的 `StockCountTask.EnsureSameDimension` 逐列一致（org/env 已在查询里过滤）：
+    // 那 11 列才是「任务与台账是否同一维度」的权威口径，效期两列不在其中。
+    private static string DimensionKeyOf(StockCountTask task) =>
+        $"{task.SkuCode}|{task.UomCode}|{task.SiteCode}|{task.LocationCode}|{task.LotNo ?? "-"}|" +
+        $"{task.SerialNo ?? "-"}|{task.QualityStatus}|{task.OwnerType}|{task.OwnerId ?? "-"}";
+
+    private static string DimensionKeyOf(StockLedger ledger) =>
+        $"{ledger.SkuCode}|{ledger.UomCode}|{ledger.SiteCode}|{ledger.LocationCode}|{ledger.LotNo ?? "-"}|" +
+        $"{ledger.SerialNo ?? "-"}|{ledger.QualityStatus}|{ledger.OwnerType}|{ledger.OwnerId ?? "-"}";
 }
 
 /// <summary>库存盘点块校验器的产出摘要。</summary>

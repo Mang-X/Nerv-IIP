@@ -75,10 +75,12 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
     public async Task<CreateInspectionRecordFromTaskResult> Handle(CreateInspectionRecordFromTaskCommand request, CancellationToken cancellationToken)
     {
         var task = await inspectionTaskRepository.GetAsync(request.InspectionTaskId, cancellationToken)
-            ?? throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
+            ?? throw new KnownException($"找不到检验任务 {request.InspectionTaskId}，请在检验任务页刷新并确认任务编号后重试。");
         if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
+            // 租户不匹配保持 403（#1333 的授权范围治理），不降级成「找不到」——
+            // 后者会把「任务存在但不属于你」和「任务不存在」混成同一种事实。
             throw QualityAuthorizationException.Forbidden("task-tenant-mismatch");
         }
         var replay = await TryGetReplayAsync(task, request, cancellationToken);
@@ -102,7 +104,11 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
         if (task.Status == InspectionTaskStatuses.Completed && task.InspectionRecordId is not null)
         {
             var completed = await inspectionRecordRepository.GetAsync(task.InspectionRecordId, cancellationToken);
-            var completedResult = await EnsureNcrAndBuildResultAsync(task.InspectionRecordId, completed, cancellationToken);
+            var completedResult = await EnsureNcrAndBuildResultAsync(
+                task.Id,
+                task.InspectionRecordId,
+                completed,
+                cancellationToken);
             return AddIdempotencyRecord(task, request, completedResult);
         }
 
@@ -122,7 +128,11 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
         if (existing is not null)
         {
             task.Complete(existing.Id, DateTimeOffset.UtcNow);
-            var existingResult = await EnsureNcrAndBuildResultAsync(existing.Id, existing, cancellationToken);
+            var existingResult = await EnsureNcrAndBuildResultAsync(
+                task.Id,
+                existing.Id,
+                existing,
+                cancellationToken);
             return AddIdempotencyRecord(task, request, existingResult);
         }
 
@@ -131,7 +141,7 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
                 task.EnvironmentId,
                 task.InspectionPlanId,
                 cancellationToken)
-            ?? throw new KnownException($"Inspection plan '{task.InspectionPlanId}' was not found.");
+            ?? throw new KnownException($"找不到检验任务 {task.Id} 所引用的检验方案 {task.InspectionPlanId}，请在检验方案页确认方案已建档并启用后重试。");
         var lines = request.ResultLines.Select(x => new InspectionResultLineInput(
             x.CharacteristicCode,
             x.ObservedValue,
@@ -158,7 +168,11 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
         task.Complete(record.Id, DateTimeOffset.UtcNow);
         await inspectionRecordRepository.AddAsync(record, cancellationToken);
 
-        var result = await EnsureNcrAndBuildResultAsync(record.Id, record, cancellationToken);
+        var result = await EnsureNcrAndBuildResultAsync(
+            task.Id,
+            record.Id,
+            record,
+            cancellationToken);
         return AddIdempotencyRecord(task, request, result);
     }
 
@@ -196,7 +210,8 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
                     cancellationToken);
                 if (taskAlreadyBound)
                 {
-                    throw new KnownException("inspection-task-already-completed-with-a-different-idempotency-key");
+                    throw new KnownException(
+                        $"检验任务 {task.Id} 已用另一个幂等键完成，请勿重复提交；如需重检请在质检任务页发起复检。");
                 }
             }
 
@@ -210,12 +225,17 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
 
         if (!Guid.TryParse(existingKey.Code, out var recordGuid))
         {
-            throw new KnownException("stored-inspection-task-receipt-is-invalid");
+            throw new KnownException(
+                $"检验任务 {task.Id} 的幂等回执记录指向无效检验记录编号，请在质检任务页检查该任务的幂等记录后重试。");
         }
 
         var recordId = new InspectionRecordId(recordGuid);
         var record = await inspectionRecordRepository.GetAsync(recordId, cancellationToken);
-        return await EnsureNcrAndBuildResultAsync(recordId, record, cancellationToken);
+        return await EnsureNcrAndBuildResultAsync(
+            task.Id,
+            recordId,
+            record,
+            cancellationToken);
     }
 
     private CreateInspectionRecordFromTaskResult AddIdempotencyRecord(
@@ -292,13 +312,15 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
     /// 编号供结果页展示/互查。幂等安全（已回链不重复开单，重放读同一 NCR）。
     /// </summary>
     private async Task<CreateInspectionRecordFromTaskResult> EnsureNcrAndBuildResultAsync(
+        InspectionTaskId taskId,
         InspectionRecordId recordId,
         InspectionRecord? record,
         CancellationToken cancellationToken)
     {
         if (record is null)
         {
-            throw new KnownException("stored-inspection-task-receipt-points-to-missing-record");
+            throw new KnownException(
+                $"检验任务 {taskId} 的幂等回执指向不存在的检验记录，请在质检任务页刷新后重新提交；如仍失败请联系管理员处理幂等回执。");
         }
 
         if (record.Result != InspectionRecordResults.Passed && record.NonconformanceReportId is null)

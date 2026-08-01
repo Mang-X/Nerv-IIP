@@ -50,6 +50,8 @@ import {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
+  formatWorkScopeKey,
+  parseWorkScopeKey,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
@@ -58,7 +60,7 @@ import {
   useListResponseState,
   useScopeBoundListResponse,
 } from '@/composables/useListFreshness'
-import { computed, reactive, watch, watchEffect, type Ref } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 
@@ -70,7 +72,11 @@ const MES_REPORTING_WRITE_PERMISSION = 'business.mes.reporting.write'
 const MES_WORK_ORDERS_READ_PERMISSION = 'business.mes.work-orders.read'
 
 export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
-  '尚未选择已授权作业范围，当前操作已禁用。请刷新范围后重试。'
+  '尚未选择已授权作业范围，当前操作已禁用。请在页面顶部的「作业范围」中选择后继续。'
+
+export const MES_WORK_SCOPE_UNAVAILABLE_MESSAGE =
+  '当前账号在本组织没有已授权的作业范围，无法读取现场数据。' +
+  '请联系管理员在 IAM 为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
 
 export interface MesListFilters {
   organizationId: string
@@ -146,17 +152,88 @@ interface MesSelectedWorkScope {
   displayName?: string
 }
 
+export interface MesWorkScopeOption {
+  label: string
+  value: string
+}
+
+const MES_WORK_SCOPE_KIND_LABELS: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+
+export function mesWorkScopeKindLabel(kind: string) {
+  return MES_WORK_SCOPE_KIND_LABELS[kind] ?? kind
+}
+
+// 同一 principal/org/env 的作业范围选择在整个 PDA 共享（工序执行/报工口径一致），
+// 用户显式选择会记住（localStorage）——PDA 是交班轮用的手持设备，重开 App 不该丢掉刚选的范围；
+// 自动兜底选择不写入，避免把兜底固化成偏好。
+const MES_WORK_SCOPE_STORAGE_PREFIX = 'nerv-iip.business-pda.mes-work-scope.v1'
+const sharedMesWorkScopeSelections = reactive(new Map<string, string>())
+
+function readRememberedMesWorkScope(selectionKey: string) {
+  try {
+    return (
+      globalThis.localStorage?.getItem(`${MES_WORK_SCOPE_STORAGE_PREFIX}:${selectionKey}`) ??
+      undefined
+    )
+  } catch {
+    return undefined
+  }
+}
+
+function writeRememberedMesWorkScope(selectionKey: string, value: string) {
+  try {
+    globalThis.localStorage?.setItem(`${MES_WORK_SCOPE_STORAGE_PREFIX}:${selectionKey}`, value)
+  } catch {
+    // 持久化失败只影响「记住选择」，不影响本次会话内的共享选择。
+  }
+}
+
 function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
   const auth = useAuthStore()
   const principalIdentity = computed(
     () => auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
   )
+  const selectionKey = computed(() =>
+    [principalIdentity.value, scope.organizationId.trim(), scope.environmentId.trim()].join(':'),
+  )
+
+  // 该权限下最近一次成功响应的授权范围清单。请求参数与它相互依赖（选择来自清单、清单来自响应），
+  // 必须用「最后已知值」而不是当前查询的 data：否则带选择的请求处于加载态时 data 为空，
+  // 选择会被清空、查询键回退，来回震荡。principal/org/env 变化时清空重来。
+  const knownAuthorizedScopes = shallowRef<MesSelectedWorkScope[]>([])
+  watch(selectionKey, () => {
+    knownAuthorizedScopes.value = []
+  })
+
+  // 期望选择：记住的选择仍在授权清单里就用它，否则回退清单第一项（与 useWmsWorkScope 同姿势）。
+  // 只会请求「当前授权清单里存在」的范围，越权选择不可能被发出（后端仍会独立核验并 403 兜底）。
+  const requestedScope = computed<MesSelectedWorkScope | undefined>(() => {
+    const scopes = knownAuthorizedScopes.value
+    if (scopes.length === 0) return undefined
+    const storedValue =
+      sharedMesWorkScopeSelections.get(selectionKey.value) ??
+      readRememberedMesWorkScope(selectionKey.value)
+    const stored = parseWorkScopeKey(storedValue)
+    const remembered = stored
+      ? scopes.find((candidate) => candidate.kind === stored.kind && candidate.id === stored.id)
+      : undefined
+    return remembered ?? scopes[0]
+  })
+
   const workContextQuery = useQuery(() => {
+    const requested = requestedScope.value
     const options = getBusinessConsolePrincipalWorkContextQueryOptions({
       query: {
         organizationId: scope.organizationId,
         environmentId: scope.environmentId,
         permissionCode,
+        ...(requested ? { scopeKind: requested.kind, scopeId: requested.id } : {}),
       },
     })
     return {
@@ -165,6 +242,41 @@ function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
       enabled: hasScope(scope),
     }
   })
+
+  watch(
+    () => workContextQuery.data.value,
+    (envelope) => {
+      if (!envelope?.success) return
+      knownAuthorizedScopes.value = (envelope.data?.authorizedScopes ?? [])
+        .map((candidate) => {
+          const kind = candidate.kind?.trim() ?? ''
+          const id = candidate.id?.trim() ?? ''
+          const displayName = candidate.displayName?.trim()
+          return { kind, id, ...(displayName ? { displayName } : {}) }
+        })
+        .filter((candidate) => candidate.kind && candidate.id)
+    },
+    { immediate: true },
+  )
+
+  const scopeOptions = computed<MesWorkScopeOption[]>(() =>
+    knownAuthorizedScopes.value.map((candidate) => ({
+      label: `${candidate.displayName || candidate.id}（${mesWorkScopeKindLabel(candidate.kind)}）`,
+      value: formatWorkScopeKey(candidate.kind, candidate.id),
+    })),
+  )
+  const scopeSelectionValue = computed<string | undefined>({
+    get: () =>
+      requestedScope.value
+        ? formatWorkScopeKey(requestedScope.value.kind, requestedScope.value.id)
+        : undefined,
+    set: (value) => {
+      if (!value) return
+      sharedMesWorkScopeSelections.set(selectionKey.value, value)
+      writeRememberedMesWorkScope(selectionKey.value, value)
+    },
+  })
+
   const selectedScope = computed<MesSelectedWorkScope | undefined>(() => {
     const envelope = workContextQuery.data.value
     if (!envelope?.success) return undefined
@@ -180,11 +292,22 @@ function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
     }
   })
   const scopeReady = computed(() => selectedScope.value !== undefined)
+  // 「读到了、但确实一个授权范围都没有」——与「还没选」是两回事，提示必须说清缺什么、去哪配。
+  const scopeUnavailable = computed(
+    () =>
+      !workContextQuery.isLoading.value &&
+      !workContextQuery.error.value &&
+      workContextQuery.data.value?.success === true &&
+      knownAuthorizedScopes.value.length === 0 &&
+      !scopeReady.value,
+  )
   const scopeMessage = computed(() => {
     if (!hasScope(scope)) return '尚未进入有效组织与环境，当前操作已禁用。'
     if (workContextQuery.isLoading.value) return '正在核验当前作业范围…'
     if (workContextQuery.error.value) return '作业范围核验失败，当前操作已禁用。请刷新后重试。'
-    return scopeReady.value ? '' : MES_WORK_SCOPE_REQUIRED_MESSAGE
+    if (scopeReady.value) return ''
+    if (scopeUnavailable.value) return MES_WORK_SCOPE_UNAVAILABLE_MESSAGE
+    return MES_WORK_SCOPE_REQUIRED_MESSAGE
   })
 
   function requireSelectedScope() {
@@ -198,9 +321,23 @@ function useMesPrincipalWorkScope(scope: MesScope, permissionCode: string) {
     requireSelectedScope,
     selectedScope,
     scopeMessage,
+    scopeOptions,
     scopePending: workContextQuery.isLoading,
     scopeReady,
+    scopeSelectionValue,
+    scopeUnavailable,
   }
+}
+
+/**
+ * 作业范围选择入口用的独立实例：work-context 查询按 key 去重，
+ * 与工序执行/报工各 composable 内部的同权限实例共享同一次请求与同一份共享选择。
+ */
+export function useMesWorkScopeSelection(permissionCode: string) {
+  return useMesPrincipalWorkScope(
+    bindAuthScope(reactive({ organizationId: '', environmentId: '' })),
+    permissionCode,
+  )
 }
 
 function scopeKey(filters: MesScope) {
@@ -715,7 +852,7 @@ export function useMesOperationTasks() {
   const operationScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters) && operationListScope.scopeReady.value)
-  const operationTasksIdentity = computed(() => {
+  const operationListContextIdentity = computed(() => {
     const selectedScope = operationListScope.selectedScope.value
     return [
       operationListScope.principalIdentity.value,
@@ -723,6 +860,18 @@ export function useMesOperationTasks() {
       filters.environmentId.trim(),
       selectedScope?.kind ?? '',
       selectedScope?.id ?? '',
+    ].join('\u0000')
+  })
+  const operationTasksIdentity = computed(() => {
+    return [
+      operationListContextIdentity.value,
+      filters.status?.trim() ?? '',
+      filters.keyword?.trim() ?? '',
+      filters.workOrderId?.trim() ?? '',
+      filters.workCenterId?.trim() ?? '',
+      filters.deviceAssetId?.trim() ?? '',
+      filters.skip,
+      filters.take,
     ].join(':')
   })
 
@@ -850,6 +999,7 @@ export function useMesOperationTasks() {
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
+    operationListContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,
     operationListScopePending: operationListScope.scopePending,
     operationListScopeReady: operationListScope.scopeReady,

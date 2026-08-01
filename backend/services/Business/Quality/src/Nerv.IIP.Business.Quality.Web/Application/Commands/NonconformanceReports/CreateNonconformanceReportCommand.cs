@@ -41,7 +41,7 @@ public sealed class CreateNonconformanceReportCommandHandler(
         var ncrCode = await codeGenerator.NextAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         if (await repository.CodeExistsAsync(request.OrganizationId, request.EnvironmentId, ncrCode, cancellationToken))
         {
-            throw new KnownException($"NCR code '{ncrCode}' already exists.");
+            throw new KnownException($"不合格报告编号 {ncrCode} 已存在，请在不合格报告页更换编号后重新提交。");
         }
 
         var ncr = NonconformanceReport.Open(

@@ -32,6 +32,7 @@ import {
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
+import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -484,6 +485,7 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
+      <MesWorkScopeFilter permission-code="business.mes.work-orders.read" />
       <p
         v-if="reportScopeMessage"
         data-testid="report-scope-message"

@@ -406,8 +406,10 @@ public sealed class MesStockMovementPostedConsumerTests
                 $"mes:finished-goods-receipt:org-001:env-dev:{sourceDocumentId}",
                 "SKU-FG",
                 "PCS",
-                "finished-goods",
-                "receiving",
+                // 成品仓命名空间与库存种子事实同码（SITE-001 / WH-WB-FG-01，#1331/#1373）：
+                // 夹具不再复述已被淘汰的臆造库位 finished-goods/receiving。
+                "SITE-001",
+                "WH-WB-FG-01",
                 "LOT-FG-001",
                 null,
                 "Unrestricted",
@@ -441,8 +443,10 @@ public sealed class MesStockMovementPostedConsumerTests
                 $"mes:finished-goods-receipt:org-001:env-dev:{sourceDocumentId}",
                 "SKU-FG",
                 "PCS",
-                "finished-goods",
-                "receiving",
+                // 成品仓命名空间与库存种子事实同码（SITE-001 / WH-WB-FG-01，#1331/#1373）：
+                // 夹具不再复述已被淘汰的臆造库位 finished-goods/receiving。
+                "SITE-001",
+                "WH-WB-FG-01",
                 "LOT-FG-001",
                 null,
                 "Unrestricted",

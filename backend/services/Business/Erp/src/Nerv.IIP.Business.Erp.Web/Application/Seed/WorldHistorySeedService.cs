@@ -182,12 +182,36 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             return;
         }
 
+        if (plan.HasPendingShipment)
+        {
+            // #1374 · 已完工待发货：只开发货单，停在 released。
+            // 发运、应收、收入凭证一律留给**演示当场**在仓库完成发运后走真实路径产生——
+            // 种子若先把凭证挂上，演示那一下就变成毫无意义的重复过账。
+            WritePendingShipment(plan, timeline);
+            return;
+        }
+
         if (!plan.HasDelivery)
         {
             return;
         }
 
         WriteDeliveryAndFinance(organizationId, environmentId, plan, timeline);
+    }
+
+    /// <summary>已完工待发货：发货单已开、未发运，因而无应收、无凭证。</summary>
+    private void WritePendingShipment(WorldHistoryOrderPlan plan, WorldHistoryTimeline timeline)
+    {
+        var salesOrder = dbContext.SalesOrders.Local.Single(x => x.SalesOrderNo == plan.SalesOrderNo);
+        var deliveryOrder = DeliveryOrder.Release(
+            salesOrder,
+            WorldHistorySpec.DeliveryOrderNo(plan.Index),
+            [new DeliveryOrderLineDraft("10", plan.Quantity, DefaultLocationCode, $"LOT-{plan.WorkOrderNo}")]);
+        dbContext.DeliveryOrders.Add(deliveryOrder);
+        BackdateUtc(
+            deliveryOrder,
+            x => x.ReleasedAtUtc,
+            MomentOn(timeline.ShipDate, plan.SalesOrderNo, "delivery"));
     }
 
     private Quotation CreateBackdatedQuotation(
