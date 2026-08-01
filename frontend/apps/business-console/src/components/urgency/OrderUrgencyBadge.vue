@@ -43,8 +43,13 @@ const props = withDefaults(
     orderReference: string
     urgency?: BusinessConsoleOrderUrgency
     mode?: UrgencyDisplayMode
+    /**
+     * 紧急度读面本身取数失败（非「排程侧没算」）。没有它，读面 400/500 会把整列
+     * 渲染成「未计算」——把「取不到」伪装成「事实不存在」（#1418 B4）。
+     */
+    sourceUnavailable?: boolean
   }>(),
-  { mode: 'level' },
+  { mode: 'level', sourceUnavailable: false },
 )
 
 const emit = defineEmits<{ refresh: [] }>()
@@ -88,7 +93,13 @@ const priorityChanges = computed(() =>
 const currentSetter = computed(() => priorityChanges.value[0]?.changedBy)
 
 const presentation = computed(() => urgencyLevelPresentation(props.urgency?.level))
-const badge = computed(() => formatUrgencyDisplay(props.urgency, props.mode))
+const badge = computed(() => {
+  // 读面失败 ≠ 未计算：失败时明说「读取失败」，绝不冒充「排程侧没算过」。
+  if (!props.urgency && props.sourceUnavailable) {
+    return { label: '读取失败', tone: 'warning' as const }
+  }
+  return formatUrgencyDisplay(props.urgency, props.mode)
+})
 
 const priorityLevelOptions = [
   { value: 'p0', label: 'P0 · 最高' },
