@@ -26,6 +26,7 @@ import {
 } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../../engine/engine'
+import type { SchedulingDimension } from '../../model/types'
 
 const props = withDefaults(
   defineProps<{
@@ -49,6 +50,8 @@ const props = withDefaults(
     matchCount?: number
     matchIndex?: number
     searchPlaceholder?: string
+    groupDimensions?: SchedulingDimension[]
+    groupBy?: string
   }>(),
   {
     canRepreview: true,
@@ -59,6 +62,8 @@ const props = withDefaults(
     matchCount: 0,
     matchIndex: 0,
     searchPlaceholder: '搜工单 / 工序 / 资源',
+    groupDimensions: () => [],
+    groupBy: 'workCenter',
   },
 )
 
@@ -76,6 +81,7 @@ const emit = defineEmits<{
   'update:search': [value: string]
   searchPrev: []
   searchNext: []
+  groupChange: [groupBy: string]
 }>()
 
 const scaleModel = computed({
@@ -86,6 +92,11 @@ const scaleModel = computed({
 const searchModel = computed({
   get: () => props.search,
   set: (v) => emit('update:search', v),
+})
+
+const groupModel = computed({
+  get: () => props.groupBy,
+  set: (value) => emit('groupChange', value),
 })
 
 const hasQuery = computed(() => props.search.trim().length > 0)
@@ -111,6 +122,21 @@ const searchStatus = computed(() => {
         <NvSelectItem value="day">日</NvSelectItem>
         <NvSelectItem value="week">周</NvSelectItem>
         <NvSelectItem value="month">月</NvSelectItem>
+      </NvSelectContent>
+    </NvSelect>
+
+    <NvSelect v-if="groupDimensions.length" v-model="groupModel">
+      <NvSelectTrigger class="h-8 w-36 border-border/70" aria-label="分组维度"
+        ><NvSelectValue
+      /></NvSelectTrigger>
+      <NvSelectContent>
+        <NvSelectItem
+          v-for="dimension in groupDimensions"
+          :key="dimension.key"
+          :value="dimension.key"
+        >
+          {{ dimension.label }}
+        </NvSelectItem>
       </NvSelectContent>
     </NvSelect>
 
