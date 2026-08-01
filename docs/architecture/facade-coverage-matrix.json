@@ -2335,7 +2335,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleMasterDataResources"
+        "listBusinessConsoleMasterDataResources",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -2621,7 +2622,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleWorkers"
+        "listBusinessConsoleWorkers",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -4188,7 +4190,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleQualityReasonCodes"
+        "listBusinessConsoleQualityReasonCodes",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
