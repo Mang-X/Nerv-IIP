@@ -78,7 +78,9 @@ function toRow(
 
   for (const line of lines) {
     if (line.locationCode) locations.add(line.locationCode)
-    if (line.isBlocked === true) hasBlocked = true
+    // 只有真有存量的冻结行才亮标：演示库里每个物料都躺着一条 0 库存的质量冻结行，
+    // 按行亮标会让整列全红——又一轮「满屏风险」假警报（#1418 B2 的续集）。
+    if (line.isBlocked === true && (line.onHandQuantity ?? 0) > 0) hasBlocked = true
     if (line.shelfLifeDays != null || line.expiryDate != null) tracksShelfLife = true
     const expiry = line.expiryDate ?? undefined
     if (expiry && (earliestExpiry === undefined || expiry < earliestExpiry)) {
