@@ -8,6 +8,8 @@ public sealed record BusinessConsoleSearchableDirectoryDefinition(
     string PermissionCode,
     IReadOnlySet<string> SupportedScopeKinds);
 
+public sealed record BusinessConsoleSearchableDirectoryScope(string? Kind, string? Id);
+
 public static class BusinessConsoleSearchableDirectoryPolicy
 {
     private static readonly IReadOnlyDictionary<string, BusinessConsoleSearchableDirectoryDefinition> Definitions =
@@ -66,6 +68,61 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         return normalized is "default" or "recent" or "suggested"
             ? null
             : "directory-ranking-mode-unsupported";
+    }
+
+    public static BusinessConsoleSearchableDirectoryScope? ResolveAuthorizedScope(
+        BusinessConsoleSearchableDirectoryDefinition definition,
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string? requestedScopeKind,
+        string? requestedScopeId)
+    {
+        if (authorization is null
+            || !authorization.IsAllowed
+            || authorization.DataScope?.DenyAll == true)
+        {
+            return null;
+        }
+
+        var grants = (authorization.ScopeGrants ?? [])
+            .Where(grant =>
+                grant is not null
+                && !string.IsNullOrWhiteSpace(grant.SourceKind)
+                && grant.SourceKind.Trim().ToLowerInvariant() is "role" or "membership"
+                && !string.IsNullOrWhiteSpace(grant.SourceId)
+                && !string.IsNullOrWhiteSpace(grant.ScopeKind)
+                && !string.IsNullOrWhiteSpace(grant.ScopeId)
+                && grant.ApplicablePermissionCodes?.Contains(definition.PermissionCode, StringComparer.Ordinal) == true)
+            .ToArray();
+        var organizationWide = grants.Any(grant =>
+            grant.OrganizationWide
+            && string.Equals(grant.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(grant.ScopeId.Trim(), organizationId, StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(requestedScopeKind))
+        {
+            var kind = requestedScopeKind.Trim().ToLowerInvariant();
+            var id = requestedScopeId!.Trim();
+            var exact = grants.Any(grant =>
+                string.Equals(grant.ScopeKind.Trim(), kind, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(grant.ScopeId.Trim(), id, StringComparison.Ordinal));
+            return organizationWide || exact
+                ? new BusinessConsoleSearchableDirectoryScope(kind, id)
+                : null;
+        }
+
+        if (organizationWide)
+        {
+            return new BusinessConsoleSearchableDirectoryScope(null, null);
+        }
+
+        var compatible = grants
+            .Select(grant => new BusinessConsoleSearchableDirectoryScope(
+                grant.ScopeKind.Trim().ToLowerInvariant(),
+                grant.ScopeId.Trim()))
+            .Where(scope => definition.SupportedScopeKinds.Contains(scope.Kind!))
+            .Distinct()
+            .ToArray();
+        return compatible.Length == 1 ? compatible[0] : null;
     }
 
     private static BusinessConsoleSearchableDirectoryDefinition Define(

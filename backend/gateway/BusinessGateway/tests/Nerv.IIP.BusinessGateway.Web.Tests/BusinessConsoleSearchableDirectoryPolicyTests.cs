@@ -7,9 +7,20 @@ public sealed class BusinessConsoleSearchableDirectoryPolicyTests
 {
     [Theory]
     [InlineData("personnel", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("team", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("equipment", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("work-center", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("station", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("workshop", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("material", BusinessGatewayPermissions.MasterDataResourcesRead)]
+    [InlineData("priority", BusinessGatewayPermissions.MasterDataResourcesRead)]
     [InlineData("location", BusinessGatewayPermissions.InventoryLedgerRead)]
+    [InlineData("batch", BusinessGatewayPermissions.InventoryLedgerRead)]
+    [InlineData("serial", BusinessGatewayPermissions.InventoryLedgerRead)]
+    [InlineData("defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead)]
     [InlineData("scrap-reason", BusinessGatewayPermissions.QualityInspectionRecordsRead)]
     [InlineData("downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead)]
+    [InlineData("maintenance-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead)]
     public void Directory_type_resolves_only_its_owner_permission(string directoryType, string permission)
     {
         var definition = BusinessConsoleSearchableDirectoryPolicy.Require(directoryType);

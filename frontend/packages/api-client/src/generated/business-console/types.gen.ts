@@ -20234,23 +20234,27 @@ export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessCons
 export type ListBusinessConsoleSearchableDirectoryData = {
     body?: never;
     path: {
-        directoryType: string;
+        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason';
     };
     query: {
         organizationId: string;
         environmentId: string;
         keyword?: string | null;
-        scopeKind?: string | null;
+        scopeKind?: 'team' | 'workshop' | 'work-center' | 'site';
         scopeId?: string | null;
         skuCode?: string | null;
         pageIndex?: number;
         pageSize?: number;
-        rankingMode?: string;
+        rankingMode?: 'default' | 'recent' | 'suggested';
     };
     url: '/api/business-console/v1/directories/{directoryType}';
 };
 
 export type ListBusinessConsoleSearchableDirectoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20259,7 +20263,11 @@ export type ListBusinessConsoleSearchableDirectoryErrors = {
      * Forbidden
      */
     403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
 };
+
+export type ListBusinessConsoleSearchableDirectoryError = ListBusinessConsoleSearchableDirectoryErrors[keyof ListBusinessConsoleSearchableDirectoryErrors];
 
 export type ListBusinessConsoleSearchableDirectoryResponses = {
     /**

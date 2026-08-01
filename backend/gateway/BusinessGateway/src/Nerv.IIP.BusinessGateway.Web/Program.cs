@@ -45,6 +45,7 @@ builder.Services
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>

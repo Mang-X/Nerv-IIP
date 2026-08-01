@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -17,8 +18,11 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     [Fact]
     public async Task Directory_endpoint_authorizes_only_owner_permission_and_forwards_site_scope()
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.InventoryLedgerRead);
-        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\",\"reasonCode\":null}");
         await using var factory = CreateFactory(auth, downstream);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
@@ -31,6 +35,121 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal("site", auth.LastRequirement.ResourceType);
         Assert.Equal("SITE-A", auth.LastRequirement.ResourceId);
         Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Restricted_scope_grant_cannot_be_replaced()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-B");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    [Fact]
+    public async Task Single_compatible_restricted_grant_is_derived_when_scope_is_omitted()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("site", "SITE-A", "site", "SITE-B")]
+    [InlineData("self", "user-admin", null, null)]
+    public async Task Ambiguous_or_incompatible_implicit_grants_fail_closed(
+        string firstKind,
+        string firstId,
+        string? secondKind,
+        string? secondId)
+    {
+        var grants = new List<AuthorizationScopeGrant>
+        {
+            Grant(firstKind, firstId, BusinessGatewayPermissions.InventoryLedgerRead),
+        };
+        if (secondKind is not null && secondId is not null)
+        {
+            grants.Add(Grant(secondKind, secondId, BusinessGatewayPermissions.InventoryLedgerRead));
+        }
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    [Fact]
+    public async Task Malformed_scope_grant_fails_closed_without_reaching_owner()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant(
+                null!,
+                "role-directory-reader",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.InventoryLedgerRead]),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    [Fact]
+    public async Task Explicit_organization_grant_is_required_when_scope_is_omitted()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("organization", auth.LastRequirement!.ResourceType);
+        Assert.Equal("org-001", auth.LastRequirement.ResourceId);
+        Assert.NotNull(downstream.RequestUri);
     }
 
     [Fact]
@@ -87,10 +206,97 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     }
 
     [Fact]
+    public async Task Page_offset_overflow_is_rejected_without_authorization_or_downstream_call()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=2147483647&pageSize=100");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    [Fact]
+    public async Task Largest_representable_page_offset_is_forwarded_without_wrapping()
+    {
+        const int expectedSkip = 2_147_483_600;
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler($"{{\"items\":[],\"total\":0,\"skip\":{expectedSkip},\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=21474837&pageSize=100");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains($"skip={expectedSkip}", downstream.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Largest_representable_page_rejects_owner_total_that_cannot_cover_the_page()
+    {
+        const int expectedSkip = 2_147_483_600;
+        var items = Enumerable.Range(1, 100)
+            .Select(index => new
+            {
+                id = $"location-{index}",
+                code = $"LOC-{index}",
+                display = $"Location {index}",
+                directoryType = "location",
+                siteCode = "SITE-A",
+                locationCode = $"LOC-{index}",
+                skuCode = (string?)null,
+                parentCode = (string?)null,
+                snapshotVersion = "v1",
+            })
+            .ToArray();
+        var downstreamPayload = JsonSerializer.Serialize(new
+        {
+            items,
+            total = int.MaxValue,
+            skip = expectedSkip,
+            take = 100,
+            status = "available",
+            sourceKind = "inventory.stock-locations",
+            asOfUtc = "2026-08-01T00:00:00Z",
+            reasonCode = (string?)null,
+        });
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler(downstreamPayload);
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=21474837&pageSize=100");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Station_route_preserves_scoped_stable_id_and_readable_code()
     {
         const string stableId = "station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001";
-        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MasterDataResourcesRead);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("work-center", "WC-001", BusinessGatewayPermissions.MasterDataResourcesRead),
+        ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
         var masterData = new RecordingMasterDataClient
         {
@@ -127,8 +333,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     }
 
     [Theory]
-    [InlineData("{\"status\":\"available\",\"reasonCode\":null,\"items\":[{\"id\":\"SKU-1:LOT-1\",\"code\":\"LOT-1\",\"displayName\":\"LOT-1 · SKU-1\",\"sourceService\":\"inventory\",\"siteCode\":\"SITE-A\",\"skuCode\":\"SKU-1\"}],\"total\":1}")]
-    [InlineData("{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{\"status\":\"available\",\"reasonCode\":null,\"items\":[{\"id\":\"SKU-1:LOT-1\",\"code\":\"LOT-1\",\"displayName\":\"LOT-1 · SKU-1\",\"sourceService\":\"inventory\",\"siteCode\":\"SITE-A\",\"skuCode\":\"SKU-1\"}],\"total\":1}}")]
+    [InlineData("{\"items\":[{\"id\":\"inventory-directory:batch:5:SKU-1:5:LOT-1\",\"code\":\"LOT-1\",\"display\":\"LOT-1 · SKU-1\",\"directoryType\":\"batch\",\"siteCode\":\"SITE-A\",\"locationCode\":null,\"skuCode\":\"SKU-1\",\"parentCode\":null,\"snapshotVersion\":\"v1\"}],\"total\":1,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-ledgers\",\"asOfUtc\":\"2026-08-01T00:00:00Z\",\"reasonCode\":null}")]
+    [InlineData("{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{\"items\":[{\"id\":\"inventory-directory:batch:5:SKU-1:5:LOT-1\",\"code\":\"LOT-1\",\"display\":\"LOT-1 · SKU-1\",\"directoryType\":\"batch\",\"siteCode\":\"SITE-A\",\"locationCode\":null,\"skuCode\":\"SKU-1\",\"parentCode\":null,\"snapshotVersion\":\"v1\"}],\"total\":1,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-ledgers\",\"asOfUtc\":\"2026-08-01T00:00:00Z\",\"reasonCode\":null}}")]
     public async Task Inventory_directory_accepts_raw_and_ResponseData_data_shapes(string payload)
     {
         var handler = new JsonHandler(payload);
@@ -141,7 +347,14 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SITE-A", "SKU-1"),
             CancellationToken.None);
 
-        Assert.Equal("SKU-1:LOT-1", Assert.Single(response.Items).Id);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("inventory-directory:batch:5:SKU-1:5:LOT-1", item.Id);
+        Assert.Equal("LOT-1 · SKU-1", item.Display);
+        var serialized = JsonSerializer.Serialize(response);
+        Assert.Contains("\"directoryType\":\"batch\"", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"sourceKind\":\"inventory.stock-ledgers\"", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"skip\":0", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"take\":20", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directoryType=batch", handler.RequestUri!.Query, StringComparison.Ordinal);
         Assert.Contains("siteCode=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
     }
@@ -163,6 +376,66 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
         Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    public static TheoryData<string, string, string> MalformedOwnerPayloads => new()
+    {
+        { "location", BusinessGatewayPermissions.InventoryLedgerRead, "{\"items\":null,\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}" },
+        { "location", BusinessGatewayPermissions.InventoryLedgerRead, "{\"items\":[{\"id\":\"\",\"code\":\"LOC-A\",\"display\":\"\",\"directoryType\":\"location\",\"siteCode\":\"SITE-A\",\"locationCode\":\"LOC-A\",\"skuCode\":null,\"parentCode\":null,\"snapshotVersion\":\"v1\"}],\"total\":0,\"skip\":1,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}" },
+        { "material", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"resources\":null,\"total\":0}" },
+        { "material", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"resources\":[{\"resourceType\":\"sku\",\"code\":\"\",\"displayName\":\"\",\"active\":true,\"snapshotVersion\":\"v1\"}],\"total\":0}" },
+        { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"items\":null,\"totalCount\":0,\"pageIndex\":1,\"pageSize\":20}" },
+        { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"items\":[{\"userId\":\"\",\"employeeNo\":\"\",\"name\":\"\",\"departmentCode\":null,\"departmentName\":null,\"jobTitle\":null,\"employmentStatus\":\"active\",\"phone\":null,\"active\":true,\"teams\":[],\"skills\":[],\"snapshotVersion\":\"v1\"}],\"totalCount\":0,\"pageIndex\":2,\"pageSize\":20}" },
+        { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":null,\"total\":0}" },
+        { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":[{\"reasonCode\":\"\",\"reasonName\":\"\",\"groupName\":\"group\",\"severity\":\"minor\",\"defaultDisposition\":null,\"enabled\":true,\"snapshotVersion\":\"v1\"}],\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":null,\"skip\":0,\"take\":20,\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
+    };
+
+    [Theory]
+    [MemberData(nameof(MalformedOwnerPayloads))]
+    public async Task Malformed_authoritative_owner_semantics_return_502_for_raw_and_envelope(
+        string directoryType,
+        string permissionCode,
+        string payload)
+    {
+        foreach (var wirePayload in new[]
+                 {
+                     payload,
+                     $"{{\"success\":true,\"message\":\"ok\",\"code\":200,\"data\":{payload}}}",
+                 })
+        {
+            var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [
+                Grant("organization", "org-001", permissionCode, organizationWide: true),
+            ]);
+            var targetHandler = new JsonHandler(wirePayload);
+            var inventoryHandler = directoryType == "location"
+                ? targetHandler
+                : new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+            var masterData = directoryType is "material" or "personnel"
+                ? new HttpBusinessMasterDataClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://master-data.local") })
+                : null;
+            var quality = directoryType == "defect-code"
+                ? new HttpBusinessQualityClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://quality.local") })
+                : null;
+            var maintenance = directoryType == "downtime-reason"
+                ? new HttpBusinessMaintenanceClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://maintenance.local") })
+                : null;
+            await using var factory = CreateFactory(
+                auth,
+                inventoryHandler,
+                masterData,
+                quality,
+                maintenance);
+            var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+            var response = await client.GetAsync(
+                $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+            Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        }
     }
 
     [Fact]
@@ -200,7 +473,9 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     private static WebApplicationFactory<Program> CreateFactory(
         IBusinessGatewayAuthorizationClient auth,
         JsonHandler inventoryHandler,
-        IBusinessMasterDataClient? masterData = null) =>
+        IBusinessMasterDataClient? masterData = null,
+        IBusinessQualityClient? quality = null,
+        IBusinessMaintenanceClient? maintenance = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
@@ -219,11 +494,28 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                     services.RemoveAll<IBusinessMasterDataClient>();
                     services.AddSingleton(masterData);
                 }
+                if (quality is not null)
+                {
+                    services.RemoveAll<IBusinessQualityClient>();
+                    services.AddSingleton(quality);
+                }
+                if (maintenance is not null)
+                {
+                    services.RemoveAll<IBusinessMaintenanceClient>();
+                    services.AddSingleton(maintenance);
+                }
 
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
             });
         });
+
+    private static AuthorizationScopeGrant Grant(
+        string scopeKind,
+        string scopeId,
+        string permissionCode,
+        bool organizationWide = false) =>
+        new("role", "role-directory-reader", scopeKind, scopeId, [permissionCode], organizationWide);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

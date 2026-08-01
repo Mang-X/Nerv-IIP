@@ -139,16 +139,23 @@ public sealed record BusinessConsoleInventoryDirectoryRequest(
 public sealed record BusinessConsoleInventoryDirectoryItem(
     string Id,
     string Code,
-    string DisplayName,
-    string SourceService,
+    string Display,
+    string DirectoryType,
     string? SiteCode,
-    string? SkuCode);
+    string? LocationCode,
+    string? SkuCode,
+    string? ParentCode,
+    string SnapshotVersion);
 
 public sealed record BusinessConsoleInventoryDirectoryResponse(
-    string Status,
-    string? ReasonCode,
     IReadOnlyCollection<BusinessConsoleInventoryDirectoryItem> Items,
-    int Total);
+    int Total,
+    int Skip,
+    int Take,
+    string Status,
+    string SourceKind,
+    DateTimeOffset AsOfUtc,
+    string? ReasonCode = null);
 
 public sealed record BusinessConsoleMaintenanceReasonDirectoryRequest(
     string OrganizationId,

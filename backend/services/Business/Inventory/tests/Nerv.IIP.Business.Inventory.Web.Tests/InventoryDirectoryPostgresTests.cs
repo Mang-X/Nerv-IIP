@@ -62,9 +62,31 @@ public sealed class InventoryDirectoryPostgresTests
                 "SITE-A",
                 null,
                 "active"));
+            db.StockLocations.Add(StockLocation.CreateOrUpdate(
+                null,
+                "org-directory-pg",
+                "env-directory-pg",
+                "LOC-B-01",
+                "bin",
+                "SITE-A",
+                null,
+                "active"));
             AddLedger(db, "LOC-A-01", "LOT-001", "SN-001");
             AddLedger(db, "LOC-A-02", "LOT-001", "SN-002");
+            AddLedger(db, "LOC-B-01", "LOT-OTHER", "SN-OTHER", skuCode: "SKU-02");
+            for (var index = 0; index < 1_500; index++)
+            {
+                AddLedger(
+                    db,
+                    $"NOISE-{index:D5}",
+                    $"LOT-NOISE-{index:D5}",
+                    $"SN-NOISE-{index:D5}",
+                    organizationId: "org-directory-noise",
+                    siteCode: "SITE-NOISE",
+                    skuCode: "SKU-NOISE");
+            }
             await db.SaveChangesAsync();
+            await db.Database.ExecuteSqlRawAsync("ANALYZE inventory.stock_ledgers");
 
             var handler = new ListInventoryDirectoryQueryHandler(db);
             var locations = await handler.Handle(
@@ -73,6 +95,7 @@ public sealed class InventoryDirectoryPostgresTests
                     "env-directory-pg",
                     InventoryDirectoryTypes.Location,
                     SiteCode: "SITE-A",
+                    SkuCode: "SKU-01",
                     Keyword: "loc-a"),
                 CancellationToken.None);
             var batches = await handler.Handle(
@@ -86,10 +109,13 @@ public sealed class InventoryDirectoryPostgresTests
                 CancellationToken.None);
 
             Assert.Equal("LOC-A-01", Assert.Single(locations.Items).Code);
-            Assert.Equal("SKU-01:LOT-001", Assert.Single(batches.Items).Id);
+            Assert.Equal(
+                InventoryDirectoryStableIds.Create(InventoryDirectoryTypes.Batch, "SKU-01", "LOT-001"),
+                Assert.Single(batches.Items).Id);
             Assert.Equal(1, batches.Total);
 
             var plan = await ExplainScopedLedgerQueryAsync(db);
+            Assert.Equal("on", await GetEnableSeqScanAsync(db));
             var scopedIndexName = await GetScopedLedgerIndexNameAsync(db);
             Assert.Contains("Index", plan, StringComparison.Ordinal);
             Assert.True(
@@ -245,14 +271,22 @@ public sealed class InventoryDirectoryPostgresTests
         }
     }
 
-    private static void AddLedger(ApplicationDbContext db, string locationCode, string lotNo, string serialNo)
+    private static void AddLedger(
+        ApplicationDbContext db,
+        string locationCode,
+        string lotNo,
+        string serialNo,
+        string organizationId = "org-directory-pg",
+        string environmentId = "env-directory-pg",
+        string siteCode = "SITE-A",
+        string skuCode = "SKU-01")
     {
         var ledger = StockLedger.Create(
-            "org-directory-pg",
-            "env-directory-pg",
-            "SKU-01",
+            organizationId,
+            environmentId,
+            skuCode,
             "piece",
-            "SITE-A",
+            siteCode,
             locationCode,
             lotNo,
             serialNo,
@@ -260,16 +294,16 @@ public sealed class InventoryDirectoryPostgresTests
             "company",
             null);
         ledger.ApplyMovement(Domain.AggregatesModel.StockMovementAggregate.StockMovement.Post(
-            "org-directory-pg",
-            "env-directory-pg",
+            organizationId,
+            environmentId,
             "inbound",
             "directory-pg-test",
             $"DOC-{locationCode}",
             "1",
             $"IDEM-{locationCode}",
-            "SKU-01",
+            skuCode,
             "piece",
-            "SITE-A",
+            siteCode,
             locationCode,
             lotNo,
             serialNo,
@@ -282,26 +316,29 @@ public sealed class InventoryDirectoryPostgresTests
 
     private static async Task<string> ExplainScopedLedgerQueryAsync(ApplicationDbContext db)
     {
-        await db.Database.OpenConnectionAsync();
-        await using (var settings = db.Database.GetDbConnection().CreateCommand())
-        {
-            settings.CommandText = "SET enable_seqscan = off";
-            await settings.ExecuteNonQueryAsync();
-        }
+        var request = new ListInventoryDirectoryQuery(
+            "org-directory-pg",
+            "env-directory-pg",
+            InventoryDirectoryTypes.Batch,
+            SiteCode: "SITE-A",
+            SkuCode: "SKU-01",
+            Keyword: "lot",
+            Skip: 0,
+            Take: 20);
+        var values = InventoryDirectoryEfQueries.BuildValues(db, request, InventoryDirectoryTypes.Batch);
+        var countPlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildCount(values));
+        var pagePlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildPage(values, request.Skip, request.Take));
+        return $"COUNT PLAN:{Environment.NewLine}{countPlan}{Environment.NewLine}PAGE PLAN:{Environment.NewLine}{pagePlan}";
+    }
 
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = """
-            EXPLAIN SELECT lot_no
-            FROM inventory.stock_ledgers
-            WHERE organization_id = 'org-directory-pg'
-              AND environment_id = 'env-directory-pg'
-              AND site_code = 'SITE-A'
-              AND sku_code = 'SKU-01'
-              AND on_hand_quantity > 0
-              AND lot_no IS NOT NULL
-            ORDER BY lot_no
-            LIMIT 20
-            """;
+    private static async Task<string> ExplainAsync(IQueryable query)
+    {
+        await using var command = query.CreateDbCommand();
+        if (command.Connection!.State != System.Data.ConnectionState.Open)
+        {
+            await command.Connection.OpenAsync();
+        }
+        command.CommandText = "EXPLAIN (FORMAT TEXT) " + command.CommandText;
         await using var reader = await command.ExecuteReaderAsync();
         var lines = new List<string>();
         while (await reader.ReadAsync())
@@ -324,6 +361,14 @@ public sealed class InventoryDirectoryPostgresTests
             """;
         return (string?)await command.ExecuteScalarAsync()
             ?? throw new InvalidOperationException("Scoped stock-ledger index is missing.");
+    }
+
+    private static async Task<string> GetEnableSeqScanAsync(ApplicationDbContext db)
+    {
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SHOW enable_seqscan";
+        return (string?)await command.ExecuteScalarAsync()
+            ?? throw new InvalidOperationException("PostgreSQL did not return enable_seqscan.");
     }
 
     private static async Task DropInventorySchemaAsync(ApplicationDbContext db)

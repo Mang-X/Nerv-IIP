@@ -27828,7 +27828,24 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "personnel",
+                "team",
+                "equipment",
+                "work-center",
+                "station",
+                "workshop",
+                "material",
+                "priority",
+                "location",
+                "batch",
+                "serial",
+                "defect-code",
+                "scrap-reason",
+                "downtime-reason",
+                "maintenance-reason"
+              ]
             }
           },
           {
@@ -27860,7 +27877,13 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "team",
+                "workshop",
+                "work-center",
+                "site"
+              ]
             }
           },
           {
@@ -27905,11 +27928,46 @@
             "schema": {
               "type": "string",
               "default": "default",
-              "nullable": false
+              "nullable": false,
+              "enum": [
+                "default",
+                "recent",
+                "suggested"
+              ]
             }
           }
         ],
         "responses": {
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {

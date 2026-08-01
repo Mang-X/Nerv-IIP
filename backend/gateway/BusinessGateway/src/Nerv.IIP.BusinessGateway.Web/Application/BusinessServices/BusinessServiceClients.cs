@@ -2280,7 +2280,13 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("workshopCode", request.WorkshopCode)),
             null,
             cancellationToken);
-        return response.Total > 0 ? response : response with { Total = response.Resources.Count };
+        if (response.Resources is null || response.Total < response.Resources.Count)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
     }
 
     public Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
@@ -2544,6 +2550,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("pageSize", request.PageSize)),
             null,
             cancellationToken);
+        if (wire.Items is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
         return new BusinessConsoleWorkerDirectoryResponse(
             wire.PageIndex,
             wire.PageSize,
@@ -6209,6 +6221,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);
+
+        if (response.Items is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
 
         return new BusinessConsoleMaintenanceReasonDirectoryResponse(
             response.Items.Select(item => new BusinessConsoleMaintenanceReasonDirectoryItem(
