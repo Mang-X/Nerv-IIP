@@ -37,6 +37,24 @@ describe('TaskListShell', () => {
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
   })
 
+  it('以服务端原始游标的 hasMore 覆盖去重行数推断', () => {
+    const wrapper = mount(TaskListShell, {
+      props: {
+        stateKey: 'quality-raw-offset',
+        scope: '当前账号 Self',
+        source: '质检待检任务服务',
+        loaded: 2,
+        total: 3,
+        hasMore: false,
+        pending: false,
+        refreshing: false,
+        loadingMore: false,
+      },
+    })
+
+    expect(wrapper.getComponent(NvInfiniteList).props('finished')).toBe(true)
+  })
+
   it('次页失败保留列表并显示局部重试，初次失败显示主错误态', async () => {
     const partial = mount(TaskListShell, {
       props: {
@@ -167,5 +185,58 @@ describe('TaskListShell', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(scroller.scrollTop).toBe(144)
+  })
+
+  it('深滚动恢复被首屏高度截断时继续分页，直到真实位置可达', async () => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.deep-restore',
+      JSON.stringify({ filters: { status: 'pending' }, scrollTop: 900 }),
+    )
+    const wrapper = mount(TaskListShell, {
+      props: {
+        stateKey: 'deep-restore',
+        scope: '当前账号 Self',
+        source: '任务服务',
+        loaded: 0,
+        total: 45,
+        pending: true,
+        refreshing: false,
+        loadingMore: false,
+        filterState: { status: '' },
+      },
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.setProps({ loaded: 20, pending: false })
+    await wrapper.vm.$nextTick()
+
+    wrapper.getComponent(NvPullRefresh).vm.$emit('scrollRestored', {
+      requested: 900,
+      actual: 180,
+      max: 180,
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+    expect(
+      JSON.parse(sessionStorage.getItem('nerv-iip.business-pda.task-list.deep-restore')!),
+    ).toEqual({
+      filters: { status: 'pending' },
+      scrollTop: 900,
+    })
+
+    await wrapper.setProps({ loaded: 40 })
+    wrapper.getComponent(NvPullRefresh).vm.$emit('scrollRestored', {
+      requested: 900,
+      actual: 900,
+      max: 980,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+    expect(
+      JSON.parse(sessionStorage.getItem('nerv-iip.business-pda.task-list.deep-restore')!),
+    ).toEqual({
+      filters: { status: '' },
+      scrollTop: 900,
+    })
   })
 })

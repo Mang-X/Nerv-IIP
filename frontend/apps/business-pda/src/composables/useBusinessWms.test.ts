@@ -1202,8 +1202,7 @@ describe('PDA WMS composables', () => {
 
       await expect(result.loadMore()).rejects.toBe(currentFailure)
       expect(result.loadMoreError.value).toBe(currentFailure)
-      const usesSplitTaskError = id.includes('PickingTasks') || id.includes('PutawayTasks')
-      expect(result.error.value).toBe(usesSplitTaskError ? undefined : currentFailure)
+      expect(result.error.value).toBeUndefined()
     },
   )
 

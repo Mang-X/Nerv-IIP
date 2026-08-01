@@ -51,21 +51,44 @@ test('任务列表壳：375×812 服务端筛选、20 条分页与返回状态�
   await expect.poll(() => requests.at(-1)?.status).toBe('inProgress')
 
   const scroller = page.locator('[data-slot="pull-refresh"] .nv-m-pr-scroll')
+  const firstPageMax = await scroller.evaluate((element) =>
+    Math.max(0, element.scrollHeight - element.clientHeight),
+  )
   await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
   await expect.poll(() => requests.some((request) => request.skip === '20')).toBe(true)
   await expect(page.getByTestId('task-list-meta')).toContainText('已加载 40 / 共 45')
 
+  const deepTarget = await scroller.evaluate((element, target) => {
+    element.scrollTo({ top: target })
+    return element.scrollTop
+  }, firstPageMax + 300)
+  expect(deepTarget).toBeGreaterThan(firstPageMax)
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = JSON.parse(
+          sessionStorage.getItem('nerv-iip.business-pda.task-list.mes-operation-tasks') ?? '{}',
+        )
+        return Number(state.scrollTop ?? 0)
+      }),
+    )
+    .toBeGreaterThanOrEqual(deepTarget - 1)
+
   await page.goto('/me')
+  requests.length = 0
   await page.goBack()
   await expect(page.getByRole('button', { name: '进行中' })).toBeVisible()
-  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await expect.poll(() => requests.some((request) => request.skip === '20')).toBe(true)
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeGreaterThanOrEqual(deepTarget - 1)
   const restored = await page.evaluate(() =>
     JSON.parse(
       sessionStorage.getItem('nerv-iip.business-pda.task-list.mes-operation-tasks') ?? '{}',
     ),
   )
   expect(restored.filters).toMatchObject({ status: 'inProgress' })
-  expect(restored.scrollTop).toBeGreaterThan(0)
+  expect(restored.scrollTop).toBeGreaterThanOrEqual(deepTarget - 1)
 })
 
 // #1297：PDA 侧作业范围闭环。后端不带 scopeKind/scopeId 只回授权清单、selectedScope 恒空，

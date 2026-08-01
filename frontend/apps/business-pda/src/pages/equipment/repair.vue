@@ -17,8 +17,12 @@ import {
   NvAppShellMobile,
   NvListRow,
   NvMobileButton,
+  NvMobileDropdownMenu,
+  NvMobileDropdownMenuItem,
   NvMobileResult,
   NvScanBar,
+  NvSearchBar,
+  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -38,6 +42,7 @@ const {
   workOrderFilters,
   workOrdersLoaded,
   workOrdersLoadingMore,
+  workOrdersRefreshing,
   workOrdersLoadMoreError,
   loadMoreWorkOrders,
   workOrdersPending,
@@ -66,6 +71,25 @@ const workOrderFilterState = computed(() => ({
   status: workOrderFilters.status ?? '',
   keyword: workOrderFilters.keyword ?? '',
 }))
+const workOrderKeywordModel = computed({
+  get: () => workOrderFilters.keyword ?? '',
+  set: (value: string) => {
+    workOrderFilters.keyword = value.trim() || undefined
+  },
+})
+const workOrderStatusModel = computed<string | number>({
+  get: () => workOrderFilters.status ?? '',
+  set: (value) => {
+    workOrderFilters.status = String(value) || undefined
+  },
+})
+const workOrderStatusOptions: DropdownOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '待处理', value: 'open' },
+  { label: '处理中', value: 'inProgress' },
+  { label: '已完成', value: 'completed' },
+  { label: '已取消', value: 'cancelled' },
+]
 
 function restoreWorkOrderState(state: { filters: Record<string, unknown> }) {
   workOrderFilters.status = String(state.filters.status ?? '') || undefined
@@ -399,7 +423,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           :total="maintenanceTotal"
           :updated-at="workOrdersLastUpdatedAt"
           :pending="workOrdersPending"
-          :refreshing="false"
+          :refreshing="workOrdersRefreshing"
           :loading-more="workOrdersLoadingMore"
           :error="workOrderListError"
           :load-more-error="workOrdersLoadMoreError"
@@ -418,25 +442,21 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           @restore="restoreWorkOrderState"
         >
           <template #filters>
-            <div class="grid grid-cols-2 gap-2 p-3">
-              <input
-                v-model.trim="workOrderFilters.keyword"
+            <div class="space-y-2 p-3">
+              <NvSearchBar
+                v-model="workOrderKeywordModel"
                 data-testid="work-order-keyword"
-                type="search"
+                aria-label="维修工单关键字"
                 placeholder="搜索设备、来源或负责人"
-                class="min-h-touch rounded-lg border border-border bg-background px-3 text-base"
               />
-              <select
-                v-model="workOrderFilters.status"
-                data-testid="work-order-status"
-                class="min-h-touch rounded-lg border border-border bg-background px-3 text-base"
-              >
-                <option value="">全部状态</option>
-                <option value="open">待处理</option>
-                <option value="inProgress">处理中</option>
-                <option value="completed">已完成</option>
-                <option value="cancelled">已取消</option>
-              </select>
+              <NvMobileDropdownMenu>
+                <NvMobileDropdownMenuItem
+                  v-model="workOrderStatusModel"
+                  data-testid="work-order-status"
+                  title="维修工单状态"
+                  :options="workOrderStatusOptions"
+                />
+              </NvMobileDropdownMenu>
             </div>
           </template>
 

@@ -172,9 +172,10 @@ describe('useBusinessQualityInspectionTasks', () => {
 
   it('uses a bounded first page and sends task filters to the server before pagination', async () => {
     seedPrincipal()
-    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
-      value: { success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 2 } },
-    })
+    coladaState.dataById.set(
+      'listBusinessConsoleQualityInspectionTasks',
+      shallowRef({ success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 2 } }),
+    )
     coladaState.listPlain.mockResolvedValue({
       data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 2 } },
     })
@@ -187,6 +188,11 @@ describe('useBusinessQualityInspectionTasks', () => {
     result.filters.keyword = 'WO-9001'
     result.filters.sourceType = 'operation'
     result.filters.overdue = true
+    await nextTick()
+    coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+      success: true,
+      data: { items: [{ inspectionTaskId: 'FILTERED-T1' }], total: 2 },
+    }
     await nextTick()
     await result.loadMore()
 
@@ -559,7 +565,41 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(coladaState.listPlain.mock.calls[1][0].query.skip).toBe(400)
   })
 
-  it('deduplicates overlapping offset pages by inspection task id', async () => {
+  it('advances the server offset by raw page rows while deduplicating overlapping task ids', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'T1' }], total: 4 },
+      },
+    })
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [{ inspectionTaskId: 'T1' }, { inspectionTaskId: 'T2' }],
+            total: 4,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ inspectionTaskId: 'T3' }], total: 4 },
+        },
+      })
+    const result = useBusinessQualityInspectionTasks()
+
+    await result.loadMore()
+    await result.loadMore()
+
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2', 'T3'])
+    expect(coladaState.listPlain.mock.calls.map(([request]) => request.query.skip)).toEqual([1, 3])
+    expect(result.hasMore.value).toBe(false)
+  })
+
+  it('makes progress across a duplicate-only page without requesting the same offset again', async () => {
     seedPrincipal()
     coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
       value: {
@@ -569,20 +609,39 @@ describe('useBusinessQualityInspectionTasks', () => {
     })
     coladaState.listPlain
       .mockResolvedValueOnce({
-        data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 3 } },
+        data: { success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 3 } },
       })
       .mockResolvedValueOnce({
-        data: {
-          success: true,
-          data: { items: [{ inspectionTaskId: 'T2' }, { inspectionTaskId: 'T3' }], total: 3 },
-        },
+        data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 3 } },
       })
     const result = useBusinessQualityInspectionTasks()
 
     await result.loadMore()
     await result.loadMore()
 
-    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2', 'T3'])
+    expect(coladaState.listPlain.mock.calls.map(([request]) => request.query.skip)).toEqual([1, 2])
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2'])
+    expect(result.hasMore.value).toBe(false)
+  })
+
+  it('unbinds the previous base response immediately when any server filter changes', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'OLD-PENDING' }], total: 1 },
+      },
+    })
+    const result = useBusinessQualityInspectionTasks()
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['OLD-PENDING'])
+
+    result.filters.status = 'in-progress'
+    await nextTick()
+
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
   })
 
   it('exposes success:false and malformed raw task responses as failures instead of empty success', async () => {

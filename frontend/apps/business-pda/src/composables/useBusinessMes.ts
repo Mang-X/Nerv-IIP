@@ -1029,6 +1029,7 @@ export function useMesOperationTasks() {
     loaded: taskPager.loaded,
     hasMore: taskPager.hasMore,
     loadingMore: taskPager.loadingMore,
+    refreshing: taskPager.refreshing,
     loadMoreError: taskPager.loadMoreError,
     loadMore: taskPager.loadMore,
     pending: operationTasksQuery.isLoading,

@@ -195,6 +195,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
     :source="qualitySource"
     :loaded="props.loaded"
     :total="props.total"
+    :has-more="props.hasMore"
     :updated-at="props.updatedAt"
     :pending="props.pending"
     :refreshing="props.pending && props.loaded > 0"

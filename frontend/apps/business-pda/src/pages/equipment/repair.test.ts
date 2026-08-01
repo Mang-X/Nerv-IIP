@@ -33,6 +33,7 @@ const workOrders = ref<Array<Record<string, unknown>>>([
 ])
 const workOrdersError = ref<unknown>(null)
 const workOrdersPending = ref(false)
+const workOrdersRefreshing = ref(false)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const scopeReady = ref(true)
@@ -57,6 +58,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     ),
     workOrdersHasFailedResponse: computed(() => false),
     workOrdersPending,
+    workOrdersRefreshing,
     workOrdersError,
     refreshWorkOrders,
     workOrderFilters: reactive({ skip: 0, take: 20, status: undefined, keyword: undefined }),
@@ -96,15 +98,28 @@ beforeEach(() => {
   createPending.value = false
   workOrdersError.value = null
   workOrdersPending.value = false
+  workOrdersRefreshing.value = false
 })
 
 describe('PDA equipment repair page', () => {
+  it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
+    const wrapper = mount(RepairPage)
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(false)
+    workOrdersRefreshing.value = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
   it('describes only the fields that the maintenance keyword query really searches', () => {
     const wrapper = mount(RepairPage)
 
-    const placeholder = wrapper.get('[data-testid="work-order-keyword"]').attributes('placeholder')
+    const searchbox = wrapper.get('input[aria-label="维修工单关键字"]')
+    const placeholder = searchbox.attributes('placeholder')
     expect(placeholder).toBe('搜索设备、来源或负责人')
     expect(placeholder).not.toContain('工单')
+    expect(wrapper.find('select[data-testid="work-order-status"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="work-order-status"]').text()).toContain('全部状态')
   })
 
   it.each([

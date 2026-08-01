@@ -23,10 +23,13 @@ import {
   NvListRow,
   NvMobileButton,
   NvMobileDialog,
+  NvMobileDropdownMenu,
+  NvMobileDropdownMenuItem,
   NvMobileTag,
   NvMobileToast,
   NvScanBar,
   type ActionItem,
+  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { ChevronRight } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
@@ -49,6 +52,7 @@ const {
   total,
   loaded,
   loadingMore,
+  refreshing,
   loadMoreError,
   loadMore,
   organizationId,
@@ -76,6 +80,19 @@ const alarmFilterState = computed(() => ({
   deviceAssetId: filters.deviceAssetId ?? '',
   status: filters.status ?? '',
 }))
+const alarmStatusModel = computed<string | number>({
+  get: () => filters.status ?? '',
+  set: (value) => {
+    filters.status = String(value) || undefined
+  },
+})
+const alarmStatusOptions: DropdownOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '未确认', value: 'raised' },
+  { label: '已确认', value: 'acknowledged' },
+  { label: '已搁置', value: 'shelved' },
+  { label: '已解除', value: 'cleared' },
+]
 
 function restoreAlarmState(state: { filters: Record<string, unknown> }) {
   filters.deviceAssetId = String(state.filters.deviceAssetId ?? '') || undefined
@@ -362,7 +379,7 @@ function showToast(message: string, type: 'success' | 'error') {
         :total="alarmTotal"
         :updated-at="lastUpdatedAt"
         :pending="pending"
-        :refreshing="false"
+        :refreshing="refreshing"
         :loading-more="loadingMore"
         :error="alarmListError"
         :load-more-error="loadMoreError"
@@ -384,26 +401,23 @@ function showToast(message: string, type: 'success' | 'error') {
           <div class="space-y-2 p-3">
             <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
             <div class="flex gap-2">
-              <select
-                v-model="filters.status"
-                data-testid="alarm-status-filter"
-                class="min-h-touch flex-1 rounded-lg border border-border bg-background px-3 text-base"
-              >
-                <option value="">全部状态</option>
-                <option value="raised">未确认</option>
-                <option value="acknowledged">已确认</option>
-                <option value="shelved">已搁置</option>
-                <option value="cleared">已解除</option>
-              </select>
-              <button
+              <NvMobileDropdownMenu class="min-w-0 flex-1">
+                <NvMobileDropdownMenuItem
+                  v-model="alarmStatusModel"
+                  data-testid="alarm-status-filter"
+                  title="报警状态"
+                  :options="alarmStatusOptions"
+                />
+              </NvMobileDropdownMenu>
+              <NvMobileButton
                 v-if="filteredDevice"
                 data-testid="clear-filter"
-                type="button"
-                class="min-h-touch shrink-0 rounded-lg border border-border px-3 text-sm"
+                variant="outline"
+                size="sm"
                 @click="clearFilter"
               >
                 清除设备
-              </button>
+              </NvMobileButton>
             </div>
           </div>
         </template>

@@ -13,6 +13,7 @@ const props = withDefaults(
   defineProps<{
     threshold?: number
     scrollTop?: number
+    scrollRestoreKey?: string | number
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -20,7 +21,11 @@ const props = withDefaults(
     scrollTop: 0,
   },
 )
-const emit = defineEmits<{ refresh: []; scroll: [scrollTop: number] }>()
+const emit = defineEmits<{
+  refresh: []
+  scroll: [scrollTop: number]
+  scrollRestored: [result: { requested: number; actual: number; max: number }]
+}>()
 const loading = defineModel<boolean>({ default: false })
 
 const scroller = ref<HTMLElement>()
@@ -68,7 +73,14 @@ function onUp() {
 
 function restoreScrollTop(value: number) {
   void nextTick(() => {
-    if (scroller.value) scroller.value.scrollTop = Math.max(0, value)
+    if (!scroller.value) return
+    const requested = Math.max(0, value)
+    scroller.value.scrollTop = requested
+    emit('scrollRestored', {
+      requested,
+      actual: scroller.value.scrollTop,
+      max: Math.max(0, scroller.value.scrollHeight - scroller.value.clientHeight),
+    })
   })
 }
 
@@ -79,7 +91,7 @@ function onScroll() {
 watch(loading, (v) => {
   if (!v) distance.value = 0
 })
-watch(() => props.scrollTop, restoreScrollTop)
+watch([() => props.scrollTop, () => props.scrollRestoreKey], ([value]) => restoreScrollTop(value))
 onMounted(() => restoreScrollTop(props.scrollTop))
 </script>
 

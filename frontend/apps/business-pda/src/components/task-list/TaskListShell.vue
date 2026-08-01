@@ -16,6 +16,7 @@ const props = withDefaults(
     source: string
     loaded: number
     total: number
+    hasMore?: boolean
     updatedAt?: string | null
     pending: boolean
     refreshing: boolean
@@ -30,6 +31,7 @@ const props = withDefaults(
   }>(),
   {
     updatedAt: null,
+    hasMore: undefined,
     error: undefined,
     loadMoreError: undefined,
     errorTestId: 'task-list-initial-error',
@@ -51,8 +53,13 @@ const emit = defineEmits<{
 const scrollTop = shallowRef(0)
 const pendingRestoredScrollTop = shallowRef<number>()
 let restoredScrollApplied = false
+let restoreLoadRequested = false
 const storageKey = computed(() => `nerv-iip.business-pda.task-list.${props.stateKey}`)
-const hasMore = computed(() => props.loaded < props.total)
+const hasMore = computed(() => props.hasMore ?? props.loaded < props.total)
+const scrollRestoreKey = computed(
+  () =>
+    `${props.loaded}:${props.loadingMore}:${hasMore.value}:${pendingRestoredScrollTop.value ?? ''}`,
+)
 const initialError = computed(() => (props.loaded === 0 ? props.error : undefined))
 const retainedError = computed(() => (props.loaded > 0 ? props.error : undefined))
 const partialError = computed(() => props.loadMoreError)
@@ -80,7 +87,10 @@ function persistState() {
   if (typeof sessionStorage === 'undefined') return
   sessionStorage.setItem(
     storageKey.value,
-    JSON.stringify({ filters: props.filterState, scrollTop: scrollTop.value }),
+    JSON.stringify({
+      filters: props.filterState,
+      scrollTop: pendingRestoredScrollTop.value ?? scrollTop.value,
+    }),
   )
 }
 
@@ -89,21 +99,15 @@ function onScroll(value: number) {
   persistState()
 }
 
-async function applyPendingRestoredScroll() {
+async function preparePendingRestoredScroll() {
   const target = pendingRestoredScrollTop.value
-  if (
-    target === undefined ||
-    restoredScrollApplied ||
-    props.pending ||
-    (target > 0 && props.loaded === 0)
-  ) {
+  if (target === undefined || props.pending || (target > 0 && props.loaded === 0)) {
     return
   }
 
   await nextTick()
   if (
     pendingRestoredScrollTop.value !== target ||
-    restoredScrollApplied ||
     props.pending ||
     (target > 0 && props.loaded === 0)
   ) {
@@ -111,21 +115,45 @@ async function applyPendingRestoredScroll() {
   }
 
   scrollTop.value = target
-  restoredScrollApplied = true
-  pendingRestoredScrollTop.value = undefined
+}
+
+function onScrollRestored(result: { requested: number; actual: number; max: number }) {
+  const target = pendingRestoredScrollTop.value
+  if (target === undefined || restoredScrollApplied || result.requested !== target) return
+
+  const reachedTarget = result.actual >= target - 1
+  if (reachedTarget || !hasMore.value) {
+    scrollTop.value = result.actual
+    restoredScrollApplied = true
+    pendingRestoredScrollTop.value = undefined
+    restoreLoadRequested = false
+    persistState()
+    return
+  }
+
+  if (!props.loadingMore && !restoreLoadRequested) {
+    restoreLoadRequested = true
+    emit('loadMore')
+  }
 }
 
 watch(() => props.filterState, persistState, { deep: true })
-watch([() => props.pending, () => props.loaded], () => void applyPendingRestoredScroll(), {
+watch([() => props.pending, () => props.loaded], () => void preparePendingRestoredScroll(), {
   flush: 'post',
 })
+watch(
+  () => props.loadingMore,
+  (loadingMore, previous) => {
+    if (previous && !loadingMore) restoreLoadRequested = false
+  },
+)
 onMounted(async () => {
   const restored = readState()
   if (!restored) return
   pendingRestoredScrollTop.value = restored.scrollTop
   emit('restore', restored)
   await nextTick()
-  await applyPendingRestoredScroll()
+  await preparePendingRestoredScroll()
 })
 </script>
 
@@ -164,8 +192,10 @@ onMounted(async () => {
       class="min-h-0 flex-1"
       :model-value="refreshing"
       :scroll-top="scrollTop"
+      :scroll-restore-key="scrollRestoreKey"
       @refresh="emit('refresh')"
       @scroll="onScroll"
+      @scroll-restored="onScrollRestored"
     >
       <NvMobileEmpty v-if="isEmpty" :description="emptyDescription" />
       <slot v-else />

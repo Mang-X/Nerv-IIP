@@ -137,6 +137,15 @@ export function useBusinessQualityInspectionTasks() {
     skip: 0,
     take: DEFAULT_TAKE,
   })
+  const listIdentity = computed(() =>
+    JSON.stringify([
+      scopeKey.value,
+      filters.status ?? null,
+      filters.keyword ?? null,
+      filters.sourceType ?? null,
+      filters.overdue ?? null,
+    ]),
+  )
 
   const listQuery = useQuery(() => ({
     ...listBusinessConsoleQualityInspectionTasksQueryOptions({
@@ -157,7 +166,7 @@ export function useBusinessQualityInspectionTasks() {
   }))
   const currentResponse = useScopeBoundListResponse(
     () => listQuery.data.value,
-    scopeKey,
+    listIdentity,
     scopeReady,
   )
   const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
@@ -187,6 +196,7 @@ export function useBusinessQualityInspectionTasks() {
 
   // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
   const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+  const nextSkip = shallowRef(0)
   const loadingMore = shallowRef(false)
   const loadMoreError = shallowRef<unknown>()
   let paginationEpoch = 0
@@ -207,6 +217,18 @@ export function useBusinessQualityInspectionTasks() {
       loadMoreError.value = undefined
     },
     { flush: 'sync' },
+  )
+
+  watch(
+    currentResponse,
+    (response) => {
+      paginationEpoch += 1
+      extraTasks.value = []
+      nextSkip.value = listItems<BusinessConsoleQualityInspectionTaskItem>(response).length
+      loadingMore.value = false
+      loadMoreError.value = undefined
+    },
+    { immediate: true, flush: 'sync' },
   )
 
   const submitMutation = useMutation({
@@ -246,12 +268,12 @@ export function useBusinessQualityInspectionTasks() {
   })
   const total = computed(() => listTotal(currentResponse.value))
   const loaded = computed(() => tasks.value.length)
-  const hasMore = computed(() => loaded.value < total.value)
+  const hasMore = computed(() => nextSkip.value < total.value)
 
   function capturePaginationScope() {
     return {
       epoch: paginationEpoch,
-      key: scopeKey.value,
+      key: listIdentity.value,
       organizationId: organizationId.value,
       environmentId: environmentId.value,
       principalId: inspectorUserId.value,
@@ -266,7 +288,7 @@ export function useBusinessQualityInspectionTasks() {
     return (
       scopeReady.value &&
       paginationEpoch === execution.epoch &&
-      scopeKey.value === execution.key &&
+      listIdentity.value === execution.key &&
       filters.status === execution.status &&
       filters.keyword === execution.keyword &&
       filters.sourceType === execution.sourceType &&
@@ -312,9 +334,14 @@ export function useBusinessQualityInspectionTasks() {
     loadingMore.value = true
     loadMoreError.value = undefined
     try {
-      const page = await fetchPage(loaded.value, DEFAULT_TAKE, execution)
+      const page = await fetchPage(nextSkip.value, DEFAULT_TAKE, execution)
       if (!page || !isCurrentPaginationScope(execution)) return
-      if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
+      if (page.length === 0) {
+        nextSkip.value = total.value
+        return
+      }
+      nextSkip.value += page.length
+      extraTasks.value = [...extraTasks.value, ...page]
     } catch (error) {
       if (isCurrentPaginationScope(execution)) loadMoreError.value = error
     } finally {
@@ -333,12 +360,16 @@ export function useBusinessQualityInspectionTasks() {
     // 防御：空页即止（total 与实际漂移时不空转）。
     while (hasMore.value && isCurrentPaginationScope(execution)) {
       const page = await fetchPage(
-        loaded.value,
-        Math.min(MAX_TAKE, total.value - loaded.value),
+        nextSkip.value,
+        Math.min(MAX_TAKE, total.value - nextSkip.value),
         execution,
       )
       if (!page || !isCurrentPaginationScope(execution)) break
-      if (page.length === 0) break
+      if (page.length === 0) {
+        nextSkip.value = total.value
+        break
+      }
+      nextSkip.value += page.length
       extraTasks.value = [...extraTasks.value, ...page]
     }
     return tasks.value

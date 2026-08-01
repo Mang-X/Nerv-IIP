@@ -396,6 +396,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     loaded: pager.loaded,
     hasMore: pager.hasMore,
     loadingMore: pager.loadingMore,
+    refreshing: pager.refreshing,
     loadMoreError: pager.loadMoreError,
     organizationId,
     environmentId,

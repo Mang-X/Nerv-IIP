@@ -75,4 +75,35 @@ describe('useTaskListPagination', () => {
 
     expect(pager.items.value.map((row) => row.id)).toEqual(['x'])
   })
+
+  it('手动刷新失败时保留当前行，并在 finally 结束真实刷新生命周期', async () => {
+    const firstPage = shallowRef({ items: [{ id: 'a' }, { id: 'b' }], total: 3 })
+    let rejectRefresh!: (reason: Error) => void
+    const refreshFirstPage = vi.fn(
+      () =>
+        new Promise<never>((_, reject) => {
+          rejectRefresh = reject
+        }),
+    )
+    const pager = useTaskListPagination<Row>({
+      identity: () => 'scope:pending',
+      firstPage,
+      pageSize: 2,
+      itemKey: (row) => row.id,
+      fetchPage: vi.fn(),
+      refreshFirstPage,
+    })
+    await nextTick()
+
+    const refreshing = pager.refresh()
+    expect(pager.refreshing.value).toBe(true)
+    expect(pager.items.value.map((row) => row.id)).toEqual(['a', 'b'])
+
+    rejectRefresh(new Error('refresh failed'))
+    await expect(refreshing).rejects.toThrow('refresh failed')
+
+    expect(pager.refreshing.value).toBe(false)
+    expect(pager.items.value.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(pager.total.value).toBe(3)
+  })
 })

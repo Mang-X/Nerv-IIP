@@ -35,6 +35,7 @@ export function useTaskListPagination<TItem>(options: UseTaskListPaginationOptio
     total.value = 0
     nextSkip.value = 0
     loadingMore.value = false
+    refreshing.value = false
     loadMoreError.value = undefined
   }
 
@@ -68,7 +69,7 @@ export function useTaskListPagination<TItem>(options: UseTaskListPaginationOptio
   const hasMore = computed(() => nextSkip.value < total.value)
 
   async function loadMore() {
-    if (loadingMore.value || !hasMore.value) return
+    if (loadingMore.value || refreshing.value || !hasMore.value) return
     const request = { skip: nextSkip.value, take: pageSize }
     const currentGeneration = generation
     loadingMore.value = true
@@ -85,12 +86,15 @@ export function useTaskListPagination<TItem>(options: UseTaskListPaginationOptio
   }
 
   async function refresh() {
-    reset()
+    generation += 1
+    const currentGeneration = generation
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await options.refreshFirstPage()
     } finally {
-      refreshing.value = false
+      if (generation === currentGeneration) refreshing.value = false
     }
   }
 

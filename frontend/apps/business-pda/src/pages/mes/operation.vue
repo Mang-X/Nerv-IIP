@@ -51,6 +51,7 @@ const {
   total,
   loaded = computed(() => operationTasks.value.length),
   loadingMore = shallowRef(false),
+  refreshing = shallowRef(false),
   loadMoreError = shallowRef<unknown>(),
   loadMore = () => Promise.resolve(),
   pending,
@@ -510,7 +511,7 @@ function formatDate(value?: string | null) {
       :total="total"
       :updated-at="lastUpdatedAt"
       :pending="pending"
-      :refreshing="pending && loaded > 0"
+      :refreshing="refreshing"
       :loading-more="loadingMore"
       :error="operationListError"
       :load-more-error="loadMoreError"

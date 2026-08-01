@@ -268,6 +268,7 @@ export function useBusinessMaintenance() {
     workOrdersLoaded: workOrderPager.loaded,
     workOrdersHasMore: workOrderPager.hasMore,
     workOrdersLoadingMore: workOrderPager.loadingMore,
+    workOrdersRefreshing: workOrderPager.refreshing,
     workOrdersLoadMoreError: workOrderPager.loadMoreError,
     loadMoreWorkOrders: workOrderPager.loadMore,
     workOrdersPending: workOrdersQuery.isLoading,
