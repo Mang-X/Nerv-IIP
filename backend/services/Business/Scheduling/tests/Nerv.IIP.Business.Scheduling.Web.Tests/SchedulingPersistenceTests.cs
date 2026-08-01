@@ -160,6 +160,59 @@ public sealed class SchedulingPersistenceTests
             reloaded.GanttItems.Select(x => (x.OperationId, x.HasMaterialRisk, x.HasEquipmentRisk)));
     }
 
+    /// <summary>
+    /// #1409：设备不可用窗口（甘特上的维护/停机遮罩带）必须随方案落库。
+    ///
+    /// 它以前只在生成响应里出现，重读时靠 <c>ProblemJson</c> 投影——但问题快照存的是
+    /// 「设备可用性适配之前」的原始输入，其 <c>UnavailabilityWindows</c> 恒为空，
+    /// 于是 POST 有 5~7 条遮罩、GET 变 0 条：刚生成时甘特上有遮罩，刷新就没了。
+    ///
+    /// 这里故意不传 problem 重读（模拟问题快照缺失的最坏情况），遮罩仍必须在。
+    /// </summary>
+    [Fact]
+    public async Task Generated_plan_block_windows_survive_persistence_round_trip()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var generated = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(
+                problem,
+                "plan-block-window-round-trip-001",
+                problem.HorizonStartUtc),
+            SchedulePlanStatusContract.Generated);
+
+        Assert.NotEmpty(generated.BlockWindows ?? []);
+
+        await using var provider = CreateInMemoryProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                SchedulePlanContractMapper.ToDomainSnapshot(generated)));
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        SchedulePlanContract reloaded;
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var persisted = await dbContext.SchedulePlans
+                .AsNoTracking()
+                .Include(x => x.Assignments)
+                .Include(x => x.ResourceLoads)
+                .Include(x => x.Conflicts)
+                .Include(x => x.UnscheduledOperations)
+                .SingleAsync(x => x.PlanId == generated.PlanId, CancellationToken.None);
+
+            reloaded = SchedulePlanContractMapper.ToContract(persisted);
+        }
+
+        Assert.Equal(
+            JsonSerializer.Serialize(generated.BlockWindows, SchedulingJson.Options),
+            JsonSerializer.Serialize(reloaded.BlockWindows, SchedulingJson.Options));
+    }
+
     private static SchedulingProblemContract CreateRiskRoundTripProblem()
     {
         var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);

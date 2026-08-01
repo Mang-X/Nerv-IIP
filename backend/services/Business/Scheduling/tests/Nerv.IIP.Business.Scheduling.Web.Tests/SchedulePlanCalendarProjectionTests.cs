@@ -132,7 +132,14 @@ public sealed class SchedulePlanCalendarProjectionTests
 
         // 没有问题快照就不带日历——读面宁可少说,也不编一份日历出来。
         Assert.Null(detail.Calendars);
-        Assert.Null(detail.BlockWindows);
+
+        // 但设备不可用窗口不再依赖问题快照:它随方案一起落库(#1409)。
+        // 这里原来断言的是 Null,那是把缺陷当成了契约——问题快照存的是「设备可用性适配之前」
+        // 的输入,其 UnavailabilityWindows 恒为空,所以遮罩带 POST 有、GET 没有。
+        // 现在快照缺失也照样带得出来,这不算「编造」:这份数据是生成时刻真正参与排程的事实。
+        Assert.Equal(
+            ScheduleBlockKindContract.Maintenance,
+            Assert.Single(detail.BlockWindows!).Kind);
     }
 
     private static ApplicationDbContext CreateDbContext()
