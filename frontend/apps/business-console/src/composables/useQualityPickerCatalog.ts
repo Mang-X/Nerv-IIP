@@ -15,16 +15,18 @@
 import type { EntityPickerOption, SearchSelectOption } from '@nerv-iip/ui'
 import type { BusinessConsoleInspectionPlanCharacteristicItem } from '@nerv-iip/api-client'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
-import { useBusinessSkus, useBusinessUoms } from './useBusinessMasterData'
+import { useBusinessSkus, useBusinessUoms, useBusinessWorkers } from './useBusinessMasterData'
 import { useQualityReasonCodes } from './usePromotedCatalogs'
 import {
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
+  useQualityNcrs,
 } from './useBusinessQuality'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 /** 目录取数上限——单个工厂的物料 / 检验方案 / 原因码量级在数百条。 */
 const CATALOG_TAKE = 500
+const WORKER_CATALOG_TAKE = 200
 
 function toOption(
   code?: string | null,
@@ -47,6 +49,42 @@ function joinHint(...parts: (string | null | undefined)[]) {
     .map((part) => part?.trim())
     .filter(Boolean)
     .join(' · ')
+}
+
+/**
+ * 质量读面的跨单据 / 人员目录。
+ *
+ * CAPA 等只读 DTO 仍以稳定 id 表达关联；页面只允许把 id 当查表键，不能把它当展示兜底。
+ * 员工目录接口单页上限为 200，当前单工厂演示人员规模远低于该上限。
+ */
+export function useQualityReadFaceCatalog() {
+  const { ncrs } = useQualityNcrs({ take: CATALOG_TAKE })
+  const { workers } = useBusinessWorkers({ includeDisabled: true, pageSize: WORKER_CATALOG_TAKE })
+
+  return {
+    /** NCR 聚合标识 → NCR 单号。 */
+    ncrCodeById: computed(() => {
+      const map = new Map<string, string>()
+      for (const ncr of ncrs.value) {
+        const id = ncr.id?.trim()
+        const code = ncr.code?.trim()
+        if (id && code) map.set(id, code)
+      }
+      return map
+    }),
+    /** IAM userId → 姓名 · 工号；缺任一项时只显示已有的人读字段。 */
+    workerLabelById: computed(() => {
+      const map = new Map<string, string>()
+      for (const worker of workers.value) {
+        const userId = worker.userId?.trim()
+        const name = worker.displayName?.trim()
+        const employeeNo = worker.employeeNo?.trim()
+        const label = name && employeeNo ? `${name} · ${employeeNo}` : name || employeeNo
+        if (userId && label) map.set(userId, label)
+      }
+      return map
+    }),
+  }
 }
 
 /** 物料目录：待检工作台筛选、检验记录的检验对象、质量分析的 SPC 范围都用它。 */
