@@ -25,6 +25,7 @@ import {
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
@@ -771,6 +772,11 @@ export type MesProductionReportInput = Omit<
   'organizationId' | 'environmentId' | 'scopeKind' | 'scopeId'
 >
 
+export interface MesProductionQuantitySnapshot {
+  plannedQuantity: number
+  reportedGoodQuantity: number
+}
+
 export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
@@ -787,6 +793,40 @@ export function useMesProductionReporting() {
       'listBusinessConsoleMesWorkOrders',
       'listBusinessConsoleMesOperationTasks',
     ])
+
+  async function readProductionQuantitySnapshot(
+    workOrderId: string,
+    operationTaskId: string,
+  ): Promise<MesProductionQuantitySnapshot> {
+    const normalizedWorkOrderId = workOrderId.trim()
+    const normalizedOperationTaskId = operationTaskId.trim()
+    const response = await getBusinessConsoleMesWipSummary({
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        workOrderId: normalizedWorkOrderId,
+        skip: 0,
+        take: 100,
+      },
+      throwOnError: false,
+    })
+    if (response.error !== undefined) throw response.error
+    if (!response.data?.success) {
+      throw response.data ?? new Error('生产报工累计数量读取失败')
+    }
+    const row = response.data.data?.items?.find(
+      (candidate) => candidate.operationTaskId?.trim() === normalizedOperationTaskId,
+    )
+    if (!row) {
+      throw new Error(
+        `生产工单 ${normalizedWorkOrderId} 的工序 ${normalizedOperationTaskId} 缺少累计报工数据。请刷新工序列表后重试；若仍无数据，请联系计划员核对工序。`,
+      )
+    }
+    return {
+      plannedQuantity: row.plannedQuantity ?? 0,
+      reportedGoodQuantity: row.goodQuantity ?? 0,
+    }
+  }
 
   async function recordProductionReportAction(
     body: MesProductionReportInput,
@@ -898,6 +938,7 @@ export function useMesProductionReporting() {
     recordProductionReport: recordProductionReportAction,
     recordProductionReportError,
     recordProductionReportPending,
+    readProductionQuantitySnapshot,
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,

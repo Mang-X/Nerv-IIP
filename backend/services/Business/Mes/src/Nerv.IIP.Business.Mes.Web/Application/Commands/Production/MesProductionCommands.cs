@@ -193,6 +193,23 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 operationTask.Status.ToString());
         }
 
+        // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。
+        var reportedGoodQuantity = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .SumAsync(x => x.GoodQuantity, cancellationToken);
+        var cumulativeGoodQuantity = reportedGoodQuantity + request.GoodQuantity;
+        var hardMaximumGoodQuantity = workOrder.Quantity * 1.2m;
+        if (cumulativeGoodQuantity > hardMaximumGoodQuantity)
+        {
+            throw new KnownException(
+                $"生产工单 {request.WorkOrderId} 的工序 {request.OperationTaskId} 本次提交后累计合格数量 {cumulativeGoodQuantity}，超过计划量 {workOrder.Quantity} 的 120% 硬上限 {hardMaximumGoodQuantity}。请调整本次合格数量或工单计划量后重试。");
+        }
+
         var outputOperationSequence = await dbContext.OperationTasks
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
