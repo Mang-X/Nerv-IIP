@@ -19,6 +19,61 @@ namespace Nerv.IIP.Business.FullChain.Tests;
 public sealed class MaintenanceLifecycleDockerAcceptanceTests
 {
     [Fact]
+    public async Task Work_order_paging_is_stable_when_opened_times_are_identical_on_real_postgres()
+    {
+        await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();
+        await using var provider = await CreateMaintenanceProviderAsync(dependencies.PostgresConnectionString);
+        var organizationId = $"org-man634-paging-{Guid.CreateVersion7():N}";
+        const string environmentId = "env-man634";
+        var openedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var seeded = Enumerable.Range(1, 5)
+            .Select(index => MaintenanceWorkOrder.OpenManual(
+                organizationId,
+                environmentId,
+                $"DEV-MAN634-{index}",
+                "normal",
+                "reporter-001"))
+            .OrderBy(workOrder => workOrder.Id.ToString(), StringComparer.Ordinal)
+            .ToArray();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var workOrder in seeded)
+            {
+                db.Entry(workOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
+            }
+            db.MaintenanceWorkOrders.AddRange(seeded);
+            await db.SaveChangesAsync();
+        }
+
+        await using var queryScope = provider.CreateAsyncScope();
+        var handler = new ListMaintenanceWorkOrdersQueryHandler(
+            queryScope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        var firstPage = await handler.Handle(
+            new ListMaintenanceWorkOrdersQuery(organizationId, environmentId, Skip: 0, Take: 2),
+            CancellationToken.None);
+        var secondPage = await handler.Handle(
+            new ListMaintenanceWorkOrdersQuery(organizationId, environmentId, Skip: 2, Take: 2),
+            CancellationToken.None);
+        var thirdPage = await handler.Handle(
+            new ListMaintenanceWorkOrdersQuery(organizationId, environmentId, Skip: 4, Take: 2),
+            CancellationToken.None);
+
+        var actual = firstPage.Items
+            .Concat(secondPage.Items)
+            .Concat(thirdPage.Items)
+            .Select(item => item.WorkOrderId.ToString())
+            .ToArray();
+        var expected = seeded
+            .Select(workOrder => workOrder.Id.ToString())
+            .OrderDescending(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expected, actual);
+        Assert.Equal(5, actual.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public async Task Reliability_summary_retains_one_completion_through_verified_and_closed_without_counting_incomplete_work()
     {
         await using var dependencies = await MaintenanceLifecycleDockerDependencies.StartAsync();

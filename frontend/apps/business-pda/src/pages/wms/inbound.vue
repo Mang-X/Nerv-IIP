@@ -65,6 +65,7 @@ const {
   refreshing,
   loadingMore,
   error,
+  loadMoreError,
   refresh,
   loadMore,
   completeInbound,
@@ -94,6 +95,20 @@ const inboundScope = computed(() =>
 )
 const inboundTotal = computed(() => total.value)
 const inboundStatusOptions = PDA_INBOUND_ORDER_STATUS_OPTIONS
+const taskListFilterState = computed(() => ({
+  scopeKey: scopeKey.value,
+  status: filters.status ?? '',
+  keyword: filters.keyword ?? '',
+  locationCode: filters.locationCode ?? '',
+  lotNo: filters.lotNo ?? '',
+}))
+function restoreTaskListState(state: { filters: Record<string, unknown> }) {
+  scopeKey.value = String(state.filters.scopeKey ?? scopeKey.value)
+  filters.status = String(state.filters.status ?? '') || undefined
+  filters.keyword = String(state.filters.keyword ?? '') || undefined
+  filters.locationCode = String(state.filters.locationCode ?? '') || undefined
+  filters.lotNo = String(state.filters.lotNo ?? '') || undefined
+}
 
 // 选中的收货单（单据级质检状态/上架放行来自列表项派生字段，避免按分页门禁行跨页聚合）。
 const selectedOrder = ref<InboundOrder | null>(null)
@@ -474,18 +489,14 @@ function goPutaway() {
               : 'WMS 未返回可用作业范围，未发起列表查询。'
           "
         />
-
-        <RetryableListError
-          v-if="error || hasFailedResponse"
-          :error="error ?? '收货入库服务未成功返回'"
-          :pending="pending"
-          fallback="单据加载失败，请下拉重试或检查网络。"
-          test-id="error-banner"
-          @retry="refreshAll"
-        />
       </div>
 
       <WmsPagedListFrame
+        state-key="wms-inbound-orders"
+        empty-description="暂无收货单据"
+        :filter-state="taskListFilterState"
+        :error="error ?? (hasFailedResponse ? '收货入库服务未成功返回' : undefined)"
+        :load-more-error="loadMoreError"
         :refreshing="refreshing"
         :loading-more="loadingMore"
         :pending="pending"
@@ -493,6 +504,9 @@ function goPutaway() {
         :total="inboundTotal"
         @refresh="refreshAll"
         @load-more="loadMore"
+        @restore="restoreTaskListState"
+        @retry="refreshAll"
+        @retry-load-more="loadMore"
       >
         <div class="space-y-4 px-4 py-3">
           <div

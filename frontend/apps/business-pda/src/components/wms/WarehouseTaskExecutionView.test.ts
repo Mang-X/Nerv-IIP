@@ -1,9 +1,10 @@
 import { mount } from '@vue/test-utils'
-import { NvBottomSheet, NvNumberKeyboard, NvPullRefresh, NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvNumberKeyboard, NvScanBar } from '@nerv-iip/ui-mobile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import WarehouseTaskExecutionView from './WarehouseTaskExecutionView.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 
 const intersectionState = vi.hoisted(() => ({
   callback: undefined as ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined,
@@ -63,6 +64,7 @@ const completedTask = {
 function mountView(
   tasks = [openTask, inProgressTask, completedTask],
   taskType: 'picking' | 'putaway' = 'picking',
+  overrides: Record<string, unknown> = {},
 ) {
   return mount(WarehouseTaskExecutionView, {
     attachTo: document.body,
@@ -83,6 +85,7 @@ function mountView(
         { label: '仓储一组', value: 'team:TEAM-WMS-01' },
         { label: '一号仓库', value: 'site:SITE-001' },
       ],
+      ...overrides,
     },
   })
 }
@@ -92,6 +95,7 @@ describe('WarehouseTaskExecutionView', () => {
     vi.restoreAllMocks()
     intersectionState.callback = undefined
     document.body.innerHTML = ''
+    sessionStorage.clear()
   })
 
   it('显示后端任务事实与范围、状态筛选，不暴露 GUID 或原始状态码', () => {
@@ -151,13 +155,85 @@ describe('WarehouseTaskExecutionView', () => {
   it('下拉刷新与滑到底部加载更多均通过事件交给页面编排', async () => {
     const wrapper = mountView()
 
-    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
-    intersectionState.callback?.([{ isIntersecting: true }])
+    wrapper.getComponent(TaskListShell).vm.$emit('refresh')
+    wrapper.getComponent(TaskListShell).vm.$emit('loadMore')
     await nextTick()
 
     expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
-    expect(wrapper.findComponent({ name: 'NvInfiniteList' }).exists()).toBe(false)
+    expect(wrapper.findComponent(TaskListShell).exists()).toBe(true)
+  })
+
+  it('已有任务时独立呈现真实动作错误，绝不冒充下一页失败', () => {
+    const wrapper = mountView([openTask], 'picking', {
+      actionError: { message: '任务状态已被其他操作更新，请刷新后重试' },
+    })
+
+    expect(wrapper.get('[data-testid="action-error-banner"]').text()).toContain(
+      '任务状态已被其他操作更新，请刷新后重试',
+    )
+    expect(wrapper.text()).not.toContain('下一页加载失败')
+  })
+
+  it('下一页失败只显示分页错误文案，不显示动作错误', () => {
+    const wrapper = mountView([openTask], 'picking', {
+      total: 40,
+      loadMoreError: { message: '仓储任务下一页读取失败' },
+    })
+
+    expect(wrapper.get('[data-testid="task-list-load-error"]').text()).toContain('下一页加载失败')
+    expect(wrapper.find('[data-testid="action-error-banner"]').exists()).toBe(false)
+  })
+
+  it('由 TaskListShell 托管全部筛选、元数据、分页错误与实际滚动位置恢复', async () => {
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.wms-picking-tasks',
+      JSON.stringify({
+        filters: {
+          scopeKey: 'team:TEAM-WMS-01',
+          status: 'InProgress',
+          keyword: 'PK-RESTORED',
+          locationCode: 'A-09',
+          lotNo: 'LOT-09',
+          candidateSearchKeyword: '候选-09',
+        },
+        scrollTop: 184,
+      }),
+    )
+    const loadMoreError = new Error('next page failed')
+    const wrapper = mountView([openTask], 'picking', {
+      keyword: 'PK-CURRENT',
+      locationCode: 'A-01',
+      lotNo: 'LOT-01',
+      candidateSearchKeyword: '候选-01',
+      updatedAt: '2026-08-01T08:00:00.000Z',
+      loadMoreError,
+    })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    await nextTick()
+
+    const shell = wrapper.getComponent(TaskListShell)
+    expect(shell.props('showMeta')).toBe(true)
+    expect(shell.props('updatedAt')).toBe('2026-08-01T08:00:00.000Z')
+    expect(shell.props('loadMoreError')).toBe(loadMoreError)
+    expect(shell.props('filterState')).toEqual({
+      scopeKey: 'self:emp049',
+      status: 'Open',
+      keyword: 'PK-CURRENT',
+      locationCode: 'A-01',
+      lotNo: 'LOT-01',
+      candidateSearchKeyword: '候选-01',
+    })
+    expect(shell.find('[data-testid="wms-task-filters"]').exists()).toBe(true)
+    expect((wrapper.get('.nv-m-pr-scroll').element as HTMLElement).scrollTop).toBe(184)
+    expect(wrapper.emitted('update:scopeKey')?.at(-1)).toEqual(['team:TEAM-WMS-01'])
+    expect(wrapper.emitted('update:status')?.at(-1)).toEqual(['InProgress'])
+    expect(wrapper.emitted('update:keyword')?.at(-1)).toEqual(['PK-RESTORED'])
+    expect(wrapper.emitted('update:locationCode')?.at(-1)).toEqual(['A-09'])
+    expect(wrapper.emitted('update:lotNo')?.at(-1)).toEqual(['LOT-09'])
+    expect(wrapper.emitted('update:candidateSearchKeyword')?.at(-1)).toEqual(['候选-09'])
   })
 
   it('终态任务不可进入操作，待执行任务只提供开始', async () => {

@@ -1,5 +1,5 @@
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
+import { NvListRow, NvMobileDropdownMenuItem, NvScanBar } from '@nerv-iip/ui-mobile'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
@@ -49,6 +49,22 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.text()).toContain('质检待检任务服务（当前账号 Self 范围，状态：待检）')
   })
 
+  it('passes the independent refresh lifecycle to the shared task-list shell', () => {
+    const wrapper = mount(QualityTaskListStep, {
+      props: {
+        tasks: [task({ inspectionTaskId: 'T1' })],
+        total: 1,
+        loaded: 1,
+        hasMore: false,
+        pending: false,
+        refreshing: true,
+        error: null,
+      },
+    })
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
   it('renders a retryable response failure instead of a business empty state', () => {
     const wrapper = mount(QualityTaskListStep, {
       props: {
@@ -89,6 +105,20 @@ describe('QualityTaskListStep', () => {
     ])
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-1001')
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T1' })
+  })
+
+  it('keeps status visible and emits server-backed keyword/source/status filters', async () => {
+    const wrapper = mountList([task({ inspectionTaskId: 'T1' })])
+    const status = wrapper.findAllComponents(NvMobileDropdownMenuItem)[0]
+
+    expect(status?.props('title')).toBe('任务状态')
+    status?.vm.$emit('update:modelValue', 'in-progress')
+    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'WO-9001')
+    await wrapper.get('[data-testid="chip-operation"]').trigger('click')
+
+    expect(wrapper.emitted('update:status')?.at(-1)).toEqual(['in-progress'])
+    expect(wrapper.emitted('update:keyword')?.at(-1)).toEqual(['WO-9001'])
+    expect(wrapper.emitted('update:sourceType')?.at(-1)).toEqual(['operation'])
   })
 
   it('scan direct: cross-page hit loads all then auto-selects the task', async () => {
