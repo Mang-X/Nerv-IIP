@@ -184,14 +184,14 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
   await expect(page.getByText('加载中…')).toHaveCount(0, { timeout: 15_000 })
   await expect(page.getByTestId('tasks-error')).toHaveCount(0)
 
-  // ---- 步骤 2 进入执行步：优先 env 扫码直达，缺省点击首行 ----
+  // ---- 步骤 2 进入执行步：可先用 env 扫码筛选，再显式点击首行 ----
   // 选择器代码事实：task-row = QualityTaskListView.vue L91 NvListRow data-testid；
   // 步骤指示「第 2/3 步」= tasks.vue L61/L112-114；扫码输入框 = M1b quality-tasks.spec.ts 同款
   // （QualityTaskScanFilter 的 ScanBar placeholder）。
   //
-  // 计划特性 GET 等待器必须在**触发动作之前**注册：扫码直达 / 点击首行本身就会选中任务并
+  // 计划特性 GET 等待器必须在**点击任务之前**注册：点击首行会选中任务并
   // 触发懒加载（tasks.vue L47-53），本地栈响应快时后注册会漏捕 → 20s 超时假失败。
-  // 两个分支各自「先建 promise（不 await）→ 触发动作 → 事后 await」。
+  // 「先建 promise（不 await）→ 点击任务 → 事后 await」。
   //
   // 创建后立即在**派生 promise** 上挂 no-op catch（`promise.catch(...)` 返回新 promise，
   // 不吞原 promise 的拒绝语义——后续 `await charResponsePromise` 仍会拿到原始拒绝）：
@@ -205,37 +205,32 @@ test('live 写路径：真实登录 → 选待检任务 → 录合格结果提�
     void responsePromise.catch(() => {})
     return responsePromise
   }
-  let charResponsePromise: ReturnType<typeof waitForCharacteristicsResponse>
   const executeCode = process.env.NERV_IIP_LIVE_EXECUTE_CODE
   if (executeCode) {
-    const scanInput = page.locator('input[placeholder^="扫来源单据"]')
+    const scanInput = page.getByPlaceholder('扫描或输入来源单据 / SKU 以筛选')
     await expect(scanInput).toBeFocused()
-    // 注册在扫码前：唯一命中即直达执行步并触发计划特性 GET。
-    charResponsePromise = waitForCharacteristicsResponse()
     await simulateScanGun(page, executeCode)
-    // 写路径要求全局唯一命中直达执行步；退化为筛选说明 env 码不唯一/未命中 → 如实失败
-    // （未兑现的特性等待器已在创建处统一收编，不会产生 unhandled rejection）。
-    try {
-      await expect(page.getByText('第 2/3 步')).toBeVisible({ timeout: 15_000 })
-    } catch {
+    await expect(page.getByText(`筛选：${executeCode}`)).toBeVisible()
+    await expect(page.getByText('第 2/3 步')).toHaveCount(0)
+    await expect(page.getByText('加载中…')).toHaveCount(0, { timeout: 15_000 })
+    if ((await page.getByTestId('task-row').count()) === 0) {
       throw new Error(
-        `环境阻塞：NERV_IIP_LIVE_EXECUTE_CODE=${executeCode} 未全局唯一命中待检任务` +
-          '（退化为关键字筛选）。写路径需要唯一命中直达执行步，请换用唯一来源单号或移除该 env 走首行路径。',
+        `环境阻塞：NERV_IIP_LIVE_EXECUTE_CODE=${executeCode} 未筛选出待检任务。` +
+          '请换用可命中的来源单号，或移除该 env 走首行路径。',
       )
     }
-  } else {
-    const rows = page.getByTestId('task-row')
-    if ((await rows.count()) === 0) {
-      throw new Error(
-        '环境阻塞：待检任务列表为空——请先 seed 待检任务（QualitySeedService）' +
-          '或用 NERV_IIP_LIVE_EXECUTE_CODE 指定唯一来源单号。live 走查不伪造数据、不静默跳过。',
-      )
-    }
-    // 注册在点击前：选中任务即触发计划特性 GET（tasks.vue L47-53 懒加载），避免竞态漏捕。
-    charResponsePromise = waitForCharacteristicsResponse()
-    await rows.first().click()
-    await expect(page.getByText('第 2/3 步')).toBeVisible()
   }
+  const rows = page.getByTestId('task-row')
+  if ((await rows.count()) === 0) {
+    throw new Error(
+      '环境阻塞：待检任务列表为空——请先 seed 待检任务（QualitySeedService）' +
+        '或用 NERV_IIP_LIVE_EXECUTE_CODE 指定可命中的来源单号。live 走查不伪造数据、不静默跳过。',
+    )
+  }
+  // 注册在点击前：选中任务即触发计划特性 GET（tasks.vue L47-53 懒加载），避免竞态漏捕。
+  const charResponsePromise = waitForCharacteristicsResponse()
+  await rows.first().click()
+  await expect(page.getByText('第 2/3 步')).toBeVisible()
 
   // ---- 步骤 3 按计划特性填写合格值直到提交解禁 ----
   // 计划特性 GET（真实读）：等待响应并取权威上下限（比解析 DOM 的 spec-range 文案更可靠）。

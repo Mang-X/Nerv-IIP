@@ -598,6 +598,7 @@ export {
   listBusinessConsoleInventoryCountAdjustments,
   listBusinessConsoleQualityInspectionTasks,
   getBusinessConsoleQualityInspectionTask,
+  getBusinessConsoleQualityInspectionRecord,
   assignBusinessConsoleQualityInspectionTask,
   claimBusinessConsoleQualityInspectionTask,
   listBusinessConsoleQualityInspectionPlanCharacteristics,
