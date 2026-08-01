@@ -9,7 +9,11 @@ import {
   DialogTitle,
 } from 'reka-ui'
 import { computed, inject, ref, watch } from 'vue'
-import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
+import {
+  isPriorityMobileOverlayTarget,
+  MOBILE_OVERLAY_LAYER,
+  MOBILE_OVERLAY_TARGET,
+} from '../../lib/overlay-target'
 import { cn, rubberband } from '../../lib/utils'
 
 // Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.
@@ -41,8 +45,9 @@ const dismissing = ref(false)
  * release the inline transition is dropped and `.nv-m-sheet-snap` takes over.
  */
 const sheetStyle = computed(() => {
-  if (!dragging.value && !dragY.value) return undefined
+  if (!dragging.value && !dragY.value) return { zIndex: MOBILE_OVERLAY_LAYER.surface }
   return {
+    zIndex: MOBILE_OVERLAY_LAYER.surface,
     transform: `translateY(${dragY.value}px)`,
     ...(dragging.value ? { transition: 'none' } : {}),
   }
@@ -107,6 +112,10 @@ function onSheetTransitionEnd(e: TransitionEvent) {
   }
 }
 
+function onInteractOutside(event: CustomEvent<{ originalEvent: Event }>) {
+  if (isPriorityMobileOverlayTarget(event.detail.originalEvent.target)) event.preventDefault()
+}
+
 // Reset drag state when the sheet OPENS (not on close): after a drag-dismiss the
 // sheet must stay slid-out (dragY = height, dismissing = true) so reka unmounts
 // it off-screen instead of snapping it back to 0 and replaying the exit slide.
@@ -126,14 +135,17 @@ watch(
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
     <DialogPortal :to="overlayTarget">
       <DialogOverlay
-        class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-40 bg-black/50 backdrop-blur-[6px] duration-300"
+        data-mobile-overlay-layer="backdrop"
+        :style="{ zIndex: MOBILE_OVERLAY_LAYER.backdrop }"
+        class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 bg-black/50 backdrop-blur-[6px] duration-300"
       />
       <DialogContent
         data-slot="mobile-sheet-content"
+        data-mobile-overlay-layer="surface"
         :style="sheetStyle"
         :class="
           cn(
-            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:[animation-timing-function:var(--nv-ease-out-expo)] fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)] duration-300 outline-none',
+            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:[animation-timing-function:var(--nv-ease-out-expo)] fixed inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)] duration-300 outline-none',
             // reka exit slide for normal closes only; drag-dismiss slides manually
             !dismissing &&
               'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom',
@@ -143,6 +155,7 @@ watch(
           )
         "
         @transitionend="onSheetTransitionEnd"
+        @interact-outside="onInteractOutside"
       >
         <!-- top grab bar: handle + title — pull down to dismiss -->
         <div
