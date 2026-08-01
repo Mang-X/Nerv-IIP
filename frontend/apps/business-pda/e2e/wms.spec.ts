@@ -11,7 +11,14 @@ async function expectTaskSheetKeyboardOverlay(
   expect(await page.viewportSize()).toEqual({ width: 375, height: 812 })
   await expect(page.getByRole('heading', { name: input.heading })).toBeVisible()
 
-  await page.locator(`[data-task-no="${input.taskNo}"]`).click()
+  const task = page.locator(`[data-task-no="${input.taskNo}"]`)
+  await expect(task).toHaveCount(0)
+
+  const filters = page.getByTestId('wms-task-filters')
+  await filters.getByRole('button', { name: '待执行', exact: true }).click()
+  await filters.getByRole('button', { name: '执行中', exact: true }).click()
+  await expect(task).toBeVisible()
+  await task.click()
   const sheet = page.locator('[data-slot="mobile-sheet-content"]')
   const quantity = page.getByTestId('executed-quantity')
   const keyboard = page.locator('[data-slot="number-keyboard"]')
@@ -42,6 +49,7 @@ async function expectTaskSheetKeyboardOverlay(
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
   await page.route('**/api/console/v1/**', routeConsoleApi)
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
   // Seed the stored session (principal carries org/env scope) so guarded WMS routes
