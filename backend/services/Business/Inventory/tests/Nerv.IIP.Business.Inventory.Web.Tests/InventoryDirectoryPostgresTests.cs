@@ -107,20 +107,29 @@ public sealed class InventoryDirectoryPostgresTests
                     SkuCode: "SKU-01",
                     Keyword: "lot"),
                 CancellationToken.None);
+            var serials = await handler.Handle(
+                new ListInventoryDirectoryQuery(
+                    "org-directory-pg",
+                    "env-directory-pg",
+                    InventoryDirectoryTypes.Serial,
+                    SiteCode: "SITE-A",
+                    SkuCode: "SKU-01",
+                    Keyword: "sn-"),
+                CancellationToken.None);
 
             Assert.Equal("LOC-A-01", Assert.Single(locations.Items).Code);
             Assert.Equal(
                 InventoryDirectoryStableIds.Create(InventoryDirectoryTypes.Batch, "SKU-01", "LOT-001"),
                 Assert.Single(batches.Items).Id);
             Assert.Equal(1, batches.Total);
+            Assert.Equal(["SN-001", "SN-002"], serials.Items.Select(item => item.Code).ToArray());
 
-            var plan = await ExplainScopedLedgerQueryAsync(db);
+            var batchPlan = await ExplainScopedLedgerQueryAsync(db, InventoryDirectoryTypes.Batch, "lot");
+            var serialPlan = await ExplainScopedLedgerQueryAsync(db, InventoryDirectoryTypes.Serial, "sn-");
             Assert.Equal("on", await GetEnableSeqScanAsync(db));
             var scopedIndexName = await GetScopedLedgerIndexNameAsync(db);
-            Assert.Contains("Index", plan, StringComparison.Ordinal);
-            Assert.True(
-                plan.Contains(scopedIndexName, StringComparison.Ordinal),
-                $"Expected EXPLAIN to use {scopedIndexName}:{Environment.NewLine}{plan}");
+            AssertNaturalScopedIndexPlan(batchPlan, scopedIndexName, InventoryDirectoryTypes.Batch);
+            AssertNaturalScopedIndexPlan(serialPlan, scopedIndexName, InventoryDirectoryTypes.Serial);
         }
         finally
         {
@@ -314,21 +323,35 @@ public sealed class InventoryDirectoryPostgresTests
         db.StockLedgers.Add(ledger);
     }
 
-    private static async Task<string> ExplainScopedLedgerQueryAsync(ApplicationDbContext db)
+    private static async Task<string> ExplainScopedLedgerQueryAsync(
+        ApplicationDbContext db,
+        string directoryType,
+        string keyword)
     {
         var request = new ListInventoryDirectoryQuery(
             "org-directory-pg",
             "env-directory-pg",
-            InventoryDirectoryTypes.Batch,
+            directoryType,
             SiteCode: "SITE-A",
             SkuCode: "SKU-01",
-            Keyword: "lot",
+            Keyword: keyword,
             Skip: 0,
             Take: 20);
-        var values = InventoryDirectoryEfQueries.BuildValues(db, request, InventoryDirectoryTypes.Batch);
+        var values = InventoryDirectoryEfQueries.BuildValues(db, request, directoryType);
         var countPlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildCount(values));
         var pagePlan = await ExplainAsync(InventoryDirectoryEfQueries.BuildPage(values, request.Skip, request.Take));
         return $"COUNT PLAN:{Environment.NewLine}{countPlan}{Environment.NewLine}PAGE PLAN:{Environment.NewLine}{pagePlan}";
+    }
+
+    private static void AssertNaturalScopedIndexPlan(
+        string plan,
+        string scopedIndexName,
+        string directoryType)
+    {
+        Assert.Contains("Index", plan, StringComparison.Ordinal);
+        Assert.True(
+            plan.Contains(scopedIndexName, StringComparison.Ordinal),
+            $"Expected {directoryType} EXPLAIN to use {scopedIndexName}:{Environment.NewLine}{plan}");
     }
 
     private static async Task<string> ExplainAsync(IQueryable query)

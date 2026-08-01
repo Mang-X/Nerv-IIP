@@ -1,4 +1,5 @@
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.Contracts.Iam;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -84,16 +85,13 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             return null;
         }
 
-        var grants = (authorization.ScopeGrants ?? [])
-            .Where(grant =>
-                grant is not null
-                && !string.IsNullOrWhiteSpace(grant.SourceKind)
-                && grant.SourceKind.Trim().ToLowerInvariant() is "role" or "membership"
-                && !string.IsNullOrWhiteSpace(grant.SourceId)
-                && !string.IsNullOrWhiteSpace(grant.ScopeKind)
-                && !string.IsNullOrWhiteSpace(grant.ScopeId)
-                && grant.ApplicablePermissionCodes?.Contains(definition.PermissionCode, StringComparer.Ordinal) == true)
-            .ToArray();
+        var grants = (authorization.ScopeGrants ?? []).ToArray();
+        if (grants.Length == 0
+            || grants.Any(grant => !IsRepresentableGrant(definition, grant, organizationId)))
+        {
+            return null;
+        }
+
         var organizationWide = grants.Any(grant =>
             grant.OrganizationWide
             && string.Equals(grant.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
@@ -123,6 +121,29 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             .Distinct()
             .ToArray();
         return compatible.Length == 1 ? compatible[0] : null;
+    }
+
+    private static bool IsRepresentableGrant(
+        BusinessConsoleSearchableDirectoryDefinition definition,
+        AuthorizationScopeGrant? grant,
+        string organizationId)
+    {
+        if (grant is null
+            || string.IsNullOrWhiteSpace(grant.SourceKind)
+            || grant.SourceKind.Trim().ToLowerInvariant() is not ("role" or "membership")
+            || string.IsNullOrWhiteSpace(grant.SourceId)
+            || string.IsNullOrWhiteSpace(grant.ScopeKind)
+            || string.IsNullOrWhiteSpace(grant.ScopeId)
+            || grant.ApplicablePermissionCodes?.Contains(definition.PermissionCode, StringComparer.Ordinal) != true)
+        {
+            return false;
+        }
+
+        var scopeKind = grant.ScopeKind.Trim().ToLowerInvariant();
+        var scopeId = grant.ScopeId.Trim();
+        return grant.OrganizationWide
+            ? scopeKind == "organization" && string.Equals(scopeId, organizationId, StringComparison.Ordinal)
+            : definition.SupportedScopeKinds.Contains(scopeKind);
     }
 
     private static BusinessConsoleSearchableDirectoryDefinition Define(

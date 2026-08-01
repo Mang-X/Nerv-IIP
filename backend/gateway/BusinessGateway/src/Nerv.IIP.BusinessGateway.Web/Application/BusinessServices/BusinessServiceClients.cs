@@ -2279,7 +2279,8 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("skillCode", request.SkillCode),
                 ("workshopCode", request.WorkshopCode)),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
         if (response.Resources is null || response.Total < response.Resources.Count)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
@@ -2549,7 +2550,8 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("pageIndex", request.PageIndex),
                 ("pageSize", request.PageSize)),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
         if (wire.Items is null)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
@@ -3585,7 +3587,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("take", request.Take),
                 ("defaultDisposition", request.DefaultDisposition)),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
 
     public Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
         string internalBearerToken,

@@ -131,6 +131,48 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Null(downstream.RequestUri);
     }
 
+    [Theory]
+    [InlineData("malformed-source")]
+    [InlineData("self-scope")]
+    [InlineData("wrong-permission")]
+    [InlineData("restricted-organization")]
+    public async Task Valid_grant_mixed_with_unrepresentable_grant_fails_closed_without_reaching_owner(
+        string extraGrantKind)
+    {
+        var extraGrant = extraGrantKind switch
+        {
+            "malformed-source" => new AuthorizationScopeGrant(
+                null!,
+                "role-directory-reader",
+                "site",
+                "SITE-B",
+                [BusinessGatewayPermissions.InventoryLedgerRead]),
+            "self-scope" => Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
+            "wrong-permission" => Grant("site", "SITE-B", BusinessGatewayPermissions.MasterDataResourcesRead),
+            "restricted-organization" => Grant(
+                "organization",
+                "org-001",
+                BusinessGatewayPermissions.InventoryLedgerRead),
+            _ => throw new ArgumentOutOfRangeException(nameof(extraGrantKind)),
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+            extraGrant,
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var factory = CreateFactory(auth, downstream);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(downstream.RequestUri);
+    }
+
     [Fact]
     public async Task Explicit_organization_grant_is_required_when_scope_is_omitted()
     {
@@ -392,6 +434,54 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
     };
 
+    public static TheoryData<string, string, string> AuthoritativeFailureEnvelopeCases => new()
+    {
+        { "material", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":null}" },
+        { "material", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":{\"resources\":[],\"total\":0}}" },
+        { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":null}" },
+        { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":{\"items\":[],\"totalCount\":0,\"pageIndex\":1,\"pageSize\":20}}" },
+        { "priority", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":null}" },
+        { "priority", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":{\"resources\":[],\"total\":0}}" },
+        { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":null}" },
+        { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"success\":false,\"message\":\"not available\",\"code\":409,\"data\":{\"items\":[],\"total\":0}}" },
+    };
+
+    [Theory]
+    [MemberData(nameof(AuthoritativeFailureEnvelopeCases))]
+    public async Task Authoritative_failure_envelopes_return_safe_502_for_each_owner_and_priority_probe(
+        string directoryType,
+        string permissionCode,
+        string failurePayload)
+    {
+        var targetHandler = directoryType == "priority"
+            ? new SequenceJsonHandler("{\"resources\":[],\"total\":0}", failurePayload)
+            : new SequenceJsonHandler(failurePayload);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", permissionCode, organizationWide: true),
+        ]);
+        var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        var masterData = directoryType is "material" or "personnel" or "priority"
+            ? new HttpBusinessMasterDataClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://master-data.local") })
+            : null;
+        var quality = directoryType == "defect-code"
+            ? new HttpBusinessQualityClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://quality.local") })
+            : null;
+        await using var factory = CreateFactory(
+            auth,
+            inventoryHandler,
+            masterData,
+            quality);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(directoryType == "priority" ? 2 : 1, targetHandler.RequestCount);
+    }
+
     [Theory]
     [MemberData(nameof(MalformedOwnerPayloads))]
     public async Task Malformed_authoritative_owner_semantics_return_502_for_raw_and_envelope(
@@ -463,6 +553,25 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    private sealed class SequenceJsonHandler(params string[] payloads) : HttpMessageHandler
+    {
+        private int index;
+
+        public int RequestCount => index;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var payloadIndex = Interlocked.Increment(ref index) - 1;
+            var payload = payloads[Math.Min(payloadIndex, payloads.Length - 1)];
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),

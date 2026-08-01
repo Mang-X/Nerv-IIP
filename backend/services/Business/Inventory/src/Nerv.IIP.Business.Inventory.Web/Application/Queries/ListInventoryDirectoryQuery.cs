@@ -52,8 +52,8 @@ public static class InventoryDirectoryEfQueries
             ? ledgers
                 .Where(x => x.LotNo != null)
                 .Where(x => keyword == null
-                    || x.LotNo!.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
-                    || x.SkuCode.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
+                    || x.LotNo!.ToLower().Contains(keyword)
+                    || x.SkuCode.ToLower().Contains(keyword)
                     || x.LocationCode.ToLower().Contains(keyword))
                 .GroupBy(x => new { x.SkuCode, x.LotNo })
                 .Select(group => new InventoryDirectoryValueRow
@@ -65,8 +65,8 @@ public static class InventoryDirectoryEfQueries
             : ledgers
                 .Where(x => x.SerialNo != null)
                 .Where(x => keyword == null
-                    || x.SerialNo!.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
-                    || x.SkuCode.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
+                    || x.SerialNo!.ToLower().Contains(keyword)
+                    || x.SkuCode.ToLower().Contains(keyword)
                     || x.LocationCode.ToLower().Contains(keyword))
                 .GroupBy(x => new { x.SkuCode, x.SerialNo })
                 .Select(group => new InventoryDirectoryValueRow
@@ -184,10 +184,10 @@ public sealed class ListInventoryDirectoryQueryHandler(ApplicationDbContext dbCo
             .Where(x => x.Status == "active")
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
             .Where(x => keyword == null
-                || x.LocationCode.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
+                || x.LocationCode.ToLower().Contains(keyword)
                 || x.LocationType.ToLower().Contains(keyword)
-                || x.SiteCode.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
-                || x.ParentLocationCode != null && x.ParentLocationCode.Contains(keyword, StringComparison.CurrentCultureIgnoreCase));
+                || x.SiteCode.ToLower().Contains(keyword)
+                || x.ParentLocationCode != null && x.ParentLocationCode.ToLower().Contains(keyword));
         if (!string.IsNullOrWhiteSpace(request.SkuCode))
         {
             var skuCode = request.SkuCode.Trim();
