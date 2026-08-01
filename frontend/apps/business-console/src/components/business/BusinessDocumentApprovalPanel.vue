@@ -36,6 +36,7 @@ const props = withDefaults(
     documentId?: string
     title?: string
     allowStart?: boolean
+    preferredTemplateCode?: string
   }>(),
   {
     allowStart: true,
@@ -56,7 +57,13 @@ const approval = useBusinessApproval(actor)
 const selectedTemplateCode = shallowRef('')
 
 const activeTemplates = computed(() =>
-  approval.templates.value.filter((template) => template.isActive !== false),
+  [...approval.templates.value]
+    .filter((template) => template.isActive !== false)
+    .sort((left, right) => {
+      const preferred = props.preferredTemplateCode?.trim()
+      if (!preferred) return 0
+      return Number(right.templateCode === preferred) - Number(left.templateCode === preferred)
+    }),
 )
 const boundChainId = computed(() => props.modelValue?.trim() ?? '')
 const hasDurableDocumentId = computed(() => !!props.documentId?.trim())

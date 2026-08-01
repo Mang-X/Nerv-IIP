@@ -42,4 +42,7 @@ public static class ApprovalTemplateCodes
     /// </summary>
     /// 配套的单据类型是 <see cref="ApprovalDocumentTypes.StockCountVariance"/>。
     public const string StockCountVariance = "APT-WB-CNT-001";
+
+    /// <summary>工程变更发布审批模板；ProductEngineering 发布校验与 Approval seed 逐字共用。</summary>
+    public const string EngineeringChangeOrder = "APT-WB-ECO-001";
 }

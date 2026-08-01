@@ -150,8 +150,8 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
             output.WriteLine($"small-scale-sample: {line}");
         }
 
-        // 采购 / NCR / 信用解冻 / 盘点差异（#1344 扩修补齐）四张模板。
-        Assert.Equal(4, first.TemplatesWritten);
+        // 采购 / NCR / 信用解冻 / 盘点差异（#1344 扩修补齐）/ 工程变更五张模板。
+        Assert.Equal(5, first.TemplatesWritten);
         Assert.Equal(facts.Count, first.ChainsWritten);
         Assert.Equal(
             facts.Count(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode),
@@ -179,6 +179,26 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
                 step.Status == ApprovalStepStatuses.Pending
                 && step.ApproverType == WorldHistoryApprovalSpec.ActorTypeUser
                 && step.ApproverRef == WorldHistoryApprovalSpec.AdminUserId));
+    }
+
+    [Fact]
+    public async Task Seed_includes_the_engineering_change_template_consumed_by_product_engineering()
+    {
+        await using var db = CreateDbContext();
+
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var template = await db.ApprovalTemplates
+            .Include(x => x.Steps)
+            .SingleOrDefaultAsync(x => x.TemplateCode == "APT-WB-ECO-001");
+
+        Assert.NotNull(template);
+        Assert.Equal("engineering-change-order", template.DocumentType);
+        Assert.True(template.IsActive);
+        var step = Assert.Single(template.Steps);
+        Assert.Equal("工程变更评审", step.StepName);
+        Assert.Equal(WorldHistoryApprovalSpec.ActorTypeUser, step.ApproverType);
+        Assert.Equal(WorldHistoryApprovalSpec.AdminUserId, step.ApproverRef);
     }
 
     [Fact]

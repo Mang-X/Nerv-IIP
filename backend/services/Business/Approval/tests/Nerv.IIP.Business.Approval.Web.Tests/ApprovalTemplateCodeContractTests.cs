@@ -36,6 +36,54 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Equal(ApprovalTemplateCodes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
         Assert.Equal("inventory-count-variance", ApprovalDocumentTypes.StockCountVariance);
         Assert.Equal(ApprovalDocumentTypes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceDocumentType);
+
+        Assert.Equal("APT-WB-ECO-001", ApprovalTemplateCodes.EngineeringChangeOrder);
+        Assert.Equal(ApprovalTemplateCodes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
+        Assert.Equal("engineering-change-order", ApprovalDocumentTypes.EngineeringChangeOrder);
+        Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeDocumentType);
+        Assert.Equal("product-engineering", WorldHistoryApprovalSpec.EngineeringChangeSourceService);
+    }
+
+    [Fact]
+    public async Task Product_engineering_start_tuple_reaches_the_seeded_engineering_template()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
+            "org-001",
+            "env-dev",
+            WorldHistoryApprovalSpec.EngineeringChangeTemplateCode,
+            WorldHistoryApprovalSpec.EngineeringChangeDocumentType,
+            version: 1,
+            isActive: true,
+            [
+                new ApprovalTemplateStepDefinition(
+                    1,
+                    "工程变更评审",
+                    null,
+                    WorldHistoryApprovalSpec.ActorTypeUser,
+                    WorldHistoryApprovalSpec.AdminUserId,
+                    24),
+            ]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var chainId = await new StartApprovalChainCommandHandler(dbContext).Handle(
+            new StartApprovalChainCommand(
+                "org-001",
+                "env-dev",
+                ApprovalTemplateCodes.EngineeringChangeOrder,
+                WorldHistoryApprovalSpec.EngineeringChangeSourceService,
+                ApprovalDocumentTypes.EngineeringChangeOrder,
+                "ECO-20260801-000001",
+                null,
+                "user:user-engineer"),
+            CancellationToken.None);
+
+        var chain = await dbContext.ApprovalChains.SingleAsync(x => x.Id == chainId, CancellationToken.None);
+        Assert.Equal(ApprovalTemplateCodes.EngineeringChangeOrder, chain.TemplateCode);
+        Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, chain.DocumentReference.DocumentType);
+        Assert.Equal(WorldHistoryApprovalSpec.EngineeringChangeSourceService, chain.DocumentReference.SourceService);
     }
 
     /// <summary>
