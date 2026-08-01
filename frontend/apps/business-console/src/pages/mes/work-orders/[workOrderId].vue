@@ -11,7 +11,7 @@ import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
 } from '@/composables/useSingleOrderScheduling'
-import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -19,7 +19,7 @@ import {
 } from '@/composables/mes/materialReadinessScope'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { useSkuNames } from '@/composables/useSkuNames'
-import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
+import { labelFor, operationQualityStatusLabel } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
@@ -158,7 +158,7 @@ const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
-const blockingReasonDisplays = computed(() => blockingReasons.value.map(describeMesReadinessReason))
+const blockingReasonDisplays = computed(() => describeMesReadinessReasons(blockingReasons.value))
 const errorMessage = computed(
   () => formatError(detailError.value) || formatError(materialReadinessError.value),
 )
@@ -236,7 +236,9 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'qualityStatus',
     header: '质量',
-    accessor: (r) => labelFor(QUALITY_STATUS_LABELS, r.qualityStatus) || '未检',
+    // 这一列会收到总体判定值（ready/warning/blocked），走库存质量状态表会把 `Ready`
+    // 原样上屏（#1418）——统一走判定优先的口径。
+    accessor: (r) => operationQualityStatusLabel(r.qualityStatus),
   },
 ]
 

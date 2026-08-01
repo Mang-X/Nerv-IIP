@@ -7,7 +7,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -257,7 +257,8 @@ function openAssign(row: DispatchRow) {
 }
 
 function readinessList(reasons?: string[] | null) {
-  return (reasons ?? []).map(describeMesReadinessReason)
+  // 合并同码：同一工序两条「物料缺料」要并成一条并点名缺哪几项（#1418）。
+  return describeMesReadinessReasons(reasons)
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '未指定'

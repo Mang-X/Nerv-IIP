@@ -54,10 +54,13 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
     `${subject(context)}有明细行没有对应的已完成拣货任务。请到「拣货任务」页为缺失的行补建并完成拣货任务，再回来复核。`,
 
   'picking-difference-reason-required': (context) =>
-    `${taskSubject(context)}的拣货数量少于计划量，必须填写差异原因才能完成。请在「差异原因」里说明少拣的原因（如库存不足、货损）。`,
+    `${taskSubject(context)}的实拣数量与计划量不一致，必须填写差异原因才能完成。请在「差异原因」里说明短拣或超拣原因。`,
+
+  'picking-over-limit': (context) =>
+    `${taskSubject(context)}的实拣数量超过计划量的 110% 硬上限。请调整实拣数量；如计划确需增加，请先调整出库计划后再操作。`,
 
   'executed-quantity-out-of-range': (context) =>
-    `${taskSubject(context)}的实拣数量超出计划量或为负数。请填写 0 到计划量之间的数量。`,
+    `${taskSubject(context)}的实拣数量为负数或低于已登记数量。请核对现场数量并填写有效的实拣数量。`,
 
   // —— 403（作业范围 / 派工）——
   // 这些代码原本也被压成一句 "forbidden"，导致「这单派给别人了」和「不在你的作业范围」

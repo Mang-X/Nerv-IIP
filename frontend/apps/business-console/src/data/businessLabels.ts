@@ -96,6 +96,30 @@ export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   quarantine: '隔离',
 }
 
+/**
+ * 工序任务「质量状态」列的**总体判定值**。这个字段是重载的：既可能是判定值
+ * （ready/warning/blocked），也可能是具体阻塞原因码，还可能是库存口径的质量状态。
+ * 判定值不在 `QUALITY_STATUS_LABELS` 里，直接 `labelFor` 会把 `Ready` 原样上屏（#1418）。
+ *
+ * 注意 `blocked` 在两张表里语义不同：库存口径是「冻结」（货被扣住），工序判定口径是
+ * 「已阻塞」（这道工序开不了工）。所以按上下文分表，而不是往库存表里塞。
+ */
+export const OPERATION_QUALITY_VERDICT_LABELS: Readonly<Record<string, string>> = {
+  ready: '可执行',
+  warning: '有提示',
+  blocked: '已阻塞',
+}
+
+/**
+ * 工序任务质量状态的显示口径：先认总体判定值，再退回库存质量状态，最后才原样透出。
+ * 顺序不能反 —— `blocked` 两表都有，工序语境下必须读成「已阻塞」。
+ */
+export function operationQualityStatusLabel(value?: string | null, fallback = '未检'): string {
+  if (!value) return fallback
+  const code = normalizeCode(value)
+  return OPERATION_QUALITY_VERDICT_LABELS[code] ?? QUALITY_STATUS_LABELS[code] ?? value
+}
+
 /** 库存货主类型（ownerType）。 */
 export const STOCK_OWNER_TYPE_LABELS: Readonly<Record<string, string>> = {
   company: '本公司',
