@@ -7,7 +7,7 @@ import {
 } from '@nerv-iip/api-client'
 import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -18,6 +18,12 @@ export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
 export interface WmsWorkScopeOption {
   label: string
   value: string
+}
+
+const selectedScopeKeys: Record<WmsWorkScopeCatalogKind, ReturnType<typeof shallowRef<string>>> = {
+  receipts: shallowRef<string>(),
+  shipments: shallowRef<string>(),
+  counts: shallowRef<string>(),
 }
 
 function normalizeScope(
@@ -31,12 +37,15 @@ function normalizeScope(
   }
 }
 
-export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
+export function useWmsWorkScope(
+  catalog: WmsWorkScopeCatalogKind,
+  consumerEnabled: MaybeRefOrGetter<boolean> = true,
+) {
   const auth = useAuthStore()
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
-  const selectedScopeKey = shallowRef<string>()
+  const selectedScopeKey = selectedScopeKeys[catalog]
 
   const catalogQuery = useQuery(() => {
     const options = {
@@ -54,7 +63,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
 
     return {
       ...queryOptions,
-      enabled: hasTenant.value,
+      enabled: hasTenant.value && toValue(consumerEnabled),
     }
   })
 
@@ -118,6 +127,16 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
     ),
     pending: catalogQuery.isLoading,
     error: catalogQuery.error,
+    hasSuccessfulResponse: computed(
+      () => envelope.value?.success === true && Boolean(envelope.value.data),
+    ),
+    hasFailedResponse: computed(
+      () =>
+        Boolean(catalogQuery.error.value) ||
+        (!catalogQuery.isLoading.value &&
+          envelope.value !== undefined &&
+          !(envelope.value.success === true && envelope.value.data)),
+    ),
     refresh: () => (hasTenant.value ? catalogQuery.refetch() : Promise.resolve()),
   }
 }

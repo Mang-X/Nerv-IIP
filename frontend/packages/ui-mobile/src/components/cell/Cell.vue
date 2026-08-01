@@ -35,6 +35,8 @@ const slots = useSlots()
       )
     "
     @click="arrow && emit('click')"
+    @keydown.enter.prevent="arrow && emit('click')"
+    @keydown.space.prevent="arrow && emit('click')"
   >
     <span v-if="slots.icon" class="flex shrink-0 items-center text-muted-foreground [&_svg]:size-5">
       <slot name="icon" />
