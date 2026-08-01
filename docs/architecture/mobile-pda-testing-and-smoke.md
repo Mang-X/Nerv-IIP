@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（6 个 spec / 45 个用例）
+### e2e spec 清单（6 个 spec / 48 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -52,7 +52,11 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
+- `e2e/equipment.spec.ts`（8）：维修工单服务端 Self 筛选（`scopeKind=self` / `scopeId`
+    固定携带当前 principal）与分页 → 强 ID 详情重新校验同一 Self 范围、展示设备位置/优先级/
+    版本/允许动作/阻塞原因/生命周期；缺少当前维修人员范围时不发请求且不声称个人队列；
+    报警上下文直达仍强 ID 回读，终态仅可查看；
+    报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
   设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
   并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
   （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；
