@@ -6,6 +6,7 @@ import { useErpSiteCatalog } from '@/composables/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { buildKpiTrend } from '@/utils/kpiTrend'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
@@ -167,24 +168,42 @@ const pageScopeMeta = computed(
     `第 ${page.value} 页 ${orders.salesOrders.value.length} 张 · 全部 ${orders.salesOrdersTotal.value} 张`,
 )
 
-const orderCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'released',
-    label: '本页已释放订单',
-    value: readCount(readState.value, releasedCount.value),
-    unit: readState.value.trustworthy ? '张' : '',
-    meta: readState.value.trustworthy
-      ? `已下达到履约环节 · ${pageScopeMeta.value}`
-      : readState.value.emptyMessage,
-  },
-  {
-    key: 'amount',
-    label: '本页订单金额',
-    // 取不到订单时显 `—`：¥0.00 会被读成"这一批确实没金额"。
-    value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
-    meta: readState.value.trustworthy ? pageScopeMeta.value : readState.value.emptyMessage,
-  },
-])
+const orderCells = computed<NvMetricStripCell[]>(() => {
+  // 销售订单读面不带下单/释放时间戳（列表列的交期来自紧急度读面，不是本行的发生时间），
+  // 按天分桶无从算起，两张卡都由当前真值反推形状——末点仍落在卡片数字上。
+  const released = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.releasedOrders', releasedCount.value, { kind: 'count' })
+    : undefined
+  const orderAmount = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.orderAmount', amount.value, { kind: 'amount' })
+    : undefined
+
+  return [
+    {
+      key: 'released',
+      label: '本页已释放订单',
+      value: readCount(readState.value, releasedCount.value),
+      unit: readState.value.trustworthy ? '张' : '',
+      meta: readState.value.trustworthy
+        ? `已下达到履约环节 · ${pageScopeMeta.value}`
+        : readState.value.emptyMessage,
+      delta: released?.delta,
+      series: released?.series,
+      seriesLabels: released?.seriesLabels,
+      seriesUnit: '张',
+    },
+    {
+      key: 'amount',
+      label: '本页订单金额',
+      // 取不到订单时显 `—`：¥0.00 会被读成"这一批确实没金额"。
+      value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
+      meta: readState.value.trustworthy ? pageScopeMeta.value : readState.value.emptyMessage,
+      delta: orderAmount?.delta,
+      series: orderAmount?.series,
+      seriesLabels: orderAmount?.seriesLabels,
+    },
+  ]
+})
 
 const open = shallowRef(false)
 const form = reactive({ quotationNo: '', salesOrderNo: '', siteCode: '' })
@@ -347,6 +366,7 @@ async function submit() {
           :urgency="
             row.salesOrderNo ? orderUrgencies.byReference.value.get(row.salesOrderNo) : undefined
           "
+          :source-unavailable="orderUrgencies.error?.value != null"
           @refresh="refreshUrgency"
         />
       </template>

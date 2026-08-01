@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Coding;
@@ -202,6 +203,38 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
 
         Assert.Equal(first, replay);
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, replay.Status);
+        Assert.Equal(1, replay.Version);
+    }
+
+    [Fact]
+    public async Task Complete_work_order_replays_the_explicit_two_part_legacy_receipt()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var (command, receipt, changedAtUtc) = await PersistCompletedWorkOrderAsync(db, "maintenance-complete-legacy-two-part");
+        await ReplaceCompletionReceiptCodeAsync(db, receipt, $"Completed|{changedAtUtc:O}");
+
+        var replay = await new CompleteMaintenanceWorkOrderCommandHandler(db).Handle(command, CancellationToken.None);
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, replay.Status);
+        Assert.Equal(changedAtUtc, replay.ChangedAtUtc);
+        Assert.Equal(1, replay.Version);
+    }
+
+    [Theory]
+    [InlineData("999|2026-08-01T01:02:03.0000000+00:00|1")]
+    [InlineData("Completed|not-a-time|1")]
+    [InlineData("Completed|2026-08-01T01:02:03.0000000+00:00|-1")]
+    [InlineData("Completed|2026-08-01T01:02:03.0000000+00:00|not-a-version")]
+    public async Task Complete_work_order_rejects_a_corrupt_three_part_persisted_receipt(string corruptCode)
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var (command, receipt, _) = await PersistCompletedWorkOrderAsync(db, $"corrupt-{Guid.CreateVersion7():N}");
+        await ReplaceCompletionReceiptCodeAsync(db, receipt, corruptCode);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CompleteMaintenanceWorkOrderCommandHandler(db).Handle(command, CancellationToken.None));
+
+        Assert.Equal("stored-maintenance-completion-receipt-is-invalid", exception.Message);
     }
 
     [Fact]
@@ -219,7 +252,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             CancellationToken.None);
 
         Assert.Equal(
-            $"business-maintenance:work-order-complete:{workOrderId}",
+            $"business-maintenance:work-order:{workOrderId}",
             settings.LockKey);
         Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
     }
@@ -386,4 +419,43 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             AssignedTechnicianUserId: "emp042",
             EstimatedLaborMinutes: 45,
             IdempotencyKey: idempotencyKey);
+
+    private static async Task<(CompleteMaintenanceWorkOrderCommand Command, CodeIdempotencyKey Receipt, DateTimeOffset ChangedAtUtc)>
+        PersistCompletedWorkOrderAsync(ApplicationDbContext db, string idempotencyKey)
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", $"DEV-{Guid.CreateVersion7():N}", "high", "emp010");
+        db.MaintenanceWorkOrders.Add(workOrder);
+        if (!await db.DowntimeReasons.AnyAsync(x => x.ReasonCode == "equipment-failure"))
+        {
+            db.DowntimeReasons.Add(DowntimeReason.Create(
+                "org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure"));
+        }
+        await db.SaveChangesAsync();
+        var command = new CompleteMaintenanceWorkOrderCommand(
+            workOrder.Id, "fixed", "equipment-failure", 10, [], IdempotencyKey: idempotencyKey);
+        var result = await new CompleteMaintenanceWorkOrderCommandHandler(db).Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        var receipt = await db.CodeIdempotencyKeys.SingleAsync(x => x.IdempotencyKey == idempotencyKey);
+        return (command, receipt, result.ChangedAtUtc);
+    }
+
+    private static async Task ReplaceCompletionReceiptCodeAsync(
+        ApplicationDbContext db,
+        CodeIdempotencyKey receipt,
+        string code)
+    {
+        db.CodeIdempotencyKeys.Remove(receipt);
+        await db.SaveChangesAsync();
+        db.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            receipt.RuleKey,
+            receipt.IdempotencyKey,
+            code,
+            receipt.PayloadFingerprint,
+            receipt.CreatedAtUtc));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
 }

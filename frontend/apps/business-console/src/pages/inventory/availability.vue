@@ -31,6 +31,7 @@ import {
   WAREHOUSE_SERIAL_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
 import {
   formatInventoryExpiryDate,
@@ -103,6 +104,7 @@ const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: tr
 const { resolvePartner } = useBusinessPartnerNames()
 // 选物料之前先给一块跨物料的真实事实：全厂效期风险（库存域唯一只要工厂就能出行的读面）。
 const {
+  overviewError,
   overviewExpiredCount,
   overviewNearExpiryCount,
   overviewPending,
@@ -205,6 +207,26 @@ const overviewFacets = computed(() => [
 ])
 const siteSelected = computed(() => (filters.siteCode ?? '').trim().length > 0)
 /**
+ * 效期风险批次数的走势**只是形状**：库存域没有历史读面，日期字段全是批次属性
+ * （效期/生产日期），台账本身不带时间轴，算不出真的环比。当前值仍是后端真值，
+ * 末点就落在卡片那个数上。没选工厂 / 还在读 / 读失败时一律不画——
+ * 那三种情况下的 0 不是事实，不配挂一个"持平"。
+ */
+const expiryRiskTrend = computed(() =>
+  siteSelected.value && !overviewPending.value && !overviewError.value
+    ? buildKpiTrend('inventory.expiryRisk', overviewTotalCount.value, {
+        kind: 'count',
+        polarity: 'lower-better',
+      })
+    : undefined,
+)
+/** 同理：可用量也只补形状；读不出可用量时（未加载/失败）不挂趋势。 */
+const availableTrend = computed(() =>
+  availabilityPending.value || availabilityError.value || !availability.value
+    ? undefined
+    : buildKpiTrend('inventory.available', availableQuantity.value, { kind: 'amount' }),
+)
+/**
  * 计数三态：数不出来就别说「0 条」——0 是一个结论，只有真的查成功才配下。
  * 未选范围 / 加载中 / 失败各说各的，别让一次 500 长得跟「本厂真没有库存」一样。
  */
@@ -268,10 +290,30 @@ const siteStockColumns: NvDataTableColumn<SiteStockRow>[] = [
   {
     key: 'earliestExpiry',
     header: '最早到期',
-    headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
-    accessor: (r) => (r.earliestExpiry ? formatInventoryExpiryDate(r.earliestExpiry) : '无效期'),
+    headerTitle:
+      'FEFO：预留与拣货建议优先选择更早到期的批次。不追效期的物料（如成品总成）没有到期日，属正常。',
+    accessor: (r) => siteStockExpiryText(r),
+  },
+  {
+    key: 'frozenFlag',
+    header: '冻结',
+    width: 'w-16',
+    headerTitle: '存在质量冻结 / 盘点冻结 / 过期而不可动用的台账行；与是否追效期无关。',
+    accessor: (r) => (r.hasBlocked ? '有冻结行' : '—'),
   },
 ]
+
+/**
+ * 最早到期列的三态口径（#1418 B2）：
+ * - 有到期日 → 显示日期；
+ * - 不追效期（没有任何保质期/效期配置，成品总成本来就没有保质期）→ 中性「不追效期」，绝不是风险；
+ * - 配置了保质期却没有效期数据 → 才是需要警示的「缺效期数据」。
+ * 这样列表与顶部「效期风险批次」卡的口径才一致：卡说 0 批风险时，列表不允许满屏红标。
+ */
+function siteStockExpiryText(row: SiteStockRow) {
+  if (row.earliestExpiry) return formatInventoryExpiryDate(row.earliestExpiry)
+  return row.tracksShelfLife ? '缺效期数据' : '不追效期'
+}
 const siteStockEmptyMessage = computed(() => {
   if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
   return '已扫描的物料在本厂都没有库存台账。可继续扫描其余物料，或换一个工厂。'
@@ -475,6 +517,7 @@ async function refreshCurrentView() {
         :value="overviewPending ? '—' : overviewTotalCount"
         unit="批"
         :tone="overviewExpiredCount > 0 ? 'danger' : 'neutral'"
+        :trend="expiryRiskTrend?.delta"
         :facets="overviewFacets"
       />
       <section class="grid content-start gap-2 rounded-md border bg-card p-4">
@@ -503,14 +546,30 @@ async function refreshCurrentView() {
         </p>
       </section>
     </div>
-    <NvMetricRing
-      v-else
-      class="lg:max-w-md"
-      label="现存量构成"
-      :value="formatQuantity(onHandQuantity)"
-      :center-caption="filters.uomCode ? `现存量 · ${formatUom(filters.uomCode)}` : '现存量'"
-      :segments="stockSegments"
-    />
+    <!--
+      选中物料后的单物料口径：左边现存量构成是真实构成关系，右边可用量的**当前值**
+      同样是后端真值，只有那条走势线是补的形状（库存域无历史读面）。
+    -->
+    <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <NvMetricRing
+        label="现存量构成"
+        :value="formatQuantity(onHandQuantity)"
+        :center-caption="filters.uomCode ? `现存量 · ${formatUom(filters.uomCode)}` : '现存量'"
+        :segments="stockSegments"
+      />
+      <NvMetricCard
+        variant="sparkline"
+        label="可用量"
+        :value="availabilityPending ? '—' : formatQuantity(availableQuantity)"
+        :unit="filters.uomCode ? formatUom(filters.uomCode) : undefined"
+        :trend="availableTrend?.delta"
+        :series="availableTrend?.series"
+        :series-labels="availableTrend?.seriesLabels"
+        :series-unit="filters.uomCode ? formatUom(filters.uomCode) : undefined"
+        :foot-start="availableTrend?.footStart"
+        :foot-end="availableTrend?.footEnd"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -654,12 +713,21 @@ async function refreshCurrentView() {
           <span class="tabular-nums">{{ row.lineCount }}</span>
         </template>
         <template #cell-earliestExpiry="{ row }">
-          <div class="flex items-center justify-start gap-2">
-            <span>{{
-              row.earliestExpiry ? formatInventoryExpiryDate(row.earliestExpiry) : '无效期'
-            }}</span>
-            <NvStatusBadge v-if="row.hasBlocked" value="blocked" />
-          </div>
+          <span v-if="row.earliestExpiry" class="tabular-nums">{{
+            formatInventoryExpiryDate(row.earliestExpiry)
+          }}</span>
+          <NvStatusBadge
+            v-else-if="row.tracksShelfLife"
+            value="missing-expiry"
+            label="缺效期数据"
+            tone="warning"
+          />
+          <span v-else class="text-muted-foreground">不追效期</span>
+        </template>
+        <template #cell-frozenFlag="{ row }">
+          <!-- 库存语境下 blocked 叫「冻结」（foundation-conventions 契约注释），不沿用 MES 的「阻塞」。 -->
+          <NvStatusBadge v-if="row.hasBlocked" value="blocked" label="冻结" />
+          <span v-else class="text-muted-foreground">—</span>
         </template>
       </NvDataTable>
       <!--

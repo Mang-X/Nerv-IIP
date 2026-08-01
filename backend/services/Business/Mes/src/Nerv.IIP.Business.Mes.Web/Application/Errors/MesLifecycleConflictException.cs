@@ -1,4 +1,5 @@
 using System.Net;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Errors;
 
@@ -28,6 +29,16 @@ public sealed class MesLifecycleConflictMiddleware(
         try
         {
             await next(context);
+        }
+        catch (MesRoutingSnapshotMissingException exception)
+        {
+            logger.LogInformation(
+                "MES routing snapshot missing. Source={Source}",
+                exception.DiagnosticSource);
+            context.Response.StatusCode = (int)HttpStatusCode.UnprocessableEntity;
+            await context.Response.WriteAsJsonAsync(
+                new MesLifecycleConflictResponse(false, MesRoutingSnapshotMissingException.SafeCode),
+                context.RequestAborted);
         }
         catch (MesIdempotencyConflictException)
         {

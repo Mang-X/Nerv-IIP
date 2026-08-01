@@ -32,12 +32,28 @@ public sealed class BusinessGatewayOpenApiTests
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
         AssertOperationId(paths, "/api/business-console/v1/me/work-context", "get", "getBusinessConsolePrincipalWorkContext");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/assignment", "post", "assignBusinessConsoleMaintenanceWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders/{workOrderId}/actions", "post", "transitionBusinessConsoleMaintenanceWorkOrder");
         var workContextResponses = paths
             .GetProperty("/api/business-console/v1/me/work-context")
             .GetProperty("get")
             .GetProperty("responses");
         Assert.True(workContextResponses.TryGetProperty("502", out _));
         Assert.True(workContextResponses.TryGetProperty("503", out _));
+        var directoryOperation = paths
+            .GetProperty("/api/business-console/v1/directories/{directoryType}")
+            .GetProperty("get");
+        AssertParameterEnum(
+            directoryOperation,
+            "directoryType",
+            "personnel", "team", "equipment", "work-center", "station", "workshop", "material", "priority",
+            "location", "batch", "serial", "defect-code", "scrap-reason", "downtime-reason", "maintenance-reason");
+        AssertParameterEnum(directoryOperation, "scopeKind", "team", "workshop", "work-center", "site");
+        AssertParameterEnum(directoryOperation, "rankingMode", "default", "recent", "suggested");
+        var directoryResponses = directoryOperation.GetProperty("responses");
+        Assert.True(directoryResponses.TryGetProperty("400", out _));
+        Assert.True(directoryResponses.TryGetProperty("502", out _));
+        Assert.True(directoryResponses.TryGetProperty("503", out _));
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}", "get", "getBusinessConsoleMasterDataResourceDetail");
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}", "patch", "updateBusinessConsoleMasterDataResource");
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}/disable", "post", "disableBusinessConsoleMasterDataResource");
@@ -1037,7 +1053,7 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.Equal(JsonObjectType.String, schema.Type);
         Assert.Equal(
             ["preview", "generated", "released", "superseded", "revoked"],
-            schema.Enumeration.Select(value => Assert.IsType<string>(value)).ToArray());
+            [.. schema.Enumeration.Select(value => Assert.IsType<string>(value))]);
         Assert.Empty(schema.EnumerationNames);
     }
 
@@ -1134,6 +1150,24 @@ public sealed class BusinessGatewayOpenApiTests
             .Single(parameter =>
                 parameter.GetProperty("in").GetString() == "query"
                 && parameter.GetProperty("name").GetString() == name);
+
+    private static void AssertParameterEnum(
+        JsonElement operation,
+        string parameterName,
+        params string[] expected)
+    {
+        var parameter = operation
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == parameterName);
+        var actual = parameter
+            .GetProperty("schema")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(item => item.GetString())
+            .ToArray();
+        Assert.Equal(expected, actual);
+    }
 
     private static void AssertJsonResponseRef(
         JsonElement paths,

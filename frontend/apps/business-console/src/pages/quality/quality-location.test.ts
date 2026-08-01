@@ -159,6 +159,8 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
       inspectionPlans: shallowRef([{ id: 'plan-1', code: 'QP-1', skuCode: 'SKU-001' }]),
       inspectionPlansPending: shallowRef(false),
       inspectionPlanOptions: computed(() => [{ value: 'plan-1', label: 'QP-1' }]),
+      // 只读回显要把方案标识翻成人读方案号（#1418），桩要跟真实目录的契约一致。
+      inspectionPlanCodeById: computed(() => new Map([['plan-1', 'QP-1']])),
     }),
     useQualitySkuCatalog: () => ({
       skuOptions: computed(() => [{ value: 'SKU-001', label: '示例物料' }]),

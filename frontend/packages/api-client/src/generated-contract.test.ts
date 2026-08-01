@@ -184,8 +184,47 @@ import {
   updateConsoleIamRolePermissionsMutationOptions,
   updateConsoleIamUserMutationOptions,
 } from './iam'
+import {
+  assignBusinessConsoleMaintenanceWorkOrder,
+  assignBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  transitionBusinessConsoleMaintenanceWorkOrder,
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  type AssignBusinessConsoleMaintenanceWorkOrderData,
+  type BusinessConsoleAssignMaintenanceWorkOrderRequest,
+  type BusinessConsoleMaintenanceWorkOrderAction,
+  type BusinessConsoleMaintenanceWorkOrderActionResponse,
+  type BusinessConsoleMaintenanceWorkOrderLifecycleEventItem,
+  type BusinessConsoleTransitionMaintenanceWorkOrderRequest,
+  type TransitionBusinessConsoleMaintenanceWorkOrderData,
+} from './business-console'
 
 describe('generated API client contract', () => {
+  it('exports the maintenance lifecycle API through the stable business-console barrel', () => {
+    expect(assignBusinessConsoleMaintenanceWorkOrder).toBeTypeOf('function')
+    expect(assignBusinessConsoleMaintenanceWorkOrderMutationOptions).toBeTypeOf('function')
+    expect(transitionBusinessConsoleMaintenanceWorkOrder).toBeTypeOf('function')
+    expect(transitionBusinessConsoleMaintenanceWorkOrderMutationOptions).toBeTypeOf('function')
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderAction>().toEqualTypeOf<
+      | 'accept'
+      | 'start'
+      | 'pause'
+      | 'waitForParts'
+      | 'resume'
+      | 'complete'
+      | 'verify'
+      | 'close'
+      | 'cancel'
+    >()
+    expectTypeOf<BusinessConsoleAssignMaintenanceWorkOrderRequest>().toMatchTypeOf<
+      AssignBusinessConsoleMaintenanceWorkOrderData['body']
+    >()
+    expectTypeOf<BusinessConsoleTransitionMaintenanceWorkOrderRequest>().toMatchTypeOf<
+      TransitionBusinessConsoleMaintenanceWorkOrderData['body']
+    >()
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
+  })
+
   it('requires optimistic versions for public quality assignment and claim mutations', () => {
     expectTypeOf<
       Pick<BusinessConsoleAssignQualityInspectionTaskRequest, 'expectedVersion'>

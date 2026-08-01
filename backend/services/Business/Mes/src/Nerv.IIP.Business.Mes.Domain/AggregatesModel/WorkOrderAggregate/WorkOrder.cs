@@ -360,10 +360,19 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order is not executable.");
         }
 
-        var maxQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
+        var configuredMaximumQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
+        var hardMaximumQuantity = Quantity * 1.2m;
+        var maxQuantity = Math.Min(configuredMaximumQuantity, hardMaximumQuantity);
         if (CompletedQuantity + ScrapQuantity + goodQuantity + scrapQuantity > maxQuantity)
         {
-            throw new InvalidOperationException("Reported quantity exceeds work order tolerance.");
+            if (hardMaximumQuantity < configuredMaximumQuantity)
+            {
+                throw new InvalidOperationException(
+                    $"生产工单 {WorkOrderIdValue} 的累计报工数量超过计划量 {Quantity} 的 120% 硬上限 {hardMaximumQuantity}。请调整报工数量或工单计划量后重试。");
+            }
+
+            throw new InvalidOperationException(
+                $"生产工单 {WorkOrderIdValue} 的累计报工数量超过允许上限 {maxQuantity}。请调整报工数量或工单超产容差后重试。");
         }
 
         CompletedQuantity += goodQuantity;

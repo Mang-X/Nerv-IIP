@@ -75,6 +75,10 @@ public sealed class WorldHistorySeedService(
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
+        // 齐套缺口档位按「已下达待开工」队列的序号成块分配（#1408）。队列序号必须从**完整计划表**
+        // 推导，不能从本批或库内已有行推导：种子是幂等的，第二次跑只补差集，按写入顺序编号会让
+        // 同一张单在两次跑之间换档。
+        var releasedCohortOrdinals = BuildReleasedCohortOrdinals(plans);
         var written = 0;
         for (var batchStart = 0; batchStart < plans.Count; batchStart += BatchSize)
         {
@@ -95,7 +99,8 @@ public sealed class WorldHistorySeedService(
                     timeline,
                     ResolveExecution(plan.Stage),
                     sourcePlanReference: CreatePlanningSuggestionSourceReference(plan),
-                    dueDate: plan.RequiredDate);
+                    dueDate: plan.RequiredDate,
+                    releasedCohortOrdinal: releasedCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo));
                 added++;
             }
 
@@ -109,6 +114,20 @@ public sealed class WorldHistorySeedService(
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// 「已下达待开工」工单在自己队列里的序号（从 1 起）——齐套缺口配额块的分配下标（#1408）。
+    /// </summary>
+    private static Dictionary<string, int> BuildReleasedCohortOrdinals(IReadOnlyList<WorldHistoryOrderPlan> plans)
+    {
+        var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var plan in plans.Where(plan => ResolveExecution(plan.Stage) == WorldHistoryExecution.ReleasedOnly))
+        {
+            ordinals[plan.WorkOrderNo] = ordinals.Count + 1;
+        }
+
+        return ordinals;
     }
 
     /// <summary>销售订单阶段 → 工单执行深度。</summary>
@@ -188,6 +207,7 @@ public sealed class WorldHistorySeedService(
                         sourceDocumentId: source.WorkOrderNo,
                         sourceDemandReference: null),
                     dueDate: source.RequiredDate,
+                    releasedCohortOrdinal: null,
                     isRework: true);
                 added++;
             }
@@ -229,6 +249,7 @@ public sealed class WorldHistorySeedService(
         WorldHistoryExecution execution,
         SourcePlanReference sourcePlanReference,
         DateOnly dueDate,
+        int? releasedCohortOrdinal,
         bool isRework = false)
     {
         var dueUtc = new DateTimeOffset(dueDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
@@ -265,7 +286,8 @@ public sealed class WorldHistorySeedService(
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
 
         var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
-        WriteMaterialFacts(organizationId, environmentId, plan, workOrder, timeline, execution, tasks);
+        WriteMaterialFacts(
+            organizationId, environmentId, plan, workOrder, timeline, execution, tasks, releasedCohortOrdinal);
 
         if (execution == WorldHistoryExecution.ReleasedOnly)
         {
@@ -441,6 +463,12 @@ public sealed class WorldHistorySeedService(
     /// 挂在首序任务上会让门禁在 OP-20 及之后取不到任何需求行，把期望证明位翻成
     /// <c>no-requirements</c>，与工单上的 <c>captured</c> 对不上——照样全拦。
     /// </para>
+    /// <para>
+    /// **缺口分布（#1408）**：#1384 把可用/已备料一律写满需求量，顺带把全世界的齐套状态
+    /// 压成了单值，「缺料 → MRP 采购建议 → 请购 → 采购 → 收货 → 入库 → 齐套转绿 → 开工」
+    /// 这条链因此没有起点。现在由 <c>WorldHistoryMesSpec.MaterialShortageTier</c> 按配额块
+    /// 给「已下达待开工」档留出四档缺口，其余执行档一律齐套——两条演示路径同时成立。
+    /// </para>
     /// </summary>
     private void WriteMaterialFacts(
         string organizationId,
@@ -449,15 +477,26 @@ public sealed class WorldHistorySeedService(
         WorkOrder workOrder,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
-        IReadOnlyList<OperationTaskWindow> tasks)
+        IReadOnlyList<OperationTaskWindow> tasks,
+        int? releasedCohortOrdinal)
     {
         var components = WorldHistoryMesSpec.Components(plan.SkuCode);
         var kittingTask = tasks[0];
         var capturedAtUtc = MomentOn(timeline.WorkOrderReleaseDate, plan.WorkOrderNo, "kitting");
+        var tier = WorldHistoryMesSpec.MaterialShortageTier(execution, releasedCohortOrdinal);
+        var coverageRatios = WorldHistoryMesSpec.MaterialCoverageRatios(plan.WorkOrderNo, tier, components.Count);
 
-        foreach (var component in components)
+        for (var componentIndex = 0; componentIndex < components.Count; componentIndex++)
         {
+            var component = components[componentIndex];
             var required = component.QuantityPer * plan.WorkOrderQuantity;
+            // 覆盖量拆成「线边可用 + 已备料」两笔，两笔之和 = 覆盖量。齐套档覆盖量 == 需求量、
+            // 缺口恰好为 0；缺料档留出的差额就是读面与开工门禁看到的缺口。
+            var (available, staged) = WorldHistoryMesSpec.SplitCoverage(
+                plan.WorkOrderNo,
+                component.SkuCode,
+                required,
+                coverageRatios[componentIndex]);
             var requirement = MaterialRequirement.Capture(
                 organizationId,
                 environmentId,
@@ -467,9 +506,8 @@ public sealed class WorldHistorySeedService(
                 component.SkuCode,
                 materialLotId: $"LOT-{component.SkuCode}-{plan.WorkOrderNo}",
                 requiredQuantity: required,
-                // 齐套检查通过：可用与已备料都覆盖需求（未齐套的场景属于二期库存域）。
-                availableQuantity: required,
-                stagedQuantity: required,
+                availableQuantity: available,
+                stagedQuantity: staged,
                 sourceSystem: SourceSystem,
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
                 capturedAtUtc: capturedAtUtc);

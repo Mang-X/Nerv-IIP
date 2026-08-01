@@ -4,7 +4,11 @@ import type {
   BusinessConsoleErpReceivableItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpPayables, useErpReceivables } from '@/composables/useBusinessErp'
+import {
+  useErpFinanceSummary,
+  useErpPayables,
+  useErpReceivables,
+} from '@/composables/useBusinessErp'
 import {
   useErpPartnerCatalog,
   useErpPayableSourceCatalog,
@@ -12,6 +16,7 @@ import {
 } from '@/composables/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { buildKpiTrend } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -158,33 +163,74 @@ const headerCount = computed(() => {
   return `${receivableState.value.count ?? '应收读取中'} / ${payableState.value.count ?? '应付读取中'}`
 })
 
-const receivableAmount = computed(() =>
-  receivables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
+/**
+ * 顶部两张卡用**全库口径**的财务摘要（#1418 B5，owner 亲验点名）。
+ *
+ * 曾踩坑：这里原本对「当前页 10 行」求和冒充「应收/应付未结」——翻页数字乱跳，
+ * 登记一笔新应付反而让卡上的「应付未结」下降（新行把旧行挤出第一页）。
+ * KPI 卡位只许放全局读数；页内合计不是余额，不许再占卡位。
+ */
+const { ready: summaryReady, summary, summaryError, refreshSummary } = useErpFinanceSummary()
+const summaryTrustworthy = computed(
+  () => summaryReady.value && summaryError.value == null && summary.value !== undefined,
 )
-const payableAmount = computed(() =>
-  payables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
-)
-// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向；金额只能对已取回的行加总，
-// 口径写进副行而不是让它冒充全量余额。
+const summaryUnavailableNote = computed(() => {
+  if (!summaryReady.value) return '尚未选择业务范围，还没有发起查询。'
+  if (summaryError.value != null) return '财务摘要读取失败，当前无法判断未结余额。'
+  return '正在读取财务摘要…'
+})
+/**
+ * 迷你图（#1395）与全库口径（#1418 B5）的交叉点。
+ *
+ * #1395 原本用当前页的 `createdAtUtc` 累加出一条真实曲线，那是配着「当前列表 N 笔合计」
+ * 的页内读数才成立的。头条数字换成全库余额之后，再挂一条 10 行拼出来的曲线就是拿一页
+ * 的形状冒充全书走势——正是 B5 要消灭的那类穿帮。**全局余额没有对应的时间序列读面**，
+ * 所以这里不传 realSeries，由 buildKpiTrend 回落到确定性补形状：它自带 `synthetic` 标记
+ * 且不发日期标签，悬停不会谎称某天是多少。真曲线要等后端补按日余额聚合。
+ */
+const settlementTrends = computed(() => ({
+  receivable: summaryTrustworthy.value
+    ? buildKpiTrend('erp.arap.receivable', summary.value?.openReceivableAmount, {
+        kind: 'amount',
+        polarity: 'neutral',
+      })
+    : undefined,
+  payable: summaryTrustworthy.value
+    ? buildKpiTrend('erp.arap.payable', summary.value?.openPayableAmount, {
+        kind: 'amount',
+        polarity: 'neutral',
+      })
+    : undefined,
+}))
+// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向。
 const settlementCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'receivable',
     label: '应收未结',
     // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
-    value: receivableState.value.trustworthy
-      ? formatAmount(receivableAmount.value)
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.openReceivableAmount)
       : UNAVAILABLE_TEXT,
-    meta: receivableState.value.trustworthy
-      ? `当前列表 ${receivables.items.value.length} 笔应收合计`
-      : receivableState.value.emptyMessage,
+    // 副行不挂筛选后的行数——筛选一变就和全局金额对不上，又是一次口径穿帮。
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : summaryUnavailableNote.value,
+    delta: settlementTrends.value.receivable?.delta,
+    series: settlementTrends.value.receivable?.series,
+    seriesLabels: settlementTrends.value.receivable?.seriesLabels,
   },
   {
     key: 'payable',
     label: '应付未结',
-    value: payableState.value.trustworthy ? formatAmount(payableAmount.value) : UNAVAILABLE_TEXT,
-    meta: payableState.value.trustworthy
-      ? `当前列表 ${payables.items.value.length} 笔应付合计`
-      : payableState.value.emptyMessage,
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.openPayableAmount)
+      : UNAVAILABLE_TEXT,
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : summaryUnavailableNote.value,
+    delta: settlementTrends.value.payable?.delta,
+    series: settlementTrends.value.payable?.series,
+    seriesLabels: settlementTrends.value.payable?.seriesLabels,
   },
 ])
 
@@ -235,6 +281,8 @@ async function submitReceivable() {
     })
     receivableOpen.value = false
     notifySuccess('应收已登记')
+    // 顶卡是全库口径的摘要，登记成功后必须跟着刷新，否则卡片数字停在旧余额上。
+    void refreshSummary()
   } catch (error) {
     notifyOperationFailure(
       '登记应收失败',
@@ -256,6 +304,7 @@ async function submitPayable() {
     })
     payableOpen.value = false
     notifySuccess('应付已登记')
+    void refreshSummary()
   } catch (error) {
     notifyOperationFailure(
       '登记应付失败',
@@ -282,6 +331,7 @@ async function submitPayable() {
             () => {
               receivables.refresh()
               payables.refresh()
+              refreshSummary()
             }
           "
         >

@@ -97,6 +97,181 @@ public static class WorldHistoryMesSpec
         ];
     }
 
+    /// <summary>该成品 4 项主料里**采购件**（悬架弹簧 <c>RM-SPR-##</c>）的下标。</summary>
+    public const int PurchasedComponentIndex = 3;
+
+    #endregion
+
+    #region 齐套缺口分布（#1408）
+
+    /// <summary>缺口配额块大小（照抄 ECO 状态分布「每块一份配额 + 块内确定性洗牌」的做法）。</summary>
+    public const int MaterialShortageQuotaBlockSize = 10;
+
+    /// <summary>
+    /// 每 10 张「已下达待开工」工单的缺口配额：6 齐套 / 2 轻度 / 1 部分 / 1 严重。
+    ///
+    /// <para>
+    /// **为什么是配额块而不是独立概率**：独立概率在小纵深（<c>Scale=0.02</c> 的快速验证，
+    /// 或演示当天只翻头几页）下会整块缺档，演示配方点名的对象可能根本不存在。配额块保证
+    /// 任何连续 10 个序号里四档皆在场——这正是计量器具校准状态与 ECO 状态分布被种子闭环
+    /// 审计认可为样板的原因（#1381）。
+    /// </para>
+    /// <para>
+    /// **为什么是 4:6 而不是对半**：缺口只落在「已下达待开工」档（约占全世界工单 3%），
+    /// 于是全世界缺料工单约 1.2%，绝大多数工单仍然齐套——「大部分齐套、少数缺料」既是
+    /// 真实工厂的样子，也同时保住 #1384 解开的逐工序开工演示。
+    /// </para>
+    /// </summary>
+    private static readonly WorldHistoryMaterialShortageTier[] MaterialShortageQuota =
+    [
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Kitted,
+        WorldHistoryMaterialShortageTier.Minor,
+        WorldHistoryMaterialShortageTier.Minor,
+        WorldHistoryMaterialShortageTier.Partial,
+        WorldHistoryMaterialShortageTier.Critical,
+    ];
+
+    /// <summary>
+    /// 取一张订单工单的齐套缺口档位。
+    ///
+    /// <para>
+    /// <paramref name="releasedCohortOrdinal"/> 是这张单在**「已下达待开工」队列里的序号**（从 1 起），
+    /// 不是全局订单序号：已下达档只占全世界 3%，按全局序号分配会让整块配额落到不存在的单上，
+    /// 实际到手的比例随「这一段里恰好有几张已下达」抖动。按队列序号分配，配额比例才是准的。
+    /// 补产工单与其他执行档传 <c>null</c>/0，恒齐套。
+    /// </para>
+    /// <para>
+    /// 配额按连续 10 个队列序号成块，块内以块号为流键**确定性洗牌**，于是档位既不与
+    /// <c>ordinal % 10</c> 这类机械分档绑死，又在每个完整块里四档齐全。
+    /// </para>
+    /// <para>
+    /// 只有「已下达待开工」（<see cref="WorldHistoryExecution.ReleasedOnly"/>）的工单会缺料，
+    /// 两个理由：① 齐套快照是**下达时刻**的实况，已开工/已完工的工单当时确实齐套，
+    /// 把它们改成缺料与「它们后来真的开工并完工了」自相矛盾；② 结构上也做不到——
+    /// 在制/完工档的领料已过账，缺口公式里的 <c>received</c> 恒等于需求量，缺口被 clamp 回 0。
+    /// </para>
+    /// </summary>
+    public static WorldHistoryMaterialShortageTier MaterialShortageTier(
+        WorldHistoryExecution execution,
+        int? releasedCohortOrdinal)
+    {
+        if (execution != WorldHistoryExecution.ReleasedOnly ||
+            releasedCohortOrdinal is not { } ordinal ||
+            ordinal <= 0)
+        {
+            return WorldHistoryMaterialShortageTier.Kitted;
+        }
+
+        var position = ordinal - 1;
+        var block = position / MaterialShortageQuotaBlockSize;
+        var shuffled = MaterialShortageQuota.ToArray();
+        var random = new WorldHistoryRandom($"material-shortage-block:{block}");
+        for (var cursor = shuffled.Length - 1; cursor > 0; cursor--)
+        {
+            var swap = random.NextInt(0, cursor + 1);
+            (shuffled[cursor], shuffled[swap]) = (shuffled[swap], shuffled[cursor]);
+        }
+
+        return shuffled[position % MaterialShortageQuotaBlockSize];
+    }
+
+    /// <summary>
+    /// 一张工单每项主料的齐套覆盖比例（0 = 整料没有，1 = 齐套）。
+    ///
+    /// <para>
+    /// 档内比例是**区间随机**而不是又一个单值：真实工厂里缺料程度有分布，
+    /// 「所有缺料单都缺 50%」与「所有单都齐套」是同一种死板（#1381）。
+    /// </para>
+    /// <para>
+    /// 部分/严重两档的缺口刻意压在**采购件**（<see cref="PurchasedComponentIndex"/>，
+    /// 悬架弹簧 <c>RM-SPR-##</c>）上：它没有生产版本，MRP 的 make/buy 分流在缺计划参数时
+    /// 回退到「有无生产版本」，必然把它判成 <c>planned-purchase</c>——缺料才走得到
+    /// 「MRP 建议采购」这一步。轻度档缺自制半成品（<c>SF-*</c>），表达「备料延迟」而不是
+    /// 「要去采购」，让缺料**原因**本身也不是单值。
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<decimal> MaterialCoverageRatios(
+        string workOrderNo,
+        WorldHistoryMaterialShortageTier tier,
+        int componentCount)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workOrderNo);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(componentCount);
+
+        var ratios = new decimal[componentCount];
+        Array.Fill(ratios, 1m);
+        if (tier == WorldHistoryMaterialShortageTier.Kitted)
+        {
+            return ratios;
+        }
+
+        var random = new WorldHistoryRandom($"material-shortage:{workOrderNo}");
+        var semiFinishedIndex = random.NextInt(0, Math.Min(PurchasedComponentIndex, componentCount));
+        var purchasedIndex = Math.Min(PurchasedComponentIndex, componentCount - 1);
+
+        switch (tier)
+        {
+            case WorldHistoryMaterialShortageTier.Minor:
+                // 差 8%~22%：一箱阀系组件还在配送途中，催一下就能开工。
+                ratios[semiFinishedIndex] = 1m - (random.NextInt(8, 23) / 100m);
+                break;
+            case WorldHistoryMaterialShortageTier.Partial:
+                // 弹簧与半成品同时短 35%~60%：净需求足够大，MRP 一定摊得出采购建议。
+                ratios[purchasedIndex] = 1m - (random.NextInt(35, 61) / 100m);
+                ratios[semiFinishedIndex] = 1m - (random.NextInt(35, 61) / 100m);
+                break;
+            case WorldHistoryMaterialShortageTier.Critical:
+                // 弹簧整料没有：可用与已备料同时为 0，是「必须走完整采购历程」的那一张。
+                ratios[purchasedIndex] = 0m;
+                ratios[semiFinishedIndex] = 1m - (random.NextInt(20, 41) / 100m);
+                break;
+            default:
+                break;
+        }
+
+        return ratios;
+    }
+
+    /// <summary>
+    /// 把覆盖量拆成「线边可用」与「已备料」两笔。
+    ///
+    /// <para>
+    /// 修复前两笔各自等于需求量，读面上「需求 100 / 可用 100 / 已备料 100」等于把同一批料数了两遍；
+    /// 缺口公式 <c>required - available - staged</c> 因此恒为 <c>-required</c>，clamp 后永远是 0，
+    /// **想压低其中一笔造缺口也压不出来**。改成拆分后两笔之和恰好等于覆盖量，缺口才是真实的，
+    /// 读面三列也不再全世界恒等。
+    /// </para>
+    /// </summary>
+    public static (decimal AvailableQuantity, decimal StagedQuantity) SplitCoverage(
+        string workOrderNo,
+        string componentSkuCode,
+        decimal requiredQuantity,
+        decimal coverageRatio)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workOrderNo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(componentSkuCode);
+
+        var coverage = decimal.Round(requiredQuantity * coverageRatio, 2, MidpointRounding.AwayFromZero);
+        if (coverage <= 0m)
+        {
+            return (0m, 0m);
+        }
+
+        var random = new WorldHistoryRandom($"material-coverage:{workOrderNo}:{componentSkuCode}");
+        var available = decimal.Round(coverage * (random.NextInt(35, 76) / 100m), 2, MidpointRounding.AwayFromZero);
+        if (available > coverage)
+        {
+            available = coverage;
+        }
+
+        return (available, coverage - available);
+    }
+
     #endregion
 
     #region 二期库位（与库存 / 仓储侧 WorldHistoryPhase2Spec 同字面量）
@@ -343,6 +518,31 @@ public sealed record WorldHistoryOperator(
     WorldHistoryWorkshop Workshop,
     int ShiftIndex,
     string TeamName);
+
+/// <summary>
+/// 「已下达待开工」工单的齐套缺口档位（#1408）。
+///
+/// <para>
+/// #1384 把 <c>availableQuantity</c>/<c>stagedQuantity</c> 一律写满需求量，解开了开工门禁，
+/// 但同时把**全世界的齐套状态压成了单值**（与 #1381 诊断的「22 个取值维度被压成单值」同类）：
+/// 一张缺口都没有，于是「缺料 → MRP 采购建议 → 请购 → 采购订单 → 收货 → 入库 → 齐套转绿 → 开工」
+/// 这条链在数据上**没有起点**。
+/// </para>
+/// </summary>
+public enum WorldHistoryMaterialShortageTier
+{
+    /// <summary>齐套：可用 + 已备料恰好覆盖需求，逐工序开工不被物料拦（保住 #1384 的成果）。</summary>
+    Kitted,
+
+    /// <summary>轻度缺口：单项自制半成品差一小截，车间催一下配送就能开工。</summary>
+    Minor,
+
+    /// <summary>部分缺口：采购件（弹簧）与一项半成品同时短，是 MRP 采购建议的主力对象。</summary>
+    Partial,
+
+    /// <summary>严重缺口：采购件整料没有（可用与已备料同时为 0），必须走完整的采购历程。</summary>
+    Critical,
+}
 
 public sealed record WorldHistoryWorkOrderPlan(
     string WorkOrderNo,

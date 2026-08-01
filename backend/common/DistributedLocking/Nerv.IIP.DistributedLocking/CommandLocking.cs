@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using MediatR;
 using Microsoft.Extensions.Configuration;
@@ -84,25 +85,33 @@ public sealed class NervIipCommandLockBehavior<TRequest, TResponse>(
         }
 
         var handles = new List<ILockSynchronizationHandler>();
-        var acquiredKeys = new HashSet<string>(StringComparer.Ordinal);
+        TResponse response = default!;
+        Exception? pipelineException = null;
         try
         {
+            var lockSettingsByKey = new Dictionary<string, TimeSpan>(StringComparer.Ordinal);
             foreach (var lockProvider in lockProviders)
             {
                 var settings = await lockProvider.GetLockKeysAsync(request, cancellationToken);
                 foreach (var key in EnumerateKeys(settings))
                 {
-                    if (acquiredKeys.Add(key))
+                    if (!lockSettingsByKey.TryGetValue(key, out var existingTimeout)
+                        || settings.AcquireTimeout < existingTimeout)
                     {
-                        handles.Add(await distributedLock.AcquireAsync(key, settings.AcquireTimeout, cancellationToken));
+                        lockSettingsByKey[key] = settings.AcquireTimeout;
                     }
                 }
             }
 
-            if (handles.Count == 0)
+            if (lockSettingsByKey.Count == 0)
             {
                 throw new InvalidOperationException(
                     $"Command lock configuration for {typeof(TRequest).Name} did not provide a lock key.");
+            }
+
+            foreach (var (key, acquireTimeout) in lockSettingsByKey.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                handles.Add(await distributedLock.AcquireAsync(key, acquireTimeout, cancellationToken));
             }
 
             var linkedTokens = new CancellationToken[handles.Count + 1];
@@ -113,15 +122,49 @@ public sealed class NervIipCommandLockBehavior<TRequest, TResponse>(
             }
 
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
-            return await next(linkedCancellation.Token);
+            response = await next(linkedCancellation.Token);
         }
-        finally
+        catch (Exception exception)
         {
-            for (var i = handles.Count - 1; i >= 0; i--)
+            pipelineException = exception;
+        }
+
+        var releaseExceptions = new List<Exception>();
+        for (var i = handles.Count - 1; i >= 0; i--)
+        {
+            try
             {
                 await handles[i].DisposeAsync();
             }
+            catch (Exception exception)
+            {
+                releaseExceptions.Add(exception);
+            }
         }
+
+        if (pipelineException is not null)
+        {
+            if (releaseExceptions.Count == 0)
+            {
+                ExceptionDispatchInfo.Capture(pipelineException).Throw();
+            }
+
+            throw new AggregateException(
+                "Command pipeline and distributed lock cleanup both failed.",
+                [pipelineException, .. releaseExceptions]);
+        }
+
+        if (releaseExceptions.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(releaseExceptions[0]).Throw();
+        }
+
+        if (releaseExceptions.Count > 1)
+        {
+            throw new AggregateException("Multiple distributed lock releases failed.", releaseExceptions);
+        }
+
+        return response;
     }
 
     private static IEnumerable<string> EnumerateKeys(CommandLockSettings settings)

@@ -18,6 +18,12 @@ public sealed class WorldHistorySeedServiceTests
     private static readonly DateOnly AsOfDate = new(2026, 7, 26);
     private const double TestScale = 0.02d;
 
+    /// <summary>
+    /// 缺口分布用例的纵深：<c>0.02</c> 只排得出 2 张「已下达待开工」，凑不满一个配额块（10 张），
+    /// 四档不可能齐全。<c>0.2</c> 有 20 张已下达（两个整块），四档必然在场。
+    /// </summary>
+    private const double ShortageScale = 0.2d;
+
     [Fact]
     public async Task History_seed_writes_the_full_work_order_chain_and_passes_its_own_validator()
     {
@@ -139,11 +145,10 @@ public sealed class WorldHistorySeedServiceTests
         await using var dbContext = CreateDbContext();
         await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
 
-        var workOrder = await dbContext.WorkOrders
-            .AsNoTracking()
-            .Where(x => x.Status == WorkOrder.ReleasedStatus)
-            .OrderBy(x => x.WorkOrderIdValue)
-            .FirstAsync();
+        // #1408 起「已下达待开工」档里有约四成缺料单，缺料单的开工本来就该被拦。
+        // 这条用例钉的是**齐套档能开工**，所以必须显式取一张齐套的单，
+        // 而不是「按单号升序的第一张 released」——那个下标会随缺口分布漂到缺料单上。
+        var workOrder = await FirstKittedReleasedWorkOrderAsync(dbContext);
 
         Assert.Equal(
             WorkOrder.MaterialRequirementSnapshotCapturedStatus,
@@ -175,6 +180,122 @@ public sealed class WorldHistorySeedServiceTests
             reason => reason.StartsWith("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", StringComparison.Ordinal)));
         // 首序工序无阻塞：这是走查里点不动的那颗按钮。
         Assert.Contains("start", readiness[tasks[0].OperationTaskIdValue].AllowedActions);
+    }
+
+    /// <summary>
+    /// #1408：#1384 把可用/已备料一律写满需求量，全世界零缺口——「缺料 → MRP 采购建议 → 请购
+    /// → 采购订单 → 收货 → 入库 → 齐套转绿 → 开工」这条链没有起点。
+    ///
+    /// <para>
+    /// 本用例走**真实的齐套读面**（不是断言字段非空），钉死两条演示路径同时成立：
+    /// 已下达档里既有能直接开工的齐套单，也有被物料门禁按 <c>MATERIAL_SHORTAGE</c> 拦住的缺料单；
+    /// 而在制 / 已完工的工单一张都不许缺料，否则 #1384 解开的逐工序开工当场丢失。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task History_seed_leaves_material_shortages_only_on_released_work_orders()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, ShortageScale);
+
+        var shortWorkOrders = await ShortWorkOrderIdsAsync(dbContext);
+        Assert.NotEmpty(shortWorkOrders);
+
+        var released = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.Status == WorkOrder.ReleasedStatus)
+            .Select(x => x.WorkOrderIdValue)
+            .ToArrayAsync();
+        var releasedSet = released.ToHashSet(StringComparer.Ordinal);
+
+        // ① 缺口只在已下达待开工档：在制/已完工的单缺料就会拦死逐工序开工（#1384）。
+        Assert.All(shortWorkOrders, workOrderId => Assert.Contains(workOrderId, releasedSet));
+        // ② 已下达档同时有齐套单，「齐套即可开工」这条路径才有对象。
+        Assert.Contains(released, workOrderId => !shortWorkOrders.Contains(workOrderId));
+
+        // ③ 缺口深度不是单值：轻度/部分/严重三档同时在场（缺口占需求的比例分布）。
+        var shortageRatios = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.RequiredQuantity > x.AvailableQuantity + x.StagedQuantity)
+            .Select(x => (x.RequiredQuantity - x.AvailableQuantity - x.StagedQuantity) / x.RequiredQuantity)
+            .ToArrayAsync();
+        Assert.Contains(shortageRatios, ratio => ratio < 0.25m);
+        Assert.Contains(shortageRatios, ratio => ratio is >= 0.25m and < 1m);
+        Assert.Contains(shortageRatios, ratio => ratio == 1m);
+
+        // ④ 严重档缺的是**采购件**：MRP 的 make/buy 分流据此判成 planned-purchase，
+        //    缺料才走得到「MRP 建议采购」这一步。
+        var wholeMaterialGaps = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.AvailableQuantity + x.StagedQuantity == 0m)
+            .Select(x => x.MaterialId)
+            .Distinct()
+            .ToArrayAsync();
+        Assert.NotEmpty(wholeMaterialGaps);
+        Assert.All(wholeMaterialGaps, materialId =>
+            Assert.StartsWith("RM-SPR-", materialId, StringComparison.Ordinal));
+    }
+
+    /// <summary>缺料单的开工必须真的被物料门禁拦住，齐套单必须真的放行——两条都走真实评估器。</summary>
+    [Fact]
+    public async Task Shortage_work_orders_are_blocked_by_the_material_gate_while_kitted_ones_start()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, ShortageScale);
+
+        var shortWorkOrders = await ShortWorkOrderIdsAsync(dbContext);
+        var shortWorkOrderId = shortWorkOrders.Order(StringComparer.Ordinal).First();
+        var kitted = await FirstKittedReleasedWorkOrderAsync(dbContext);
+        var evaluatedAtUtc = new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var evaluator = new MesOperationTaskActionReadinessEvaluator(dbContext);
+
+        var shortTasks = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x => x.WorkOrderId == shortWorkOrderId)
+            .OrderBy(x => x.OperationSequence)
+            .ToArrayAsync();
+        var shortReadiness = await evaluator.EvaluateManyAsync(shortTasks, evaluatedAtUtc, CancellationToken.None);
+        var firstShort = shortReadiness[shortTasks[0].OperationTaskIdValue];
+        Assert.DoesNotContain("start", firstShort.AllowedActions);
+        Assert.Contains(
+            firstShort.BlockReasons,
+            reason => reason.StartsWith("MATERIAL_SHORTAGE", StringComparison.Ordinal));
+        // 证明位仍然盖着章：缺料是缺口问题，不是「没做齐套检查」（#1384 的证明位不受影响）。
+        Assert.DoesNotContain(
+            firstShort.BlockReasons,
+            reason => reason.StartsWith("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", StringComparison.Ordinal));
+
+        var kittedTasks = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x => x.WorkOrderId == kitted.WorkOrderIdValue)
+            .OrderBy(x => x.OperationSequence)
+            .ToArrayAsync();
+        var kittedReadiness = await evaluator.EvaluateManyAsync(kittedTasks, evaluatedAtUtc, CancellationToken.None);
+        Assert.Contains("start", kittedReadiness[kittedTasks[0].OperationTaskIdValue].AllowedActions);
+    }
+
+    /// <summary>齐套读面必须把缺口讲清楚：状态 Blocked、行级 Shortage、并给出「卡在哪个环节」。</summary>
+    [Fact]
+    public async Task Material_readiness_read_face_reports_the_shortage_and_its_stage()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, ShortageScale);
+
+        var shortWorkOrderId = (await ShortWorkOrderIdsAsync(dbContext)).Order(StringComparer.Ordinal).First();
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", shortWorkOrderId),
+            CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.ReadinessStatus);
+        Assert.NotEmpty(readiness.BlockingReasons);
+
+        var shortage = Assert.Single(readiness.Items.Where(x => x.ShortageQuantity > 0m).Take(1));
+        Assert.Equal("Shortage", shortage.Status);
+        // 已下达未开工的单一张领料都没发，缺口卡在「备料」环节——读面据此给出下一步动作。
+        Assert.Equal(MesMaterialShortageStages.AwaitingPreparation, shortage.ShortageStage);
+        // 齐套行不许再出现「可用 == 已备料 == 需求」这种把同一批料数两遍的写法。
+        Assert.All(readiness.Items, item =>
+            Assert.True(item.AvailableQuantity + item.StagedQuantity <= item.RequiredQuantity));
     }
 
     [Fact]
@@ -449,6 +570,46 @@ public sealed class WorldHistorySeedServiceTests
             local.Hour >= WorldHistoryCalendar.EarlyShiftStartLocalHour,
             $"Operation moment {local:O} falls outside the 08:00–24:00 two-shift window.");
     }
+
+    /// <summary>
+    /// #1408 · 缺口压在哪个采购件上，必须与 DemandPlanning 侧「MRP 建议采购哪个物料」逐字一致。
+    /// 两侧只要差一个字，演示走到「建议采购 → 收货 → 齐套转绿」就会露出「建议采购 A、缺的是 B」。
+    /// </summary>
+    [Fact]
+    public void Shortage_component_matches_the_cross_service_golden_vector()
+    {
+        var pairs = WorldHistoryShortageComponentGoldenVector.FinishedGoodSkus
+            .Select(sku => (
+                FinishedGoodSku: sku,
+                ComponentSku: WorldHistoryMesSpec.Components(sku)[WorldHistoryMesSpec.PurchasedComponentIndex].SkuCode))
+            .ToArray();
+
+        Assert.All(pairs, pair => Assert.StartsWith("RM-SPR-", pair.ComponentSku, StringComparison.Ordinal));
+        Assert.Equal(
+            WorldHistoryShortageComponentGoldenVector.Digest,
+            WorldHistoryShortageComponentGoldenVector.DigestOf(pairs));
+    }
+
+    /// <summary>取一张齐套（缺口为 0）的「已下达待开工」工单——齐套演示路径的对象。</summary>
+    private static async Task<WorkOrder> FirstKittedReleasedWorkOrderAsync(ApplicationDbContext dbContext)
+    {
+        var shortWorkOrders = await ShortWorkOrderIdsAsync(dbContext);
+        return await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.Status == WorkOrder.ReleasedStatus && !shortWorkOrders.Contains(x.WorkOrderIdValue))
+            .OrderBy(x => x.WorkOrderIdValue)
+            .FirstAsync();
+    }
+
+    /// <summary>缺口 &gt; 0 的工单号集合（缺口口径与开工门禁、齐套读面逐字一致）。</summary>
+    private static async Task<HashSet<string>> ShortWorkOrderIdsAsync(ApplicationDbContext dbContext) =>
+        (await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.RequiredQuantity > x.AvailableQuantity + x.StagedQuantity)
+            .Select(x => x.WorkOrderId)
+            .Distinct()
+            .ToArrayAsync())
+        .ToHashSet(StringComparer.Ordinal);
 
     private static WorldHistorySeedService CreateSeed(ApplicationDbContext dbContext) =>
         new(dbContext, new StubProductionVersionResolver());

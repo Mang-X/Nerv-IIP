@@ -52,9 +52,15 @@ export interface SiteStockRow {
   lineCount: number
   /** 该物料分布的库位数——仓管判断「要不要归并」的直接依据。 */
   locationCount: number
-  /** 最早到期日；无效期物料为 undefined。 */
+  /** 最早到期日；不追效期物料为 undefined。 */
   earliestExpiry?: string
-  /** 是否存在冻结/不可动用的台账行。 */
+  /**
+   * 该物料是否配置了效期追踪（任一台账行带保质期或效期）。
+   * 用来区分「本来就不追效期」（成品总成等，中性事实）与
+   * 「配置了保质期却缺效期数据」（真正需要警示的缺数据），见 #1418 B2。
+   */
+  tracksShelfLife: boolean
+  /** 是否存在冻结/不可动用的台账行（质量冻结 / 盘点冻结 / 过期），与是否追效期无关。 */
   hasBlocked: boolean
 }
 
@@ -67,11 +73,15 @@ function toRow(
 ): SiteStockRow {
   const locations = new Set<string>()
   let earliestExpiry: string | undefined
+  let tracksShelfLife = false
   let hasBlocked = false
 
   for (const line of lines) {
     if (line.locationCode) locations.add(line.locationCode)
-    if (line.isBlocked === true) hasBlocked = true
+    // 只有真有存量的冻结行才亮标：演示库里每个物料都躺着一条 0 库存的质量冻结行，
+    // 按行亮标会让整列全红——又一轮「满屏风险」假警报（#1418 B2 的续集）。
+    if (line.isBlocked === true && (line.onHandQuantity ?? 0) > 0) hasBlocked = true
+    if (line.shelfLifeDays != null || line.expiryDate != null) tracksShelfLife = true
     const expiry = line.expiryDate ?? undefined
     if (expiry && (earliestExpiry === undefined || expiry < earliestExpiry)) {
       earliestExpiry = expiry
@@ -88,6 +98,7 @@ function toRow(
     lineCount: lines.length,
     locationCount: locations.size,
     earliestExpiry,
+    tracksShelfLife,
     hasBlocked,
   }
 }

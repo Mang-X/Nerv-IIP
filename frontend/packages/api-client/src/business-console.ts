@@ -2474,6 +2474,21 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition as BusinessConsoleMesTelemetryCandidateTransition,
 } from './generated/business-console'
 
+// MAN-632 / #1169: unified owner-backed searchable directory contract.
+export {
+  listBusinessConsoleSearchableDirectory,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
+} from './generated/business-console'
+
+export type {
+  ListBusinessConsoleSearchableDirectoryData,
+  ListBusinessConsoleSearchableDirectoryResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryRequest as BusinessConsoleSearchableDirectoryRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryResponse as BusinessConsoleSearchableDirectoryResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryItem as BusinessConsoleSearchableDirectoryItem,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchableDirectoryResponse as BusinessConsoleSearchableDirectoryEnvelope,
+} from './generated/business-console'
+
 export {
   getBusinessConsoleTelemetryConnectorTagCoverage,
   getBusinessConsoleTelemetryConnectorTagCoverageQueryOptions,
@@ -2567,6 +2582,24 @@ export type {
 
 export type BusinessConsolePrincipalWorkContextRequest =
   import('./generated/business-console').GetBusinessConsolePrincipalWorkContextData['query']
+
+// MAN-631 / #1392: auditable Maintenance assignment and lifecycle actions.
+export {
+  assignBusinessConsoleMaintenanceWorkOrder,
+  assignBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  transitionBusinessConsoleMaintenanceWorkOrder,
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions,
+} from './generated/business-console'
+
+export type {
+  AssignBusinessConsoleMaintenanceWorkOrderData,
+  TransitionBusinessConsoleMaintenanceWorkOrderData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignMaintenanceWorkOrderRequest as BusinessConsoleAssignMaintenanceWorkOrderRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTransitionMaintenanceWorkOrderRequest as BusinessConsoleTransitionMaintenanceWorkOrderRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction as BusinessConsoleMaintenanceWorkOrderAction,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderActionResponse as BusinessConsoleMaintenanceWorkOrderActionResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem as BusinessConsoleMaintenanceWorkOrderLifecycleEventItem,
+} from './generated/business-console'
 
 // MAN-629 / #1166: WMS 可信作业范围、受控派工与人工任务生命周期。
 export {

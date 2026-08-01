@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 409-row registry with
+- The `exposed` rows are summarised by count here; the full 412-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -95,21 +95,30 @@ declaration against what actually shipped (facade + codegen + barrel for
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
-| Inventory           |      16 |       9 |        2 |        5 |
-| Maintenance         |      21 |      16 |        5 |        0 |
+| Inventory           |      17 |      10 |        2 |        5 |
+| Maintenance         |      25 |      20 |        4 |        1 |
 | MasterData          |      49 |      41 |        4 |        4 |
 | Mes                 |      55 |      52 |        3 |        0 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **409** | **338** |   **48** |   **23** |
+| **Total**           | **414** | **343** |   **47** |   **24** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (338) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (343) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
+
+For MAN-632 searchable directories, `listBusinessConsoleSearchableDirectory`
+maps each type to exactly one authoritative owner and permission. Inventory
+`listInventoryDirectory` provides location/batch/serial; Maintenance
+`listMaintenanceDowntimeReasons` provides downtime-reason and the explicit
+maintenance-reason alias. MasterData and Quality reuse their existing exposed
+reads. The facade preserves stable IDs, readable labels, scope context, owner
+identity, deterministic paging, and explicit unavailable ranking metadata; it
+does not copy cross-service facts or create business decision scores.
 
 For connector configured-tag coverage, the declaration is exact: service
 operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
@@ -155,7 +164,6 @@ three separate public contracts.
 | IndustrialTelemetry | POST   | `/api/business/v1/iiot/tags`                                                                    | BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today).                                       |
 | Inventory           | POST   | `/api/inventory/v1/count-tasks/{countTaskId}/cancel`                                            | BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase.                                              |
 | Inventory           | POST   | `/api/inventory/v1/locations`                                                                   | BusinessGateway facade pending; inventory location master-setup UI is a later menu phase.                                                                                          |
-| Maintenance         | GET    | `/api/business/v1/maintenance/downtime-reasons`                                                 | BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase.                                                                               |
 | Maintenance         | POST   | `/api/business/v1/maintenance/downtime-reasons`                                                 | BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase.                                                                               |
 | Maintenance         | DELETE | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase.                                                                               |
 | Maintenance         | PUT    | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase.                                                                               |
@@ -194,6 +202,7 @@ three separate public contracts.
 | Inventory           | POST   | `/api/inventory/v1/reservations/fefo`                                        | Service-to-service FEFO reservation API consumed by WMS (#412).                                                                     |
 | Inventory           | POST   | `/api/inventory/v1/reservations/{reservationId}/release`                     | Service-to-service reservation release API consumed by WMS outbound cancel (#412).                                                  |
 | Inventory           | POST   | `/api/inventory/v1/status-transfers`                                         | Internal controlled-status transition driven by Quality inspection-result events; not a direct Console action.                      |
+| Maintenance         | POST   | `/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe` | Read-only BusinessGateway lookup for an exact persisted assignment receipt before mutable target validation; it never creates a receipt or changes work-order state. |
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | Service-to-service public credit read consumed by ERP sales-order credit check (#436).                                              |
 | MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data resolve consumed by other business services.                                                |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | Service-to-service batch reference-data validate consumed by other business services.                                               |

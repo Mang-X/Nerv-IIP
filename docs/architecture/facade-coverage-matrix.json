@@ -1574,6 +1574,20 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/directory",
+      "operationId": "listInventoryDirectory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes owner-side scoped, keyword-searchable, paged location/batch/serial candidates through the unified searchable-directory facade.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks",
       "operationId": "createInventoryCountTask",
@@ -1768,8 +1782,14 @@
       "method": "GET",
       "route": "/api/business/v1/maintenance/downtime-reasons",
       "operationId": "listMaintenanceDowntimeReasons",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes the authoritative downtime-reason catalog as both downtime-reason and an explicit maintenance-reason alias; category facts and authorityDirectoryType remain visible.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
     },
     {
       "service": "Maintenance",
@@ -1950,6 +1970,53 @@
       "gatewayOperationIds": [
         "createBusinessConsoleMaintenanceWorkOrder"
       ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}",
+      "operationId": "getMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/actions",
+      "operationId": "transitionMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "transitionBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment",
+      "operationId": "assignMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe",
+      "operationId": "probeMaintenanceWorkOrderAssignmentReplay",
+      "classification": "internal",
+      "rationale": "Read-only service contract used by BusinessGateway to distinguish an exact persisted assignment replay from a first assignment before validating mutable dispatch targets; it never creates a receipt or changes work-order state."
     },
     {
       "service": "Maintenance",
@@ -2268,7 +2335,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleMasterDataResources"
+        "listBusinessConsoleMasterDataResources",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -2554,7 +2622,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleWorkers"
+        "listBusinessConsoleWorkers",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -4121,7 +4190,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleQualityReasonCodes"
+        "listBusinessConsoleQualityReasonCodes",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
