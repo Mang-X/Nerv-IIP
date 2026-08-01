@@ -10,6 +10,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperat
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -1388,8 +1389,9 @@ public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInte
         if (!string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             || !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
             || !string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(chain.SourceService, "product-engineering", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(chain.DocumentType, "engineering-change-order", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.TemplateCode, ApprovalTemplateCodes.EngineeringChangeOrder, StringComparison.Ordinal)
+            || !string.Equals(chain.SourceService, ApprovalSourceServices.ProductEngineering, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentType, ApprovalDocumentTypes.EngineeringChangeOrder, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(chain.DocumentId, changeNumber, StringComparison.Ordinal))
         {
             throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
@@ -1402,6 +1404,7 @@ public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInte
         string OrganizationId,
         string EnvironmentId,
         string Status,
+        string TemplateCode,
         string SourceService,
         string DocumentType,
         string DocumentId);
