@@ -1,5 +1,9 @@
 export { cn } from './lib/utils'
-export { MOBILE_OVERLAY_TARGET } from './lib/overlay-target'
+export {
+  isPriorityMobileOverlayTarget,
+  MOBILE_OVERLAY_LAYER,
+  MOBILE_OVERLAY_TARGET,
+} from './lib/overlay-target'
 export { default as NvAppShellMobile } from './components/app-shell-mobile/AppShellMobile.vue'
 export { default as NvScanBar } from './components/scan-bar/ScanBar.vue'
 export { default as NvListRow } from './components/list-row/ListRow.vue'

@@ -145,6 +145,8 @@ describe('NvUI mobile Appendix A6 full-mapping freeze (@nerv-iip/ui-mobile / #78
   it('keeps the non-component exports unchanged', () => {
     expect.soft(exported.cn).toBeTypeOf('function')
     expect.soft(exported.MOBILE_OVERLAY_TARGET).toBeDefined()
+    expect.soft(exported.MOBILE_OVERLAY_LAYER).toBeDefined()
+    expect.soft(exported.isPriorityMobileOverlayTarget).toBeTypeOf('function')
   })
 
   it('removed the @deprecated mobile aliases from source; Nv canonicals stay', () => {
