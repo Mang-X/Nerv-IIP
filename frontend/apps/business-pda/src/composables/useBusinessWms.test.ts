@@ -1582,6 +1582,45 @@ describe('PDA WMS composables', () => {
     expect(startBusinessConsoleWmsPickingTask).toHaveBeenCalledTimes(1)
   })
 
+  it('clears refreshing when authoritative verification of an unconfirmed action fails', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
+      success: true,
+      data: {
+        items: [
+          {
+            warehouseTaskId: 'pick-1',
+            taskNo: 'PICK-001',
+            status: 'Open',
+            version: 2,
+            allowedActions: ['start'],
+          },
+        ],
+        total: 1,
+      },
+    })
+    const unconfirmed = Object.assign(new Error('unconfirmed'), {
+      code: 'business-operation-unconfirmed',
+    })
+    coladaState.startPicking.mockRejectedValueOnce(unconfirmed)
+    const result = useWmsPicking()
+
+    await expect(
+      result.executeTask({ action: 'start', task: result.tasks.value[0]! }),
+    ).rejects.toBe(unconfirmed)
+    const verificationFailure = new Error('authoritative verification failed')
+    coladaState.listPicking.mockRejectedValueOnce(verificationFailure)
+    const listRefetch = coladaState.refetchById.get('listBusinessConsoleWmsPickingTasks')!
+
+    const refreshPromise = result.refresh()
+    expect(result.refreshing.value).toBe(true)
+    await expect(refreshPromise).rejects.toBe(verificationFailure)
+    expect(result.actionError.value).toBe(verificationFailure)
+    expect(result.error.value).toBeUndefined()
+    expect(result.loadMoreError.value).toBeUndefined()
+    expect(listRefetch).not.toHaveBeenCalled()
+    expect(result.refreshing.value).toBe(false)
+  })
+
   it('keeps a confirmed start successful when only the follow-up list refresh fails', async () => {
     coladaState.queryDataById.set('listBusinessConsoleWmsPickingTasks', {
       success: true,

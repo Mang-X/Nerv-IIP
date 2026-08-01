@@ -1042,22 +1042,24 @@ function useWmsWarehouseTasks(
     if (!scope.hasScope.value) return
     resetPaging()
     refreshing.value = true
-    let confirmedAction: Awaited<ReturnType<typeof verifyUnconfirmedTaskAction>>
     try {
-      confirmedAction = await verifyUnconfirmedTaskAction()
-    } catch (error) {
-      actionError.value = error
-      throw error
-    }
+      let confirmedAction: Awaited<ReturnType<typeof verifyUnconfirmedTaskAction>>
+      try {
+        confirmedAction = await verifyUnconfirmedTaskAction()
+      } catch (error) {
+        actionError.value = error
+        throw error
+      }
 
-    try {
-      await tasksQuery.refetch()
-      queryError.value = undefined
-      if (!unconfirmedTaskAction.value) actionError.value = undefined
-      return confirmedAction ? { confirmedAction } : {}
-    } catch (error) {
-      queryError.value = error
-      throw error
+      try {
+        await tasksQuery.refetch()
+        queryError.value = undefined
+        if (!unconfirmedTaskAction.value) actionError.value = undefined
+        return confirmedAction ? { confirmedAction } : {}
+      } catch (error) {
+        queryError.value = error
+        throw error
+      }
     } finally {
       refreshing.value = false
     }
