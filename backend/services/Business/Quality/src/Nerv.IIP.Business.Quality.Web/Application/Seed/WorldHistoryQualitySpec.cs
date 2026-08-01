@@ -19,6 +19,16 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 /// </summary>
 public static class WorldHistoryQualitySpec
 {
+    /// <summary>
+    /// 待检历史任务中每三条留一条未认领，其余两条预认领给历史检验员，用于同时演示认领与改派。
+    /// 该规则只作用于新写入的 pending 任务；seed 不覆盖租户已有 assignment。
+    /// </summary>
+    public const int PendingAssignmentStride = 3;
+
+    public static bool ShouldPreAssignPendingTask(WorldHistoryInspectionFact fact) =>
+        fact.Status != WorldHistoryInspectionStatus.Pending
+        || fact.Index % PendingAssignmentStride != 0;
+
     #region 检验计划（世界观历史专用，与 IP-DEMO-* 固定演示计划隔离）
 
     public const string ReceivingPlanCode = "IP-WB-RCV-001";

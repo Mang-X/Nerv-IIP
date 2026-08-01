@@ -193,11 +193,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             throw new UnauthorizedAccessException("Inspection task is outside the inspector's authorized teams.");
         }
 
-        if (AssignedUserId is null && AssignedTeamId is null)
-        {
-            throw new UnauthorizedAccessException("Inspection task has no authorized assignment.");
-        }
-
         AssignedUserId = normalizedUserId;
         StartedAtUtc = claimedAtUtc;
         Status = InspectionTaskStatuses.InProgress;
