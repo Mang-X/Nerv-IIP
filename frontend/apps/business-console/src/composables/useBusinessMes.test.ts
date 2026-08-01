@@ -41,6 +41,7 @@ import {
 } from '@nerv-iip/api-client'
 import {
   describeMesReadinessReason,
+  describeMesReadinessReasons,
   useMesCapacityImpacts,
   useMesDispatchTasks,
   useMesDowntimeEvents,
@@ -692,6 +693,38 @@ describe('business MES composables', () => {
       label: '物料齐套未满足：还差 3 件',
       detail: '',
     })
+  })
+
+  // #1418：服务端按「每种缺料各一条」下发，逐条渲染会在同一工序上堆出两条一模一样的
+  // 「物料缺料」——看不出是两种料，也不知道缺哪两项。同码必须合并成一条并点名。
+  it('merges same-code readiness reasons and names every shortage', () => {
+    const merged = describeMesReadinessReasons([
+      'MATERIAL_SHORTAGE: 物料 MAT-OIL 缺口 2',
+      'MATERIAL_SHORTAGE: 物料 MAT-SEAL 缺口 5',
+      'QUALITY_HOLD_ACTIVE: 存在未放行的质量冻结',
+    ])
+
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toMatchObject({
+      code: 'MATERIAL_SHORTAGE',
+      label: '物料缺料',
+      detail: '物料 MAT-OIL 缺口 2、物料 MAT-SEAL 缺口 5',
+    })
+    // 不同码是不同处理路径，必须各占一行，不能被一起合掉。
+    expect(merged[1]).toMatchObject({ code: 'QUALITY_HOLD_ACTIVE', label: '质量冻结中' })
+  })
+
+  it('collapses byte-identical duplicates without leaving an empty detail separator', () => {
+    const merged = describeMesReadinessReasons(['MATERIAL_SHORTAGE', 'MATERIAL_SHORTAGE'])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ code: 'MATERIAL_SHORTAGE', label: '物料缺料', detail: '' })
+  })
+
+  it('returns an empty list for missing reasons', () => {
+    expect(describeMesReadinessReasons(undefined)).toEqual([])
+    expect(describeMesReadinessReasons(null)).toEqual([])
+    expect(describeMesReadinessReasons([])).toEqual([])
   })
 
   it('lists work orders with default context and safe items', () => {

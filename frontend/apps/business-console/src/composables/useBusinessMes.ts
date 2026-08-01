@@ -272,6 +272,38 @@ export function describeMesReadinessReason(reason: string): MesReadinessReasonDi
   }
 }
 
+/**
+ * 一串阻塞码 → 去重合并后的展示列表。
+ *
+ * 服务端按「每种缺料各下发一条」的粒度回 `MATERIAL_SHORTAGE:…`，前端过去直接
+ * `.map(describeMesReadinessReason)` 逐条渲染，于是同一道工序会堆出两条一模一样的
+ * 「物料缺料」——标签相同、`nextStep` 相同，操作员既看不出这是两种料，也不知道缺哪两项
+ * （#1418）。同码合并成一条，把各自的服务端说明并进 `detail`，一行说清「缺哪几项」。
+ *
+ * 只合并**同码**：不同码对应不同处理路径（`nextStep` 不同），必须各占一行。
+ */
+export function describeMesReadinessReasons(
+  reasons?: readonly string[] | null,
+): MesReadinessReasonDisplay[] {
+  const merged = new Map<string, MesReadinessReasonDisplay>()
+  const details = new Map<string, string[]>()
+  for (const raw of reasons ?? []) {
+    const display = describeMesReadinessReason(raw)
+    const bucket = details.get(display.code)
+    if (!bucket) {
+      merged.set(display.code, display)
+      details.set(display.code, display.detail ? [display.detail] : [])
+      continue
+    }
+    // 同码重复：说明去重后并进同一条，空说明不占位。
+    if (display.detail && !bucket.includes(display.detail)) bucket.push(display.detail)
+  }
+  return [...merged.values()].map((display) => ({
+    ...display,
+    detail: (details.get(display.code) ?? []).join('、'),
+  }))
+}
+
 export interface MesListFilters {
   organizationId: string
   environmentId: string

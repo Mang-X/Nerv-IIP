@@ -62,6 +62,12 @@ const sizeClass = computed(
           sizeClass,
           // 抽屉内容默认可纵向滚动：此前 21 个调用点里有 17 个在手写 overflow-y-auto。
           'overflow-y-auto overscroll-contain',
+          // 直接子元素一律 min-w-0：flex 子项的 `min-width:auto` 会让宽表格/多列网格按
+          // **内容最小宽**把自己撑过抽屉边界（#1418：CAPA 详情抽屉内容排到 780px，
+          // 而抽屉只有 512px，右侧 285px 直接溢出到视口外）。钉住 min-w-0 之后，超宽内容
+          // 各自在自己的 overflow 容器里横向滚动（NvDataTable 本就自带 overflow-auto），
+          // 而不是把整个抽屉顶破。
+          '[&>*]:min-w-0',
           props.class,
         )
       "
