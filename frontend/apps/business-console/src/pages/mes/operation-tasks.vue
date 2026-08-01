@@ -20,6 +20,7 @@ import {
   useMesCurrentOperationSops,
   useMesOperationTasks,
 } from '@/composables/useBusinessMes'
+import { OPERATION_QUALITY_VERDICT_LABELS } from '@/data/businessLabels'
 import { scheduleInvalidationHint } from '@/composables/useScheduleInvalidation'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
@@ -473,14 +474,10 @@ const selectedSopTitle = computed(() => {
 })
 // 质量状态既可能是总体判定（Ready / Warning / Blocked），也可能是具体阻塞原因码。
 // 判定值不在原因码表里，落到兜底分支就会把 Ready 原样显到界面上，所以先过一层中文判定表。
-const QUALITY_VERDICT_LABELS: Record<string, string> = {
-  ready: '可执行',
-  warning: '有提示',
-  blocked: '已阻塞',
-}
+// 判定表已提到 `@/data/businessLabels` 共享（工单详情的同名列用的是同一份，#1418）。
 function readiness(value?: string | null) {
   const raw = (value ?? '未检').trim()
-  const verdict = QUALITY_VERDICT_LABELS[raw.toLowerCase()]
+  const verdict = OPERATION_QUALITY_VERDICT_LABELS[raw.toLowerCase()]
   if (verdict) return { code: raw, label: verdict, nextStep: '' }
   return describeMesReadinessReason(raw)
 }

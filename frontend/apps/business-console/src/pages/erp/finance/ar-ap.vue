@@ -12,6 +12,7 @@ import {
 } from '@/composables/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { buildKpiTrend, seriesFromDatedItems } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -166,27 +167,60 @@ const payableAmount = computed(() =>
 )
 // 应收/应付是一对读数，通栏放一行才看得出资金缺口方向；金额只能对已取回的行加总，
 // 口径写进副行而不是让它冒充全量余额。
-const settlementCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'receivable',
-    label: '应收未结',
-    // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
-    value: receivableState.value.trustworthy
-      ? formatAmount(receivableAmount.value)
-      : UNAVAILABLE_TEXT,
-    meta: receivableState.value.trustworthy
-      ? `当前列表 ${receivables.items.value.length} 笔应收合计`
-      : receivableState.value.emptyMessage,
-  },
-  {
-    key: 'payable',
-    label: '应付未结',
-    value: payableState.value.trustworthy ? formatAmount(payableAmount.value) : UNAVAILABLE_TEXT,
-    meta: payableState.value.trustworthy
-      ? `当前列表 ${payables.items.value.length} 笔应付合计`
-      : payableState.value.emptyMessage,
-  },
-])
+const settlementCells = computed<NvMetricStripCell[]>(() => {
+  // 应收/应付明细自带 createdAtUtc，走真实数据：按开单日累加成存量口径的未结余额曲线。
+  // 当前页行数太少、日期又挤在同一天时会退化成一根竖线，buildKpiTrend 自己会回落到补形状。
+  const receivable = receivableState.value.trustworthy
+    ? buildKpiTrend('erp.arap.receivable', receivableAmount.value, {
+        kind: 'amount',
+        polarity: 'neutral',
+        realSeries: seriesFromDatedItems(receivables.items.value, {
+          date: (r) => r.createdAtUtc,
+          value: (r) => r.openAmount ?? 0,
+          mode: 'cumulative',
+        }),
+      })
+    : undefined
+  const payable = payableState.value.trustworthy
+    ? buildKpiTrend('erp.arap.payable', payableAmount.value, {
+        kind: 'amount',
+        polarity: 'neutral',
+        realSeries: seriesFromDatedItems(payables.items.value, {
+          date: (r) => r.createdAtUtc,
+          value: (r) => r.openAmount ?? 0,
+          mode: 'cumulative',
+        }),
+      })
+    : undefined
+
+  return [
+    {
+      key: 'receivable',
+      label: '应收未结',
+      // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
+      value: receivableState.value.trustworthy
+        ? formatAmount(receivableAmount.value)
+        : UNAVAILABLE_TEXT,
+      meta: receivableState.value.trustworthy
+        ? `当前列表 ${receivables.items.value.length} 笔应收合计`
+        : receivableState.value.emptyMessage,
+      delta: receivable?.delta,
+      series: receivable?.series,
+      seriesLabels: receivable?.seriesLabels,
+    },
+    {
+      key: 'payable',
+      label: '应付未结',
+      value: payableState.value.trustworthy ? formatAmount(payableAmount.value) : UNAVAILABLE_TEXT,
+      meta: payableState.value.trustworthy
+        ? `当前列表 ${payables.items.value.length} 笔应付合计`
+        : payableState.value.emptyMessage,
+      delta: payable?.delta,
+      series: payable?.series,
+      seriesLabels: payable?.seriesLabels,
+    },
+  ]
+})
 
 const receivableOpen = shallowRef(false)
 const payableOpen = shallowRef(false)

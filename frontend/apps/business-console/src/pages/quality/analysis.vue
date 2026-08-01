@@ -32,6 +32,7 @@ import {
   type QualitySpcControlChartItem,
 } from '@/composables/useBusinessQualityLedgers'
 import { formatDateTime } from '@/utils/format'
+import { deltaFrom } from '@/utils/kpiTrend'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
@@ -300,6 +301,29 @@ const spcXbarLabels = computed(() =>
     .filter((subgroup) => typeof subgroup.xbar === 'number' && Number.isFinite(subgroup.xbar))
     .map((subgroup) => `子组 ${subgroup.index ?? 0}`),
 )
+/*
+ * X-bar 走势幅度：由上面那条**真实**子组均值线首尾算出，不另造数——没有子组时
+ * 线为空，deltaFrom 自然返回 undefined，卡片就不挂角标。
+ * 过程均值是被测特性的量纲值（不是百分比），所以按 amount 口径；均值漂移本身
+ * 无好坏之分——判它是不是失控是控制限和判异规则的职责，所以配色取 neutral。
+ */
+const spcXbarDelta = computed(() =>
+  deltaFrom(spcXbarSeries.value, { kind: 'amount', polarity: 'neutral' }),
+)
+/**
+ * 卡片主数值 = 这条线的**末点**（最新子组均值）。
+ *
+ * 这张卡原本顶着「控制上限 UCL」的数字、底下却画着 X-bar 走势——两者本就不是
+ * 同一个量。挂上变化角标后这个错位会变成一句错话：UCL 在一段控制限内是常数，
+ * 「UCL +2.3%」是不成立的。改成主数值、走势线、变化角标三者同指一个量：
+ * 最新过程均值。UCL 没有被丢掉，它挪到脚注里继续给出判读所需的控制带。
+ */
+const spcLatestXbar = computed(() => spcXbarSeries.value.at(-1))
+const spcControlBandFoot = computed(() => {
+  const ucl = formatMetric(spc.spcChart.value?.controlLimits?.xbarUpperControlLimit)
+  const lcl = formatMetric(spc.spcChart.value?.controlLimits?.xbarLowerControlLimit)
+  return `控制带 ${lcl} ~ ${ucl}`
+})
 const spcCapabilityFacets = computed<NvMetricFacet[]>(() => [
   { key: 'cp', label: 'Cp', value: formatMetric(spc.capability.value?.cp) },
   {
@@ -583,12 +607,13 @@ function spcViolationKey(row: QualitySpcViolation) {
         />
         <NvMetricCard
           variant="sparkline"
-          label="控制上限 UCL"
-          :value="formatMetric(spc.spcChart.value?.controlLimits?.xbarUpperControlLimit)"
+          label="最新子组均值 X̄"
+          :value="formatMetric(spcLatestXbar)"
+          :trend="spcXbarDelta"
           :series="spcXbarSeries"
           :series-labels="spcXbarLabels"
           :foot-start="spcControlLimitHint"
-          :foot-end="`中心线 ${formatMetric(spc.spcChart.value?.controlLimits?.centerLine)}`"
+          :foot-end="spcControlBandFoot"
         />
         <NvMetricCard
           variant="facets"

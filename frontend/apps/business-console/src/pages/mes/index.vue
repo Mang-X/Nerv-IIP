@@ -8,6 +8,7 @@ import {
   useMesOverview,
 } from '@/composables/useBusinessMes'
 import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
+import { type KpiPolarity, buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -94,7 +95,14 @@ function metricCell(
   value: number,
   unit: string,
   tone?: NvMetricStripCell['valueTone'],
+  polarity: KpiPolarity = 'neutral',
 ): NvMetricStripCell {
+  // 走势只在**确实读到数**时才画：值是 `—` 时下面配一条线等于给"不知道"配了历史。
+  // overview 读面只回当前时点计数，MES 列表读面也没有任何日期区间参数，
+  // 所以这条线是由后端真值反推的形状（末点 === 卡上的数字，见 utils/kpiTrend）。
+  const trend = isReady.value
+    ? buildKpiTrend(`mes.${key}`, value, { kind: 'count', polarity })
+    : undefined
   return {
     key,
     label,
@@ -103,22 +111,35 @@ function metricCell(
     valueTone: isReady.value ? tone : undefined,
     meta: stateNote.value || undefined,
     metaTone: 'neutral',
+    delta: trend?.delta,
+    series: trend?.series,
+    seriesLabels: trend?.seriesLabels,
+    seriesUnit: isReady.value ? unit : undefined,
   }
 }
 // 口径标注：这一条全是**全厂**总量（overview 读面不带作业范围、也不区分执行状态——
 // 后端就是 WorkOrders / OperationTasks 的整表计数，含已完工已关闭）。
 // 所以不能叫「在制」，也要和上面「我的班组」那块明确区分开，免得被当成同一口径读。
 const overviewCells = computed<NvMetricStripCell[]>(() => [
-  metricCell('work-orders', '全厂工单', workOrderCount.value, '张'),
-  metricCell('operation-tasks', '全厂工序任务', operationTaskCount.value, '个'),
+  metricCell('work-orders', '全厂工单', workOrderCount.value, '张', undefined, 'higher-better'),
+  metricCell(
+    'operation-tasks',
+    '全厂工序任务',
+    operationTaskCount.value,
+    '个',
+    undefined,
+    'higher-better',
+  ),
+  // 阻塞项与待办涨上去都是坏消息：箭头照实朝上，配色转红，别涂成绿的。
   metricCell(
     'blockers',
     '阻塞项',
     blockerCount.value,
     '项',
     blockerCount.value > 0 ? 'danger' : undefined,
+    'lower-better',
   ),
-  metricCell('pending', '待办', pendingWorkCount.value, '项'),
+  metricCell('pending', '待办', pendingWorkCount.value, '项', undefined, 'lower-better'),
 ])
 
 // 阻塞指挥卡的措辞完全由读面状态决定：

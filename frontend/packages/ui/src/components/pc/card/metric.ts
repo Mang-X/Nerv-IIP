@@ -80,6 +80,25 @@ export interface NvMetricStripCell {
   /** Sub-line under the value: a delta or a short note. */
   meta?: string
   metaTone?: NvMetricDeltaDirection | 'neutral'
+  /**
+   * Change chip on the sub-line. Preferred over `meta` + `metaTone` for an
+   * actual delta: it carries the `tone` override, so a metric where rising is
+   * BAD (逾期单 +3) keeps the up-arrow while reading destructive — something
+   * `metaTone` alone cannot express (it hard-maps up → success). When both are
+   * set the chip leads and `meta` trails as a muted note.
+   */
+  delta?: NvMetricDelta
+  /**
+   * Trend series for this cell's mini chart. Needs at least two points; the
+   * LAST point must be the same figure as `value` — the strip is read as
+   * "number plus the shape that produced it", so a line that lands anywhere
+   * else reads as a contradiction.
+   */
+  series?: number[]
+  /** Per-point labels for the mini chart's crosshair tooltip. */
+  seriesLabels?: string[]
+  /** Unit suffix shown in the mini chart's tooltip. */
+  seriesUnit?: string
   /** Stable identity; REQUIRED for reorderable collections (see NvMetricSegment.key). */
   key?: string | number
 }

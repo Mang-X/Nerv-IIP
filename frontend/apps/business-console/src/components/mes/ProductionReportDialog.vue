@@ -56,6 +56,9 @@ const {
   canCompleteOperation,
   intentLocked,
   recordProductionReportPending,
+  quantitySnapshotPending,
+  quantityValidationMessage,
+  overproductionConfirmationRequired,
   reportScopeMessage,
   reportScopePending,
   reportScopeReady,
@@ -166,6 +169,14 @@ async function onSubmit() {
         >
           {{ reportScopeMessage }}
         </p>
+        <p
+          v-if="quantityValidationMessage"
+          data-testid="production-quantity-message"
+          class="rounded-lg border border-warning bg-warning/10 p-3 text-sm font-medium text-warning-strong"
+          role="alert"
+        >
+          {{ quantityValidationMessage }}
+        </p>
         <!-- 点提交才标红；未通过不发请求。 -->
         <p
           v-if="showErrors && (invalid.goodQuantity || invalid.scrapQuantity)"
@@ -182,14 +193,19 @@ async function onSubmit() {
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
           <NvButton
             type="submit"
-            :disabled="!canSubmit || recordProductionReportPending || reportScopePending"
+            :disabled="
+              !canSubmit ||
+              recordProductionReportPending ||
+              reportScopePending ||
+              quantitySnapshotPending
+            "
           >
             <Spinner
-              v-if="recordProductionReportPending || reportScopePending"
+              v-if="recordProductionReportPending || reportScopePending || quantitySnapshotPending"
               aria-hidden="true"
             />
             <ClipboardCheckIcon v-else aria-hidden="true" />
-            提交报工
+            {{ overproductionConfirmationRequired ? '确认超产并提交' : '提交报工' }}
           </NvButton>
         </NvDialogFooter>
       </form>

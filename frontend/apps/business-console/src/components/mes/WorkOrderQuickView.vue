@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   isScheduleInvalidated,
@@ -50,9 +50,7 @@ const operations = computed(() =>
     (a, b) => (a.operationSequence ?? 0) - (b.operationSequence ?? 0),
   ),
 )
-const blockingReasons = computed(() =>
-  (detail.value?.blockingReasons ?? []).map(describeMesReadinessReason),
-)
+const blockingReasons = computed(() => describeMesReadinessReasons(detail.value?.blockingReasons))
 
 // 状态 / 就绪 / 工序状态统一交给共享 StatusBadge（:value）解析为中文标签 + 语义色，
 // 与各列表页同一口径，避免本组件再维护一份不全的映射而漏出英文裸值（如 created/Queued）。

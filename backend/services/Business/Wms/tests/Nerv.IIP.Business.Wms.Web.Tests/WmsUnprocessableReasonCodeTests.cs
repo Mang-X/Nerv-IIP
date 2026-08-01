@@ -60,6 +60,7 @@ public sealed class WmsUnprocessableReasonCodeTests
     [InlineData(WmsUnprocessableReasonCodes.OutboundPickingDifferenceReasonMissing)]
     [InlineData(WmsUnprocessableReasonCodes.OutboundLinePickingTaskMissing)]
     [InlineData(WmsUnprocessableReasonCodes.PickingDifferenceReasonRequired)]
+    [InlineData(WmsUnprocessableReasonCodes.PickingOverLimit)]
     [InlineData(WmsUnprocessableReasonCodes.ExecutedQuantityOutOfRange)]
     public void Every_reason_code_survives_the_gateway_safe_message_filter(string code)
     {
