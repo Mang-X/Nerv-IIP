@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
@@ -99,6 +100,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             "work-center" => ListWorkCenters(request, type),
             "work-calendar" => ListWorkCalendars(request, type),
             "device-asset" => ListDeviceAssets(request, type),
+            "station" => ListStations(request, type),
             "site" => ListSites(request, type),
             "production-line" => ListProductionLines(request, type),
             "shift" => ListShifts(request, type),
@@ -121,7 +123,38 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Skip(request.All ? 0 : Math.Max(0, request.Skip))
             .Take(limit)
             .ToListAsync(cancellationToken);
+        if (string.Equals(request.ResourceType, "station", StringComparison.OrdinalIgnoreCase))
+        {
+            resources = resources
+                .Select(resource => resource with
+                {
+                    Code = StableStationId(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        resource.SiteCode,
+                        resource.WorkshopCode,
+                        resource.LineCode,
+                        resource.WorkCenterCode,
+                        resource.StationCode),
+                })
+                .ToList();
+        }
+
         return new ListMasterDataResourcesResponse(resources, total, request.All && total > limit, request.All ? limit : null);
+    }
+
+    private static string StableStationId(params string?[] components)
+    {
+        var builder = new StringBuilder("station:");
+        foreach (var component in components)
+        {
+            var value = component ?? string.Empty;
+            builder.Append(Encoding.UTF8.GetByteCount(value));
+            builder.Append(':');
+            builder.Append(value);
+        }
+
+        return builder.ToString();
     }
 
     private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, string resourceType)
@@ -349,6 +382,38 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 StationCode = x.StationCode,
                 ParentDeviceId = x.ParentDeviceId,
                 RetiredOn = x.RetiredOn,
+            });
+    }
+
+    private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourcesQuery request, string resourceType)
+    {
+        var keyword = NormalizeKeyword(request.Keyword);
+        return dbContext.DeviceAssets
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.IncludeDisabled || !x.Disabled)
+            .Where(x => x.StationCode != null && x.StationCode != "")
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
+            .Where(x => keyword == null || x.StationCode!.ToLower().Contains(keyword))
+            .GroupBy(x => new { x.SiteCode, x.WorkshopCode, x.LineCode, x.WorkCenterCode, StationCode = x.StationCode! })
+            .OrderBy(x => x.Key.StationCode)
+            .ThenBy(x => x.Key.SiteCode)
+            .ThenBy(x => x.Key.WorkshopCode)
+            .ThenBy(x => x.Key.LineCode)
+            .ThenBy(x => x.Key.WorkCenterCode)
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Key.StationCode,
+                x.Key.StationCode,
+                true,
+                x.Max(asset => asset.UpdatedAtUtc).ToString("O"))
+            {
+                SiteCode = x.Key.SiteCode,
+                WorkshopCode = x.Key.WorkshopCode,
+                LineCode = x.Key.LineCode,
+                WorkCenterCode = x.Key.WorkCenterCode,
+                StationCode = x.Key.StationCode,
+                Status = "active",
             });
     }
 

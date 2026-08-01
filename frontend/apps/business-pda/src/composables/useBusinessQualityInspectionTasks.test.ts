@@ -7,7 +7,9 @@ import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  queryFactoryById: new Map<string, () => unknown>(),
   dataById: new Map<string, { value: unknown }>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
   submit: vi.fn(),
   claim: vi.fn(),
   listPlain: vi.fn(),
@@ -52,13 +54,16 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
+    coladaState.queryFactoryById.set(id, optionsFactory)
     const data = coladaState.dataById.get(id) ?? shallowRef(undefined)
     coladaState.dataById.set(id, data)
+    const refetch = vi.fn()
+    coladaState.refetchById.set(id, refetch)
     return {
       data,
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useMutation: vi.fn((options) => ({
@@ -108,7 +113,9 @@ describe('useBusinessQualityInspectionTasks', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.queryOptionsById.clear()
+    coladaState.queryFactoryById.clear()
     coladaState.dataById.clear()
+    coladaState.refetchById.clear()
     coladaState.claim.mockResolvedValue({
       success: true,
       data: {
@@ -167,6 +174,87 @@ describe('useBusinessQualityInspectionTasks', () => {
         scopeKind: 'self',
         scopeId: 'user-admin',
       }),
+    })
+  })
+
+  it('uses a bounded first page and sends task filters to the server before pagination', async () => {
+    seedPrincipal()
+    coladaState.dataById.set(
+      'listBusinessConsoleQualityInspectionTasks',
+      shallowRef({ success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 2 } }),
+    )
+    coladaState.listPlain.mockResolvedValue({
+      data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 2 } },
+    })
+    const result = useBusinessQualityInspectionTasks()
+
+    expect(coladaState.listOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ skip: 0, take: 20, status: 'pending' }),
+    })
+
+    result.filters.keyword = 'WO-9001'
+    result.filters.sourceType = 'operation'
+    result.filters.overdue = true
+    await nextTick()
+    coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+      success: true,
+      data: { items: [{ inspectionTaskId: 'FILTERED-T1' }], total: 2 },
+    }
+    await nextTick()
+    await result.loadMore()
+
+    expect(coladaState.listPlain).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({
+        skip: 1,
+        take: 20,
+        keyword: 'WO-9001',
+        sourceType: 'operation',
+        overdue: true,
+      }),
+    })
+  })
+
+  it('normalizes keyword once for query identity and every pagination request', async () => {
+    seedPrincipal()
+    coladaState.dataById.set(
+      'listBusinessConsoleQualityInspectionTasks',
+      shallowRef({
+        success: true,
+        data: { items: [{ inspectionTaskId: 'T1' }], total: 2 },
+      }),
+    )
+    coladaState.listPlain.mockResolvedValue({
+      data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 2 } },
+    })
+    const result = useBusinessQualityInspectionTasks()
+
+    result.filters.keyword = ' abc '
+    await nextTick()
+    coladaState.queryFactoryById.get('listBusinessConsoleQualityInspectionTasks')!()
+    expect(coladaState.listOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ keyword: 'abc' }),
+    })
+
+    coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+      success: true,
+      data: { items: [{ inspectionTaskId: 'T1' }], total: 2 },
+    }
+    await nextTick()
+    await result.loadMore()
+    expect(coladaState.listPlain).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ keyword: 'abc' }),
+    })
+
+    const loadedBeforeEquivalentKeyword = result.loaded.value
+    result.filters.keyword = 'abc'
+    await nextTick()
+    expect(result.loaded.value).toBe(loadedBeforeEquivalentKeyword)
+
+    result.filters.keyword = '   '
+    await nextTick()
+    coladaState.queryFactoryById.get('listBusinessConsoleQualityInspectionTasks')!()
+    expect(coladaState.listOptions).toHaveBeenLastCalledWith({
+      query: expect.not.objectContaining({ keyword: expect.anything() }),
     })
   })
 
@@ -526,6 +614,170 @@ describe('useBusinessQualityInspectionTasks', () => {
     }
     expect(coladaState.listPlain.mock.calls[0][0].query.skip).toBe(200)
     expect(coladaState.listPlain.mock.calls[1][0].query.skip).toBe(400)
+  })
+
+  it('advances the server offset by raw page rows while deduplicating overlapping task ids', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'T1' }], total: 4 },
+      },
+    })
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [{ inspectionTaskId: 'T1' }, { inspectionTaskId: 'T2' }],
+            total: 4,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ inspectionTaskId: 'T3' }], total: 4 },
+        },
+      })
+    const result = useBusinessQualityInspectionTasks()
+
+    await result.loadMore()
+    await result.loadMore()
+
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2', 'T3'])
+    expect(coladaState.listPlain.mock.calls.map(([request]) => request.query.skip)).toEqual([1, 3])
+    expect(result.hasMore.value).toBe(false)
+  })
+
+  it('makes progress across a duplicate-only page without requesting the same offset again', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'T1' }], total: 3 },
+      },
+    })
+    coladaState.listPlain
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ inspectionTaskId: 'T1' }], total: 3 } },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ inspectionTaskId: 'T2' }], total: 3 } },
+      })
+    const result = useBusinessQualityInspectionTasks()
+
+    await result.loadMore()
+    await result.loadMore()
+
+    expect(coladaState.listPlain.mock.calls.map(([request]) => request.query.skip)).toEqual([1, 2])
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['T1', 'T2'])
+    expect(result.hasMore.value).toBe(false)
+  })
+
+  it('keeps all loaded rows on refresh failure, exposes the real lifecycle, and replaces on success', async () => {
+    seedPrincipal()
+    const taskPage = (prefix: string, start: number) =>
+      Array.from({ length: 20 }, (_, index) => ({
+        inspectionTaskId: `${prefix}-${start + index}`,
+      }))
+    coladaState.dataById.set(
+      'listBusinessConsoleQualityInspectionTasks',
+      shallowRef({
+        success: true,
+        data: { items: taskPage('OLD', 0), total: 40 },
+      }),
+    )
+    coladaState.listPlain.mockResolvedValueOnce({
+      data: { success: true, data: { items: taskPage('OLD', 20), total: 40 } },
+    })
+    const result = useBusinessQualityInspectionTasks()
+    await result.loadMore()
+    expect(result.tasks.value).toHaveLength(40)
+
+    let rejectRefresh!: (reason?: unknown) => void
+    coladaState.refetchById.get('listBusinessConsoleQualityInspectionTasks')!.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectRefresh = reject
+      }),
+    )
+    const refreshFailure = new Error('quality refresh failed')
+    const failedRefresh = result.refresh()
+    expect(result.refreshing.value).toBe(true)
+    expect(result.tasks.value).toHaveLength(40)
+    rejectRefresh(refreshFailure)
+    await expect(failedRefresh).rejects.toBe(refreshFailure)
+    expect(result.refreshing.value).toBe(false)
+    expect(result.tasks.value).toHaveLength(40)
+
+    const freshPage = taskPage('NEW', 0)
+    coladaState.refetchById
+      .get('listBusinessConsoleQualityInspectionTasks')!
+      .mockImplementationOnce(async () => {
+        coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+          success: true,
+          data: { items: freshPage, total: 20 },
+        }
+        await nextTick()
+      })
+    const successfulRefresh = result.refresh()
+    expect(result.refreshing.value).toBe(true)
+    await successfulRefresh
+    await nextTick()
+    expect(result.refreshing.value).toBe(false)
+    expect(result.tasks.value).toEqual(freshPage)
+    expect(result.hasMore.value).toBe(false)
+  })
+
+  it('keeps the complete loaded snapshot when refresh resolves with success:false', async () => {
+    seedPrincipal()
+    const taskPage = (start: number) =>
+      Array.from({ length: 20 }, (_, index) => ({ inspectionTaskId: `OLD-${start + index}` }))
+    coladaState.dataById.set(
+      'listBusinessConsoleQualityInspectionTasks',
+      shallowRef({ success: true, data: { items: taskPage(0), total: 40 } }),
+    )
+    coladaState.listPlain.mockResolvedValueOnce({
+      data: { success: true, data: { items: taskPage(20), total: 40 } },
+    })
+    const result = useBusinessQualityInspectionTasks()
+    await result.loadMore()
+
+    coladaState.refetchById
+      .get('listBusinessConsoleQualityInspectionTasks')!
+      .mockImplementationOnce(async () => {
+        coladaState.dataById.get('listBusinessConsoleQualityInspectionTasks')!.value = {
+          success: false,
+          message: 'refresh rejected',
+        }
+        await nextTick()
+      })
+    await result.refresh()
+    await nextTick()
+
+    expect(result.tasks.value).toHaveLength(40)
+    expect(result.total.value).toBe(40)
+    expect(result.hasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds the previous base response immediately when any server filter changes', async () => {
+    seedPrincipal()
+    coladaState.dataById.set('listBusinessConsoleQualityInspectionTasks', {
+      value: {
+        success: true,
+        data: { items: [{ inspectionTaskId: 'OLD-PENDING' }], total: 1 },
+      },
+    })
+    const result = useBusinessQualityInspectionTasks()
+    expect(result.tasks.value.map((task) => task.inspectionTaskId)).toEqual(['OLD-PENDING'])
+
+    result.filters.status = 'in-progress'
+    await nextTick()
+
+    expect(result.tasks.value).toEqual([])
+    expect(result.total.value).toBe(0)
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.hasFailedResponse.value).toBe(false)
   })
 
   it('exposes success:false and malformed raw task responses as failures instead of empty success', async () => {

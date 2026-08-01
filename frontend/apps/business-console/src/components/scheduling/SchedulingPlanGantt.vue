@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleResourceItem,
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingAssignment,
@@ -14,6 +15,8 @@ import {
   toModel,
   type ScheduleModel,
   type ScheduleTask,
+  type DimensionValue,
+  type SchedulingDimension,
   type TimeScale,
 } from '@nerv-iip/scheduling'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -55,10 +58,138 @@ const emit = defineEmits<{
   release: []
 }>()
 
+type SchedulingGroupKey = 'workCenter' | 'workshop' | 'productionLine'
+
+const SCHEDULING_GROUP_DIMENSIONS: SchedulingDimension[] = [
+  { key: 'workCenter', label: '工作中心' },
+  { key: 'workshop', label: '车间' },
+  { key: 'productionLine', label: '产线' },
+]
+
+const UNASSIGNED_GROUP_IDS = {
+  workshop: '__unassigned_workshop__',
+  productionLine: '__unassigned_production_line__',
+} as const
+
+function catalogValues(
+  resources: BusinessConsoleResourceItem[],
+  missingLabel: string,
+): DimensionValue[] {
+  return resources.flatMap((resource) => {
+    const code = resource.code?.trim()
+    if (!code) return []
+    return [{ id: code, label: resource.displayName?.trim() || missingLabel }]
+  })
+}
+
+function uniqueDimensionValues(values: DimensionValue[]) {
+  const seen = new Set<string>()
+  return values.filter((value) => {
+    if (seen.has(value.id)) return false
+    seen.add(value.id)
+    return true
+  })
+}
+
+function buildGroupedTasks(
+  tasks: ScheduleTask[],
+  catalogs: {
+    workCenters: BusinessConsoleResourceItem[]
+    workshops: BusinessConsoleResourceItem[]
+    lines: BusinessConsoleResourceItem[]
+  },
+  resolveWorkCenter: (code?: string | null) => string | undefined,
+) {
+  const workCenterByCode = new Map(
+    catalogs.workCenters.flatMap((resource) => {
+      const code = resource.code?.trim()
+      return code ? [[code, resource] as const] : []
+    }),
+  )
+  const workshopValues = catalogValues(catalogs.workshops, '未命名车间')
+  const lineValues = catalogValues(catalogs.lines, '未命名产线')
+  const operationTasks = tasks.filter((task) => task.type === 'operation' && !task.blockKind)
+  const missingWorkshopCount = operationTasks.filter((task) => {
+    const workCenterCode = task.workCenterId ?? task.resourceId
+    return !workCenterCode || !workCenterByCode.get(workCenterCode)?.workshopCode?.trim()
+  }).length
+  const missingLineCount = operationTasks.filter((task) => {
+    const workCenterCode = task.workCenterId ?? task.resourceId
+    return !workCenterCode || !workCenterByCode.get(workCenterCode)?.lineCode?.trim()
+  }).length
+  const fallbackWorkshopLabel = `未归属车间（${missingWorkshopCount} 项）`
+  const fallbackLineLabel = `未归属产线（${missingLineCount} 项）`
+
+  const groupedTasks = tasks.map((task) => {
+    if (task.type !== 'operation') return task
+    const workCenterCode = task.workCenterId ?? task.resourceId
+    const workCenter = workCenterCode ? workCenterByCode.get(workCenterCode) : undefined
+    const workshopCode = workCenter?.workshopCode?.trim()
+    const lineCode = workCenter?.lineCode?.trim()
+    const dimensions = { ...(task.dimensions ?? {}) }
+
+    if (workCenterCode) {
+      dimensions.workCenter = {
+        id: workCenterCode,
+        label: resolveWorkCenter(workCenterCode) ?? workCenterCode,
+      }
+    }
+    dimensions.workshop = {
+      id: workshopCode ?? UNASSIGNED_GROUP_IDS.workshop,
+      label: workshopCode
+        ? (workshopValues.find((value) => value.id === workshopCode)?.label ?? '未命名车间')
+        : fallbackWorkshopLabel,
+    }
+    dimensions.productionLine = {
+      id: lineCode ?? UNASSIGNED_GROUP_IDS.productionLine,
+      label: lineCode
+        ? (lineValues.find((value) => value.id === lineCode)?.label ?? '未命名产线')
+        : fallbackLineLabel,
+    }
+
+    return { ...task, dimensions }
+  })
+
+  const workCenterValues = uniqueDimensionValues(
+    groupedTasks
+      .filter((task) => task.type === 'operation' && !task.blockKind)
+      .flatMap((task) => (task.dimensions?.workCenter ? [task.dimensions.workCenter] : [])),
+  )
+  const groupValues: Record<SchedulingGroupKey, DimensionValue[]> = {
+    workCenter: workCenterValues,
+    workshop: uniqueDimensionValues([
+      ...workshopValues,
+      ...(missingWorkshopCount
+        ? [{ id: UNASSIGNED_GROUP_IDS.workshop, label: fallbackWorkshopLabel }]
+        : []),
+    ]),
+    productionLine: uniqueDimensionValues([
+      ...lineValues,
+      ...(missingLineCount
+        ? [
+            {
+              id: UNASSIGNED_GROUP_IDS.productionLine,
+              label: fallbackLineLabel,
+            },
+          ]
+        : []),
+    ]),
+  }
+
+  return { tasks: groupedTasks, groupValues }
+}
+
 const scale = shallowRef<TimeScale>('auto')
+const groupBy = shallowRef<SchedulingGroupKey>('workCenter')
 
 // 工作中心显示名 + 分类（主数据名录，与派工看板同一份缓存）。
-const { resolveWorkCenter, resolveWorkCenterCategory } = useMesDisplayNames()
+const {
+  resolveWorkCenter,
+  resolveWorkCenterCategory,
+  workCenterResources,
+  workshopResources,
+  lineResources,
+} = useMesDisplayNames({ schedulingGroups: true })
 
 // 工序分色按工作中心「工序族」归类，族解析以主数据 category 为准、编码前缀仅作兜底，
 // 映射与色槽语义集中在 data/workCenterFamilies.ts（不在页面里写死客户编码）。
@@ -96,9 +227,8 @@ const renderableAssignments = computed(() =>
 const model = computed<ScheduleModel | undefined>(() => {
   if (!props.plan) return undefined
   const mapped = toModel({ ...props.plan, assignments: renderableAssignments.value })
-  return {
-    ...mapped,
-    tasks: mapped.tasks.map((task) => {
+  const grouped = buildGroupedTasks(
+    mapped.tasks.map((task) => {
       // 资源时间块(维护/停机/换线/换型)不是工序:只把工作中心换成人话名,不套工序标题。
       if (task.blockKind) {
         return task.workCenterId
@@ -140,6 +270,18 @@ const model = computed<ScheduleModel | undefined>(() => {
           : task.dimensions,
       }
     }),
+    {
+      workCenters: workCenterResources.value,
+      workshops: workshopResources.value,
+      lines: lineResources.value,
+    },
+    resolveWorkCenter,
+  )
+  return {
+    ...mapped,
+    tasks: grouped.tasks,
+    groupDimensions: SCHEDULING_GROUP_DIMENSIONS,
+    groupValues: grouped.groupValues,
   }
 })
 
@@ -268,7 +410,15 @@ function revealMatch(index: number) {
 watch([search, searchMatches], () => {
   sendCommand({ kind: 'setSearchHighlight', taskIds: searchMatches.value.map((t) => t.id) })
   matchCursor.value = 0
-  if (searchMatches.value.length) revealMatch(0)
+  if (searchMatches.value.length) {
+    const selectedIndex = searchMatches.value.findIndex((task) => task.id === selectedTaskId.value)
+    if (selectedIndex >= 0) {
+      matchCursor.value = selectedIndex + 1
+      sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+    } else {
+      revealMatch(0)
+    }
+  }
 })
 // 换方案时清空搜索:上一版方案的关键词留在框里,配着新方案的「无匹配」最容易被当成 bug。
 watch(
@@ -328,6 +478,13 @@ function isForbidden(error: unknown, visited = new Set<object>()): boolean {
 function formatDateTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function setGroupBy(value: string) {
+  if (SCHEDULING_GROUP_DIMENSIONS.some((dimension) => dimension.key === value)) {
+    groupBy.value = value as SchedulingGroupKey
+    if (selectedTaskId.value) sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+  }
 }
 </script>
 
@@ -472,12 +629,15 @@ function formatDateTime(value: string) {
             :can-edit="false"
             :can-repreview="false"
             :can-release="false"
+            :group-dimensions="SCHEDULING_GROUP_DIMENSIONS"
+            :group-by="groupBy"
             searchable
             :search="search"
             :match-count="matchCount"
             :match-index="matchCursor"
             search-placeholder="搜工单 / 工序 / 工作中心"
             @scale-change="scale = $event"
+            @group-change="setGroupBy"
             @zoom-in="sendCommand({ kind: 'zoomIn' })"
             @zoom-out="sendCommand({ kind: 'zoomOut' })"
             @today="sendCommand({ kind: 'scrollToToday' })"
@@ -492,6 +652,7 @@ function formatDateTime(value: string) {
               :model="model"
               :scale="scale"
               :read-only="true"
+              :group-by="groupBy"
               @task-select="selectedTaskId = $event"
             />
           </div>

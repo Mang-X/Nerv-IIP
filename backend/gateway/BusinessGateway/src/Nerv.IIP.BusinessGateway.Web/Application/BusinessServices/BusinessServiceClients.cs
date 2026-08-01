@@ -244,6 +244,12 @@ public interface IBusinessMasterDataClient
 
 public interface IBusinessInventoryClient
 {
+    Task<BusinessConsoleInventoryDirectoryResponse> ListDirectoryAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryDirectoryRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Inventory directory client is not configured.");
+
     Task<BusinessConsoleInventoryStockBySourceResponse> GetStockBySourceAsync(
         string internalBearerToken,
         BusinessConsoleInventoryStockBySourceRequest request,
@@ -1248,6 +1254,12 @@ public interface IBusinessIndustrialTelemetryClient
 
 public interface IBusinessMaintenanceClient
 {
+    Task<BusinessConsoleMaintenanceReasonDirectoryResponse> ListDowntimeReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceReasonDirectoryRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance reason directory client is not configured.");
+
     Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -1874,9 +1886,10 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    response.StatusCode,
-                    await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken));
+                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken);
+                throw response.StatusCode == HttpStatusCode.BadRequest
+                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage)
+                    : BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, downstreamMessage);
             }
 
             try
@@ -2264,10 +2277,18 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("departmentCode", request.DepartmentCode),
                 ("shiftCode", request.ShiftCode),
                 ("userId", request.UserId),
-                ("skillCode", request.SkillCode)),
+                ("skillCode", request.SkillCode),
+                ("workshopCode", request.WorkshopCode)),
             null,
-            cancellationToken);
-        return response.Total > 0 ? response : response with { Total = response.Resources.Count };
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+        if (response.Resources is null || response.Total < response.Resources.Count)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+        return response;
     }
 
     public Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
@@ -2530,7 +2551,14 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("pageIndex", request.PageIndex),
                 ("pageSize", request.PageSize)),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+        if (wire.Items is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
         return new BusinessConsoleWorkerDirectoryResponse(
             wire.PageIndex,
             wire.PageSize,
@@ -2778,6 +2806,26 @@ public sealed class HttpBusinessInventoryClient(
     IOptions<BusinessGatewayInventoryForwardedPermissionOptions> forwardedPermissionOptions)
     : BusinessServiceHttpClient(httpClient), IBusinessInventoryClient
 {
+    public Task<BusinessConsoleInventoryDirectoryResponse> ListDirectoryAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryDirectoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryDirectoryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/directory?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("directoryType", request.DirectoryType),
+                ("keyword", request.Keyword),
+                ("siteCode", request.SiteCode),
+                ("skuCode", request.SkuCode),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+
     public Task<BusinessConsoleInventoryStockBySourceResponse> GetStockBySourceAsync(
         string internalBearerToken,
         BusinessConsoleInventoryStockBySourceRequest request,
@@ -3537,9 +3585,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("search", request.Search),
                 ("groupName", request.GroupName),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("defaultDisposition", request.DefaultDisposition)),
             null,
-            cancellationToken);
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
 
     public Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
         string internalBearerToken,
@@ -6158,6 +6208,43 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
     };
 
+    public async Task<BusinessConsoleMaintenanceReasonDirectoryResponse> ListDowntimeReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceReasonDirectoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamDowntimeReasonDirectoryItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/downtime-reasons?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
+
+        if (response.Items is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleMaintenanceReasonDirectoryResponse(
+            response.Items.Select(item => new BusinessConsoleMaintenanceReasonDirectoryItem(
+                item.ReasonCode,
+                item.ReasonCode,
+                item.Description,
+                item.ReasonCategory,
+                item.LossCategory)).ToArray(),
+            response.Skip,
+            response.Take,
+            response.Total);
+    }
+
     public async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -6886,6 +6973,15 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             : FormatJsonScalar(value.Value);
 
     private sealed record DownstreamMaintenancePagedResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
+
+    private sealed record DownstreamDowntimeReasonDirectoryItem(
+        JsonElement DowntimeReasonId,
+        string OrganizationId,
+        string EnvironmentId,
+        string ReasonCode,
+        string Description,
+        string ReasonCategory,
+        string LossCategory);
 
     private sealed record DownstreamMaintenanceWorkOrderListItem(
         JsonElement WorkOrderId,

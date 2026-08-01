@@ -38,7 +38,7 @@ definePage({
 const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } =
   useMesShiftHandovers()
 const { keyword } = useMesKeywordFilter(filters)
-// 交接单读面只回班次 / 班组标识，名称在主数据里，前端按编码 join；查不到只显标识。
+// 班次 / 班组名称优先用 DTO 与主数据目录；目录查不到时显占位，不回吐内部标识。
 const { resolveShiftLabel } = useMesDisplayNames({ shifts: true })
 const { resolveTeam } = useMasterDataDisplayNames({ teams: true })
 const { page, pageSize } = usePagedList(filters, {
@@ -77,10 +77,14 @@ const columns: NvDataTableColumn<HandoverRow>[] = [
     key: 'handoverId',
     header: '交接单',
     cellClass: 'font-medium',
-    accessor: (r) => r.handoverId ?? '无',
+    accessor: () => '—',
   },
   { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
-  { key: 'teamId', header: '班组', accessor: (r) => resolveTeam(r.teamId) ?? r.teamId ?? '无' },
+  {
+    key: 'teamId',
+    header: '班组',
+    accessor: (r) => r.teamName?.trim() || resolveTeam(r.teamId) || '未指派',
+  },
   { key: 'handoverStatus', header: '状态', width: 'w-24' },
   { key: 'openIssueCount', header: '未结事项', align: 'end', width: 'w-24' },
   { key: 'createdAtUtc', header: '创建时间', width: 'w-44' },

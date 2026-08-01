@@ -33,6 +33,7 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import {
   formatInventoryExpiryDate,
   formatInventoryExpirySource,
@@ -130,6 +131,7 @@ const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
 
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const contextWorkOrderLabel = computed(() => readFaceText(contextWorkOrderId.value, ''))
 watch(
   () => route.query,
   (query) => {
@@ -290,10 +292,30 @@ const siteStockColumns: NvDataTableColumn<SiteStockRow>[] = [
   {
     key: 'earliestExpiry',
     header: '最早到期',
-    headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
-    accessor: (r) => (r.earliestExpiry ? formatInventoryExpiryDate(r.earliestExpiry) : '无效期'),
+    headerTitle:
+      'FEFO：预留与拣货建议优先选择更早到期的批次。不追效期的物料（如成品总成）没有到期日，属正常。',
+    accessor: (r) => siteStockExpiryText(r),
+  },
+  {
+    key: 'frozenFlag',
+    header: '冻结',
+    width: 'w-16',
+    headerTitle: '存在质量冻结 / 盘点冻结 / 过期而不可动用的台账行；与是否追效期无关。',
+    accessor: (r) => (r.hasBlocked ? '有冻结行' : '—'),
   },
 ]
+
+/**
+ * 最早到期列的三态口径（#1418 B2）：
+ * - 有到期日 → 显示日期；
+ * - 不追效期（没有任何保质期/效期配置，成品总成本来就没有保质期）→ 中性「不追效期」，绝不是风险；
+ * - 配置了保质期却没有效期数据 → 才是需要警示的「缺效期数据」。
+ * 这样列表与顶部「效期风险批次」卡的口径才一致：卡说 0 批风险时，列表不允许满屏红标。
+ */
+function siteStockExpiryText(row: SiteStockRow) {
+  if (row.earliestExpiry) return formatInventoryExpiryDate(row.earliestExpiry)
+  return row.tracksShelfLife ? '缺效期数据' : '不追效期'
+}
 const siteStockEmptyMessage = computed(() => {
   if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
   return '已扫描的物料在本厂都没有库存台账。可继续扫描其余物料，或换一个工厂。'
@@ -373,7 +395,7 @@ function locationLabelOf(line: { locationCode?: string | null }) {
 function ownerLabel(ownerType?: string | null, ownerId?: string | null) {
   const type = ownerType ? labelFor(STOCK_LEDGER_OWNER_TYPE_LABELS, ownerType, '未知货主类型') : ''
   if (!ownerId) return type || '无'
-  const partner = resolvePartner(ownerId) ?? ownerId
+  const partner = resolvePartner(ownerId) ?? '未解析货主'
   return type ? `${type} · ${partner}` : partner
 }
 function qualityStatusLabel(value?: string | null) {
@@ -468,9 +490,9 @@ async function refreshCurrentView() {
           效期预警（30天）
         </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
-            >返回工单 {{ contextWorkOrderId }}</RouterLink
-          >
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">
+            返回工单<span v-if="contextWorkOrderLabel"> {{ contextWorkOrderLabel }}</span>
+          </RouterLink>
         </NvButton>
         <NvButton
           size="sm"
@@ -693,12 +715,21 @@ async function refreshCurrentView() {
           <span class="tabular-nums">{{ row.lineCount }}</span>
         </template>
         <template #cell-earliestExpiry="{ row }">
-          <div class="flex items-center justify-start gap-2">
-            <span>{{
-              row.earliestExpiry ? formatInventoryExpiryDate(row.earliestExpiry) : '无效期'
-            }}</span>
-            <NvStatusBadge v-if="row.hasBlocked" value="blocked" />
-          </div>
+          <span v-if="row.earliestExpiry" class="tabular-nums">{{
+            formatInventoryExpiryDate(row.earliestExpiry)
+          }}</span>
+          <NvStatusBadge
+            v-else-if="row.tracksShelfLife"
+            value="missing-expiry"
+            label="缺效期数据"
+            tone="warning"
+          />
+          <span v-else class="text-muted-foreground">不追效期</span>
+        </template>
+        <template #cell-frozenFlag="{ row }">
+          <!-- 库存语境下 blocked 叫「冻结」（foundation-conventions 契约注释），不沿用 MES 的「阻塞」。 -->
+          <NvStatusBadge v-if="row.hasBlocked" value="blocked" label="冻结" />
+          <span v-else class="text-muted-foreground">—</span>
         </template>
       </NvDataTable>
       <!--

@@ -604,12 +604,16 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
         await EnsureRoutingSnapshotPreconditionsAsync(request, cancellationToken);
         var routingSnapshot = await CaptureRoutingSnapshotAsync(request, allocation.Code, cancellationToken);
+        var effectiveRequest = string.IsNullOrWhiteSpace(routingSnapshot?.ProductionVersionId) ||
+                string.Equals(routingSnapshot.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase)
+            ? request
+            : request with { ProductionVersionId = routingSnapshot.ProductionVersionId };
         return await skuAvailabilityScopeCoordinator.ExecuteAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.SkuId,
+            effectiveRequest.OrganizationId,
+            effectiveRequest.EnvironmentId,
+            effectiveRequest.SkuId,
             token => CreateWorkOrderAsync(
-                request,
+                effectiveRequest,
                 allocation.Code,
                 sourceSystem,
                 sourceDocumentType,

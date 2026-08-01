@@ -7,6 +7,8 @@ import {
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 export interface MesDisplayNameOptions {
+  /** 额外加载车间/产线/工作中心关系，用于排产甘特分组；默认关闭。 */
+  schedulingGroups?: boolean
   /**
    * 额外加载班次主数据（用于把 shiftId 解析成班次名）。
    * 默认关闭：只有展示班次列的页面才付这次请求。
@@ -32,7 +34,16 @@ export interface MesDisplayNameOptions {
  */
 export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
   const { skus } = useBusinessSkus()
-  const { resources: workCenters } = useBusinessMasterDataResources('work-center')
+  const workCenterSource = useBusinessMasterDataResources('work-center')
+  const workshopSource = options.schedulingGroups
+    ? useBusinessMasterDataResources('workshop')
+    : undefined
+  const lineSource = options.schedulingGroups
+    ? useBusinessMasterDataResources('production-line')
+    : undefined
+  const workCenters = workCenterSource.resources
+  const workshops = computed(() => workshopSource?.resources.value ?? [])
+  const lines = computed(() => lineSource?.resources.value ?? [])
   const shiftSource = options.shifts ? useBusinessMasterDataResources('shift') : undefined
   const workerSource = options.workers
     ? useBusinessWorkers({ employmentStatus: 'active' })
@@ -122,6 +133,10 @@ export function useMesDisplayNames(options: MesDisplayNameOptions = {}) {
     resolveWorkCenter,
     resolveWorkCenterCategory,
     resolveWorker,
+    /** 工作中心及其车间/产线归属；甘特分组直接复用这份名录缓存。 */
+    workCenterResources: workCenters,
+    workshopResources: workshops,
+    lineResources: lines,
   }
 }
 

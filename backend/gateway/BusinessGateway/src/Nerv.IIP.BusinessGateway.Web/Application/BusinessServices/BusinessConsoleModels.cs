@@ -62,6 +62,121 @@ public sealed record BusinessConsoleResourceListResponse(
     bool Truncated = false,
     int? Limit = null);
 
+public sealed record BusinessConsoleSearchableDirectoryRequest(
+    [property: RouteParam] string DirectoryType,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? Keyword = null,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null,
+    [property: QueryParam] string? SkuCode = null,
+    [property: QueryParam] int PageIndex = 1,
+    [property: QueryParam] int PageSize = 20,
+    [property: QueryParam] string RankingMode = "default");
+
+public sealed record BusinessConsoleSearchableDirectoryItem(
+    string Id,
+    string DisplayName,
+    string? Code,
+    string SourceService,
+    IReadOnlyDictionary<string, string?> Context);
+
+public sealed record BusinessConsoleSearchableDirectoryResponse(
+    string DirectoryType,
+    string Status,
+    string? ReasonCode,
+    IReadOnlyCollection<BusinessConsoleSearchableDirectoryItem> Items,
+    int Total,
+    string SourceService,
+    string AuthorityDirectoryType,
+    string RankingMode,
+    string RankingStatus,
+    string? RankingReasonCode,
+    string? FallbackOrdering,
+    string Ordering,
+    string OrderingExplanation)
+{
+    public static BusinessConsoleSearchableDirectoryResponse FromItems(
+        string directoryType,
+        IReadOnlyCollection<BusinessConsoleSearchableDirectoryItem> items,
+        int total,
+        string sourceService,
+        bool authorityConfigured = true,
+        string? authorityDirectoryType = null,
+        string rankingMode = "default")
+    {
+        var normalizedRankingMode = rankingMode.Trim().ToLowerInvariant();
+        var rankingAvailable = normalizedRankingMode == "default";
+        return new(
+            directoryType,
+            authorityConfigured ? "available" : "unavailable",
+            authorityConfigured ? null : "directory-authority-unconfigured",
+            authorityConfigured ? items : [],
+            authorityConfigured ? total : 0,
+            sourceService,
+            authorityDirectoryType ?? directoryType,
+            normalizedRankingMode,
+            rankingAvailable ? "applied" : "unavailable",
+            rankingAvailable ? null : "directory-ranking-facts-unavailable",
+            rankingAvailable ? null : "code-ascending",
+            "code-ascending",
+            rankingAvailable
+                ? "Deterministic owner-side ordering by stable business code; no ranking affects business decisions."
+                : "No authoritative usage or recommendation facts are available; candidates use the deterministic code-ascending fallback and do not affect business decisions.");
+    }
+}
+
+public sealed record BusinessConsoleInventoryDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DirectoryType,
+    string? Keyword = null,
+    string? SiteCode = null,
+    string? SkuCode = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleInventoryDirectoryItem(
+    string Id,
+    string Code,
+    string Display,
+    string DirectoryType,
+    string? SiteCode,
+    string? LocationCode,
+    string? SkuCode,
+    string? ParentCode,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleInventoryDirectoryResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryDirectoryItem> Items,
+    int Total,
+    int Skip,
+    int Take,
+    string Status,
+    string SourceKind,
+    DateTimeOffset AsOfUtc,
+    string? ReasonCode = null);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryItem(
+    string Id,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryResponse(
+    IReadOnlyCollection<BusinessConsoleMaintenanceReasonDirectoryItem> Items,
+    int Skip,
+    int Take,
+    int Total);
+
 public sealed record BusinessConsolePrincipalWorkContextRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -187,7 +302,8 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? DepartmentCode = null,
     string? ShiftCode = null,
     string? UserId = null,
-    string? SkillCode = null);
+    string? SkillCode = null,
+    string? WorkshopCode = null);
 
 public sealed record BusinessConsoleListDeviceAssetsRequest(
     string OrganizationId,
@@ -1577,7 +1693,8 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DefaultDisposition = null);
 
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,

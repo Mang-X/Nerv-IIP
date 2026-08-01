@@ -221,6 +221,8 @@ export interface ScheduleModel {
   changes: ScheduleChange[]
   /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */
   groupDimensions?: SchedulingDimension[]
+  /** 每个分组维度的全量泳道定义；用于保留当前时间窗内没有任务的泳道。 */
+  groupValues?: Record<string, DimensionValue[]>
   /**
    * 计划所依据的工作日历。有值时甘特按它画工作/非工作底纹与班次边界;
    * 无值时引擎退回「周末 + 夜间」的通用作息假设。

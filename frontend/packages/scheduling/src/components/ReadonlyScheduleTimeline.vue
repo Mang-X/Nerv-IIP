@@ -121,20 +121,32 @@ const timelineWidth = computed(() => {
 const resourceNames = computed(
   () => new Map(props.model.resources.map((resource) => [resource.id, resource.text])),
 )
+const dimensionNames = computed(
+  () =>
+    new Map(
+      (props.model.groupValues?.[props.groupBy] ?? []).map((value) => [value.id, value.label]),
+    ),
+)
 
-const laneLabel = (task: ScheduleTask, laneId: string) => {
-  if (props.view === 'order') return task.orderId || '未关联工单'
+const laneLabel = (task: ScheduleTask | undefined, laneId: string) => {
+  if (props.view === 'order') return task?.orderId || '未关联工单'
   return (
-    task.dimensions?.[props.groupBy]?.label ??
+    task?.dimensions?.[props.groupBy]?.label ??
+    dimensionNames.value.get(laneId) ??
     resourceNames.value.get(laneId) ??
-    task.workCenterId ??
-    task.resourceId ??
+    task?.workCenterId ??
+    task?.resourceId ??
     '未分配资源'
   )
 }
 
 const lanes = computed<TimelineLane[]>(() => {
   const groups = new Map<string, ScheduleTask[]>()
+  if (props.view === 'resource') {
+    for (const value of props.model.groupValues?.[props.groupBy] ?? []) {
+      groups.set(value.id, [])
+    }
+  }
   for (const task of operationTasks.value) {
     const laneId =
       props.view === 'order'
@@ -169,7 +181,7 @@ const lanes = computed<TimelineLane[]>(() => {
 
     return {
       id,
-      label: laneLabel(tasks[0]!, id),
+      label: laneLabel(tasks[0], id),
       tasks: positioned,
       rowCount: Math.max(1, rowEnds.length),
     }

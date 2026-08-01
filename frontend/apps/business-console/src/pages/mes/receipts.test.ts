@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import ReceiptsPage from './receipts.vue'
 
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
 vi.mock('@/composables/useSkuNames', async () => {
@@ -141,10 +143,15 @@ vi.mock('@/composables/useBusinessMes', () => {
 
 // NvDataTable 桩:逐行渲染入库状态与操作两个插槽，便于断言失败徽章/原因/重试按钮。
 const tableStub = {
-  props: ['rows'],
+  props: ['columns', 'rows'],
   template: `
     <section data-testid="table">
       <div v-for="row in rows" :key="row.receiptRequestId" data-testid="row">
+        <span v-for="column in columns" :key="column.key">
+          {{ column.accessor ? column.accessor(row) : '' }}
+        </span>
+        <slot name="cell-requestNo" :row="row" />
+        <slot name="cell-workOrderId" :row="row" />
         <slot name="cell-receiptStatus" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
@@ -301,6 +308,41 @@ describe('MES receipts — failed inventory posting retry', () => {
       .findAll('button')
       .find((b) => b.text().includes('重试'))
     expect(failedRetry!.attributes('disabled')).toBeDefined()
+  })
+
+  it('read-face guard shows request and work-order numbers without exposing technical identifiers', () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: '019fbb41-1111-7111-8111-111111111111',
+        requestNo: 'FGR-20260801-001',
+        workOrderId: '019fbb41-2222-7222-8222-222222222222',
+        workOrderNo: 'WO-2026-08001',
+        skuId: 'FG-1',
+        receiptStatus: 'Posted',
+      },
+    ]
+    const visibleText = mountPage().text()
+
+    expect(visibleText).toContain('FGR-20260801-001')
+    expect(visibleText).toContain('WO-2026-08001')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('read-face guard shows placeholders when DTO display fields are missing', () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: '019fbb41-1111-7111-8111-111111111111',
+        workOrderId: '019fbb41-2222-7222-8222-222222222222',
+        skuId: 'FG-1',
+        receiptStatus: 'Posted',
+      },
+    ]
+    const visibleText = mountPage().text()
+
+    expect(visibleText).toContain('—')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
   })
 
   // 工单/成品经 query 带入（工单详情发起），补齐必填单位成本后提交登记。

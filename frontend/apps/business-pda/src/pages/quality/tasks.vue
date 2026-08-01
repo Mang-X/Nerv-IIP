@@ -38,6 +38,7 @@ const {
   loadMore,
   ensureAllLoaded,
   pending,
+  refreshing = shallowRef(false),
   error,
   refresh,
   reasonCodes,
@@ -48,6 +49,9 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
   scopeReady,
+  filters = { status: 'pending', skip: 0, take: 20 },
+  loadingMore = shallowRef(false),
+  loadMoreError = shallowRef<unknown>(),
 } = useBusinessQualityInspectionTasks()
 const identity = usePdaIdentity()
 const qualityScope = computed(() =>
@@ -163,12 +167,19 @@ function openNcr() {
       :loaded="loaded"
       :has-more="hasMore"
       :pending="pending"
+      :refreshing="refreshing"
       :error="error"
       :scope="qualityScope"
       :scope-ready="scopeReady"
       :updated-at="lastUpdatedAt"
       :has-successful-response="hasSuccessfulResponse"
       :has-failed-response="hasFailedResponse"
+      v-model:status="filters.status"
+      v-model:keyword="filters.keyword"
+      v-model:source-type="filters.sourceType"
+      v-model:overdue="filters.overdue"
+      :loading-more="loadingMore"
+      :load-more-error="loadMoreError"
       :load-all="ensureAllLoaded"
       @select="selectTask"
       @load-more="loadMore"

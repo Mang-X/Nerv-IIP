@@ -174,10 +174,7 @@ function usePagedAccumulator<TSource, TItem>(
         reset()
         return
       }
-      if (value.success !== true) {
-        reset()
-        return
-      }
+      if (value.success !== true) return
       acceptPage(value, 0, TASK_PAGE_SIZE)
     },
     { immediate: true, flush: 'sync' },
@@ -318,6 +315,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsInboundOrdersQueryOptions({
@@ -353,6 +351,8 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -371,7 +371,12 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -384,11 +389,14 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     if (
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-inbound-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -414,6 +422,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
           requestedSkip,
@@ -433,7 +442,10 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -457,7 +469,8 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     orders: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => ordersQuery.isLoading.value || scope.pending.value),
-    error: computed(() => loadMoreError.value ?? ordersQuery.error.value ?? scope.error.value),
+    error: computed(() => ordersQuery.error.value ?? scope.error.value),
+    loadMoreError,
     refreshing,
     loadingMore,
     lastUpdatedAt,
@@ -563,6 +576,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsOutboundOrdersQueryOptions({
@@ -598,6 +612,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -616,7 +632,12 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await ordersQuery.refetch()
@@ -629,11 +650,14 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     if (
       !scope.hasScope.value ||
       ordersQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-outbound-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -659,6 +683,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
           requestedSkip,
@@ -678,7 +703,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -702,7 +730,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     orders: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => ordersQuery.isLoading.value || scope.pending.value),
-    error: computed(() => loadMoreError.value ?? ordersQuery.error.value ?? scope.error.value),
+    error: computed(() => ordersQuery.error.value ?? scope.error.value),
+    loadMoreError,
     refreshing,
     loadingMore,
     lastUpdatedAt,
@@ -977,8 +1006,10 @@ function useWmsWarehouseTasks(
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
   const actionPending = shallowRef(false)
   const actionError = shallowRef<unknown>()
+  const queryError = shallowRef<unknown>()
   const unconfirmedTaskAction = shallowRef<FrozenWarehouseTaskAction>()
   const actionConfirmedSequence = shallowRef(0)
   const actionUnconfirmed = computed(() => unconfirmedTaskAction.value !== undefined)
@@ -1018,7 +1049,10 @@ function useWmsWarehouseTasks(
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
+    queryError.value = undefined
     page.reset()
   }
 
@@ -1036,16 +1070,32 @@ function useWmsWarehouseTasks(
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
+    loadMoreError.value = undefined
+    queryError.value = undefined
     refreshing.value = true
     try {
-      const confirmedAction = await verifyUnconfirmedTaskAction()
-      await tasksQuery.refetch()
-      if (!unconfirmedTaskAction.value) actionError.value = undefined
-      return confirmedAction ? { confirmedAction } : {}
-    } catch (error) {
-      actionError.value = error
-      throw error
+      let confirmedAction: Awaited<ReturnType<typeof verifyUnconfirmedTaskAction>>
+      try {
+        confirmedAction = await verifyUnconfirmedTaskAction()
+      } catch (error) {
+        actionError.value = error
+        throw error
+      }
+
+      try {
+        await tasksQuery.refetch()
+        queryError.value = undefined
+        if (!unconfirmedTaskAction.value) actionError.value = undefined
+        return confirmedAction ? { confirmedAction } : {}
+      } catch (error) {
+        queryError.value = error
+        throw error
+      }
     } finally {
       refreshing.value = false
     }
@@ -1055,11 +1105,14 @@ function useWmsWarehouseTasks(
     if (
       !scope.hasScope.value ||
       tasksQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
       return
     }
+    const loadMoreToken = Symbol(`wms-${taskType}-load-more`)
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -1089,6 +1142,7 @@ function useWmsWarehouseTasks(
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
           requestedSkip,
@@ -1108,7 +1162,10 @@ function useWmsWarehouseTasks(
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -1319,9 +1376,9 @@ function useWmsWarehouseTasks(
     tasks: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => tasksQuery.isLoading.value || scope.pending.value),
-    error: computed(
-      () => actionError.value ?? loadMoreError.value ?? tasksQuery.error.value ?? scope.error.value,
-    ),
+    error: computed(() => queryError.value ?? tasksQuery.error.value ?? scope.error.value),
+    loadMoreError,
+    actionError,
     refreshing,
     loadingMore,
     actionPending,
@@ -1445,6 +1502,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const executionsQuery = useQuery(() => ({
     ...listBusinessConsoleWmsCountExecutionsQueryOptions({
@@ -1479,6 +1537,8 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
     loadMoreError.value = undefined
     page.reset()
   }
@@ -1496,7 +1556,12 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
 
   async function refresh() {
     if (!scope.hasScope.value) return
-    resetPaging()
+    pagingGeneration.value += 1
+    filters.skip = 0
+    filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
+    loadingMore.value = false
+    loadMoreError.value = undefined
     refreshing.value = true
     try {
       await executionsQuery.refetch()
@@ -1509,11 +1574,14 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     if (
       !scope.hasScope.value ||
       executionsQuery.isLoading.value ||
+      refreshing.value ||
       loadingMore.value ||
       page.exhausted.value
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-count-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -1538,6 +1606,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
           pagingGeneration.value,
         )
       ) {
+        loadMoreError.value = undefined
         page.acceptPage(
           data as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
           requestedSkip,
@@ -1557,7 +1626,10 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -1581,7 +1653,8 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     executions: computed(() => page.items.value),
     total: computed(() => page.total.value),
     pending: computed(() => executionsQuery.isLoading.value || scope.pending.value),
-    error: computed(() => loadMoreError.value ?? executionsQuery.error.value ?? scope.error.value),
+    error: computed(() => executionsQuery.error.value ?? scope.error.value),
+    loadMoreError,
     refreshing,
     loadingMore,
     lastUpdatedAt,
