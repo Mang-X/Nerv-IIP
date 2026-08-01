@@ -34,7 +34,12 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(16, contracts.Length);
+        Assert.Equal(17, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/directory"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryDirectory");
         // 盘点 / 流水读面（此前完全缺失，业务前端只能挂会话内本地队列）。
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/count-tasks"

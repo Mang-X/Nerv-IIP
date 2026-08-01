@@ -1,0 +1,337 @@
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
+using System.Diagnostics;
+using Nerv.IIP.Business.Inventory.Domain;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
+using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+
+namespace Nerv.IIP.Business.Inventory.Web.Tests;
+
+public sealed class InventoryDirectoryPostgresTests
+{
+    [Fact]
+    public async Task PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            return;
+        }
+
+        var scopes = await Task.WhenAll(
+            DirectoryPostgresScope.CreateAsync(),
+            DirectoryPostgresScope.CreateAsync());
+        try
+        {
+            var ports = scopes
+                .Select(scope => new NpgsqlConnectionStringBuilder(scope.ConnectionString).Port)
+                .ToArray();
+            Assert.Equal(2, ports.Distinct().Count());
+        }
+        finally
+        {
+            await scopes[0].DisposeAsync();
+            await scopes[1].DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index()
+    {
+        await using var postgres = await DirectoryPostgresScope.CreateAsync();
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddInventoryPostgreSqlPersistence(postgres.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await DropInventorySchemaAsync(db);
+
+        try
+        {
+            await db.Database.MigrateAsync();
+            db.StockLocations.Add(StockLocation.CreateOrUpdate(
+                null,
+                "org-directory-pg",
+                "env-directory-pg",
+                "LOC-A-01",
+                "bin",
+                "SITE-A",
+                null,
+                "active"));
+            AddLedger(db, "LOC-A-01", "LOT-001", "SN-001");
+            AddLedger(db, "LOC-A-02", "LOT-001", "SN-002");
+            await db.SaveChangesAsync();
+
+            var handler = new ListInventoryDirectoryQueryHandler(db);
+            var locations = await handler.Handle(
+                new ListInventoryDirectoryQuery(
+                    "org-directory-pg",
+                    "env-directory-pg",
+                    InventoryDirectoryTypes.Location,
+                    SiteCode: "SITE-A",
+                    Keyword: "loc-a"),
+                CancellationToken.None);
+            var batches = await handler.Handle(
+                new ListInventoryDirectoryQuery(
+                    "org-directory-pg",
+                    "env-directory-pg",
+                    InventoryDirectoryTypes.Batch,
+                    SiteCode: "SITE-A",
+                    SkuCode: "SKU-01",
+                    Keyword: "lot"),
+                CancellationToken.None);
+
+            Assert.Equal("LOC-A-01", Assert.Single(locations.Items).Code);
+            Assert.Equal("SKU-01:LOT-001", Assert.Single(batches.Items).Id);
+            Assert.Equal(1, batches.Total);
+
+            var plan = await ExplainScopedLedgerQueryAsync(db);
+            var scopedIndexName = await GetScopedLedgerIndexNameAsync(db);
+            Assert.Contains("Index", plan, StringComparison.Ordinal);
+            Assert.True(
+                plan.Contains(scopedIndexName, StringComparison.Ordinal),
+                $"Expected EXPLAIN to use {scopedIndexName}:{Environment.NewLine}{plan}");
+        }
+        finally
+        {
+            await DropInventorySchemaAsync(db);
+        }
+    }
+
+    private sealed class DirectoryPostgresScope : IAsyncDisposable
+    {
+        private const string OwnerLabel = "nerv-iip.test.owner=man632-directory";
+        private readonly string? containerName;
+        private readonly string? volumeName;
+        private readonly string? runLabel;
+
+        private DirectoryPostgresScope(
+            string connectionString,
+            string? containerName = null,
+            string? volumeName = null,
+            string? runLabel = null)
+        {
+            ConnectionString = connectionString;
+            this.containerName = containerName;
+            this.volumeName = volumeName;
+            this.runLabel = runLabel;
+        }
+
+        public string ConnectionString { get; }
+
+        public static async Task<DirectoryPostgresScope> CreateAsync()
+        {
+            var external = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+            if (!string.IsNullOrWhiteSpace(external))
+            {
+                return new DirectoryPostgresScope(external);
+            }
+
+            var run = Guid.CreateVersion7().ToString("N");
+            var container = $"nerv-iip-man632-pg-{run}";
+            var volume = $"nerv-iip-man632-pg-data-{run}";
+            var runLabel = $"nerv-iip.test.run={run}";
+            var scope = new DirectoryPostgresScope(string.Empty, container, volume, runLabel);
+            try
+            {
+                await RunDockerAsync(["volume", "create", "--label", OwnerLabel, "--label", runLabel, volume]);
+                await RunDockerAsync([
+                    "run", "-d",
+                    "--name", container,
+                    "--label", OwnerLabel,
+                    "--label", runLabel,
+                    "-e", "POSTGRES_PASSWORD=man632-test-password",
+                    "-e", "POSTGRES_DB=man632_inventory",
+                    "-p", "127.0.0.1:0:5432",
+                    "--mount", $"source={volume},target=/var/lib/postgresql",
+                    "postgres:18"]);
+                var portOutput = await RunDockerAsync(["port", container, "5432/tcp"]);
+                var portText = portOutput.Trim().Split(':').Last();
+                if (!int.TryParse(portText, out var port))
+                {
+                    throw new InvalidOperationException("Could not resolve Docker's run-scoped PostgreSQL port.");
+                }
+                var connectionString = new NpgsqlConnectionStringBuilder
+                {
+                    Host = "127.0.0.1",
+                    Port = port,
+                    Database = "man632_inventory",
+                    Username = "postgres",
+                    Password = "man632-test-password",
+                    IncludeErrorDetail = true,
+                    Timeout = 1,
+                }.ConnectionString;
+                await WaitUntilReadyAsync(connectionString);
+                return new DirectoryPostgresScope(connectionString, container, volume, runLabel);
+            }
+            catch
+            {
+                await scope.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (containerName is null || volumeName is null || runLabel is null)
+            {
+                return;
+            }
+
+            await RunDockerAsync(["rm", "-f", containerName], allowFailure: true);
+            await RunDockerAsync(["volume", "rm", volumeName], allowFailure: true);
+            var containers = await RunDockerAsync([
+                "ps", "-a", "--filter", $"label={runLabel}", "--format", "{{.Names}}"]);
+            var volumes = await RunDockerAsync([
+                "volume", "ls", "--filter", $"label={runLabel}", "--format", "{{.Name}}"]);
+            if (!string.IsNullOrWhiteSpace(containers) || !string.IsNullOrWhiteSpace(volumes))
+            {
+                throw new InvalidOperationException("Run-scoped PostgreSQL Docker resources remain after cleanup.");
+            }
+        }
+
+        private static async Task WaitUntilReadyAsync(string connectionString)
+        {
+            Exception? last = null;
+            for (var attempt = 0; attempt < 60; attempt++)
+            {
+                try
+                {
+                    await using var connection = new NpgsqlConnection(connectionString);
+                    await connection.OpenAsync();
+                    return;
+                }
+                catch (Exception ex) when (ex is NpgsqlException or TimeoutException)
+                {
+                    last = ex;
+                    await Task.Delay(TimeSpan.FromMilliseconds(500));
+                }
+            }
+
+            throw new InvalidOperationException("Run-scoped PostgreSQL did not become ready.", last);
+        }
+
+        private static async Task<string> RunDockerAsync(IReadOnlyCollection<string> arguments, bool allowFailure = false)
+        {
+            var startInfo = new ProcessStartInfo("docker")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("Could not start Docker CLI.");
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await stdout;
+            var error = await stderr;
+            if (!allowFailure && process.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Docker CLI failed with exit code {process.ExitCode}: {error.Trim()}");
+            }
+
+            return output;
+        }
+    }
+
+    private static void AddLedger(ApplicationDbContext db, string locationCode, string lotNo, string serialNo)
+    {
+        var ledger = StockLedger.Create(
+            "org-directory-pg",
+            "env-directory-pg",
+            "SKU-01",
+            "piece",
+            "SITE-A",
+            locationCode,
+            lotNo,
+            serialNo,
+            "unrestricted",
+            "company",
+            null);
+        ledger.ApplyMovement(Domain.AggregatesModel.StockMovementAggregate.StockMovement.Post(
+            "org-directory-pg",
+            "env-directory-pg",
+            "inbound",
+            "directory-pg-test",
+            $"DOC-{locationCode}",
+            "1",
+            $"IDEM-{locationCode}",
+            "SKU-01",
+            "piece",
+            "SITE-A",
+            locationCode,
+            lotNo,
+            serialNo,
+            "unrestricted",
+            "company",
+            null,
+            1m));
+        db.StockLedgers.Add(ledger);
+    }
+
+    private static async Task<string> ExplainScopedLedgerQueryAsync(ApplicationDbContext db)
+    {
+        await db.Database.OpenConnectionAsync();
+        await using (var settings = db.Database.GetDbConnection().CreateCommand())
+        {
+            settings.CommandText = "SET enable_seqscan = off";
+            await settings.ExecuteNonQueryAsync();
+        }
+
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            EXPLAIN SELECT lot_no
+            FROM inventory.stock_ledgers
+            WHERE organization_id = 'org-directory-pg'
+              AND environment_id = 'env-directory-pg'
+              AND site_code = 'SITE-A'
+              AND sku_code = 'SKU-01'
+              AND on_hand_quantity > 0
+              AND lot_no IS NOT NULL
+            ORDER BY lot_no
+            LIMIT 20
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var lines = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            lines.Add(reader.GetString(0));
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static async Task<string> GetScopedLedgerIndexNameAsync(ApplicationDbContext db)
+    {
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT indexname
+            FROM pg_indexes
+            WHERE schemaname = 'inventory'
+              AND tablename = 'stock_ledgers'
+              AND indexdef LIKE '%(organization_id, environment_id, site_code, sku_code, expiry_date)%'
+            """;
+        return (string?)await command.ExecuteScalarAsync()
+            ?? throw new InvalidOperationException("Scoped stock-ledger index is missing.");
+    }
+
+    private static async Task DropInventorySchemaAsync(ApplicationDbContext db)
+    {
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(InventoryFacts.Schema);
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
+}

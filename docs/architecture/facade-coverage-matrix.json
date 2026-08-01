@@ -1574,6 +1574,20 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/directory",
+      "operationId": "listInventoryDirectory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes owner-side scoped, keyword-searchable, paged location/batch/serial candidates through the unified searchable-directory facade.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks",
       "operationId": "createInventoryCountTask",
@@ -1768,8 +1782,14 @@
       "method": "GET",
       "route": "/api/business/v1/maintenance/downtime-reasons",
       "operationId": "listMaintenanceDowntimeReasons",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes the authoritative downtime-reason catalog as both downtime-reason and an explicit maintenance-reason alias; category facts and authorityDirectoryType remain visible.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
     },
     {
       "service": "Maintenance",

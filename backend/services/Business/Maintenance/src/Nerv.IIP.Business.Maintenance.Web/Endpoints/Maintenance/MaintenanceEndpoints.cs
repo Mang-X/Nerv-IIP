@@ -351,7 +351,12 @@ public sealed record UpdateDowntimeReasonRequest(
 
 public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string EnvironmentId, string ReasonCode);
 
-public sealed record ListDowntimeReasonsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+public sealed record ListDowntimeReasonsRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null);
 
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateMaintenanceWorkOrderRequest, ResponseData<CreateMaintenanceWorkOrderResponse>>
@@ -721,7 +726,7 @@ public sealed class ListDowntimeReasonsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListDowntimeReasonsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListDowntimeReasonsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListDowntimeReasonsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Keyword), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
