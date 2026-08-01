@@ -32,15 +32,17 @@ public enum MesRoutingSnapshotStatus
 public sealed record MesRoutingSnapshotResult(
     MesRoutingSnapshotStatus Status,
     string SourceSystem,
-    IReadOnlyCollection<MesRoutingOperationSnapshot> Operations)
+    IReadOnlyCollection<MesRoutingOperationSnapshot> Operations,
+    string? ProductionVersionId)
 {
     public static MesRoutingSnapshotResult Captured(
         string sourceSystem,
-        IReadOnlyCollection<MesRoutingOperationSnapshot> operations) =>
-        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations);
+        IReadOnlyCollection<MesRoutingOperationSnapshot> operations,
+        string? productionVersionId = null) =>
+        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations, productionVersionId);
 
     public static MesRoutingSnapshotResult Missing(string sourceSystem) =>
-        new(MesRoutingSnapshotStatus.Missing, sourceSystem, []);
+        new(MesRoutingSnapshotStatus.Missing, sourceSystem, [], null);
 }
 
 public interface IMesRoutingSnapshotProvider
@@ -78,6 +80,8 @@ public sealed class NullMesRoutingSnapshotProvider : IMesRoutingSnapshotProvider
 public sealed class MesRoutingSnapshotMissingException(string source)
     : KnownException($"ROUTING_SNAPSHOT_MISSING: 工单缺少已发布生产版本的工艺路线快照，Source = {source}。")
 {
+    public const string SafeCode = "ROUTING_SNAPSHOT_MISSING";
+
     public string DiagnosticSource { get; } = source;
 }
 
@@ -92,12 +96,35 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
         MesRoutingSnapshotRequest request,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.ProductionVersionId))
+        var productionVersionId = request.ProductionVersionId?.Trim();
+        if (string.IsNullOrWhiteSpace(productionVersionId))
+        {
+            var resolvedVersion = await SendOptionalAsync<Nerv.IIP.Contracts.ProductEngineering.ResolveProductionVersionResponse>(
+                "/api/business/v1/engineering/production-versions/resolve?" + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("skuCode", request.SkuId),
+                    ("effectiveDate", DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime)),
+                    ("lotSize", request.WorkOrderQuantity)),
+                cancellationToken);
+            if (resolvedVersion is null ||
+                string.IsNullOrWhiteSpace(resolvedVersion.ProductionVersionId) ||
+                !Guid.TryParse(resolvedVersion.ProductionVersionId, out _) ||
+                !string.Equals(resolvedVersion.OrganizationId, request.OrganizationId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(resolvedVersion.EnvironmentId, request.EnvironmentId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(resolvedVersion.SkuCode, request.SkuId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(resolvedVersion.Status, ActiveProductionVersionStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                return MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.MissingProductionVersion);
+            }
+
+            productionVersionId = resolvedVersion.ProductionVersionId.Trim();
+        }
+        if (productionVersionId is null)
         {
             return MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.MissingProductionVersion);
         }
 
-        var productionVersionId = request.ProductionVersionId.Trim();
         var selectedVersion = await SendOptionalAsync<RoutingProductionVersionSnapshotResponse>(
             $"/api/business/v1/engineering/production-versions/{EscapePath(productionVersionId)}/routing-snapshot?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -135,7 +162,8 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
 
         return MesRoutingSnapshotResult.Captured(
             MesRoutingSnapshotSources.Captured(productionVersionId, selectedVersion.RoutingVersionId),
-            operations);
+            operations,
+            productionVersionId);
     }
 
     private async Task<T?> SendOptionalAsync<T>(string requestUri, CancellationToken cancellationToken)

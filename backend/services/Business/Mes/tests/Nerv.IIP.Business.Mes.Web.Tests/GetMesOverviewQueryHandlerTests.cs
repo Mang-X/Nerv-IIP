@@ -44,9 +44,61 @@ public sealed class GetMesOverviewQueryHandlerTests
         Assert.Equal(expectedDispatch, response.PendingWork.Single(x => x.WorkType == "dispatch-operation-tasks").Count);
         Assert.Equal(expectedReport, response.PendingWork.Single(x => x.WorkType == "report-production").Count);
 
-        // 历史数据没有挂起/排程失效/过账失败/缺料——不许虚报阻塞。
-        Assert.Empty(response.Blockers);
+        // 历史数据没有挂起 / 排程失效 / 过账失败——这三条不许虚报。
+        Assert.DoesNotContain(response.Blockers, blocker => blocker.Code == "WORK_ORDER_ON_HOLD");
+        Assert.DoesNotContain(response.Blockers, blocker => blocker.Code == "SCHEDULE_INVALIDATED");
+        Assert.DoesNotContain(response.Blockers, blocker => blocker.Code == "RECEIPT_POSTING_FAILED");
+
+        // 缺料按库内实况报，不再恒为空（#1408）。原先这里是 `Assert.Empty(response.Blockers)`
+        // 并注明「历史数据没有缺料」——那正是把「全世界 100% 齐套」这个缺陷固化成契约的地方。
+        var expectedShortage = await ExpectedShortageWorkOrderCountAsync(dbContext);
+        var shortage = response.Blockers.SingleOrDefault(blocker => blocker.Code == "MATERIAL_SHORTAGE");
+        Assert.Equal(expectedShortage, shortage?.Count ?? 0);
+        if (shortage is not null)
+        {
+            Assert.Equal("material-kitting", shortage.AreaCode);
+        }
+
+        // 计数卡片按各自口径给状态；缺料不进计数卡片的状态判据，工单卡片仍应为 Ready。
         Assert.All(response.Counts, count => Assert.Equal("Ready", count.Status));
+    }
+
+    /// <summary>
+    /// 演示纵深（<c>Scale=0.2</c>，两个完整配额块）下缺料阻塞必须真的出现在驾驶舱上——
+    /// 上面那条 Theory 跑的是 <c>0.02</c> 快速纵深，已下达队列凑不满一个配额块，
+    /// 可能整批都是齐套档，抓不住「缺料从来不报」这种回归。
+    /// </summary>
+    [Fact]
+    public async Task Overview_reports_material_shortage_blockers_at_demo_depth()
+    {
+        await using var dbContext = CreateDbContext();
+        await new WorldHistorySeedService(dbContext, new StubProductionVersionResolver())
+            .SeedAsync(Org, Env, new DateOnly(2026, 7, 26), 0.2d);
+
+        var response = await new GetMesOverviewQueryHandler(dbContext)
+            .Handle(new GetMesOverviewQuery(Org, Env), CancellationToken.None);
+
+        var shortage = Assert.Single(response.Blockers, blocker => blocker.Code == "MATERIAL_SHORTAGE");
+        Assert.Equal("material-kitting", shortage.AreaCode);
+        Assert.True(shortage.Count > 0, "已下达待开工档必须留出缺料单，否则采购链演示没有起点（#1408）。");
+        Assert.Equal(await ExpectedShortageWorkOrderCountAsync(dbContext), shortage.Count);
+    }
+
+    /// <summary>已下达且缺口 &gt; 0 的工单数（口径与驾驶舱、开工门禁、齐套读面逐字一致）。</summary>
+    private static async Task<int> ExpectedShortageWorkOrderCountAsync(ApplicationDbContext dbContext)
+    {
+        var releasedWorkOrders = await dbContext.WorkOrders
+            .Where(x => x.Status == WorkOrder.ReleasedStatus)
+            .Select(x => x.WorkOrderIdValue)
+            .ToArrayAsync();
+        var released = releasedWorkOrders.ToHashSet(StringComparer.Ordinal);
+
+        return (await dbContext.MaterialRequirements
+                .Where(x => x.RequiredQuantity > x.AvailableQuantity + x.StagedQuantity)
+                .Select(x => x.WorkOrderId)
+                .Distinct()
+                .ToArrayAsync())
+            .Count(released.Contains);
     }
 
     [Fact]
