@@ -29,6 +29,17 @@ export type EngineCommand =
   | { kind: 'fitToScreen' }
   | { kind: 'selectTask'; taskId: string }
   | { kind: 'focusConflict'; taskId: string }
+  /**
+   * 把某条工序滚进可视区(纵向滚到它那行、横向滚到它的时间)。与 selectTask 分开是有意的:
+   * 点条选中不该把视口跳走,但「搜到了」必须跳过去,否则搜索等于没搜。
+   */
+  | { kind: 'revealTask'; taskId: string }
+  /**
+   * 搜索命中集。非空时命中条高亮、未命中条压暗;传空数组即退出搜索态。
+   * 放在引擎层而不是让业务层过滤 model:过滤会把上下文抽掉,而调度员要的是
+   * 「在整张图里看见这一条在哪、旁边是谁」,不是「只剩这一条」。
+   */
+  | { kind: 'setSearchHighlight'; taskIds: string[] }
   | { kind: 'setReadOnly'; readOnly: boolean }
   | { kind: 'setTheme'; theme: ThemeBinding }
   | { kind: 'setGroupBy'; groupBy: string }

@@ -13,6 +13,10 @@ const WC_LABEL: Record<string, string> = {
   '折弯-02': '折弯中心',
   '焊接-01': '焊装中心',
   '加工中心-03': '机加中心',
+  '装配-04': '装配中心',
+  '涂装-05': '表面处理中心',
+  '检测-06': '检测中心',
+  '包装-07': '包装中心',
 }
 const WC_DIMS: Record<
   string,
@@ -38,6 +42,26 @@ const WC_DIMS: Record<
     team: ['T-B', '乙班'],
     line: ['LN-MACH', '机加线'],
   },
+  '装配-04': {
+    device: ['DEV-A4', '装配工位 A4'],
+    team: ['T-A', '甲班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '涂装-05': {
+    device: ['DEV-P5', '喷涂线 P5'],
+    team: ['T-B', '乙班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '检测-06': {
+    device: ['DEV-T6', '三坐标 T6'],
+    team: ['T-A', '甲班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '包装-07': {
+    device: ['DEV-K7', '打包机 K7'],
+    team: ['T-B', '乙班'],
+    line: ['LN-ASSY', '总装线'],
+  },
 }
 
 const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']
@@ -47,11 +71,16 @@ const STATUSES = [
   { label: '进行中', tone: 'info' as const, progress: 0.55 },
   { label: '未开始', tone: 'neutral' as const, progress: 0 },
 ]
+// 八个色槽全覆盖:分色回归要看得见 assy/insp/pack 与 cut/bend 是否还撞色。
 const WC_COLOR: Record<string, string> = {
   '激光切割-01': 'cut',
   '折弯-02': 'bend',
   '焊接-01': 'weld',
   '加工中心-03': 'mach',
+  '装配-04': 'assy',
+  '涂装-05': 'paint',
+  '检测-06': 'insp',
+  '包装-07': 'pack',
 }
 const ORDER_PRODUCT: Record<string, string> = {
   'WO-2026-001': '前减振器总成',
@@ -68,6 +97,10 @@ const RES_KPI: Record<string, [number, number, number, number]> = {
   '折弯-02': [0.38, 0.85, 3, 0],
   '焊接-01': [1.12, 0.72, 8, 3],
   '加工中心-03': [0.96, 0.77, 7, 1],
+  '装配-04': [0.72, 0.81, 4, 1],
+  '涂装-05': [0.64, 0.79, 2, 0],
+  '检测-06': [0.45, 0.9, 1, 0],
+  '包装-07': [0.55, 0.83, 2, 0],
 }
 
 const model = computed(() => {

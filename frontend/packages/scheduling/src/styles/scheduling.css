@@ -81,6 +81,17 @@
   /* 白线根因:DHTMLX 9.x 默认 --dhx-gantt-base-colors-border:#DFE0E1 / -border-light:#F0F0F0,
    近黑底上直接显白。逐选择器补丁总有漏网,故在 scope 顶部重映射 DHTMLX 自有变量,一次性收口。 */
   .nerv-gantt-dhx {
+    /* 字体/字号:vendor 在 :root 上把 --dhx-gantt-font-family 定成 `Inter, Helvetica, Arial`
+       且 --dhx-gantt-font-size: 14px,而 .gantt_container 自己声明 font-family/font-size
+       (后代自身声明胜过从 .nerv-gantt 继承),于是同屏出现两套 Inter、两个字号。
+       vendor 全文 13 处字体声明都走 var(--dhx-gantt-font-family),所以在 scope 上改这两个
+       变量就一次收口——注意这是自定义属性、且声明在甘特容器元素上(不是 :root),
+       与 vendor 的 :root 声明不同元素,@layer 降权不适用,不需要 !important。
+       0.8125rem 与上面 .nerv-gantt 的 font-size 同值:甘特内部只保留一个字号事实源。
+       vendor 那 6 条 fonts.gstatic.com 的 @font-face 只声明 family `Inter`,而 --font-sans
+       里是 'Inter Variable',改完这两行后无人引用 → 浏览器不会再去外网取字体。 */
+    --dhx-gantt-font-family: var(--font-sans);
+    --dhx-gantt-font-size: 0.8125rem;
     --dhx-gantt-base-colors-border: var(--nv-scheduling-hairline);
     --dhx-gantt-base-colors-border-light: color-mix(in oklch, var(--border), transparent 60%);
     --dhx-gantt-scale-border-horizontal: 1px solid var(--nv-scheduling-hairline);
@@ -277,20 +288,28 @@
     border-radius: 5px 0 0 5px;
   }
 
-  /* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。 */
+  /* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。
+     ★ 硬约束:8 个色槽的色相必须两两拉开(实测下限 ~35°)。此前 assy 抄了 cut、insp 抄了
+     bend——槽补了颜色照抄,实机图例上「装配」与「包装」并排肉眼分不出(#1399 M1),调度员
+     会读错工序族。色相按 25/75/115/155/200/250/305/342 近似均布,最小间距 37°。
+     改任何一个都要跑 scheduling-palette.test.ts(它按 oklch 色相差断言去重)。 */
   :root {
-    /* 按工序语义着色(冲压/钣金 绿、折弯 琥珀、焊接 红、机加 蓝、涂装 紫、总装 青绿) */
-    --nv-scheduling-category-cut: oklch(0.62 0.13 155);
-    --nv-scheduling-category-bend: oklch(0.72 0.13 75);
+    /* 焊接 红 */
     --nv-scheduling-category-weld: oklch(0.57 0.17 25);
+    /* 折弯 琥珀 */
+    --nv-scheduling-category-bend: oklch(0.72 0.13 75);
+    /* 检测 黄绿——原为 oklch(0.72 0.13 75),与 bend 完全同色 */
+    --nv-scheduling-category-insp: oklch(0.68 0.14 115);
+    /* 冲压/钣金 绿 */
+    --nv-scheduling-category-cut: oklch(0.62 0.13 155);
+    /* 包装 青——原为 oklch(0.6 0.12 165),与 cut/assy 只差 10 色相 0.02 明度 */
+    --nv-scheduling-category-pack: oklch(0.66 0.11 200);
+    /* 机加 蓝 */
     --nv-scheduling-category-mach: oklch(0.58 0.13 250);
-    /* paint 原为 oklch(0.56 0.13 250),与 mach 同色相仅差 0.02 明度,肉眼不可分——改紫罗兰拉开 */
+    /* 表面处理 紫——原为 oklch(0.56 0.13 250),与 mach 同色相仅差 0.02 明度,肉眼不可分 */
     --nv-scheduling-category-paint: oklch(0.58 0.13 305);
-    --nv-scheduling-category-pack: oklch(0.6 0.12 165);
-    /* 装配 / 检测各自成槽:此前业务侧借用 cut(冲压) 画包装、bend(折弯) 画检测,
-       色槽名与工序语义对不上,读代码的人必然被误导。补两槽,不再借位。 */
-    --nv-scheduling-category-assy: oklch(0.62 0.13 155);
-    --nv-scheduling-category-insp: oklch(0.72 0.13 75);
+    /* 装配 玫红——原为 oklch(0.62 0.13 155),与 cut 完全同色 */
+    --nv-scheduling-category-assy: oklch(0.62 0.15 342);
   }
   .nerv-gantt-dhx .gantt_task_line.nerv-cat-cut {
     --bar: var(--nv-scheduling-category-cut);
@@ -386,6 +405,23 @@
       0 0 0 2px var(--nv-brand),
       0 4px 14px color-mix(in oklch, var(--nv-brand), transparent 40%) !important;
     z-index: 2;
+  }
+  /* 搜索命中 / 未命中(#1399 M5)。
+     ★ 这两条规则里的每一个声明都必须带 !important:scheduling.css 整体在 @layer nv-components
+     里,而 DHTMLX vendor CSS 无 layer——有 layer 的样式永远输给无 layer 的,与选择器特异性
+     无关。忘了 !important 会静默不生效(实测:同一条规则里 background-color !important 赢、
+     旁边没加的 color 输成 vendor 硬编码 #23272A)。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-hit {
+    border-color: var(--nv-warning) !important;
+    box-shadow:
+      0 0 0 2px var(--nv-warning),
+      0 4px 14px color-mix(in oklch, var(--nv-warning), transparent 45%) !important;
+    z-index: 3 !important;
+  }
+  /* 未命中压暗而不是隐藏:调度员要的是"这条在整张图的哪儿、旁边挤着谁",
+     把其余条抽走等于把上下文也抽走。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-miss {
+    opacity: 0.22 !important;
   }
   /* 冲突(仅工单甘特条):危险色描边 + 内环。资源排产板冲突改用内联 ⚠ 角标,卡片本身不加环,
    故此规则用 :not(:has(.nerv-card)) 排除资源卡,避免压住选中环(选中无效的根因)。 */
