@@ -236,7 +236,8 @@ onMounted(async () => {
         v-if="loaded > 0"
         parent-scroll
         :model-value="loadingMore"
-        :finished="!hasMore || Boolean(partialError)"
+        :finished="!hasMore"
+        :paused="Boolean(partialError)"
         @load="emit('loadMore')"
       />
     </NvPullRefresh>

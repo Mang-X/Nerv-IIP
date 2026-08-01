@@ -73,6 +73,9 @@ describe('TaskListShell', () => {
 
     expect(partial.find('[data-testid="kept-row"]').exists()).toBe(true)
     expect(partial.get('[data-testid="task-list-load-error"]').text()).toContain('已加载数据保留')
+    expect(partial.getComponent(NvInfiniteList).props('paused')).toBe(true)
+    expect(partial.getComponent(NvInfiniteList).props('finished')).toBe(false)
+    expect(partial.text()).not.toContain('没有更多了')
 
     const initial = mount(TaskListShell, {
       props: {

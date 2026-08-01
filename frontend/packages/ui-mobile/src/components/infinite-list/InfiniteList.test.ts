@@ -58,4 +58,29 @@ describe('InfiniteList', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('load')).toBeUndefined()
   })
+
+  it('暂停时不触发观察器加载，也不把可重试状态渲染为终页或加载提示', async () => {
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
+    const wrapper = mount(InfiniteList, {
+      props: {
+        parentScroll: true,
+        paused: true,
+        modelValue: false,
+      },
+    })
+
+    observers[0]?.trigger(true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('load')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('没有更多了')
+    expect(wrapper.text()).not.toContain('上拉加载更多')
+    expect(wrapper.text()).not.toContain('加载中')
+
+    await wrapper.setProps({ paused: false })
+    observers[0]?.trigger(true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('load')).toHaveLength(1)
+  })
 })

@@ -315,6 +315,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsInboundOrdersQueryOptions({
@@ -371,6 +372,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
     loadingMore.value = false
     loadMoreError.value = undefined
     refreshing.value = true
@@ -391,6 +393,8 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-inbound-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -435,7 +439,10 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -566,6 +573,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const ordersQuery = useQuery(() => ({
     ...listBusinessConsoleWmsOutboundOrdersQueryOptions({
@@ -622,6 +630,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
     loadingMore.value = false
     loadMoreError.value = undefined
     refreshing.value = true
@@ -642,6 +651,8 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-outbound-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -686,7 +697,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -986,6 +1000,7 @@ function useWmsWarehouseTasks(
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
   const actionPending = shallowRef(false)
   const actionError = shallowRef<unknown>()
   const queryError = shallowRef<unknown>()
@@ -1050,6 +1065,7 @@ function useWmsWarehouseTasks(
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
     loadingMore.value = false
     loadMoreError.value = undefined
     queryError.value = undefined
@@ -1087,6 +1103,8 @@ function useWmsWarehouseTasks(
     ) {
       return
     }
+    const loadMoreToken = Symbol(`wms-${taskType}-load-more`)
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -1136,7 +1154,10 @@ function useWmsWarehouseTasks(
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 
@@ -1473,6 +1494,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   })
   const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
+  let activeLoadMoreToken: symbol | undefined
 
   const executionsQuery = useQuery(() => ({
     ...listBusinessConsoleWmsCountExecutionsQueryOptions({
@@ -1527,6 +1549,7 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     pagingGeneration.value += 1
     filters.skip = 0
     filters.take = TASK_PAGE_SIZE
+    activeLoadMoreToken = undefined
     loadingMore.value = false
     loadMoreError.value = undefined
     refreshing.value = true
@@ -1547,6 +1570,8 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     ) {
       return
     }
+    const loadMoreToken = Symbol('wms-count-load-more')
+    activeLoadMoreToken = loadMoreToken
     loadingMore.value = true
     const requestedSkip = page.nextSkip.value
     const requestScopeKey = scope.responseScopeKey.value
@@ -1590,7 +1615,10 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       }
       throw error
     } finally {
-      loadingMore.value = false
+      if (activeLoadMoreToken === loadMoreToken) {
+        activeLoadMoreToken = undefined
+        loadingMore.value = false
+      }
     }
   }
 

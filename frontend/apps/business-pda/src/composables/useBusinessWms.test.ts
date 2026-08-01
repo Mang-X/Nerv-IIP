@@ -259,6 +259,16 @@ const pagingErrorCases = [
   },
 ] as const
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('PDA WMS composables', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -1427,6 +1437,48 @@ describe('PDA WMS composables', () => {
       )
       expect(result.filters.skip).toBe(0)
       expect(result.filters.take).toBe(20)
+    },
+  )
+
+  it.each(pagingErrorCases)(
+    'keeps the current $name load-more guard owned by the newest request after refresh invalidates an older request',
+    async ({ id, list, create, makeItem }) => {
+      const page = (skip: number) =>
+        Array.from({ length: 20 }, (_, index) => makeItem(skip + index))
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: page(0), total: 60 },
+      })
+      const oldRequest = deferred<{ data: unknown }>()
+      const newRequest = deferred<{ data: unknown }>()
+      list.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+      const result = create()
+
+      const oldLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+
+      await result.refresh()
+      expect(result.loadingMore.value).toBe(false)
+
+      const newLoad = result.loadMore()
+      expect(result.loadingMore.value).toBe(true)
+      expect(list).toHaveBeenCalledTimes(2)
+
+      oldRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await oldLoad
+
+      expect(result.loadingMore.value).toBe(true)
+      await result.loadMore()
+      expect(list).toHaveBeenCalledTimes(2)
+
+      newRequest.resolve({
+        data: { success: true, data: { items: page(20), total: 60 } },
+      })
+      await newLoad
+
+      expect(result.loadingMore.value).toBe(false)
     },
   )
 
