@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { Delete } from '@lucide/vue'
 import { computed, inject } from 'vue'
-import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
+import { MOBILE_OVERLAY_LAYER, MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
 import { cn } from '../../lib/utils'
 
 // Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.
@@ -63,15 +63,23 @@ function confirm() {
        that is an ancestor (docs phone sim) is found instead of erroring. -->
   <Teleport defer :to="overlayTarget">
     <Transition name="nv-m-nk-fade">
-      <div v-if="show" class="fixed inset-0 z-40 bg-black/30" @click="emit('update:show', false)" />
+      <div
+        v-if="show"
+        data-mobile-overlay-layer="input-backdrop"
+        :style="{ zIndex: MOBILE_OVERLAY_LAYER.inputBackdrop }"
+        class="pointer-events-auto fixed inset-0 bg-black/30"
+        @click="emit('update:show', false)"
+      />
     </Transition>
     <Transition name="nv-m-nk-slide">
       <div
         v-if="show"
         data-slot="number-keyboard"
+        data-mobile-overlay-layer="input-surface"
+        :style="{ zIndex: MOBILE_OVERLAY_LAYER.inputSurface }"
         :class="
           cn(
-            'fixed inset-x-0 bottom-0 z-50 select-none rounded-t-2xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)]',
+            'pointer-events-auto fixed inset-x-0 bottom-0 select-none rounded-t-2xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)]',
             props.class,
           )
         "

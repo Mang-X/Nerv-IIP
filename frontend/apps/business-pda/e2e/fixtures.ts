@@ -171,7 +171,29 @@ const outboundOrders = [
   { outboundOrderId: 'out-2', outboundOrderNo: 'OUT-2', status: 'pending', createdAtUtc: nowUtc },
 ]
 
-const pickingTasks = [
+interface WarehouseTaskFixture {
+  warehouseTaskId: string
+  taskNo: string
+  taskType: 'picking' | 'putaway'
+  sourceOrderNo: string
+  skuCode: string
+  fromLocationCode: string
+  toLocationCode: string
+  plannedQuantity: number
+  executedQuantity?: number
+  uomCode?: string
+  status: string
+  version?: number
+  assignedOperatorUserId?: string
+  assignedPoolCode?: string
+  siteCode?: string
+  lotNo?: string | null
+  allowedActions?: string[]
+  blockReasons?: string[]
+  createdAtUtc: string
+}
+
+const pickingTasks: WarehouseTaskFixture[] = [
   {
     warehouseTaskId: 'wt-pk-1',
     taskNo: 'PK-1',
@@ -181,12 +203,35 @@ const pickingTasks = [
     fromLocationCode: 'A1',
     toLocationCode: 'B2',
     plannedQuantity: 10,
-    status: 'pending',
+    status: 'Open',
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    createdAtUtc: nowUtc,
+  },
+  {
+    warehouseTaskId: 'wt-pk-exec-1',
+    taskNo: 'PK-EXEC-1',
+    taskType: 'picking',
+    sourceOrderNo: 'OUT-2',
+    skuCode: 'SKU-2',
+    fromLocationCode: 'A2',
+    toLocationCode: 'B3',
+    plannedQuantity: 10,
+    executedQuantity: 2,
+    uomCode: 'EA',
+    status: 'InProgress',
+    version: 2,
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    allowedActions: ['progress', 'exception', 'complete'],
+    blockReasons: [],
     createdAtUtc: nowUtc,
   },
 ]
 
-const putawayTasks = [
+const putawayTasks: WarehouseTaskFixture[] = [
   {
     warehouseTaskId: 'wt-pa-1',
     taskNo: 'PA-1',
@@ -196,7 +241,30 @@ const putawayTasks = [
     fromLocationCode: 'A1',
     toLocationCode: 'B2',
     plannedQuantity: 10,
-    status: 'pending',
+    status: 'Open',
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    createdAtUtc: nowUtc,
+  },
+  {
+    warehouseTaskId: 'wt-pa-exec-1',
+    taskNo: 'PA-EXEC-1',
+    taskType: 'putaway',
+    sourceOrderNo: 'IN-2',
+    skuCode: 'SKU-2',
+    fromLocationCode: 'STG-02',
+    toLocationCode: 'A3',
+    plannedQuantity: 10,
+    executedQuantity: 2,
+    uomCode: 'EA',
+    status: 'InProgress',
+    version: 2,
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    allowedActions: ['progress', 'exception', 'complete'],
+    blockReasons: [],
     createdAtUtc: nowUtc,
   },
 ]
@@ -300,6 +368,53 @@ function confirmedOperation(
     changedAtUtc: nowUtc,
     resourceStatus,
   }
+}
+
+function warehouseTaskListEnvelope(requestUrl: URL, items: WarehouseTaskFixture[]) {
+  let filtered = items
+  const scopeKind = (requestUrl.searchParams.get('scopeKind') ?? '').trim()
+  const scopeId = (requestUrl.searchParams.get('scopeId') ?? '').trim()
+  if (!scopeKind || !scopeId) {
+    filtered = []
+  } else if (scopeKind === 'self') {
+    filtered = filtered.filter((item) => item.assignedOperatorUserId === scopeId)
+  } else if (scopeKind === 'work-pool') {
+    filtered = filtered.filter((item) => item.assignedPoolCode === scopeId)
+  } else if (scopeKind === 'site') {
+    filtered = filtered.filter((item) => item.siteCode === scopeId)
+  } else {
+    filtered = []
+  }
+
+  const status = (requestUrl.searchParams.get('status') ?? '').trim().toLowerCase()
+  if (status) filtered = filtered.filter((item) => item.status.toLowerCase() === status)
+
+  const locationCode = (requestUrl.searchParams.get('locationCode') ?? '').trim()
+  if (locationCode) {
+    filtered = filtered.filter(
+      (item) => item.fromLocationCode === locationCode || item.toLocationCode === locationCode,
+    )
+  }
+
+  const lotNo = (requestUrl.searchParams.get('lotNo') ?? '').trim()
+  if (lotNo) filtered = filtered.filter((item) => item.lotNo === lotNo)
+
+  const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toUpperCase()
+  if (keyword) {
+    filtered = filtered.filter((item) =>
+      [item.taskNo, item.sourceOrderNo, item.skuCode].some((value) =>
+        value.toUpperCase().includes(keyword),
+      ),
+    )
+  }
+
+  const skip = Math.max(0, Number(requestUrl.searchParams.get('skip') ?? 0) || 0)
+  const requestedTake = Number(requestUrl.searchParams.get('take') ?? 100)
+  const take =
+    requestedTake <= 0 || !Number.isFinite(requestedTake)
+      ? 100
+      : Math.min(500, Math.floor(requestedTake))
+  return envelope({ items: filtered.slice(skip, skip + take), total: filtered.length })
 }
 
 /**
@@ -499,10 +614,10 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, listEnvelope(outboundOrders))
   }
   if (pathname.endsWith('/wms/picking-tasks')) {
-    return fulfillJson(route, listEnvelope(pickingTasks))
+    return fulfillJson(route, warehouseTaskListEnvelope(requestUrl, pickingTasks))
   }
   if (pathname.endsWith('/wms/putaway-tasks')) {
-    return fulfillJson(route, listEnvelope(putawayTasks))
+    return fulfillJson(route, warehouseTaskListEnvelope(requestUrl, putawayTasks))
   }
   if (pathname.endsWith('/wms/count-executions')) {
     return fulfillJson(route, listEnvelope(countExecutions))
