@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpCostCandidates } from '@/composables/useBusinessErp'
+import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -99,26 +99,37 @@ const readState = computed(() =>
   }),
 )
 
-const amount = computed(() => costs.items.value.reduce((sum, c) => sum + (c.amount ?? 0), 0))
+/**
+ * 「候选金额」卡用全库口径的财务摘要（#1418 B5 同族）：原先对当前页行求和冒充总额，
+ * 翻页/新增都会让"汇总"乱跳。「待入账候选」条数同理只能按本页数，标签如实带「本页」。
+ */
+const { ready: summaryReady, summary, summaryError } = useErpFinanceSummary()
+const summaryTrustworthy = computed(
+  () => summaryReady.value && summaryError.value == null && summary.value !== undefined,
+)
 const pendingCount = computed(
   () => costs.items.value.filter((c) => (c.status ?? '').toLowerCase() === 'pending').length,
 )
 const costCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'pending',
-    label: '待入账候选',
+    label: '本页待入账候选',
     value: readCount(readState.value, pendingCount.value),
     unit: readState.value.trustworthy ? '条' : '',
-    meta: readState.value.trustworthy ? '等待生成凭证或结转成本' : readState.value.emptyMessage,
+    meta: readState.value.trustworthy
+      ? '仅统计当前页；等待生成凭证或结转成本'
+      : readState.value.emptyMessage,
   },
   {
     key: 'amount',
-    label: '候选金额',
+    label: '待入账成本',
     // 取不到数时显 `—`，不显 ¥0.00——「零待入账成本」是会被当真的结论。
-    value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
-    meta: readState.value.trustworthy
-      ? `当前列表 ${costs.items.value.length} 条候选合计`
-      : readState.value.emptyMessage,
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.costCandidateAmount)
+      : UNAVAILABLE_TEXT,
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : '财务摘要读取失败或尚未返回，当前无法判断总额。',
   },
 ])
 
