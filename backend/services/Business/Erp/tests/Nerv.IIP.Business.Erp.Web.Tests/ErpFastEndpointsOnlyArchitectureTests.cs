@@ -12,6 +12,7 @@ using WmsListInboundOrdersEndpoint = WmsWeb::Nerv.IIP.Business.Wms.Web.Endpoints
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpFastEndpointsOnlyArchitectureTests
 {
     [Fact]

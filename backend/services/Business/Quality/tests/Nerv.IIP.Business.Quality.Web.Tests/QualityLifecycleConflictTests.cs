@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityLifecycleConflictTests
 {
     [Fact]

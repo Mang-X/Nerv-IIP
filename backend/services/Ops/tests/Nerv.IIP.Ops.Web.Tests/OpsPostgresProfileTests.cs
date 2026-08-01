@@ -13,6 +13,7 @@ using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OpsPostgresProfileTests
 {
     [Fact]

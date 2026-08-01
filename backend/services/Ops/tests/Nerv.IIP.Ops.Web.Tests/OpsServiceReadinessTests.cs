@@ -7,10 +7,7 @@ using Nerv.IIP.Ops.Infrastructure.Repositories;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
-[CollectionDefinition("readiness", DisableParallelization = true)]
-public sealed class ReadinessCollection;
-
-[Collection("readiness")]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Theory]

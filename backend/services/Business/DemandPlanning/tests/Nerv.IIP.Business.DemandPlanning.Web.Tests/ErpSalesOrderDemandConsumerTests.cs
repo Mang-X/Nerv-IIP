@@ -17,6 +17,7 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpSalesOrderDemandConsumerTests
 {
     [Fact]

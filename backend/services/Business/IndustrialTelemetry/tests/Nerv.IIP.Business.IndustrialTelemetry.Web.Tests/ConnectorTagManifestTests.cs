@@ -17,6 +17,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ConnectorTagManifestTests
 {
     private const string RevisionA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

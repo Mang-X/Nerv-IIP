@@ -18,6 +18,7 @@ using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ObservabilityAlertMonitorTests
 {
     [Fact]

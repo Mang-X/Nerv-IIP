@@ -11,6 +11,7 @@ using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class RushWorkOrderHttpPostgresTests
 {
     [MesRealPostgresFact]

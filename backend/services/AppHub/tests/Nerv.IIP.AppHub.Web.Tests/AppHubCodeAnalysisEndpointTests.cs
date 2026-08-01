@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class AppHubCodeAnalysisEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private const string InternalServiceBearerToken = "local-internal-service-token";

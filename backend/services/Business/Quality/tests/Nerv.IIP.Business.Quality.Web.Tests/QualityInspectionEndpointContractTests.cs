@@ -40,6 +40,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityInspectionEndpointContractTests
 {
     [Fact]

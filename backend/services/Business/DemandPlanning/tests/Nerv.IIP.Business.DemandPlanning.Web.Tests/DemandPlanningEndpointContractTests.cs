@@ -27,6 +27,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class DemandPlanningEndpointContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

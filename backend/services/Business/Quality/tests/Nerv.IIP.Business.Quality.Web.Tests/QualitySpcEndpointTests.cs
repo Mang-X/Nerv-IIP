@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualitySpcEndpointTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

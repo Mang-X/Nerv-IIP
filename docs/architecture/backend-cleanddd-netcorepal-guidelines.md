@@ -276,6 +276,7 @@ Web 集成测试：
 1. 使用模板生成的 `MyWebApplicationFactory` 或等价测试工厂。
 2. 使用 Testcontainers 或本地开发编排启动当前 profile 所需依赖；默认 Development profile 为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，显式 `Messaging:Provider=Redis` 时要求 Redis 持久化，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
 3. Endpoint 测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
+4. 当前测试宿主使用 `WebApplicationFactoryCollection` 阻止 xUnit 并行测试执行以避免 FastEndpoints 静态配置竞态：FastEndpoints 8.1.0 在全局静态状态中存储 `Config` 和 `Serializer.Options`；并发测试宿主启动可能同时变更和拷贝共享的 converter 列表，导致 `System.ArgumentException: Destination array was not long enough`。每个使用 `WebApplicationFactory<Program>` 的测试类必须标记 `[Collection(WebApplicationFactoryCollection.Name)]`，并在测试项目中定义对应的 `[CollectionDefinition(Name, DisableParallelization = true)]` collection。只有当 FastEndpoints 支持 per-host 配置或宿主启动不再触碰共享状态时，才可以移除此 collection。
 
 事件测试：
 
