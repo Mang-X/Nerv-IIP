@@ -18,6 +18,7 @@ const routeState = vi.hoisted(() => ({
   params: { workOrderId: 'WO-1' },
   query: {} as Record<string, string>,
 }))
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -32,8 +33,18 @@ vi.mock('@/composables/useScheduleInvalidation', () => ({
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   useMesDisplayNames: () => ({
     resolveSku: (v?: string | null) => v ?? '无',
-    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
-    resolveShiftLabel: (v?: string | null) => v ?? undefined,
+    resolveSkuLabel: (v?: string | null) =>
+      v?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+        ? state.catalogResolved
+          ? '轴承钢'
+          : '未指定物料'
+        : (v ?? '未指定物料'),
+    resolveShiftLabel: (v?: string | null) =>
+      v?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+        ? state.catalogResolved
+          ? '早班'
+          : undefined
+        : (v ?? undefined),
     resolveWorkCenter: (v?: string | null) => v ?? undefined,
   }),
 }))
@@ -44,6 +55,9 @@ const state = vi.hoisted(() => ({
   materialIssueRequests: [] as Record<string, unknown>[],
   baseUomBySku: new Map<string, string>(),
   skusPending: false,
+  catalogResolved: true,
+  detail: {} as Record<string, unknown>,
+  materialReadiness: {} as Record<string, unknown>,
 }))
 
 // 单位取自物料主档（#1294 姿势）：主档缺单位就不许发起领料，绝不写死占位值。
@@ -82,22 +96,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
     confirmLineSideReceiptPending: ref(false),
     createMaterialIssueRequest: state.createMaterialIssueRequest,
     createMaterialIssueRequestPending: ref(false),
-    detail: ref({
-      workOrderId: 'WO-1',
-      skuId: 'FG-1',
-      quantity: 10,
-      status: 'released',
-      operationTasks: [],
-      blockingReasons: [],
-      qualityHolds: [],
-    }),
+    detail: ref(state.detail),
     detailError: ref(undefined),
     detailPending: ref(false),
     filters: reactive({ organizationId: 'org', environmentId: 'dev', workOrderId: 'WO-1' }),
     finishedGoodsReceiptRequests: ref([]),
     materialIssueRequests: ref(state.materialIssueRequests),
     materialIssueRequestsPending: ref(false),
-    materialReadiness: ref({ items: [], readinessStatus: 'Ready', blockingReasons: [] }),
+    materialReadiness: ref(state.materialReadiness),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
     refreshDetail: vi.fn(),
@@ -129,10 +135,18 @@ function mountDetail(permissionCodes: string[]) {
       stubs: {
         BusinessLayout: { template: '<main><slot /></main>' },
         QualityHoldPanel: { template: '<div />' },
-        NvPageHeader: { template: '<header><slot name="actions" /></header>' },
+        NvPageHeader: {
+          props: ['title'],
+          template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+        },
         NvDataTable: {
-          props: ['rows'],
-          template: '<div><slot name="cell-wmsRequestId" v-for="row in rows" :row="row" /></div>',
+          props: ['rows', 'columns'],
+          template: `<div><div v-for="row in rows">
+            <span v-for="column in columns">
+              {{ column.key === 'wmsRequestId' ? '' : column.accessor ? column.accessor(row) : row[column.key] }}
+            </span>
+            <slot name="cell-wmsRequestId" :row="row" />
+          </div></div>`,
         },
         NvButton: { template: '<button><slot /></button>' },
         NvStatusBadge: {
@@ -163,12 +177,24 @@ function mountDetail(permissionCodes: string[]) {
 
 describe('work-order detail — PC 领料入口 (#1324)', () => {
   beforeEach(() => {
+    routeState.params.workOrderId = 'WO-1'
     state.createMaterialIssueRequest.mockReset()
     state.confirmLineSideReceipt.mockReset()
     state.materialIssueRequests.length = 0
     state.baseUomBySku.clear()
     state.baseUomBySku.set('MAT-OIL', 'L')
     state.skusPending = false
+    state.catalogResolved = true
+    state.detail = {
+      workOrderId: 'WO-1',
+      skuId: 'FG-1',
+      quantity: 10,
+      status: 'released',
+      operationTasks: [],
+      blockingReasons: [],
+      qualityHolds: [],
+    }
+    state.materialReadiness = { items: [], readinessStatus: 'Ready', blockingReasons: [] }
   })
 
   it('有领料管理权限时渲染「发起领料」入口', () => {
@@ -251,5 +277,102 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
 
     expect(wrapper.text()).toContain('MI-MIR-001')
     expect(wrapper.text()).not.toContain('仓库尚未接单')
+  })
+
+  it('read-face guard：目录可解析时展示工序、工作中心、设备与业务单号', () => {
+    routeState.params.workOrderId = 'WO-2026-08001'
+    state.detail = {
+      workOrderId: 'WO-2026-08001',
+      skuId: 'FG-1',
+      quantity: 10,
+      status: 'released',
+      blockingReasons: [],
+      qualityHolds: [],
+      operationTasks: [
+        {
+          operationTaskId: '019fbb41-1111-7111-8111-111111111111',
+          operationTaskNo: 'OP-08001-10',
+          workCenterId: '019fbb41-2222-7222-8222-222222222222',
+          workCenterName: '精加工一线',
+          deviceAssetId: '019fbb41-3333-7333-8333-333333333333',
+          deviceAssetName: '五轴加工中心',
+          shiftId: '019fbb41-4444-7444-8444-444444444444',
+        },
+      ],
+    }
+    state.materialReadiness = {
+      items: [
+        {
+          materialId: '019fbb41-5555-7555-8555-555555555555',
+          materialLotId: 'LOT-20260801-A',
+          requiredQuantity: 2,
+          availableQuantity: 2,
+          stagedQuantity: 2,
+          shortageQuantity: 0,
+        },
+      ],
+      readinessStatus: 'Ready',
+      blockingReasons: [],
+    }
+    state.materialIssueRequests.push({
+      requestId: 'MIR-20260801-01',
+      materialId: 'MAT-OIL',
+      requestedQuantity: 1,
+      receivedQuantity: 0,
+      wmsRequestId: 'MI-MIR-20260801-01',
+    })
+
+    const visibleText = mountDetail([
+      'business.mes.work-orders.read',
+      'business.mes.materials.manage',
+    ]).text()
+    expect(visibleText).toContain('OP-08001-10')
+    expect(visibleText).toContain('精加工一线')
+    expect(visibleText).toContain('五轴加工中心')
+    expect(visibleText).toContain('轴承钢')
+    expect(visibleText).toContain('MI-MIR-20260801-01')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('read-face guard：目录失败与人读字段缺失时显示占位符且不泄露 ID', () => {
+    const technicalId = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    routeState.params.workOrderId = technicalId
+    state.catalogResolved = false
+    state.detail = {
+      workOrderId: technicalId,
+      skuId: 'FG-1',
+      quantity: 10,
+      status: 'released',
+      blockingReasons: [],
+      qualityHolds: [],
+      operationTasks: [
+        {
+          operationTaskId: technicalId,
+          workCenterId: '019fbb41-bbbb-7bbb-8bbb-bbbbbbbbbbbb',
+          deviceAssetId: '019fbb41-cccc-7ccc-8ccc-cccccccccccc',
+          shiftId: '019fbb41-dddd-7ddd-8ddd-dddddddddddd',
+        },
+      ],
+    }
+    state.materialReadiness = {
+      items: [{ materialId: technicalId, materialLotId: technicalId, shortageQuantity: 0 }],
+      readinessStatus: 'Ready',
+      blockingReasons: [],
+    }
+    state.materialIssueRequests.push({
+      requestId: technicalId,
+      materialId: 'MAT-OIL',
+      wmsRequestId: technicalId,
+    })
+
+    const visibleText = mountDetail([
+      'business.mes.work-orders.read',
+      'business.mes.materials.manage',
+    ]).text()
+    expect(visibleText).toContain('—')
+    expect(visibleText).toContain('未指定')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
   })
 })

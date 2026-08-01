@@ -71,6 +71,7 @@ import {
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 
 definePage({
   meta: {
@@ -465,14 +466,14 @@ const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
 })
-/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+/** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
 function deviceLabel(code?: string | null, fallback = '无设备') {
   if (!code) return fallback
-  return resolveDevice(code) ?? code
+  return resolveDevice(code) ?? readFaceText(code, fallback)
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
-  return resolveWorkCenter(code) ?? code
+  return resolveWorkCenter(code) ?? readFaceText(code, fallback)
 }
 
 type Window = (typeof availabilityWindows)['value'][number]
@@ -486,7 +487,11 @@ const columns: NvDataTableColumn<Window>[] = [
   { key: 'workCenterId', header: '工作中心', accessor: (r) => workCenterLabel(r.workCenterId) },
   { key: 'startUtc', header: '开始', width: 'w-44' },
   { key: 'endUtc', header: '结束', width: 'w-44' },
-  { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
+  {
+    key: 'sourceReferenceId',
+    header: '关联业务',
+    accessor: (r) => r.sourceReferenceLabel?.trim() || '—',
+  },
   {
     key: 'substituteDeviceAssetIds',
     header: '替代设备',
@@ -588,8 +593,24 @@ function maintenanceStatusLabel(value?: string | null) {
   // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
   return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
-function workOrderLabel(row: { workOrderId?: string }) {
-  return row.workOrderId ?? '维护工单'
+function workOrderLabel(row: { openedAtUtc?: string | null }) {
+  return row.openedAtUtc ? `维修工单 · ${formatDateTime(row.openedAtUtc)}` : '维修工单'
+}
+const alarmCodeById = computed(
+  () =>
+    new Map(
+      activeAlarms.value
+        .filter((alarm) => alarm.alarmEventId && alarm.alarmCode)
+        .map((alarm) => [alarm.alarmEventId!, alarm.alarmCode!]),
+    ),
+)
+function alarmLabel(alarmId?: string | null) {
+  return (alarmId && alarmCodeById.value.get(alarmId)) || '—'
+}
+function sparePartWorkOrderLabel(workOrderId?: string | null) {
+  if (!workOrderId) return '未关联'
+  const workOrder = currentDeviceWorkOrders.value.find((row) => row.workOrderId === workOrderId)
+  return workOrder ? workOrderLabel(workOrder) : '—'
 }
 /** 保养/点检周期：先查常用说法，其余按 ISO 8601 周期翻译（P7D → 每 7 天）。 */
 function intervalLabel(value?: string | null) {
@@ -798,7 +819,7 @@ function formatError(error: unknown) {
                   {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  {{ currentState?.deviceAssetId ?? filters.deviceAssetId }}
+                  {{ readFaceText(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                   状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}
@@ -1198,7 +1219,7 @@ function formatError(error: unknown) {
                   v-if="row.sourceAlarmId || row.relatedAlarmId"
                   class="text-xs text-muted-foreground"
                 >
-                  关联报警 {{ row.sourceAlarmId ?? row.relatedAlarmId }}
+                  关联报警 {{ alarmLabel(row.sourceAlarmId ?? row.relatedAlarmId) }}
                 </p>
               </div>
               <div
@@ -1268,7 +1289,8 @@ function formatError(error: unknown) {
                   row.skuCode ?? '备件物料'
                 }}</span>
                 <span class="text-xs text-muted-foreground"
-                  >数量 {{ quantityLabel(row) }} · 工单 {{ row.workOrderId ?? '未关联' }}</span
+                  >数量 {{ quantityLabel(row) }} · 工单
+                  {{ sparePartWorkOrderLabel(row.workOrderId) }}</span
                 >
               </div>
               <div

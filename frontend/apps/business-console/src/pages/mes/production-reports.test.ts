@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import ProductionReportsPage from './production-reports.vue'
 
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
 // 报工列表 mock:同页只放三行,故意让"已冲销原单"(B)与其冲销行、"冲销行"(C)与其原单**不在同页**,
 // 以验证已冲销判定/互链读服务端逐行字段(reversalReportNo / reversedReportNo)与跨页点击定位。
 const rows = [
@@ -100,6 +102,24 @@ const mesState = vi.hoisted(() => ({
   detailError: undefined as unknown as { value: unknown },
   activateReverseDetail: vi.fn(),
   deactivateReverseDetail: vi.fn(),
+  guardRows: null as Array<Record<string, unknown>> | null,
+  candidateRows: [] as Array<Record<string, unknown>>,
+  catalogResolved: true,
+}))
+
+vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+  useMasterDataDisplayNames: () => ({
+    resolveDevice: () => (mesState.catalogResolved ? '五轴加工中心' : undefined),
+  }),
+}))
+
+vi.mock('@/composables/mes/useMesDisplayNames', () => ({
+  useMesDisplayNames: () => ({
+    resolveSkuLabel: (value?: string | null) => {
+      if (!mesState.catalogResolved) return '未指定物料'
+      return value?.startsWith('019fbb41-') ? '轴承钢' : (value ?? '未指定物料')
+    },
+  }),
 }))
 
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
@@ -134,6 +154,7 @@ vi.mock('@/composables/useBusinessMes', async () => {
       // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的
       // watch(flush:'post')→ 滚动/高亮后半条链在测试里真实触发。
       productionReports: computed(() => {
+        if (mesState.guardRows) return mesState.guardRows
         const keyword = String(mesState.filters.keyword ?? '')
         return keyword && counterpartRows[keyword] ? counterpartRows[keyword] : rows
       }),
@@ -158,7 +179,7 @@ vi.mock('@/composables/useBusinessMes', async () => {
         skip: 0,
         take: 100,
       }),
-      candidates: computed(() => []),
+      candidates: computed(() => mesState.candidateRows),
       total: computed(() => 0),
       pending: shallowRef(false),
       error: shallowRef(undefined),
@@ -172,11 +193,15 @@ vi.mock('@/composables/useBusinessMes', async () => {
 
 // DataTablePro 桩:逐行渲染 cell-reportNo 与 cell-actions 两个插槽,便于断言徽章/互链/操作按钮。
 const tableStub = {
-  props: ['rows'],
+  props: ['columns', 'rows'],
   template: `
     <section data-testid="data-table">
       <div v-for="row in rows" :key="row.productionReportId" data-testid="row">
+        <span v-for="column in columns" :key="column.key">
+          {{ column.accessor ? column.accessor(row) : '' }}
+        </span>
         <slot name="cell-reportNo" :row="row" />
+        <slot name="cell-workOrderId" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </section>
@@ -268,6 +293,9 @@ beforeEach(() => {
     mesState.detail.value = { report, consumedMaterialLots: [] }
   })
   mesState.deactivateReverseDetail.mockClear()
+  mesState.guardRows = null
+  mesState.candidateRows = []
+  mesState.catalogResolved = true
   // jsdom 未实现 scrollIntoView,定义为可断言的 mock(跨页定位滚动)
   Element.prototype.scrollIntoView = vi.fn()
   // attachTo 会把上一个 wrapper 的 DOM 留在 body,清掉避免跨用例串扰
@@ -275,6 +303,106 @@ beforeEach(() => {
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
+  it('read-face guard shows DTO numbers and resolved catalog names without technical identifiers', async () => {
+    const row = {
+      productionReportId: '019fbb41-1111-7111-8111-111111111111',
+      reportNo: 'PRPT-20260801-001',
+      workOrderId: '019fbb41-2222-7222-8222-222222222222',
+      workOrderNo: 'WO-2026-08001',
+      operationTaskId: '019fbb41-3333-7333-8333-333333333333',
+      operationTaskNo: 'WO-2026-08001-OP-10',
+      goodQuantity: 8,
+      scrapQuantity: 0,
+      reworkQuantity: 0,
+      reportedAtUtc: '2026-08-01T08:00:00Z',
+      workOrderStatus: 'started',
+    }
+    mesState.guardRows = [row]
+    mesState.candidateRows = [
+      {
+        candidateId: 'candidate-1',
+        deviceAssetId: '019fbb41-4444-7444-8444-444444444444',
+        tagKey: '产量计数',
+        goodQuantity: 8,
+        bucketEndUtc: '2026-08-01T08:00:00Z',
+        status: 'pending-confirmation',
+      },
+    ]
+    mesState.detail.value = {
+      report: row,
+      consumedMaterialLots: [
+        {
+          materialId: '019fbb41-5555-7555-8555-555555555555',
+          materialLotId: 'LOT-20260801-01',
+          consumedQuantity: 2,
+          uomCode: 'kg',
+          materialIssueRequestNo: 'MIR-20260801-01',
+        },
+      ],
+    }
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    ;(wrapper.vm as unknown as { openReverse: (target: typeof row) => void }).openReverse(row)
+    await flushPromises()
+    const visibleText = wrapper.text()
+
+    expect(visibleText).toContain('PRPT-20260801-001')
+    expect(visibleText).toContain('WO-2026-08001')
+    expect(visibleText).toContain('WO-2026-08001-OP-10')
+    expect(visibleText).toContain('轴承钢')
+    expect(visibleText).toContain('LOT-20260801-01')
+    expect(visibleText).toContain('五轴加工中心')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('read-face guard shows placeholders when DTO fields and catalogs cannot resolve identifiers', async () => {
+    const row = {
+      productionReportId: '019fbb41-1111-7111-8111-111111111111',
+      reportNo: 'PRPT-20260801-002',
+      workOrderId: '019fbb41-2222-7222-8222-222222222222',
+      operationTaskId: '019fbb41-3333-7333-8333-333333333333',
+      goodQuantity: 8,
+      scrapQuantity: 0,
+      reworkQuantity: 0,
+      reportedAtUtc: '2026-08-01T08:00:00Z',
+      workOrderStatus: 'started',
+    }
+    mesState.catalogResolved = false
+    mesState.guardRows = [row]
+    mesState.candidateRows = [
+      {
+        candidateId: 'candidate-1',
+        deviceAssetId: '019fbb41-4444-7444-8444-444444444444',
+        tagKey: '产量计数',
+        goodQuantity: 8,
+        bucketEndUtc: '2026-08-01T08:00:00Z',
+        status: 'pending-confirmation',
+      },
+    ]
+    mesState.detail.value = {
+      report: row,
+      consumedMaterialLots: [
+        {
+          materialId: '019fbb41-5555-7555-8555-555555555555',
+          materialLotId: '019fbb41-6666-7666-8666-666666666666',
+          consumedQuantity: 2,
+          uomCode: 'kg',
+          materialIssueRequestNo: 'MIR-20260801-01',
+        },
+      ],
+    }
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    ;(wrapper.vm as unknown as { openReverse: (target: typeof row) => void }).openReverse(row)
+    await flushPromises()
+    const visibleText = wrapper.text()
+
+    expect(visibleText).toContain('—')
+    expect(visibleText).toContain('未指定物料')
+    expect(visibleText).toContain('未指定设备')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
   it('重新报工入口只带出报工记录中的真实工单与工序上下文，不伪造工序状态', () => {
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     const vm = wrapper.vm as unknown as {
