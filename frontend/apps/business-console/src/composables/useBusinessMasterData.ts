@@ -64,6 +64,19 @@ import {
 
 const DEFAULT_TAKE = 100
 
+/**
+ * 人员目录单页上限，由网关校验器定死：
+ * `BusinessConsoleMasterDataEndpoints.cs` 的 `RuleFor(x => x.PageSize).InclusiveBetween(1, 200)`。
+ *
+ * 超了就是 400，而调用方大多把人员目录当查表用（userId → 姓名），失败时整列回落成占位符——
+ * **界面看着「没数据」，其实是请求被拒**。第五轮走查在待检工作台实际踩到（`pageSize: 500`，
+ * 整列「当前持有人」变 `—`，连「已被他人认领」都看不出来）。
+ *
+ * 所以这里既导出常量给调用方引用，也在 composable 内部夹紧——下一个调用方就算随手写个大数
+ * 也不会把页面打成静默空态。
+ */
+export const WORKER_DIRECTORY_MAX_PAGE_SIZE = 200
+
 export interface BusinessContextFilters extends BusinessContextFields {}
 
 export interface MasterDataListFilters extends BusinessContextFilters {
@@ -705,8 +718,13 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
       // 网关 BusinessConsoleWorkerDirectoryRequestValidator 校验 PageIndex > 0（1-based，
       // 默认 PageIndex=1，与 useBusinessScheduling 等一致）。发 0 会被后端拒为 400，人员选择器静默空。
       pageIndex: 1,
-      pageSize: DEFAULT_TAKE,
       ...initial,
+      // 夹紧到网关上限：调用方传超了就是 400，而这里失败通常表现为「整列空」而不是报错，
+      // 极难从界面看出来（见 WORKER_DIRECTORY_MAX_PAGE_SIZE 注释里的实测）。
+      pageSize: Math.min(
+        Math.max(1, initial.pageSize ?? DEFAULT_TAKE),
+        WORKER_DIRECTORY_MAX_PAGE_SIZE,
+      ),
     }),
   )
 
