@@ -6,6 +6,7 @@
  * - 字段级校验才用内联（红框 + 汇总），不走这里。
  */
 import { toast } from '@nerv-iip/ui'
+import { type WmsReasonContext, wmsReasonMessage } from './wmsReasonCodes'
 
 /** 从各种 error 形态里取出原始文本。 */
 function rawMessage(error: unknown): string {
@@ -21,9 +22,17 @@ function rawMessage(error: unknown): string {
  * 把后端/网络错误转成对用户友好的中文。
  * 绝不把 `downstream-invalid-response` / `502` 这类开发术语甩给用户。
  */
-export function friendlyErrorMessage(error: unknown, fallback = '操作失败，请稍后重试。'): string {
+export function friendlyErrorMessage(
+  error: unknown,
+  fallback = '操作失败，请稍后重试。',
+  reasonContext?: WmsReasonContext,
+): string {
   const raw = rawMessage(error)
   if (!raw) return fallback
+  // WMS 的稳定拒绝代码（#1397）必须排在所有通用分支之前：`outbound-pack-review-not-passed`
+  // 这类代码一旦落到下面的 422/403 泛化分支，就又变回「请检查填写项」——那正是被修的 bug。
+  const wmsReason = wmsReasonMessage(raw, reasonContext)
+  if (wmsReason) return wmsReason
   if (
     /business-operation-unconfirmed|BusinessOperationUnconfirmedError|权威状态尚未确认|写操作回执不完整|写操作缺少权威回执/i.test(
       raw,
@@ -211,9 +220,14 @@ export function isForbiddenError(error: unknown): boolean {
  * 之所以收成一处：三个入口原本各抄一遍这四行，任一处漏掉 `serverErrorMessage` 那步，
  * 该入口就会把后端的领域拒绝理由吞成猜测性兜底文案（MAN-691 / #1259、MAN-700 / #1289 两次踩过）。
  */
-function resolveLayeredMessage(error: unknown, fallback: string | undefined, logLabel: string) {
+function resolveLayeredMessage(
+  error: unknown,
+  fallback: string | undefined,
+  logLabel: string,
+  reasonContext?: WmsReasonContext,
+) {
   const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback)
+  const message = friendlyErrorMessage(raw || error, fallback, reasonContext)
   if (raw && message !== raw) {
     // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
     console.error(`[${logLabel}] 服务端原始错误：`, raw, error)
@@ -237,9 +251,14 @@ function resolveLayeredMessage(error: unknown, fallback: string | undefined, log
  * （现网 106 处里 103 处形如 `'撤销失败'`），派生兜底会拼出「撤销失败失败，请稍后重试」。
  * 领域兜底句只能由调用方自己写。
  */
-export function notifyOperationFailure(action: string, error: unknown, fallback: string): void {
+export function notifyOperationFailure(
+  action: string,
+  error: unknown,
+  fallback: string,
+  reasonContext?: WmsReasonContext,
+): void {
   // 第二个参数传 '' 是刻意的——什么都取不到时要落到调用方的领域兜底，而不是通用兜底句。
-  const message = resolveLayeredMessage(error, '', action)
+  const message = resolveLayeredMessage(error, '', action, reasonContext)
   toast.error(message ? `${action}：${message}` : fallback)
 }
 
@@ -251,9 +270,13 @@ export function notifyOperationFailure(action: string, error: unknown, fallback:
  *
  * 无错误时返回空串，模板可直接 `v-if` 判空。
  */
-export function inlineErrorMessage(error: unknown, fallback = '请求失败，请稍后重试。'): string {
+export function inlineErrorMessage(
+  error: unknown,
+  fallback = '请求失败，请稍后重试。',
+  reasonContext?: WmsReasonContext,
+): string {
   if (!error) return ''
-  return resolveLayeredMessage(error, fallback, '加载失败')
+  return resolveLayeredMessage(error, fallback, '加载失败', reasonContext)
 }
 
 /** 成功反馈。 */

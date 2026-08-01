@@ -342,7 +342,10 @@ const headerCount = computed(() => {
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeDefaults(filters)
 // 库位与批次后端无主数据读面，从真实台账与仓储作业记录派生可选项。
-const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
+  undefined,
+  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
+)
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,

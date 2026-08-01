@@ -28,12 +28,26 @@ public sealed class WmsAuthorizationException : Exception
         new(reason);
 }
 
-public sealed class WmsUnprocessableException(string reason)
+public sealed class WmsUnprocessableException(string reason, string? reasonCode = null)
     : Exception($"WMS request cannot be processed: {reason}.")
 {
     public const string SafeCode = "unprocessable";
 
     public string Reason { get; } = reason;
+
+    /// <summary>
+    /// 稳定的机读拒绝原因（kebab ASCII）。
+    ///
+    /// 为什么不是直接把 <see cref="Reason"/> 上屏：网关的 <c>IsStrictSafeDownstreamMessage</c>
+    /// 只放行 <c>[A-Za-z0-9-_.]</c>、≤128 字符的下游消息——这是防止下游自由文本（含 SQL 片段、
+    /// 内部标识）经网关泄漏到浏览器的护栏，不该为了显示中文而拆掉。
+    /// 因此本服务对外只承诺**稳定代码**，中文人话由前端按代码映射
+    /// （与 <c>downstream-timeout</c> 的既有做法同款，见 business-console 的 notify.ts）。
+    ///
+    /// 没有给代码时退回 <see cref="SafeCode"/>，行为与改造前一致。
+    /// </summary>
+    public string ReasonCode { get; } =
+        string.IsNullOrWhiteSpace(reasonCode) ? SafeCode : reasonCode;
 }
 
 public sealed class WmsLifecycleConflictException(string action, string currentStatus)
@@ -89,18 +103,21 @@ public sealed class WmsLifecycleConflictMiddleware(
                 "WMS authorization denied. Reason={Reason}",
                 exception.Reason);
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            // Reason 本身就是稳定 kebab 代码（resource-not-assigned-to-self 等），可安全外发；
+            // 只报 "forbidden" 会让「这单派给别人了」和「不在你的作业范围」看起来一模一样（#1397 / 台账 #82）。
             await context.Response.WriteAsJsonAsync(
-                new WmsLifecycleConflictResponse(false, WmsAuthorizationException.SafeCode),
+                new WmsLifecycleConflictResponse(false, SafeOutboundCode(exception.Reason, WmsAuthorizationException.SafeCode)),
                 context.RequestAborted);
         }
         catch (WmsUnprocessableException exception)
         {
             logger.LogInformation(
-                "WMS request is unprocessable. Reason={Reason}",
+                "WMS request is unprocessable. ReasonCode={ReasonCode}, Reason={Reason}",
+                exception.ReasonCode,
                 exception.Reason);
             context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
             await context.Response.WriteAsJsonAsync(
-                new WmsLifecycleConflictResponse(false, WmsUnprocessableException.SafeCode),
+                new WmsLifecycleConflictResponse(false, SafeOutboundCode(exception.ReasonCode, WmsUnprocessableException.SafeCode)),
                 context.RequestAborted);
         }
         catch (WmsLifecycleConflictException exception)
@@ -114,6 +131,32 @@ public sealed class WmsLifecycleConflictMiddleware(
                 new WmsLifecycleConflictResponse(false, WmsLifecycleConflictException.SafeCode),
                 context.RequestAborted);
         }
+    }
+
+    /// <summary>
+    /// 只放行稳定的 kebab 代码外发，其余退回常量 SafeCode。
+    ///
+    /// 这里刻意复刻 BusinessGateway 的 <c>IsStrictSafeDownstreamMessage</c> 判据
+    /// （首字符字母/数字，整体仅 <c>[A-Za-z0-9-_.]</c>，≤128）：网关本来就会把不合规的下游消息
+    /// 换成 <c>downstream-request-failed</c>，本服务先自查一遍，避免出现「本地看着有原因、
+    /// 过了网关变成一句 downstream-request-failed」这种更难排查的情况。
+    /// </summary>
+    public static string SafeOutboundCode(string? code, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length > 128)
+        {
+            return fallback;
+        }
+
+        if (!char.IsAsciiLetterOrDigit(code[0]))
+        {
+            return fallback;
+        }
+
+        return code.All(static value =>
+            char.IsAsciiLetterOrDigit(value) || value is '-' or '_' or '.')
+            ? code
+            : fallback;
     }
 }
 

@@ -281,12 +281,34 @@ export function verifyBusinessConsoleOperationReadback(
   return { state: 'indeterminate' }
 }
 
+/**
+ * 回读时必须带上的**作业范围**。
+ *
+ * 为什么需要（#1397）：WMS 的列表读面在网关侧是范围受限的，只带
+ * organizationId/environmentId 一律 403。回执回读走的正是这些列表读面，
+ * 不带范围就永远确认不了——表现为写操作明明 200 成功、界面却报
+ * 「操作结果尚未确认」。把成功说成不确定比报错更糟：用户会去重复提交。
+ *
+ * 范围由**调用方**给：它刚刚就是用这个范围完成写操作的，是权威来源。
+ * 不从服务端回执地址里猜——回执地址只用于校验，绝不当 URL 盲跟。
+ */
+export interface BusinessConsoleOperationReadbackScope {
+  scopeKind?: string | null
+  scopeId?: string | null
+}
+
 interface ConfirmBusinessConsoleOperationBaseOptions {
   expectedOperationType: string
   expectedIdempotencyKey: string
   attempts?: number
   retryDelayMs?: number
-  readback?: (path: string, receipt: BusinessConsoleOperationReceiptLike) => Promise<unknown>
+  /** 受范围治理的读面（WMS）必须传，否则回读必 403、永远确认不了。 */
+  readbackScope?: BusinessConsoleOperationReadbackScope
+  readback?: (
+    path: string,
+    receipt: BusinessConsoleOperationReceiptLike,
+    scope?: BusinessConsoleOperationReadbackScope,
+  ) => Promise<unknown>
 }
 
 export type ConfirmBusinessConsoleOperationOptions<
@@ -323,6 +345,7 @@ function requireExactResource(url: URL, name: string, resourceId: string) {
 export async function readBusinessConsoleOperationState(
   path: string,
   receipt: BusinessConsoleOperationIdentity,
+  scope?: BusinessConsoleOperationReadbackScope,
 ) {
   const operationType = receipt.operationType
   const resourceId = receipt.resourceId
@@ -331,6 +354,11 @@ export async function readBusinessConsoleOperationState(
   const url = new URL(path, 'http://business-console.local')
   const organizationId = requiredQuery(url, 'organizationId')
   const environmentId = requiredQuery(url, 'environmentId')
+  // 受范围治理的读面必须带作业范围，否则网关直接 403（#1397）。
+  const scopeQuery = {
+    ...(scope?.scopeKind?.trim() ? { scopeKind: scope.scopeKind.trim() } : {}),
+    ...(scope?.scopeId?.trim() ? { scopeId: scope.scopeId.trim() } : {}),
+  }
 
   if (
     operationType === 'wms.inbound-order.complete' &&
@@ -339,7 +367,7 @@ export async function readBusinessConsoleOperationState(
     const inboundOrderId = requireExactResource(url, 'inboundOrderId', resourceId)
     return (
       await listBusinessConsoleWmsInboundOrders({
-        query: { organizationId, environmentId, inboundOrderId },
+        query: { organizationId, environmentId, inboundOrderId, ...scopeQuery },
         throwOnError: true,
       })
     ).data
@@ -352,7 +380,7 @@ export async function readBusinessConsoleOperationState(
     const outboundOrderId = requireExactResource(url, 'outboundOrderId', resourceId)
     return (
       await listBusinessConsoleWmsOutboundOrders({
-        query: { organizationId, environmentId, outboundOrderId },
+        query: { organizationId, environmentId, outboundOrderId, ...scopeQuery },
         throwOnError: true,
       })
     ).data
@@ -365,7 +393,7 @@ export async function readBusinessConsoleOperationState(
     const countExecutionId = requireExactResource(url, 'countExecutionId', resourceId)
     return (
       await listBusinessConsoleWmsCountExecutions({
-        query: { organizationId, environmentId, countExecutionId },
+        query: { organizationId, environmentId, countExecutionId, ...scopeQuery },
         throwOnError: true,
       })
     ).data
@@ -480,7 +508,7 @@ export async function confirmBusinessConsoleOperation<
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     let verdict: BusinessConsoleOperationReadbackVerdict | undefined
     try {
-      const payload = await readback(path, receipt)
+      const payload = await readback(path, receipt, options.readbackScope)
       verdict = verifyBusinessConsoleOperationReadback(receipt, payload)
     } catch (error) {
       lastError = error

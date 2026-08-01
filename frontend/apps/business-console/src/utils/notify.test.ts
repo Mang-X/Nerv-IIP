@@ -308,3 +308,56 @@ describe('errorStatusCode / isForbiddenError', () => {
     expect(errorStatusCode(error)).toBeUndefined()
   })
 })
+
+describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
+  it('出库复核的 422 说清「卡在哪 + 去哪解」，而不是「请检查填写项」', () => {
+    const message = friendlyErrorMessage({ message: 'outbound-picking-not-completed' }, '兜底', {
+      outboundOrderNo: 'OB-WQ-B-PICK-MIR-20260731-02',
+    })
+    // 点名对象
+    expect(message).toContain('OB-WQ-B-PICK-MIR-20260731-02')
+    // 说清卡在哪
+    expect(message).toContain('拣货任务尚未完成')
+    // 给出路
+    expect(message).toContain('拣货任务')
+    // 这条正是被修掉的无信息量文案，绝不能再出现
+    expect(message).not.toContain('请检查填写项')
+  })
+
+  it('拿不到单号时退化成不点名的句子，但仍然给出路', () => {
+    const message = friendlyErrorMessage({ message: 'outbound-picking-not-completed' }, '兜底')
+    expect(message).toContain('该出库单')
+    expect(message).not.toContain('请检查填写项')
+  })
+
+  it('原因代码必须排在通用 422/403 分支之前，否则又退化成泛化文案', () => {
+    expect(friendlyErrorMessage({ message: 'outbound-pack-review-not-passed' })).toContain(
+      '复核通过',
+    )
+    // 403 家族同理：不能被「没有权限执行此操作」一句话盖掉
+    const forbidden = friendlyErrorMessage({ message: 'resource-not-assigned-to-self' })
+    expect(forbidden).toContain('已派给其他作业员')
+    expect(forbidden).not.toBe('没有权限执行此操作。')
+  })
+
+  it('未登记的代码不猜语义，落回原有分层兜底', () => {
+    expect(friendlyErrorMessage({ message: 'unprocessable' })).toContain('请检查填写项')
+  })
+
+  it('分层链上的三个入口都能拿到中文原因（toast 与行内同一口径）', () => {
+    notifyOperationFailure(
+      '提交出库复核失败',
+      { message: 'outbound-picking-not-completed' },
+      '兜底',
+      { outboundOrderNo: 'OB-1' },
+    )
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining('出库单 OB-1的拣货任务尚未完成'),
+    )
+    expect(
+      inlineErrorMessage({ message: 'outbound-picking-not-completed' }, '兜底', {
+        outboundOrderNo: 'OB-1',
+      }),
+    ).toContain('出库单 OB-1')
+  })
+})

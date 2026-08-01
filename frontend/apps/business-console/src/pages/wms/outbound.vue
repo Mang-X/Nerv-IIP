@@ -116,7 +116,10 @@ const { page, pageSize } = usePagedList(filters, {
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeCatalog()
-const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog()
+const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
+  undefined,
+  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
+)
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -343,10 +346,18 @@ async function submitReview() {
     }
     reviewIntentLocked.value =
       reviewIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
+    // 失败原因必须留在弹框里（#1397 / 台账 #81）：过去这里被清成空串，用户只看到一条
+    // 会自己消失的 toast「请检查填写项」，既不知道卡在哪，也无从自助定位。
+    const reasonContext = { outboundOrderNo: pendingOrder.value?.outboundOrderNo ?? undefined }
     formError.value = reviewIntentLocked.value
       ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
-      : ''
-    notifyOperationFailure('提交出库复核失败', error, '提交出库复核失败，请稍后重试。')
+      : inlineErrorMessage(error, '提交出库复核失败，请稍后重试。', reasonContext)
+    notifyOperationFailure(
+      '提交出库复核失败',
+      error,
+      '提交出库复核失败，请稍后重试。',
+      reasonContext,
+    )
   }
 }
 
