@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { computed, defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +16,15 @@ vi.mock('@/composables/useWorkbenchHome', () => ({
     masterDataResources: 'business.masterdata.resources.read',
   },
   usePdaIdentity: () => ({
+    permissionCodes: computed(
+      () =>
+        new Set(
+          [
+            permissions.maintenanceRead ? 'business.maintenance.work-orders.read' : undefined,
+            permissions.masterDataRead ? 'business.masterdata.resources.read' : undefined,
+          ].filter((code): code is string => Boolean(code)),
+        ),
+    ),
     can: (permission: string) =>
       permission.includes('quality') ||
       permission.includes('mes') ||

@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（6 个 spec / 48 个用例）
+### e2e spec 清单（6 个 spec / 49 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -52,11 +52,12 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（8）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页、
+- `e2e/equipment.spec.ts`（9）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页、
   HTTP 200 + `success:false` 显式错误与重试（不渲染空态或旧行）、
   强 `workOrderId` 详情重校验与只读生命周期；设备位置以稳定 `deviceAssetId` 查询有界设备目录，且只接收
   `deviceAssetId` 唯一精确匹配的当前响应（测试数据中设备 ID 与设备编码不同）；缺少设备位置读取权限时
-  fail closed，维修队列与设备目录请求均为 0；清除设备筛选与详情返回按钮实际触点高度 ≥44px；
+  fail closed，维修队列与设备目录请求均为 0；主体 ID 缺失时列表、详情和设备目录请求也均为 0，
+  且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选与详情返回按钮实际触点高度 ≥44px；
   终态详情不提供写动作。报警行详情「去报修」后，从已确认创建回执取得强 `workOrderId`，在成功态
   点击真实“查看工单详情”入口并保留报警来源上下文，详情重新发起同一 principal 的 Self GET，
   同时回读设备目录位置。报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →

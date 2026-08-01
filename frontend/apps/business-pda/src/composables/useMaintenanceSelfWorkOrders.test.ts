@@ -13,6 +13,8 @@ const api = vi.hoisted(() => ({
   queryFactories: new Map<string, () => Record<string, unknown>>(),
   data: new Map<string, ShallowRef<unknown>>(),
   errors: new Map<string, ShallowRef<unknown>>(),
+  loading: new Map<string, ShallowRef<boolean>>(),
+  refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -43,13 +45,17 @@ vi.mock('@pinia/colada', () => ({
     api.queryFactories.set(id, factory)
     const data = shallowRef()
     const error = shallowRef()
+    const isLoading = shallowRef(false)
+    const refetch = vi.fn(async () => undefined)
     api.data.set(id, data)
     api.errors.set(id, error)
+    api.loading.set(id, isLoading)
+    api.refetches.set(id, refetch)
     return {
       data,
       error,
-      isLoading: shallowRef(false),
-      refetch: vi.fn(async () => undefined),
+      isLoading,
+      refetch,
     }
   }),
 }))
@@ -76,6 +82,20 @@ function requestFor(id: string) {
   return (options?.key as Array<{ request?: unknown }> | undefined)?.[0]?.request
 }
 
+function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
+  return {
+    workOrderId,
+    deviceAssetId,
+    priority: 'high',
+    status: 'accepted',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    version: 7,
+    allowedActions: [],
+    blockReasons: [],
+    lifecycle: [],
+  }
+}
+
 describe('useMaintenanceSelfWorkOrders', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -83,6 +103,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.queryFactories.clear()
     api.data.clear()
     api.errors.clear()
+    api.loading.clear()
+    api.refetches.clear()
   })
 
   it('suppresses the personal queue when principal scope or read permission is unavailable', () => {
@@ -212,6 +234,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     api.queryFactories.clear()
     api.data.clear()
     api.errors.clear()
+    api.loading.clear()
+    api.refetches.clear()
   })
 
   it('revalidates the strong ID with the authenticated self scope', () => {
@@ -248,7 +272,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       },
     }
     await nextTick()
-    expect(result.workOrder.value?.workOrderId).toBe('WO-DETAIL')
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.pending.value).toBe(true)
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
@@ -270,7 +295,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
   })
 
-  it('binds device lookup to scope and requested stable ID, rejecting code matches and late old responses', async () => {
+  it('treats the authoritative device directory as part of aggregate detail state', async () => {
     seedPrincipal()
     const routeId = shallowRef('WO-NEW')
     const result = useMaintenanceSelfWorkOrderDetail(routeId)
@@ -294,20 +319,11 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: {
-        workOrderId: 'WO-NEW',
-        deviceAssetId: 'device-new',
-        priority: 'high',
-        status: 'accepted',
-        openedAtUtc: '2026-08-02T01:00:00.000Z',
-        version: 1,
-        allowedActions: [],
-        blockReasons: [],
-        lifecycle: [],
-      },
+      data: authoritativeDetail('WO-NEW', 'device-new'),
     }
     await nextTick()
-    expect(result.workOrder.value?.workOrderId).toBe('WO-NEW')
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.pending.value).toBe(true)
     expect(requestFor('device-directory')).toEqual({
       query: {
         organizationId: 'org-001',
@@ -335,6 +351,28 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+
+    api.data.get('device-directory')!.value = undefined
+    api.errors.get('device-directory')!.value = { status: 403 }
+    await nextTick()
+    expect(result.device.value).toBeUndefined()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.error.value).toEqual({ status: 403 })
+
+    api.errors.get('device-directory')!.value = undefined
+    api.data.get('device-directory')!.value = { success: false, data: { resources: [] } }
+    await nextTick()
+    expect(result.hasFailedResponse.value).toBe(true)
+
+    api.data.get('device-directory')!.value = {
+      success: true,
+      data: { resources: [], total: 0 },
+    }
+    await nextTick()
+    expect(result.hasFailedResponse.value).toBe(true)
 
     api.data.get('device-directory')!.value = {
       success: true,
@@ -348,6 +386,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
 
     api.data.get('device-directory')!.value = {
       success: true,
@@ -370,24 +410,26 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       displayName: '一号数控机床',
       workshopCode: 'WS-1',
     })
+    expect(result.workOrder.value?.workOrderId).toBe('WO-NEW')
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.hasFailedResponse.value).toBe(false)
+
+    api.errors.get('maintenance-detail')!.value = { status: 403 }
+    await nextTick()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.device.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    api.errors.get('maintenance-detail')!.value = undefined
 
     routeId.value = 'WO-LATEST'
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: {
-        workOrderId: 'WO-LATEST',
-        deviceAssetId: 'device-latest',
-        priority: 'medium',
-        status: 'open',
-        openedAtUtc: '2026-08-02T02:00:00.000Z',
-        version: 2,
-        allowedActions: [],
-        blockReasons: [],
-        lifecycle: [],
-      },
+      data: authoritativeDetail('WO-LATEST', 'device-latest'),
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.pending.value).toBe(true)
 
     api.data.get('device-directory')!.value = {
       success: true,
@@ -403,5 +445,39 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+  })
+
+  it('retries the work order first and then the newly resolved device directory', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-DETAIL', 'device-1'),
+    }
+    await nextTick()
+
+    const calls: string[] = []
+    api.refetches.get('maintenance-detail')!.mockImplementation(async () => {
+      calls.push('work-order')
+    })
+    api.refetches.get('device-directory')!.mockImplementation(async () => {
+      calls.push('device')
+    })
+
+    await result.refresh()
+
+    expect(calls).toEqual(['work-order', 'device'])
+
+    calls.length = 0
+    api.refetches.get('maintenance-detail')!.mockImplementation(async () => {
+      calls.push('work-order')
+      api.errors.get('maintenance-detail')!.value = { status: 403 }
+    })
+
+    await result.refresh()
+
+    expect(calls).toEqual(['work-order'])
   })
 })

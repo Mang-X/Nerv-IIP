@@ -16,6 +16,7 @@ import {
   completePendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 import {
   useListFreshness,
   useListResponseState,
@@ -90,10 +91,8 @@ export function useBusinessMaintenance() {
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const loginName = computed(() => auth.principal?.loginName ?? '')
   const permissionCodes = computed(() => new Set(auth.principal?.permissionCodes ?? []))
-  const canReadWorkOrderDetail = computed(
-    () =>
-      permissionCodes.value.has('business.maintenance.work-orders.read') &&
-      permissionCodes.value.has('business.masterdata.resources.read'),
+  const canReadWorkOrderDetail = computed(() =>
+    canAccessMaintenanceWorkOrderReadModel(permissionCodes.value),
   )
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
   const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)

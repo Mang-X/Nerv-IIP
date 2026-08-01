@@ -20,11 +20,13 @@ import {
   useScopeBoundListResponse,
 } from './useListFreshness'
 import { useTaskListPagination } from './useTaskListPagination'
+import {
+  MAINTENANCE_READ_MODEL_PERMISSIONS,
+  canAccessMaintenanceWorkOrderReadModel,
+} from '@/permissions/maintenanceReadModelAccess'
 import { useAuthStore } from '@/stores/auth'
 
 const PAGE_SIZE = 20
-const MAINTENANCE_READ_PERMISSION = 'business.maintenance.work-orders.read'
-const DEVICE_READ_PERMISSION = 'business.masterdata.resources.read'
 
 type WorkOrderListEnvelope =
   | {
@@ -109,9 +111,13 @@ function useMaintenanceSelfScope() {
   const environmentId = computed(() => auth.principal?.environmentId?.trim() ?? '')
   const principalId = computed(() => auth.principal?.principalId?.trim() ?? '')
   const permissions = computed(() => new Set(auth.principal?.permissionCodes ?? []))
-  const canReadMaintenance = computed(() => permissions.value.has(MAINTENANCE_READ_PERMISSION))
-  const canReadDevice = computed(() => permissions.value.has(DEVICE_READ_PERMISSION))
-  const canRead = computed(() => canReadMaintenance.value && canReadDevice.value)
+  const canReadMaintenance = computed(() =>
+    permissions.value.has(MAINTENANCE_READ_MODEL_PERMISSIONS.workOrders),
+  )
+  const canReadDevice = computed(() =>
+    permissions.value.has(MAINTENANCE_READ_MODEL_PERMISSIONS.masterDataResources),
+  )
+  const canRead = computed(() => canAccessMaintenanceWorkOrderReadModel(permissions.value))
   const scopeReady = computed(
     () =>
       Boolean(organizationId.value && environmentId.value && principalId.value) && canRead.value,
@@ -253,13 +259,13 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     enabled: enabled.value,
   }))
   const detailEnvelope = computed(() => detailQuery.data.value as WorkOrderDetailEnvelope)
-  const workOrder = computed(() => {
+  const validatedWorkOrder = computed(() => {
     const envelope = detailEnvelope.value
     const item = envelope?.success === true ? envelope.data : undefined
     return isAuthoritativeMaintenanceWorkOrderDetail(item, workOrderId.value) ? item : undefined
   })
 
-  const deviceAssetId = computed(() => workOrder.value?.deviceAssetId?.trim() ?? '')
+  const deviceAssetId = computed(() => validatedWorkOrder.value?.deviceAssetId?.trim() ?? '')
   const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
   const deviceIdentity = computed(() =>
     deviceEnabled.value ? `${scope.scopeKey.value}:device:${deviceAssetId.value}` : '',
@@ -282,7 +288,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     deviceIdentity,
     deviceEnabled,
   )
-  const device = computed<BusinessConsoleResourceItem | undefined>(() => {
+  const validatedDevice = computed<BusinessConsoleResourceItem | undefined>(() => {
     const envelope = deviceResponse.value
     if (envelope?.success !== true) return undefined
     const exactItems = (envelope.data?.resources ?? []).filter(
@@ -293,14 +299,50 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     )
     return exactItems.length === 1 ? exactItems[0] : undefined
   })
-  const hasSuccessfulResponse = computed(() => Boolean(workOrder.value))
+  const deviceResponseAvailable = computed(() => deviceResponse.value !== undefined)
+  const hasSuccessfulResponse = computed(() =>
+    Boolean(
+      validatedWorkOrder.value &&
+      validatedDevice.value &&
+      !detailQuery.error.value &&
+      !deviceQuery.error.value,
+    ),
+  )
+  const workOrder = computed(() =>
+    hasSuccessfulResponse.value ? validatedWorkOrder.value : undefined,
+  )
+  const device = computed(() => (hasSuccessfulResponse.value ? validatedDevice.value : undefined))
+  const pending = computed(
+    () =>
+      enabled.value &&
+      (detailQuery.isLoading.value ||
+        Boolean(
+          !detailQuery.error.value &&
+          validatedWorkOrder.value &&
+          (deviceQuery.isLoading.value ||
+            (!deviceResponseAvailable.value && !deviceQuery.error.value)),
+        )),
+  )
   const hasFailedResponse = computed(
     () =>
       enabled.value &&
-      !detailQuery.isLoading.value &&
+      !pending.value &&
       (Boolean(detailQuery.error.value) ||
-        (detailEnvelope.value !== undefined && !hasSuccessfulResponse.value)),
+        (detailEnvelope.value !== undefined && !validatedWorkOrder.value) ||
+        Boolean(
+          validatedWorkOrder.value &&
+          (deviceQuery.error.value || (deviceResponseAvailable.value && !validatedDevice.value)),
+        )),
   )
+  const error = computed(() => detailQuery.error.value ?? deviceQuery.error.value)
+
+  const refresh = async () => {
+    if (!enabled.value) return
+    await detailQuery.refetch()
+    if (validatedWorkOrder.value && !detailQuery.error.value && deviceEnabled.value) {
+      await deviceQuery.refetch()
+    }
+  }
 
   return {
     ...scope,
@@ -309,10 +351,10 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     workOrder,
     device,
     canReadDevice: scope.canReadDevice,
-    pending: detailQuery.isLoading,
-    error: detailQuery.error,
+    pending,
+    error,
     hasSuccessfulResponse,
     hasFailedResponse,
-    refresh: () => (enabled.value ? detailQuery.refetch() : Promise.resolve()),
+    refresh,
   }
 }

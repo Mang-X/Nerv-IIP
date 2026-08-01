@@ -5,6 +5,7 @@ import { computed } from 'vue'
 
 import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
 import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/useWorkbenchHome'
+import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 
 definePage({ meta: { requiresAuth: true, title: '任务' } })
 
@@ -12,10 +13,7 @@ const identity = usePdaIdentity()
 const canSeeMesOperations = computed(() => identity.can(HOME_PERMISSIONS.mesOperations))
 const canSeeQualitySelfTasks = computed(() => identity.can(HOME_PERMISSIONS.quality))
 const canSeeMaintenanceSelfQueue = computed(() =>
-  Boolean(
-    identity.can(HOME_PERMISSIONS.maintenanceWorkOrders) &&
-    identity.can(HOME_PERMISSIONS.masterDataResources),
-  ),
+  canAccessMaintenanceWorkOrderReadModel(identity.permissionCodes.value),
 )
 const warehouseEntrances = computed(() => {
   const entries: Array<{ title: string; note: string; route: string }> = []
