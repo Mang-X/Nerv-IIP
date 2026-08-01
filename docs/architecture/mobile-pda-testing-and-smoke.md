@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 39 个用例）
+### e2e spec 清单（6 个 spec / 43 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -58,6 +58,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
   上下限校验、触点 ≥44px、无横向溢出。**拍照取证已裁剪至 #924**（本 PR 无拍照 UI）。
+- `e2e/quality.spec.ts`（4）：质检任务服务端筛选、领取、逐特性录入、两段回读（task/record 强 ID）与 403/409/422 错误提示稳定渲染。375×812 下完整覆盖服务端筛选（状态/来源类型/来源服务/关键字/超期条件）→ 领取 → 数字键盘逐特性录入 → 提交 → 按 `inspectionTaskId` 回读 → 按 `inspectionRecordId` 回读权威 passed 结果；以及领取越权（403）、生命周期冲突（409）、已被领取（422）错误时稳定文案提示并留在列表。
 
 ## 2. 运行命令
 
