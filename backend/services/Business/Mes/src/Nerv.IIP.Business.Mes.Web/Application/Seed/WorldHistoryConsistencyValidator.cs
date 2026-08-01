@@ -45,6 +45,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         var reports = await LoadReportTotalsAsync(organizationId, environmentId, cancellationToken);
         var receipts = await LoadReceiptsAsync(organizationId, environmentId, cancellationToken);
         var kitting = await LoadKittingCountsAsync(organizationId, environmentId, cancellationToken);
+        var kittingGaps = await LoadKittingGapsAsync(organizationId, environmentId, cancellationToken);
 
         var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(-1);
         var upperBound = new DateTimeOffset(asOfDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero).AddDays(1);
@@ -62,6 +63,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
             CheckWorkOrder(workOrderId, workOrder, taskCounts, reports, receipts, kitting, lowerBound, upperBound, failures);
         }
+
+        CheckMaterialShortageDistribution(workOrders, kittingGaps, failures);
 
         if (failures.Count > 0)
         {
@@ -651,6 +654,126 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, x => x.Count, StringComparer.Ordinal);
 
+    private async Task<KittingGap[]> LoadKittingGapsAsync(
+        string organizationId, string environmentId, CancellationToken cancellationToken) =>
+        await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.WorkOrderId.StartsWith("WO-2026-"))
+            .Select(x => new KittingGap(
+                x.WorkOrderId,
+                x.MaterialId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity))
+            .ToArrayAsync(cancellationToken);
+
+    #endregion
+
+    #region 齐套缺口分布（#1408）
+
+    /// <summary>
+    /// 齐套缺口分布的 fail-closed 校验。
+    ///
+    /// <para>
+    /// #1384 解开开工门禁时把可用/已备料一律写满需求量，全世界零缺口——「缺料 → MRP 采购建议
+    /// → 请购 → 采购订单 → 收货 → 入库 → 齐套转绿 → 开工」这条链因此没有起点（#1408）。
+    /// 现在两条演示路径**必须同时成立**，这里就把两条都钉死：
+    /// </para>
+    /// <list type="number">
+    /// <item>缺口只许出现在「已下达待开工」档。在制 / 已完工的工单一旦缺料，
+    ///       逐工序开工会被物料门禁拦死，#1384 的成果当场丢失。</item>
+    /// <item>已下达档必须**同时**有齐套单与缺料单，且缺料里必须有一张「整料没有」的严重档——
+    ///       演示配方点名的三类对象缺一个，配方就落空。</item>
+    /// </list>
+    /// <para>
+    /// 只数条数（旧断言）证明不了任何一条：条数恰恰是这两种翻车都不改变的量。
+    /// </para>
+    /// </summary>
+    private static void CheckMaterialShortageDistribution(
+        Dictionary<string, WorkOrderProjection> workOrders,
+        KittingGap[] gaps,
+        List<string> failures)
+    {
+        var shortageByWorkOrder = gaps
+            .GroupBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new
+                {
+                    Shortage = group.Sum(x => Math.Max(0m, x.RequiredQuantity - x.AvailableQuantity - x.StagedQuantity)),
+                    HasWholeMaterialGap = group.Any(x => x.AvailableQuantity + x.StagedQuantity <= 0m),
+                },
+                StringComparer.Ordinal);
+
+        var releasedShortage = 0;
+        var releasedKitted = 0;
+        var releasedWholeMaterialGap = 0;
+        var executedShortage = new List<string>();
+
+        foreach (var (workOrderId, workOrder) in workOrders)
+        {
+            if (!shortageByWorkOrder.TryGetValue(workOrderId, out var gap))
+            {
+                continue;
+            }
+
+            var isReleasedOnly = string.Equals(workOrder.Status, WorkOrder.ReleasedStatus, StringComparison.Ordinal);
+            if (!isReleasedOnly)
+            {
+                if (gap.Shortage > QuantityTolerance)
+                {
+                    executedShortage.Add(workOrderId);
+                }
+
+                continue;
+            }
+
+            if (gap.Shortage > QuantityTolerance)
+            {
+                releasedShortage++;
+                if (gap.HasWholeMaterialGap)
+                {
+                    releasedWholeMaterialGap++;
+                }
+            }
+            else
+            {
+                releasedKitted++;
+            }
+        }
+
+        if (executedShortage.Count > 0)
+        {
+            failures.Add(
+                $"{executedShortage.Count} 张已开工/已完工工单带齐套缺口" +
+                $"（{string.Join('、', executedShortage.Order(StringComparer.Ordinal).Take(5))}…）——" +
+                "缺口只许留在「已下达待开工」档，否则逐工序开工演示会被物料门禁拦死（#1384）。");
+        }
+
+        // 配额块保证的是「每个完整块里四档齐全」。已下达队列不足一个整块时（<c>Scale</c> 极小的
+        // 快速验证），块内洗牌完全可能连着抽到同一档——那是纵深不足，不是分布错误，不追究。
+        // 演示用的全量 <c>Scale=1.0</c> 有近百张已下达单，必然跨多个整块。
+        if (releasedShortage + releasedKitted < WorldHistoryMesSpec.MaterialShortageQuotaBlockSize)
+        {
+            return;
+        }
+
+        if (releasedKitted == 0)
+        {
+            failures.Add("已下达待开工的工单全部缺料——「齐套即可开工」这条演示路径没有对象（#1408）。");
+        }
+
+        if (releasedShortage == 0)
+        {
+            failures.Add("已下达待开工的工单一张缺料都没有——采购链演示失去起点（#1408）。");
+        }
+        else if (releasedWholeMaterialGap == 0)
+        {
+            failures.Add("缺料工单里没有一张「整料没有」的严重档——完整采购历程演示缺对象（#1408）。");
+        }
+    }
+
     #endregion
 
     private static IReadOnlyList<string> BuildSample(
@@ -710,6 +833,14 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         string? MaterialRequirementSnapshotProductionVersionId);
 
     private sealed record TaskCounts(string WorkOrderId, int Total, int Completed, int DispatchGaps);
+
+    /// <summary>一条齐套需求行的缺口原料（缺口 = 需求 − 线边可用 − 已备料，见 #1408）。</summary>
+    private sealed record KittingGap(
+        string WorkOrderId,
+        string MaterialId,
+        decimal RequiredQuantity,
+        decimal AvailableQuantity,
+        decimal StagedQuantity);
 
     private sealed record ReportTotals(
         string WorkOrderId,

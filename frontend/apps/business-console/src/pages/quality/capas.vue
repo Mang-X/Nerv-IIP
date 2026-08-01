@@ -11,6 +11,7 @@ import {
   type QualityCapaItem,
 } from '@/composables/useBusinessQualityLedgers'
 import { usePagedList } from '@/composables/usePagedList'
+import { useQualityReadFaceCatalog } from '@/composables/useQualityPickerCatalog'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
@@ -117,6 +118,7 @@ const detailCapa = computed<QualityCapaItem | undefined>(
   () => capaDetail.value ?? selectedCapa.value,
 )
 const detailActions = computed<QualityCapaActionItem[]>(() => detailCapa.value?.actions ?? [])
+const { ncrCodeById, workerLabelById } = useQualityReadFaceCatalog()
 const detailErrorMessage = computed(() =>
   capaDetailError.value
     ? friendlyErrorMessage(capaDetailError.value, '纠正措施详情加载失败，请稍后重试。')
@@ -136,16 +138,28 @@ function actionProgress(row: QualityCapaItem) {
   return `${row.completedActionCount ?? 0} / ${row.actionCount ?? 0}`
 }
 
+function sourceNcrLabel(row: QualityCapaItem) {
+  const code = row.sourceNcrCode?.trim()
+  if (code) return code
+  const id = row.sourceNcrId?.trim()
+  return (id ? ncrCodeById.value.get(id) : undefined) ?? '—'
+}
+
+function workerLabel(userId: string | null | undefined, fallback = '未指派') {
+  const id = userId?.trim()
+  return (id ? workerLabelById.value.get(id) : undefined) ?? fallback
+}
+
 const columns: NvDataTableColumn<QualityCapaItem>[] = [
   {
     key: 'capaCode',
     header: 'CAPA 单号',
     cellClass: 'font-medium',
-    accessor: (row) => row.capaCode?.trim() || row.correctiveActionId || '未知',
+    accessor: (row) => row.capaCode?.trim() || '未编号',
   },
-  { key: 'sourceNcrId', header: '来源 NCR', accessor: (row) => row.sourceNcrId?.trim() || '无' },
+  { key: 'sourceNcrId', header: '来源 NCR', accessor: sourceNcrLabel },
   { key: 'rootCause', header: '根本原因', accessor: (row) => row.rootCause?.trim() || '待分析' },
-  { key: 'ownerUserId', header: '负责人', accessor: (row) => row.ownerUserId?.trim() || '未指派' },
+  { key: 'ownerUserId', header: '负责人', accessor: (row) => workerLabel(row.ownerUserId) },
   { key: 'dueAtUtc', header: '到期', width: 'w-32', accessor: (row) => formatDate(row.dueAtUtc) },
   { key: 'status', header: '状态', width: 'w-32' },
   { key: 'progress', header: '措施进度', align: 'end', width: 'w-28', accessor: actionProgress },
@@ -164,7 +178,7 @@ const actionColumns: NvDataTableColumn<QualityCapaActionItem>[] = [
     header: '措施内容',
     accessor: (row) => row.description?.trim() || '未填写',
   },
-  { key: 'ownerUserId', header: '负责人', accessor: (row) => row.ownerUserId?.trim() || '未指派' },
+  { key: 'ownerUserId', header: '负责人', accessor: (row) => workerLabel(row.ownerUserId) },
   { key: 'dueAtUtc', header: '到期', width: 'w-28', accessor: (row) => formatDate(row.dueAtUtc) },
   { key: 'status', header: '状态', width: 'w-24' },
 ]
@@ -319,7 +333,11 @@ function actionRowKey(row: QualityCapaActionItem) {
           </NvSheetDescription>
         </NvSheetHeader>
 
-        <div class="grid content-start gap-4 px-4 pb-4">
+        <!-- `grid-cols-1` 把隐式的 auto 轨道换成 `minmax(0,1fr)`；`[&>*]:min-w-0` 解掉栅格子项
+             默认的 `min-width:auto`。两者缺一，8D 措施明细那张 5 列表格就会按「内容最小宽」
+             把整块内容撑到 780px —— 抽屉只有 512px，右侧 285px 溢出到视口外（#1418）。
+             钉住之后表格在自带的 overflow-auto 里横向滚动，抽屉本身不再被顶破。 -->
+        <div class="grid grid-cols-1 content-start gap-4 px-4 pb-4 [&>*]:min-w-0">
           <p
             v-if="detailErrorMessage"
             class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
@@ -356,11 +374,11 @@ function actionRowKey(row: QualityCapaActionItem) {
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">来源 NCR</dt>
-                <dd class="mt-1 text-sm">{{ detailCapa.sourceNcrId?.trim() || '无' }}</dd>
+                <dd class="mt-1 text-sm">{{ sourceNcrLabel(detailCapa) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">负责人</dt>
-                <dd class="mt-1 text-sm">{{ detailCapa.ownerUserId?.trim() || '未指派' }}</dd>
+                <dd class="mt-1 text-sm">{{ workerLabel(detailCapa.ownerUserId) }}</dd>
               </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">到期</dt>
@@ -382,7 +400,7 @@ function actionRowKey(row: QualityCapaActionItem) {
               </div>
             </dl>
 
-            <section class="grid gap-2">
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
               <h3 class="text-sm font-semibold text-foreground">8D 措施明细</h3>
               <NvDataTable
                 :columns="actionColumns"
@@ -406,7 +424,7 @@ function actionRowKey(row: QualityCapaActionItem) {
               </NvDataTable>
             </section>
 
-            <section class="grid gap-2">
+            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
               <h3 class="text-sm font-semibold text-foreground">效果验证与关单</h3>
               <dl class="grid gap-3 sm:grid-cols-2">
                 <div class="rounded-lg border bg-card p-3 sm:col-span-2">
@@ -418,7 +436,7 @@ function actionRowKey(row: QualityCapaActionItem) {
                 <div class="rounded-lg border bg-card p-3">
                   <dt class="text-xs text-muted-foreground">验证人</dt>
                   <dd class="mt-1 text-sm">
-                    {{ detailCapa.effectivenessVerifiedByUserId?.trim() || '无' }}
+                    {{ workerLabel(detailCapa.effectivenessVerifiedByUserId, '—') }}
                   </dd>
                 </div>
                 <div class="rounded-lg border bg-card p-3">
@@ -429,7 +447,7 @@ function actionRowKey(row: QualityCapaActionItem) {
                 </div>
                 <div class="rounded-lg border bg-card p-3">
                   <dt class="text-xs text-muted-foreground">关单人</dt>
-                  <dd class="mt-1 text-sm">{{ detailCapa.closedByUserId?.trim() || '无' }}</dd>
+                  <dd class="mt-1 text-sm">{{ workerLabel(detailCapa.closedByUserId, '—') }}</dd>
                 </div>
                 <div class="rounded-lg border bg-card p-3">
                   <dt class="text-xs text-muted-foreground">关单时间</dt>

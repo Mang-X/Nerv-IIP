@@ -355,7 +355,7 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         EnsureExpectedVersion(expectedVersion);
         EnsureStatus(WarehouseTaskStatus.InProgress);
         EnsureManualActor(actorUserId);
-        EnsureProgress(executedQuantity);
+        EnsureCompletionQuantity(executedQuantity);
         var completedBy = WmsText.Required(actorUserId, nameof(actorUserId));
         var normalizedReason = WmsText.Optional(completionReason);
         if (TaskType != WarehouseTaskType.Picking && executedQuantity != PlannedQuantity)
@@ -364,10 +364,12 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         }
 
         if (TaskType == WarehouseTaskType.Picking
-            && executedQuantity < PlannedQuantity
+            && executedQuantity != PlannedQuantity
             && normalizedReason is null)
         {
-            throw new ArgumentException("A completion reason is required for a picking difference.", nameof(completionReason));
+            throw new ArgumentException(
+                $"拣货任务 {TaskNo} 的实拣数量与计划量不一致，必须填写差异原因。请说明短拣或超拣原因后重试。",
+                nameof(completionReason));
         }
 
         ExecutedQuantity = executedQuantity;
@@ -453,6 +455,42 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         if (executedQuantity < ExecutedQuantity)
         {
             throw new InvalidOperationException("Warehouse task progress cannot regress.");
+        }
+    }
+
+    private void EnsureCompletionQuantity(decimal executedQuantity)
+    {
+        if (executedQuantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(executedQuantity),
+                executedQuantity,
+                $"仓库任务 {TaskNo} 的实作数量不能为负数。请填写不小于 0 的实作数量后重试。");
+        }
+
+        if (TaskType == WarehouseTaskType.Picking)
+        {
+            var maximumQuantity = PlannedQuantity * 1.1m;
+            if (executedQuantity > maximumQuantity)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "pickingOverLimit",
+                    executedQuantity,
+                    $"拣货任务 {TaskNo} 的实拣数量 {executedQuantity} 超过计划量 {PlannedQuantity} 的 110% 上限 {maximumQuantity}。请调整实拣数量；如计划确需增加，请先调整出库计划后重试。");
+            }
+        }
+        else if (executedQuantity > PlannedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(executedQuantity),
+                executedQuantity,
+                $"仓库任务 {TaskNo} 的实作数量不能超过计划量 {PlannedQuantity}。请调整实作数量后重试。");
+        }
+
+        if (executedQuantity < ExecutedQuantity)
+        {
+            throw new InvalidOperationException(
+                $"仓库任务 {TaskNo} 的实作数量不能低于已登记数量 {ExecutedQuantity}。请核对现场数量后重试。");
         }
     }
 

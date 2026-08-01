@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
-import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWipSummary } from '@/composables/useBusinessMes'
 import {
   mesOperationTaskStatusOptions,
   useMesReferenceLabels,
@@ -83,7 +83,8 @@ function progressRatio(row: WipRow) {
   return Math.min(1, Math.max(0, (row.goodQuantity ?? 0) / planned))
 }
 function readinessList(reasons?: string[] | null) {
-  return (reasons ?? []).map(describeMesReadinessReason)
+  // 合并同码：同一工序两条「物料缺料」要并成一条并点名缺哪几项（#1418）。
+  return describeMesReadinessReasons(reasons)
 }
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId

@@ -82,6 +82,19 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
 }
 
 vi.mock('@/composables/useBusinessErp', () => ({
+  // AR/AP 与成本候选的 KPI 卡改用全库口径的财务摘要（#1418 B5），页面因此多了这路依赖。
+  useErpFinanceSummary: () => ({
+    ready: computed(() => true),
+    summary: computed(() => ({
+      openReceivableAmount: 14_853_060,
+      openPayableAmount: 3_458_646.25,
+      costCandidateAmount: 1_387_052.5,
+      postedVoucherCount: 5590,
+    })),
+    summaryError: shallowRef(undefined),
+    summaryPending: shallowRef(false),
+    refreshSummary: vi.fn(),
+  }),
   useErpReceivables: () => ({
     ...listShape(() => state.receivables),
     createReceivable: vi.fn(),

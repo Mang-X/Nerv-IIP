@@ -38,8 +38,11 @@ public static class WmsUnprocessableReasonCodes
     /// <summary>出库单有明细行没有对应的终态拣货任务。</summary>
     public const string OutboundLinePickingTaskMissing = "outbound-line-picking-task-missing";
 
-    /// <summary>拣货数量少于计划量，必须填写差异原因。</summary>
+    /// <summary>拣货数量与计划量不一致，必须填写差异原因。</summary>
     public const string PickingDifferenceReasonRequired = "picking-difference-reason-required";
+
+    /// <summary>实拣数量超过计划量的 110% 硬上限。</summary>
+    public const string PickingOverLimit = "picking-over-limit";
 
     /// <summary>执行数量超出计划量或为负。</summary>
     public const string ExecutedQuantityOutOfRange = "executed-quantity-out-of-range";
@@ -55,6 +58,7 @@ public static class WmsUnprocessableReasonCodes
         exception.ParamName switch
         {
             "completionReason" => PickingDifferenceReasonRequired,
+            "pickingOverLimit" => PickingOverLimit,
             "executedQuantity" => ExecutedQuantityOutOfRange,
             _ => WmsUnprocessableException.SafeCode,
         };

@@ -8,6 +8,7 @@ import type {
   BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { formatDateTime } from '@/utils/format'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -276,11 +277,8 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
     .join('，')
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
+// 本地日期一律走 `@/utils/format` 的「YYYY-MM-DD HH:mm」。裸 `toLocaleString()` 跟的是
+// **浏览器 UI 语言**，装英文系统的机器上排程明细里满屏 `1/5/2026, 8:00:00 AM`（#1418）。
 
 function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]) {
   const timestamps = assignments
@@ -292,7 +290,7 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
 
   if (timestamps.length === 0) return '无'
 
-  return `${timestamps[0]!.toLocaleString()} 至 ${timestamps[timestamps.length - 1]!.toLocaleString()}`
+  return `${formatDateTime(timestamps[0]!.toISOString())} 至 ${formatDateTime(timestamps[timestamps.length - 1]!.toISOString())}`
 }
 
 function openDetail(planId: string | undefined) {
@@ -950,7 +948,10 @@ function reasonLabel(reason?: string | null) {
                 :tone="schedulingPlanStatusTone(planDetail.status)"
               />
             </div>
-            <div class="grid gap-3 sm:grid-cols-5">
+            <!-- 6 个指标塞进 5 列：第 6 个「负荷分钟」必然孤悬到第二行独占一格，而 1/5 的
+                 列宽又装不下「设备状态未知工序」这种 7 字标签，只能断行并贴到格子边缘
+                 （#1418）。改 3 列 × 2 行：列宽翻倍，长标签一行放得下，也不再有落单格子。 -->
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <p class="text-xs text-muted-foreground">资源数</p>
                 <p class="text-sm font-medium text-foreground">{{ selectedResourceCount }}</p>
@@ -1033,6 +1034,7 @@ function reasonLabel(reason?: string | null) {
                         ? orderUrgencies.byReference.value.get(assignment.orderId)
                         : undefined
                     "
+                    :source-unavailable="orderUrgencies.error?.value != null"
                     @refresh="refreshUrgency"
                   />
                 </div>

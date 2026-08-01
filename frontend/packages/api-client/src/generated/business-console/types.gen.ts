@@ -7287,6 +7287,40 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     idempotencyKey?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchableDirectoryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryResponse = {
+    directoryType?: string;
+    status?: string;
+    reasonCode?: string | null;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryItem>;
+    total?: number;
+    sourceService?: string;
+    authorityDirectoryType?: string;
+    rankingMode?: string;
+    rankingStatus?: string;
+    rankingReasonCode?: string | null;
+    fallbackOrdering?: string | null;
+    ordering?: string;
+    orderingExplanation?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryItem = {
+    id?: string;
+    displayName?: string;
+    code?: string | null;
+    sourceService?: string;
+    context?: {
+        [key: string]: string | null;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchableDirectoryRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeRuleListResponse | null;
 };
@@ -11537,6 +11571,7 @@ export type ListBusinessConsoleQualityReasonCodesData = {
         groupName?: string | null;
         skip?: number;
         take?: number;
+        defaultDisposition?: string | null;
     };
     url: '/api/business-console/v1/quality/reason-codes';
 };
@@ -15922,6 +15957,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         shiftCode?: string | null;
         userId?: string | null;
         skillCode?: string | null;
+        workshopCode?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };
@@ -20194,6 +20230,53 @@ export type UnshelveBusinessConsoleEquipmentAlarmResponses = {
 };
 
 export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessConsoleEquipmentAlarmResponses[keyof UnshelveBusinessConsoleEquipmentAlarmResponses];
+
+export type ListBusinessConsoleSearchableDirectoryData = {
+    body?: never;
+    path: {
+        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason';
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        scopeKind?: 'team' | 'workshop' | 'work-center' | 'site';
+        scopeId?: string | null;
+        skuCode?: string | null;
+        pageIndex?: number;
+        pageSize?: number;
+        rankingMode?: 'default' | 'recent' | 'suggested';
+    };
+    url: '/api/business-console/v1/directories/{directoryType}';
+};
+
+export type ListBusinessConsoleSearchableDirectoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleSearchableDirectoryError = ListBusinessConsoleSearchableDirectoryErrors[keyof ListBusinessConsoleSearchableDirectoryErrors];
+
+export type ListBusinessConsoleSearchableDirectoryResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchableDirectoryResponse;
+};
+
+export type ListBusinessConsoleSearchableDirectoryResponse = ListBusinessConsoleSearchableDirectoryResponses[keyof ListBusinessConsoleSearchableDirectoryResponses];
 
 export type ListBusinessConsoleBarcodeRulesData = {
     body?: never;

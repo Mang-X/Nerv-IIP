@@ -1196,18 +1196,48 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
     tip.style.display = 'block'
     // pointermove 高频:把位置写入合并到每帧一次 rAF(避免每个事件都触发合成),用 translate 定位(GPU 层,不触发 layout)。
-    this.tipPendingX = e.clientX + 14
-    this.tipPendingY = e.clientY + 18
+    // 这里存的是**指针原始坐标**,偏移与边界翻转都留到 rAF 里算 —— 那时 tip 已完成布局,
+    // 才量得到真实尺寸。
+    this.tipPendingX = e.clientX
+    this.tipPendingY = e.clientY
     if (!this.tipRaf) {
       this.tipRaf = requestAnimationFrame(() => {
         this.tipRaf = 0
         const el = this.tipEl
         if (!el || el.style.display === 'none') return
-        el.style.transform = `translate(${Math.round(this.tipPendingX)}px, ${Math.round(this.tipPendingY)}px)`
+        el.style.transform = this.tipTransform(el)
         // 首帧就位后再淡入(display:none → block 时 transition 不生效,需分帧)。
         if (el.style.opacity !== '1') el.style.opacity = '1'
       })
     }
+  }
+
+  /**
+   * tooltip 的落位。默认摆在指针右下方,但**贴近视口右/下边缘时翻到另一侧**——
+   * 此前无条件 `指针 + (14, 18)`,鼠标停在甘特底部一行时 tooltip 直接被视口下边切掉,
+   * 正好是信息最密的那几行(#1418)。
+   *
+   * 翻转而不是简单夹取:夹到边上会让 tooltip 盖住指针下的任务条,反而挡住要看的东西。
+   * 翻转后若仍装不下(tooltip 比视口还高)再夹进边距,保证至少从顶部开始可读。
+   */
+  private tipTransform(el: HTMLElement): string {
+    const GAP_X = 14
+    const GAP_Y = 18
+    const MARGIN = 8
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    let x = this.tipPendingX + GAP_X
+    if (x + w > vw - MARGIN) x = this.tipPendingX - GAP_X - w
+    x = Math.max(MARGIN, Math.min(x, vw - MARGIN - w))
+
+    let y = this.tipPendingY + GAP_Y
+    if (y + h > vh - MARGIN) y = this.tipPendingY - GAP_Y - h
+    y = Math.max(MARGIN, Math.min(y, vh - MARGIN - h))
+
+    return `translate(${Math.round(x)}px, ${Math.round(y)}px)`
   }
 
   private hideTip(): void {
