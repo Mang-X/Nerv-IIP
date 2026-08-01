@@ -1140,7 +1140,9 @@ internal static class WarehouseTaskActionExecution
         }
         catch (ArgumentException exception)
         {
-            throw new WmsUnprocessableException(exception.Message);
+            throw new WmsUnprocessableException(
+                exception.Message,
+                WmsUnprocessableReasonCodes.FromWarehouseTaskArgument(exception));
         }
         catch (InvalidOperationException)
         {
@@ -1489,7 +1491,8 @@ public sealed class CompleteOutboundOrderCommandHandler
         if (!request.Passed)
         {
             throw new WmsUnprocessableException(
-                "Outbound order cannot complete when pack review failed.");
+                "Outbound order cannot complete when pack review failed.",
+                WmsUnprocessableReasonCodes.OutboundPackReviewNotPassed);
         }
 
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
@@ -1578,7 +1581,13 @@ public sealed class CompleteOutboundOrderCommandHandler
                 && string.IsNullOrWhiteSpace(x.CompletionReason)))
         {
             throw new WmsUnprocessableException(
-                "Outbound order requires terminal picking task execution facts with a persisted difference reason before pack review.");
+                "Outbound order requires terminal picking task execution facts with a persisted difference reason before pack review.",
+                taskExecutions.Length == 0
+                    ? WmsUnprocessableReasonCodes.OutboundPickingTaskMissing
+                    : taskExecutions.Any(x =>
+                        x.Status is not (WarehouseTaskStatus.Completed or WarehouseTaskStatus.CompletedWithDifference))
+                        ? WmsUnprocessableReasonCodes.OutboundPickingNotCompleted
+                        : WmsUnprocessableReasonCodes.OutboundPickingDifferenceReasonMissing);
         }
 
         var executedQuantities = taskExecutions
@@ -1590,7 +1599,8 @@ public sealed class CompleteOutboundOrderCommandHandler
         if (outbound.Lines.Any(line => !executedQuantities.ContainsKey(line.LineNo)))
         {
             throw new WmsUnprocessableException(
-                "Every outbound order line requires a terminal picking task execution fact before pack review.");
+                "Every outbound order line requires a terminal picking task execution fact before pack review.",
+                WmsUnprocessableReasonCodes.OutboundLinePickingTaskMissing);
         }
 
         return executedQuantities;
