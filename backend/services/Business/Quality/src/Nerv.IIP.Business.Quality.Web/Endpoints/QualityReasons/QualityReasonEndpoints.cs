@@ -13,7 +13,8 @@ public sealed record ListQualityReasonsRequest(
     string? Search,
     string? GroupName,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DefaultDisposition = null);
 
 public sealed record GetQualityReasonRequest(
     string OrganizationId,
@@ -61,7 +62,8 @@ public sealed class ListQualityReasonsEndpoint(ISender sender)
             req.Search,
             req.GroupName,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.DefaultDisposition), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

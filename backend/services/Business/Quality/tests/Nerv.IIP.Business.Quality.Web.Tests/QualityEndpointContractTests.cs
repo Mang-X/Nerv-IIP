@@ -134,6 +134,11 @@ public sealed class QualityEndpointContractTests
         Assert.Equal("QR-SCRATCH", item.ReasonCode);
         Assert.Equal("minor", item.Severity);
 
+        var scrap = await new ListQualityReasonsQueryHandler(dbContext).Handle(
+            new ListQualityReasonsQuery("org-001", "env-dev", Enabled: true, DefaultDisposition: "scrap"),
+            CancellationToken.None);
+        Assert.Empty(scrap.Items);
+
         var detail = await new GetQualityReasonQueryHandler(dbContext).Handle(
             new GetQualityReasonQuery("org-001", "env-dev", "QR-SCRATCH"),
             CancellationToken.None);
