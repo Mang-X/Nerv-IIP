@@ -39,19 +39,55 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             throw new KnownException($"Scheduling workbench requires between 1 and {SchedulingWorkbenchLimits.MaxOrderCount} distinct work orders.");
         }
 
-        var firstPage = await ListWorkOrdersAsync(organizationId, environmentId, 0, cancellationToken);
+        // 只翻「可排状态」的工单页:终态工单(closed/completed/...)占了 MES 工单表的绝大多数,
+        // 且按 DueUtc 升序排在最前,不过滤就得顺序翻过几千行历史关单才够到在制工单,
+        // 单次生成方案会超过网关的下游超时线(#1400)。
+        var firstPage = await ListWorkOrdersAsync(organizationId, environmentId, 0, SchedulableStatusesCsv, cancellationToken);
         var byId = firstPage.Items.ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
         var requestedIds = requested.Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
-        for (var skip = SchedulingWorkbenchLimits.MaxOrderCount;
+        for (var skip = SchedulingWorkbenchLimits.AuthoritativePageSize;
              skip < firstPage.Total && !requestedIds.IsSubsetOf(byId.Keys);
-             skip += SchedulingWorkbenchLimits.MaxOrderCount)
+             skip += SchedulingWorkbenchLimits.AuthoritativePageSize)
         {
-            var page = await ListWorkOrdersAsync(organizationId, environmentId, skip, cancellationToken);
+            var page = await ListWorkOrdersAsync(organizationId, environmentId, skip, SchedulableStatusesCsv, cancellationToken);
             foreach (var item in page.Items)
             {
                 byId.TryAdd(item.WorkOrderId, item);
             }
         }
+
+        // 可排状态页里找不到的工单,再按 id 定向查一次:这样才能把「工单不存在」和
+        // 「工单存在但已终态」区分开,保住原有的两种报错语义。
+        var unresolved = requested
+            .Where(x => !byId.ContainsKey(x.WorkOrderId))
+            .Select(x => x.WorkOrderId)
+            .ToArray();
+        if (unresolved.Length > 0)
+        {
+            // 与同目录另两个 provider 一致地限流扇出:勾选 500 个终态工单是合法输入,
+            // 串行回查会退化成 500 次往返。
+            using var throttler = new SemaphoreSlim(MaxConcurrentMesLookups);
+            var exactMatches = await Task.WhenAll(unresolved.Select(async workOrderId =>
+            {
+                await throttler.WaitAsync(cancellationToken);
+                try
+                {
+                    return await FindWorkOrderByIdAsync(organizationId, environmentId, workOrderId, cancellationToken);
+                }
+                finally
+                {
+                    throttler.Release();
+                }
+            }));
+            foreach (var exact in exactMatches)
+            {
+                if (exact is not null)
+                {
+                    byId.TryAdd(exact.WorkOrderId, exact);
+                }
+            }
+        }
+
         var missing = requested.Where(x => !byId.ContainsKey(x.WorkOrderId)).Select(x => x.WorkOrderId).ToArray();
         if (missing.Length > 0)
         {
@@ -112,17 +148,37 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         }).ToArray();
     }
 
+    private async Task<MesWorkOrderItem?> FindWorkOrderByIdAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var page = await ListWorkOrdersAsync(
+            organizationId,
+            environmentId,
+            0,
+            statuses: null,
+            cancellationToken,
+            workOrderId: workOrderId);
+        return page.Items.FirstOrDefault(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal));
+    }
+
     private async Task<MesWorkOrderListResponse> ListWorkOrdersAsync(
         string organizationId,
         string environmentId,
         int skip,
-        CancellationToken cancellationToken)
+        string? statuses,
+        CancellationToken cancellationToken,
+        string? workOrderId = null)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/business/v1/mes/work-orders?" + SchedulingProblemHttp.Query(
                 ("organizationId", organizationId),
                 ("environmentId", environmentId),
+                ("statuses", statuses),
+                ("workOrderId", workOrderId),
                 ("skip", skip),
                 ("take", SchedulingWorkbenchLimits.MaxOrderCount)));
         var bearerToken = internalTokenProvider?.BearerToken;
@@ -176,6 +232,14 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
     {
         "completed", "closed", "cancelled", "canceled", "scrapped"
     };
+
+    private const int MaxConcurrentMesLookups = 8;
+
+    // TerminalStatuses 的补集,用来把候选翻页收敛到在制工单。两者必须同源:
+    // 新增一个终态而这里不同步,会让该状态的工单被当成可排候选翻出来。
+    private static readonly string SchedulableStatusesCsv = string.Join(
+        ',',
+        "created", "released", "started", "hold");
 
     private sealed record MesWorkOrderListResponse(IReadOnlyCollection<MesWorkOrderItem> Items, int Total);
     private sealed record MesWorkOrderItem(

@@ -66,10 +66,12 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
-    public async Task Source_provider_accepts_one_authoritative_batch_of_100_distinct_work_orders()
+    public async Task Source_provider_accepts_a_batch_up_to_the_selection_limit()
     {
         var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
-        var orders = Enumerable.Range(1, 100).Select(index => new
+        // 跟随选单上限而不是写死数字：上限受网关超时约束、会随性能调整而变，
+        // 写死会让「上限调整」与「本用例」互相牵制。
+        var orders = Enumerable.Range(1, SchedulingWorkbenchLimits.MaxOrderCount).Select(index => new
         {
             workOrderId = $"WO-{index:000}",
             skuId = "SKU-001",
@@ -94,8 +96,10 @@ public sealed class SchedulingWorkbenchTests
             orders.Select((x, index) => new SchedulingWorkbenchOrderSelection(x.workOrderId, index, index == 0)).ToArray(),
             CancellationToken.None);
 
-        Assert.Equal(100, result.Count);
-        Assert.Equal(100, result.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(SchedulingWorkbenchLimits.MaxOrderCount, result.Count);
+        Assert.Equal(
+            SchedulingWorkbenchLimits.MaxOrderCount,
+            result.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal("ROUTE-001:A", result.First().RoutingVersionId);
         Assert.True(result.First().IsRush);
     }
@@ -182,6 +186,60 @@ public sealed class SchedulingWorkbenchTests
 
         Assert.Equal(2, requests);
         Assert.Equal("WO-501", Assert.Single(result).OrderId);
+    }
+
+    /// <summary>
+    /// #1400:候选翻页必须先按「可排状态」收敛。MES 工单表里终态工单占绝大多数且按交期
+    /// 排在最前,不带 statuses 过滤就要顺序翻过几千行历史关单才够到在制工单,单次生成方案
+    /// 会超过网关的下游超时线。这里锁死过滤条件真的出现在下游 query 上。
+    /// </summary>
+    [Fact]
+    public async Task Source_provider_narrows_candidate_pages_to_schedulable_statuses()
+    {
+        var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
+        var queries = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            queries.Add(request.RequestUri!.Query);
+            return Json(new { items = new[] { WorkOrder("WO-001", start) }, total = 1 });
+        });
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            new StubProductEngineeringClient());
+
+        var result = await provider.ResolveOrdersAsync(
+            "org-001", "env-dev", start, [new("WO-001", 10, false)], CancellationToken.None);
+
+        Assert.Equal("WO-001", Assert.Single(result).OrderId);
+        var query = Assert.Single(queries);
+        Assert.Contains("statuses=created%2Creleased%2Cstarted%2Chold", query, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #1400 的另一半:按可排状态过滤后就查不到终态工单了,所以「工单已终态」这条报错
+    /// 必须靠一次按 id 的定向回查保住,不能退化成「工单不存在」。
+    /// </summary>
+    [Fact]
+    public async Task Source_provider_still_reports_a_terminal_order_as_terminal()
+    {
+        var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
+        var handler = new StubHandler(request =>
+        {
+            var query = request.RequestUri!.Query;
+            // 可排状态页里没有它;只有按 id 定向查时才返回,且状态是 closed。
+            var items = query.Contains("workOrderId=WO-900", StringComparison.Ordinal)
+                ? new[] { WorkOrder("WO-900", start, status: "closed") }
+                : Array.Empty<object>();
+            return Json(new { items, total = items.Length });
+        });
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") },
+            new StubProductEngineeringClient());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.ResolveOrdersAsync(
+            "org-001", "env-dev", start, [new("WO-900", 10, false)], CancellationToken.None));
+
+        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -420,7 +478,7 @@ public sealed class SchedulingWorkbenchTests
         Content = new StringContent(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json")
     };
 
-    private static object WorkOrder(string workOrderId, DateTimeOffset start) => new
+    private static object WorkOrder(string workOrderId, DateTimeOffset start, string status = "released") => new
     {
         workOrderId,
         skuId = "SKU-001",
@@ -429,7 +487,7 @@ public sealed class SchedulingWorkbenchTests
         quantity = 1,
         priority = 10,
         dueUtc = start.AddDays(1),
-        status = "released",
+        status,
         workOrderNo = workOrderId,
         operationTasks = new[] { new { earliestStartUtc = start } },
     };
