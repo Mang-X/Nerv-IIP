@@ -129,6 +129,7 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
       organizationId: 'org-001',
       environmentId: 'env-dev',
       openedBy: 'operator01',
+      idempotencyKey: expect.any(String),
     },
   ])
 })

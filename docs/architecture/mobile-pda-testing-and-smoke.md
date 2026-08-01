@@ -12,6 +12,9 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 
 1. **jsdom 单元/组件测试**（`vp test run src`）
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
+   - 本工作台补充覆盖：任务页不发起伪个人 MES 查询、`workOrderId + operationTaskId` 强 ID 深链、
+     Profile loading/error/partial/ready、WMS 授权/当前选择、远端登出撤销成功/失败/超时，以及
+     工序页同组件 query 切换的旧对象清理、单边/越权 pair fail closed，以及 `NvCell` 的动作语义回归。
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
 2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
@@ -19,22 +22,25 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
-   - 覆盖：登录→首页真实流程、首页扫码条/应用墙/我的任务空态、`@nerv-iip/ui-mobile` 全部 5 个组件
+   - 覆盖：登录→首页真实流程、首页扫码条/权限应用墙且无伪个人任务、固定四入口跨页、个人中心与退出，`@nerv-iip/ui-mobile` 全部 5 个组件
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 29 个用例）
+### e2e spec 清单（5 个 spec / 33 个用例）
 
-- `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
-  首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
-  首页扫码 type+Enter 页内回显、不跳死路由。
+- `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
+  首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
+  `a[href]` 提供可读名称、focus-visible、Enter 原生导航及 Space 保持链接语义；应用墙入口跳转作业页；
+  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心，
+  核验可读角色与范围、键盘 Tab 焦点可见；退出清理 PDA 会话并回登录。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
 - `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
   拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
-- `e2e/mes.spec.ts`（7）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果并
+- `e2e/mes.spec.ts`（8）：工序执行完成（二次确认）→ 成功结果；工序执行同组件 query push 与
+  浏览器 back/forward 始终关闭旧 sheet 并只打开当前 `workOrderId + operationTaskId`；报工全链 → 成功结果并
   核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
   pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
   以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染；首页应用墙

@@ -9,6 +9,7 @@ import {
 import { useWmsWorkScope } from './useWmsWorkScope'
 
 const catalogData = vi.hoisted(() => ({ value: undefined as unknown }))
+const lastQueryOptions = vi.hoisted(() => ({ value: undefined as unknown }))
 const authState = vi.hoisted(() => ({
   principal: {
     principalId: 'session-principal',
@@ -43,6 +44,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((factory) => {
     const options = factory()
+    lastQueryOptions.value = options
     return {
       data: catalogData,
       isLoading: shallowRef(false),
@@ -114,6 +116,12 @@ describe('useWmsWorkScope', () => {
     expect(scope.scopeKind.value).toBe('self')
     expect(scope.scopeId.value).toBe('emp049')
     expect(scope.hasSelection.value).toBe(true)
+  })
+
+  it('allows a profile consumer to suppress catalogs outside the current permission set', () => {
+    useWmsWorkScope('receipts', shallowRef(false))
+
+    expect(lastQueryOptions.value).toMatchObject({ enabled: false })
   })
 
   it('切换作业池或站点时只输出目录授权的 kind/id', () => {

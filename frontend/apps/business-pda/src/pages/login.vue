@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth'
 import { sanitizeRedirectPath } from '@nerv-iip/business-core'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -19,6 +19,15 @@ const loginName = ref('')
 const password = ref('')
 const error = ref('')
 const submitting = ref(false)
+const logoutNotice = computed(() => {
+  if (route.query.logout === 'failed') {
+    return '网络不可用，当前设备已退出，但服务器会话撤销失败。'
+  }
+  if (route.query.logout === 'timed-out') {
+    return '服务器会话撤销超时，当前设备已安全退出。'
+  }
+  return ''
+})
 
 async function onSubmit() {
   if (submitting.value) return
@@ -44,6 +53,14 @@ async function onSubmit() {
       <h1 class="text-2xl font-semibold text-foreground">Nerv-IIP 手持作业台</h1>
       <p class="mt-1 text-sm text-muted-foreground">请登录以开始作业</p>
     </div>
+
+    <p
+      v-if="logoutNotice"
+      class="mb-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground"
+      role="status"
+    >
+      {{ logoutNotice }}
+    </p>
 
     <form class="space-y-4" @submit.prevent="onSubmit">
       <input

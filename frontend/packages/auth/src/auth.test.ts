@@ -202,6 +202,34 @@ describe('auth store factory', () => {
     expect(auth.isAuthenticated).toBe(false)
     expect(localStorage.getItem('nerv-iip.test.auth')).toBeNull()
   })
+
+  it('offers an explicit bounded logout that reports revoke success, failure, and timeout', async () => {
+    const { api, client } = createApi()
+    const useAuthStore = createAuthStore({
+      api,
+      messages,
+      storageKey: 'nerv-iip.test.auth',
+      storeId: 'test-auth',
+    })
+    client.loginConsoleUser.mockResolvedValue({ data: { success: true, data: session } })
+    const auth = useAuthStore()
+
+    client.logoutConsoleSession.mockResolvedValueOnce({})
+    await auth.login('admin', 'secret')
+    await expect(auth.logoutAndRevoke({ timeoutMs: 20 })).resolves.toEqual({ status: 'revoked' })
+    expect(auth.isAuthenticated).toBe(false)
+
+    client.logoutConsoleSession.mockRejectedValueOnce(new TypeError('offline'))
+    await auth.login('admin', 'secret')
+    await expect(auth.logoutAndRevoke({ timeoutMs: 20 })).resolves.toEqual({ status: 'failed' })
+    expect(auth.isAuthenticated).toBe(false)
+
+    client.logoutConsoleSession.mockReturnValueOnce(new Promise(() => undefined))
+    await auth.login('admin', 'secret')
+    await expect(auth.logoutAndRevoke({ timeoutMs: 1 })).resolves.toEqual({ status: 'timed-out' })
+    expect(auth.isAuthenticated).toBe(false)
+    expect(localStorage.getItem('nerv-iip.test.auth')).toBeNull()
+  })
 })
 
 describe('auth route helpers', () => {
