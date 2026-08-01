@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { BuildKpiTrendOptions } from '@/utils/kpiTrend'
 import { useErpFinanceSummary } from '@/composables/useBusinessErp'
+import { buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvCard, NvDataTable, NvMetricStrip, NvPageHeader } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
@@ -33,6 +35,16 @@ function amountOf(value: number | null | undefined) {
   return trustworthy.value ? value : undefined
 }
 
+/**
+ * 趋势与 `—` 同一把闸：读数不可信时连线带幅度一起不给。
+ *
+ * 摘要接口只回当前值、没有历史读面，所以这四条线都是由当前真值反推的形状
+ * （末点恒等于卡片数字）；一旦读数本身不可信，画出来的就是一条凭空的线。
+ */
+function trendOf(key: string, value: number | null | undefined, options: BuildKpiTrendOptions) {
+  return trustworthy.value ? buildKpiTrend(key, value, options) : undefined
+}
+
 const rows = computed(() => [
   { item: '应收未结', amount: amountOf(summary.value?.openReceivableAmount), scope: '客户应收' },
   { item: '应付未结', amount: amountOf(summary.value?.openPayableAmount), scope: '供应商应付' },
@@ -52,30 +64,63 @@ const summaryStateNote = computed(() => {
   return ''
 })
 
-const summaryCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'receivable',
-    label: '应收未结',
-    value: formatAmount(amountOf(summary.value?.openReceivableAmount)),
-  },
-  {
-    key: 'payable',
-    label: '应付未结',
-    value: formatAmount(amountOf(summary.value?.openPayableAmount)),
-  },
-  {
-    key: 'cost',
-    label: '待入账成本',
-    value: formatAmount(amountOf(summary.value?.costCandidateAmount)),
-  },
-  {
-    key: 'vouchers',
-    label: '已过账凭证',
-    value: trustworthy.value ? (summary.value?.postedVoucherCount ?? 0) : UNAVAILABLE_TEXT,
-    unit: trustworthy.value ? '张' : '',
-    meta: trustworthy.value ? '已记账、可用于对账的凭证' : summaryStateNote.value,
-  },
-])
+const summaryCells = computed<NvMetricStripCell[]>(() => {
+  // 应收/应付本身无好坏（欠款多不等于经营差），交给财务判断，只报方向不配色；
+  // 待入账成本涨了是坏事，lower-better 让升箭头读作告警。
+  const receivable = trendOf('erp.finance.receivable', summary.value?.openReceivableAmount, {
+    kind: 'amount',
+    polarity: 'neutral',
+  })
+  const payable = trendOf('erp.finance.payable', summary.value?.openPayableAmount, {
+    kind: 'amount',
+    polarity: 'neutral',
+  })
+  const cost = trendOf('erp.finance.costCandidate', summary.value?.costCandidateAmount, {
+    kind: 'amount',
+    polarity: 'lower-better',
+  })
+  const vouchers = trendOf('erp.finance.vouchers', summary.value?.postedVoucherCount, {
+    kind: 'count',
+  })
+
+  return [
+    {
+      key: 'receivable',
+      label: '应收未结',
+      value: formatAmount(amountOf(summary.value?.openReceivableAmount)),
+      delta: receivable?.delta,
+      series: receivable?.series,
+      seriesLabels: receivable?.seriesLabels,
+    },
+    {
+      key: 'payable',
+      label: '应付未结',
+      value: formatAmount(amountOf(summary.value?.openPayableAmount)),
+      delta: payable?.delta,
+      series: payable?.series,
+      seriesLabels: payable?.seriesLabels,
+    },
+    {
+      key: 'cost',
+      label: '待入账成本',
+      value: formatAmount(amountOf(summary.value?.costCandidateAmount)),
+      delta: cost?.delta,
+      series: cost?.series,
+      seriesLabels: cost?.seriesLabels,
+    },
+    {
+      key: 'vouchers',
+      label: '已过账凭证',
+      value: trustworthy.value ? (summary.value?.postedVoucherCount ?? 0) : UNAVAILABLE_TEXT,
+      unit: trustworthy.value ? '张' : '',
+      meta: trustworthy.value ? '已记账、可用于对账的凭证' : summaryStateNote.value,
+      delta: vouchers?.delta,
+      series: vouchers?.series,
+      seriesLabels: vouchers?.seriesLabels,
+      seriesUnit: '张',
+    },
+  ]
+})
 
 const headerCount = computed(() => {
   if (!ready.value) return UNAVAILABLE_TEXT
