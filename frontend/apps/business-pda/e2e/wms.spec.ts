@@ -1,5 +1,45 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { routeBusinessConsoleApi, routeConsoleApi, seedStoredSession } from './fixtures'
+
+async function expectTaskSheetKeyboardOverlay(
+  page: Page,
+  input: { route: '/wms/pick' | '/wms/putaway'; heading: '拣货' | '上架'; taskNo: string },
+) {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto(input.route)
+
+  expect(await page.viewportSize()).toEqual({ width: 375, height: 812 })
+  await expect(page.getByRole('heading', { name: input.heading })).toBeVisible()
+
+  await page.locator(`[data-task-no="${input.taskNo}"]`).click()
+  const sheet = page.locator('[data-slot="mobile-sheet-content"]')
+  const quantity = page.getByTestId('executed-quantity')
+  const keyboard = page.locator('[data-slot="number-keyboard"]')
+
+  await expect(sheet).toBeVisible()
+  await quantity.click()
+  await expect(keyboard).toBeVisible()
+
+  await keyboard.getByRole('button', { name: '7', exact: true }).click()
+  await keyboard.getByRole('button', { name: '删除' }).click()
+  await page
+    .locator('[data-mobile-overlay-layer="input-backdrop"]')
+    .click({ position: { x: 8, y: 8 } })
+  await expect(keyboard).toHaveCount(0)
+  await expect(sheet).toBeVisible()
+
+  await quantity.click()
+  await keyboard.getByRole('button', { name: '8', exact: true }).click()
+  await keyboard.getByRole('button', { name: '完成' }).click()
+  await expect(keyboard).toHaveCount(0)
+  await expect(sheet).toBeVisible()
+
+  await quantity.click()
+  await expect(keyboard).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
+  await expect(keyboard).toHaveCount(0)
+}
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/console/v1/**', routeConsoleApi)
@@ -120,6 +160,22 @@ test('拣货 read-only: task PK-1 shows Chinese status (no raw code / GUID)', as
   const body = await page.locator('body').innerText()
   expect(body).not.toContain('pending')
   expect(body).not.toContain('wt-pk-1')
+})
+
+test('拣货: 375x812 task sheet keeps open for real number-keyboard clicks', async ({ page }) => {
+  await expectTaskSheetKeyboardOverlay(page, {
+    route: '/wms/pick',
+    heading: '拣货',
+    taskNo: 'PK-EXEC-1',
+  })
+})
+
+test('上架: 375x812 task sheet keeps open for real number-keyboard clicks', async ({ page }) => {
+  await expectTaskSheetKeyboardOverlay(page, {
+    route: '/wms/putaway',
+    heading: '上架',
+    taskNo: 'PA-EXEC-1',
+  })
 })
 
 test('home wall → 收货入库 navigates to /wms/inbound', async ({ page }) => {
