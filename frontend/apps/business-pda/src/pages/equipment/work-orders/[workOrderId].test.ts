@@ -1,18 +1,17 @@
-import type {
-  BusinessConsoleMaintenanceWorkOrderItem,
-  BusinessConsoleResourceItem,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { mount } from '@vue/test-utils'
 import { shallowRef, type ComputedRef } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 
 const state = vi.hoisted(() => ({
   scopeReady: true,
   pending: false,
   failed: false,
   error: undefined as unknown,
-  workOrder: undefined as BusinessConsoleMaintenanceWorkOrderItem | undefined,
+  workOrder: undefined as AuthoritativeMaintenanceWorkOrderDetail | undefined,
   device: undefined as BusinessConsoleResourceItem | undefined,
   requestedId: undefined as ComputedRef<string> | undefined,
   refresh: vi.fn(),
@@ -34,6 +33,23 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
 }))
 
 import WorkOrderDetailPage from './[workOrderId].vue'
+
+function authoritativeWorkOrder(
+  overrides: Partial<AuthoritativeMaintenanceWorkOrderDetail> = {},
+): AuthoritativeMaintenanceWorkOrderDetail {
+  return {
+    workOrderId: 'WO-DETAIL',
+    deviceAssetId: 'device-1',
+    priority: 'medium',
+    status: 'open',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    version: 1,
+    allowedActions: [],
+    blockReasons: [],
+    lifecycle: [],
+    ...overrides,
+  }
+}
 
 async function mountPage(path = '/equipment/work-orders/WO-DETAIL') {
   const router = createRouter({
@@ -63,10 +79,8 @@ describe('maintenance work-order authoritative detail page', () => {
   })
 
   it('revalidates route context and renders every required authoritative read field', async () => {
-    state.workOrder = {
-      workOrderId: 'WO-DETAIL',
+    state.workOrder = authoritativeWorkOrder({
       sourceReferenceId: 'MWO-2026-0042',
-      deviceAssetId: 'device-1',
       priority: 'high',
       status: 'accepted',
       assignedTechnicianUserId: 'principal-1',
@@ -87,7 +101,7 @@ describe('maintenance work-order authoritative detail page', () => {
           occurredAtUtc: '2026-08-02T01:02:03.000Z',
         },
       ],
-    }
+    })
     state.device = {
       deviceAssetId: 'device-1',
       code: 'CNC-01',
@@ -106,7 +120,7 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
     expect(wrapper.text()).toContain('当前维修人员')
-    expect(wrapper.text()).toContain('班组信息已记录但不可解析')
+    expect(wrapper.text()).toContain('班组名称暂不可用')
     expect(wrapper.text()).toContain('操作人已记录')
     expect(wrapper.text()).toContain('来源：报警报修创建结果')
     expect(wrapper.text()).not.toContain('WO-DETAIL')
@@ -126,15 +140,11 @@ describe('maintenance work-order authoritative detail page', () => {
   it.each([
     [{}, '未指派维修人员'],
     [{ assignedTechnicianUserId: 'principal-1' }, '当前维修人员'],
-    [{ assignedTeamId: 'team-a' }, '未指派维修人员 · 班组信息已记录但不可解析'],
+    [{ assignedTeamId: 'team-a' }, '未指派维修人员 · 班组名称暂不可用'],
   ])('renders truthful self assignment without exposing identifiers', async (assignment, label) => {
-    state.workOrder = {
-      workOrderId: 'WO-DETAIL',
-      deviceAssetId: 'device-1',
-      status: 'open',
-      priority: 'medium',
+    state.workOrder = authoritativeWorkOrder({
       ...assignment,
-    }
+    })
 
     const wrapper = await mountPage()
 
@@ -144,22 +154,37 @@ describe('maintenance work-order authoritative detail page', () => {
   })
 
   it('shows a terminal work order as read-only even when stale actions are present', async () => {
-    state.workOrder = {
-      workOrderId: 'WO-DETAIL',
-      deviceAssetId: 'device-1',
+    state.workOrder = authoritativeWorkOrder({
       status: 'closed',
-      priority: 'medium',
       version: 12,
       allowedActions: ['start'],
       blockReasons: ['terminal-status'],
-      lifecycle: [],
-    }
+    })
 
     const wrapper = await mountPage()
 
     expect(wrapper.text()).toContain('终态只读')
     expect(wrapper.text()).toContain('工单已进入终态，仅可查看')
     expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
+  })
+
+  it('uses actionable account guidance when the detail cannot be queried', async () => {
+    state.scopeReady = false
+
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('当前账号暂无法查看，请重新登录或联系管理员')
+    for (const diagnostic of [
+      'Self',
+      '服务端',
+      '已授权',
+      '不可解析',
+      '未发起查询',
+      '组织/环境',
+      '读取权限',
+    ]) {
+      expect(wrapper.text()).not.toContain(diagnostic)
+    }
   })
 
   it('fails closed for forbidden, invalid, or unmatched IDs without rendering old detail', async () => {

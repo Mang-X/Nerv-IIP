@@ -50,6 +50,7 @@ const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkO
       variant="text"
       size="sm"
       block
+      class="min-h-touch"
       @click="deviceAssetId = ''"
     >
       清除设备筛选

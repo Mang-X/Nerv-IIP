@@ -32,12 +32,22 @@ const {
   error,
   lastUpdatedAt,
   hasSuccessfulResponse,
+  hasFailedResponse,
   filters,
 } = useMaintenanceSelfWorkOrders()
 const devicePickerOpen = shallowRef(false)
 const selectedDeviceLabel = shallowRef('')
+const displayError = computed(
+  () =>
+    error.value ?? (hasFailedResponse.value ? new Error('维修工单读取失败，请重试。') : undefined),
+)
+const visibleItems = computed(() => (hasFailedResponse.value ? [] : items.value))
+const visibleTotal = computed(() => (hasFailedResponse.value ? 0 : total.value))
+const visibleLoaded = computed(() => visibleItems.value.length)
+const visibleHasMore = computed(() => !hasFailedResponse.value && hasMore.value)
 const scopeLabel = computed(() => {
-  if (!scopeReady.value) return '个人维修范围未就绪'
+  if (!scopeReady.value) return '当前账号暂无法查看维修工单'
+  if (hasFailedResponse.value) return '维修工单暂不可用'
   if (hasSuccessfulResponse.value) return '分派给当前维修人员 / 当前业务环境'
   return '正在读取当前维修人员的工单'
 })
@@ -50,6 +60,10 @@ const filterState = computed(() => ({
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   filters.deviceAssetId = device.deviceAssetId
   selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'
+}
+
+function openDevicePicker() {
+  if (scopeReady.value) devicePickerOpen.value = true
 }
 
 function openDetail(item: BusinessConsoleMaintenanceWorkOrderItem) {
@@ -75,14 +89,14 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         :state-key="`maintenance-self-work-orders:${principalId}`"
         :scope="scopeLabel"
         source="维修工单"
-        :loaded="loaded"
-        :total="total"
-        :has-more="hasMore"
+        :loaded="visibleLoaded"
+        :total="visibleTotal"
+        :has-more="visibleHasMore"
         :updated-at="lastUpdatedAt"
         :pending="pending"
         :refreshing="refreshing"
         :loading-more="loadingMore"
-        :error="error"
+        :error="displayError"
         :load-more-error="loadMoreError"
         error-test-id="maintenance-self-work-orders-error"
         failure-explanation="未成功读取当前维修人员的工单，不展示之前的队列。"
@@ -90,7 +104,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         :empty-description="
           scopeReady
             ? '当前维修人员暂无符合筛选条件的维修工单。'
-            : '缺少当前维修人员、组织/环境、维修工单读取权限或设备位置读取权限，未发起查询。'
+            : '当前账号暂无法查看，请重新登录或联系管理员。'
         "
         @refresh="refresh"
         @retry="refresh"
@@ -104,14 +118,18 @@ function restoreState(state: { filters: Record<string, unknown> }) {
             v-model:device-asset-id="filters.deviceAssetId"
             v-model:keyword="filters.keyword"
             :device-label="selectedDeviceLabel"
-            @choose-device="devicePickerOpen = true"
+            @choose-device="openDevicePicker"
           />
         </template>
 
-        <MaintenanceWorkOrderList :items="items" @select="openDetail" />
+        <MaintenanceWorkOrderList :items="visibleItems" @select="openDetail" />
       </TaskListShell>
     </div>
 
-    <DeviceAssetPicker v-model:open="devicePickerOpen" @select="onDeviceSelected" />
+    <DeviceAssetPicker
+      v-if="scopeReady"
+      v-model:open="devicePickerOpen"
+      @select="onDeviceSelected"
+    />
   </NvAppShellMobile>
 </template>

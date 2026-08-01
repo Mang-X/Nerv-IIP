@@ -32,7 +32,13 @@ function backToList() {
   <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
-        <NvMobileButton variant="text" size="sm" aria-label="返回维修工单列表" @click="backToList">
+        <NvMobileButton
+          variant="text"
+          size="sm"
+          class="min-h-touch min-w-touch"
+          aria-label="返回维修工单列表"
+          @click="backToList"
+        >
           返回
         </NvMobileButton>
         <h1 class="text-lg font-semibold text-foreground">维修工单详情</h1>
@@ -44,9 +50,7 @@ function backToList() {
       class="m-4 rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center"
     >
       <h2 class="font-semibold text-foreground">工单不可查看</h2>
-      <p class="mt-2 text-sm text-muted-foreground">
-        当前维修人员、组织/环境、维修工单读取权限、设备位置读取权限或工单标识未就绪，未发起详情查询。
-      </p>
+      <p class="mt-2 text-sm text-muted-foreground">当前账号暂无法查看，请重新登录或联系管理员。</p>
     </div>
 
     <div v-else-if="pending && !workOrder" class="p-8 text-center text-sm text-muted-foreground">
@@ -59,7 +63,7 @@ function backToList() {
       <RetryableListError
         :error="error"
         :pending="pending"
-        fallback="工单详情校验失败，请重试。"
+        fallback="工单详情读取失败，请重试。"
         test-id="maintenance-work-order-detail-error"
         @retry="refresh"
       />

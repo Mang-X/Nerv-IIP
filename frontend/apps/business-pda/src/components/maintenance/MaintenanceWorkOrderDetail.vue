@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  BusinessConsoleMaintenanceWorkOrderItem,
   BusinessConsoleMasterDataResourceDetail,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
@@ -19,20 +18,21 @@ import {
   maintenanceDeviceLocation,
   maintenanceDeviceTitle,
 } from './maintenanceWorkOrderPresentation'
+import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 
 const props = defineProps<{
-  workOrder: BusinessConsoleMaintenanceWorkOrderItem
+  workOrder: AuthoritativeMaintenanceWorkOrderDetail
   device?: BusinessConsoleResourceItem | BusinessConsoleMasterDataResourceDetail
 }>()
 
 const terminal = computed(() => isMaintenanceTerminal(props.workOrder))
-const allowedActions = computed(() => props.workOrder.allowedActions ?? [])
-const blockReasons = computed(() => props.workOrder.blockReasons ?? [])
-const lifecycle = computed(() => props.workOrder.lifecycle ?? [])
+const allowedActions = computed(() => props.workOrder.allowedActions)
+const blockReasons = computed(() => props.workOrder.blockReasons)
+const lifecycle = computed(() => props.workOrder.lifecycle)
 const assignment = computed(() => {
   const parts = [
     props.workOrder.assignedTechnicianUserId ? '当前维修人员' : '未指派维修人员',
-    props.workOrder.assignedTeamId ? '班组信息已记录但不可解析' : undefined,
+    props.workOrder.assignedTeamId ? '班组名称暂不可用' : undefined,
   ].filter((part): part is string => Boolean(part))
   return parts.join(' · ')
 })
@@ -71,7 +71,7 @@ const assignment = computed(() => {
         <dt class="text-muted-foreground">指派</dt>
         <dd class="break-words text-foreground">{{ assignment }}</dd>
         <dt class="text-muted-foreground">版本</dt>
-        <dd class="text-foreground">版本 {{ workOrder.version ?? 0 }}</dd>
+        <dd class="text-foreground">版本 {{ workOrder.version }}</dd>
         <dt class="text-muted-foreground">开单时间</dt>
         <dd class="text-foreground">{{ formatMaintenanceDateTime(workOrder.openedAtUtc) }}</dd>
       </dl>
@@ -112,7 +112,7 @@ const assignment = computed(() => {
       <ol v-if="lifecycle.length" class="space-y-3">
         <li
           v-for="(event, index) in lifecycle"
-          :key="`${event.resultingVersion ?? index}:${event.occurredAtUtc ?? ''}`"
+          :key="`${event.resultingVersion}:${event.occurredAtUtc}:${index}`"
           class="border-l-2 border-brand/30 pl-3"
         >
           <p class="text-sm font-medium text-foreground">
@@ -124,7 +124,7 @@ const assignment = computed(() => {
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
             {{ event.actorPrincipalId ? '操作人已记录' : '操作人未记录' }} · 版本
-            {{ event.resultingVersion ?? '未记录' }} ·
+            {{ event.resultingVersion }} ·
             {{ formatMaintenanceDateTime(event.occurredAtUtc) }}
           </p>
         </li>

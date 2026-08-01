@@ -46,8 +46,61 @@ export interface MaintenanceSelfWorkOrderFilters {
   keyword: string
 }
 
-function normalized(value: string) {
+export type AuthoritativeMaintenanceWorkOrderDetail = BusinessConsoleMaintenanceWorkOrderItem & {
+  workOrderId: string
+  deviceAssetId: string
+  priority: string
+  status: string
+  openedAtUtc: string
+  version: number
+  allowedActions: string[]
+  blockReasons: string[]
+  lifecycle: NonNullable<BusinessConsoleMaintenanceWorkOrderItem['lifecycle']>
+}
+
+function trimToUndefined(value: string) {
   return value.trim() || undefined
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isValidVersion(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isAuthoritativeMaintenanceWorkOrderDetail(
+  value: BusinessConsoleMaintenanceWorkOrderItem | null | undefined,
+  requestedWorkOrderId: string,
+): value is AuthoritativeMaintenanceWorkOrderDetail {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    value.workOrderId === requestedWorkOrderId &&
+    isNonBlankString(value.deviceAssetId) &&
+    isNonBlankString(value.priority) &&
+    isNonBlankString(value.status) &&
+    isNonBlankString(value.openedAtUtc) &&
+    Number.isFinite(Date.parse(value.openedAtUtc)) &&
+    isValidVersion(value.version) &&
+    Array.isArray(value.allowedActions) &&
+    value.allowedActions.every(isNonBlankString) &&
+    Array.isArray(value.blockReasons) &&
+    value.blockReasons.every(isNonBlankString) &&
+    Array.isArray(value.lifecycle) &&
+    value.lifecycle.every(
+      (event) =>
+        event !== null &&
+        typeof event === 'object' &&
+        isNonBlankString(event.action) &&
+        isNonBlankString(event.fromStatus) &&
+        isNonBlankString(event.toStatus) &&
+        isValidVersion(event.resultingVersion) &&
+        isNonBlankString(event.occurredAtUtc) &&
+        Number.isFinite(Date.parse(event.occurredAtUtc)),
+    ),
+  )
 }
 
 function useMaintenanceSelfScope() {
@@ -98,9 +151,9 @@ export function useMaintenanceSelfWorkOrders() {
   })
   const listQueryParameters = () => ({
     ...scope.queryScope(),
-    status: normalized(normalizeMaintenanceWorkOrderStatusFilter(filters.status)),
-    deviceAssetId: normalized(filters.deviceAssetId),
-    keyword: normalized(filters.keyword),
+    status: trimToUndefined(normalizeMaintenanceWorkOrderStatusFilter(filters.status)),
+    deviceAssetId: trimToUndefined(filters.deviceAssetId),
+    keyword: trimToUndefined(filters.keyword),
   })
 
   const listQuery = useQuery(() => ({
@@ -157,14 +210,24 @@ export function useMaintenanceSelfWorkOrders() {
   })
   const freshness = useListFreshness(response, scope.scopeReady)
   const responseState = useListResponseState(response, scope.scopeReady, listQuery.isLoading)
+  const visibleItems = computed(() =>
+    responseState.hasFailedResponse.value ? [] : pager.items.value,
+  )
+  const visibleTotal = computed(() =>
+    responseState.hasFailedResponse.value ? 0 : pager.total.value,
+  )
+  const visibleLoaded = computed(() => visibleItems.value.length)
+  const visibleHasMore = computed(
+    () => !responseState.hasFailedResponse.value && pager.hasMore.value,
+  )
 
   return {
     ...scope,
     filters,
-    items: pager.items,
-    total: pager.total,
-    loaded: pager.loaded,
-    hasMore: pager.hasMore,
+    items: visibleItems,
+    total: visibleTotal,
+    loaded: visibleLoaded,
+    hasMore: visibleHasMore,
     loadingMore: pager.loadingMore,
     refreshing: pager.refreshing,
     loadMoreError: pager.loadMoreError,
@@ -193,7 +256,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const workOrder = computed(() => {
     const envelope = detailEnvelope.value
     const item = envelope?.success === true ? envelope.data : undefined
-    return item?.workOrderId === workOrderId.value ? item : undefined
+    return isAuthoritativeMaintenanceWorkOrderDetail(item, workOrderId.value) ? item : undefined
   })
 
   const deviceAssetId = computed(() => workOrder.value?.deviceAssetId?.trim() ?? '')

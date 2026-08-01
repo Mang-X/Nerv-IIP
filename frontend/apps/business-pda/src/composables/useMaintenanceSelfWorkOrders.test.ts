@@ -145,6 +145,28 @@ describe('useMaintenanceSelfWorkOrders', () => {
     })
   })
 
+  it('clears visible rows and reports failure for a rejected HTTP 200 envelope', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: { items: [{ workOrderId: 'STALE-WO' }], total: 1 },
+    }
+    await nextTick()
+    expect(result.items.value).toHaveLength(1)
+
+    api.data.get('maintenance-list')!.value = {
+      success: false,
+      data: { items: [{ workOrderId: 'BAD-WO' }], total: 1 },
+    }
+    await nextTick()
+
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.items.value).toEqual([])
+    expect(result.total.value).toBe(0)
+  })
+
   it('loads the next page with the same self scope and server filters', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
@@ -207,6 +229,47 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     })
   })
 
+  it('rejects and clears a matching-ID detail when authoritative fields are incomplete', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        workOrderId: 'WO-DETAIL',
+        deviceAssetId: 'device-1',
+        priority: 'high',
+        status: 'accepted',
+        openedAtUtc: '2026-08-02T01:00:00.000Z',
+        version: 7,
+        allowedActions: [],
+        blockReasons: [],
+        lifecycle: [],
+      },
+    }
+    await nextTick()
+    expect(result.workOrder.value?.workOrderId).toBe('WO-DETAIL')
+
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        workOrderId: 'WO-DETAIL',
+        deviceAssetId: 'device-1',
+        priority: 'high',
+        status: 'accepted',
+        openedAtUtc: '2026-08-02T01:00:00.000Z',
+        version: 7,
+        allowedActions: [],
+        blockReasons: [],
+      },
+    }
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
+  })
+
   it('binds device lookup to scope and requested stable ID, rejecting code matches and late old responses', async () => {
     seedPrincipal()
     const routeId = shallowRef('WO-NEW')
@@ -231,7 +294,17 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: { workOrderId: 'WO-NEW', deviceAssetId: 'device-new' },
+      data: {
+        workOrderId: 'WO-NEW',
+        deviceAssetId: 'device-new',
+        priority: 'high',
+        status: 'accepted',
+        openedAtUtc: '2026-08-02T01:00:00.000Z',
+        version: 1,
+        allowedActions: [],
+        blockReasons: [],
+        lifecycle: [],
+      },
     }
     await nextTick()
     expect(result.workOrder.value?.workOrderId).toBe('WO-NEW')
@@ -301,7 +374,17 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     routeId.value = 'WO-LATEST'
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: { workOrderId: 'WO-LATEST', deviceAssetId: 'device-latest' },
+      data: {
+        workOrderId: 'WO-LATEST',
+        deviceAssetId: 'device-latest',
+        priority: 'medium',
+        status: 'open',
+        openedAtUtc: '2026-08-02T02:00:00.000Z',
+        version: 2,
+        allowedActions: [],
+        blockReasons: [],
+        lifecycle: [],
+      },
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()

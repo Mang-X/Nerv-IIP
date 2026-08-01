@@ -10,6 +10,16 @@ import {
   session,
 } from './fixtures'
 
+async function expectMinimumTouchHeight(locator: Locator, minimum = 44) {
+  await expect(locator).toBeVisible()
+  const box = await locator.boundingBox()
+  expect(
+    box,
+    `missing touch box for ${await locator.evaluate((element) => element.outerHTML)}`,
+  ).not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(minimum)
+}
+
 // 网关 Mock + 已登录主体（含 org/env + loginName，见 fixtures.principal）。
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/console/v1/**', routeConsoleApi)
@@ -22,6 +32,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   const listRequests: URL[] = []
   const detailRequests: URL[] = []
   const deviceDirectoryRequests: URL[] = []
+  let rejectFirstListResponse = true
   page.on('request', (request) => {
     const url = new URL(request.url())
     if (url.pathname === '/api/business-console/v1/master-data/device-assets') {
@@ -61,6 +72,14 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     if (route.request().method() !== 'GET') return route.fallback()
     if (url.pathname === base) {
       listRequests.push(url)
+      if (rejectFirstListResponse) {
+        rejectFirstListResponse = false
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: false, message: '列表暂不可用', data: null }),
+        })
+      }
       const skip = Number(url.searchParams.get('skip') ?? 0)
       const take = Number(url.searchParams.get('take') ?? 20)
       return route.fulfill({
@@ -84,6 +103,12 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   })
 
   await page.goto('/equipment/work-orders')
+  await expect(page.getByTestId('maintenance-self-work-orders-error')).toContainText(
+    '维修工单读取失败，请重试',
+  )
+  await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(0)
+  await expect(page.getByText('当前维修人员暂无符合筛选条件的维修工单')).toHaveCount(0)
+  await page.getByTestId('retry-list').click()
   await expect(page.getByTestId('task-list-meta')).toContainText('已加载 20 / 共 25')
   expect(listRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(listRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
@@ -102,6 +127,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await page.getByRole('button', { name: '已接单', exact: true }).click()
   await page.getByTestId('maintenance-device-filter').click()
   await page.getByTestId('device-option-device-asset-cnc-01').click()
+  await expectMinimumTouchHeight(page.getByTestId('maintenance-device-clear'))
   await expect
     .poll(() => {
       const last = listRequests.at(-1)
@@ -132,15 +158,14 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
 
   await page.getByTestId('maintenance-work-order-row').first().click()
   await expect(page).toHaveURL('/equipment/work-orders/WO-SELF-1')
+  await expectMinimumTouchHeight(page.getByRole('button', { name: '返回维修工单列表' }))
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-9',
   )
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('当前维修人员')
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
-    '班组信息已记录但不可解析',
-  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('班组名称暂不可用')
   await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
   await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
     principal.principalId,
@@ -199,16 +224,20 @@ test('维修工单：缺少设备位置读取权限时不发请求且不声称�
   })
   const requests: string[] = []
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/api/business-console/v1/maintenance/work-orders') {
-      requests.push(request.url())
+    const pathname = new URL(request.url()).pathname
+    if (
+      pathname === '/api/business-console/v1/maintenance/work-orders' ||
+      pathname === '/api/business-console/v1/master-data/device-assets'
+    ) {
+      requests.push(pathname)
     }
   })
 
   await page.goto('/equipment/work-orders')
 
-  await expect(page.getByText('个人维修范围未就绪')).toBeVisible()
+  await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
   await expect(page.getByTestId('list-empty-explanation')).toContainText(
-    '缺少当前维修人员、组织/环境、维修工单读取权限或设备位置读取权限',
+    '当前账号暂无法查看，请重新登录或联系管理员',
   )
   await expect(page.getByText('我的维修工单')).toHaveCount(0)
   expect(requests).toEqual([])
@@ -233,6 +262,7 @@ test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看'
             deviceAssetId: 'device-asset-cnc-01',
             priority: 'medium',
             status: 'closed',
+            openedAtUtc: '2026-08-02T01:00:00.000Z',
             version: 12,
             allowedActions: ['start'],
             blockReasons: ['terminal-status'],
@@ -491,6 +521,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
             deviceAssetId: 'DEV-A',
             priority: 'high',
             status: 'open',
+            openedAtUtc: '2026-08-02T02:00:00.000Z',
             version: 1,
             allowedActions: ['accept'],
             blockReasons: [],
