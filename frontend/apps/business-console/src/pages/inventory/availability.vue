@@ -33,6 +33,7 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import {
   formatInventoryExpiryDate,
   formatInventoryExpirySource,
@@ -130,6 +131,7 @@ const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
 
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const contextWorkOrderLabel = computed(() => readFaceText(contextWorkOrderId.value, ''))
 watch(
   () => route.query,
   (query) => {
@@ -393,7 +395,7 @@ function locationLabelOf(line: { locationCode?: string | null }) {
 function ownerLabel(ownerType?: string | null, ownerId?: string | null) {
   const type = ownerType ? labelFor(STOCK_LEDGER_OWNER_TYPE_LABELS, ownerType, '未知货主类型') : ''
   if (!ownerId) return type || '无'
-  const partner = resolvePartner(ownerId) ?? ownerId
+  const partner = resolvePartner(ownerId) ?? '未解析货主'
   return type ? `${type} · ${partner}` : partner
 }
 function qualityStatusLabel(value?: string | null) {
@@ -488,9 +490,9 @@ async function refreshCurrentView() {
           效期预警（30天）
         </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
-            >返回工单 {{ contextWorkOrderId }}</RouterLink
-          >
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">
+            返回工单<span v-if="contextWorkOrderLabel"> {{ contextWorkOrderLabel }}</span>
+          </RouterLink>
         </NvButton>
         <NvButton
           size="sm"

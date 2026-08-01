@@ -27,6 +27,7 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { readFaceText } from '@/utils/readFace'
 import {
   inlineErrorMessage,
   notifyError,
@@ -135,6 +136,7 @@ const canReadInspectionRecords = computed(() =>
 )
 
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
+const workOrderLabel = computed(() => readFaceText(filters.workOrderId, '未编号工单'))
 // 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
 // 已释放周期保留在列表里，使强制释放后面板不卸载、释放时间/方式与时间线仍可见（issue 验收「时间线完整」）。
 const qualityHolds = computed(() =>
@@ -208,7 +210,7 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     key: 'operationTaskId',
     header: '任务',
     cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskId ?? '无',
+    accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -219,17 +221,16 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     width: 'w-16',
     accessor: (r) => r.operationSequence ?? 0,
   },
-  // 读面已回 *Name / *Code（见 MesOperationTaskRow），按「名称 → 编码 → 标识」三级回退，
-  // 与产能影响 / 停机页同一范式，不把内部标识摆到界面上。
+  // 读面已回 *Name / *Code（见 MesOperationTaskRow）；两者都缺时显占位，不回吐内部标识。
   {
     key: 'workCenterId',
     header: '工作中心',
-    accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无',
+    accessor: (r) => r.workCenterName?.trim() || r.workCenterCode?.trim() || '—',
   },
   {
     key: 'deviceAssetId',
     header: '设备',
-    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+    accessor: (r) => r.deviceAssetName?.trim() || r.deviceAssetCode?.trim() || '未指定',
   },
   { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
@@ -251,7 +252,11 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
     // 齐套读面只回物料标识，物料名在 SKU 主数据里；主数据缺就显编码，是 GUID 则不上屏。
     accessor: (r) => resolveSkuLabel(r.materialId),
   },
-  { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
+  {
+    key: 'materialLotId',
+    header: '批次',
+    accessor: (r) => readFaceText(r.materialLotId, '未指定'),
+  },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
   { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
@@ -292,7 +297,12 @@ function newMaterialIdempotencyKey(scope: string) {
 const materialIssueRows = computed(() => materialIssueRequests.value)
 type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
 const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
-  { key: 'requestId', header: '领料单', cellClass: 'font-medium' },
+  {
+    key: 'requestId',
+    header: '领料单',
+    cellClass: 'font-medium',
+    accessor: (r) => readFaceText(r.requestId),
+  },
   {
     key: 'materialId',
     header: '物料',
@@ -546,7 +556,7 @@ const canSubmitCancel = computed(() => {
 
 // 取消弹窗的只读上下文：全部来自当前工单详情，操作员只补原因与备注。
 const cancelContextItems = computed(() => [
-  { label: '工单', value: filters.workOrderId },
+  { label: '工单', value: workOrderLabel.value },
   { label: '状态', value: formatStatus(detail.value?.status) },
   { label: '物料', value: skuLabel.value },
   { label: '计划数量', value: formatQuantity(detail.value?.quantity) },
@@ -576,7 +586,7 @@ async function submitCancel() {
     cancelOpen.value = false
     resetCancelForm()
     notifySuccess(
-      `已取消工单 ${filters.workOrderId}：${releasedCount} 项预留释放、${returnCount} 项退料指引生成。`,
+      `已取消工单 ${workOrderLabel.value}：${releasedCount} 项预留释放、${returnCount} 项退料指引生成。`,
     )
   } catch (error) {
     if (
@@ -641,7 +651,7 @@ function formatError(error: unknown) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="`工单 ${filters.workOrderId}`"
+      :title="`工单 ${workOrderLabel}`"
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
@@ -735,7 +745,7 @@ function formatError(error: unknown) {
       v-if="scheduleOpen"
       v-model:open="scheduleOpen"
       :work-order-id="detail?.workOrderId ?? filters.workOrderId"
-      :context-label="`MES 工单 ${detail?.workOrderId ?? filters.workOrderId}`"
+      :context-label="`MES 工单 ${workOrderLabel}`"
     />
 
     <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->
@@ -997,7 +1007,9 @@ function formatError(error: unknown) {
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
         </template>
         <template #cell-wmsRequestId="{ row }">
-          <span v-if="row.wmsRequestId" class="font-medium">{{ row.wmsRequestId }}</span>
+          <span v-if="row.wmsRequestId" class="font-medium">{{
+            readFaceText(row.wmsRequestId)
+          }}</span>
           <span v-else class="text-xs text-muted-foreground">仓库尚未接单</span>
         </template>
         <template #cell-actions="{ row }">
@@ -1020,7 +1032,7 @@ function formatError(error: unknown) {
     <NvAlertDialog v-model:open="issueOpen">
       <NvAlertDialogContent class="sm:max-w-md">
         <NvAlertDialogHeader>
-          <NvAlertDialogTitle>发起领料 · {{ filters.workOrderId }}</NvAlertDialogTitle>
+          <NvAlertDialogTitle>发起领料 · {{ workOrderLabel }}</NvAlertDialogTitle>
           <NvAlertDialogDescription>
             领料发起后由仓库生成出库与拣货任务，出库单号回写到本页；物料到线边后再确认收料。
           </NvAlertDialogDescription>
@@ -1086,7 +1098,9 @@ function formatError(error: unknown) {
     <NvAlertDialog v-model:open="receiveOpen">
       <NvAlertDialogContent class="sm:max-w-md">
         <NvAlertDialogHeader>
-          <NvAlertDialogTitle>线边收料 · {{ receiveForm.requestId }}</NvAlertDialogTitle>
+          <NvAlertDialogTitle
+            >线边收料 · {{ readFaceText(receiveForm.requestId) }}</NvAlertDialogTitle
+          >
           <NvAlertDialogDescription>
             确认收料后线边可用量随即增加；数量留空表示按未收余量一次收齐。
           </NvAlertDialogDescription>
@@ -1136,7 +1150,7 @@ function formatError(error: unknown) {
     <NvAlertDialog v-model:open="cancelOpen">
       <NvAlertDialogContent class="sm:max-w-lg">
         <NvAlertDialogHeader>
-          <NvAlertDialogTitle>取消工单 · {{ filters.workOrderId }}</NvAlertDialogTitle>
+          <NvAlertDialogTitle>取消工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
           <!-- 破坏性动作：保留一句后果陈述，明细由下方补偿预览给出。 -->
           <NvAlertDialogDescription>
             取消后将释放预留、生成退料指引，并取消未完成的入库请求与工序任务，操作不可撤销。
@@ -1232,7 +1246,7 @@ function formatError(error: unknown) {
                   <span class="truncate"
                     >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                      · {{ row.materialLotId }}</span
+                      · {{ readFaceText(row.materialLotId, '未指定批次') }}</span
                     ></span
                   >
                   <span class="shrink-0 tabular-nums">{{
@@ -1253,7 +1267,7 @@ function formatError(error: unknown) {
                   <span class="truncate"
                     >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                      · {{ row.materialLotId }}</span
+                      · {{ readFaceText(row.materialLotId, '未指定批次') }}</span
                     ></span
                   >
                   <span class="shrink-0 tabular-nums">{{
