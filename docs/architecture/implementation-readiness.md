@@ -6,7 +6,7 @@
 
 Business PDA 工序执行页现在完整消费既有 BusinessGateway/MES 权威任务行：入口查询继续由当前 principal 与实时核验的 `scopeKind/scopeId` 过滤；没有 self assignment 时页面明确展示实际的班组、工作中心、车间或组织授权范围，不把范围队列称为“我的任务”。列表、URL、详情、动作写前回读和结果始终绑定同一 `workOrderId + operationTaskId`，route query、scope 或 principal identity 变化会先关闭旧详情，只有新 identity 的成功响应能重新打开精确 pair。
 
-详情展示工单、工序任务、设备、当前 SOP、MES `blockReasons` 和 `evaluatedAtUtc`。生命周期按钮只从服务端 `allowedActions` 的 `start/pause/resume/complete` 子集生成，不再从本地 status 推导；前序、物料齐套、设备与质量阻塞以可读分类和服务端说明展示，空动作和完成态保持只读。动作提交前在同一授权范围内精确回读双强 ID 并再次核验服务端动作；409 会撤销旧 sheet/意图并刷新权威列表，`accepted`、缺失/畸形回执或未完成权威回读只显示结果未核实，不显示成功且保留同一幂等键供安全重试。此切片没有修改后端 endpoint、公开契约、OpenAPI、generated client、数据库或 facade declaration；完整报工字段、耗料批次、领料、完工入库、扫码解析、测量判定和离线队列仍不在范围内。
+详情只展示可读工单号、工序任务号和设备名称/编码；可读字段缺失时明确提示信息未提供，不把 `workOrderId`、`operationTaskId` 或 `deviceAssetId` 当作面向操作员的替代文案。当前 SOP、MES `blockReasons` 和 `evaluatedAtUtc` 继续来自权威响应；前序、物料齐套、设备、质量与其它门禁统一复用 `@nerv-iip/business-core` 的可读分类和服务端说明。生命周期按钮只从服务端 `allowedActions` 的 `start/pause/resume/complete` 子集生成，不再从本地 status 推导，空动作和完成态保持只读。动作提交前通过 exposed `operationTaskId` 精确 query 在同一授权范围内回读双强 ID 并再次核验服务端动作；同键重放只有 `statusActionGate` 明确判定 `legalNoop` 才可在服务端动作缺失时继续，单凭 status 可执行但非 legal-noop 仍 fail closed。409 会撤销旧 sheet/意图并刷新权威列表，`accepted`、缺失/畸形回执或未完成权威回读只显示结果未核实，不显示成功且保留同一幂等键供安全重试。此切片以向后兼容的可选 query 更新 BusinessGateway OpenAPI/generated client 与既有 `listBusinessMesOperationTasks` exposed facade declaration；数据库不变。完整报工字段、耗料批次、领料、完工入库、扫码解析、测量判定和离线队列仍不在范围内。
 
 ## 跨业务可搜索目录契约（MAN-632 / #1169）
 

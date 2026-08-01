@@ -931,7 +931,7 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
-    public async Task List_operation_tasks_endpoint_forwards_exact_work_order_id()
+    public async Task List_operation_tasks_endpoint_forwards_exact_strong_id_pair()
     {
         var sender = new CapturingListOperationTasksSender();
         await using var factory = new WebApplicationFactory<Program>()
@@ -949,13 +949,14 @@ public sealed class MesEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.GetAsync(
-            "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&workOrderId=WO-EXACT-A&skip=0&take=100");
+            "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&workOrderId=WO-EXACT-A&operationTaskId=OP-EXACT-A&skip=0&take=100");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(sender.Query);
         Assert.Equal("org-001", sender.Query.OrganizationId);
         Assert.Equal("env-dev", sender.Query.EnvironmentId);
         Assert.Equal("WO-EXACT-A", sender.Query.WorkOrderId);
+        Assert.Equal("OP-EXACT-A", sender.Query.OperationTaskId);
     }
 
     [Fact]

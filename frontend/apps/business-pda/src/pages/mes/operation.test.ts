@@ -71,6 +71,8 @@ const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
+    workOrderNo: 'MO-2026-0001',
+    operationTaskNo: 'OP-TASK-0010',
     status: 'InProgress',
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
@@ -82,6 +84,8 @@ const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0002',
+    workOrderNo: 'MO-2026-0002',
+    operationTaskNo: 'OP-TASK-0020',
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
@@ -198,8 +202,8 @@ describe('PDA MES operation execution page', () => {
   it('renders the scan bar and an operation ListRow per task', () => {
     const wrapper = mount(OperationPage)
     expect(wrapper.find('input[placeholder^="扫"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0001')
-    expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).toContain('MO-2026-0001')
+    expect(wrapper.text()).toContain('MO-2026-0002')
     expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
     // 工序序号可读呈现
     expect(wrapper.text()).toContain('工序 10')
@@ -227,6 +231,8 @@ describe('PDA MES operation execution page', () => {
     operationTasksRef.value = [
       {
         ...defaultTasks[1],
+        workOrderId: 'work-order-internal-42',
+        operationTaskId: 'operation-task-internal-20',
         workOrderNo: 'MO-2026-0042',
         operationTaskNo: 'OP-TASK-0020',
         operationCode: 'OP-CUT',
@@ -251,14 +257,40 @@ describe('PDA MES operation execution page', () => {
     expect(document.body.textContent).toContain('MO-2026-0042')
     expect(document.body.textContent).toContain('OP-TASK-0020')
     expect(document.body.textContent).toContain('七号数控车床（DEV-LATHE-07）')
-    expect(document.body.textContent).toContain('device-asset-lathe-07')
+    expect(document.body.textContent).not.toContain('work-order-internal-42')
+    expect(document.body.textContent).not.toContain('operation-task-internal-20')
+    expect(document.body.textContent).not.toContain('device-asset-lathe-07')
     expect(document.body.textContent).toContain('2026')
     expect(document.body.textContent).toContain('前序工序')
     expect(document.body.textContent).toContain('物料齐套')
     expect(document.body.textContent).toContain('设备')
     expect(document.body.textContent).toContain('质量')
     expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
-    wrapper.unmount()
+  })
+
+  it('shows explicit unavailable copy instead of raw identifiers when readable references are absent', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workOrderId: 'work-order-internal-missing',
+        operationTaskId: 'operation-task-internal-missing',
+        workOrderNo: undefined,
+        operationTaskNo: undefined,
+        deviceAssetId: 'device-asset-internal-missing',
+        allowedActions: [],
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('工单信息未提供')
+    expect(document.body.textContent).toContain('工序任务信息未提供')
+    expect(document.body.textContent).toContain('设备信息未提供')
+    expect(document.body.textContent).not.toContain('work-order-internal-missing')
+    expect(document.body.textContent).not.toContain('operation-task-internal-missing')
+    expect(document.body.textContent).not.toContain('device-asset-internal-missing')
   })
 
   it('renders lifecycle buttons only from server allowedActions instead of local status guesses', async () => {
@@ -277,7 +309,6 @@ describe('PDA MES operation execution page', () => {
     expect(document.body.querySelector('[data-testid="action-resume"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="action-pause"]')).toBeNull()
     expect(document.body.querySelector('[data-testid="action-complete"]')).toBeNull()
-    wrapper.unmount()
   })
 
   it('consumes the workOrderId and operationTaskId deep link and opens that exact task', async () => {
@@ -290,8 +321,8 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
-    expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes the old task and waits for the new pair response when the reused route query changes', async () => {
@@ -301,7 +332,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -321,8 +352,8 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes a fixed-pair sheet and reopens only from the new scope response', async () => {
@@ -332,7 +363,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -358,8 +389,8 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 30')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 30')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes a fixed-pair sheet and fails closed when the new scope omits the task', async () => {
@@ -369,7 +400,7 @@ describe('PDA MES operation execution page', () => {
     })
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -402,7 +433,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -428,8 +459,8 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 40')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 40')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('fails closed when a reused route changes to an incomplete task identity', async () => {
@@ -505,7 +536,9 @@ describe('PDA MES operation execution page', () => {
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
-    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('MO-2026-0001 · OP-TASK-0010')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
@@ -527,9 +560,10 @@ describe('PDA MES operation execution page', () => {
 
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('MO-2026-0001 · OP-TASK-0010')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
     expect(wrapper.text()).toContain('结果尚未核实')
-    wrapper.unmount()
   })
 
   it('shows an error Result without locking route/refresh leave after a determinate 4xx', async () => {

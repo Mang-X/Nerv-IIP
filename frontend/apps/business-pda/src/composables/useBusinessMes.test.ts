@@ -283,21 +283,25 @@ describe('pda useBusinessMes composables', () => {
     vi.mocked(listBusinessConsoleMesOperationTasks)
       .mockReset()
       .mockImplementation(
-        async ({ query }: { query: { keyword?: string | null; workOrderId?: string | null } }) =>
+        async ({
+          query,
+        }: {
+          query: { operationTaskId?: string | null; workOrderId?: string | null }
+        }) =>
           ({
             data: {
               success: true,
               data: {
                 items: [
                   {
-                    operationTaskId: query.keyword,
+                    operationTaskId: query.operationTaskId,
                     workOrderId: query.workOrderId ?? 'wo-1',
                     status:
-                      query.keyword === 'ot-3' || query.keyword === 'ot-reentry'
+                      query.operationTaskId === 'ot-3' || query.operationTaskId === 'ot-reentry'
                         ? 'Queued'
                         : 'InProgress',
                     allowedActions:
-                      query.keyword === 'ot-3' || query.keyword === 'ot-reentry'
+                      query.operationTaskId === 'ot-3' || query.operationTaskId === 'ot-reentry'
                         ? ['start']
                         : ['pause', 'complete'],
                     blockReasons: [],
@@ -1271,7 +1275,7 @@ describe('pda useBusinessMes composables', () => {
       expect.objectContaining({
         query: expect.objectContaining({
           workOrderId: 'wo-blocked',
-          keyword: 'ot-blocked',
+          operationTaskId: 'ot-blocked',
           scopeKind: 'work-center',
           scopeId: 'WC-A',
         }),
@@ -1280,6 +1284,111 @@ describe('pda useBusinessMes composables', () => {
     expect(
       coladaState.mutateById.get('startBusinessConsoleMesOperationTask'),
     ).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a retained start intent still reads Queued without a server action', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'ot-replay-blocked',
+                workOrderId: 'wo-replay-blocked',
+                status: 'Queued',
+                allowedActions: ['start'],
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'ot-replay-blocked',
+                workOrderId: 'wo-replay-blocked',
+                status: 'Queued',
+                allowedActions: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+    receiptState.confirm.mockRejectedValueOnce(new TypeError('response lost'))
+    const { startTask } = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    const request = {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'op-replay-blocked-1',
+    }
+
+    await expect(startTask('wo-replay-blocked', 'ot-replay-blocked', request)).rejects.toThrow(
+      'response lost',
+    )
+    await expect(startTask('wo-replay-blocked', 'ot-replay-blocked', request)).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows the same retained start intent to replay when the authoritative status is its legal result', async () => {
+    vi.mocked(listBusinessConsoleMesOperationTasks)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'ot-replay-applied',
+                workOrderId: 'wo-replay-applied',
+                status: 'Queued',
+                allowedActions: ['start'],
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'ot-replay-applied',
+                workOrderId: 'wo-replay-applied',
+                status: 'InProgress',
+                allowedActions: [],
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+    receiptState.confirm.mockRejectedValueOnce(new TypeError('response lost'))
+    const { startTask } = useMesOperationTasks()
+    const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')!
+    const request = {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'op-replay-applied-1',
+    }
+
+    await expect(startTask('wo-replay-applied', 'ot-replay-applied', request)).rejects.toThrow(
+      'response lost',
+    )
+    await expect(
+      startTask('wo-replay-applied', 'ot-replay-applied', request),
+    ).resolves.toBeUndefined()
+
+    expect(mutateAsync).toHaveBeenCalledTimes(2)
+    expect(mutateAsync.mock.calls[1]?.[0].body.idempotencyKey).toBe('op-replay-applied-1')
   })
 
   it('starts an operation task forwarding an optional reason code with the caller-supplied key', async () => {

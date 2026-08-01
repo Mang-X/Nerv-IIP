@@ -53,6 +53,7 @@ import {
   formatWorkScopeKey,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  statusActionGate,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
@@ -61,7 +62,10 @@ import {
   useScopeBoundListResponse,
 } from '@/composables/useListFreshness'
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
-import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import {
+  assertLifecycleActionExecutable,
+  LifecycleActionUnavailableError,
+} from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskListPagination } from './useTaskListPagination'
 
@@ -829,7 +833,7 @@ async function readExactOperationTask(
       ...(workOrderId ? { workOrderId } : {}),
       scopeKind: selectedScope.kind,
       scopeId: selectedScope.id,
-      keyword: operationTaskId,
+      ...(source === 'operations' ? { operationTaskId } : { keyword: operationTaskId }),
       skip: 0,
       take: 2,
     },
@@ -1010,14 +1014,17 @@ export function useMesOperationTasks() {
         // A same-key replay may legitimately observe the transition's resulting state.
         // A new intent must never reconstruct permission from status: an absent server
         // action is authoritative and fails closed.
-        assertLifecycleActionExecutable({
+        const replayGate = statusActionGate({
           domain: 'mes-operation-task',
           action,
           facts: {
-            status: isReplay ? authoritative?.status : undefined,
+            status: authoritative?.status,
             idempotentReplay: isReplay,
           },
         })
+        if (!replayGate.legalNoop) {
+          throw new LifecycleActionUnavailableError(replayGate)
+        }
       }
     } catch (error) {
       if (!isReplay) clearPendingBusinessIntent(scope)

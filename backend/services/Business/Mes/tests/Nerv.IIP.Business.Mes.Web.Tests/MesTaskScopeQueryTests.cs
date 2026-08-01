@@ -128,6 +128,7 @@ public sealed class MesTaskScopeQueryTests
                 null,
                 Take: 1,
                 AssignedUserIds: "emp010",
+                WorkOrderId: "WO-Z-SCOPE",
                 OperationTaskId: "OP-Z-SCOPE"),
             CancellationToken.None);
 

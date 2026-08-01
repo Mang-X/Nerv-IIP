@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
+import {
+  describeMesReadinessReasons,
+  openDownloadGrantBlob,
+  operationTaskStatusLabel,
+} from '@nerv-iip/business-core'
 import {
   createTimeoutFetch,
   describeRequestError,
@@ -216,6 +220,7 @@ type ResultState = {
   title: string
   description?: string
   action: ActionKind
+  displayReference: string
   workOrderId: string
   taskId: string
 }
@@ -226,28 +231,7 @@ const toast = reactive({ show: false, message: '', type: 'error' as const })
 
 const availableActions = computed(() => actionsFor(selected.value))
 const blockReasonDisplays = computed(() =>
-  (selected.value?.blockReasons ?? []).map((reason) => {
-    const separator = reason.indexOf(':')
-    const code = (separator > 0 ? reason.slice(0, separator) : reason).trim()
-    const detail = (separator > 0 ? reason.slice(separator + 1) : reason).trim()
-    const normalizedCode = code.toUpperCase()
-    let category = '其他门禁'
-    if (normalizedCode.includes('PREVIOUS_OPERATION')) category = '前序工序'
-    else if (normalizedCode.includes('MATERIAL')) category = '物料齐套'
-    else if (normalizedCode.includes('QUALITY')) category = '质量'
-    else if (
-      normalizedCode.includes('EQUIPMENT') ||
-      normalizedCode.includes('ALARM') ||
-      normalizedCode.includes('DOWNTIME') ||
-      normalizedCode.includes('MAINTENANCE') ||
-      normalizedCode.includes('INSPECTION') ||
-      normalizedCode.includes('SOURCE') ||
-      normalizedCode.includes('TAG_MAPPING') ||
-      normalizedCode.includes('SUBSTITUTE')
-    )
-      category = '设备'
-    return { code, category, detail: detail || '服务端未提供更多说明。' }
-  }),
+  describeMesReadinessReasons(selected.value?.blockReasons),
 )
 
 const scanActive = computed(() => selected.value === null && result.value === null)
@@ -276,9 +260,28 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
   filters.keyword = typeof keyword === 'string' && keyword ? keyword : undefined
 }
 
+function workOrderLabel(task: Task) {
+  return task.workOrderNo?.trim() || '工单信息未提供'
+}
+
+function operationTaskLabel(task: Task) {
+  return task.operationTaskNo?.trim() || task.operationCode?.trim() || '工序任务信息未提供'
+}
+
+function deviceLabel(task: Task) {
+  const name = task.deviceAssetName?.trim()
+  const code = task.deviceAssetCode?.trim()
+  if (name && code) return `${name}（${code}）`
+  return name || code || '设备信息未提供'
+}
+
+function taskDisplayReference(task: Task) {
+  return `${workOrderLabel(task)} · ${operationTaskLabel(task)}`
+}
+
 function rowTitle(task: Task) {
   const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
-  const wo = task.workOrderId ?? '无工单'
+  const wo = workOrderLabel(task)
   return seq ? `${wo} · ${seq}` : wo
 }
 function rowSubtitle(task: Task) {
@@ -401,6 +404,7 @@ async function runAction(action: ActionKind) {
   }
   const id = task.operationTaskId
   const workOrderId = task.workOrderId
+  const displayReference = taskDisplayReference(task)
   const key = operationKey.value
   closeSheet()
   try {
@@ -409,8 +413,9 @@ async function runAction(action: ActionKind) {
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
-      description: `${workOrderId} · ${id}`,
+      description: displayReference,
       action,
+      displayReference,
       workOrderId,
       taskId: id,
     }
@@ -423,8 +428,9 @@ async function runAction(action: ActionKind) {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: `${workOrderId} · ${id}\n${describeRequestError(e, '请检查网络后重试。').message}`,
+      description: `${displayReference}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      displayReference,
       workOrderId,
       taskId: id,
     }
@@ -439,7 +445,7 @@ async function retry() {
   }
   const state = result.value
   if (!state) return
-  const { action, workOrderId, taskId } = state
+  const { action, displayReference, workOrderId, taskId } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
   result.value = null
@@ -449,8 +455,9 @@ async function retry() {
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
-      description: `${workOrderId} · ${taskId}`,
+      description: displayReference,
       action,
+      displayReference,
       workOrderId,
       taskId,
     }
@@ -463,8 +470,9 @@ async function retry() {
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: `${workOrderId} · ${taskId}\n${describeRequestError(e, '请检查网络后重试。').message}`,
+      description: `${displayReference}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      displayReference,
       workOrderId,
       taskId,
     }
@@ -646,37 +654,11 @@ function formatDateTime(value?: string | null) {
           class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-lg border border-border px-3 py-3 text-sm"
         >
           <dt class="text-muted-foreground">工单</dt>
-          <dd class="min-w-0 break-all text-foreground">
-            {{ selected.workOrderNo || selected.workOrderId }}
-            <span v-if="selected.workOrderNo" class="block text-xs text-muted-foreground">{{
-              selected.workOrderId
-            }}</span>
-          </dd>
+          <dd class="min-w-0 break-all text-foreground">{{ workOrderLabel(selected) }}</dd>
           <dt class="text-muted-foreground">工序任务</dt>
-          <dd class="min-w-0 break-all text-foreground">
-            {{ selected.operationTaskNo || selected.operationTaskId }}
-            <span v-if="selected.operationTaskNo" class="block text-xs text-muted-foreground">{{
-              selected.operationTaskId
-            }}</span>
-          </dd>
+          <dd class="min-w-0 break-all text-foreground">{{ operationTaskLabel(selected) }}</dd>
           <dt class="text-muted-foreground">设备</dt>
-          <dd class="min-w-0 break-all text-foreground">
-            {{
-              selected.deviceAssetName && selected.deviceAssetCode
-                ? `${selected.deviceAssetName}（${selected.deviceAssetCode}）`
-                : selected.deviceAssetName ||
-                  selected.deviceAssetCode ||
-                  selected.deviceAssetId ||
-                  '未指定'
-            }}
-            <span
-              v-if="
-                selected.deviceAssetId && (selected.deviceAssetName || selected.deviceAssetCode)
-              "
-              class="block text-xs text-muted-foreground"
-              >{{ selected.deviceAssetId }}</span
-            >
-          </dd>
+          <dd class="min-w-0 break-all text-foreground">{{ deviceLabel(selected) }}</dd>
           <dt class="text-muted-foreground">门禁评估</dt>
           <dd class="text-foreground">{{ formatDateTime(selected.evaluatedAtUtc) }}</dd>
         </dl>
@@ -692,11 +674,11 @@ function formatDateTime(value?: string | null) {
           <h2 class="text-sm font-semibold text-foreground">当前不能开始</h2>
           <div
             v-for="reason in blockReasonDisplays"
-            :key="`${reason.code}:${reason.detail}`"
+            :key="reason.code"
             class="rounded-md bg-card px-3 py-2"
           >
             <p class="text-sm font-medium text-foreground">{{ reason.category }}</p>
-            <p class="mt-1 text-sm text-muted-foreground">{{ reason.detail }}</p>
+            <p class="mt-1 text-sm text-muted-foreground">{{ reason.detail || reason.label }}</p>
           </div>
         </section>
 

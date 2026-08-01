@@ -357,6 +357,8 @@ export const mesOperationTasks = [
   {
     operationTaskId: 'OP-3',
     workOrderId: 'WO-2',
+    workOrderNo: 'MO-2026-0002',
+    operationTaskNo: 'OP-TASK-0030',
     status: 'Queued',
     operationSequence: 10,
     workCenterId: 'WC-C',
@@ -370,6 +372,8 @@ export const mesOperationTasks = [
 const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskId: `OP-${index + 1}`,
   workOrderId: 'WO-501',
+  workOrderNo: 'MO-2026-0501',
+  operationTaskNo: `OP-TASK-${String(index + 1).padStart(4, '0')}`,
   status: 'Queued',
   operationSequence: index + 1,
   workCenterId: 'WC-MANY',

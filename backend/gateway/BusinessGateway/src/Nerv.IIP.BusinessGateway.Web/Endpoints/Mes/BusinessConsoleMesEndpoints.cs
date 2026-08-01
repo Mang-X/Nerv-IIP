@@ -1023,6 +1023,38 @@ public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
             request.Take,
             Join(scope.AssignedUserIds),
             Join(scope.TeamIds),
+            Join(scope.WorkCenterIds),
+            OperationTaskId: request.OperationTaskId);
+    }
+
+    internal static async Task<BusinessMesOperationTaskListRequest> ResolveRequestAsync(
+        PrincipalWorkScopeResolver workScopeResolver,
+        BusinessGatewayAuthorizationResult? authorization,
+        BusinessConsoleMesReportableOperationTaskListRequest request,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            authorization,
+            request.OrganizationId,
+            request.EnvironmentId,
+            permissionCode,
+            request.ScopeKind,
+            request.ScopeId,
+            cancellationToken);
+        return new BusinessMesOperationTaskListRequest(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Status,
+            request.Keyword,
+            request.WorkCenterId,
+            request.ShiftId,
+            request.DeviceAssetId,
+            request.WorkOrderId,
+            request.Skip,
+            request.Take,
+            Join(scope.AssignedUserIds),
+            Join(scope.TeamIds),
             Join(scope.WorkCenterIds));
     }
 
@@ -1038,7 +1070,7 @@ public sealed class ListBusinessConsoleMesReportableOperationTasksEndpoint(
     IBusinessMesClient mes,
     PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesOperationTaskListRequest, BusinessConsoleMesOperationTaskListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesReportableOperationTaskListRequest, BusinessConsoleMesOperationTaskListResponse>(
         auth,
         BusinessGatewayPermissions.MesReportingRead)
 {
@@ -1047,12 +1079,12 @@ public sealed class ListBusinessConsoleMesReportableOperationTasksEndpoint(
     protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
         BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
-    protected override string OrganizationId(BusinessConsoleMesOperationTaskListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesReportableOperationTaskListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesOperationTaskListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesReportableOperationTaskListRequest request) => request.EnvironmentId;
 
     protected override async Task<BusinessConsoleMesOperationTaskListResponse> ForwardAsync(
-        BusinessConsoleMesOperationTaskListRequest request,
+        BusinessConsoleMesReportableOperationTaskListRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
