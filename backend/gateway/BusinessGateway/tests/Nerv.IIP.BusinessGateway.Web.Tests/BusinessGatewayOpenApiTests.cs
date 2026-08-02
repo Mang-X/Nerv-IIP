@@ -761,7 +761,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks", "get", "listBusinessConsoleMesDispatchTasks");
         AssertOperationId(paths, "/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign", "post", "assignBusinessConsoleMesDispatchTask");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks", "get", "listBusinessConsoleMesOperationTasks");
+        AssertQueryParameters(paths, "/api/business-console/v1/mes/operation-tasks", "get", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "listBusinessConsoleMesReportableOperationTasks");
+        AssertNoQueryParameter(paths, "/api/business-console/v1/mes/reportable-operation-tasks", "get", "operationTaskId");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-sops/current", "get", "getBusinessConsoleMesCurrentOperationSops");
         AssertOperationId(paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "startBusinessConsoleMesOperationTask");
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start", "post", "idempotencyKey", 150);

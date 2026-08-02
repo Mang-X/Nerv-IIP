@@ -4206,6 +4206,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReportableOperationTaskListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskActionResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionResponse | null;
 };
@@ -14817,6 +14821,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
         take?: number;
         scopeKind?: string | null;
         scopeId?: string | null;
+        operationTaskId?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks';
 };
