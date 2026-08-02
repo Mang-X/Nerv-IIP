@@ -17,7 +17,7 @@ import NvSheetTitle from './NvSheetTitle.vue'
  */
 describe('NvSheetContent 版式契约', () => {
   async function mountSheet() {
-    return mount(NvSheet, {
+    const wrapper = mount(NvSheet, {
       props: { open: true },
       slots: {
         default: () =>
