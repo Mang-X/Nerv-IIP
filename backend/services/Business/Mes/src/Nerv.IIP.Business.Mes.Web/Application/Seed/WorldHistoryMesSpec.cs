@@ -181,6 +181,112 @@ public static class WorldHistoryMesSpec
     }
 
     /// <summary>
+    /// 「已下达待开工」工单的排产优先级配额：重点单少、常规单多。
+    ///
+    /// <para>
+    /// **优先级与紧迫度是两件事**，这是这份配额存在的全部理由。紧迫度是系统按交期算出来的
+    /// **事实**；优先级是计划员下的**决定**——重点客户的单交期不紧也要先做。把优先级由紧迫度
+    /// 推导等于取消这个字段的意义，所以这里独立铺档，不与交期偏移相关联。
+    /// </para>
+    /// <para>
+    /// 修复前全世界常规工单一律写死 <c>10</c>（返修单 90），排产工作台的优先级列整列同值，
+    /// 排产员既无从判断也无从演示「我手工把这张提上去」（第五轮走查 owner 点名）。
+    /// </para>
+    /// </summary>
+    private static readonly int[] ReleasedPriorityQuota =
+    [
+        500, // 战略/重点客户单：每 10 张 1 张
+        200, 200, // 重要单
+        100, 100, 100, 100, // 常规单占多数
+        50, 50, // 可延后
+        10, // 填空单
+    ];
+
+    /// <summary>取一张「已下达待开工」工单的排产优先级；其余档位沿用既有常量。</summary>
+    public static int? ReleasedPriority(
+        WorldHistoryExecution execution,
+        int? releasedCohortOrdinal)
+    {
+        if (execution != WorldHistoryExecution.ReleasedOnly ||
+            releasedCohortOrdinal is not { } ordinal ||
+            ordinal <= 0)
+        {
+            return null;
+        }
+
+        var position = ordinal - 1;
+        var block = position / ReleasedDueOffsetQuotaBlockSize;
+        var shuffled = ReleasedPriorityQuota.ToArray();
+        // 与交期配额用不同的流键：否则「优先级最高的恰好也最晚」会成为固定规律，
+        // 演示时反而讲不出「交期不紧但要先做」这条。
+        var random = new WorldHistoryRandom($"released-priority-block:{block}");
+        for (var cursor = shuffled.Length - 1; cursor > 0; cursor--)
+        {
+            var swap = random.NextInt(0, cursor + 1);
+            (shuffled[cursor], shuffled[swap]) = (shuffled[swap], shuffled[cursor]);
+        }
+
+        return shuffled[position % ReleasedDueOffsetQuotaBlockSize];
+    }
+
+    /// <summary>每 10 张已下达工单一份交期配额（与缺口配额同一块大小，便于对照阅读）。</summary>
+    public const int ReleasedDueOffsetQuotaBlockSize = 10;
+
+    /// <summary>
+    /// 「已下达待开工」工单相对 <c>asOfDate</c> 的交期偏移（天）：4 张已逾期 / 6 张尚未到期。
+    ///
+    /// <para>
+    /// **为什么要单独给一份配额**：这批单的交期原本由 <c>订单日 + 18~40 天前置期</c> 推出来，
+    /// 而已下达档的订单日被压在 <c>asOfDate</c> 附近，于是**整池工单交期全部落在 asOfDate 之前**
+    /// ——排产工作台一打开，待排池清一色逾期（第五轮走查实测：默认窗口 8/2 起，池内交期全是
+    /// 7/28~7/30）。两个后果：① 一个所有待排工单都已延误的工厂看着像瘫了；② 紧迫度整列飘红，
+    /// 失去区分度，排产员没法据此决定先排谁。
+    /// </para>
+    /// <para>
+    /// 真实工厂两者都有：有拖期的、也有还早的。四逾期六未到期既保住「有紧急单要插」的故事，
+    /// 又让紧迫度这一列真的能排序。
+    /// </para>
+    /// <para>
+    /// 用配额块而不是独立概率的理由与缺口配额相同：小纵深快速验证时独立概率会整块偏掉。
+    /// </para>
+    /// </summary>
+    private static readonly int[] ReleasedDueOffsetQuota =
+    [
+        -6, -3, -2, -1, // 已逾期：越早的越紧急，紧迫度列因此有梯度
+        1, 2, 4, 6, 9, 13, // 未到期：从明天到两周后
+    ];
+
+    /// <summary>
+    /// 取一张「已下达待开工」工单的交期（相对 <paramref name="asOfDate"/>）。
+    ///
+    /// 非已下达档返回 <c>null</c>——在制/完工单的交期是历史事实，由订单前置期推出，不该被改写。
+    /// </summary>
+    public static DateOnly? ReleasedDueDate(
+        WorldHistoryExecution execution,
+        int? releasedCohortOrdinal,
+        DateOnly asOfDate)
+    {
+        if (execution != WorldHistoryExecution.ReleasedOnly ||
+            releasedCohortOrdinal is not { } ordinal ||
+            ordinal <= 0)
+        {
+            return null;
+        }
+
+        var position = ordinal - 1;
+        var block = position / ReleasedDueOffsetQuotaBlockSize;
+        var shuffled = ReleasedDueOffsetQuota.ToArray();
+        var random = new WorldHistoryRandom($"released-due-offset-block:{block}");
+        for (var cursor = shuffled.Length - 1; cursor > 0; cursor--)
+        {
+            var swap = random.NextInt(0, cursor + 1);
+            (shuffled[cursor], shuffled[swap]) = (shuffled[swap], shuffled[cursor]);
+        }
+
+        return asOfDate.AddDays(shuffled[position % ReleasedDueOffsetQuotaBlockSize]);
+    }
+
+    /// <summary>
     /// 一张工单每项主料的齐套覆盖比例（0 = 整料没有，1 = 齐套）。
     ///
     /// <para>

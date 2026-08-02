@@ -2,6 +2,9 @@
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
+import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
@@ -46,6 +49,17 @@ const isEmpty = computed(
 
 // 工单池只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
+
+/**
+ * 待排池的紧迫度（第五轮走查补）。
+ *
+ * 池子原来只有交期、优先级、急单三列——**排产员要先自己拿交期跟今天比**才知道哪张紧。
+ * 需求池（#1424）与 MES 工单页都已经有这一列，同一个人在三个页面之间切换却看到三种口径。
+ * 键与 MES 工单页保持一致：`workOrderId`（紧急度读面按工单登记）。
+ */
+const orderUrgencies = useOrderUrgencies(
+  computed(() => props.candidates.map((candidate) => candidate.workOrderId ?? '')),
+)
 
 const byId = computed(() => new Map(props.draftOrders.map((order) => [order.workOrderId, order])))
 
@@ -97,7 +111,9 @@ function setPriority(workOrderId: string, value: string | number) {
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="font-semibold">待排工单池</h2>
-        <p class="text-sm text-muted-foreground">从 MES 权威工单中一次选择最多 10 条。批量越大排程耗时越长，超过上限会被拒绝。</p>
+        <p class="text-sm text-muted-foreground">
+          从 MES 权威工单中一次选择最多 10 条。批量越大排程耗时越长，超过上限会被拒绝。
+        </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <!-- 作业范围选择入口由宿主页面注入（与 MES 工单页共享同一份选择）。 -->
@@ -244,6 +260,7 @@ function setPriority(workOrderId: string, value: string | number) {
             <th class="p-2">工单</th>
             <th class="p-2">物料</th>
             <th class="p-2">交期</th>
+            <th class="p-2">紧迫度</th>
             <th class="p-2">优先级</th>
             <th class="p-2">急单</th>
           </tr>
@@ -269,6 +286,19 @@ function setPriority(workOrderId: string, value: string | number) {
             </td>
             <td class="p-2">
               {{ candidate.dueUtc ? new Date(candidate.dueUtc).toLocaleString() : '—' }}
+            </td>
+            <td class="p-2">
+              <OrderUrgencyBadge
+                :order-reference="candidate.workOrderId ?? ''"
+                :mode="DEFAULT_URGENCY_DISPLAY_MODE"
+                :urgency="
+                  candidate.workOrderId
+                    ? orderUrgencies.byReference.value.get(candidate.workOrderId)
+                    : undefined
+                "
+                :source-unavailable="orderUrgencies.error?.value != null"
+                @refresh="orderUrgencies.refresh"
+              />
             </td>
             <td class="p-2">
               <NvInput

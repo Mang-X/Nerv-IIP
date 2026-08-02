@@ -91,16 +91,23 @@ public sealed class WorldHistorySeedService(
             {
                 var timeline = WorldHistoryTimeline.For(plan, asOfDate);
                 var workOrderPlan = WorldHistoryMesSpec.BuildWorkOrderPlan(plan.WorkOrderNo, plan.SkuCode, plan.Quantity);
+                var execution = ResolveExecution(plan.Stage);
+                var releasedCohortOrdinal = releasedCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo);
+                // 已下达待开工的那批按配额跨 asOfDate 铺开交期（四逾期六未到期）；其余档位仍用
+                // 订单前置期推出来的历史交期——在制/完工单的交期是既成事实，不该被改写。
+                var dueDate =
+                    WorldHistoryMesSpec.ReleasedDueDate(execution, releasedCohortOrdinal, asOfDate)
+                    ?? plan.RequiredDate;
                 WriteWorkOrderChain(
                     organizationId,
                     environmentId,
                     workOrderPlan,
                     productionVersions.GetValueOrDefault(plan.SkuCode),
                     timeline,
-                    ResolveExecution(plan.Stage),
+                    execution,
                     sourcePlanReference: CreatePlanningSuggestionSourceReference(plan),
-                    dueDate: plan.RequiredDate,
-                    releasedCohortOrdinal: releasedCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo));
+                    dueDate: dueDate,
+                    releasedCohortOrdinal: releasedCohortOrdinal);
                 added++;
             }
 
@@ -277,7 +284,11 @@ public sealed class WorldHistorySeedService(
             plan.SkuCode,
             productionVersionId,
             plan.WorkOrderQuantity,
-            priority: isRework ? 90 : 10,
+            // 返修单恒定 90；已下达待开工的那批按配额铺开（重点单少、常规单多），
+            // 其余档位沿用 10——历史单的优先级不影响排产，铺开只会给读面添噪。
+            priority: isRework
+                ? 90
+                : WorldHistoryMesSpec.ReleasedPriority(execution, releasedCohortOrdinal) ?? 10,
             dueUtc,
             WorldHistorySpec.UomCode,
             sourcePlanReference);
