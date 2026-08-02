@@ -27,8 +27,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'maintenance-detail', request }],
     query: vi.fn(),
   })),
-  listBusinessConsoleDeviceAssetsQueryOptions: vi.fn((request) => ({
-    key: [{ _id: 'device-directory', request }],
+  getBusinessConsoleMasterDataResourceDetailQueryOptions: vi.fn((request) => ({
+    key: [{ _id: 'device-detail', request }],
     query: vi.fn(),
   })),
   getConsolePrincipal: vi.fn(),
@@ -105,6 +105,9 @@ const invalidListEnvelopes = [
   ['negative total', { success: true, data: { items: [], total: -1 } }],
   ['non-integer total', { success: true, data: { items: [], total: 0.5 } }],
   ['inconsistent total', { success: true, data: { items: [{ workOrderId: 'WO-1' }], total: 0 } }],
+  ['null item', { success: true, data: { items: [null], total: 1 } }],
+  ['primitive item', { success: true, data: { items: ['WO-1'], total: 1 } }],
+  ['blank strong ID', { success: true, data: { items: [{ workOrderId: ' ' }], total: 1 } }],
 ] as const
 
 describe('useMaintenanceSelfWorkOrders', () => {
@@ -139,7 +142,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(api.queryFactories.get('maintenance-list')?.().enabled).toBe(false)
     expect(detail.enabled.value).toBe(false)
     expect(api.queryFactories.get('maintenance-detail')?.().enabled).toBe(false)
-    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
   it('binds status, device, keyword, and first-page pagination to the server self query', async () => {
@@ -374,7 +377,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
-    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
   it.each([
@@ -401,10 +404,61 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
-    expect(api.queryFactories.get('device-directory')?.().enabled).toBe(false)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
-  it('treats the authoritative device directory as part of aggregate detail state', async () => {
+  it.each([
+    ['actor principal', { actorPrincipalId: ' ' }],
+    ['reason', { reason: '' }],
+    ['technician', { technicianUserId: undefined }],
+    ['team', { teamId: undefined }],
+  ])('rejects detail when a lifecycle event has an invalid %s audit field', async (_, override) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const event: Record<string, unknown> = {
+      action: 'accept',
+      fromStatus: 'opened',
+      toStatus: 'accepted',
+      actorPrincipalId: 'principal-1',
+      technicianUserId: null,
+      teamId: null,
+      reason: '现场接单',
+      resultingVersion: 2,
+      occurredAtUtc: '2026-08-02T01:00:00.000Z',
+      ...override,
+    }
+    if (Object.hasOwn(override, 'technicianUserId')) delete event.technicianUserId
+    if (Object.hasOwn(override, 'teamId')) delete event.teamId
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), lifecycle: [event] },
+    }
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
+  it.each([
+    ['closed status', { status: 'closed', allowedActions: ['start'] }],
+    ['cancelled status', { status: 'cancelled', allowedActions: ['accept'] }],
+    ['terminal block reason', { blockReasons: ['terminal-status'], allowedActions: ['start'] }],
+  ])('rejects contradictory terminal action facts: %s', async (_, override) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), ...override },
+    }
+    await nextTick()
+
+    expect(result.workOrder.value).toBeUndefined()
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
+  it('treats the strong-ID device detail as part of aggregate detail state', async () => {
     seedPrincipal()
     const routeId = shallowRef('WO-NEW')
     const result = useMaintenanceSelfWorkOrderDetail(routeId)
@@ -415,14 +469,11 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
-    expect(requestFor('device-directory')).toEqual({
+    expect(requestFor('device-detail')).toEqual({
+      path: { resourceType: 'device-asset', code: '' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        includeDisabled: false,
-        keyword: '',
-        skip: 0,
-        take: 20,
       },
     })
 
@@ -433,29 +484,23 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
     expect(result.pending.value).toBe(true)
-    expect(requestFor('device-directory')).toEqual({
+    expect(requestFor('device-detail')).toEqual({
+      path: { resourceType: 'device-asset', code: 'device-new' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        includeDisabled: false,
-        keyword: 'device-new',
-        skip: 0,
-        take: 20,
       },
     })
 
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
       data: {
-        resources: [
-          {
-            deviceAssetId: 'device-old',
-            code: 'device-new',
-            displayName: '迟到的旧设备',
-            workshopCode: 'WS-OLD',
-          },
-        ],
-        total: 1,
+        resourceType: 'device-asset',
+        deviceAssetId: 'device-old',
+        code: 'CNC-OLD',
+        displayName: '迟到的旧设备',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
       },
     }
     await nextTick()
@@ -463,34 +508,40 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
 
-    api.data.get('device-directory')!.value = undefined
-    api.errors.get('device-directory')!.value = { status: 403 }
+    api.data.get('device-detail')!.value = undefined
+    api.errors.get('device-detail')!.value = { status: 403 }
     await nextTick()
     expect(result.device.value).toBeUndefined()
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
     expect(result.error.value).toEqual({ status: 403 })
 
-    api.errors.get('device-directory')!.value = undefined
-    api.data.get('device-directory')!.value = { success: false, data: { resources: [] } }
+    api.errors.get('device-detail')!.value = undefined
+    api.data.get('device-detail')!.value = { success: false, data: null }
     await nextTick()
     expect(result.hasFailedResponse.value).toBe(true)
 
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
-      data: { resources: [], total: 0 },
+      data: {
+        resourceType: 'work-center',
+        deviceAssetId: 'device-new',
+        code: 'CNC-NEW',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
     }
     await nextTick()
     expect(result.hasFailedResponse.value).toBe(true)
 
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
       data: {
-        resources: [
-          { deviceAssetId: 'device-new', code: 'CNC-NEW', displayName: '重复设备一' },
-          { deviceAssetId: ' device-new ', code: 'CNC-NEW-2', displayName: '重复设备二' },
-        ],
-        total: 2,
+        resourceType: 'device-asset',
+        deviceAssetId: 'device-new',
+        code: 'CNC-NEW',
+        organizationId: 'org-other',
+        environmentId: 'env-dev',
       },
     }
     await nextTick()
@@ -498,18 +549,16 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
 
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
       data: {
-        resources: [
-          {
-            deviceAssetId: 'device-new',
-            code: 'CNC-NEW',
-            displayName: '一号数控机床',
-            workshopCode: 'WS-1',
-          },
-        ],
-        total: 1,
+        resourceType: 'device-asset',
+        deviceAssetId: 'device-new',
+        code: 'CNC-NEW',
+        displayName: '一号数控机床',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workshopCode: 'WS-1',
       },
     }
     await nextTick()
@@ -540,16 +589,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.pending.value).toBe(true)
 
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
       data: {
-        resources: [
-          {
-            deviceAssetId: 'device-new',
-            code: 'CNC-NEW',
-            displayName: '迟到的一号数控机床',
-          },
-        ],
+        resourceType: 'device-asset',
+        deviceAssetId: 'device-new',
+        code: 'CNC-NEW',
+        displayName: '迟到的一号数控机床',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
       },
     }
     await nextTick()
@@ -558,7 +606,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.hasFailedResponse.value).toBe(true)
   })
 
-  it('retries the work order first and then the newly resolved device directory', async () => {
+  it('retries the work order first and then the newly resolved device detail', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
     api.data.get('maintenance-detail')!.value = {
@@ -571,7 +619,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     api.refetches.get('maintenance-detail')!.mockImplementation(async () => {
       calls.push('work-order')
     })
-    api.refetches.get('device-directory')!.mockImplementation(async () => {
+    api.refetches.get('device-detail')!.mockImplementation(async () => {
       calls.push('device')
     })
 
@@ -597,9 +645,16 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: authoritativeDetail('WO-DETAIL', 'device-1'),
     }
-    api.data.get('device-directory')!.value = {
+    api.data.get('device-detail')!.value = {
       success: true,
-      data: { resources: [{ deviceAssetId: 'device-1', displayName: '旧设备' }], total: 1 },
+      data: {
+        resourceType: 'device-asset',
+        deviceAssetId: 'device-1',
+        code: 'CNC-01',
+        displayName: '旧设备',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
     }
     await nextTick()
     expect(result.workOrder.value?.workOrderId).toBe('WO-DETAIL')
@@ -619,15 +674,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
 
     api.errors.get('maintenance-detail')!.value = undefined
-    api.loading.get('device-directory')!.value = true
+    api.loading.get('device-detail')!.value = true
     await nextTick()
     expect(result.pending.value).toBe(true)
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.workOrder.value).toBeUndefined()
     expect(result.device.value).toBeUndefined()
 
-    api.loading.get('device-directory')!.value = false
-    api.data.get('device-directory')!.value = { success: false, data: null }
+    api.loading.get('device-detail')!.value = false
+    api.data.get('device-detail')!.value = { success: false, data: null }
     await nextTick()
     expect(result.hasFailedResponse.value).toBe(true)
     expect(result.workOrder.value).toBeUndefined()

@@ -155,11 +155,11 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).not.toContain('team-a')
   })
 
-  it('shows a terminal work order as read-only even when stale actions are present', async () => {
+  it('shows a validated terminal work order as read-only with no stale actions', async () => {
     state.workOrder = authoritativeWorkOrder({
       status: 'closed',
       version: 12,
-      allowedActions: ['start'],
+      allowedActions: [],
       blockReasons: ['terminal-status'],
     })
 

@@ -661,6 +661,29 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  const deviceDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
+  )
+  if (deviceDetailMatch) {
+    const requestedId = decodeURIComponent(deviceDetailMatch[1])
+    const device = deviceAssets.find((item) => item.deviceAssetId === requestedId)
+    return fulfillJson(
+      route,
+      envelope(
+        device
+          ? {
+              ...device,
+              resourceType: 'device-asset',
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      device ? 200 : 404,
+    )
+  }
+
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {

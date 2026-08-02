@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
-import MaintenanceWorkOrderFilters from '@/components/maintenance/MaintenanceWorkOrderFilters.vue'
-import MaintenanceWorkOrderList from '@/components/maintenance/MaintenanceWorkOrderList.vue'
+import MaintenanceWorkOrderFilters from './components/MaintenanceWorkOrderFilters.vue'
+import MaintenanceWorkOrderList from './components/MaintenanceWorkOrderList.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import { useMaintenanceSelfWorkOrders } from '@/composables/useMaintenanceSelfWorkOrders'
 import type {

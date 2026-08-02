@@ -62,12 +62,12 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await page.setViewportSize({ width: 375, height: 812 })
   const listRequests: URL[] = []
   const detailRequests: URL[] = []
-  const deviceDirectoryRequests: URL[] = []
+  const deviceDetailRequests: URL[] = []
   let rejectFirstListResponse = true
   page.on('request', (request) => {
     const url = new URL(request.url())
-    if (url.pathname === '/api/business-console/v1/master-data/device-assets') {
-      deviceDirectoryRequests.push(url)
+    if (url.pathname.startsWith('/api/business-console/v1/master-data/resources/device-asset/')) {
+      deviceDetailRequests.push(url)
     }
   })
   const workOrders = Array.from({ length: 25 }, (_, index) => ({
@@ -205,15 +205,12 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(detailRequests).toHaveLength(1)
   expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
-  expect(
-    deviceDirectoryRequests.some(
-      (url) =>
-        url.searchParams.get('keyword') === 'device-asset-cnc-01' &&
-        url.searchParams.get('includeDisabled') === 'false' &&
-        url.searchParams.get('skip') === '0' &&
-        url.searchParams.get('take') === '20',
-    ),
-  ).toBe(true)
+  expect(deviceDetailRequests).toHaveLength(1)
+  expect(deviceDetailRequests[0].pathname).toBe(
+    '/api/business-console/v1/master-data/resources/device-asset/device-asset-cnc-01',
+  )
+  expect(deviceDetailRequests[0].searchParams.get('organizationId')).toBe('org-001')
+  expect(deviceDetailRequests[0].searchParams.get('environmentId')).toBe('env-dev')
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 
@@ -282,8 +279,9 @@ test('维修工单：缺少主体 ID 时列表与详情均不发业务请求', a
   }
 })
 
-test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看', async ({ page }) => {
+test('维修工单：终态矛盾事实失败关闭，修正后强 ID 回读且仅可查看', async ({ page }) => {
   const detailRequests: URL[] = []
+  let rejectContradictoryDetail = true
   await page.route(
     '**/api/business-console/v1/maintenance/work-orders/WO-CLOSED**',
     async (route) => {
@@ -302,7 +300,7 @@ test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看'
             status: 'closed',
             openedAtUtc: '2026-08-02T01:00:00.000Z',
             version: 12,
-            allowedActions: ['start'],
+            allowedActions: rejectContradictoryDetail ? ['start'] : [],
             blockReasons: ['terminal-status'],
             lifecycle: [],
             assignedTechnicianUserId: principal.principalId,
@@ -315,13 +313,21 @@ test('维修工单：报警上下文直达仍强 ID 回读，终态仅可查看'
 
   await page.goto('/equipment/work-orders/WO-CLOSED?sourceAlarmId=ALM-9')
 
+  await expect(page.getByTestId('maintenance-work-order-detail-error')).toContainText(
+    '工单详情读取失败，请重试',
+  )
+  await expect(page.getByTestId('maintenance-read-only-state')).toHaveCount(0)
+  rejectContradictoryDetail = false
+  await page.getByTestId('maintenance-work-order-detail-error').getByRole('button').click()
   await expect(page.getByTestId('maintenance-read-only-state')).toContainText('终态只读')
   await expect(page.getByTestId('maintenance-read-only-state')).toContainText(
     '工单已进入终态，仅可查看',
   )
-  expect(detailRequests).toHaveLength(1)
-  expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
-  expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  expect(detailRequests).toHaveLength(2)
+  expect(detailRequests.every((url) => url.searchParams.get('scopeKind') === 'self')).toBe(true)
+  expect(
+    detailRequests.every((url) => url.searchParams.get('scopeId') === principal.principalId),
+  ).toBe(true)
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 

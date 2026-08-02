@@ -128,7 +128,8 @@ public sealed record MasterDataResourceDetail(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? DeviceAssetId = null);
 
 public sealed record GetMasterDataResourceDetailQuery(
     string OrganizationId,

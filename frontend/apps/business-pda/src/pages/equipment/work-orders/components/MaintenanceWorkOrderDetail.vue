@@ -17,7 +17,7 @@ import {
   isMaintenanceTerminal,
   maintenanceDeviceLocation,
   maintenanceDeviceTitle,
-} from './maintenanceWorkOrderPresentation'
+} from '../maintenanceWorkOrderPresentation'
 import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 
 const props = defineProps<{

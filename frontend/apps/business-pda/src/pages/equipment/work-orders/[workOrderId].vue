@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import MaintenanceWorkOrderDetail from '@/components/maintenance/MaintenanceWorkOrderDetail.vue'
+import MaintenanceWorkOrderDetail from './components/MaintenanceWorkOrderDetail.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'

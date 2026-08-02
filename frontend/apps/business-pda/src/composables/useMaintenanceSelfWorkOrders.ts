@@ -1,11 +1,10 @@
 import {
+  getBusinessConsoleMasterDataResourceDetailQueryOptions,
   getBusinessConsoleMaintenanceWorkOrderQueryOptions,
-  listBusinessConsoleDeviceAssetsQueryOptions,
   listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
+  type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsoleMaintenanceWorkOrderItem,
-  type BusinessConsoleResourceItem,
-  type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
 import {
   normalizeMaintenanceWorkOrderStatusFilter,
@@ -36,6 +35,10 @@ type WorkOrderListEnvelope =
 
 type WorkOrderDetailEnvelope =
   | { success?: boolean; data?: BusinessConsoleMaintenanceWorkOrderItem | null }
+  | undefined
+
+type DeviceAssetDetailEnvelope =
+  | { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null }
   | undefined
 
 interface WorkOrderPage {
@@ -79,6 +82,15 @@ function isExplicitAssignment(value: unknown) {
   return value === null || isNonBlankString(value)
 }
 
+function isWorkOrderListItem(value: unknown): value is BusinessConsoleMaintenanceWorkOrderItem {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId),
+  )
+}
+
 function parseWorkOrderPage(envelope: unknown, skip: number, take: number): WorkOrderPage {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     throw new Error('维修工单读取失败，请重试。')
@@ -91,6 +103,7 @@ function parseWorkOrderPage(envelope: unknown, skip: number, take: number): Work
     typeof data !== 'object' ||
     Array.isArray(data) ||
     !Array.isArray(data.items) ||
+    !data.items.every(isWorkOrderListItem) ||
     !Number.isSafeInteger(data.total) ||
     (data.total ?? -1) < 0
   ) {
@@ -108,6 +121,14 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
   value: BusinessConsoleMaintenanceWorkOrderItem | null | undefined,
   requestedWorkOrderId: string,
 ): value is AuthoritativeMaintenanceWorkOrderDetail {
+  const terminalStatus =
+    value &&
+    isNonBlankString(value.status) &&
+    ['closed', 'cancelled'].includes(value.status.trim().toLowerCase())
+  const terminalBlock =
+    value &&
+    Array.isArray(value.blockReasons) &&
+    value.blockReasons.some((reason) => reason.trim().toLowerCase() === 'terminal-status')
   return Boolean(
     value &&
     typeof value === 'object' &&
@@ -120,6 +141,7 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     isValidVersion(value.version) &&
     Array.isArray(value.allowedActions) &&
     value.allowedActions.every(isNonBlankString) &&
+    (!(terminalStatus || terminalBlock) || value.allowedActions.length === 0) &&
     Array.isArray(value.blockReasons) &&
     value.blockReasons.every(isNonBlankString) &&
     Object.hasOwn(value, 'assignedTechnicianUserId') &&
@@ -134,6 +156,12 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
         isNonBlankString(event.action) &&
         isNonBlankString(event.fromStatus) &&
         isNonBlankString(event.toStatus) &&
+        isNonBlankString(event.actorPrincipalId) &&
+        Object.hasOwn(event, 'technicianUserId') &&
+        isExplicitAssignment(event.technicianUserId) &&
+        Object.hasOwn(event, 'teamId') &&
+        isExplicitAssignment(event.teamId) &&
+        isNonBlankString(event.reason) &&
         isValidVersion(event.resultingVersion) &&
         isNonBlankString(event.occurredAtUtc) &&
         Number.isFinite(Date.parse(event.occurredAtUtc)),
@@ -327,33 +355,34 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     deviceEnabled.value ? `${scope.scopeKey.value}:device:${deviceAssetId.value}` : '',
   )
   const deviceQuery = useQuery(() => ({
-    ...listBusinessConsoleDeviceAssetsQueryOptions({
+    ...getBusinessConsoleMasterDataResourceDetailQueryOptions({
+      path: {
+        resourceType: 'device-asset',
+        code: deviceAssetId.value,
+      },
       query: {
         organizationId: scope.organizationId.value,
         environmentId: scope.environmentId.value,
-        includeDisabled: false,
-        keyword: deviceAssetId.value,
-        skip: 0,
-        take: PAGE_SIZE,
       },
     }),
     enabled: deviceEnabled.value,
   }))
   const deviceResponse = useScopeBoundListResponse(
-    () => deviceQuery.data.value as BusinessConsoleResourceListEnvelope | undefined,
+    () => deviceQuery.data.value as DeviceAssetDetailEnvelope,
     deviceIdentity,
     deviceEnabled,
   )
-  const validatedDevice = computed<BusinessConsoleResourceItem | undefined>(() => {
+  const validatedDevice = computed<BusinessConsoleMasterDataResourceDetail | undefined>(() => {
     const envelope = deviceResponse.value
     if (envelope?.success !== true) return undefined
-    const exactItems = (envelope.data?.resources ?? []).filter(
-      (item) =>
-        item.active !== false &&
-        typeof item.deviceAssetId === 'string' &&
-        item.deviceAssetId.trim() === deviceAssetId.value,
-    )
-    return exactItems.length === 1 ? exactItems[0] : undefined
+    const item = envelope.data
+    return item &&
+      item.resourceType?.trim().toLowerCase() === 'device-asset' &&
+      item.organizationId?.trim() === scope.organizationId.value &&
+      item.environmentId?.trim() === scope.environmentId.value &&
+      item.deviceAssetId?.trim() === deviceAssetId.value
+      ? item
+      : undefined
   })
   const deviceResponseAvailable = computed(() => deviceResponse.value !== undefined)
   const hasSuccessfulResponse = computed(() =>
