@@ -8,7 +8,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
-import type { ScheduleModel } from '../model/types'
+import type { LaneOrder, ScheduleModel } from '../model/types'
 import SchedulingCanvas from './SchedulingCanvas.vue'
 
 // 资源排产板:一资源一泳道,左轴维度可切换(设备 / 班组 / 产线 / 工作中心…)。
@@ -19,6 +19,7 @@ const props = defineProps<{
   loading?: boolean
   engineKind?: 'auto' | 'dhtmlx'
   groupBy?: string
+  laneOrder?: LaneOrder
 }>()
 
 const emit = defineEmits<{
@@ -86,6 +87,7 @@ defineExpose({ command })
         :read-only="readOnly"
         :loading="loading"
         :group-by="groupBy"
+        :lane-order="laneOrder"
         :engine-kind="engineKind"
         @task-select="$emit('taskSelect', $event)"
         @task-drag-end="$emit('taskDragEnd', $event)"

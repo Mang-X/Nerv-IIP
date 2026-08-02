@@ -3,7 +3,7 @@ import { Skeleton } from '@nerv-iip/ui'
 import { CalendarClockIcon } from '@lucide/vue'
 import { computed, ref, toRef } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
-import type { ScheduleModel } from '../model/types'
+import type { LaneOrder, ScheduleModel } from '../model/types'
 import ReadonlyScheduleTimeline from './ReadonlyScheduleTimeline.vue'
 import { useEngine } from './useEngine'
 import '../styles/scheduling.css'
@@ -17,6 +17,7 @@ const props = withDefaults(
     readOnly?: boolean
     loading?: boolean
     groupBy?: string
+    laneOrder?: LaneOrder
     engineKind?: 'auto' | 'dhtmlx'
   }>(),
   { scale: 'auto', readOnly: false, loading: false, engineKind: 'auto' },
@@ -39,6 +40,7 @@ const { engine, engineName } = useEngine({
   scale: toRef(props, 'scale'),
   readOnly: toRef(props, 'readOnly'),
   groupBy: toRef(props, 'groupBy'),
+  laneOrder: toRef(props, 'laneOrder'),
   engineKind: props.engineKind,
   on: {
     taskSelected: (p) => emit('taskSelect', p.taskId),
@@ -88,6 +90,7 @@ defineExpose({ command, engineName })
         :view="view"
         :scale="scale"
         :group-by="groupBy"
+        :lane-order="laneOrder"
         @task-select="emit('taskSelect', $event)"
         @conflict-click="emit('conflictClick', $event)"
       />

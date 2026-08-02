@@ -26,7 +26,7 @@ import {
 } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../../engine/engine'
-import type { SchedulingDimension } from '../../model/types'
+import type { LaneOrder, SchedulingDimension } from '../../model/types'
 
 const props = withDefaults(
   defineProps<{
@@ -52,6 +52,7 @@ const props = withDefaults(
     searchPlaceholder?: string
     groupDimensions?: SchedulingDimension[]
     groupBy?: string
+    laneOrder?: LaneOrder
   }>(),
   {
     canRepreview: true,
@@ -64,6 +65,7 @@ const props = withDefaults(
     searchPlaceholder: '搜工单 / 工序 / 资源',
     groupDimensions: () => [],
     groupBy: 'workCenter',
+    laneOrder: 'busiest',
   },
 )
 
@@ -82,6 +84,7 @@ const emit = defineEmits<{
   searchPrev: []
   searchNext: []
   groupChange: [groupBy: string]
+  laneOrderChange: [laneOrder: LaneOrder]
 }>()
 
 const scaleModel = computed({
@@ -97,6 +100,11 @@ const searchModel = computed({
 const groupModel = computed({
   get: () => props.groupBy,
   set: (value) => emit('groupChange', value),
+})
+
+const laneOrderModel = computed({
+  get: () => props.laneOrder,
+  set: (value) => emit('laneOrderChange', value as LaneOrder),
 })
 
 const hasQuery = computed(() => props.search.trim().length > 0)
@@ -137,6 +145,18 @@ const searchStatus = computed(() => {
         >
           {{ dimension.label }}
         </NvSelectItem>
+      </NvSelectContent>
+    </NvSelect>
+
+    <!-- 泳道排序只在有分组维度时才有意义（单一维度下泳道就是资源本身）。 -->
+    <NvSelect v-if="groupDimensions.length" v-model="laneOrderModel">
+      <NvSelectTrigger class="h-8 w-32 border-border/70" aria-label="泳道排序"
+        ><NvSelectValue
+      /></NvSelectTrigger>
+      <NvSelectContent>
+        <NvSelectItem value="busiest">利用率降序</NvSelectItem>
+        <NvSelectItem value="name">名称升序</NvSelectItem>
+        <NvSelectItem value="onlyScheduled">仅有排程</NvSelectItem>
       </NvSelectContent>
     </NvSelect>
 
