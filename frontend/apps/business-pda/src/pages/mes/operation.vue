@@ -483,6 +483,16 @@ async function retry() {
   const { action, displayReference, workOrderId, taskId, context } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
+  if (!isOperationActionContextCurrent(context)) {
+    operationResultUnknown.value = false
+    result.value = {
+      ...state,
+      status: 'error',
+      title: '操作失败',
+      description: `${displayReference}\n账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。`,
+    }
+    return
+  }
   const pageSnapshot = captureOperationPageSnapshot(context)
   result.value = null
   try {
@@ -555,7 +565,7 @@ function onScan(value: string) {
           :disabled="operationResultUnknown"
           variant="text"
           size="sm"
-          class="text-muted-foreground"
+          class="min-h-touch text-muted-foreground"
           @click="backToList"
         >
           返回

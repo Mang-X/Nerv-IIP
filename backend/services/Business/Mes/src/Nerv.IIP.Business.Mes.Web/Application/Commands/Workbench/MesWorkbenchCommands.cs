@@ -1440,14 +1440,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                 x.OperationSequence < task.OperationSequence &&
                 x.Status != OperationTaskLifecycleStatus.Completed)
             .OrderBy(x => x.OperationSequence)
-            .Select(x => x.OperationTaskIdValue)
+            .Select(x => x.OperationSequence)
             .ToArrayAsync(cancellationToken);
         if (blockingOperations.Length > 0)
         {
             // 这条会经分层透传直接上屏，而前端只原样透传 60 字以内的中文短消息（超了会被截断）——
             // 所以只说「哪几道工序还没完工」，不带 OperationTaskId = 这类内部字段名；
             // 前序太多时只点前三道，剩下的给个数（MAN-698 台账 #35 同批）。
-            var named = blockingOperations.Take(3).ToArray();
+            var named = blockingOperations.Take(3).Select(sequence => $"工序 {sequence}").ToArray();
             var more = blockingOperations.Length > named.Length
                 ? $" 等 {blockingOperations.Length} 道"
                 : string.Empty;

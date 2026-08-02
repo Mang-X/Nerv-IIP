@@ -89,6 +89,40 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Complete_operation_endpoint_preserves_readable_predecessor_sequences_without_raw_task_ids()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new PreviousOperationIncompleteSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-CURRENT-INTERNAL/complete",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                idempotencyKey = "complete-predecessor-rejected",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("前序工序尚未完成：工序 10、工序 20 等 4 道。", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-PREVIOUS-INTERNAL", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-CURRENT-INTERNAL", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Convert_plan_endpoint_returns_422_with_routing_snapshot_error_code()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -2186,6 +2220,38 @@ public sealed class MesEndpointContractTests
             _ = cancellationToken;
             return Task.FromException<TResponse>(
                 new MesRoutingSnapshotMissingException("product-engineering:missing-production-version"));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class PreviousOperationIncompleteSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Assert.IsType<ChangeOperationTaskStateCommand>(request);
+            return Task.FromException<TResponse>(
+                new KnownException("前序工序尚未完成：工序 10、工序 20 等 4 道。"));
         }
 
         public Task Send<TRequest>(

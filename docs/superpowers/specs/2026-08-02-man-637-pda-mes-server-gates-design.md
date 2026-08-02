@@ -23,13 +23,14 @@
 - 409/lifecycle conflict：关闭旧 sheet、清除旧动作上下文和幂等键、刷新当前 scope 的权威列表；旧按钮不会继续可用。
 - `accepted`/缺失/畸形回执或权威回读未确认：保留原幂等键并显示“结果不确定”错误，不显示成功。
 - 未确认后 principal、组织、环境或 manage scope 漂移：保留旧 pair/key 的历史事实但禁止在新 context 重放；页面只显示可读冲突提示，不泄露 raw ID。
+- 点击重试前已发生的 principal、组织、环境或 manage scope 漂移：页面在 mutation 前比较冻结 context，保留结果、context 与幂等键，并把未知网络态收敛为可读且 determinate 的“上下文已变化”冲突；只有请求调用期间才发生的漂移进入 stale discard。
 - route query、scope 或 principal identity 变化：立即关闭旧详情，只能由新 identity 的成功响应重新打开精确 pair。
 - 首次动作或重试 await 期间发生 route、principal、组织/环境、读范围或 manage scope 漂移：旧 success/error 都静默丢弃，清除旧结果/意图并刷新当前上下文；上下文变化本身不显示“操作失败”。
 - 首次动作或重试 await 期间从普通列表 pair A 改选 pair B：A 的旧 success/error 都静默丢弃并刷新当前列表，只清理仍属于 A 的意图；B 的 sheet、选择和结果不被关闭或覆盖。
 - 完整 deep link 的任务数据先于 manage scope 到达：未 ready 时不打开；manage identity 就绪后按新的打开 identity 重新评估并只打开精确 pair。
-- 前序阻塞：MES 以权威 `operationSequence` 返回“工序 N”，不把当前或前序 `operationTaskId` 放入面向操作员的说明。
+- 前序阻塞：MES readiness 与 complete command 都投影权威 `operationSequence`，以“工序 N”及截断后的“等 N 道”返回，不把当前或前序 `operationTaskId` 放入面向操作员的说明。
 - 未知 `allowedActions` 值不渲染按钮；空数组只读，不从 status 推导兜底动作。
 
 ## 测试策略
 
-先在 composable、page-private component 与页面单元测试中新增失败断言，再做最小实现；route contract 直接检查 generated route table 不包含 `components`。页面延迟 mutation 表格测试覆盖 route/principal/org-env/manage-scope × success/error × initial/retry，并覆盖普通列表选择 A→B 的 initial/retry × success/error；另以任务数据先到、manage scope 后到的确定性用例验证 deep-link 打开顺序。BottomSheet 黑盒断言使用真实 Portal 契约 `[data-slot="mobile-sheet-content"][data-state="open"]`，关闭动画保留的 `data-state="closed"` 节点不算打开。readiness evaluator 与 service contract 直接断言“工序 N”且 current/predecessor raw ID 缺席。375×812 Playwright 增加同工单 20 个以上 substring collisions 的 deep-link 场景，断言请求携带 exact `operationTaskId` 且不携带 keyword，并覆盖生产形态缺号与可读前序引用。最终运行 Gateway/MES/Facade、api-client/business-core/PC/PDA、PDA typecheck/build、MES 与完整 PDA e2e、逐文件格式和 OpenAPI drift；仅在存在受管场景时通过 `nerv.ps1 fullstack run` 留存公开 BusinessGateway 证据。
+先在 composable、page-private component 与页面单元测试中新增失败断言，再做最小实现；route contract 直接检查 generated route table 不包含 `components`。页面延迟 mutation 表格测试覆盖 route/principal/org-env/manage-scope × success/error × initial/retry，并覆盖普通列表选择 A→B 的 initial/retry × success/error；另以任务数据先到、manage scope 后到的确定性用例验证 deep-link 打开顺序。未知结果重试另以真实 principal、organization、environment、manage-scope identity 分别漂移，断言 mutation 未调用、冲突可读且原 key/context 仍在。BottomSheet 黑盒断言使用真实 Portal 契约 `[data-slot="mobile-sheet-content"][data-state="open"]`，关闭动画保留的 `data-state="closed"` 节点不算打开。readiness evaluator、complete command 与 service contract 直接断言“工序 N / 等 N 道”且 current/predecessor raw ID 缺席。375×812 Playwright 增加同工单 20 个以上 substring collisions 的 deep-link 场景，断言请求携带 exact `operationTaskId` 且不携带 keyword，并测量页头返回按钮不低于 44 px；同时覆盖生产形态缺号与可读前序引用。最终运行 Gateway/MES/Facade、api-client/business-core/PC/PDA、PDA typecheck/build、MES 与完整 PDA e2e、逐文件格式和 OpenAPI drift；仅在存在受管场景时通过 `nerv.ps1 fullstack run` 留存公开 BusinessGateway 证据。

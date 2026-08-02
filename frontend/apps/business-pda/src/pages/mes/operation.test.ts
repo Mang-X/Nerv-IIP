@@ -211,10 +211,10 @@ import OperationPage from './operation.vue'
 
 describe('PDA MES operation execution page', () => {
   beforeEach(() => {
-    completeTask.mockClear()
-    startTask.mockClear()
-    pauseTask.mockClear()
-    resumeTask.mockClear()
+    completeTask.mockReset().mockResolvedValue(undefined)
+    startTask.mockReset().mockResolvedValue(undefined)
+    pauseTask.mockReset().mockResolvedValue(undefined)
+    resumeTask.mockReset().mockResolvedValue(undefined)
     refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
@@ -967,12 +967,61 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
-  it('shows a readable fail-closed result when the frozen retry context has drifted', async () => {
-    completeTask
-      .mockRejectedValueOnce(new RequestTimeoutError())
-      .mockRejectedValueOnce(
-        new Error('账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。'),
-      )
+  it.each([
+    {
+      label: 'principal',
+      identity: 'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'organization',
+      identity: 'principal-001\u0000org-002\u0000env-dev\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'environment',
+      identity: 'principal-001\u0000org-001\u0000env-qa\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'manage scope',
+      identity: 'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B',
+    },
+  ])(
+    'preflights frozen retry context after $label drift without calling the mutation',
+    async ({ identity }) => {
+      completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+      await wrapper.findAll('[data-row]')[0].trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+      await flushPromises()
+
+      const firstOptions = completeTask.mock.calls[0][2]
+      operationActionContextIdentityRef.value = identity
+      await nextTick()
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+      expect(wrapper.text()).not.toContain('网络')
+      expect(wrapper.text()).not.toContain('WO-2026-0001')
+      expect(wrapper.text()).not.toContain('OP-1')
+      expect(wrapper.get('[data-testid="back-to-list"]').attributes('disabled')).toBeUndefined()
+
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(2)
+      expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+      expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+    },
+  )
+
+  it('presents readable predecessor sequences from a rejected complete command without raw task IDs', async () => {
+    completeTask.mockRejectedValueOnce(new Error('前序工序尚未完成：工序 10、工序 20 等 4 道。'))
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
@@ -981,17 +1030,11 @@ describe('PDA MES operation execution page', () => {
     document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
-    await wrapper.get('[data-testid="retry-action"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.text()).toContain('前序工序尚未完成：工序 10、工序 20 等 4 道。')
     expect(wrapper.text()).not.toContain('WO-2026-0001')
     expect(wrapper.text()).not.toContain('OP-1')
-    expect(completeTask).toHaveBeenCalledTimes(2)
-    expect(completeTask.mock.calls[1][2].context).toStrictEqual(
-      completeTask.mock.calls[0][2].context,
-    )
-    expect(wrapper.get('[data-testid="back-to-list"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('OP-10')
+    expect(wrapper.text()).not.toContain('OP-20')
   })
 
   it('removes the beforeunload guard when the operation route component is removed', async () => {

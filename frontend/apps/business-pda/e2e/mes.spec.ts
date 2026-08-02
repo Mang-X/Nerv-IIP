@@ -192,6 +192,10 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   await page.goto('/mes/operation')
 
   await expect(page.getByRole('heading', { name: '工序执行' })).toBeVisible()
+  const headerBackButton = page.getByRole('button', { name: '返回', exact: true })
+  const headerBackBox = await headerBackButton.boundingBox()
+  expect(headerBackBox).not.toBeNull()
+  expect(headerBackBox!.height).toBeGreaterThanOrEqual(44)
 
   // MES 当前没有独立业务工单号，列表显式展示缺失态，强 ID 仍只用于绑定。
   const row = page.getByRole('button', {

@@ -106,3 +106,17 @@
 - [x] Discard stale initial/retry success and error for pair A without clearing or closing a newly selected pair B; refresh the current list in all four cases.
 - [x] Include manage-action identity/readiness in deep-link opening so task data arriving before scope resolution cannot be opened and then permanently closed by the reset watcher.
 - [x] Capture five deterministic red tests, use the real open-state Portal selector, and turn all 48 operation-page tests green.
+
+### Task 8: Preserve unknown retry evidence and finish operator-readable completion failures
+
+**Files:**
+
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
+- Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs`
+- Modify: MAN-637 command/service, PDA unit and 375×812 Playwright tests
+
+- [x] Before retry mutation, compare the frozen principal/org/environment/manage-scope context with the live action identity; pre-existing drift becomes a determinate readable conflict while the result, frozen context and idempotency key remain available.
+- [x] Keep stale-result discard only for identity changes that happen while a request is in flight; prove all four pre-request identity drifts call no mutation and retain the same key/context for a subsequently safe retry.
+- [x] Raise the enabled header Back button from the `size="sm"` 32 px baseline to the 44 px PDA touch floor and assert its real 375×812 bounding box.
+- [x] Project incomplete predecessors by `OperationSequence` in the complete-command guard and transport “工序 N / 等 N 道” without current or predecessor raw task IDs through the service envelope and PDA result.
+- [x] Capture focused red for the four identity cases, 32 px browser measurement and raw-ID command error, then turn 52 page tests plus command/service and browser targets green.
