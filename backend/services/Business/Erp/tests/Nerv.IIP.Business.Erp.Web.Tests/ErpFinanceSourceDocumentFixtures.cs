@@ -117,7 +117,10 @@ internal static class ErpFinanceSourceDocumentFixtures
         string organizationId = "org-001",
         string environmentId = "env-dev")
     {
-        var requiredDate = new DateOnly(2026, 8, 1);
+        // 这个日期同时当**报价有效期**用，而 Quotation.EnsureCanCreateSalesOrder 判
+        // `ExpiresOn < today`——写死就是定时炸弹：2026-08-02 一到，所有用这个夹具的用例
+        // 集体红成「Expired quotations cannot create sales orders」，且 diff 里看不出关系。
+        var requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30));
         var quotation = Quotation.Create(
             organizationId,
             environmentId,
