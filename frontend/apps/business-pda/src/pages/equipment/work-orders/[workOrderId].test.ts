@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
     users: { 'principal-1': '张维修' },
     teams: { 'team-a': '甲班' },
   },
+  identitiesUnavailable: false,
   requestedId: undefined as ComputedRef<string> | undefined,
   refresh: vi.fn(),
 }))
@@ -35,7 +36,7 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
       device: shallowRef(state.device),
       identities: shallowRef(state.identities),
       identityPending: shallowRef(false),
-      identitiesUnavailable: shallowRef(false),
+      identitiesUnavailable: shallowRef(state.identitiesUnavailable),
       refresh: state.refresh,
     }
   },
@@ -86,6 +87,7 @@ describe('maintenance work-order authoritative detail page', () => {
       error: undefined,
       workOrder: undefined,
       device: undefined,
+      identitiesUnavailable: false,
       requestedId: undefined,
     })
   })
@@ -198,6 +200,18 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('终态只读')
     expect(wrapper.text()).toContain('工单已进入终态，仅可查看')
     expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
+  })
+
+  it('offers an actionable identity refresh when enrichment returns 502', async () => {
+    state.workOrder = authoritativeWorkOrder()
+    state.identitiesUnavailable = true
+    const wrapper = await mountPage()
+
+    const button = wrapper.get('[data-testid="refresh-maintenance-identities"]')
+    expect(button.text()).toContain('刷新身份资料')
+    await button.trigger('click')
+
+    expect(state.refresh).toHaveBeenCalledTimes(1)
   })
 
   it('uses actionable account guidance when the detail cannot be queried', async () => {

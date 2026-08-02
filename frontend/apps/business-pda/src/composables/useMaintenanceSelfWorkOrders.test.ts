@@ -323,6 +323,31 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(result.total.value).toBe(0)
   })
 
+  it('normalizes uppercase public GUIDs returned by the list contract', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    const workOrderId = workOrderGuid(1)
+    const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: {
+        items: [
+          authoritativeListItem(1, {
+            workOrderId: workOrderId.toUpperCase(),
+            deviceAssetId: deviceAssetId.toUpperCase(),
+          }),
+        ],
+        total: 1,
+        skip: 0,
+        take: 20,
+      },
+    }
+    await nextTick()
+
+    expect(result.items.value[0]).toMatchObject({ workOrderId, deviceAssetId })
+  })
+
   it.each(invalidListEnvelopes)(
     'rejects a malformed first-page envelope: %s',
     async (_, envelope) => {
@@ -508,6 +533,28 @@ describe('useMaintenanceSelfWorkOrders', () => {
 
     expect(result.hasFailedResponse.value).toBe(true)
     expect(result.items.value).toEqual([])
+  })
+
+  it('retries the exact principal identity lookup together with a list refresh', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: { items: [authoritativeListItem(1)], total: 1, skip: 0, take: 20 },
+    }
+    api.errors.get('maintenance-list-principal')!.value = { status: 502 }
+    await nextTick()
+    expect(result.principalDisplayName.value).toBeUndefined()
+
+    api.refetches.get('maintenance-list-principal')!.mockImplementationOnce(async () => {
+      api.errors.get('maintenance-list-principal')!.value = undefined
+      api.data.get('maintenance-list-principal')!.value = '张维修'
+    })
+    await result.refresh()
+    await nextTick()
+
+    expect(api.refetches.get('maintenance-list-principal')).toHaveBeenCalledTimes(1)
+    expect(result.principalDisplayName.value).toBe('张维修')
   })
 
   it('loads the next page with the same self scope and server filters', async () => {
@@ -908,15 +955,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
   it('accepts a device detail resolved by public ID when its business code differs', async () => {
     seedPrincipal()
     const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
-    const result = useMaintenanceSelfWorkOrderDetail(
-      computed(() => '019f0000-0000-7000-8000-000000000101'),
-    )
+    const workOrderId = '019f0000-0000-7000-8000-000000000101'
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => workOrderId.toUpperCase()))
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', deviceAssetId),
+      data: authoritativeDetail(workOrderId.toUpperCase(), deviceAssetId.toUpperCase()),
     }
     await nextTick()
 
+    expect(requestFor('maintenance-detail')).toMatchObject({ path: { workOrderId } })
     expect(requestFor('device-detail')).toMatchObject({
       path: { resourceType: 'device-asset', code: deviceAssetId },
     })
@@ -928,6 +975,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         deviceAssetId,
         code: 'DEV-CNC-01',
         displayName: '一号数控机床',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-001',
         environmentId: 'env-dev',
       },
@@ -935,6 +984,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await nextTick()
 
     expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.workOrder.value).toMatchObject({ workOrderId, deviceAssetId })
     expect(result.device.value?.code).toBe('DEV-CNC-01')
   })
 
@@ -945,6 +995,11 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     ['code', { code: {} }],
     ['device public ID', { deviceAssetId: '00000000-0000-0000-0000-000000000000' }],
     ['display name', { displayName: 42 }],
+    ['missing active flag', { active: undefined }],
+    ['active flag type', { active: 'true' }],
+    ['missing snapshot version', { snapshotVersion: undefined }],
+    ['blank snapshot version', { snapshotVersion: ' ' }],
+    ['snapshot version type', { snapshotVersion: 7 }],
     ['site', { siteCode: {} }],
     ['plant', { plantCode: 42 }],
     ['workshop', { workshopCode: {} }],
@@ -969,6 +1024,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
           deviceAssetId: '019f0000-0000-7000-8000-000000000001',
           code: 'DEV-CNC-01',
           displayName: '一号数控机床',
+          active: true,
+          snapshotVersion: 'device-v1',
           organizationId: 'org-001',
           environmentId: 'env-dev',
           ...override,
@@ -1191,6 +1248,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         deviceAssetId: '019f0000-0000-7000-8000-000000000001',
         code: 'DEV-CNC-OLD',
         displayName: '迟到的旧设备',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-001',
         environmentId: 'env-dev',
       },
@@ -1232,6 +1291,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         resourceType: 'device-asset',
         deviceAssetId: '019f0000-0000-7000-8000-000000000001',
         code: 'DEV-CNC-01',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-other',
         environmentId: 'env-dev',
       },
@@ -1248,6 +1309,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         deviceAssetId: '019f0000-0000-7000-8000-000000000001',
         code: 'DEV-CNC-01',
         displayName: '一号数控机床',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-001',
         environmentId: 'env-dev',
         workshopCode: 'WS-1',
@@ -1287,6 +1350,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         deviceAssetId: '019f0000-0000-7000-8000-000000000001',
         code: 'DEV-CNC-01',
         displayName: '迟到的一号数控机床',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-001',
         environmentId: 'env-dev',
       },
@@ -1331,6 +1396,41 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(calls).toEqual(['work-order'])
   })
 
+  it('retries identity enrichment after authoritative detail revalidation', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
+    }
+    api.errors.get('maintenance-identities')!.value = { status: 502 }
+    await nextTick()
+    expect(result.identitiesUnavailable.value).toBe(true)
+
+    const calls: string[] = []
+    api.refetches.get('maintenance-detail')!.mockImplementationOnce(async () => {
+      calls.push('work-order')
+    })
+    api.refetches.get('maintenance-identities')!.mockImplementationOnce(async () => {
+      calls.push('identities')
+      api.errors.get('maintenance-identities')!.value = undefined
+      api.data.get('maintenance-identities')!.value = {
+        users: { 'principal-1': '张维修' },
+        teams: {},
+      }
+    })
+
+    await result.refresh()
+    await nextTick()
+
+    expect(calls[0]).toBe('work-order')
+    expect(calls).toContain('identities')
+    expect(result.identitiesUnavailable.value).toBe(false)
+    expect(result.identities.value?.users['principal-1']).toBe('张维修')
+  })
+
   it('hides retained aggregate detail during work-order and device refreshes', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrderDetail(
@@ -1347,6 +1447,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         deviceAssetId: '019f0000-0000-7000-8000-000000000001',
         code: 'DEV-CNC-01',
         displayName: '旧设备',
+        active: true,
+        snapshotVersion: 'device-v1',
         organizationId: 'org-001',
         environmentId: 'env-dev',
       },

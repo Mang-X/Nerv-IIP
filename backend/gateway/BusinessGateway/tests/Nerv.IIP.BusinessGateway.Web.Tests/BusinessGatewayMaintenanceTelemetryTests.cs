@@ -1180,10 +1180,22 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
+        var telemetry = new RecordingIndustrialTelemetryClient
+        {
+            AlarmListResponse = AlarmResponse(Alarm("alarm-001", "DEV-PRESS-01")),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => DeviceDetail(request, DeviceId(1)),
+        };
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -1224,6 +1236,98 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("wo-maint-001", maintenance.LastCompleteWorkOrderId);
         Assert.Equal("restored", maintenance.LastCompleteWorkOrderRequest.GetProperty("result").GetString());
         Assert.Equal("SPARE-001", maintenance.LastCompleteWorkOrderRequest.GetProperty("spareParts")[0].GetProperty("skuCode").GetString());
+    }
+
+    [Fact]
+    public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var telemetry = new RecordingIndustrialTelemetryClient
+        {
+            AlarmListResponse = AlarmResponse(Alarm("alarm-001", "DEV-PRESS-01")),
+        };
+        var deviceId = DeviceId(1);
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-PRESS-01"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await PostAlarmRepairAsync(client, deviceId.ToUpperInvariant());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, maintenance.CreateWorkOrderCallCount);
+        Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest(
+            "org-001", "env-dev", null, null, 0, 2, AlarmEventId: "alarm-001"), telemetry.LastAlarmListRequest);
+        Assert.Equal(2, masterData.DetailRequests.Count);
+        Assert.Contains(masterData.DetailRequests, x => x.Code == deviceId.ToUpperInvariant());
+        Assert.Contains(masterData.DetailRequests, x => x.Code == "DEV-PRESS-01");
+    }
+
+    [Fact]
+    public async Task Alarm_sourced_repair_rejects_a_different_device_before_create()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var telemetry = new RecordingIndustrialTelemetryClient
+        {
+            AlarmListResponse = AlarmResponse(Alarm("alarm-001", "DEV-ALARM-A")),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => request.Code == "DEV-ALARM-A"
+                ? DeviceDetail(request, DeviceId(1))
+                : DeviceDetail(request, DeviceId(2)),
+        };
+        await using var factory = CreateAlarmRepairFactory(maintenance, telemetry, masterData);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
+    }
+
+    public static TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse> InvalidAlarmFacts => new()
+    {
+        { "not found", new BusinessConsoleTelemetryAlarmEventListResponse([], 0) },
+        { "wrong scope", AlarmResponse(Alarm("alarm-001", "DEV-A", organizationId: "org-other")) },
+        { "multiple", new BusinessConsoleTelemetryAlarmEventListResponse([
+            Alarm("alarm-001", "DEV-A"),
+            Alarm("alarm-001", "DEV-B"),
+        ], 2) },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidAlarmFacts))]
+    public async Task Alarm_sourced_repair_rejects_missing_wrong_scope_or_multiple_alarm_facts(
+        string _,
+        BusinessConsoleTelemetryAlarmEventListResponse alarmResponse)
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var telemetry = new RecordingIndustrialTelemetryClient { AlarmListResponse = alarmResponse };
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateAlarmRepairFactory(maintenance, telemetry, masterData);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await PostAlarmRepairAsync(client, "DEV-A");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Fact]
@@ -1758,6 +1862,71 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             candidates.Select(x => x.Kind).Distinct(StringComparer.Ordinal).ToArray(),
             []);
 
+    private static string DeviceId(int suffix) =>
+        $"019f0000-0000-7000-8000-{suffix.ToString(CultureInfo.InvariantCulture).PadLeft(12, '0')}";
+
+    private static BusinessConsoleTelemetryAlarmEventItem Alarm(
+        string alarmEventId,
+        string deviceAssetId,
+        string organizationId = "org-001",
+        string environmentId = "env-dev") => new(
+            alarmEventId,
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            "TEMP_HIGH",
+            "critical",
+            "raised",
+            DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+            null,
+            "EXT-ALARM-001");
+
+    private static BusinessConsoleTelemetryAlarmEventListResponse AlarmResponse(
+        BusinessConsoleTelemetryAlarmEventItem alarm) => new([alarm], 1);
+
+    private static BusinessConsoleMasterDataResourceDetail DeviceDetail(
+        BusinessConsoleMasterDataResourceRequest request,
+        string deviceAssetId,
+        string? code = null) => new(
+            "device-asset",
+            code ?? request.Code,
+            "设备",
+            true,
+            "v1",
+            request.OrganizationId,
+            request.EnvironmentId,
+            DeviceAssetId: deviceAssetId);
+
+    private static async Task<HttpResponseMessage> PostAlarmRepairAsync(
+        HttpClient client,
+        string deviceAssetId) =>
+        await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId,
+            priority = "high",
+            sourceAlarmId = "alarm-001",
+            openedBy = "untrusted-client",
+            idempotencyKey = "maintenance-alarm-create-test",
+        });
+
+    private static WebApplicationFactory<Program> CreateAlarmRepairFactory(
+        RecordingMaintenanceFacadeClient maintenance,
+        RecordingIndustrialTelemetryClient telemetry,
+        RecordingMasterDataClient masterData) =>
+        CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
@@ -1920,6 +2089,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public BusinessServiceProxyException? CompleteWorkOrderFailure { get; init; }
 
+    public int CreateWorkOrderCallCount { get; private set; }
+
     public int AssignCallCount { get; private set; }
 
     public int TransitionCallCount { get; private set; }
@@ -1929,6 +2100,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
+        CreateWorkOrderCallCount++;
         LastInternalToken = internalBearerToken;
         LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));

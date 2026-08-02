@@ -24,11 +24,11 @@ import {
 } from '@/composables/useListFreshness'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'
 import { useTaskListPagination } from './useTaskListPagination'
 
 const WORK_ORDER_PAGE_SIZE = 20
 const AUXILIARY_LIST_TAKE = 100
-
 export interface MaintenanceListFilters {
   status?: string
   keyword?: string
@@ -233,13 +233,24 @@ export function useBusinessMaintenance() {
       environmentId: environmentId.value,
       openedBy: loginName.value,
     } satisfies CreateMaintenanceWorkOrderRequest
-    return completePendingBusinessIntent(scope, async () =>
-      confirmBusinessConsoleOperation(await createMutation.mutateAsync({ body }), {
+    return completePendingBusinessIntent(scope, async () => {
+      const response = await createMutation.mutateAsync({ body })
+      const workOrderId = confirmedMaintenanceCreateWorkOrderId(response)
+      const receipt = response.data!.operationReceipt!
+      const normalizedResponse = {
+        ...response,
+        data: {
+          ...response.data!,
+          workOrderId,
+          operationReceipt: { ...receipt, resourceId: workOrderId },
+        },
+      }
+      return confirmBusinessConsoleOperation(normalizedResponse, {
         expectedOperationType: 'maintenance.work-order.create',
         expectedIdempotencyKey: idempotencyKey,
-        expectedResourceIdSelector: (envelope) => envelope.data?.workOrderId,
-      }),
-    )
+        expectedResourceIdSelector: () => workOrderId,
+      })
+    })
   }
 
   async function recordInspection(input: RecordInspectionInput) {

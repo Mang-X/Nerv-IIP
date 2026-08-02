@@ -3,6 +3,7 @@ import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { confirmedMaintenanceCreateWorkOrderId } from '@/composables/maintenanceCreateReceipt'
 import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
@@ -147,10 +148,11 @@ const queryDeviceAssetId = computed(() => {
   const v = route.query.deviceAssetId
   return typeof v === 'string' ? v.trim() : ''
 })
-const sourceAlarmId = computed(() => {
+const routeSourceAlarmId = computed(() => {
   const v = route.query.sourceAlarmId
-  return typeof v === 'string' && v.length > 0 ? v : undefined
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined
 })
+const sourceAlarmId = ref(routeSourceAlarmId.value)
 
 // 报修表单 = repairOrderFlow 的上下文（selectDevice → fillDetails → create）。
 const form = reactive<RepairCtx & { assetUnavailableReason: string }>({
@@ -208,6 +210,7 @@ function onScan(value: string) {
   const deviceAssetId = value.trim()
   if (!deviceAssetId) return
   form.deviceAssetId = deviceAssetId
+  sourceAlarmId.value = undefined
   selectedDevice.value = {
     deviceAssetId,
     displayName: deviceAssetId,
@@ -220,6 +223,7 @@ function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId:
   const deviceCode = device.code?.trim()
   if (!deviceCode) return
   form.deviceAssetId = deviceCode
+  sourceAlarmId.value = undefined
   selectedDevice.value = { ...device, source: 'directory' }
 }
 
@@ -282,9 +286,7 @@ async function submit() {
       ...intent,
       idempotencyKey: operationKey.value,
     })
-    const workOrderId = response.data?.workOrderId?.trim()
-    if (!workOrderId) throw new Error('维修工单创建回执缺少工单标识，请刷新核实。')
-    createdWorkOrderId.value = workOrderId
+    createdWorkOrderId.value = confirmedMaintenanceCreateWorkOrderId(response)
     return response
   })
 }
@@ -304,6 +306,7 @@ function resetForm() {
   form.deviceAssetId = queryDeviceAssetId.value
   form.priority = ''
   form.assetUnavailableReason = ''
+  sourceAlarmId.value = routeSourceAlarmId.value
   selectedDevice.value = queryDeviceAssetId.value
     ? {
         deviceAssetId: queryDeviceAssetId.value,

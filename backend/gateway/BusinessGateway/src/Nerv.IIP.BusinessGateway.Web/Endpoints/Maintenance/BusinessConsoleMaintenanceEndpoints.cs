@@ -25,6 +25,8 @@ public abstract class AuthorizedBusinessMaintenanceProxyEndpoint<TRequest, TResp
 public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceWorkOrderRequest, BusinessConsoleCreateMaintenanceWorkOrderResponse>(
         auth,
@@ -38,17 +40,104 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
 
     protected override string? ResourceId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.DeviceAssetId;
 
-    protected override Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        return maintenance.CreateWorkOrderAsync(
+        var sourceAlarmId = request.SourceAlarmId?.Trim();
+        if (!string.IsNullOrEmpty(sourceAlarmId))
+        {
+            var alarms = await industrialTelemetry.ListAlarmsAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleTelemetryAlarmListRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    DeviceAssetId: null,
+                    Status: null,
+                    Skip: 0,
+                    Take: 2,
+                    AlarmEventId: sourceAlarmId),
+                cancellationToken);
+            var alarm = alarms.Items is { Count: 1 } && alarms.Total == 1
+                ? alarms.Items.Single()
+                : null;
+            if (alarm is null ||
+                !string.Equals(alarm.AlarmEventId, sourceAlarmId, StringComparison.Ordinal) ||
+                !string.Equals(alarm.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
+                !string.Equals(alarm.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "source-alarm-unavailable");
+            }
+
+            var requestedDeviceId = await ResolveDeviceAggregateIdAsync(
+                request.DeviceAssetId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken);
+            var alarmDeviceId = await ResolveDeviceAggregateIdAsync(
+                alarm.DeviceAssetId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken);
+            if (!string.Equals(requestedDeviceId, alarmDeviceId, StringComparison.Ordinal))
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.Conflict,
+                    "source-alarm-device-mismatch");
+            }
+        }
+
+        return await maintenance.CreateWorkOrderAsync(
             tokenProvider.BearerToken,
-            request with { OpenedBy = actorRef },
+            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
             cancellationToken);
     }
+
+    private async Task<string> ResolveDeviceAggregateIdAsync(
+        string deviceReference,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(deviceReference))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "device-reference-unavailable");
+        }
+        var normalizedReference = deviceReference.Trim();
+        var detail = await masterData.GetResourceDetailAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleMasterDataResourceRequest(
+                organizationId,
+                environmentId,
+                "device-asset",
+                normalizedReference),
+            cancellationToken);
+        var aggregateId = NormalizeGuid(detail.DeviceAssetId);
+        var referenceMatches = string.Equals(detail.Code, normalizedReference, StringComparison.Ordinal) ||
+            string.Equals(aggregateId, NormalizeGuid(normalizedReference), StringComparison.Ordinal);
+        if (!string.Equals(detail.ResourceType, "device-asset", StringComparison.Ordinal) ||
+            !string.Equals(detail.OrganizationId, organizationId, StringComparison.Ordinal) ||
+            !string.Equals(detail.EnvironmentId, environmentId, StringComparison.Ordinal) ||
+            !referenceMatches ||
+            aggregateId is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "device-reference-unavailable");
+        }
+        return aggregateId;
+    }
+
+    private static string? NormalizeGuid(string? value) =>
+        Guid.TryParseExact(value?.Trim(), "D", out var parsed) && parsed != Guid.Empty
+            ? parsed.ToString("D")
+            : null;
 }
 
 [Tags("Business Console Maintenance")]
@@ -1235,7 +1324,7 @@ public sealed class BusinessConsoleCreateMaintenanceWorkOrderRequestValidator : 
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Priority).NotEmpty().MaximumLength(40);
-        RuleFor(x => x.SourceAlarmId).MaximumLength(100);
+        RuleFor(x => x.SourceAlarmId).NotEmpty().MaximumLength(100).When(x => x.SourceAlarmId is not null);
         RuleFor(x => x.OpenedBy).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(200);

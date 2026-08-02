@@ -20,6 +20,9 @@ const coladaState = vi.hoisted(() => ({
 // stubbed because `@/stores/auth` lazily references them (never called in these
 // tests — we only `$patch` the principal).
 vi.mock('@nerv-iip/api-client', () => ({
+  BusinessOperationUnconfirmedError: class BusinessOperationUnconfirmedError extends Error {
+    readonly code = 'business-operation-unconfirmed'
+  },
   confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceWorkOrders' }],
@@ -99,6 +102,15 @@ describe('useBusinessMaintenance', () => {
     coladaState.queryDataById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.mutate.createWorkOrder.mockResolvedValue({
+      success: true,
+      data: {
+        workOrderId: '019f1000-0000-7000-8000-000000000001',
+        operationReceipt: {
+          resourceId: '019f1000-0000-7000-8000-000000000001',
+        },
+      },
+    })
   })
 
   it('keeps every list query disabled when the principal has no org/env scope', () => {
@@ -190,7 +202,15 @@ describe('useBusinessMaintenance', () => {
     seedPrincipal()
     coladaState.mutate.createWorkOrder
       .mockRejectedValueOnce({ status: 422, message: 'invalid request' })
-      .mockResolvedValueOnce({ success: true, data: {} })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          workOrderId: '019f1000-0000-7000-8000-000000000002',
+          operationReceipt: {
+            resourceId: '019f1000-0000-7000-8000-000000000002',
+          },
+        },
+      })
     const { createWorkOrder } = useBusinessMaintenance()
     const intent = {
       deviceAssetId: 'D-DETERMINATE',

@@ -10225,6 +10225,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceDetail? ResourceDetailResponse { get; set; }
 
+    public Func<BusinessConsoleMasterDataResourceRequest, BusinessConsoleMasterDataResourceDetail>?
+        ResourceDetailFactory { get; init; }
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -10286,7 +10289,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         }
 
         return Task.FromResult(
-            ResourceDetailResponse ?? ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
+            ResourceDetailFactory?.Invoke(request) ??
+            ResourceDetailResponse ??
+            ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
@@ -13564,6 +13569,10 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
+    public BusinessConsoleTelemetryAlarmListRequest? LastAlarmListRequest { get; private set; }
+
+    public BusinessConsoleTelemetryAlarmEventListResponse? AlarmListResponse { get; init; }
+
     public BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest? LastAlarmRuleUpsertRequest { get; private set; }
 
     public BusinessConsoleTelemetryOeeRequest? LastOeeRequest { get; private set; }
@@ -13676,7 +13685,8 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleTelemetryAlarmEventListResponse([]));
+        LastAlarmListRequest = request;
+        return Task.FromResult(AlarmListResponse ?? new BusinessConsoleTelemetryAlarmEventListResponse([]));
     }
 
     public Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(

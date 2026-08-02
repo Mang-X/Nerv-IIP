@@ -103,6 +103,17 @@ function backToList() {
         :identity-pending="identityPending"
         :identities-unavailable="identitiesUnavailable"
       />
+      <div v-if="identitiesUnavailable" class="px-4 pb-4">
+        <NvMobileButton
+          data-testid="refresh-maintenance-identities"
+          variant="outline"
+          class="min-h-touch w-full"
+          :disabled="identityPending"
+          @click="refresh"
+        >
+          刷新身份资料
+        </NvMobileButton>
+      </div>
     </div>
   </NvAppShellMobile>
 </template>

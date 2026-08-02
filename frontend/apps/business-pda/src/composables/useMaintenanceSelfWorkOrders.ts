@@ -95,12 +95,20 @@ function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
+function normalizeCanonicalGuid(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  return CANONICAL_GUID.test(normalized) && normalized !== '00000000-0000-0000-0000-000000000000'
+    ? normalized
+    : undefined
+}
+
 function isCanonicalGuid(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    CANONICAL_GUID.test(value) &&
-    value.toLowerCase() !== '00000000-0000-0000-0000-000000000000'
-  )
+  return normalizeCanonicalGuid(value) !== undefined
+}
+
+function normalizeDeviceReference(value: string) {
+  return normalizeCanonicalGuid(value) ?? value.trim()
 }
 
 export function normalizeMaintenanceDeviceReferences(values: unknown): string[] {
@@ -167,7 +175,11 @@ function parseWorkOrderPage(
     throw new Error('维修工单读取失败，请重试。')
   }
   const total = data.total as number
-  const items = data.items
+  const items = data.items.map((item) => ({
+    ...item,
+    workOrderId: normalizeCanonicalGuid(item.workOrderId)!,
+    deviceAssetId: normalizeDeviceReference(item.deviceAssetId!),
+  }))
   if (items.length > take || total < skip + items.length || (skip < total && items.length === 0)) {
     throw new Error('维修工单分页信息不一致，请重试。')
   }
@@ -194,7 +206,7 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     typeof value === 'object' &&
     isCanonicalGuid(requestedWorkOrderId) &&
     isCanonicalGuid(value.workOrderId) &&
-    value.workOrderId === requestedWorkOrderId &&
+    normalizeCanonicalGuid(value.workOrderId) === normalizeCanonicalGuid(requestedWorkOrderId) &&
     isNullableString(value.sourceReferenceId) &&
     isNonBlankString(value.deviceAssetId) &&
     isNonBlankString(value.priority) &&
@@ -473,6 +485,11 @@ export function useMaintenanceSelfWorkOrders() {
   const visibleHasMore = computed(
     () => !pending.value && !hasFailedResponse.value && pager.hasMore.value,
   )
+  const refresh = async () => {
+    if (!scope.scopeReady.value) return
+    await pager.refresh()
+    await principalIdentityQuery.refetch()
+  }
 
   return {
     ...scope,
@@ -486,7 +503,7 @@ export function useMaintenanceSelfWorkOrders() {
     refreshing: pager.refreshing,
     loadMoreError: pager.loadMoreError,
     loadMore: pager.loadMore,
-    refresh: () => (scope.scopeReady.value ? pager.refresh() : Promise.resolve()),
+    refresh,
     pending,
     error,
     lastUpdatedAt: freshness,
@@ -497,8 +514,8 @@ export function useMaintenanceSelfWorkOrders() {
 
 export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRefOrGetter<string>) {
   const scope = useMaintenanceSelfScope()
-  const workOrderId = computed(() => toValue(requestedWorkOrderId).trim())
-  const enabled = computed(() => scope.scopeReady.value && isCanonicalGuid(workOrderId.value))
+  const workOrderId = computed(() => normalizeCanonicalGuid(toValue(requestedWorkOrderId)) ?? '')
+  const enabled = computed(() => scope.scopeReady.value && Boolean(workOrderId.value))
   const detailIdentity = computed(() =>
     enabled.value ? `${scope.scopeKey.value}:work-order:${workOrderId.value}` : '',
   )
@@ -522,7 +539,11 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       workOrderId.value,
       scope.principalId.value,
     )
-      ? item
+      ? {
+          ...item,
+          workOrderId: normalizeCanonicalGuid(item.workOrderId)!,
+          deviceAssetId: normalizeDeviceReference(item.deviceAssetId),
+        }
       : undefined
   })
   const authoritativePending = computed(() => enabled.value && detailQuery.isLoading.value)
@@ -625,7 +646,11 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
         (identityEnabled.value && !identityPending.value && identityResponse.value === undefined)),
   )
 
-  const deviceAssetId = computed(() => validatedWorkOrder.value?.deviceAssetId?.trim() ?? '')
+  const deviceAssetId = computed(() =>
+    validatedWorkOrder.value
+      ? normalizeDeviceReference(validatedWorkOrder.value.deviceAssetId)
+      : '',
+  )
   const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
   const deviceIdentity = computed(() =>
     deviceEnabled.value ? `${scope.scopeKey.value}:device:${deviceAssetId.value}` : '',
@@ -669,6 +694,8 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       !isNonBlankString(item.code) ||
       !isCanonicalGuid(item.deviceAssetId) ||
       !isNonBlankString(item.displayName) ||
+      typeof item.active !== 'boolean' ||
+      !isNonBlankString(item.snapshotVersion) ||
       !presentationFields.every(isNullableString)
     ) {
       return undefined
@@ -677,8 +704,9 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     return item.resourceType.trim().toLowerCase() === 'device-asset' &&
       item.organizationId.trim() === scope.organizationId.value &&
       item.environmentId.trim() === scope.environmentId.value &&
-      (item.code === deviceAssetId.value || item.deviceAssetId === deviceAssetId.value)
-      ? item
+      (item.code === deviceAssetId.value ||
+        normalizeCanonicalGuid(item.deviceAssetId) === normalizeCanonicalGuid(deviceAssetId.value))
+      ? { ...item, deviceAssetId: normalizeCanonicalGuid(item.deviceAssetId)! }
       : undefined
   })
   const deviceResponseAvailable = computed(() => deviceResponse.value !== undefined)
@@ -723,8 +751,11 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const refresh = async () => {
     if (!enabled.value) return
     await detailQuery.refetch()
-    if (validatedWorkOrder.value && !detailQuery.error.value && deviceEnabled.value) {
-      await deviceQuery.refetch()
+    if (validatedWorkOrder.value && !detailQuery.error.value) {
+      const enrichmentRefreshes: Promise<unknown>[] = []
+      if (deviceEnabled.value) enrichmentRefreshes.push(deviceQuery.refetch())
+      if (identityEnabled.value) enrichmentRefreshes.push(identityQuery.refetch())
+      await Promise.all(enrichmentRefreshes)
     }
   }
 

@@ -97,6 +97,26 @@ vi.mock('@/components/equipment/DeviceAssetPicker.vue', () => ({
 
 import RepairPage from './repair.vue'
 
+const createdWorkOrderId = '33333333-3333-3333-3333-333333333333'
+
+function confirmedCreateResponse(resourceId = createdWorkOrderId) {
+  return {
+    success: true,
+    data: {
+      workOrderId: createdWorkOrderId,
+      operationReceipt: {
+        operationType: 'maintenance.work-order.create',
+        resourceType: 'maintenance-work-order',
+        resourceId,
+        outcome: 'confirmed',
+        stateConfirmed: true,
+        accepted: false,
+        idempotencyKey: 'page-composable-confirmed',
+      },
+    },
+  }
+}
+
 async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | '中' | '低') {
   await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
   await flushPromises()
@@ -111,10 +131,7 @@ async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | 
 beforeEach(() => {
   push.mockClear()
   createWorkOrder.mockClear()
-  createWorkOrder.mockResolvedValue({
-    success: true,
-    data: { workOrderId: '33333333-3333-3333-3333-333333333333' },
-  })
+  createWorkOrder.mockResolvedValue(confirmedCreateResponse())
   refreshWorkOrders.mockClear()
   route.query = {}
   createPending.value = false
@@ -215,8 +232,8 @@ describe('PDA equipment repair page', () => {
     })
   })
 
-  it('lets scan replace the selected device without clearing priority or reason', async () => {
-    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+  it('lets scan replace the selected device and clears stale alarm provenance', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1', sourceAlarmId: 'ALM-9' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
     await selectPriority(wrapper, '低')
     await wrapper.get('[data-testid="reason-input"]').setValue('液压压力异常')
@@ -227,6 +244,7 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-SCAN-9')
     expect(wrapper.get('[data-testid="priority-trigger"]').text()).toContain('低')
+    expect(wrapper.text()).not.toContain('报警上下文')
     expect((wrapper.get('[data-testid="reason-input"]').element as HTMLTextAreaElement).value).toBe(
       '液压压力异常',
     )
@@ -237,6 +255,7 @@ describe('PDA equipment repair page', () => {
       priority: 'low',
       assetUnavailableReason: '液压压力异常',
     })
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).not.toHaveProperty('sourceAlarmId')
   })
 
   it('pauses ScanBar focus reclaim while the reason textarea is focused', async () => {
@@ -356,6 +375,27 @@ describe('PDA equipment repair page', () => {
     expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="recheck-created-work-order-assignment"]').text()).toContain(
       '重新核验指派状态',
+    )
+  })
+
+  it('fails closed when payload and receipt repeat the same non-GUID identifier', async () => {
+    createWorkOrder.mockResolvedValueOnce({
+      success: true,
+      data: {
+        workOrderId: 'WO-INVALID',
+        operationReceipt: { resourceId: 'WO-INVALID' },
+      },
+    })
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      false,
     )
   })
 

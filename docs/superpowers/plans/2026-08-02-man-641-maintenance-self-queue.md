@@ -115,3 +115,13 @@
 - [x] **Step 4: Inspect `git diff --check`, status, and branch diff against `origin/main`.**
 - [x] **Step 5: Commit, push `codex/man-641-pda-maintenance-self-queue`, and create a ready PR whose body contains `Fixes #1178`, exact tests, and documentation impact.**
 - [x] **Step 6: Verify the PR is non-draft, open, targets `main`, and its head SHA equals local HEAD; do not merge.**
+
+### Task 6: Review hardening for public IDs, alarm provenance, and retry recovery
+
+- [x] Normalize canonical work-order/device GUIDs to lowercase at route, request, and response boundaries; keep business codes case-sensitive.
+- [x] Require MasterData device detail `active` and nonblank `snapshotVersion` facts before rendering authoritative detail.
+- [x] Require matching nonempty canonical GUIDs in create payload `workOrderId` and `operationReceipt.resourceId`; malformed matching strings fail closed.
+- [x] Re-read a unique alarm in the current organization/environment and resolve both alarm/request device references to the same MasterData `DeviceAssetId` before an alarm-sourced create. This changes no public endpoint shape and leaves the facade classification `exposed` unchanged.
+- [x] Clear stale alarm provenance after explicit device replacement, while retaining the Gateway as the final association gate.
+- [x] Retry exact principal/assignment identity enrichment together with authoritative list/detail refreshes, and expose an actionable detail identity refresh.
+- [x] Make Playwright list mocks apply Maintenance status/device/keyword filters before total and slicing; cover uppercase GUIDs and malformed create receipts.
