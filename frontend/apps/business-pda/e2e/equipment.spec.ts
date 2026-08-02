@@ -345,13 +345,14 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   })
 
   const expect48 = async (locator: Locator) => {
+    const subpixelTolerance = 0.001
     const box = await locator.boundingBox()
     expect(
       box,
       `missing box for ${await locator.evaluate((element) => element.outerHTML)}`,
     ).not.toBeNull()
-    expect(box!.height).toBeGreaterThanOrEqual(48)
-    expect(box!.width).toBeGreaterThanOrEqual(48)
+    expect(box!.height).toBeGreaterThanOrEqual(48 - subpixelTolerance)
+    expect(box!.width).toBeGreaterThanOrEqual(48 - subpixelTolerance)
   }
 
   await page.goto('/equipment/repair?deviceAssetId=DEV-ROUTE&sourceAlarmId=ALM-9')
