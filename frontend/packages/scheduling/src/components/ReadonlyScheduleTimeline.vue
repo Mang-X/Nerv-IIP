@@ -2,7 +2,7 @@
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
-import type { ScheduleModel, ScheduleTask } from '../model/types'
+import type { LaneOrder, ScheduleModel, ScheduleTask } from '../model/types'
 
 const props = withDefaults(
   defineProps<{
@@ -10,8 +10,9 @@ const props = withDefaults(
     view: 'order' | 'resource'
     scale?: TimeScale
     groupBy?: string
+    laneOrder?: LaneOrder
   }>(),
-  { scale: 'auto', groupBy: 'workCenter' },
+  { scale: 'auto', groupBy: 'workCenter', laneOrder: 'busiest' },
 )
 
 const emit = defineEmits<{
@@ -157,7 +158,27 @@ const lanes = computed<TimelineLane[]>(() => {
     groups.set(laneId, tasks)
   }
 
-  return [...groups.entries()].map(([id, tasks]) => {
+  // 泳道排序（只在资源视图有意义；订单视图的泳道就是订单本身）。
+  // 默认忙闲降序：按车间/产线分组时名录里的空泳道会挤在首屏，演示第一眼像坏了。
+  // 「仅有排程」只作可选项——空泳道保留是 #1428 的有意设计，不做默认。
+  const laneOrder = props.view === 'resource' ? props.laneOrder : 'busiest'
+  const entries =
+    laneOrder === 'onlyScheduled'
+      ? [...groups.entries()].filter(([, tasks]) => tasks.length > 0)
+      : [...groups.entries()]
+  if (laneOrder === 'busiest') {
+    // 同样忙（含都为空）时保持插入序，即名录顺序，避免每次渲染抖动。
+    const seed = new Map([...groups.keys()].map((id, index) => [id, index]))
+    entries.sort(
+      (a, b) => b[1].length - a[1].length || (seed.get(a[0]) ?? 0) - (seed.get(b[0]) ?? 0),
+    )
+  } else if (laneOrder === 'name') {
+    entries.sort((a, b) =>
+      laneLabel(a[1][0], a[0]).localeCompare(laneLabel(b[1][0], b[0]), 'zh-Hans-CN'),
+    )
+  }
+
+  return entries.map(([id, tasks]) => {
     const rowEnds: number[] = []
     const positioned = [...tasks]
       .sort((left, right) => Date.parse(left.startUtc) - Date.parse(right.startUtc))

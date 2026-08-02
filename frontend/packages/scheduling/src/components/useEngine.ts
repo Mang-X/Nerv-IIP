@@ -8,7 +8,7 @@ import type {
 } from '../engine/engine'
 import { DhtmlxEngine } from '../engine/dhtmlx/DhtmlxEngine'
 import { isDhtmlxAvailable, preloadGantt } from '../engine/dhtmlx/loader'
-import type { ScheduleModel } from '../model/types'
+import type { LaneOrder, ScheduleModel } from '../model/types'
 
 export type EngineKind = 'auto' | 'dhtmlx'
 
@@ -42,6 +42,7 @@ export interface UseEngineOptions {
   scale: Ref<TimeScale>
   readOnly: Ref<boolean>
   groupBy?: Ref<string | undefined>
+  laneOrder?: Ref<LaneOrder | undefined>
   engineKind?: EngineKind
   on?: Partial<{ [E in keyof EngineEvents]: (p: EngineEvents[E]) => void }>
 }
@@ -78,6 +79,7 @@ export function useEngine(opts: UseEngineOptions) {
       readOnly: opts.readOnly.value,
       scale: opts.scale.value,
       groupBy: opts.groupBy?.value,
+      laneOrder: opts.laneOrder?.value,
       locale: 'zh',
       theme: { isDark: isDark.value, tokens: readTokens() },
     }
@@ -101,12 +103,23 @@ export function useEngine(opts: UseEngineOptions) {
     engine.value = e
   }
 
-  watch(opts.container, (el) => { if (el) void init() }, { immediate: true })
+  watch(
+    opts.container,
+    (el) => {
+      if (el) void init()
+    },
+    { immediate: true },
+  )
   watch(opts.model, (m) => {
     if (m && !suppressSetData) engine.value?.setData(m)
   })
   watch(opts.scale, (s) => engine.value?.applyCommand({ kind: 'scaleTo', scale: s }))
   watch(opts.readOnly, (r) => engine.value?.applyCommand({ kind: 'setReadOnly', readOnly: r }))
+  if (opts.laneOrder) {
+    watch(opts.laneOrder, (order) =>
+      engine.value?.applyCommand({ kind: 'setLaneOrder', laneOrder: order ?? 'busiest' }),
+    )
+  }
   if (opts.groupBy) {
     watch(opts.groupBy, (g) =>
       engine.value?.applyCommand({ kind: 'setGroupBy', groupBy: g ?? 'workCenter' }),

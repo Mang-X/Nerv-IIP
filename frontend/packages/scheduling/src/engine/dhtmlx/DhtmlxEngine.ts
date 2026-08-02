@@ -706,6 +706,10 @@ export class DhtmlxEngine implements SchedulingEngine {
         }
         if (this.model) this.setData(this.model)
         break
+      case 'setLaneOrder':
+        this.options.laneOrder = command.laneOrder
+        if (this.model) this.setData(this.model)
+        break
       case 'scrollToToday':
         if (g?.showDate) g.showDate(this.nowDate())
         break
@@ -1506,11 +1510,31 @@ export class DhtmlxEngine implements SchedulingEngine {
       // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
       const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))
       const groupOrder = new Map(configuredLanes.map((lane, index) => [lane.id, index]))
-      const sortedGroups = [...groups.entries()].sort(
-        (a, b) =>
+      // 每条泳道上有多少工序——排序与「仅有排程」共用，只数一遍。
+      const opCountByLane = new Map<string, number>()
+      for (const t of ops) {
+        const id = laneOf(t)
+        opCountByLane.set(id, (opCountByLane.get(id) ?? 0) + 1)
+      }
+      const laneOrder = this.options.laneOrder ?? 'busiest'
+      const laneEntries =
+        laneOrder === 'onlyScheduled'
+          ? [...groups.entries()].filter(([id]) => (opCountByLane.get(id) ?? 0) > 0)
+          : [...groups.entries()]
+      const sortedGroups = laneEntries.sort((a, b) => {
+        if (laneOrder === 'name') return a[1].localeCompare(b[1], 'zh-Hans-CN')
+        if (laneOrder === 'busiest') {
+          // 忙的排上面：按车间/产线分组时名录里的空泳道会挤在首屏，演示第一眼像坏了
+          // （第五轮走查实测：首屏两条空产线，滚下去才见到有活的那条）。
+          const diff = (opCountByLane.get(b[0]) ?? 0) - (opCountByLane.get(a[0]) ?? 0)
+          if (diff !== 0) return diff
+          // 同样忙（含都为空）时回落名录顺序，避免每次渲染抖动。
+        }
+        return (
           (groupOrder.get(a[0]) ?? resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
-          (groupOrder.get(b[0]) ?? resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER),
-      )
+          (groupOrder.get(b[0]) ?? resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER)
+        )
+      })
       // 本批泳道指标先攒起来,循环末尾一次性判定哪些指标真有数据(#1399 M8)。
       const laneKpis: Array<LaneTask['kpi']> = []
       for (const [id, label] of sortedGroups) {

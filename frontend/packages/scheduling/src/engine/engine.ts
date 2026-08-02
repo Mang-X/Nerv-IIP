@@ -1,4 +1,4 @@
-import type { ScheduleModel, TimeScale } from '../model/types'
+import type { LaneOrder, ScheduleModel, TimeScale } from '../model/types'
 
 export type { TimeScale } from '../model/types'
 
@@ -19,6 +19,8 @@ export interface SchedulingEngineOptions {
   locale: 'zh' | 'en'
   /** 资源排产板的分组维度键(对应 ScheduleModel.groupDimensions);缺省按工作中心。 */
   groupBy?: string
+  /** 泳道排序口径;缺省按忙闲降序,见 LaneOrder 注释。 */
+  laneOrder?: LaneOrder
 }
 
 export type EngineCommand =
@@ -43,6 +45,7 @@ export type EngineCommand =
   | { kind: 'setReadOnly'; readOnly: boolean }
   | { kind: 'setTheme'; theme: ThemeBinding }
   | { kind: 'setGroupBy'; groupBy: string }
+  | { kind: 'setLaneOrder'; laneOrder: LaneOrder }
 
 /** 拖拽结束的归一化负载,不含任何引擎私有结构——接缝处的关键契约。 */
 export interface TaskDragPayload {

@@ -16,6 +16,7 @@ import {
   type ScheduleModel,
   type ScheduleTask,
   type DimensionValue,
+  type LaneOrder,
   type SchedulingDimension,
   type TimeScale,
 } from '@nerv-iip/scheduling'
@@ -181,6 +182,8 @@ function buildGroupedTasks(
 
 const scale = shallowRef<TimeScale>('auto')
 const groupBy = shallowRef<SchedulingGroupKey>('workCenter')
+// 默认忙闲降序：按车间/产线分组时名录里的空泳道会挤在首屏（第五轮走查实测）。
+const laneOrder = shallowRef<LaneOrder>('busiest')
 
 // 工作中心显示名 + 分类（主数据名录，与派工看板同一份缓存）。
 const {
@@ -486,6 +489,13 @@ function setGroupBy(value: string) {
     if (selectedTaskId.value) sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
   }
 }
+
+function setLaneOrder(value: LaneOrder) {
+  laneOrder.value = value
+  sendCommand({ kind: 'setLaneOrder', laneOrder: value })
+  // 与切分组同理：重排后选中项可能已经不在视口里，滚回去，别让人自己找。
+  if (selectedTaskId.value) sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+}
 </script>
 
 <template>
@@ -631,6 +641,7 @@ function setGroupBy(value: string) {
             :can-release="false"
             :group-dimensions="SCHEDULING_GROUP_DIMENSIONS"
             :group-by="groupBy"
+            :lane-order="laneOrder"
             searchable
             :search="search"
             :match-count="matchCount"
@@ -638,6 +649,7 @@ function setGroupBy(value: string) {
             search-placeholder="搜工单 / 工序 / 工作中心"
             @scale-change="scale = $event"
             @group-change="setGroupBy"
+            @lane-order-change="setLaneOrder"
             @zoom-in="sendCommand({ kind: 'zoomIn' })"
             @zoom-out="sendCommand({ kind: 'zoomOut' })"
             @today="sendCommand({ kind: 'scrollToToday' })"
@@ -653,6 +665,7 @@ function setGroupBy(value: string) {
               :scale="scale"
               :read-only="true"
               :group-by="groupBy"
+              :lane-order="laneOrder"
               @task-select="selectedTaskId = $event"
             />
           </div>

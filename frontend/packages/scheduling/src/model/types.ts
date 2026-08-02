@@ -39,6 +39,17 @@ export interface DimensionValue {
   label: string
 }
 
+/**
+ * 泳道排序口径。
+ *
+ * `busiest` 是默认：按车间/产线分组时名录里的空泳道会排在前面，首屏看到的是没活的线，
+ * 演示第一眼像坏了（第五轮走查实测）。忙的排上面，一打开就是有活的。
+ *
+ * **`onlyScheduled` 不做默认**：空泳道保留是有意的设计——「这条线这周没活」本身就是
+ * 调度员要看的信息（#1428）。把它做成默认等于把那个决定悄悄撤销，所以只作为可选项。
+ */
+export type LaneOrder = 'busiest' | 'name' | 'onlyScheduled'
+
 export interface ScheduleTask {
   /** assignmentId 优先,缺则 `${orderId}:${operationId}`。 */
   id: string

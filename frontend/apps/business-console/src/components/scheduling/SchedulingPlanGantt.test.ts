@@ -157,8 +157,17 @@ async function switchGroup(wrapper: ReturnType<typeof mount>, groupBy: string) {
   await settle()
 }
 
+async function setLaneOrder(wrapper: ReturnType<typeof mount>, laneOrder: string) {
+  wrapper.findComponent({ name: 'SchedulingToolbar' }).vm.$emit('laneOrderChange', laneOrder)
+  await settle()
+}
+
 function laneNames(wrapper: ReturnType<typeof mount>) {
   return wrapper.findAll('[data-resource-lane] .nv-timeline-label__name').map((lane) => lane.text())
+}
+
+function sortedLaneNames(wrapper: ReturnType<typeof mount>) {
+  return [...laneNames(wrapper)].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
 }
 
 function taskCount(wrapper: ReturnType<typeof mount>) {
@@ -238,30 +247,29 @@ describe('SchedulingPlanGantt 分组维度', () => {
     await settle()
 
     expect(wrapper.find('[aria-label="分组维度"]').exists()).toBe(true)
-    expect(laneNames(wrapper)).toEqual([
-      '活塞杆加工中心一线',
-      '缸筒加工中心二线',
-      '未配置归属的工作中心',
-    ])
+    // 只比集合不比顺序：泳道顺序由「泳道排序」独立决定（默认忙闲降序），
+    // 由下面两条排序用例覆盖；混在一起会让这条用例每次改排序都误红。
+    expect(sortedLaneNames(wrapper)).toEqual(
+      ['活塞杆加工中心一线', '缸筒加工中心二线', '未配置归属的工作中心'].sort((a, b) =>
+        a.localeCompare(b, 'zh-Hans-CN'),
+      ),
+    )
 
     const workCenterTaskCount = taskCount(wrapper)
     await switchGroup(wrapper, 'workshop')
-    expect(laneNames(wrapper)).toEqual([
-      '一车间 · 机加车间',
-      '二车间 · 装配车间',
-      '三车间 · 表面与包装',
-      '未归属车间（1 项）',
-    ])
+    expect(sortedLaneNames(wrapper)).toEqual(
+      ['一车间 · 机加车间', '二车间 · 装配车间', '三车间 · 表面与包装', '未归属车间（1 项）'].sort(
+        (a, b) => a.localeCompare(b, 'zh-Hans-CN'),
+      ),
+    )
     expect(taskCount(wrapper)).toBe(workCenterTaskCount)
 
     await switchGroup(wrapper, 'productionLine')
-    expect(laneNames(wrapper)).toEqual([
-      '活塞杆一线',
-      '缸筒二线',
-      '精磨线',
-      '包装线',
-      '未归属产线（1 项）',
-    ])
+    expect(sortedLaneNames(wrapper)).toEqual(
+      ['活塞杆一线', '缸筒二线', '精磨线', '包装线', '未归属产线（1 项）'].sort((a, b) =>
+        a.localeCompare(b, 'zh-Hans-CN'),
+      ),
+    )
     expect(taskCount(wrapper)).toBe(workCenterTaskCount)
   })
 
@@ -296,5 +304,48 @@ describe('SchedulingPlanGantt 分组维度', () => {
       .findAll('[data-resource-lane]')
       .find((lane) => lane.text().includes('包装线'))
     expect(emptyLine?.findAll('[data-task-id]')).toHaveLength(0)
+  })
+
+  /**
+   * 第五轮走查实测：按产线分组时首屏是两条空产线，往下滚才见到有活的那条——
+   * 演示第一眼像坏了。默认改成忙闲降序。
+   */
+  it('默认按忙闲降序排泳道，有排程的排在空泳道前面', async () => {
+    const wrapper = mountGantt({ plan: groupedPlan() })
+    await settle()
+    await switchGroup(wrapper, 'productionLine')
+
+    const names = laneNames(wrapper)
+    const counts = wrapper
+      .findAll('[data-resource-lane]')
+      .map((lane) => lane.findAll('[data-task-id]').length)
+    const firstEmpty = counts.indexOf(0)
+    // 第一条空泳道之后不允许再出现有排程的泳道。
+    if (firstEmpty >= 0) {
+      expect(counts.slice(firstEmpty).every((count) => count === 0)).toBe(true)
+    }
+    expect(names.length).toBeGreaterThan(0)
+  })
+
+  it('「仅有排程」隐藏空泳道，「名称升序」按名字排且空泳道仍在', async () => {
+    const wrapper = mountGantt({ plan: groupedPlan() })
+    await settle()
+    await switchGroup(wrapper, 'productionLine')
+    const allLanes = laneNames(wrapper).length
+
+    await setLaneOrder(wrapper, 'onlyScheduled')
+    const scheduledCounts = wrapper
+      .findAll('[data-resource-lane]')
+      .map((lane) => lane.findAll('[data-task-id]').length)
+    expect(scheduledCounts.length).toBeGreaterThan(0)
+    expect(scheduledCounts.every((count) => count > 0)).toBe(true)
+    expect(scheduledCounts.length).toBeLessThan(allLanes)
+
+    // 「仅有排程」只是可选项：切回名称升序，空泳道必须回来——
+    // 「这条线这周没活」本身是调度员要看的信息（#1428 的设计意图，不许被悄悄撤销）。
+    await setLaneOrder(wrapper, 'name')
+    const byName = laneNames(wrapper)
+    expect(byName.length).toBe(allLanes)
+    expect([...byName].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))).toEqual(byName)
   })
 })
