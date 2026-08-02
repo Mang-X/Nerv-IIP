@@ -863,11 +863,17 @@ watch(
                 添加一行
               </NvButton>
             </div>
+            <!-- 列宽按**抽屉的 512px** 算，不是按视口。`sm:` 是视口断点：视口 1366px 时
+                 规则照样生效，可这一行实际待在 md 档抽屉里——原来的固定列
+                 5rem+8rem+6rem=19rem，加间距与删除按钮吃掉约 368px，留给 `1fr` 的物料
+                 只剩 60 来 px，选择器被压成「选…」，最该看清的字段反而最窄。
+                 收窄固定列并给物料 minmax 下限：512px 下物料仍有约 132px，
+                 容器更宽时它继续吃掉多余空间。 -->
             <div
               v-for="row in spareRows"
               :key="row.id"
               :data-testid="`spare-row-${row.id}`"
-              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_5rem_8rem_6rem_auto]"
+              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[minmax(7rem,1fr)_4rem_7rem_5rem_auto]"
             >
               <NvField>
                 <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
