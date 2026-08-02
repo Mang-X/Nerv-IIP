@@ -587,7 +587,16 @@ export function useMaintenanceSelfWorkOrders() {
   )
   const refresh = async () => {
     if (!scope.scopeReady.value) return
+    const requestedIdentity = identity.value
+    const requestedGeneration = generation.value
     await pager.refresh()
+    if (
+      !scope.scopeReady.value ||
+      identity.value !== requestedIdentity ||
+      generation.value !== requestedGeneration
+    ) {
+      return
+    }
     await principalIdentityQuery.refetch()
   }
 
@@ -947,7 +956,16 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
 
   const refresh = async () => {
     if (!enabled.value) return
+    const requestedIdentity = detailIdentity.value
+    const requestedGeneration = detailGeneration.value
     await detailQuery.refetch()
+    if (
+      !enabled.value ||
+      detailIdentity.value !== requestedIdentity ||
+      detailGeneration.value !== requestedGeneration
+    ) {
+      return
+    }
     if (validatedWorkOrder.value && !detailQuery.error.value) {
       const enrichmentRefreshes: Promise<unknown>[] = []
       if (deviceEnabled.value) enrichmentRefreshes.push(deviceQuery.refetch())

@@ -72,6 +72,20 @@ function listResponse() {
   }
 }
 
+function emptyListResponse() {
+  return {
+    data: {
+      success: true,
+      data: {
+        items: [],
+        total: 0,
+        skip: 0,
+        take: 20,
+      },
+    },
+  }
+}
+
 describe('maintenance real Pinia Colada component-scope identity', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -138,4 +152,86 @@ describe('maintenance real Pinia Colada component-scope identity', () => {
     expect(wrapper.text()).toBe('no-row')
     expect(wrapper.get('[data-failed="true"]')).toBeDefined()
   })
+
+  it.each(['logout', 'principal', 'organization', 'environment', 'permission'] as const)(
+    'does not manually refetch a worker after a delayed list refresh crosses %s scope',
+    async (drift) => {
+      sdk.list.mockResolvedValue(listResponse())
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const auth = useAuthStore(pinia)
+      auth.principal = {
+        principalId: 'principal-1',
+        principalType: 'User',
+        loginName: 'technician01',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [
+          'business.maintenance.work-orders.read',
+          'business.masterdata.resources.read',
+        ],
+      } as never
+
+      let queue!: ReturnType<typeof useMaintenanceSelfWorkOrders>
+      const Harness = defineComponent({
+        setup() {
+          queue = useMaintenanceSelfWorkOrders()
+          return () => h('div', queue.items.value[0]?.workOrderId ?? 'no-row')
+        },
+      })
+      const wrapper = mount(Harness, {
+        global: {
+          plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000, staleTime: 0 } }]],
+        },
+      })
+
+      try {
+        await flushPromises()
+        expect(wrapper.text()).toBe(WORK_ORDER_ID)
+        expect(sdk.workers).toHaveBeenCalledTimes(1)
+
+        let resolveListRefresh!: (response: ReturnType<typeof listResponse>) => void
+        sdk.list.mockResolvedValue(emptyListResponse())
+        sdk.list.mockImplementationOnce(
+          () =>
+            new Promise<ReturnType<typeof listResponse>>(
+              (resolve) => (resolveListRefresh = resolve),
+            ),
+        )
+        const refreshPromise = queue.refresh()
+        await nextTick()
+        expect(sdk.list).toHaveBeenCalledTimes(2)
+
+        if (drift === 'logout') {
+          auth.principal = undefined
+        } else {
+          auth.principal = {
+            principalId: drift === 'principal' ? 'principal-2' : 'principal-1',
+            principalType: 'User',
+            loginName: 'technician01',
+            organizationId: drift === 'organization' ? 'org-002' : 'org-001',
+            environmentId: drift === 'environment' ? 'env-prod' : 'env-dev',
+            permissionCodes:
+              drift === 'permission'
+                ? ['business.maintenance.work-orders.read']
+                : ['business.maintenance.work-orders.read', 'business.masterdata.resources.read'],
+          } as never
+        }
+        await nextTick()
+        await flushPromises()
+
+        expect(wrapper.text()).toBe('no-row')
+        const workerCallsAfterReactiveScopeChange = sdk.workers.mock.calls.length
+
+        resolveListRefresh(listResponse())
+        await refreshPromise
+        await flushPromises()
+
+        expect(wrapper.text()).toBe('no-row')
+        expect(sdk.workers).toHaveBeenCalledTimes(workerCallsAfterReactiveScopeChange)
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
 })

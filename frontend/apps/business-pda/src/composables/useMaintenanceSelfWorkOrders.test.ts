@@ -735,9 +735,62 @@ describe('useMaintenanceSelfWorkOrders', () => {
     await result.refresh()
     await nextTick()
 
+    expect(api.refetches.get('maintenance-list')).toHaveBeenCalledTimes(1)
     expect(api.refetches.get('maintenance-list-principal')).toHaveBeenCalledTimes(1)
     expect(result.principalDisplayName.value).toBe('张维修')
   })
+
+  it.each([
+    [
+      'logout',
+      () => {
+        useAuthStore().principal = undefined
+      },
+    ],
+    ['principal switch', () => seedPrincipal({ principalId: 'principal-2' })],
+    ['organization switch', () => seedPrincipal({ organizationId: 'org-002' })],
+    ['environment switch', () => seedPrincipal({ environmentId: 'env-prod' })],
+    [
+      'permission loss',
+      () => seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] }),
+    ],
+  ])(
+    'does not manually refetch a worker after a delayed list refresh crosses %s',
+    async (_, driftScope) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrders()
+      api.data.get('maintenance-list')!.value = {
+        success: true,
+        data: { items: [authoritativeListItem(1)], total: 1, skip: 0, take: 20 },
+      }
+      await nextTick()
+      expect(result.items.value).toHaveLength(1)
+
+      let resolveListRefresh!: () => void
+      api.refetches
+        .get('maintenance-list')!
+        .mockImplementationOnce(
+          () => new Promise<void>((resolve) => (resolveListRefresh = resolve)),
+        )
+      const refreshPromise = result.refresh()
+      await nextTick()
+
+      driftScope()
+      await nextTick()
+
+      expect(result.items.value).toEqual([])
+      expect(result.hasSuccessfulResponse.value).toBe(false)
+      expect(api.refetches.get('maintenance-list-principal')).not.toHaveBeenCalled()
+
+      resolveListRefresh()
+      await refreshPromise
+      await nextTick()
+
+      expect(api.refetches.get('maintenance-list')).toHaveBeenCalledTimes(1)
+      expect(api.refetches.get('maintenance-list-principal')).not.toHaveBeenCalled()
+      expect(result.items.value).toEqual([])
+    },
+  )
 
   it('loads the next page with the same self scope and server filters', async () => {
     seedPrincipal()
@@ -1706,6 +1759,9 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await result.refresh()
 
     expect(calls).toEqual(['work-order', 'device'])
+    expect(api.refetches.get('maintenance-detail')).toHaveBeenCalledTimes(1)
+    expect(api.refetches.get('device-detail')).toHaveBeenCalledTimes(1)
+    expect(api.refetches.get('maintenance-identities')).toHaveBeenCalledTimes(1)
 
     calls.length = 0
     api.refetches.get('maintenance-detail')!.mockImplementation(async () => {
@@ -1716,6 +1772,99 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await result.refresh()
 
     expect(calls).toEqual(['work-order'])
+    expect(api.refetches.get('maintenance-detail')).toHaveBeenCalledTimes(2)
+    expect(api.refetches.get('device-detail')).toHaveBeenCalledTimes(1)
+    expect(api.refetches.get('maintenance-identities')).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [
+      'logout',
+      () => {
+        useAuthStore().principal = undefined
+      },
+    ],
+    ['principal switch', () => seedPrincipal({ principalId: 'principal-2' })],
+    ['organization switch', () => seedPrincipal({ organizationId: 'org-002' })],
+    ['environment switch', () => seedPrincipal({ environmentId: 'env-prod' })],
+    [
+      'permission loss',
+      () => seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] }),
+    ],
+  ])(
+    'does not manually refetch detail enrichments after a delayed work-order refresh crosses %s',
+    async (_, driftScope) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => workOrderGuid(101)))
+      api.data.get('maintenance-detail')!.value = {
+        success: true,
+        data: authoritativeDetail(workOrderGuid(101), 'DEV-CNC-01'),
+      }
+      await nextTick()
+      expect(result.authoritativeWorkOrder.value?.workOrderId).toBe(workOrderGuid(101))
+
+      let resolveDetailRefresh!: () => void
+      api.refetches
+        .get('maintenance-detail')!
+        .mockImplementationOnce(
+          () => new Promise<void>((resolve) => (resolveDetailRefresh = resolve)),
+        )
+      const refreshPromise = result.refresh()
+      await nextTick()
+
+      driftScope()
+      await nextTick()
+
+      expect(result.authoritativeWorkOrder.value).toBeUndefined()
+      expect(api.refetches.get('device-detail')).not.toHaveBeenCalled()
+      expect(api.refetches.get('maintenance-identities')).not.toHaveBeenCalled()
+
+      resolveDetailRefresh()
+      await refreshPromise
+      await nextTick()
+
+      expect(api.refetches.get('maintenance-detail')).toHaveBeenCalledTimes(1)
+      expect(api.refetches.get('device-detail')).not.toHaveBeenCalled()
+      expect(api.refetches.get('maintenance-identities')).not.toHaveBeenCalled()
+      expect(result.workOrder.value).toBeUndefined()
+    },
+  )
+
+  it('does not manually refetch the new detail enrichments when an old refresh finishes after a route switch', async () => {
+    seedPrincipal()
+    const routeId = shallowRef(workOrderGuid(101))
+    const result = useMaintenanceSelfWorkOrderDetail(routeId)
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderGuid(101), 'DEV-OLD'),
+    }
+    await nextTick()
+
+    let resolveOldDetailRefresh!: () => void
+    api.refetches
+      .get('maintenance-detail')!
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => (resolveOldDetailRefresh = resolve)),
+      )
+    const refreshPromise = result.refresh()
+    await nextTick()
+
+    routeId.value = workOrderGuid(102)
+    await nextTick()
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderGuid(102), 'DEV-NEW'),
+    }
+    await nextTick()
+
+    resolveOldDetailRefresh()
+    await refreshPromise
+    await nextTick()
+
+    expect(result.authoritativeWorkOrder.value?.workOrderId).toBe(workOrderGuid(102))
+    expect(api.refetches.get('maintenance-detail')).toHaveBeenCalledTimes(1)
+    expect(api.refetches.get('device-detail')).not.toHaveBeenCalled()
+    expect(api.refetches.get('maintenance-identities')).not.toHaveBeenCalled()
   })
 
   it('retries identity enrichment after authoritative detail revalidation', async () => {
