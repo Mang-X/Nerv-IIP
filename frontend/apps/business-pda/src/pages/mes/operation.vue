@@ -71,11 +71,13 @@ const {
   actionPending,
   operationListScope,
   operationListContextIdentity,
+  operationActionContextIdentity,
   operationListScopeMessage,
   operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
   captureOperationActionContext,
+  isOperationActionContextCurrent,
   refresh,
   lastUpdatedAt,
   hasSuccessfulResponse,
@@ -102,6 +104,11 @@ const hasInvalidTaskDeepLink = computed(
 const deepLinkIdentity = computed(
   () =>
     `${operationListContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+)
+const operationPageGeneration = ref(0)
+const operationPageIdentity = computed(
+  () =>
+    `${operationListContextIdentity.value}\u0000${operationActionContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
 )
 const deepLinkMessage = ref('')
 
@@ -251,8 +258,14 @@ function openSheet(task: Task) {
 
 const deepLinkOpenedIdentity = ref('')
 watch(
-  [requestedWorkOrderId, requestedOperationTaskId, operationListContextIdentity],
+  [
+    requestedWorkOrderId,
+    requestedOperationTaskId,
+    operationListContextIdentity,
+    operationActionContextIdentity,
+  ],
   ([workOrderId, operationTaskId]) => {
+    operationPageGeneration.value += 1
     closeSheet()
     if (!operationResultUnknown.value) result.value = null
     deepLinkOpenedIdentity.value = ''
@@ -308,6 +321,42 @@ async function recoverLifecycleUpdate() {
   toast.message = LIFECYCLE_ACTION_UPDATED_MESSAGE
   toast.show = true
 }
+
+type OperationPageSnapshot = {
+  generation: number
+  identity: string
+  context: OperationActionContext
+}
+
+function captureOperationPageSnapshot(context: OperationActionContext): OperationPageSnapshot {
+  return {
+    generation: operationPageGeneration.value,
+    identity: operationPageIdentity.value,
+    context,
+  }
+}
+
+function isOperationPageSnapshotCurrent(snapshot: OperationPageSnapshot) {
+  return (
+    operationPageGeneration.value === snapshot.generation &&
+    operationPageIdentity.value === snapshot.identity &&
+    isOperationActionContextCurrent(snapshot.context)
+  )
+}
+
+async function discardStaleOperationResult() {
+  closeSheet()
+  result.value = null
+  operationKey.value = ''
+  operationContext.value = null
+  operationResultUnknown.value = false
+  try {
+    await refresh()
+  } catch {
+    // 上下文已变化时只丢弃旧结果；当前列表仍可由用户再次手动刷新。
+  }
+}
+
 async function openSopFile(sop: CurrentSop) {
   const fileId = sop.fileId?.trim()
   if (!fileId) {
@@ -366,9 +415,14 @@ async function runAction(action: ActionKind) {
   const key = operationKey.value
   const context = operationContext.value
   if (!context) return
+  const pageSnapshot = captureOperationPageSnapshot(context)
   closeSheet()
   try {
     await ACTION_FNS[action](workOrderId, id, key, context)
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult()
+      return
+    }
     operationResultUnknown.value = false
     result.value = {
       status: 'success',
@@ -381,6 +435,10 @@ async function runAction(action: ActionKind) {
       context,
     }
   } catch (e) {
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult()
+      return
+    }
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return
@@ -410,9 +468,14 @@ async function retry() {
   const { action, displayReference, workOrderId, taskId, context } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
+  const pageSnapshot = captureOperationPageSnapshot(context)
   result.value = null
   try {
     await ACTION_FNS[action](workOrderId, taskId, key, context)
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult()
+      return
+    }
     operationResultUnknown.value = false
     result.value = {
       status: 'success',
@@ -425,6 +488,10 @@ async function retry() {
       context,
     }
   } catch (e) {
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult()
+      return
+    }
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return

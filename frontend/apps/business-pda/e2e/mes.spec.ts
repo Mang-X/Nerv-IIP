@@ -241,12 +241,16 @@ test('工序执行：375×812 阻塞任务展示前序/齐套/设备/质量原�
   await expect(
     page.getByRole('heading', { name: '工单信息未提供 · 工序 20', exact: true }),
   ).toBeVisible()
+  await expect(page.getByText('工序任务信息未提供', { exact: true })).toBeVisible()
   const blockers = page.getByTestId('operation-block-reasons')
   await expect(blockers).toContainText('当前不能开始')
-  await expect(blockers).toContainText('前序工序')
+  await expect(blockers).toContainText('前序工序尚未完成（工序 10）')
   await expect(blockers).toContainText('物料齐套')
   await expect(blockers).toContainText('设备')
   await expect(blockers).toContainText('质量')
+  await expect(page.getByText('OP-TASK-0020', { exact: true })).toHaveCount(0)
+  await expect(blockers).not.toContainText('OP-1')
+  await expect(blockers).not.toContainText('OP-2')
   await expect(page.getByTestId('action-start')).toHaveCount(0)
   await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
   await expect(page.locator('html')).toHaveJSProperty('scrollWidth', 375)
@@ -338,7 +342,7 @@ test('工序执行：完成态服务端返回空动作时详情只读', async ({
               operationTaskId: 'OP-DONE',
               workOrderId: 'WO-DONE',
               workOrderNo: null,
-              operationTaskNo: 'OP-TASK-DONE',
+              operationTaskNo: null,
               status: 'Completed',
               operationSequence: 30,
               workCenterId: 'WC-A',
@@ -404,7 +408,7 @@ test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个
     operationTaskId: `${targetOperationTaskId}-${String(index + 1).padStart(2, '0')}`,
     workOrderId,
     workOrderNo: null,
-    operationTaskNo: `OP-TASK-COLLISION-${index + 1}`,
+    operationTaskNo: null,
     status: 'Queued',
     operationSequence: index + 1,
     workCenterId: 'WC-A',
@@ -415,7 +419,7 @@ test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个
     operationTaskId: targetOperationTaskId,
     workOrderId,
     workOrderNo: null,
-    operationTaskNo: 'OP-TASK-EXACT',
+    operationTaskNo: null,
     status: 'Queued',
     operationSequence: 99,
     workCenterId: 'WC-A',
@@ -476,7 +480,7 @@ test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
               workOrderNo: null,
-              operationTaskNo: 'OP-TASK-0010',
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence,
               workCenterId: scopeId,
@@ -531,7 +535,7 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
               workOrderNo: null,
-              operationTaskNo: 'OP-TASK-0010',
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence: 10,
               workCenterId: 'WC-A',
@@ -594,7 +598,7 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
               workOrderNo: null,
-              operationTaskNo: 'OP-TASK-0010',
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence: 10,
               workCenterId: 'WC-A',

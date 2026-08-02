@@ -49,7 +49,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderId))
             .Select(x => new OperationFact(
                 x.WorkOrderId,
-                x.OperationTaskIdValue,
                 x.OperationSequence,
                 x.Status))
             .ToArrayAsync(cancellationToken);
@@ -188,7 +187,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 x.OperationSequence < task.OperationSequence &&
                 x.Status != OperationTaskLifecycleStatus.Completed)
             .OrderBy(x => x.OperationSequence)
-            .Select(x => x.OperationTaskIdValue)
+            .Select(x => $"工序 {x.OperationSequence}")
             .ToArray();
         if (previousOperations.Length > 0)
         {
@@ -291,7 +290,6 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
 
     private sealed record OperationFact(
         string WorkOrderId,
-        string OperationTaskIdValue,
         int OperationSequence,
         OperationTaskLifecycleStatus Status);
 

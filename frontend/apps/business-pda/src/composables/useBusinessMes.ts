@@ -892,6 +892,16 @@ export function useMesOperationTasks() {
       selectedScope?.id ?? '',
     ].join('\u0000')
   })
+  const operationActionContextIdentity = computed(() => {
+    const selectedScope = operationScope.selectedScope.value
+    return [
+      (auth.principal?.principalId ?? auth.sessionId ?? '').trim(),
+      filters.organizationId.trim(),
+      filters.environmentId.trim(),
+      selectedScope?.kind.trim() ?? '',
+      selectedScope?.id.trim() ?? '',
+    ].join('\u0000')
+  })
   const operationTasksIdentity = computed(() => {
     return [
       operationListContextIdentity.value,
@@ -1067,14 +1077,16 @@ export function useMesOperationTasks() {
   }
 
   function assertOperationActionContextCurrent(context: OperationActionContext) {
-    if (
-      !sameOperationActionContext(
-        currentOperationActionContext(context.action, context.workOrderId, context.operationTaskId),
-        context,
-      )
-    ) {
+    if (!isOperationActionContextCurrent(context)) {
       throw new MesOperationActionContextChangedError()
     }
+  }
+
+  function isOperationActionContextCurrent(context: OperationActionContext) {
+    return sameOperationActionContext(
+      currentOperationActionContext(context.action, context.workOrderId, context.operationTaskId),
+      context,
+    )
   }
 
   function actionPayload(context: OperationActionContext, options: OperationActionOptions) {
@@ -1180,6 +1192,7 @@ export function useMesOperationTasks() {
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
     operationListContextIdentity,
+    operationActionContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,
     operationListScopePending: operationListScope.scopePending,
     operationListScopeReady: operationListScope.scopeReady,
@@ -1187,6 +1200,7 @@ export function useMesOperationTasks() {
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
     captureOperationActionContext,
+    isOperationActionContextCurrent,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,

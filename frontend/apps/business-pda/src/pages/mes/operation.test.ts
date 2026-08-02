@@ -7,6 +7,17 @@ import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } fro
 type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> & { status?: string }
 
 const push = vi.fn()
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
@@ -93,13 +104,29 @@ const operationListScopeRef = ref({
 const operationListContextIdentityRef = ref(
   'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
 )
+const operationActionContextIdentityRef = ref(
+  'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
+)
+
+function isOperationActionContextCurrent(context: OperationActionContext) {
+  return (
+    operationActionContextIdentityRef.value ===
+    [
+      context.principalId,
+      context.organizationId,
+      context.environmentId,
+      context.scopeKind,
+      context.scopeId,
+    ].join('\u0000')
+  )
+}
 
 const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
     workOrderNo: 'MO-2026-0001',
-    operationTaskNo: 'OP-TASK-0010',
+    operationTaskNo: null,
     status: 'InProgress',
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
@@ -112,7 +139,7 @@ const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0002',
     workOrderNo: 'MO-2026-0002',
-    operationTaskNo: 'OP-TASK-0020',
+    operationTaskNo: null,
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
@@ -151,12 +178,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
     operationListContextIdentity: operationListContextIdentityRef,
+    operationActionContextIdentity: operationActionContextIdentityRef,
     operationListScopeMessage: ref(''),
     operationListScopeReady: ref(true),
     operationScopeMessage: operationScopeMessageRef,
     operationScopePending: ref(false),
     operationScopeReady: operationScopeReadyRef,
     captureOperationActionContext,
+    isOperationActionContextCurrent,
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -200,6 +229,8 @@ describe('PDA MES operation execution page', () => {
     }
     operationListContextIdentityRef.value =
       'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
     operationTasksRef.value = defaultTasks
     tasksPendingRef.value = false
     tasksSuccessfulRef.value = true
@@ -208,6 +239,8 @@ describe('PDA MES operation execution page', () => {
     push.mockClear()
     routeGuardState.guard = undefined
     filters.keyword = undefined
+    filters.organizationId = 'org-001'
+    filters.environmentId = 'env-dev'
     filters.workOrderId = undefined
     filters.operationTaskId = undefined
     routeState.replaceQuery?.({})
@@ -226,6 +259,49 @@ describe('PDA MES operation execution page', () => {
     const event = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(event)
     return event
+  }
+
+  type PageDriftKind = 'route' | 'principal' | 'organization-environment' | 'manage-scope'
+  const pageDriftCases: Array<{ drift: PageDriftKind; label: string }> = [
+    { drift: 'route', label: 'route pair' },
+    { drift: 'principal', label: 'principal' },
+    { drift: 'organization-environment', label: 'organization/environment' },
+    { drift: 'manage-scope', label: 'manage scope' },
+  ]
+  const staleOutcomes = ['success', 'error'] as const
+
+  async function applyPageDrift(drift: PageDriftKind) {
+    if (drift === 'route') {
+      routeState.replaceQuery?.({
+        workOrderId: 'WO-2026-0002',
+        operationTaskId: 'OP-2',
+      })
+    } else if (drift === 'principal') {
+      operationListContextIdentityRef.value =
+        'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+      operationActionContextIdentityRef.value =
+        'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    } else if (drift === 'organization-environment') {
+      filters.organizationId = 'org-002'
+      filters.environmentId = 'env-qa'
+      operationListContextIdentityRef.value =
+        'principal-001\u0000org-002\u0000env-qa\u0000work-center\u0000WC-A'
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-002\u0000env-qa\u0000work-center\u0000WC-A'
+    } else {
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    }
+    await nextTick()
+  }
+
+  async function beginCompleteAction(wrapper: ReturnType<typeof mount>) {
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await nextTick()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await nextTick()
   }
 
   it('renders the scan bar and an operation ListRow per task', () => {
@@ -256,7 +332,7 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
-  it('renders the server-evaluated pair, device, gate time, and readable blocker details', async () => {
+  it('renders a non-null readable operationTaskNo with server-evaluated blocker details', async () => {
     operationTasksRef.value = [
       {
         ...defaultTasks[1],
@@ -270,7 +346,7 @@ describe('PDA MES operation execution page', () => {
         deviceAssetName: '七号数控车床',
         allowedActions: [],
         blockReasons: [
-          'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（OP-1）',
+          'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（工序 10）',
           'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
           'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
           'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
@@ -574,13 +650,72 @@ describe('PDA MES operation execution page', () => {
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
-    expect(wrapper.text()).toContain('MO-2026-0001 · OP-TASK-0010')
+    expect(wrapper.text()).toContain('MO-2026-0001 · 工序任务信息未提供')
     expect(wrapper.text()).not.toContain('WO-2026-0001')
     expect(wrapper.text()).not.toContain('OP-1')
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
   })
+
+  it.each(
+    pageDriftCases.flatMap(({ drift, label }) =>
+      staleOutcomes.map((outcome) => ({ drift, label, outcome })),
+    ),
+  )(
+    'drops stale $outcome from an in-flight action after $label drift',
+    async ({ drift, outcome }) => {
+      const pendingMutation = deferred<void>()
+      completeTask.mockImplementationOnce(() => pendingMutation.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      await applyPageDrift(drift)
+
+      if (outcome === 'success') pendingMutation.resolve()
+      else pendingMutation.reject(new Error('stale mutation failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('工序已完成')
+      expect(wrapper.text()).not.toContain('操作失败')
+    },
+  )
+
+  it.each(
+    pageDriftCases.flatMap(({ drift, label }) =>
+      staleOutcomes.map((outcome) => ({ drift, label, outcome })),
+    ),
+  )(
+    'drops stale $outcome from an in-flight retry after $label drift',
+    async ({ drift, outcome }) => {
+      const pendingRetry = deferred<void>()
+      completeTask
+        .mockRejectedValueOnce(new RequestTimeoutError())
+        .mockImplementationOnce(() => pendingRetry.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      await flushPromises()
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      expect(completeTask).toHaveBeenCalledTimes(2)
+      await applyPageDrift(drift)
+
+      if (outcome === 'success') pendingRetry.resolve()
+      else pendingRetry.reject(new Error('stale retry failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('工序已完成')
+      expect(wrapper.text()).not.toContain('操作失败')
+    },
+  )
 
   it('does not show success for an accepted but unconfirmed operation receipt', async () => {
     completeTask.mockRejectedValueOnce(
@@ -598,7 +733,7 @@ describe('PDA MES operation execution page', () => {
 
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('MO-2026-0001 · OP-TASK-0010')
+    expect(wrapper.text()).toContain('MO-2026-0001 · 工序任务信息未提供')
     expect(wrapper.text()).not.toContain('WO-2026-0001')
     expect(wrapper.text()).not.toContain('OP-1')
     expect(wrapper.text()).toContain('结果尚未核实')

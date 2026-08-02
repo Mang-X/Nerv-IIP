@@ -13,6 +13,7 @@
 ### Task 1: Lock the server-authoritative action contract with failing tests
 
 **Files:**
+
 - Modify: `frontend/apps/business-pda/src/composables/useBusinessMes.test.ts`
 - Modify: `frontend/apps/business-pda/src/pages/mes/operation.test.ts`
 
@@ -24,6 +25,7 @@
 ### Task 2: Implement the minimal composable and page behavior
 
 **Files:**
+
 - Modify: `frontend/apps/business-pda/src/composables/useBusinessMes.ts`
 - Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
 
@@ -36,6 +38,7 @@
 ### Task 3: Add the 375x812 browser journey
 
 **Files:**
+
 - Modify: `frontend/apps/business-pda/e2e/fixtures.ts`
 - Modify: `frontend/apps/business-pda/e2e/mes.spec.ts`
 
@@ -48,6 +51,7 @@
 ### Task 4: Synchronize documentation and verify all gates
 
 **Files:**
+
 - Modify: `docs/architecture/mobile-pda-module-product-design.md`
 - Modify: `docs/architecture/mobile-pda-testing-and-smoke.md`
 - Modify: `docs/architecture/implementation-readiness.md`
@@ -62,6 +66,7 @@
 ### Task 5: Close exact-link and retry-context review gaps
 
 **Files:**
+
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
 - Modify: `frontend/apps/business-pda/src/composables/useBusinessMes.ts`
 - Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
@@ -73,3 +78,18 @@
 - [x] Freeze principal/org/env/manage-scope/pair/operation type in the action context and reject retries before mutation when identity drifts.
 - [x] Keep `operationTaskNo` distinct from `operationCode`; use an explicit unavailable task-instance label.
 - [x] Extract detail/gate/result presentation into the route-excluded page-private component and protect the generated route table with a contract test.
+
+### Task 6: Isolate asynchronous action results and remove raw predecessor IDs
+
+**Files:**
+
+- Modify: `frontend/apps/business-pda/src/composables/useBusinessMes.ts`
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
+- Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesOperationTaskActionReadinessEvaluator.cs`
+- Modify: `frontend/apps/business-pda/e2e/fixtures.ts`
+- Modify: focused unit, service-contract and Playwright tests
+
+- [x] Freeze a monotonic page generation plus route/principal/org-env/read/manage-scope identity for initial actions and retries; discard stale success/error and refresh the current context without showing “操作失败”.
+- [x] Render predecessor blockers from authoritative `operationSequence` as “工序 N” and prove evaluator/service/PDA output omits current and predecessor raw IDs.
+- [x] Keep every production-shape browser operation-task fixture at `operationTaskNo=null`; retain non-null coverage only in a clearly named unit test.
+- [x] Capture TDD red for all three gaps, then turn the focused unit, backend and 375×812 browser tests green.

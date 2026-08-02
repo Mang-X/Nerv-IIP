@@ -1525,11 +1525,11 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1, operationTasks.Total);
         var operationTask = Assert.Single(operationTasks.Items);
         Assert.Equal("OP-FILTER-10", operationTask.OperationTaskId);
-        Assert.Equal("WO-FILTER-001", operationTask.WorkOrderNo);
-        Assert.Equal("OP-FILTER-10", operationTask.OperationTaskNo);
+        Assert.Null(operationTask.WorkOrderNo);
+        Assert.Null(operationTask.OperationTaskNo);
         Assert.Equal("WC-FILTER", operationTask.WorkCenterCode);
         Assert.Null(operationTask.WorkCenterName);
-        Assert.Equal("DEV-FILTER", operationTask.DeviceAssetCode);
+        Assert.Null(operationTask.DeviceAssetCode);
         Assert.Null(operationTask.DeviceAssetName);
         Assert.Equal(1, dispatchTasks.Total);
         var dispatchTask = Assert.Single(dispatchTasks.Items);

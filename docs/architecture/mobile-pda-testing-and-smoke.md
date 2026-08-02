@@ -44,10 +44,10 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 - `e2e/mes.spec.ts`（19）：任务列表壳 375×812 服务端筛选、20 条分页与返回深滚动状态恢复
   （目标超出首屏高度时自动续页）；深恢复次页持续失败时停止自动重试，只有用户显式重试一次后
   才继续加载并恢复目标位置；
-  工序执行按双强 ID 绑定，但详情只展示可读工单号、可选工序任务号（缺失时显式提示）、设备、
-  SOP、服务端门禁时间和前序/齐套/设备/质量阻塞，绝不把 raw ID 当作显示编号；按钮只消费
+  工序执行按双强 ID 绑定，但生产形态 fixture 的可选工序任务号保持缺失，详情明确提示未提供并展示设备、
+  SOP、服务端门禁时间和前序/齐套/设备/质量阻塞；前序原因显示“工序 N”，375×812 断言当前/前序 raw ID 均不出现；按钮只消费
   `allowedActions`，覆盖完成（二次确认）→ confirmed 成功、409 刷新撤销旧动作、accepted/unconfirmed
-  不成功和完成态只读；工序执行同组件 query push 与
+  不成功和完成态只读；单元测试另以具名用例覆盖非空 `operationTaskNo`。首次动作与重试的延迟 success/error 在 route、principal、组织/环境或 manage scope 漂移后均被丢弃并刷新当前上下文；工序执行同组件 query push 与
   浏览器 back/forward 始终关闭旧 sheet 并只打开当前 `workOrderId + operationTaskId`，且以超过 20 个
   同工单子串碰撞项证明完整 deep link 使用 exact `operationTaskId`；报工全链 → 成功结果并
   核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
