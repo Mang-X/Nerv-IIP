@@ -254,7 +254,7 @@ function setPriority(workOrderId: string, value: string | number) {
 
     <div v-else class="max-h-80 overflow-auto rounded-md border">
       <table class="w-full text-sm">
-        <thead class="sticky top-0 bg-muted text-left">
+        <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
           <tr>
             <th class="p-2">加入</th>
             <th class="p-2">工单</th>
