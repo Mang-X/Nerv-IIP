@@ -202,13 +202,22 @@ public static class WorldHistoryMesSpec
         10, // 填空单
     ];
 
-    /// <summary>取一张「已下达待开工」工单的排产优先级；其余档位沿用既有常量。</summary>
-    public static int? ReleasedPriority(
+    /// <summary>
+    /// 取一张**可排产**工单（已下达待开工 / 在制）的排产优先级；已完工档返回 <c>null</c>
+    /// 由调用方回落既有常量——完工单不进待排池，铺开只会给读面添噪。
+    ///
+    /// <para>
+    /// 序号取自 <c>BuildSchedulableCohortOrdinals</c>（两档合一个队列），不是齐套缺口那个
+    /// 「已下达」专用队列：只按已下达档铺，待排池里在制那批会整片停在 <c>10</c>，
+    /// 往下滚两屏就看不出轻重（第五轮走查实测）。
+    /// </para>
+    /// </summary>
+    public static int? SchedulablePriority(
         WorldHistoryExecution execution,
-        int? releasedCohortOrdinal)
+        int? schedulableCohortOrdinal)
     {
-        if (execution != WorldHistoryExecution.ReleasedOnly ||
-            releasedCohortOrdinal is not { } ordinal ||
+        if (execution is not (WorldHistoryExecution.ReleasedOnly or WorldHistoryExecution.Partial) ||
+            schedulableCohortOrdinal is not { } ordinal ||
             ordinal <= 0)
         {
             return null;
