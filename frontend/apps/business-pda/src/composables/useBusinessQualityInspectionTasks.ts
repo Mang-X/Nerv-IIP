@@ -2,14 +2,18 @@ import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
   claimBusinessConsoleQualityInspectionTaskMutationOptions,
   confirmBusinessConsoleOperation,
+  getBusinessConsoleQualityInspectionRecord,
+  getBusinessConsoleQualityInspectionTask,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
   type BusinessConsoleInspectionCharacteristicResult,
+  type BusinessConsoleInspectionRecordDetailResponse,
   type BusinessConsoleInspectionPlanCharacteristicItem,
   type BusinessConsoleQualityInspectionTaskItem,
   type BusinessConsoleQualityReasonItem,
+  BusinessOperationUnconfirmedError,
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
@@ -46,6 +50,7 @@ export interface InspectionTaskFilters {
   status: string
   keyword?: string
   sourceType?: string
+  sourceService?: string
   overdue?: boolean
   skip: number
   take: number
@@ -144,6 +149,7 @@ export function useBusinessQualityInspectionTasks() {
       filters.status ?? null,
       normalizedKeyword.value ?? null,
       filters.sourceType ?? null,
+      filters.sourceService ?? null,
       filters.overdue ?? null,
     ]),
   )
@@ -158,6 +164,7 @@ export function useBusinessQualityInspectionTasks() {
         status: filters.status,
         keyword: normalizedKeyword.value,
         sourceType: filters.sourceType || undefined,
+        sourceService: filters.sourceService || undefined,
         overdue: filters.overdue,
         skip: filters.skip,
         take: filters.take,
@@ -210,6 +217,7 @@ export function useBusinessQualityInspectionTasks() {
       () => filters.status,
       normalizedKeyword,
       () => filters.sourceType,
+      () => filters.sourceService,
       () => filters.overdue,
     ],
     () => {
@@ -285,6 +293,7 @@ export function useBusinessQualityInspectionTasks() {
       status: filters.status,
       keyword: normalizedKeyword.value,
       sourceType: filters.sourceType,
+      sourceService: filters.sourceService,
       overdue: filters.overdue,
     }
   }
@@ -297,6 +306,7 @@ export function useBusinessQualityInspectionTasks() {
       filters.status === execution.status &&
       normalizedKeyword.value === execution.keyword &&
       filters.sourceType === execution.sourceType &&
+      filters.sourceService === execution.sourceService &&
       filters.overdue === execution.overdue &&
       inspectorUserId.value === execution.principalId
     )
@@ -317,6 +327,7 @@ export function useBusinessQualityInspectionTasks() {
         status: execution.status,
         keyword: execution.keyword,
         sourceType: execution.sourceType || undefined,
+        sourceService: execution.sourceService || undefined,
         overdue: execution.overdue,
         skip,
         take: Math.min(Math.max(take, 1), MAX_TAKE),
@@ -354,32 +365,6 @@ export function useBusinessQualityInspectionTasks() {
     }
   }
 
-  /**
-   * 加载全部待检任务后返回最新集合。扫码直达用：facade 无 sourceDocumentId/关键字服务端过滤，
-   * 目标任务可能落在未加载分页；按 **受限分页迭代**（每页 ≤ MAX_TAKE）聚合覆盖全量再匹配——
-   * 不把 take 直接扩到 total（超过后端验证器上限会整段失败）。
-   */
-  async function ensureAllLoaded() {
-    if (!scopeReady.value) return tasks.value
-    const execution = capturePaginationScope()
-    // 防御：空页即止（total 与实际漂移时不空转）。
-    while (hasMore.value && isCurrentPaginationScope(execution)) {
-      const page = await fetchPage(
-        nextSkip.value,
-        Math.min(MAX_TAKE, total.value - nextSkip.value),
-        execution,
-      )
-      if (!page || !isCurrentPaginationScope(execution)) break
-      if (page.length === 0) {
-        nextSkip.value = total.value
-        break
-      }
-      nextSkip.value += page.length
-      extraTasks.value = [...extraTasks.value, ...page]
-    }
-    return tasks.value
-  }
-
   async function refresh() {
     if (!scopeReady.value) return
     paginationEpoch += 1
@@ -393,6 +378,39 @@ export function useBusinessQualityInspectionTasks() {
     } finally {
       refreshing.value = false
     }
+  }
+
+  async function readInspectionTask(inspectionTaskId: string) {
+    const { data: envelope } = await getBusinessConsoleQualityInspectionTask({
+      path: { inspectionTaskId },
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        scopeKind: 'self',
+        scopeId: inspectorUserId.value,
+      },
+      throwOnError: true,
+    })
+    const task = envelope?.success === true ? envelope.data?.task : undefined
+    return task?.inspectionTaskId === inspectionTaskId ? task : undefined
+  }
+
+  function assertAuthoritativeRecord(
+    record: BusinessConsoleInspectionRecordDetailResponse | null | undefined,
+    inspectionRecordId: string,
+  ) {
+    const result = record?.result?.trim().toLowerCase()
+    if (
+      record?.inspectionRecordId !== inspectionRecordId ||
+      !result ||
+      !['passed', 'rejected', 'conditional-release'].includes(result)
+    ) {
+      throw new BusinessOperationUnconfirmedError(
+        '检验任务已提交，但未能按记录 ID 确认权威结果，请保留当前页面并重试。',
+        'quality.inspection-task.submit',
+      )
+    }
+    return { ...record, result }
   }
 
   /**
@@ -430,22 +448,7 @@ export function useBusinessQualityInspectionTasks() {
       () => `quality-submit-${makeIdempotencyKey()}`,
     )
     try {
-      const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
-        query: {
-          organizationId: organizationId.value,
-          environmentId: environmentId.value,
-          scopeKind: 'self',
-          scopeId: inspectorUserId.value,
-          inspectionTaskId,
-          skip: 0,
-          take: 2,
-        },
-        throwOnError: true,
-      })
-      const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
-        authoritativeEnvelope,
-      ).filter((task) => task.inspectionTaskId === inspectionTaskId)
-      const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+      const authoritative = await readInspectionTask(inspectionTaskId)
       const hasAuthoritativeSubmitAction =
         authoritative?.allowedActions?.includes('submit-inspection') === true
       const canReplayCommittedSubmit =
@@ -468,8 +471,8 @@ export function useBusinessQualityInspectionTasks() {
       if (!isReplay) clearPendingBusinessIntent(scope)
       throw error
     }
-    return completePendingBusinessIntent(scope, async () =>
-      confirmBusinessConsoleOperation(
+    return completePendingBusinessIntent(scope, async () => {
+      const confirmed = await confirmBusinessConsoleOperation(
         await submitMutation.mutateAsync({
           path: { inspectionTaskId },
           query: {
@@ -488,8 +491,50 @@ export function useBusinessQualityInspectionTasks() {
           expectedIdempotencyKey: idempotencyKey,
           expectedResourceIdSelector: (envelope) => envelope.data?.inspectionRecordId,
         },
-      ),
-    )
+      )
+      const inspectionRecordId = confirmed.data?.inspectionRecordId?.trim()
+      if (!inspectionRecordId) {
+        throw new BusinessOperationUnconfirmedError(
+          '检验提交未返回检验记录 ID，请保留当前页面并重试。',
+          'quality.inspection-task.submit',
+        )
+      }
+      const completedTask = await readInspectionTask(inspectionTaskId)
+      if (
+        completedTask?.status?.trim().toLowerCase() !== 'completed' ||
+        completedTask.inspectionRecordId !== inspectionRecordId
+      ) {
+        throw new BusinessOperationUnconfirmedError(
+          '检验提交后任务状态或记录关联尚未确认，请保留当前页面并重试。',
+          'quality.inspection-task.submit',
+        )
+      }
+      const { data: recordEnvelope } = await getBusinessConsoleQualityInspectionRecord({
+        path: { inspectionRecordId },
+        query: {
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
+        },
+        throwOnError: true,
+      })
+      const record = assertAuthoritativeRecord(
+        recordEnvelope?.success === true ? recordEnvelope.data : undefined,
+        inspectionRecordId,
+      )
+      return {
+        ...confirmed,
+        data: {
+          ...confirmed.data,
+          inspectionRecordId: record.inspectionRecordId,
+          result: record.result,
+          nonconformanceReportId: record.nonconformanceReportId ?? null,
+          nonconformanceReportCode:
+            record.nonconformanceReportId === confirmed.data?.nonconformanceReportId
+              ? (confirmed.data?.nonconformanceReportCode ?? null)
+              : null,
+        },
+      }
+    })
   }
 
   async function claimTask(task: BusinessConsoleQualityInspectionTaskItem) {
@@ -547,22 +592,7 @@ export function useBusinessQualityInspectionTasks() {
     if (envelope.success !== true || !envelope.data) {
       throw new Error(envelope.message?.trim() || '领取检验任务失败，请重试。')
     }
-    const { data: authoritativeEnvelope } = await listBusinessConsoleQualityInspectionTasks({
-      query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-        scopeKind: 'self',
-        scopeId: inspectorUserId.value,
-        inspectionTaskId,
-        skip: 0,
-        take: 2,
-      },
-      throwOnError: true,
-    })
-    const exactMatches = listItems<BusinessConsoleQualityInspectionTaskItem>(
-      authoritativeEnvelope,
-    ).filter((candidate) => candidate.inspectionTaskId === inspectionTaskId)
-    const authoritative = exactMatches.length === 1 ? exactMatches[0] : undefined
+    const authoritative = await readInspectionTask(inspectionTaskId)
     assertLifecycleActionExecutable({
       domain: 'quality-inspection-task',
       action: 'create-record',
@@ -589,7 +619,6 @@ export function useBusinessQualityInspectionTasks() {
     loadMoreError,
     refreshing,
     loadMore,
-    ensureAllLoaded,
     pending: listQuery.isLoading,
     error: listQuery.error,
     lastUpdatedAt,

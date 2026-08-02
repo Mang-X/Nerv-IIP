@@ -15,6 +15,10 @@ import {
   SUGGESTION_REJECT_REASON_MAX_LENGTH,
   useBusinessPlanning,
 } from '@/composables/useBusinessPlanning'
+import {
+  isMesWorkOrderDownstream,
+  normalizeReferenceToken,
+} from '@/composables/useFulfillmentTimeline'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -680,8 +684,14 @@ function isOpen(status?: string | null) {
   return status?.toLowerCase() === 'open'
 }
 function downstreamLabel(service?: string | null, type?: string | null) {
-  if (service === 'BusinessMes' && type === 'WorkOrder') return 'MES 工单'
-  if (service === 'BusinessErp' && type === 'PurchaseRequisition') return 'ERP 采购申请'
+  // 归一化后再比：写侧有两个生产者（种子写 `business-mes`、前端接受建议时写 `BusinessMes`），
+  // 严格比字面量会让一半数据退化成泛称「下游单据」。
+  if (isMesWorkOrderDownstream(service, type)) return 'MES 工单'
+  if (
+    normalizeReferenceToken(service) === 'businesserp' &&
+    normalizeReferenceToken(type) === 'purchaserequisition'
+  )
+    return 'ERP 采购申请'
   return '下游单据'
 }
 // —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
@@ -691,7 +701,9 @@ const canScheduleSingleOrder = useCanScheduleSingleOrder()
 const scheduleTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
 
 function suggestionWorkOrderId(row: BusinessConsolePlanningSuggestionItem) {
-  return row.downstreamService === 'BusinessMes' && row.downstreamDocumentType === 'WorkOrder'
+  // 码值口径两侧不一：后端种子写 `business-mes`，这里原来严格比 `BusinessMes`，
+  // 于是演示数据上「对该单排产」一个按钮都不渲染（第五轮走查实测）。归一化后再比。
+  return isMesWorkOrderDownstream(row.downstreamService, row.downstreamDocumentType)
     ? (row.downstreamDocumentId ?? '')
     : ''
 }
@@ -704,7 +716,9 @@ function downstreamRoute(
   type: string | null | undefined,
   documentId: string,
 ) {
-  if (service === 'BusinessMes' && type === 'WorkOrder') {
+  // 同一个口径问题：严格比字面量时，种子的 `business-mes` 会被兜底路由到 /erp 关键词搜索，
+  // 看着有链接、点进去却不是工单详情——比按钮不渲染更难发现。
+  if (isMesWorkOrderDownstream(service, type)) {
     return { path: `/mes/work-orders/${encodeURIComponent(documentId)}` }
   }
 

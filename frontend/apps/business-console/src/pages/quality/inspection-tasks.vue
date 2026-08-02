@@ -8,7 +8,10 @@ import {
   isInspectionTaskOverdue,
 } from '@/composables/useQualityInspectionTasks'
 import { useSkuNames } from '@/composables/useSkuNames'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessWorkers,
+  WORKER_DIRECTORY_MAX_PAGE_SIZE,
+} from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -72,7 +75,8 @@ const {
 })
 // 待检任务只回 SKU 编码，物料名在主数据里；查不到就只显编码，不编造物料名。
 const { resolveSkuName } = useSkuNames()
-const { workers } = useBusinessWorkers({ pageSize: 500 })
+// 500 会被网关拒为 400（上限 200），整列「当前持有人」会静默变成 `—`。
+const { workers } = useBusinessWorkers({ pageSize: WORKER_DIRECTORY_MAX_PAGE_SIZE })
 const workerByUserId = computed(
   () =>
     new Map(

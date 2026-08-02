@@ -36,7 +36,6 @@ const {
   loaded,
   hasMore,
   loadMore,
-  ensureAllLoaded,
   pending,
   refreshing = shallowRef(false),
   error,
@@ -177,10 +176,10 @@ function openNcr() {
       v-model:status="filters.status"
       v-model:keyword="filters.keyword"
       v-model:source-type="filters.sourceType"
+      v-model:source-service="filters.sourceService"
       v-model:overdue="filters.overdue"
       :loading-more="loadingMore"
       :load-more-error="loadMoreError"
-      :load-all="ensureAllLoaded"
       @select="selectTask"
       @load-more="loadMore"
       @refresh="() => refresh()"

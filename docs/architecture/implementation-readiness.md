@@ -22,6 +22,12 @@ BusinessGateway 统一返回 `operationReceipt`，明确区分服务端已经返
 
 BusinessGateway 写入口优先使用标准 `Idempotency-Key` header，同时兼容既有 legacy header 与请求体字段；多个来源归一化后不一致时统一返回 `409 idempotency-key-mismatch`，不选择任一冲突值继续执行。Quality、WMS、IndustrialTelemetry、MES 和 Maintenance 的资源级命令锁共用生产安全 Redis 实现，生产环境缺少 Redis 配置时 fail fast；测试环境才允许进程内锁替代。
 
+## WMS 父单权威回读作业范围（MAN-638 / #1175）
+
+WMS 收货、出库复核和盘点完成的 Gateway `accepted` 回执现在把命令实际使用的 `scopeKind/scopeId` 原样冻结在 `readbackPath`；PDA 同一意图同时冻结强 ID、并发版本、业务载荷、幂等键和作业范围，并把该范围显式交给受治理的生成客户端回读。共享回读器只允许回执路径范围与意图快照精确一致的 `self/work-pool/site` 请求；缺范围、路径与快照不一致、授权失效或下游拒绝都 fail closed，既不退回当前 UI 新选择，也不提升为组织全量。结果未知时仍只保留原键、原载荷和原范围重试；收到 confirmed 或同范围强 ID 权威回读成功后才结束意图。
+
+本修复没有新增或修改 HTTP endpoint、请求/响应 schema、facade declaration 或数据库结构；`readbackPath` 的公开 URI 值按既有 string 契约补齐范围查询参数。Gateway OpenAPI 仍是唯一生成输入，导出与 `pnpm -C frontend generate:api` 用于确认快照和 generated client 无 schema 漂移。
+
 ## 当前主体作业上下文与授权范围（MAN-627 / #1164）
 
 MasterData 现在按当前 IAM principal 的稳定 `userId` 解析 Worker、岗位文本、有效班组、班次、班组所属车间、车间覆盖工作中心与站点事实，并明确返回无 Worker 映射、多映射、inactive Worker、缺班次及孤立关系。当前没有独立 Position aggregate 或岗位主数据 ID，`Worker.JobTitle` 只作为自由文本返回并附带 `position-master-not-modeled`；正式岗位目录是后续缺口，不以 JobTitle 冒充。Team 只有 Workshop/Shift 关系，因此同车间 WorkCenter 标记为 `workshop-covered`，不宣称直接派属。
@@ -146,6 +152,14 @@ BusinessGateway OpenAPI、generated client 与 stable barrel。PDA `/quality/tas
 Self scope，待领取行先原子 claim 再进入录入，状态和不可操作原因保持可见；本变更不新增 PC UI，
 PC 既有提交路径只删除旧 `inspectorUserId` / principal gate 契约残留。世界观历史 seed 对既有
 pending 未归属任务做幂等回填，新任务沿用事实检验员归属。
+
+PDA Quality 执行闭环（MAN-640 / #1177）直接消费上述服务端契约：Self 列表把状态、来源类型、
+来源服务、关键字和超期条件全部下传，服务端过滤后才计算 `total` 与分页；扫码只更新关键字条件，
+不再通过客户端遍历全部分页判定命中。提交继续使用稳定意图键和 Gateway 权威回执，但 PDA 只有在
+按 `inspectionTaskId` 回读到 `completed` 且关联记录与写响应一致、再按 `inspectionRecordId` 回读到
+`passed` / `rejected` / `conditional-release` 权威记录后才结束该意图并展示结果。mock 浏览器验收固定
+375×812 覆盖服务端筛选、领取、逐特性录入、提交及两段强 ID 回读；真实栈证据必须另行通过公开
+BusinessGateway 取得，不能用 mock、HTTP 200 或客户端预判替代。
 
 ## Quality 报工待检计划主链前置（MAN-578 / #1046）
 

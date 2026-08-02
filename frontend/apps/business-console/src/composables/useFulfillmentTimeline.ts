@@ -232,9 +232,26 @@ export function peggingSuggestionIds(items: readonly BusinessConsoleMrpPeggingIt
   return ids
 }
 
-/** 下游引用码值大小写/分隔符两侧口径不一（BusinessMes / business-mes），统一归一化后比较。 */
-function normalizeReferenceToken(value: string | null | undefined): string {
+/**
+ * 下游引用码值大小写/分隔符两侧口径不一（`BusinessMes` / `business-mes`），统一归一化后比较。
+ *
+ * 导出供别处复用：计划工作台原来各写一份**严格字面量**比较，于是「对该单排产」按钮对种子
+ * 数据（后端写的是 `business-mes`）一个都不渲染——功能做了却谁都看不见（#1262 / MAN-694，
+ * 第五轮走查实测）。这类码值口径不一致在本仓库反复出现，比较逻辑只该有一处。
+ */
+export function normalizeReferenceToken(value: string | null | undefined): string {
   return (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** 该计划建议是否已承接成 MES 工单——两侧码值归一后判定，不做字面量比较。 */
+export function isMesWorkOrderDownstream(
+  service: string | null | undefined,
+  documentType: string | null | undefined,
+): boolean {
+  return (
+    normalizeReferenceToken(service) === 'businessmes' &&
+    normalizeReferenceToken(documentType) === 'workorder'
+  )
 }
 
 /**

@@ -21,7 +21,6 @@ vi.mock('@/composables/useBusinessQualityInspectionTasks', () => ({
     loaded: computed(() => tasks.value.length),
     hasMore: computed(() => false),
     loadMore: vi.fn(),
-    ensureAllLoaded: vi.fn(async () => tasks.value),
     pending: shallowRef(false),
     error: shallowRef(null),
     refresh,

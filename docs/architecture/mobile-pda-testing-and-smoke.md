@@ -18,7 +18,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
 2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
-   报修高频输入专项显式覆盖 375×812）
+   导航、任务列表、报修与 WMS 数字键盘 overlay 等关键路径显式覆盖 375×812）
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 39 个用例）
+### e2e spec 清单（6 个 spec / 45 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -37,8 +37,10 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
-- `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
-  拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
+- `e2e/wms.spec.ts`（6）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
+  拣货只读中文状态（无裸 code/GUID）；拣货、上架分别在 375×812 下先通过状态筛选 UI 从
+  “待执行”切换到“执行中”，再以普通点击验证 BottomSheet 内数字键盘的数字、删除、背板和
+  “完成”交互不会误关业务抽屉，关闭业务抽屉时键盘同步卸载；首页应用墙 → `/wms/inbound`。
 - `e2e/mes.spec.ts`（14）：任务列表壳 375×812 服务端筛选、20 条分页与返回深滚动状态恢复
   （目标超出首屏高度时自动续页）；深恢复次页持续失败时停止自动重试，只有用户显式重试一次后
   才继续加载并恢复目标位置；
@@ -58,6 +60,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
   上下限校验、触点 ≥44px、无横向溢出。**拍照取证已裁剪至 #924**（本 PR 无拍照 UI）。
+- `e2e/quality.spec.ts`（4）：质检任务服务端筛选、领取、逐特性录入、两段回读（task/record 强 ID）与 403/409/422 错误提示稳定渲染。375×812 下完整覆盖服务端筛选（状态/来源类型/来源服务/关键字/超期条件）→ 领取 → 数字键盘逐特性录入 → 提交 → 按 `inspectionTaskId` 回读 → 按 `inspectionRecordId` 回读权威 passed 结果；以及领取越权（403）、生命周期冲突（409）、已被领取（422）错误时稳定文案提示并留在列表。
 
 ## 2. 运行命令
 
