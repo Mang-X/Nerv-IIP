@@ -39,6 +39,15 @@ async function login(page: Page) {
   await page.waitForURL(new URL('/', baseURL!).toString(), { timeout: 60_000 })
 }
 
+const row = (page: Page) => page.locator('tbody tr').first()
+
+/** 品牌层是 `nv-sheet-content`（原版才是 `sheet-content`）——上一轮少写 nv- 前缀，白等一轮。 */
+const PANEL_SELECTOR =
+  '[role="dialog"], [data-slot="nv-sheet-content"], [data-slot="sheet-content"]'
+
+const isPanelOpen = (page: Page) =>
+  page.evaluate((selector) => document.querySelector(selector) != null, PANEL_SELECTOR)
+
 /** 打开某页第一行的详情抽屉/弹窗，截首屏 + 底部（底部专看有没有被裁切）。 */
 async function openAndShoot(page: Page, id: string, title: string, opener: () => Promise<void>) {
   try {
@@ -47,8 +56,8 @@ async function openAndShoot(page: Page, id: string, title: string, opener: () =>
     await shot(page, id, `${title}-抽屉`)
     // **滚抽屉自己的滚动容器，不是背后的页面**——page.mouse.wheel without moving the
     // cursor onto the drawer scrolls the page behind it，两张截图会一模一样（实际踩到）。
-    const scrolled = await page.evaluate(() => {
-      const panel = document.querySelector('[role="dialog"], [data-slot="sheet-content"]')
+    const scrolled = await page.evaluate((selector) => {
+      const panel = document.querySelector(selector)
       if (!panel) return { found: false, scrollable: false, delta: 0 }
       const scroller =
         [panel, ...Array.from(panel.querySelectorAll('*'))].find((el) => {
@@ -60,7 +69,7 @@ async function openAndShoot(page: Page, id: string, title: string, opener: () =>
       const before = node.scrollTop
       node.scrollTop = node.scrollHeight
       return { found: true, scrollable: true, delta: node.scrollTop - before }
-    })
+    }, PANEL_SELECTOR)
     await page.waitForTimeout(900)
     await shot(page, `${id}b`, `${title}-抽屉底部`, scrolled)
     await page.keyboard.press('Escape').catch(() => {})
@@ -127,30 +136,99 @@ test('第五轮收尾取证', async ({ page }) => {
   }
 
   // ── C. 抽屉与弹窗（前几轮完全没取过证）──
-  const drawers: Array<[string, string, string]> = [
-    ['F-05', '销售订单', '/erp/sales/orders'],
-    ['F-06', 'MES工单', '/mes/work-orders'],
-    ['F-07', '不合格品NCR', '/quality/ncrs'],
-    ['F-08', '纠正措施CAPA', '/quality/capas'],
-    ['F-09', '设备报警', '/equipment/alarms'],
-    ['F-10', '维护工单', '/maintenance/work-orders'],
-    ['F-11', '采购订单', '/erp/procurement/purchase-orders'],
-    ['F-12', '库存批次', '/inventory/lots'],
+  //
+  // 上一轮 8 个只开出 2 个，另外 6 个报告里只写一句 found=false —— 分不清是
+  // 「没打开」还是「打开了但选择器没匹配」，等于没取到证。逐页读了触发器才发现
+  // 三种情况，一把「点首行」根本盖不住：
+  //   · NCR / 设备报警 / 维护工单 —— 抽屉在行内 NvRowActions 的「…」菜单里，
+  //     得先开菜单再点菜单项
+  //   · 采购订单 —— 行上没有详情抽屉，页上唯一的弹框是工具栏「新建」
+  //   · 库存批次 —— **整页没有任何抽屉/弹框**，硬凑 opener 只会造出假失败
+  // 所以改成按页声明打开方式，而不是盲试；`none` 是如实记录"此页无抽屉"。
+  type DrawerCase = {
+    id: string
+    title: string
+    route: string
+  } & (
+    | { via: 'row-action'; name: RegExp }
+    | { via: 'row-menu'; name: RegExp }
+    | { via: 'toolbar'; name: RegExp }
+    | { via: 'none' }
+  )
+
+  const drawers: DrawerCase[] = [
+    {
+      id: 'F-05',
+      title: '销售订单',
+      route: '/erp/sales/orders',
+      via: 'row-action',
+      name: /履约追踪/,
+    },
+    {
+      id: 'F-06',
+      title: 'MES工单',
+      route: '/mes/work-orders',
+      via: 'row-action',
+      name: /详情|查看/,
+    },
+    { id: 'F-07', title: '不合格品NCR', route: '/quality/ncrs', via: 'row-menu', name: /打开处置/ },
+    {
+      id: 'F-08',
+      title: '纠正措施CAPA',
+      route: '/quality/capas',
+      via: 'row-action',
+      name: /详情|查看|处理/,
+    },
+    {
+      id: 'F-09',
+      title: '设备报警',
+      route: '/equipment/alarms',
+      via: 'row-menu',
+      name: /抑制|确认|详情/,
+    },
+    {
+      id: 'F-10',
+      title: '维护工单',
+      route: '/maintenance/work-orders',
+      via: 'row-menu',
+      name: /完成|详情|派工/,
+    },
+    {
+      id: 'F-11',
+      title: '采购订单-新建',
+      route: '/erp/procurement/purchase-orders',
+      via: 'toolbar',
+      name: /新建|创建/,
+    },
+    { id: 'F-12', title: '库存批次', route: '/inventory/lots', via: 'none' },
   ]
-  for (const [id, title, route] of drawers) {
-    await page.goto(route, { waitUntil: 'networkidle', timeout: 60_000 }).catch(() => {})
+
+  for (const item of drawers) {
+    await page.goto(item.route, { waitUntil: 'networkidle', timeout: 60_000 }).catch(() => {})
     await page.waitForTimeout(2_500)
-    await openAndShoot(page, id, title, async () => {
-      // 表格首行通常可点开详情；退而求其次点第一个「详情/查看」按钮。
-      const row = page.locator('tbody tr').first()
-      if (await row.isVisible().catch(() => false)) {
-        await row.click()
+
+    if (item.via === 'none') {
+      await shot(page, item.id, `${item.title}-整页`, { drawer: '此页无抽屉/弹框，只取页面证据' })
+      continue
+    }
+
+    await openAndShoot(page, item.id, item.title, async () => {
+      if (item.via === 'toolbar') {
+        await page.getByRole('button', { name: item.name }).first().click()
         return
       }
-      await page
-        .getByRole('button', { name: /详情|查看/ })
+      if (item.via === 'row-action') {
+        await row(page).getByRole('button', { name: item.name }).first().click()
+        return
+      }
+      // row-menu：NvRowActions 的触发器带 aria-label（页面自定义如「NCR 操作 NCR-…」，
+      // 兜底是「更多操作」），先开菜单，等菜单项挂上 Portal 再点。
+      await row(page)
+        .getByRole('button', { name: /操作/ })
         .first()
         .click()
+      await page.getByRole('menuitem', { name: item.name }).first().waitFor({ timeout: 8_000 })
+      await page.getByRole('menuitem', { name: item.name }).first().click()
     })
   }
 
