@@ -39,6 +39,15 @@ async function login(page: Page) {
   await page.waitForURL(new URL('/', baseURL!).toString(), { timeout: 60_000 })
 }
 
+const row = (page: Page) => page.locator('tbody tr').first()
+
+/** 品牌层是 `nv-sheet-content`（原版才是 `sheet-content`）——上一轮少写 nv- 前缀，白等一轮。 */
+const PANEL_SELECTOR =
+  '[role="dialog"], [data-slot="nv-sheet-content"], [data-slot="sheet-content"]'
+
+const isPanelOpen = (page: Page) =>
+  page.evaluate((selector) => document.querySelector(selector) != null, PANEL_SELECTOR)
+
 /** 打开某页第一行的详情抽屉/弹窗，截首屏 + 底部（底部专看有没有被裁切）。 */
 async function openAndShoot(page: Page, id: string, title: string, opener: () => Promise<void>) {
   try {
@@ -47,8 +56,8 @@ async function openAndShoot(page: Page, id: string, title: string, opener: () =>
     await shot(page, id, `${title}-抽屉`)
     // **滚抽屉自己的滚动容器，不是背后的页面**——page.mouse.wheel without moving the
     // cursor onto the drawer scrolls the page behind it，两张截图会一模一样（实际踩到）。
-    const scrolled = await page.evaluate(() => {
-      const panel = document.querySelector('[role="dialog"], [data-slot="sheet-content"]')
+    const scrolled = await page.evaluate((selector) => {
+      const panel = document.querySelector(selector)
       if (!panel) return { found: false, scrollable: false, delta: 0 }
       const scroller =
         [panel, ...Array.from(panel.querySelectorAll('*'))].find((el) => {
@@ -60,7 +69,7 @@ async function openAndShoot(page: Page, id: string, title: string, opener: () =>
       const before = node.scrollTop
       node.scrollTop = node.scrollHeight
       return { found: true, scrollable: true, delta: node.scrollTop - before }
-    })
+    }, PANEL_SELECTOR)
     await page.waitForTimeout(900)
     await shot(page, `${id}b`, `${title}-抽屉底部`, scrolled)
     await page.keyboard.press('Escape').catch(() => {})
@@ -141,16 +150,55 @@ test('第五轮收尾取证', async ({ page }) => {
     await page.goto(route, { waitUntil: 'networkidle', timeout: 60_000 }).catch(() => {})
     await page.waitForTimeout(2_500)
     await openAndShoot(page, id, title, async () => {
-      // 表格首行通常可点开详情；退而求其次点第一个「详情/查看」按钮。
-      const row = page.locator('tbody tr').first()
-      if (await row.isVisible().catch(() => false)) {
-        await row.click()
-        return
+      // 上一轮只会「点首行」，而这些页大多靠**行内动作按钮**开抽屉（销售订单是「履约追踪」），
+      // 于是 8 个里 6 个根本没打开，报告却只记 found=false —— 看不出是没开还是没匹配。
+      // 改成多策略依次试，并把**命中的是哪一招**记进报告，下次再失败能直接定位。
+      const strategies: Array<[string, () => Promise<boolean>]> = [
+        [
+          'row-action-button',
+          async () => {
+            const btn = row(page)
+              .getByRole('button', { name: /履约追踪|详情|查看|解释|明细|处理/ })
+              .first()
+            if (!(await btn.isVisible().catch(() => false))) return false
+            await btn.click()
+            return true
+          },
+        ],
+        [
+          'row-first-link',
+          async () => {
+            const link = row(page).locator('a, button').first()
+            if (!(await link.isVisible().catch(() => false))) return false
+            await link.click()
+            return true
+          },
+        ],
+        [
+          'row-click',
+          async () => {
+            if (
+              !(await row(page)
+                .isVisible()
+                .catch(() => false))
+            )
+              return false
+            await row(page).click()
+            return true
+          },
+        ],
+      ]
+      for (const [name, run] of strategies) {
+        if (!(await run().catch(() => false))) continue
+        await page.waitForTimeout(1_800)
+        if (await isPanelOpen(page)) {
+          notes.push({ id, openedBy: name })
+          return
+        }
+        await page.keyboard.press('Escape').catch(() => {})
+        await page.waitForTimeout(400)
       }
-      await page
-        .getByRole('button', { name: /详情|查看/ })
-        .first()
-        .click()
+      throw new Error('三种 opener 策略都没能打开抽屉')
     })
   }
 
