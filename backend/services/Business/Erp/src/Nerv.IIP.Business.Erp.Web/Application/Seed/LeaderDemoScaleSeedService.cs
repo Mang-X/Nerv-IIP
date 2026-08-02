@@ -17,6 +17,28 @@ public sealed class LeaderDemoScaleSeedService(ApplicationDbContext dbContext)
     public const int BatchSize = 100;
     private const decimal CreditLimit = 100_000_000m;
 
+    /// <summary>
+    /// 规模池订单往前压多少天。世界观历史最早的订单大约在 asOfDate 前一年内，压到 720 天
+    /// 之前可以保证规模单整体沉到销售订单列表末尾，同时仍能被搜索与下钻找到。
+    /// </summary>
+    private const int ScaleBackdateDays = 720;
+
+    /// <summary>
+    /// 规模单的创建时间：统一压到世界观历史之前，并按序号错开分钟，避免整批同一时刻
+    /// 导致倒序分页在边界上抖动（同值排序不稳定，翻页会重复或漏行）。
+    /// </summary>
+    private static DateTimeOffset ScaleCreatedAtUtc(DateTimeOffset nowUtc, int index) =>
+        nowUtc.AddDays(-ScaleBackdateDays).AddMinutes(index);
+
+    private void BackdateUtc<TEntity>(
+        TEntity entity,
+        System.Linq.Expressions.Expression<Func<TEntity, DateTime>> property,
+        DateTimeOffset value)
+        where TEntity : class
+    {
+        dbContext.Entry(entity).Property(property).CurrentValue = value.UtcDateTime;
+    }
+
     public async Task SeedAsync(
         string organizationId,
         string environmentId,
@@ -71,11 +93,18 @@ public sealed class LeaderDemoScaleSeedService(ApplicationDbContext dbContext)
                     ]);
                 quotation.Approve();
                 dbContext.Quotations.Add(quotation);
-                dbContext.SalesOrders.Add(SalesOrder.CreateFromQuotation(
+                var scaleSalesOrder = SalesOrder.CreateFromQuotation(
                     LeaderDemoScaleSpec.SalesOrderNo(index),
                     LeaderDemoScaleSpec.SiteCode,
                     quotation,
-                    new CustomerCreditSnapshot(LeaderDemoScaleSpec.CustomerCode(index), CreditLimit, 0m, 0m)));
+                    new CustomerCreditSnapshot(LeaderDemoScaleSpec.CustomerCode(index), CreditLimit, 0m, 0m));
+                dbContext.SalesOrders.Add(scaleSalesOrder);
+                // 规模池只是排产纵深的填充料，不是演示故事的一部分：创建时间必须压到世界观
+                // 历史之前，否则销售订单读面按 `CreatedAtUtc` 倒序，**首屏全是 SO-SCALE-***
+                // ——领导第一眼看到的就是一批本不该点开的填充单（第五轮走查 owner 亲验点名）。
+                // 交期仍锚今天（上面 anchor + DueDayOffset），排产演示要的正是未来交期。
+                BackdateUtc(scaleSalesOrder, x => x.CreatedAtUtc, ScaleCreatedAtUtc(nowUtc, index));
+                BackdateUtc(quotation, x => x.CreatedAtUtc, ScaleCreatedAtUtc(nowUtc, index));
                 added++;
             }
 
