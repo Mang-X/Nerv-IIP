@@ -17,6 +17,10 @@ const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 const outDir = process.env.NERV_IIP_R5_OUT_DIR
 
 test.skip(!baseURL || !adminPassword || !outDir, 'requires a running leader-demo stack')
+// business-console 是 PC 台，移动端由 business-pda 单独负责——在 mobile project 上跑既没意义，
+// 还会**把桌面截图覆盖掉**：两个 project 写同一个 `${shotDir}/${id}-${title}.png`。
+// （实际吃过：以为在看 1366 宽的桌面版式，读到的其实是 390×844@2.75DPR 的手机截图，
+// 排产工作台被压成单列堆叠，据此判断布局全是错的。）
 test.setTimeout(40 * 60 * 1000)
 
 const notes: Record<string, unknown>[] = []
@@ -82,6 +86,12 @@ async function openAndShoot(page: Page, id: string, title: string, opener: () =>
 }
 
 test('第五轮收尾取证', async ({ page }) => {
+  // 文件级 test.skip 的回调只拿得到 fixture、拿不到 testInfo，必须在用例体内判断。
+  test.skip(test.info().project.name !== 'desktop', '只在 desktop project 取证')
+  // Playwright 的 actionTimeout 默认是 0 = **永不超时**。声明的按钮一旦不在页上，
+  // click 会一直挂到用例超时（实际踩到：CAPA 那步空转 6 分钟才被发现）。
+  // 取证脚本宁可快速判失败、留下 opener 失效的记录，也不该静默卡住。
+  page.setDefaultTimeout(10_000)
   shotDir = path.join(outDir!, 'screenshots/第五轮-收尾')
   await mkdir(shotDir, { recursive: true })
   page.on('response', (r) => {
@@ -151,6 +161,7 @@ test('第五轮收尾取证', async ({ page }) => {
     route: string
   } & (
     | { via: 'row-action'; name: RegExp }
+    | { via: 'row' }
     | { via: 'row-menu'; name: RegExp }
     | { via: 'toolbar'; name: RegExp }
     | { via: 'none' }
@@ -172,20 +183,13 @@ test('第五轮收尾取证', async ({ page }) => {
       name: /详情|查看/,
     },
     { id: 'F-07', title: '不合格品NCR', route: '/quality/ncrs', via: 'row-menu', name: /打开处置/ },
-    {
-      id: 'F-08',
-      title: '纠正措施CAPA',
-      route: '/quality/capas',
-      via: 'row-action',
-      name: /详情|查看|处理/,
-    },
-    {
-      id: 'F-09',
-      title: '设备报警',
-      route: '/equipment/alarms',
-      via: 'row-menu',
-      name: /抑制|确认|详情/,
-    },
+    // CAPA 是整行可点、不是行内按钮——上一轮声明成 row-action，靠兜底才开出来；
+    // 声明既然不准就改准，别让兜底把烂声明一直背下去。
+    { id: 'F-08', title: '纠正措施CAPA', route: '/quality/capas', via: 'row' },
+    // 只点「抑制」（开搁置弹框）。**取证脚本绝不能点会落库的动作**：上一版正则里
+    // 带了「确认」，它直接把演示库里一条报警确认掉了（右下角弹「报警已确认。」），
+    // 抽屉压根没开，报告里只留一句 found=false——既污染数据又没取到证。
+    { id: 'F-09', title: '设备报警', route: '/equipment/alarms', via: 'row-menu', name: /抑制/ },
     {
       id: 'F-10',
       title: '维护工单',
@@ -213,22 +217,36 @@ test('第五轮收尾取证', async ({ page }) => {
     }
 
     await openAndShoot(page, item.id, item.title, async () => {
-      if (item.via === 'toolbar') {
-        await page.getByRole('button', { name: item.name }).first().click()
-        return
+      const declared = async () => {
+        if (item.via === 'toolbar') {
+          await page.getByRole('button', { name: item.name }).first().click()
+          return
+        }
+        if (item.via === 'row') {
+          await row(page).click()
+          return
+        }
+        if (item.via === 'row-action') {
+          await row(page).getByRole('button', { name: item.name }).first().click()
+          return
+        }
+        // row-menu：NvRowActions 的触发器带 aria-label（页面自定义如「NCR 操作 NCR-…」，
+        // 兜底是「更多操作」），先开菜单，等菜单项挂上 Portal 再点。
+        await row(page)
+          .getByRole('button', { name: /操作/ })
+          .first()
+          .click()
+        await page.getByRole('menuitem', { name: item.name }).first().click()
       }
-      if (item.via === 'row-action') {
-        await row(page).getByRole('button', { name: item.name }).first().click()
-        return
+      try {
+        await declared()
+      } catch {
+        // 声明写错（页面改了触发器）时退回点首行，并**记下来用的是兜底**——
+        // 悄悄成功比失败更坏：声明会一直烂着，下次谁也不知道它早就不准了。
+        await page.keyboard.press('Escape').catch(() => {})
+        await row(page).click()
+        notes.push({ id: item.id, openedBy: 'fallback-row-click', declared: item.via })
       }
-      // row-menu：NvRowActions 的触发器带 aria-label（页面自定义如「NCR 操作 NCR-…」，
-      // 兜底是「更多操作」），先开菜单，等菜单项挂上 Portal 再点。
-      await row(page)
-        .getByRole('button', { name: /操作/ })
-        .first()
-        .click()
-      await page.getByRole('menuitem', { name: item.name }).first().waitFor({ timeout: 8_000 })
-      await page.getByRole('menuitem', { name: item.name }).first().click()
     })
   }
 
