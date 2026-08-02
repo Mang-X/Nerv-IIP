@@ -131,7 +131,7 @@ async function confirmRemove() {
           >
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
         </NvField>
-        <NvField class="flex flex-row items-center gap-2">
+        <NvField orientation="horizontal">
           <NvCheckbox id="member-leader" v-model="isLeader" />
           <NvFieldLabel for="member-leader" class="mb-0">设为组长</NvFieldLabel>
         </NvField>

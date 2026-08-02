@@ -340,7 +340,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无点检记录。可从保养计划或维修工单补录点检结果。"
     >
-      <template #cell-result="{ row }"><NvStatusBadge :value="resultLabel(row.result)" /></template>
+      <template #cell-result="{ row }"
+        ><NvStatusBadge :value="row.result" :label="resultLabel(row.result)"
+      /></template>
       <template #cell-measurements="{ row }">
         <button
           v-if="(row.measurements?.length ?? 0) > 0"

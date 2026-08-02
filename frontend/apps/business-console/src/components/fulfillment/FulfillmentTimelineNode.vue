@@ -25,8 +25,11 @@ const failureText = computed(() => {
 })
 
 // 各来源单据回的是英文状态码，走全站状态字典映射成中文，不把原文直出成 chip。
-const detailStatusLabel = computed(() =>
-  props.node.detailStatus ? resolveStatus(props.node.detailStatus).label : '',
+// 节点可以给现成文案（如紧急度分级，词表不在共享 STATUS_LABELS 里），也可以给裸码值。
+const detailStatusLabel = computed(
+  () =>
+    props.node.detailStatusLabel ??
+    (props.node.detailStatus ? resolveStatus(props.node.detailStatus).label : ''),
 )
 </script>
 

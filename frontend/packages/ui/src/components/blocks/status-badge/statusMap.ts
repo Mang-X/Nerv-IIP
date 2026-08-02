@@ -191,12 +191,23 @@ function warnMissingStatusLabel(key: string, raw: string) {
   )
 }
 
-/** Resolve a raw status value to a localized label + semantic tone. */
-export function resolveStatus(value?: string | null): ResolvedStatus {
+/**
+ * Resolve a raw status value to a localized label + semantic tone.
+ *
+ * `warnOnMissing` 存在的理由：漏词告警要拦的是「裸码值上了屏」。调用方自己传了
+ * `label` 时，屏上是它的词、不是这里的回吐值，漏词**没有可见后果**——照报只会
+ * 把频道刷满假警报（实测：审批决策记录传了 `:label` 还在报 `approve` 缺词），
+ * 真正的漏词反而被淹掉。所以由调用方声明「这次的词表结果是否会上屏」。
+ */
+export function resolveStatus(
+  value?: string | null,
+  options?: { warnOnMissing?: boolean },
+): ResolvedStatus {
   const raw = (value ?? '').trim()
   const key = normalizeStatusKey(raw)
   const label = STATUS_LABELS[key]
-  if (label === undefined && raw) warnMissingStatusLabel(key, raw)
+  if (label === undefined && raw && options?.warnOnMissing !== false)
+    warnMissingStatusLabel(key, raw)
   return {
     label: label ?? (raw || '未知'),
     tone: STATUS_TO_TONE.get(key) ?? 'neutral',

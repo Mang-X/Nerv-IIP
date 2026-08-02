@@ -402,7 +402,9 @@ async function submitRfq() {
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
       >
-      <template #cell-status="{ row }"><NvStatusBadge :value="statusLabel(row.status)" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge :value="row.status" :label="statusLabel(row.status)"
+      /></template>
       <template #cell-actions="{ row }">
         <div v-if="canConvert(row)" class="flex justify-end gap-2">
           <NvButton

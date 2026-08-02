@@ -171,7 +171,7 @@ const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
       </NvTabsContent>
       <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
         <table class="w-full text-sm">
-          <thead class="sticky top-0 bg-muted/90 text-left">
+          <thead class="sticky top-0 bg-muted text-left">
             <tr>
               <th class="p-2">工单 / 工序</th>
               <th class="p-2">资源</th>
