@@ -177,6 +177,19 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.find('[data-testid="maintenance-source-context"]').exists()).toBe(false)
   })
 
+  it('matches source alarm GUIDs case-insensitively while keeping opaque IDs ordinal', async () => {
+    const sourceAlarmId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    state.workOrder = authoritativeWorkOrder({ sourceAlarmId })
+
+    const wrapper = await mountPage(
+      `/equipment/work-orders/019f0000-0000-7000-8000-000000000101?sourceAlarmId=${sourceAlarmId.toUpperCase()}`,
+    )
+
+    expect(wrapper.get('[data-testid="maintenance-source-context"]').text()).toBe(
+      '来源：报警报修创建结果',
+    )
+  })
+
   it('does not claim ordinary repair source context without an authoritative alarm link', async () => {
     state.workOrder = authoritativeWorkOrder()
 

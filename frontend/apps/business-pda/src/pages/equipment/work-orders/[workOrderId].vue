@@ -2,6 +2,7 @@
 import MaintenanceWorkOrderDetail from './components/MaintenanceWorkOrderDetail.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
+import { normalizeMaintenancePublicReference } from '@/composables/maintenancePublicIds'
 import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -28,8 +29,11 @@ const {
   refresh,
 } = useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId)
 const sourceContext = computed(() => {
-  const sourceAlarmId = route.query.sourceAlarmId
-  return typeof sourceAlarmId === 'string' && workOrder.value?.sourceAlarmId === sourceAlarmId
+  const requestedSourceAlarmId = normalizeMaintenancePublicReference(route.query.sourceAlarmId)
+  const authoritativeSourceAlarmId = normalizeMaintenancePublicReference(
+    workOrder.value?.sourceAlarmId,
+  )
+  return requestedSourceAlarmId && requestedSourceAlarmId === authoritativeSourceAlarmId
     ? '来源：报警报修创建结果'
     : ''
 })

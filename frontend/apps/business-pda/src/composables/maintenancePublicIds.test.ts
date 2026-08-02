@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   normalizeMaintenanceDeviceReference,
   normalizeMaintenanceDeviceReferences,
+  normalizeMaintenancePublicReference,
   serializeMaintenanceKey,
 } from './maintenancePublicIds'
 
@@ -14,6 +15,9 @@ describe('maintenance public identifiers', () => {
       normalizeMaintenanceDeviceReferences([publicId, publicId.toLowerCase(), 'DEV-A', 'dev-a']),
     ).toEqual([publicId.toLowerCase(), 'DEV-A'])
     expect(normalizeMaintenanceDeviceReferences(['DEV-A', 'dev-a'])).toEqual(['DEV-A', 'dev-a'])
+    expect(normalizeMaintenancePublicReference(publicId)).toBe(publicId.toLowerCase())
+    expect(normalizeMaintenancePublicReference('ALM-A')).toBe('ALM-A')
+    expect(normalizeMaintenancePublicReference('alm-a')).toBe('alm-a')
   })
 
   it('keeps delimiter-bearing structured identities collision-free', () => {

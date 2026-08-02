@@ -49,7 +49,7 @@ const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkO
       v-if="deviceAssetIds.length"
       data-testid="maintenance-device-clear"
       variant="text"
-      size="sm"
+      size="lg"
       block
       class="min-h-touch"
       @click="deviceAssetIds = []"

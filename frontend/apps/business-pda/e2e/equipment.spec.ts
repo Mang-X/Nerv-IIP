@@ -206,7 +206,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await page.getByRole('button', { name: '已接单', exact: true }).click()
   await page.getByTestId('maintenance-device-filter').click()
   await page.getByTestId('device-option-019f0000-0000-7000-8000-000000000001').click()
-  await expectMinimumTouchHeight(page.getByTestId('maintenance-device-clear'))
+  await expectMinimumTouchHeight(page.getByTestId('maintenance-device-clear'), 48)
   await expect
     .poll(() => {
       const last = listRequests.at(-1)
@@ -766,6 +766,7 @@ test('点检：数字键盘录入（含负号）+ 超差警示 + 提交确认', 
 })
 
 test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文并按 Self 重校验', async ({ page }) => {
+  const sourceAlarmId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   const detailRequests: URL[] = []
   let createdWorkOrderAssigned = false
   await page.route(
@@ -803,7 +804,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
             lifecycle: [],
             assignedTechnicianUserId: principal.principalId,
             assignedTeamId: null,
-            sourceAlarmId: 'ALM-1',
+            sourceAlarmId,
           },
         }),
       })
@@ -853,7 +854,8 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   )
   const detailUrl = new URL(page.url())
   expect(detailUrl.searchParams.get('source')).toBeNull()
-  expect(detailUrl.searchParams.get('sourceAlarmId')).toBe('ALM-1')
+  await page.goto(`${detailUrl.pathname}?sourceAlarmId=${sourceAlarmId.toUpperCase()}`)
+  expect(new URL(page.url()).searchParams.get('sourceAlarmId')).toBe(sourceAlarmId.toUpperCase())
   await expect(page.getByTestId('maintenance-source-context')).toHaveText('来源：报警报修创建结果')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('装配线冲压机')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(

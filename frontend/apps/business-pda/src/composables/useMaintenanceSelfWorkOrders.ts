@@ -31,6 +31,13 @@ import {
 
 const PAGE_SIZE = 20
 const MAX_IDENTITY_REFERENCES = 20
+let maintenanceQueryInstanceSequence = 0
+
+function nextMaintenanceQueryInstanceNonce() {
+  maintenanceQueryInstanceSequence += 1
+  return maintenanceQueryInstanceSequence
+}
+
 type WorkOrderListEnvelope =
   | {
       success?: boolean
@@ -385,6 +392,7 @@ function useMaintenanceSelfScope() {
 }
 
 export function useMaintenanceSelfWorkOrders() {
+  const instanceNonce = nextMaintenanceQueryInstanceNonce()
   const scope = useMaintenanceSelfScope()
   const filters = reactive<MaintenanceSelfWorkOrderFilters>({
     status: '',
@@ -413,6 +421,7 @@ export function useMaintenanceSelfWorkOrders() {
         deviceAssetIds: normalizedDeviceAssetIds.value,
         keyword: filters.keyword.trim(),
       },
+      instanceNonce,
     }),
   )
   const generation = useMaintenanceQueryGeneration(identity, scope.scopeReady)
@@ -600,6 +609,7 @@ export function useMaintenanceSelfWorkOrders() {
 }
 
 export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRefOrGetter<string>) {
+  const instanceNonce = nextMaintenanceQueryInstanceNonce()
   const scope = useMaintenanceSelfScope()
   const workOrderId = computed(() => normalizeCanonicalGuid(toValue(requestedWorkOrderId)) ?? '')
   const enabled = computed(() => scope.scopeReady.value && Boolean(workOrderId.value))
@@ -613,6 +623,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
             scope.principalId.value,
           ],
           workOrderId: workOrderId.value,
+          instanceNonce,
         })
       : '',
   )
@@ -873,7 +884,10 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       !isNonBlankString(item.code) ||
       !isCanonicalGuid(item.deviceAssetId) ||
       !isNonBlankString(item.displayName) ||
-      typeof item.active !== 'boolean' ||
+      item.active !== true ||
+      item.retired === true ||
+      (item.retired !== undefined && item.retired !== null && typeof item.retired !== 'boolean') ||
+      (item.retiredOn !== undefined && item.retiredOn !== null) ||
       !isNonBlankString(item.snapshotVersion) ||
       !presentationFields.every(isNullableString)
     ) {

@@ -302,6 +302,47 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
+  it('uses a non-repeating component-instance identity for every list and detail query family', async () => {
+    seedPrincipal()
+    useMaintenanceSelfWorkOrders()
+    const firstList = queryMetadata('maintenance-list')
+    const firstPrincipal = queryMetadata('maintenance-list-principal')
+    useMaintenanceSelfWorkOrderDetail(computed(() => workOrderGuid(101)))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderGuid(101), 'DEV-CNC-01'),
+    }
+    await nextTick()
+    const firstDetail = queryMetadata('maintenance-detail')
+    const firstDevice = queryMetadata('device-detail')
+    const firstIdentities = queryMetadata('maintenance-identities')
+
+    useMaintenanceSelfWorkOrders()
+    const secondList = queryMetadata('maintenance-list')
+    const secondPrincipal = queryMetadata('maintenance-list-principal')
+    useMaintenanceSelfWorkOrderDetail(computed(() => workOrderGuid(101)))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderGuid(101), 'DEV-CNC-01'),
+    }
+    await nextTick()
+    const secondDetail = queryMetadata('maintenance-detail')
+    const secondDevice = queryMetadata('device-detail')
+    const secondIdentities = queryMetadata('maintenance-identities')
+
+    for (const [first, second] of [
+      [firstList, secondList],
+      [firstPrincipal, secondPrincipal],
+      [firstDetail, secondDetail],
+      [firstDevice, secondDevice],
+      [firstIdentities, secondIdentities],
+    ]) {
+      expect(first?.identity).toBeTypeOf('string')
+      expect(second?.identity).toBeTypeOf('string')
+      expect(second?.identity).not.toBe(first?.identity)
+    }
+  })
+
   it('binds status, device, keyword, and first-page pagination to the server self query', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
@@ -1134,6 +1175,9 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     ['display name', { displayName: 42 }],
     ['missing active flag', { active: undefined }],
     ['active flag type', { active: 'true' }],
+    ['inactive device', { active: false }],
+    ['retired device', { retired: true }],
+    ['device with retirement date', { retiredOn: '2026-08-01T00:00:00.000Z' }],
     ['missing snapshot version', { snapshotVersion: undefined }],
     ['blank snapshot version', { snapshotVersion: ' ' }],
     ['snapshot version type', { snapshotVersion: 7 }],

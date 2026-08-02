@@ -7,9 +7,13 @@ export function normalizeCanonicalGuid(value: unknown): string | undefined {
   return CANONICAL_GUID.test(normalized) && normalized !== EMPTY_GUID ? normalized : undefined
 }
 
-export function normalizeMaintenanceDeviceReference(value: unknown): string {
+export function normalizeMaintenancePublicReference(value: unknown): string {
   if (typeof value !== 'string') return ''
   return normalizeCanonicalGuid(value) ?? value.trim()
+}
+
+export function normalizeMaintenanceDeviceReference(value: unknown): string {
+  return normalizeMaintenancePublicReference(value)
 }
 
 export function normalizeMaintenanceDeviceReferences(values: unknown): string[] {

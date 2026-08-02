@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（6 个 spec / 56 个用例）
+### e2e spec 清单（6 个 spec / 57 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -56,7 +56,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（11）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
+- `e2e/equipment.spec.ts`（12）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
   `skip/take` 为安全整数且与请求精确一致；HTTP 200 + `success:false` 或错页响应显式错误与重试
   （不渲染空态、不保留旧行，也不缓存错页）、强 `workOrderId` 详情重校验与只读生命周期；工单设备引用可为
   设备公开 ID 或设备编码，设备位置查询只接收当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用
@@ -66,7 +66,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   且单元回归覆盖 Self scope/筛选/路由 A→B→A 时拒绝旧 A cache、403 前不闪回旧详情、迟到旧请求不污染
   当前 generation，设备/人员/班组 enrichment 只消费 fresh 权威详情；结构化 query key 覆盖冒号、逗号和
   unit-separator 碰撞，公开 Guid 大小写归一而 `DEV-A`/`dev-a` 保持两个 Ordinal 业务编码；
-  且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选与详情返回按钮实际触点高度 ≥44px；
+  且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选实际触点高度 ≥48px，详情返回按钮实际触点高度 ≥44px；
   终态详情不提供写动作。报警行详情「去报修」后，从已确认创建回执取得强 `workOrderId`，但创建默认
   未指派，首次同一 principal 的 Self GET 返回 403，成功态仅显示等待派工且无详情入口；测试模拟外部
   权威派工给当前 principal 后，用户显式点击“重新核验指派状态”，Self GET 成功才显示“查看工单详情”
