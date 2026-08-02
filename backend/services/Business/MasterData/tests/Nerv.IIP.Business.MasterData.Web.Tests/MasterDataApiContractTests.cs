@@ -643,6 +643,33 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Device_detail_rejects_id_code_namespace_collision_as_ambiguous()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deviceById = DeviceAsset.Register("org-001", "env-dev", "DEV-B", "Device B", "LINE-B", "WC-B");
+        dbContext.DeviceAssets.Add(deviceById);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var ambiguousReference = deviceById.Id.ToString();
+        dbContext.DeviceAssets.Add(DeviceAsset.Register(
+            "org-001",
+            "env-dev",
+            ambiguousReference,
+            "Device A",
+            "LINE-A",
+            "WC-A"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+                new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", ambiguousReference),
+                CancellationToken.None));
+
+        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Station_directory_keeps_local_codes_distinct_and_pages_deterministically()
     {
         await using var provider = CreateInMemoryProvider();

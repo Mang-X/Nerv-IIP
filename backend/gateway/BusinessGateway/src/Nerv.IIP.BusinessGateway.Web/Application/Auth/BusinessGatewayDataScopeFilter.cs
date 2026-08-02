@@ -8,6 +8,7 @@ public sealed class BusinessGatewayDataScopeFilter(
     IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
 {
+    private const int MaxRequestedDeviceReferences = 200;
     private const string NoScopeMatch = "__iam_scope_no_match__";
 
     public async Task<BusinessConsoleTelemetryAlarmListRequest> ApplyToTelemetryAlarmsAsync(
@@ -49,9 +50,17 @@ public sealed class BusinessGatewayDataScopeFilter(
         }
 
         var resolved = await ResolveAsync(request.OrganizationId, request.EnvironmentId, dataScope, cancellationToken);
-        var allowed = resolved.DeviceAssetReferences.ToHashSet(StringComparer.Ordinal);
-        var requested = ExactDeviceReferences(request);
-        var narrowed = (!requested.Specified ? allowed : requested.Values.Where(allowed.Contains))
+        var allowed = resolved.DeviceAssets
+            .Select(device => new DeviceSnapshotIdentity(device.DeviceAssetId, device.SnapshotVersion))
+            .ToHashSet();
+        var requested = DeviceReferenceGroups(request);
+        var requestedDevices = await ResolveRequestedDevicesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            requested,
+            cancellationToken);
+        var narrowed = (!requested.Specified ? allowed : requestedDevices.Where(allowed.Contains))
+            .Select(device => device.DeviceAssetId)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -78,7 +87,7 @@ public sealed class BusinessGatewayDataScopeFilter(
             || dataScope.TeamCodes?.Count > 0
             || dataScope.OrganizationIds?.Any(x => !string.Equals(x.Trim(), organizationId, StringComparison.Ordinal)) == true)
         {
-            return new ResolvedDataScope([], [], []);
+            return new ResolvedDataScope([], []);
         }
 
         var lines = await ListResourcesAsync(organizationId, environmentId, "production-line", cancellationToken);
@@ -110,19 +119,22 @@ public sealed class BusinessGatewayDataScopeFilter(
                 || Matches(x.LineCode, lineSet)
                 || Matches(x.WorkCenterCode, workCenterSet))
             .ToArray();
-        var scopedDeviceAssetIds = scopedDevices
-            .Select(x => string.IsNullOrWhiteSpace(x.DeviceAssetId) ? x.Code : x.DeviceAssetId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x!.Trim())
+        var scopedDeviceAssets = scopedDevices
+            .Select(ToDeviceIdentity)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
+            .Where(group => group
+                .Select(device => (device.Code, device.SnapshotVersion))
+                .Distinct()
+                .Count() == 1)
+            .Select(x => x.First())
+            .ToArray();
+        var scopedDeviceAssetIds = scopedDeviceAssets
+            .Select(x => x.DeviceAssetId)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var scopedDeviceAssetReferences = scopedDevices
-            .SelectMany(x => new[] { x.DeviceAssetId, x.Code })
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x!.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        return new ResolvedDataScope(scopedWorkCenterCodes, scopedDeviceAssetIds, scopedDeviceAssetReferences);
+        return new ResolvedDataScope(scopedDeviceAssetIds, scopedDeviceAssets);
     }
 
     private async Task<IReadOnlyCollection<BusinessConsoleResourceItem>> ListResourcesAsync(
@@ -170,7 +182,126 @@ public sealed class BusinessGatewayDataScopeFilter(
     private static string JoinOrNoMatch(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? NoScopeMatch : string.Join(',', values.Order(StringComparer.Ordinal));
 
-    private static DeviceReferenceFilter ExactDeviceReferences(BusinessConsoleMaintenanceWorkOrderListRequest request)
+    private async Task<HashSet<DeviceSnapshotIdentity>> ResolveRequestedDevicesAsync(
+        string organizationId,
+        string environmentId,
+        DeviceReferenceFilter requested,
+        CancellationToken cancellationToken)
+    {
+        if (!requested.Specified)
+        {
+            return [];
+        }
+
+        var references = requested.Groups
+            .SelectMany(group => group)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (references.Length == 0 || references.Length > MaxRequestedDeviceReferences)
+        {
+            return [];
+        }
+
+        using var throttle = new SemaphoreSlim(8);
+        var tasks = references.Select(async reference =>
+        {
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                var device = await ResolveDeviceAsync(
+                    organizationId,
+                    environmentId,
+                    reference,
+                    cancellationToken);
+                return (Reference: reference, Device: device);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+        var resolved = await Task.WhenAll(tasks);
+        if (resolved.Any(x => x.Device is null))
+        {
+            return [];
+        }
+
+        var byReference = resolved.ToDictionary(
+            x => x.Reference,
+            x => x.Device!,
+            StringComparer.Ordinal);
+        var intersection = requested.Groups[0]
+            .Select(reference => byReference[reference])
+            .ToHashSet();
+        foreach (var group in requested.Groups.Skip(1))
+        {
+            intersection.IntersectWith(group.Select(reference => byReference[reference]));
+        }
+        return intersection;
+    }
+
+    private async Task<DeviceSnapshotIdentity?> ResolveDeviceAsync(
+        string organizationId,
+        string environmentId,
+        string reference,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await masterData.GetResourceDetailAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleMasterDataResourceRequest(
+                    organizationId,
+                    environmentId,
+                    "device-asset",
+                    reference),
+                cancellationToken);
+            var deviceAssetId = NormalizeDeviceAssetId(detail.DeviceAssetId);
+            var requestedDeviceAssetId = NormalizeDeviceAssetId(reference);
+            var referenceMatches = string.Equals(detail.Code, reference, StringComparison.Ordinal)
+                || (requestedDeviceAssetId is not null
+                    && string.Equals(deviceAssetId, requestedDeviceAssetId, StringComparison.Ordinal));
+            return string.Equals(detail.ResourceType, "device-asset", StringComparison.Ordinal)
+                && string.Equals(detail.OrganizationId, organizationId, StringComparison.Ordinal)
+                && string.Equals(detail.EnvironmentId, environmentId, StringComparison.Ordinal)
+                && detail.Active
+                && !string.IsNullOrWhiteSpace(detail.SnapshotVersion)
+                && referenceMatches
+                ? new DeviceSnapshotIdentity(deviceAssetId!, detail.SnapshotVersion.Trim())
+                : null;
+        }
+        catch (BusinessServiceProxyException)
+        {
+            return null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private static DeviceIdentity? ToDeviceIdentity(BusinessConsoleResourceItem resource)
+    {
+        var deviceAssetId = NormalizeDeviceAssetId(resource.DeviceAssetId);
+        return string.Equals(resource.ResourceType, "device-asset", StringComparison.Ordinal)
+            && resource.Active
+            && !string.IsNullOrWhiteSpace(resource.SnapshotVersion)
+            && !string.IsNullOrWhiteSpace(resource.Code)
+            && deviceAssetId is not null
+                ? new DeviceIdentity(deviceAssetId, resource.Code.Trim(), resource.SnapshotVersion.Trim())
+                : null;
+    }
+
+    private static string? NormalizeDeviceAssetId(string? value) =>
+        Guid.TryParseExact(value?.Trim(), "D", out var parsed) && parsed != Guid.Empty
+            ? parsed.ToString("D")
+            : null;
+
+    private static DeviceReferenceFilter DeviceReferenceGroups(BusinessConsoleMaintenanceWorkOrderListRequest request)
     {
         var groups = new List<HashSet<string>>();
         AddGroup(groups, request.DeviceAssetReferences ?? []);
@@ -188,13 +319,7 @@ public sealed class BusinessGatewayDataScopeFilter(
         {
             return new DeviceReferenceFilter(false, []);
         }
-
-        var intersection = groups[0];
-        foreach (var group in groups.Skip(1))
-        {
-            intersection.IntersectWith(group);
-        }
-        return new DeviceReferenceFilter(true, intersection);
+        return new DeviceReferenceFilter(true, groups);
     }
 
     private static void AddGroup(List<HashSet<string>> groups, IEnumerable<string> values)
@@ -219,9 +344,12 @@ public sealed class BusinessGatewayDataScopeFilter(
         !string.IsNullOrWhiteSpace(value) && allowed.Contains(value.Trim());
 
     private sealed record ResolvedDataScope(
-        IReadOnlyCollection<string> WorkCenterCodes,
         IReadOnlyCollection<string> DeviceAssetIds,
-        IReadOnlyCollection<string> DeviceAssetReferences);
+        IReadOnlyCollection<DeviceIdentity> DeviceAssets);
 
-    private sealed record DeviceReferenceFilter(bool Specified, HashSet<string> Values);
+    private sealed record DeviceIdentity(string DeviceAssetId, string Code, string SnapshotVersion);
+
+    private sealed record DeviceSnapshotIdentity(string DeviceAssetId, string SnapshotVersion);
+
+    private sealed record DeviceReferenceFilter(bool Specified, IReadOnlyList<HashSet<string>> Groups);
 }

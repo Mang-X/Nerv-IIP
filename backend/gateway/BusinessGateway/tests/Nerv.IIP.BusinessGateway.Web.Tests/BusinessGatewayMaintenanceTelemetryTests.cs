@@ -166,9 +166,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     [Fact]
     public async Task Workshop_data_scope_is_pushed_down_to_maintenance_telemetry_and_equipment_alarm_lists()
     {
+        var allowedDeviceId = DeviceId(1);
+        var deniedDeviceId = DeviceId(2);
         var dataScope = new AuthorizationDataScope([], ["WS-A"], []);
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(dataScope);
-        var maintenance = new RecordingMaintenanceFacadeClient();
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
         var telemetry = new RecordingTelemetryFacadeClient();
         var masterData = new RecordingMasterDataClient
         {
@@ -178,9 +180,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessConsoleResourceItem("production-line", "LINE-B", "Line B", true, "v1", WorkshopCode: "WS-B"),
                 new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A", WorkshopCode: "WS-A"),
                 new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1", LineCode: "LINE-B", WorkshopCode: "WS-B"),
-                new BusinessConsoleResourceItem("device-asset", "DEV,A", "Device A", true, "v1", LineCode: "LINE-A", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
-                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", LineCode: "LINE-B", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
+                new BusinessConsoleResourceItem("device-asset", "DEV,A", "Device A", true, "v1", LineCode: "LINE-A", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+                new BusinessConsoleResourceItem("device-asset", "DEV-B", "Device B", true, "v1", LineCode: "LINE-B", WorkCenterCode: "WC-B", DeviceAssetId: deniedDeviceId),
             ],
+            ResourceDetailFactory = request => string.Equals(request.Code, "DEV,A", StringComparison.Ordinal)
+                ? DeviceDetail(request, allowedDeviceId, "DEV,A")
+                : DeviceDetail(request, deniedDeviceId, "DEV-B"),
         };
         await using var factory = CreateFactory(auth, services =>
         {
@@ -204,13 +209,142 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, maintenanceResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, telemetryResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, equipmentResponse.StatusCode);
-        Assert.Equal(["DEV,A"], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
+        Assert.Equal([allowedDeviceId], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
         Assert.Null(maintenance.LastWorkOrderListRequest.DeviceAssetIds);
-        Assert.Equal("DEV-A", telemetry.LastAlarmListRequest!.DeviceAssetIds);
-        Assert.Equal("DEV-A", telemetry.LastEquipmentAlarmListRequest!.DeviceAssetIds);
-        Assert.DoesNotContain("DEV-B", maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
+        Assert.Equal(allowedDeviceId, telemetry.LastAlarmListRequest!.DeviceAssetIds);
+        Assert.Equal(allowedDeviceId, telemetry.LastEquipmentAlarmListRequest!.DeviceAssetIds);
+        Assert.DoesNotContain(deniedDeviceId, maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
         Assert.DoesNotContain("DEV", maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
         Assert.DoesNotContain("A", maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
+        Assert.Contains(masterData.DetailRequests, request => request.Code == "DEV,A");
+        Assert.DoesNotContain(masterData.DetailRequests, request => request.Code is "DEV" or "A");
+    }
+
+    [Fact]
+    public async Task Maintenance_data_scope_rejects_a_device_id_that_collides_with_an_allowed_device_code()
+    {
+        var allowedDeviceId = DeviceId(1);
+        var deniedDeviceId = DeviceId(2);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", deniedDeviceId, "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+                new BusinessConsoleResourceItem("device-asset", "DEV-B", "Device B", true, "v1", WorkCenterCode: "WC-B", DeviceAssetId: deniedDeviceId),
+            ],
+            ResourceDetailFactory = request => string.Equals(request.Code, deniedDeviceId, StringComparison.Ordinal)
+                ? throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "device-reference-ambiguous")
+                : DeviceDetail(request, allowedDeviceId, deniedDeviceId),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences={deniedDeviceId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["__iam_scope_no_match__"], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
+    }
+
+    [Fact]
+    public async Task Maintenance_data_scope_intersects_legacy_code_and_exact_id_by_canonical_device_identity()
+    {
+        var allowedDeviceId = DeviceId(1);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+            ],
+            ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences={allowedDeviceId}&deviceAssetIds=DEV-A&deviceAssetId=DEV-A");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal([allowedDeviceId], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
+        Assert.Equal(2, masterData.DetailRequests.Count);
+        Assert.Equal(2, masterData.DetailRequests.Select(x => x.Code).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("outside-scope")]
+    [InlineData("inactive")]
+    [InlineData("missing-snapshot")]
+    [InlineData("snapshot-mismatch")]
+    public async Task Maintenance_data_scope_fails_closed_for_untrusted_device_reference_facts(string scenario)
+    {
+        var allowedDeviceId = DeviceId(1);
+        var deniedDeviceId = DeviceId(2);
+        var requestedReference = scenario == "outside-scope" ? "DEV-B" : "DEV-A";
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+            ],
+            ResourceDetailFactory = request => scenario switch
+            {
+                "missing" => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
+                "outside-scope" => DeviceDetail(request, deniedDeviceId, "DEV-B"),
+                "inactive" => DeviceDetail(request, allowedDeviceId, "DEV-A") with { Active = false },
+                "missing-snapshot" => DeviceDetail(request, allowedDeviceId, "DEV-A") with { SnapshotVersion = string.Empty },
+                "snapshot-mismatch" => DeviceDetail(request, allowedDeviceId, "DEV-A") with { SnapshotVersion = "v2" },
+                _ => throw new InvalidOperationException($"Unsupported scenario '{scenario}'."),
+            },
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences={requestedReference}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["__iam_scope_no_match__"], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
     }
 
     [Fact]
@@ -2236,7 +2370,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "alarm-001",
                 "alarm-001",
                 DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture))) with
-            { AllowedActions = WorkOrderDetailAllowedActions, BlockReasons = WorkOrderDetailBlockReasons });
+        { AllowedActions = WorkOrderDetailAllowedActions, BlockReasons = WorkOrderDetailBlockReasons });
     }
 
     private static bool MatchesCsv(string? csv, string? value) =>
