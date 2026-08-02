@@ -216,6 +216,58 @@ public sealed class ListMaintenanceWorkOrdersRequestValidator : Validator<ListMa
     }
 }
 
+public sealed record QueryInternalMaintenanceWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null,
+    string[] DeviceAssetReferences = null!)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new ListMaintenanceWorkOrdersRequest(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences).ToQuery();
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
+    : Validator<QueryInternalMaintenanceWorkOrdersRequest>
+{
+    public QueryInternalMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.Status).MaximumLength(40);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.WorkOrderId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetReferences)
+            .NotNull()
+            .Must(references => references is { Length: > 0 and <= ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences })
+            .WithMessage($"Device asset references must contain between 1 and {ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences} values.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+}
+
 public sealed record GetMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string OrganizationId,
@@ -465,11 +517,11 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
 }
 
 public sealed class QueryInternalMaintenanceWorkOrdersEndpoint(ISender sender)
-    : MaintenanceEndpoint<ListMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
+    : MaintenanceEndpoint<QueryInternalMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
 {
     public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryInternalMaintenanceWorkOrdersEndpoint>());
 
-    public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(QueryInternalMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
         var result = await sender.Send(req.ToQuery(), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
