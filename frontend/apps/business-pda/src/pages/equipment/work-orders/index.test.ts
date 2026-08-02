@@ -12,12 +12,22 @@ const state = vi.hoisted(() => ({
   hasFailedResponse: false,
   error: undefined as unknown,
   items: [] as BusinessConsoleMaintenanceWorkOrderItem[],
-  filters: { status: '', deviceAssetId: '', keyword: '' },
+  filters: { status: '', deviceAssetIds: [] as string[], keyword: '' },
   refresh: vi.fn(),
   loadMore: vi.fn(),
 }))
 
 vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+  normalizeMaintenanceDeviceReferences: (values: unknown) =>
+    Array.isArray(values)
+      ? [
+          ...new Set(
+            values.filter(
+              (value): value is string => typeof value === 'string' && value.length > 0,
+            ),
+          ),
+        ]
+      : [],
   useMaintenanceSelfWorkOrders: () => ({
     scopeReady: shallowRef(state.scopeReady),
     hasSuccessfulResponse: shallowRef(state.hasSuccessfulResponse),
@@ -33,6 +43,7 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
     error: shallowRef(state.error),
     lastUpdatedAt: shallowRef('2026-08-02T01:00:00.000Z'),
     filters: reactive(state.filters),
+    principalDisplayName: shallowRef('张维修'),
     refresh: state.refresh,
     loadMore: state.loadMore,
   }),
@@ -75,7 +86,7 @@ describe('maintenance self work-order queue page', () => {
     state.hasFailedResponse = false
     state.error = undefined
     state.items = []
-    Object.assign(state.filters, { status: '', deviceAssetId: '', keyword: '' })
+    Object.assign(state.filters, { status: '', deviceAssetIds: [], keyword: '' })
     sessionStorage.clear()
   })
 
@@ -125,7 +136,8 @@ describe('maintenance self work-order queue page', () => {
     ]
     const { wrapper, router } = await mountPage()
 
-    expect(wrapper.text()).toContain('维修人员 principal-1')
+    expect(wrapper.text()).toContain('维修人员 张维修')
+    expect(wrapper.text()).not.toContain('principal-1')
     expect(wrapper.text()).not.toContain('Self')
     expect(wrapper.text()).not.toContain('服务端')
     expect(wrapper.text()).toContain('设备已关联')
@@ -142,7 +154,7 @@ describe('maintenance self work-order queue page', () => {
 
     await wrapper.get('[data-testid="select-device"]').trigger('click')
 
-    expect(state.filters.deviceAssetId).toBe('DEV-CNC-01')
+    expect(state.filters.deviceAssetIds).toEqual(['019f-device-guid', 'DEV-CNC-01'])
     expect(wrapper.text()).toContain('一号数控机床')
   })
 
@@ -160,7 +172,7 @@ describe('maintenance self work-order queue page', () => {
     const { wrapper } = await mountPage()
 
     wrapper.findComponent(TaskListShell).vm.$emit('restore', {
-      filters: { status: 'future-server-state', deviceAssetId: '', keyword: '' },
+      filters: { status: 'future-server-state', deviceAssetIds: [], keyword: '' },
     })
     await flushPromises()
 

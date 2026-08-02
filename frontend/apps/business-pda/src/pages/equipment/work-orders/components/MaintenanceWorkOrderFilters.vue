@@ -14,7 +14,7 @@ import {
 defineProps<{ deviceLabel?: string }>()
 const emit = defineEmits<{ chooseDevice: [] }>()
 const status = defineModel<'' | MaintenanceWorkOrderStatusCode>('status', { required: true })
-const deviceAssetId = defineModel<string>('deviceAssetId', { required: true })
+const deviceAssetIds = defineModel<string[]>('deviceAssetIds', { required: true })
 const keyword = defineModel<string>('keyword', { required: true })
 
 const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkOrderStatusOptions]
@@ -40,19 +40,19 @@ const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkO
       <NvListRow
         data-testid="maintenance-device-filter"
         title="设备"
-        :subtitle="deviceAssetId ? deviceLabel || '已选择设备' : '全部设备'"
+        :subtitle="deviceAssetIds.length ? deviceLabel || '已选择设备' : '全部设备'"
         @select="emit('chooseDevice')"
         @keydown.space.prevent="emit('chooseDevice')"
       />
     </div>
     <NvMobileButton
-      v-if="deviceAssetId"
+      v-if="deviceAssetIds.length"
       data-testid="maintenance-device-clear"
       variant="text"
       size="sm"
       block
       class="min-h-touch"
-      @click="deviceAssetId = ''"
+      @click="deviceAssetIds = []"
     >
       清除设备筛选
     </NvMobileButton>

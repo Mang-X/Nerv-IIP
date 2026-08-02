@@ -13,6 +13,10 @@ const state = vi.hoisted(() => ({
   error: undefined as unknown,
   workOrder: undefined as AuthoritativeMaintenanceWorkOrderDetail | undefined,
   device: undefined as BusinessConsoleResourceItem | undefined,
+  identities: {
+    users: { 'principal-1': '张维修' },
+    teams: { 'team-a': '甲班' },
+  },
   requestedId: undefined as ComputedRef<string> | undefined,
   refresh: vi.fn(),
 }))
@@ -27,6 +31,9 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
       hasFailedResponse: shallowRef(state.failed),
       workOrder: shallowRef(state.workOrder),
       device: shallowRef(state.device),
+      identities: shallowRef(state.identities),
+      identityPending: shallowRef(false),
+      identitiesUnavailable: shallowRef(false),
       refresh: state.refresh,
     }
   },
@@ -122,14 +129,16 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
-    expect(wrapper.text()).toContain('维修人员 principal-1')
-    expect(wrapper.text()).toContain('班组 team-a')
-    expect(wrapper.text()).toContain('操作人 principal-1')
-    expect(wrapper.text()).toContain('技师快照 principal-1')
-    expect(wrapper.text()).toContain('班组快照 team-a')
+    expect(wrapper.text()).toContain('维修人员 张维修')
+    expect(wrapper.text()).toContain('班组 甲班')
+    expect(wrapper.text()).toContain('操作人 张维修')
+    expect(wrapper.text()).toContain('技师快照 张维修')
+    expect(wrapper.text()).toContain('班组快照 甲班')
     expect(wrapper.text()).toContain('来源：报警报修创建结果')
     expect(wrapper.text()).not.toContain('WO-DETAIL')
     expect(wrapper.text()).not.toContain('device-1')
+    expect(wrapper.text()).not.toContain('principal-1')
+    expect(wrapper.text()).not.toContain('team-a')
     expect(wrapper.text()).toContain('版本 7')
     expect(wrapper.text()).toContain('开工')
     expect(wrapper.text()).toContain('取消')
@@ -141,9 +150,9 @@ describe('maintenance work-order authoritative detail page', () => {
   })
 
   it.each([
-    [{}, '维修人员 principal-1 · 未指派班组'],
-    [{ assignedTeamId: 'team-a' }, '维修人员 principal-1 · 班组 team-a'],
-  ])('renders stable self assignment identifiers', async (assignment, label) => {
+    [{}, '维修人员 张维修 · 未指派班组'],
+    [{ assignedTeamId: 'team-a' }, '维修人员 张维修 · 班组 甲班'],
+  ])('renders readable self assignment identities', async (assignment, label) => {
     state.workOrder = authoritativeWorkOrder({
       ...assignment,
     })

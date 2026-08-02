@@ -19,6 +19,8 @@ const canReadWorkOrderDetail = ref(true)
 const confirmedCreatedWorkOrder = ref<Record<string, unknown>>()
 const createdDetailHasSuccessfulResponse = ref(false)
 const createdDetailPending = ref(false)
+const createdDetailHasFailedResponse = ref(false)
+const createdDeviceHasFailedResponse = ref(false)
 const refreshCreatedWorkOrder = vi.fn(async () => {})
 const workOrders = ref<Array<Record<string, unknown>>>([
   {
@@ -75,9 +77,11 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
 
 vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
   useMaintenanceSelfWorkOrderDetail: () => ({
-    workOrder: confirmedCreatedWorkOrder,
-    hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
-    pending: createdDetailPending,
+    authoritativeWorkOrder: confirmedCreatedWorkOrder,
+    authoritativeHasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+    authoritativePending: createdDetailPending,
+    authoritativeHasFailedResponse: createdDetailHasFailedResponse,
+    deviceHasFailedResponse: createdDeviceHasFailedResponse,
     refresh: refreshCreatedWorkOrder,
   }),
 }))
@@ -118,6 +122,8 @@ beforeEach(() => {
   confirmedCreatedWorkOrder.value = undefined
   createdDetailHasSuccessfulResponse.value = false
   createdDetailPending.value = false
+  createdDetailHasFailedResponse.value = false
+  createdDeviceHasFailedResponse.value = false
   refreshCreatedWorkOrder.mockReset()
   workOrdersError.value = null
   workOrdersPending.value = false
@@ -345,11 +351,32 @@ describe('PDA equipment repair page', () => {
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('报修已提交')
     expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
-      '尚未指派给当前账号',
+      '尚未确认工单指派给当前账号',
     )
     expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="recheck-created-work-order-assignment"]').text()).toContain(
       '重新核验指派状态',
+    )
+  })
+
+  it('keeps confirmed assignment visible when device enrichment fails', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+    confirmedCreatedWorkOrder.value = {
+      workOrderId: '33333333-3333-3333-3333-333333333333',
+    }
+    createdDetailHasSuccessfulResponse.value = true
+    createdDeviceHasFailedResponse.value = true
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '已确认工单指派给当前维修人员',
+    )
+    expect(wrapper.get('[data-testid="created-work-order-device-state"]').text()).toContain(
+      '设备资料暂不可用',
     )
   })
 

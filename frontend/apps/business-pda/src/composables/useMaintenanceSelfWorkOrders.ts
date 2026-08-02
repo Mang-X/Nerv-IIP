@@ -1,10 +1,13 @@
 import {
   getBusinessConsoleMasterDataResourceDetailQueryOptions,
+  getBusinessConsoleMasterDataResourceDetail,
   getBusinessConsoleMaintenanceWorkOrderQueryOptions,
+  listBusinessConsoleWorkers,
   listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
   type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsoleMaintenanceWorkOrderItem,
+  type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
 import {
   normalizeMaintenanceWorkOrderStatusFilter,
@@ -20,8 +23,11 @@ import {
   canAccessMaintenanceWorkOrderReadModel,
 } from '@/permissions/maintenanceReadModelAccess'
 import { useAuthStore } from '@/stores/auth'
+import { isStrictRfc3339DateTime } from '@/utils/strictRfc3339'
 
 const PAGE_SIZE = 20
+const MAX_IDENTITY_REFERENCES = 20
+const CANONICAL_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type WorkOrderListEnvelope =
   | {
@@ -50,8 +56,13 @@ interface WorkOrderPage {
 
 export interface MaintenanceSelfWorkOrderFilters {
   status: '' | MaintenanceWorkOrderStatusCode
-  deviceAssetId: string
+  deviceAssetIds: string[]
   keyword: string
+}
+
+export interface MaintenanceWorkOrderIdentityDirectory {
+  users: Readonly<Record<string, string>>
+  teams: Readonly<Record<string, string>>
 }
 
 export type AuthoritativeMaintenanceWorkOrderDetail = BusinessConsoleMaintenanceWorkOrderItem & {
@@ -80,6 +91,27 @@ function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
+function isCanonicalGuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    CANONICAL_GUID.test(value) &&
+    value.toLowerCase() !== '00000000-0000-0000-0000-000000000000'
+  )
+}
+
+export function normalizeMaintenanceDeviceReferences(values: unknown): string[] {
+  if (!Array.isArray(values)) return []
+  const unique = new Map<string, string>()
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const normalized = value.trim()
+    if (!normalized) continue
+    const key = normalized.toLowerCase()
+    if (!unique.has(key)) unique.set(key, normalized)
+  }
+  return [...unique.values()].slice(0, 2)
+}
+
 function isExplicitAssignment(value: unknown) {
   return value === null || isNonBlankString(value)
 }
@@ -92,7 +124,12 @@ function isWorkOrderListItem(
     value &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
-    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId) &&
+    isCanonicalGuid((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId) &&
+    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).deviceAssetId) &&
+    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).priority) &&
+    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).status) &&
+    isStrictRfc3339DateTime((value as BusinessConsoleMaintenanceWorkOrderItem).openedAtUtc) &&
+    isValidVersion((value as BusinessConsoleMaintenanceWorkOrderItem).version) &&
     (value as BusinessConsoleMaintenanceWorkOrderItem).assignedTechnicianUserId === principalId,
   )
 }
@@ -154,8 +191,7 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     isNonBlankString(value.deviceAssetId) &&
     isNonBlankString(value.priority) &&
     isNonBlankString(value.status) &&
-    isNonBlankString(value.openedAtUtc) &&
-    Number.isFinite(Date.parse(value.openedAtUtc)) &&
+    isStrictRfc3339DateTime(value.openedAtUtc) &&
     isValidVersion(value.version) &&
     Array.isArray(value.allowedActions) &&
     value.allowedActions.every(isNonBlankString) &&
@@ -180,10 +216,86 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
         isExplicitAssignment(event.teamId) &&
         isNonBlankString(event.reason) &&
         isValidVersion(event.resultingVersion) &&
-        isNonBlankString(event.occurredAtUtc) &&
-        Number.isFinite(Date.parse(event.occurredAtUtc)),
+        isStrictRfc3339DateTime(event.occurredAtUtc),
     ),
   )
+}
+
+function collectIdentityReferences(workOrder: AuthoritativeMaintenanceWorkOrderDetail | undefined) {
+  const users = new Set<string>()
+  const teams = new Set<string>()
+  if (workOrder) {
+    users.add(workOrder.assignedTechnicianUserId)
+    if (workOrder.assignedTeamId) teams.add(workOrder.assignedTeamId)
+    for (const event of workOrder.lifecycle) {
+      users.add(event.actorPrincipalId!)
+      if (event.technicianUserId) users.add(event.technicianUserId)
+      if (event.teamId) teams.add(event.teamId)
+    }
+  }
+  const userIds = [...users].sort()
+  const teamIds = [...teams].sort()
+  return {
+    userIds,
+    teamIds,
+    bounded: userIds.length + teamIds.length <= MAX_IDENTITY_REFERENCES,
+  }
+}
+
+function parseExactWorker(envelope: unknown, requestedUserId: string) {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return undefined
+  const response = envelope as {
+    success?: boolean
+    data?: {
+      pageIndex?: number
+      pageSize?: number
+      totalCount?: number
+      items?: BusinessConsoleWorkerDirectoryItem[]
+    } | null
+  }
+  const data = response.data
+  if (
+    response.success !== true ||
+    !data ||
+    data.pageIndex !== 1 ||
+    data.pageSize !== 1 ||
+    data.totalCount !== 1 ||
+    !Array.isArray(data.items) ||
+    data.items.length !== 1
+  ) {
+    return undefined
+  }
+  const worker = data.items[0]
+  return worker?.userId === requestedUserId &&
+    isNonBlankString(worker.employeeNo) &&
+    isNonBlankString(worker.displayName) &&
+    isNonBlankString(worker.employmentStatus) &&
+    typeof worker.active === 'boolean' &&
+    Array.isArray(worker.teams) &&
+    Array.isArray(worker.skills) &&
+    isNonBlankString(worker.snapshotVersion)
+    ? worker.displayName.trim()
+    : undefined
+}
+
+function parseExactTeam(
+  envelope: unknown,
+  requestedTeamId: string,
+  organizationId: string,
+  environmentId: string,
+) {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return undefined
+  const response = envelope as Exclude<DeviceAssetDetailEnvelope, undefined>
+  const team = response.success === true ? response.data : undefined
+  return team?.resourceType === 'team' &&
+    team.code === requestedTeamId &&
+    team.organizationId === organizationId &&
+    team.environmentId === environmentId &&
+    typeof team.active === 'boolean' &&
+    isNonBlankString(team.snapshotVersion) &&
+    isNonBlankString(team.displayName)
+    ? team.displayName.trim()
+    : undefined
 }
 
 function useMaintenanceSelfScope() {
@@ -233,18 +345,51 @@ export function useMaintenanceSelfWorkOrders() {
   const scope = useMaintenanceSelfScope()
   const filters = reactive<MaintenanceSelfWorkOrderFilters>({
     status: '',
-    deviceAssetId: '',
+    deviceAssetIds: [],
     keyword: '',
   })
+  const normalizedDeviceAssetIds = computed(() =>
+    normalizeMaintenanceDeviceReferences(filters.deviceAssetIds),
+  )
   const listQueryParameters = () => ({
     ...scope.queryScope(),
     status: trimToUndefined(normalizeMaintenanceWorkOrderStatusFilter(filters.status)),
-    deviceAssetId: trimToUndefined(filters.deviceAssetId),
+    deviceAssetIds: trimToUndefined(normalizedDeviceAssetIds.value.join(',')),
     keyword: trimToUndefined(filters.keyword),
   })
   const identity = computed(
     () =>
-      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${filters.deviceAssetId.trim()}:${filters.keyword.trim()}`,
+      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${normalizedDeviceAssetIds.value.join('\u001f')}:${filters.keyword.trim()}`,
+  )
+  const principalIdentityQuery = useQuery(() => ({
+    key: [{ _id: 'maintenance-list-principal', scope: scope.scopeKey.value }],
+    enabled: scope.scopeReady.value,
+    query: async () => {
+      const { data } = await listBusinessConsoleWorkers({
+        query: {
+          organizationId: scope.organizationId.value,
+          environmentId: scope.environmentId.value,
+          userId: scope.principalId.value,
+          pageIndex: 1,
+          pageSize: 1,
+          includeDisabled: true,
+        },
+        throwOnError: true,
+      })
+      const displayName = parseExactWorker(data, scope.principalId.value)
+      if (!displayName) throw new Error('身份资料暂不可用')
+      return displayName
+    },
+  }))
+  const principalIdentityResponse = useScopeBoundListResponse(
+    () => principalIdentityQuery.data.value,
+    scope.scopeKey,
+    scope.scopeReady,
+  )
+  const principalDisplayName = computed(() =>
+    !principalIdentityQuery.isLoading.value && !principalIdentityQuery.error.value
+      ? principalIdentityResponse.value
+      : undefined,
   )
 
   const listQuery = useQuery(() => ({
@@ -324,6 +469,7 @@ export function useMaintenanceSelfWorkOrders() {
   return {
     ...scope,
     filters,
+    principalDisplayName,
     items: visibleItems,
     total: visibleTotal,
     loaded: visibleLoaded,
@@ -371,6 +517,105 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       ? item
       : undefined
   })
+  const authoritativePending = computed(() => enabled.value && detailQuery.isLoading.value)
+  const authoritativeHasSuccessfulResponse = computed(
+    () =>
+      enabled.value &&
+      !authoritativePending.value &&
+      !detailQuery.error.value &&
+      Boolean(validatedWorkOrder.value),
+  )
+  const authoritativeHasFailedResponse = computed(
+    () =>
+      enabled.value &&
+      !authoritativePending.value &&
+      Boolean(
+        detailQuery.error.value ||
+        (detailEnvelope.value !== undefined && !validatedWorkOrder.value),
+      ),
+  )
+  const authoritativeWorkOrder = computed(() =>
+    authoritativeHasSuccessfulResponse.value ? validatedWorkOrder.value : undefined,
+  )
+
+  const identityReferences = computed(() => collectIdentityReferences(validatedWorkOrder.value))
+  const identityEnabled = computed(
+    () =>
+      authoritativeHasSuccessfulResponse.value &&
+      identityReferences.value.bounded &&
+      identityReferences.value.userIds.length + identityReferences.value.teamIds.length > 0,
+  )
+  const identityKey = computed(() =>
+    identityEnabled.value
+      ? `${detailIdentity.value}:identities:${identityReferences.value.userIds.join(',')}:${identityReferences.value.teamIds.join(',')}`
+      : '',
+  )
+  const identityQuery = useQuery(() => ({
+    key: [{ _id: 'maintenance-identities', identity: identityKey.value }],
+    enabled: identityEnabled.value,
+    query: async (): Promise<MaintenanceWorkOrderIdentityDirectory> => {
+      const userEntries = await Promise.all(
+        identityReferences.value.userIds.map(async (userId) => {
+          const { data } = await listBusinessConsoleWorkers({
+            query: {
+              organizationId: scope.organizationId.value,
+              environmentId: scope.environmentId.value,
+              userId,
+              pageIndex: 1,
+              pageSize: 1,
+              includeDisabled: true,
+            },
+            throwOnError: true,
+          })
+          const displayName = parseExactWorker(data, userId)
+          if (!displayName) throw new Error('身份资料暂不可用')
+          return [userId, displayName] as const
+        }),
+      )
+      const teamEntries = await Promise.all(
+        identityReferences.value.teamIds.map(async (teamId) => {
+          const { data } = await getBusinessConsoleMasterDataResourceDetail({
+            path: { resourceType: 'team', code: teamId },
+            query: {
+              organizationId: scope.organizationId.value,
+              environmentId: scope.environmentId.value,
+            },
+            throwOnError: true,
+          })
+          const displayName = parseExactTeam(
+            data,
+            teamId,
+            scope.organizationId.value,
+            scope.environmentId.value,
+          )
+          if (!displayName) throw new Error('身份资料暂不可用')
+          return [teamId, displayName] as const
+        }),
+      )
+      return {
+        users: Object.fromEntries(userEntries),
+        teams: Object.fromEntries(teamEntries),
+      }
+    },
+  }))
+  const identityResponse = useScopeBoundListResponse(
+    () => identityQuery.data.value,
+    identityKey,
+    identityEnabled,
+  )
+  const identities = computed(() =>
+    identityEnabled.value && !identityQuery.isLoading.value && !identityQuery.error.value
+      ? identityResponse.value
+      : undefined,
+  )
+  const identityPending = computed(() => identityEnabled.value && identityQuery.isLoading.value)
+  const identitiesUnavailable = computed(
+    () =>
+      Boolean(validatedWorkOrder.value) &&
+      (!identityReferences.value.bounded ||
+        Boolean(identityQuery.error.value) ||
+        (identityEnabled.value && !identityPending.value && identityResponse.value === undefined)),
+  )
 
   const deviceAssetId = computed(() => validatedWorkOrder.value?.deviceAssetId?.trim() ?? '')
   const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
@@ -459,12 +704,29 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     workOrderId,
     enabled,
     workOrder,
+    authoritativeWorkOrder,
     device,
+    identities,
+    identityPending,
+    identitiesUnavailable,
     canReadDevice: scope.canReadDevice,
     pending,
     error,
     hasSuccessfulResponse,
     hasFailedResponse,
+    authoritativePending,
+    authoritativeError: computed(() => detailQuery.error.value),
+    authoritativeHasSuccessfulResponse,
+    authoritativeHasFailedResponse,
+    deviceError: computed(() => deviceQuery.error.value),
+    deviceHasFailedResponse: computed(
+      () =>
+        Boolean(validatedWorkOrder.value) &&
+        !deviceQuery.isLoading.value &&
+        Boolean(
+          deviceQuery.error.value || (deviceResponseAvailable.value && !validatedDevice.value),
+        ),
+    ),
     refresh,
   }
 }

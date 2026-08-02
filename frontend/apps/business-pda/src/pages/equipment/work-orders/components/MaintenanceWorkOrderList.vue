@@ -3,7 +3,10 @@ import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-clie
 import { maintenancePriorityLabel, maintenanceWorkOrderStatusLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileTag } from '@nerv-iip/ui-mobile'
 
-defineProps<{ items: BusinessConsoleMaintenanceWorkOrderItem[] }>()
+const props = defineProps<{
+  items: BusinessConsoleMaintenanceWorkOrderItem[]
+  principalDisplayName?: string
+}>()
 const emit = defineEmits<{ select: [workOrder: BusinessConsoleMaintenanceWorkOrderItem] }>()
 
 function title(item: BusinessConsoleMaintenanceWorkOrderItem) {
@@ -14,7 +17,7 @@ function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
   return [
     item.deviceAssetId?.trim() ? '设备已关联' : '设备未标识',
     `优先级 ${maintenancePriorityLabel(item.priority)}`,
-    `维修人员 ${item.assignedTechnicianUserId}`,
+    props.principalDisplayName ? `维修人员 ${props.principalDisplayName}` : '身份资料暂不可用',
   ].join(' · ')
 }
 

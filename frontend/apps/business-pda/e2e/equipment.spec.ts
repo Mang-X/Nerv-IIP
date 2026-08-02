@@ -8,7 +8,11 @@ import {
   routeConsoleApi,
   seedStoredSession,
   session,
+  workerProfile,
 } from './fixtures'
+
+const selfWorkOrderId = (index: number) =>
+  `019f1000-0000-7000-8000-${String(index).padStart(12, '0')}`
 
 async function expectMinimumTouchHeight(locator: Locator, minimum = 44) {
   await expect(locator).toBeVisible()
@@ -71,7 +75,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     }
   })
   const workOrders = Array.from({ length: 25 }, (_, index) => ({
-    workOrderId: `WO-SELF-${index + 1}`,
+    workOrderId: selfWorkOrderId(index + 1),
     sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
     deviceAssetId: 'DEV-CNC-01',
     priority: 'high',
@@ -127,7 +131,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
         }),
       })
     }
-    if (url.pathname === `${base}/WO-SELF-1`) {
+    if (url.pathname === `${base}/${selfWorkOrderId(1)}`) {
       detailRequests.push(url)
       return route.fulfill({
         status: 200,
@@ -155,6 +159,9 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     'DEV-CNC-01',
   )
   await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText(
+    workerProfile.displayName,
+  )
+  await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
     principal.principalId,
   )
 
@@ -172,7 +179,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
             scopeKind: last.searchParams.get('scopeKind'),
             scopeId: last.searchParams.get('scopeId'),
             status: last.searchParams.get('status'),
-            deviceAssetId: last.searchParams.get('deviceAssetId'),
+            deviceAssetIds: last.searchParams.get('deviceAssetIds'),
             keyword: last.searchParams.get('keyword'),
           }
         : undefined
@@ -181,7 +188,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       scopeKind: 'self',
       scopeId: principal.principalId,
       status: 'accepted',
-      deviceAssetId: 'DEV-CNC-01',
+      deviceAssetIds: '019f0000-0000-7000-8000-000000000001,DEV-CNC-01',
       keyword: '主轴',
     })
 
@@ -194,7 +201,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
 
   await page.getByTestId('maintenance-work-order-row').first().focus()
   await page.getByTestId('maintenance-work-order-row').first().press('Space')
-  await expect(page).toHaveURL('/equipment/work-orders/WO-SELF-1')
+  await expect(page).toHaveURL(`/equipment/work-orders/${selfWorkOrderId(1)}`)
   await expectMinimumTouchHeight(page.getByRole('button', { name: '返回维修工单列表' }))
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
@@ -202,10 +209,16 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   )
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
-    `维修人员 ${principal.principalId}`,
+    `维修人员 ${workerProfile.displayName}`,
   )
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('班组 team-a')
-  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('班组 甲班')
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
+    principal.principalId,
+  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('team-a')
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
+    selfWorkOrderId(1),
+  )
   expect(detailRequests).toHaveLength(1)
   expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
@@ -216,6 +229,89 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(deviceDetailRequests[0].searchParams.get('organizationId')).toBe('org-001')
   expect(deviceDetailRequests[0].searchParams.get('environmentId')).toBe('env-dev')
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
+})
+
+test('维修工单：HTTP 200 错位 skip/take 响应失败关闭且不渲染空态', async ({ page }) => {
+  await page.route('**/api/business-console/v1/maintenance/work-orders**', async (route) => {
+    const url = new URL(route.request().url())
+    if (
+      route.request().method() !== 'GET' ||
+      url.pathname !== '/api/business-console/v1/maintenance/work-orders'
+    ) {
+      return route.fallback()
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: [],
+          total: 0,
+          skip: 20,
+          take: 20,
+        },
+      }),
+    })
+  })
+
+  await page.goto('/equipment/work-orders')
+
+  await expect(page.getByTestId('maintenance-self-work-orders-error')).toContainText(
+    '维修工单读取失败，请重试',
+  )
+  await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(0)
+  await expect(page.getByText('当前维修人员暂无符合筛选条件的维修工单')).toHaveCount(0)
+})
+
+test('维修工单：设备公开 ID 详情路径返回支持 ID 后展示当前设备事实', async ({ page }) => {
+  const workOrderId = '019f1000-0000-7000-8000-000000000099'
+  const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+  const deviceDetailRequests: URL[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname.includes('/master-data/resources/device-asset/')) {
+      deviceDetailRequests.push(url)
+    }
+  })
+  await page.route(
+    `**/api/business-console/v1/maintenance/work-orders/${workOrderId}**`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            workOrderId,
+            sourceReferenceId: 'MWO-PUBLIC-ID',
+            deviceAssetId,
+            priority: 'high',
+            status: 'accepted',
+            openedAtUtc: '2026-08-02T01:00:00.000Z',
+            version: 3,
+            allowedActions: [],
+            blockReasons: [],
+            lifecycle: [],
+            assignedTechnicianUserId: principal.principalId,
+            assignedTeamId: null,
+          },
+        }),
+      })
+    },
+  )
+
+  await page.goto(`/equipment/work-orders/${workOrderId}`)
+
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('DEV-CNC-01')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
+    `维修人员 ${workerProfile.displayName}`,
+  )
+  expect(deviceDetailRequests).toHaveLength(1)
+  expect(deviceDetailRequests[0].pathname).toBe(
+    `/api/business-console/v1/master-data/resources/device-asset/${deviceAssetId}`,
+  )
 })
 
 test('维修工单：缺少设备位置读取权限时不发请求且不声称个人队列', async ({ browser }) => {
@@ -625,7 +721,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   await page.getByTestId('submit').click()
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
   await expect(page.getByTestId('created-work-order-assignment-state')).toContainText(
-    '尚未指派给当前账号',
+    '工单指派状态暂不可核实',
   )
   await expect(page.getByTestId('view-created-work-order')).toHaveCount(0)
 

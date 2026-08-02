@@ -40,6 +40,7 @@ export const workerProfile = {
   jobTitle: '操作工',
   employmentStatus: 'active',
   active: true,
+  snapshotVersion: 'worker-v1',
   teams: [{ teamCode: 'TEAM-WB-AS-A', teamName: '装配车间早班组' }],
   skills: [],
 }
@@ -701,13 +702,16 @@ export async function routeBusinessConsoleApi(route: Route) {
   )
   if (deviceDetailMatch) {
     const requestedCode = decodeURIComponent(deviceDetailMatch[1])
-    const device = deviceAssets.find((item) => item.code === requestedCode)
+    const device = deviceAssets.find(
+      (item) => item.code === requestedCode || item.deviceAssetId === requestedCode,
+    )
     return fulfillJson(
       route,
       envelope(
         device
           ? {
               resourceType: 'device-asset',
+              deviceAssetId: device.deviceAssetId,
               code: device.code,
               displayName: device.displayName,
               active: device.active,
@@ -721,6 +725,34 @@ export async function routeBusinessConsoleApi(route: Route) {
           : null,
       ),
       device ? 200 : 404,
+    )
+  }
+
+  const teamDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/team\/([^/]+)$/,
+  )
+  if (teamDetailMatch) {
+    const requestedCode = decodeURIComponent(teamDetailMatch[1])
+    const teamName =
+      requestedCode === 'team-a'
+        ? '甲班'
+        : workerProfile.teams.find((team) => team.teamCode === requestedCode)?.teamName
+    return fulfillJson(
+      route,
+      envelope(
+        teamName
+          ? {
+              resourceType: 'team',
+              code: requestedCode,
+              displayName: teamName,
+              active: true,
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      teamName ? 200 : 404,
     )
   }
 

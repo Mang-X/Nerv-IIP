@@ -14,8 +14,18 @@ const requestedWorkOrderId = computed(() => {
   const value = route.params.workOrderId
   return typeof value === 'string' ? value.trim() : ''
 })
-const { scopeReady, workOrder, device, pending, error, hasFailedResponse, refresh } =
-  useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId)
+const {
+  scopeReady,
+  workOrder,
+  device,
+  identities,
+  identityPending,
+  identitiesUnavailable,
+  pending,
+  error,
+  hasFailedResponse,
+  refresh,
+} = useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId)
 const sourceContext = computed(() => {
   const sourceAlarmId = route.query.sourceAlarmId
   return typeof sourceAlarmId === 'string' && workOrder.value?.sourceAlarmId === sourceAlarmId
@@ -77,7 +87,13 @@ function backToList() {
       >
         {{ sourceContext }}
       </p>
-      <MaintenanceWorkOrderDetail :work-order="workOrder" :device="device" />
+      <MaintenanceWorkOrderDetail
+        :work-order="workOrder"
+        :device="device"
+        :identities="identities"
+        :identity-pending="identityPending"
+        :identities-unavailable="identitiesUnavailable"
+      />
     </div>
   </NvAppShellMobile>
 </template>

@@ -3,7 +3,10 @@ import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import MaintenanceWorkOrderFilters from './components/MaintenanceWorkOrderFilters.vue'
 import MaintenanceWorkOrderList from './components/MaintenanceWorkOrderList.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import { useMaintenanceSelfWorkOrders } from '@/composables/useMaintenanceSelfWorkOrders'
+import {
+  normalizeMaintenanceDeviceReferences,
+  useMaintenanceSelfWorkOrders,
+} from '@/composables/useMaintenanceSelfWorkOrders'
 import type {
   BusinessConsoleMaintenanceWorkOrderItem,
   BusinessConsoleResourceItem,
@@ -34,6 +37,7 @@ const {
   hasSuccessfulResponse,
   hasFailedResponse,
   filters,
+  principalDisplayName,
 } = useMaintenanceSelfWorkOrders()
 const devicePickerOpen = shallowRef(false)
 const selectedDeviceLabel = shallowRef('')
@@ -49,14 +53,16 @@ const scopeLabel = computed(() => {
 })
 const filterState = computed(() => ({
   status: filters.status,
-  deviceAssetId: filters.deviceAssetId,
+  deviceAssetIds: filters.deviceAssetIds,
+  deviceLabel: selectedDeviceLabel.value,
   keyword: filters.keyword,
 }))
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   const deviceCode = device.code?.trim()
-  if (!deviceCode) return
-  filters.deviceAssetId = deviceCode
+  const publicId = device.deviceAssetId.trim()
+  if (!deviceCode || !publicId) return
+  filters.deviceAssetIds = normalizeMaintenanceDeviceReferences([publicId, deviceCode])
   selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'
 }
 
@@ -72,9 +78,12 @@ function openDetail(item: BusinessConsoleMaintenanceWorkOrderItem) {
 function restoreState(state: { filters: Record<string, unknown> }) {
   const restored = state.filters
   filters.status = normalizeMaintenanceWorkOrderStatusFilter(restored.status)
-  filters.deviceAssetId = typeof restored.deviceAssetId === 'string' ? restored.deviceAssetId : ''
+  filters.deviceAssetIds = normalizeMaintenanceDeviceReferences(restored.deviceAssetIds)
   filters.keyword = typeof restored.keyword === 'string' ? restored.keyword : ''
-  if (!filters.deviceAssetId) selectedDeviceLabel.value = ''
+  selectedDeviceLabel.value =
+    filters.deviceAssetIds.length && typeof restored.deviceLabel === 'string'
+      ? restored.deviceLabel.trim()
+      : ''
 }
 </script>
 
@@ -113,14 +122,18 @@ function restoreState(state: { filters: Record<string, unknown> }) {
         <template #filters>
           <MaintenanceWorkOrderFilters
             v-model:status="filters.status"
-            v-model:device-asset-id="filters.deviceAssetId"
+            v-model:device-asset-ids="filters.deviceAssetIds"
             v-model:keyword="filters.keyword"
             :device-label="selectedDeviceLabel"
             @choose-device="openDevicePicker"
           />
         </template>
 
-        <MaintenanceWorkOrderList :items="items" @select="openDetail" />
+        <MaintenanceWorkOrderList
+          :items="items"
+          :principal-display-name="principalDisplayName"
+          @select="openDetail"
+        />
       </TaskListShell>
     </div>
 

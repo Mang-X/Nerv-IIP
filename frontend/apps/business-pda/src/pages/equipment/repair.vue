@@ -121,9 +121,11 @@ const submittedIntent = ref<RepairIntent | null>(null)
 const intentLocked = ref(false)
 const createdWorkOrderId = ref('')
 const {
-  workOrder: confirmedCreatedWorkOrder,
-  hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
-  pending: createdDetailPending,
+  authoritativeWorkOrder: confirmedCreatedWorkOrder,
+  authoritativeHasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+  authoritativePending: createdDetailPending,
+  authoritativeHasFailedResponse: createdDetailHasFailedResponse,
+  deviceHasFailedResponse: createdDeviceHasFailedResponse,
   refresh: refreshCreatedWorkOrder,
 } = useMaintenanceSelfWorkOrderDetail(createdWorkOrderId)
 const canViewCreatedWorkOrder = computed(
@@ -133,6 +135,12 @@ const canViewCreatedWorkOrder = computed(
     createdDetailHasSuccessfulResponse.value &&
     confirmedCreatedWorkOrder.value?.workOrderId === createdWorkOrderId.value,
 )
+const createdAssignmentState = computed(() => {
+  if (createdDetailPending.value) return '正在核验工单指派状态…'
+  if (canViewCreatedWorkOrder.value) return '已确认工单指派给当前维修人员，可查看详情。'
+  if (createdDetailHasFailedResponse.value) return '工单指派状态暂不可核实，请稍后重试。'
+  return '尚未确认工单指派给当前账号，当前暂不可查看详情。'
+})
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 目录选择 -----------------------
 const queryDeviceAssetId = computed(() => {
@@ -359,11 +367,14 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           data-testid="created-work-order-assignment-state"
           class="text-sm leading-6 text-muted-foreground"
         >
-          {{
-            canViewCreatedWorkOrder
-              ? '已确认工单指派给当前维修人员，可查看详情。'
-              : '工单尚未指派给当前账号，当前暂不可查看详情。'
-          }}
+          {{ createdAssignmentState }}
+        </p>
+        <p
+          v-if="createdDeviceHasFailedResponse"
+          data-testid="created-work-order-device-state"
+          class="text-sm leading-6 text-muted-foreground"
+        >
+          设备资料暂不可用，不影响已确认的工单指派结果。
         </p>
         <NvMobileButton
           v-if="!canViewCreatedWorkOrder && canReadWorkOrderDetail && createdWorkOrderId"

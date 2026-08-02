@@ -18,11 +18,17 @@ import {
   maintenanceDeviceLocation,
   maintenanceDeviceTitle,
 } from '../maintenanceWorkOrderPresentation'
-import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
+import type {
+  AuthoritativeMaintenanceWorkOrderDetail,
+  MaintenanceWorkOrderIdentityDirectory,
+} from '@/composables/useMaintenanceSelfWorkOrders'
 
 const props = defineProps<{
   workOrder: AuthoritativeMaintenanceWorkOrderDetail
   device?: BusinessConsoleResourceItem | BusinessConsoleMasterDataResourceDetail
+  identities?: MaintenanceWorkOrderIdentityDirectory
+  identitiesUnavailable?: boolean
+  identityPending?: boolean
 }>()
 
 const terminal = computed(() => isMaintenanceTerminal(props.workOrder))
@@ -30,12 +36,30 @@ const allowedActions = computed(() => props.workOrder.allowedActions)
 const blockReasons = computed(() => props.workOrder.blockReasons)
 const lifecycle = computed(() => props.workOrder.lifecycle)
 const assignment = computed(() => {
+  if (props.identityPending || props.identitiesUnavailable || !props.identities) {
+    return '身份资料暂不可用'
+  }
+  const technician = props.identities.users[props.workOrder.assignedTechnicianUserId]
+  const team = props.workOrder.assignedTeamId
+    ? props.identities.teams[props.workOrder.assignedTeamId]
+    : undefined
+  if (!technician || (props.workOrder.assignedTeamId && !team)) return '身份资料暂不可用'
   const parts = [
-    `维修人员 ${props.workOrder.assignedTechnicianUserId}`,
-    props.workOrder.assignedTeamId ? `班组 ${props.workOrder.assignedTeamId}` : '未指派班组',
+    `维修人员 ${technician}`,
+    props.workOrder.assignedTeamId ? `班组 ${team}` : '未指派班组',
   ].filter((part): part is string => Boolean(part))
   return parts.join(' · ')
 })
+
+function userName(userId: string | null | undefined) {
+  if (!userId) return '未指派'
+  return props.identities?.users[userId] ?? '身份资料暂不可用'
+}
+
+function teamName(teamId: string | null | undefined) {
+  if (!teamId) return '未指派'
+  return props.identities?.teams[teamId] ?? '身份资料暂不可用'
+}
 </script>
 
 <template>
@@ -123,9 +147,9 @@ const assignment = computed(() => {
             {{ maintenanceWorkOrderActionLabel(event.action) }} · {{ event.reason || '原因未记录' }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            操作人 {{ event.actorPrincipalId }} · 技师快照
-            {{ event.technicianUserId || '未指派' }} · 班组快照 {{ event.teamId || '未指派' }} ·
-            版本 {{ event.resultingVersion }} ·
+            操作人 {{ userName(event.actorPrincipalId) }} · 技师快照
+            {{ userName(event.technicianUserId) }} · 班组快照 {{ teamName(event.teamId) }} · 版本
+            {{ event.resultingVersion }} ·
             {{ formatMaintenanceDateTime(event.occurredAtUtc) }}
           </p>
         </li>

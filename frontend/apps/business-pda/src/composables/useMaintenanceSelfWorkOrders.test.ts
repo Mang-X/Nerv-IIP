@@ -10,6 +10,8 @@ import {
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
+  workers: vi.fn(),
+  resourceDetail: vi.fn(),
   queryFactories: new Map<string, () => Record<string, unknown>>(),
   data: new Map<string, ShallowRef<unknown>>(),
   errors: new Map<string, ShallowRef<unknown>>(),
@@ -19,6 +21,8 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMaintenanceWorkOrders: api.list,
+  listBusinessConsoleWorkers: api.workers,
+  getBusinessConsoleMasterDataResourceDetail: api.resourceDetail,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn((request) => ({
     key: [{ _id: 'maintenance-list', request }],
     query: vi.fn(),
@@ -98,6 +102,29 @@ function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
   }
 }
 
+function workOrderGuid(index: number) {
+  return `019f0000-0000-7000-8000-${String(index).padStart(12, '0')}`
+}
+
+function authoritativeListItem(index: number, overrides: Record<string, unknown> = {}) {
+  return {
+    workOrderId: workOrderGuid(index),
+    deviceAssetId: 'DEV-CNC-01',
+    priority: 'high',
+    status: 'accepted',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    version: 7,
+    assignedTechnicianUserId: 'principal-1',
+    ...overrides,
+  }
+}
+
+function withoutListField(field: string) {
+  const item = authoritativeListItem(1) as Record<string, unknown>
+  delete item[field]
+  return item
+}
+
 function withPagination(envelope: unknown, skip: number, take: number) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return envelope
   const response = envelope as { data?: unknown }
@@ -113,10 +140,68 @@ const invalidListEnvelopes = [
   ['non-array items', { success: true, data: { items: {}, total: 0 } }],
   ['negative total', { success: true, data: { items: [], total: -1 } }],
   ['non-integer total', { success: true, data: { items: [], total: 0.5 } }],
-  ['inconsistent total', { success: true, data: { items: [{ workOrderId: 'WO-1' }], total: 0 } }],
+  ['inconsistent total', { success: true, data: { items: [authoritativeListItem(1)], total: 0 } }],
   ['null item', { success: true, data: { items: [null], total: 1 } }],
   ['primitive item', { success: true, data: { items: ['WO-1'], total: 1 } }],
   ['blank strong ID', { success: true, data: { items: [{ workOrderId: ' ' }], total: 1 } }],
+  [
+    'non-GUID strong ID',
+    {
+      success: true,
+      data: { items: [authoritativeListItem(1, { workOrderId: 'WO-1' })], total: 1 },
+    },
+  ],
+  [
+    'empty GUID',
+    {
+      success: true,
+      data: {
+        items: [
+          authoritativeListItem(1, {
+            workOrderId: '00000000-0000-0000-0000-000000000000',
+          }),
+        ],
+        total: 1,
+      },
+    },
+  ],
+  [
+    'missing device',
+    { success: true, data: { items: [withoutListField('deviceAssetId')], total: 1 } },
+  ],
+  [
+    'missing priority',
+    { success: true, data: { items: [withoutListField('priority')], total: 1 } },
+  ],
+  ['missing status', { success: true, data: { items: [withoutListField('status')], total: 1 } }],
+  ['missing version', { success: true, data: { items: [withoutListField('version')], total: 1 } }],
+  [
+    'unsafe version',
+    {
+      success: true,
+      data: {
+        items: [authoritativeListItem(1, { version: Number.MAX_SAFE_INTEGER + 1 })],
+        total: 1,
+      },
+    },
+  ],
+  [
+    'invalid date',
+    {
+      success: true,
+      data: {
+        items: [authoritativeListItem(1, { openedAtUtc: '2026-02-30T01:00:00Z' })],
+        total: 1,
+      },
+    },
+  ],
+  [
+    'timezone-less date',
+    {
+      success: true,
+      data: { items: [authoritativeListItem(1, { openedAtUtc: '2026-08-02T01:00:00' })], total: 1 },
+    },
+  ],
 ] as const
 
 describe('useMaintenanceSelfWorkOrders', () => {
@@ -159,7 +244,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     const result = useMaintenanceSelfWorkOrders()
 
     result.filters.status = 'accepted'
-    result.filters.deviceAssetId = 'device-1'
+    result.filters.deviceAssetIds = ['019f0000-0000-7000-8000-000000000001', 'DEV-CNC-01']
     result.filters.keyword = '主轴'
     await nextTick()
 
@@ -170,7 +255,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
         scopeKind: 'self',
         scopeId: 'principal-1',
         status: 'accepted',
-        deviceAssetId: 'device-1',
+        deviceAssetIds: '019f0000-0000-7000-8000-000000000001,DEV-CNC-01',
         keyword: '主轴',
         skip: 0,
         take: 20,
@@ -197,7 +282,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.data.get('maintenance-list')!.value = {
       success: true,
       data: {
-        items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
+        items: [authoritativeListItem(1)],
         total: 1,
         skip: 0,
         take: 20,
@@ -209,7 +294,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.data.get('maintenance-list')!.value = {
       success: false,
       data: {
-        items: [{ workOrderId: 'BAD-WO', assignedTechnicianUserId: 'principal-1' }],
+        items: [authoritativeListItem(2)],
         total: 1,
         skip: 0,
         take: 20,
@@ -266,7 +351,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       api.data.get('maintenance-list')!.value = {
         success: true,
         data: {
-          items: [{ workOrderId: 'WO-1', assignedTechnicianUserId }],
+          items: [authoritativeListItem(1, { assignedTechnicianUserId })],
           total: 1,
           skip: 0,
           take: 20,
@@ -287,10 +372,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       api.data.get('maintenance-list')!.value = {
         success: true,
         data: {
-          items: Array.from({ length: 20 }, (_, index) => ({
-            workOrderId: `WO-${index}`,
-            assignedTechnicianUserId: 'principal-1',
-          })),
+          items: Array.from({ length: 20 }, (_, index) => authoritativeListItem(index)),
           total: 21,
           skip: 0,
           take: 20,
@@ -315,10 +397,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.data.get('maintenance-list')!.value = {
       success: true,
       data: {
-        items: Array.from({ length: 20 }, (_, index) => ({
-          workOrderId: `WO-${index}`,
-          assignedTechnicianUserId: 'principal-1',
-        })),
+        items: Array.from({ length: 20 }, (_, index) => authoritativeListItem(index)),
         total: 21,
         skip: 0,
         take: 20,
@@ -328,7 +407,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       data: {
         success: true,
         data: {
-          items: [{ workOrderId: 'WO-20', assignedTechnicianUserId: 'principal-1' }],
+          items: [authoritativeListItem(20)],
           total: 21,
           ...pagination,
         },
@@ -340,7 +419,9 @@ describe('useMaintenanceSelfWorkOrders', () => {
 
     expect(result.loadMoreError.value).toBeInstanceOf(Error)
     expect(result.items.value).toHaveLength(20)
-    expect(result.items.value.find((item) => item.workOrderId === 'WO-20')).toBeUndefined()
+    expect(
+      result.items.value.find((item) => item.workOrderId === workOrderGuid(20)),
+    ).toBeUndefined()
   })
 
   it.each([null, undefined, 'principal-other'])(
@@ -351,10 +432,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       api.data.get('maintenance-list')!.value = {
         success: true,
         data: {
-          items: Array.from({ length: 20 }, (_, index) => ({
-            workOrderId: `WO-${index}`,
-            assignedTechnicianUserId: 'principal-1',
-          })),
+          items: Array.from({ length: 20 }, (_, index) => authoritativeListItem(index)),
           total: 21,
           skip: 0,
           take: 20,
@@ -364,7 +442,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
         data: {
           success: true,
           data: {
-            items: [{ workOrderId: 'WO-20', assignedTechnicianUserId }],
+            items: [authoritativeListItem(20, { assignedTechnicianUserId })],
             total: 21,
             skip: 20,
             take: 20,
@@ -386,7 +464,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.data.get('maintenance-list')!.value = {
       success: true,
       data: {
-        items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
+        items: [authoritativeListItem(1)],
         total: 1,
         skip: 0,
         take: 20,
@@ -420,15 +498,12 @@ describe('useMaintenanceSelfWorkOrders', () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
     result.filters.status = 'inProgress'
-    result.filters.deviceAssetId = 'device-2'
+    result.filters.deviceAssetIds = ['device-2', 'DEV-2', 'device-2']
     result.filters.keyword = '轴承'
     api.data.get('maintenance-list')!.value = {
       success: true,
       data: {
-        items: Array.from({ length: 20 }, (_, index) => ({
-          workOrderId: `WO-${index}`,
-          assignedTechnicianUserId: 'principal-1',
-        })),
+        items: Array.from({ length: 20 }, (_, index) => authoritativeListItem(index)),
         total: 21,
         skip: 0,
         take: 20,
@@ -438,7 +513,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       data: {
         success: true,
         data: {
-          items: [{ workOrderId: 'WO-20', assignedTechnicianUserId: 'principal-1' }],
+          items: [authoritativeListItem(20)],
           total: 21,
           skip: 20,
           take: 20,
@@ -456,14 +531,14 @@ describe('useMaintenanceSelfWorkOrders', () => {
         scopeKind: 'self',
         scopeId: 'principal-1',
         status: 'inProgress',
-        deviceAssetId: 'device-2',
+        deviceAssetIds: 'device-2,DEV-2',
         keyword: '轴承',
         skip: 20,
         take: 20,
       },
       throwOnError: true,
     })
-    expect(result.items.value.at(-1)?.workOrderId).toBe('WO-20')
+    expect(result.items.value.at(-1)?.workOrderId).toBe(workOrderGuid(20))
   })
 })
 
@@ -617,6 +692,77 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
+  it.each(['1', '2026-02-30T01:00:00Z', '2026-08-02T01:00:00'])(
+    'rejects a non-RFC3339 or impossible opened timestamp: %s',
+    async (openedAtUtc) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      api.data.get('maintenance-detail')!.value = {
+        success: true,
+        data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), openedAtUtc },
+      }
+      await nextTick()
+
+      expect(result.authoritativeHasFailedResponse.value).toBe(true)
+      expect(result.authoritativeWorkOrder.value).toBeUndefined()
+    },
+  )
+
+  it.each(['1', '2026-02-30T01:00:00Z', '2026-08-02T01:00:00'])(
+    'rejects a non-RFC3339 or impossible lifecycle timestamp: %s',
+    async (occurredAtUtc) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      api.data.get('maintenance-detail')!.value = {
+        success: true,
+        data: {
+          ...authoritativeDetail('WO-DETAIL', 'device-1'),
+          lifecycle: [
+            {
+              action: 'accept',
+              fromStatus: 'open',
+              toStatus: 'accepted',
+              actorPrincipalId: 'principal-1',
+              technicianUserId: 'principal-1',
+              teamId: null,
+              reason: '现场接单',
+              resultingVersion: 2,
+              occurredAtUtc,
+            },
+          ],
+        },
+      }
+      await nextTick()
+
+      expect(result.authoritativeHasFailedResponse.value).toBe(true)
+    },
+  )
+
+  it.each([
+    ['403', { error: { status: 403 } }],
+    ['timeout', { error: new Error('timeout') }],
+    ['bad shape', { data: { success: true, data: { resourceType: 'device-asset' } } }],
+  ])(
+    'keeps authoritative assignment confirmed when device enrichment returns %s',
+    async (_, outcome) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      api.data.get('maintenance-detail')!.value = {
+        success: true,
+        data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+      }
+      await nextTick()
+      if ('error' in outcome) api.errors.get('device-detail')!.value = outcome.error
+      if ('data' in outcome) api.data.get('device-detail')!.value = outcome.data
+      await nextTick()
+
+      expect(result.authoritativeHasSuccessfulResponse.value).toBe(true)
+      expect(result.authoritativeWorkOrder.value?.assignedTechnicianUserId).toBe('principal-1')
+      expect(result.deviceHasFailedResponse.value).toBe(true)
+      expect(result.workOrder.value).toBeUndefined()
+    },
+  )
+
   it.each([
     ['closed status', { status: 'closed', allowedActions: ['start'] }],
     ['cancelled status', { status: 'cancelled', allowedActions: ['accept'] }],
@@ -687,6 +833,169 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     expect(result.hasSuccessfulResponse.value).toBe(true)
     expect(result.device.value?.code).toBe('DEV-CNC-01')
+  })
+
+  it('resolves readable users and teams through exact scoped MasterData contracts', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        ...authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+        assignedTeamId: 'TEAM-A',
+      },
+    }
+    await nextTick()
+    api.workers.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          pageIndex: 1,
+          pageSize: 1,
+          totalCount: 1,
+          items: [
+            {
+              userId: 'principal-1',
+              employeeNo: 'EMP-001',
+              displayName: '张维修',
+              employmentStatus: 'active',
+              active: true,
+              teams: [],
+              skills: [],
+              snapshotVersion: 'worker-v1',
+            },
+          ],
+        },
+      },
+    })
+    api.resourceDetail.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          resourceType: 'team',
+          code: 'TEAM-A',
+          displayName: '甲班',
+          active: true,
+          snapshotVersion: 'team-v1',
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+        },
+      },
+    })
+
+    const options = api.queryFactories.get('maintenance-identities')?.()
+    expect(options?.enabled).toBe(true)
+    const identities = await (options?.query as () => Promise<unknown>)()
+    api.data.get('maintenance-identities')!.value = identities
+    await nextTick()
+
+    expect(api.workers).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        userId: 'principal-1',
+        pageIndex: 1,
+        pageSize: 1,
+      }),
+      throwOnError: true,
+    })
+    expect(api.resourceDetail).toHaveBeenCalledWith({
+      path: { resourceType: 'team', code: 'TEAM-A' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      throwOnError: true,
+    })
+    expect(result.identities.value).toEqual({
+      users: { 'principal-1': '张维修' },
+      teams: { 'TEAM-A': '甲班' },
+    })
+  })
+
+  it('fails identity enrichment closed when an exact worker response returns another user', async () => {
+    seedPrincipal()
+    useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+    }
+    await nextTick()
+    api.workers.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          pageIndex: 1,
+          pageSize: 1,
+          totalCount: 1,
+          items: [
+            {
+              userId: 'principal-other',
+              employeeNo: 'EMP-002',
+              displayName: '错误人员',
+              employmentStatus: 'active',
+              active: true,
+              teams: [],
+              skills: [],
+              snapshotVersion: 'worker-v1',
+            },
+          ],
+        },
+      },
+    })
+
+    const options = api.queryFactories.get('maintenance-identities')?.()
+    await expect((options?.query as () => Promise<unknown>)()).rejects.toThrow('身份资料暂不可用')
+  })
+
+  it('bounds identity enrichment requests for an oversized lifecycle', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        ...authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+        lifecycle: Array.from({ length: 21 }, (_, index) => ({
+          action: 'accept',
+          fromStatus: 'open',
+          toStatus: 'accepted',
+          actorPrincipalId: `principal-${index + 2}`,
+          technicianUserId: null,
+          teamId: null,
+          reason: '历史动作',
+          resultingVersion: index + 1,
+          occurredAtUtc: '2026-08-02T01:02:03.000Z',
+        })),
+      },
+    }
+    await nextTick()
+
+    expect(api.queryFactories.get('maintenance-identities')?.().enabled).toBe(false)
+    expect(result.identitiesUnavailable.value).toBe(true)
+    expect(api.workers).not.toHaveBeenCalled()
+  })
+
+  it('clears retained identity names synchronously when the work-order identity changes', async () => {
+    seedPrincipal()
+    const routeId = shallowRef('WO-A')
+    const result = useMaintenanceSelfWorkOrderDetail(routeId)
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-A', 'DEV-A'),
+    }
+    await nextTick()
+    api.data.get('maintenance-identities')!.value = {
+      users: { 'principal-1': '旧人员' },
+      teams: {},
+    }
+    await nextTick()
+    expect(result.identities.value?.users['principal-1']).toBe('旧人员')
+
+    routeId.value = 'WO-B'
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-B', 'DEV-B'),
+    }
+    await nextTick()
+
+    expect(result.identities.value).toBeUndefined()
   })
 
   it('treats the strong-ID device detail as part of aggregate detail state', async () => {

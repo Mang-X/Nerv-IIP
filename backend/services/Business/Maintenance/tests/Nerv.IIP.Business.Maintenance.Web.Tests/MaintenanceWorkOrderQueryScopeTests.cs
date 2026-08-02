@@ -59,6 +59,34 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     }
 
     [Fact]
+    public async Task Device_reference_csv_matches_public_id_and_business_code_before_paging()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        const string publicId = "019f0000-0000-7000-8000-000000000001";
+        const string businessCode = "DEV-CNC-01";
+        var storedByPublicId = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", publicId, "high", "reporter", assignedTechnicianUserId: "tech-001");
+        var storedByBusinessCode = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", businessCode, "high", "reporter", assignedTechnicianUserId: "tech-001");
+        db.MaintenanceWorkOrders.AddRange(storedByPublicId, storedByBusinessCode);
+        await db.SaveChangesAsync();
+
+        var result = await new ListMaintenanceWorkOrdersQueryHandler(db).Handle(
+            new ListMaintenanceWorkOrdersQuery(
+                "org-001",
+                "env-dev",
+                DeviceAssetIds: $"{publicId},{businessCode}",
+                AssignedTechnicianUserIds: "tech-001",
+                Skip: 0,
+                Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Contains(item.DeviceAssetId, new[] { publicId, businessCode });
+    }
+
+    [Fact]
     public async Task Detail_derives_actions_and_block_reasons_from_status_and_persisted_business_data()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
