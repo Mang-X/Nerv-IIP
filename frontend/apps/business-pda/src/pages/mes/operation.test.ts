@@ -31,7 +31,21 @@ vi.mock('vue-router', async () => {
 })
 
 // --- composable mock: 2 operation tasks with different statuses ---
-type ActionOptions = { reasonCode?: string; idempotencyKey: string; contextIdentity?: string }
+type OperationActionContext = {
+  principalId: string
+  organizationId: string
+  environmentId: string
+  scopeKind: string
+  scopeId: string
+  action: 'start' | 'pause' | 'resume' | 'complete'
+  workOrderId: string
+  operationTaskId: string
+}
+type ActionOptions = {
+  reasonCode?: string
+  idempotencyKey: string
+  context: OperationActionContext
+}
 const completeTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
@@ -44,18 +58,17 @@ const pauseTask = vi.fn(
 const resumeTask = vi.fn(
   async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
 )
-const captureOperationActionContextIdentity = vi.fn(
-  (action: string, workOrderId: string, operationTaskId: string) =>
-    [
-      'principal-001',
-      'org-001',
-      'env-dev',
-      'work-center',
-      'WC-A',
-      workOrderId,
-      operationTaskId,
-      `mes.operation-task.${action}`,
-    ].join('\u0000'),
+const captureOperationActionContext = vi.fn(
+  (action: OperationActionContext['action'], workOrderId: string, operationTaskId: string) => ({
+    principalId: 'principal-001',
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    scopeKind: 'work-center',
+    scopeId: 'WC-A',
+    action,
+    workOrderId,
+    operationTaskId,
+  }),
 )
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
@@ -143,7 +156,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationScopeMessage: operationScopeMessageRef,
     operationScopePending: ref(false),
     operationScopeReady: operationScopeReadyRef,
-    captureOperationActionContextIdentity,
+    captureOperationActionContext,
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -739,8 +752,8 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.text()).not.toContain('WO-2026-0001')
     expect(wrapper.text()).not.toContain('OP-1')
     expect(completeTask).toHaveBeenCalledTimes(2)
-    expect(completeTask.mock.calls[1][2].contextIdentity).toBe(
-      completeTask.mock.calls[0][2].contextIdentity,
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(
+      completeTask.mock.calls[0][2].context,
     )
     expect(wrapper.get('[data-testid="back-to-list"]').attributes('disabled')).toBeUndefined()
   })

@@ -75,6 +75,18 @@ describe('MesOperationExecutionPanel', () => {
     expect(wrapper.emitted('action')).toEqual([['start']])
   })
 
+  it('renders every action through the NvUI mobile button boundary', async () => {
+    mountPanel()
+    await flushPromises()
+
+    const buttons = [...document.body.querySelectorAll('button')]
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons.every((button) => button.dataset.slot === 'mobile-button')).toBe(true)
+    expect(document.body.querySelector('[data-testid="action-start"]')?.className).toContain(
+      'min-h-touch',
+    )
+  })
+
   it('renders an indeterminate readable result and emits retry without exposing raw IDs', async () => {
     const wrapper = mountPanel({
       selected: null,
@@ -87,7 +99,16 @@ describe('MesOperationExecutionPanel', () => {
         displayReference: 'MO-2026-0042 · 工序任务信息未提供',
         workOrderId: 'work-order-internal-42',
         taskId: 'operation-task-internal-20',
-        contextIdentity: 'frozen-context',
+        context: {
+          principalId: 'principal-001',
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
+          action: 'complete',
+          workOrderId: 'work-order-internal-42',
+          operationTaskId: 'operation-task-internal-20',
+        },
       },
     })
 

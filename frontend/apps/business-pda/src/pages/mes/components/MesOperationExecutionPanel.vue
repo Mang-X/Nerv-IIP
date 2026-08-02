@@ -5,7 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import { describeMesReadinessReasons, operationTaskStatusLabel } from '@nerv-iip/business-core'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { NvBottomSheet, NvMobileResult } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 import {
@@ -61,32 +61,41 @@ const blockReasonDisplays = computed(() =>
     :description="result.description"
   >
     <template #actions>
-      <button
+      <NvMobileButton
         v-if="result.status === 'success'"
         type="button"
-        class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
+        variant="primary"
+        size="lg"
+        block
+        class="min-h-touch"
         @click="emit('continue')"
       >
         继续
-      </button>
-      <button
+      </NvMobileButton>
+      <NvMobileButton
         v-else
         type="button"
         data-testid="retry-action"
-        class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
+        variant="primary"
+        size="lg"
+        block
+        class="min-h-touch"
         @click="emit('retry')"
       >
         重试
-      </button>
-      <button
+      </NvMobileButton>
+      <NvMobileButton
         type="button"
         data-testid="back-to-list"
         :disabled="operationResultUnknown"
-        class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+        variant="outline"
+        size="lg"
+        block
+        class="min-h-touch"
         @click="emit('back')"
       >
         返回列表
-      </button>
+      </NvMobileButton>
     </template>
   </NvMobileResult>
 
@@ -162,14 +171,16 @@ const blockReasonDisplays = computed(() =>
                 {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
                 {{ formatOperationDate(sop.effectiveDate) }}
               </p>
-              <button
+              <NvMobileButton
                 type="button"
-                class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
+                variant="outline"
+                size="lg"
+                class="mt-2 min-h-touch"
                 :disabled="openingSopFileId === sop.fileId"
                 @click="emit('openSop', sop)"
               >
                 查看SOP
-              </button>
+              </NvMobileButton>
             </div>
           </div>
           <p v-else class="text-sm text-muted-foreground">当前没有已生效SOP。</p>
@@ -186,41 +197,46 @@ const blockReasonDisplays = computed(() =>
 
       <div v-if="confirmingComplete" class="space-y-3">
         <p class="text-sm text-foreground">完成后该工序将进入终态，确认完成？</p>
-        <button
+        <NvMobileButton
           type="button"
           data-testid="confirm-complete"
           :disabled="actionPending || !operationScopeReady"
-          class="min-h-touch w-full rounded-lg bg-destructive text-base font-medium text-destructive-foreground disabled:opacity-60"
+          variant="danger"
+          size="lg"
+          block
+          class="min-h-touch bg-destructive text-destructive-foreground"
           @click="emit('action', 'complete')"
         >
           确认完成
-        </button>
-        <button
+        </NvMobileButton>
+        <NvMobileButton
           type="button"
-          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+          variant="outline"
+          size="lg"
+          block
+          class="min-h-touch"
           @click="emit('cancelComplete')"
         >
           取消
-        </button>
+        </NvMobileButton>
       </div>
 
       <div v-else class="space-y-2">
-        <button
+        <NvMobileButton
           v-for="action in availableActions"
           :key="action"
           type="button"
           :data-testid="`action-${action}`"
           :disabled="actionPending || !operationScopeReady"
-          class="min-h-touch w-full rounded-lg text-base font-medium disabled:opacity-60"
-          :class="
-            action === 'complete'
-              ? 'bg-destructive text-destructive-foreground'
-              : 'bg-primary text-primary-foreground'
-          "
+          :variant="action === 'complete' ? 'danger' : 'primary'"
+          size="lg"
+          block
+          class="min-h-touch"
+          :class="action === 'complete' ? 'bg-destructive text-destructive-foreground' : undefined"
           @click="emit('action', action)"
         >
           {{ OPERATION_ACTION_LABELS[action] }}
-        </button>
+        </NvMobileButton>
         <p
           v-if="availableActions.length === 0"
           class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground"

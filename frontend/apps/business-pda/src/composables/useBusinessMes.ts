@@ -818,10 +818,21 @@ export function useMesExactOperationTask(
 export interface OperationActionOptions {
   reasonCode?: string
   idempotencyKey: string
-  contextIdentity?: string
+  context: OperationActionContext
 }
 
-type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+export type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+
+export interface OperationActionContext {
+  readonly principalId: string
+  readonly organizationId: string
+  readonly environmentId: string
+  readonly scopeKind: string
+  readonly scopeId: string
+  readonly action: OperationAction
+  readonly workOrderId: string
+  readonly operationTaskId: string
+}
 
 export class MesOperationActionContextChangedError extends Error {
   readonly code = 'mes-operation-action-context-changed'
@@ -975,45 +986,106 @@ export function useMesOperationTasks() {
     onSuccess: invalidate,
   })
 
-  function currentOperationActionContextIdentity(
+  function currentOperationActionContext(
     action: OperationAction,
     workOrderId: string,
     operationTaskId: string,
-  ) {
+  ): OperationActionContext | null {
     const selectedScope = operationScope.selectedScope.value
-    return [
-      auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-      filters.organizationId.trim(),
-      filters.environmentId.trim(),
-      selectedScope?.kind ?? '',
-      selectedScope?.id ?? '',
-      workOrderId,
-      operationTaskId,
-      `mes.operation-task.${action}`,
-    ].join('\u0000')
+    const context = {
+      principalId: (auth.principal?.principalId ?? auth.sessionId ?? '').trim(),
+      organizationId: filters.organizationId.trim(),
+      environmentId: filters.environmentId.trim(),
+      scopeKind: selectedScope?.kind.trim() ?? '',
+      scopeId: selectedScope?.id.trim() ?? '',
+      action,
+      workOrderId: workOrderId.trim(),
+      operationTaskId: operationTaskId.trim(),
+    } satisfies OperationActionContext
+    return Object.values(context).every((value) => value.length > 0) ? context : null
   }
 
-  function captureOperationActionContextIdentity(
+  function captureOperationActionContext(
     action: OperationAction,
     workOrderId: string,
     operationTaskId: string,
-  ) {
+  ): OperationActionContext {
     operationScope.requireSelectedScope()
-    return currentOperationActionContextIdentity(action, workOrderId, operationTaskId)
+    const context = currentOperationActionContext(action, workOrderId, operationTaskId)
+    if (!context) throw new MesOperationActionContextChangedError()
+    return Object.freeze(context)
   }
 
-  function actionPayload(
+  function requireFrozenOperationActionContext(
+    value: OperationActionContext | undefined,
+    action: OperationAction,
+    workOrderId: string,
     operationTaskId: string,
-    selectedScope: MesSelectedWorkScope,
-    options: OperationActionOptions,
+  ): OperationActionContext {
+    if (!value || typeof value !== 'object') throw new MesOperationActionContextChangedError()
+    const expectedPair = {
+      action,
+      workOrderId: workOrderId.trim(),
+      operationTaskId: operationTaskId.trim(),
+    }
+    const fields = [
+      value.principalId,
+      value.organizationId,
+      value.environmentId,
+      value.scopeKind,
+      value.scopeId,
+      value.action,
+      value.workOrderId,
+      value.operationTaskId,
+    ]
+    if (
+      fields.some((field) => typeof field !== 'string' || field.trim().length === 0) ||
+      value.action !== expectedPair.action ||
+      value.workOrderId !== expectedPair.workOrderId ||
+      value.operationTaskId !== expectedPair.operationTaskId
+    ) {
+      throw new MesOperationActionContextChangedError()
+    }
+    return value
+  }
+
+  function sameOperationActionContext(
+    left: OperationActionContext | null,
+    right: OperationActionContext,
   ) {
+    return (
+      left !== null &&
+      left.principalId === right.principalId &&
+      left.organizationId === right.organizationId &&
+      left.environmentId === right.environmentId &&
+      left.scopeKind === right.scopeKind &&
+      left.scopeId === right.scopeId &&
+      left.action === right.action &&
+      left.workOrderId === right.workOrderId &&
+      left.operationTaskId === right.operationTaskId
+    )
+  }
+
+  function assertOperationActionContextCurrent(context: OperationActionContext) {
+    if (
+      !sameOperationActionContext(
+        currentOperationActionContext(context.action, context.workOrderId, context.operationTaskId),
+        context,
+      )
+    ) {
+      throw new MesOperationActionContextChangedError()
+    }
+  }
+
+  function actionPayload(context: OperationActionContext, options: OperationActionOptions) {
     const { reasonCode, idempotencyKey } = options
     return {
-      path: { operationTaskId },
+      path: { operationTaskId: context.operationTaskId },
       query: {
-        ...scopeQuery(filters),
-        scopeKind: selectedScope.kind,
-        scopeId: selectedScope.id,
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        scopeKind: context.scopeKind,
+        scopeId: context.scopeId,
       },
       body: {
         ...(reasonCode === undefined ? {} : { reasonCode }),
@@ -1029,31 +1101,30 @@ export function useMesOperationTasks() {
     operationTaskId: string,
     options: OperationActionOptions,
   ) {
-    const currentContextIdentity = currentOperationActionContextIdentity(
+    const context = requireFrozenOperationActionContext(
+      options.context,
       action,
       workOrderId,
       operationTaskId,
     )
-    if (options.contextIdentity && options.contextIdentity !== currentContextIdentity) {
-      throw new MesOperationActionContextChangedError()
-    }
-    const selectedScope = operationScope.requireSelectedScope()
+    assertOperationActionContextCurrent(context)
     const scope = {
-      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-      operationType: `mes.operation-task.${action}`,
-      payloadFingerprint: `${workOrderId}:${operationTaskId}:${selectedScope.kind}:${selectedScope.id}:${options.reasonCode ?? ''}`,
+      principalId: context.principalId,
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      operationType: `mes.operation-task.${context.action}`,
+      payloadFingerprint: `${context.workOrderId}:${context.operationTaskId}:${context.scopeKind}:${context.scopeId}:${options.reasonCode ?? ''}`,
     }
     const isReplay = Boolean(peekPendingBusinessIntent(scope))
     const pending = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
     try {
       const authoritative = await readExactOperationTask(
-        filters,
-        operationTaskId,
-        selectedScope,
-        workOrderId,
+        { organizationId: context.organizationId, environmentId: context.environmentId },
+        context.operationTaskId,
+        { kind: context.scopeKind, id: context.scopeId },
+        context.workOrderId,
       )
+      assertOperationActionContextCurrent(context)
       const serverAllowsAction =
         authoritative?.allowedActions?.some(
           (allowedAction) => allowedAction.trim().toLowerCase() === action,
@@ -1081,15 +1152,15 @@ export function useMesOperationTasks() {
     return completePendingBusinessIntent(scope, async () =>
       confirmBusinessConsoleOperation(
         await mutation.mutateAsync(
-          actionPayload(operationTaskId, selectedScope, {
+          actionPayload(context, {
             ...options,
             idempotencyKey: pending.idempotencyKey,
           }),
         ),
         {
-          expectedOperationType: `mes.operation-task.${action}`,
+          expectedOperationType: `mes.operation-task.${context.action}`,
           expectedIdempotencyKey: pending.idempotencyKey,
-          expectedResourceId: operationTaskId,
+          expectedResourceId: context.operationTaskId,
         },
       ),
     )
@@ -1115,7 +1186,7 @@ export function useMesOperationTasks() {
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
-    captureOperationActionContextIdentity,
+    captureOperationActionContext,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,

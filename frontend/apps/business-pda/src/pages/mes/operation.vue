@@ -9,7 +9,11 @@ import {
 } from '@/api/request-timeout'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
+import {
+  type OperationActionContext,
+  useMesCurrentOperationSops,
+  useMesOperationTasks,
+} from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
   isLifecycleActionUpdated,
@@ -19,6 +23,7 @@ import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGua
 import {
   NvAppShellMobile,
   NvListRow,
+  NvMobileButton,
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
   NvMobileToast,
@@ -70,7 +75,7 @@ const {
   operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
-  captureOperationActionContextIdentity,
+  captureOperationActionContext,
   refresh,
   lastUpdatedAt,
   hasSuccessfulResponse,
@@ -161,23 +166,23 @@ const ACTION_FNS: Record<
     workOrderId: string,
     operationTaskId: string,
     idempotencyKey: string,
-    contextIdentity: string,
+    context: OperationActionContext,
   ) => Promise<unknown>
 > = {
-  start: (workOrderId, operationTaskId, idempotencyKey, contextIdentity) =>
-    startTask(workOrderId, operationTaskId, { idempotencyKey, contextIdentity }),
-  pause: (workOrderId, operationTaskId, idempotencyKey, contextIdentity) =>
-    pauseTask(workOrderId, operationTaskId, { idempotencyKey, contextIdentity }),
-  resume: (workOrderId, operationTaskId, idempotencyKey, contextIdentity) =>
-    resumeTask(workOrderId, operationTaskId, { idempotencyKey, contextIdentity }),
-  complete: (workOrderId, operationTaskId, idempotencyKey, contextIdentity) =>
-    completeTask(workOrderId, operationTaskId, { idempotencyKey, contextIdentity }),
+  start: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    startTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  pause: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    pauseTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  resume: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    resumeTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  complete: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    completeTask(workOrderId, operationTaskId, { idempotencyKey, context }),
 }
 
 // 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
 // 换动作或重新打开面板 → 新键。
 const operationKey = ref('')
-const operationContextIdentity = ref('')
+const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
 usePendingWriteLeaveGuard(operationResultUnknown)
 
@@ -234,7 +239,7 @@ function openSheet(task: Task) {
   // 重新打开面板 → 新一轮操作，作废上一个幂等键
   if (!operationResultUnknown.value) {
     operationKey.value = ''
-    operationContextIdentity.value = ''
+    operationContext.value = null
   }
   selected.value = task
   sopFilters.operationCode = task.operationCode?.trim() ?? ''
@@ -293,7 +298,7 @@ async function recoverLifecycleUpdate() {
   closeSheet()
   result.value = null
   operationKey.value = ''
-  operationContextIdentity.value = ''
+  operationContext.value = null
   operationResultUnknown.value = false
   try {
     await refresh()
@@ -336,7 +341,7 @@ async function runAction(action: ActionKind) {
     confirmingComplete.value = true
     if (!operationResultUnknown.value) {
       operationKey.value = makeIdempotencyKey()
-      operationContextIdentity.value = captureOperationActionContextIdentity(
+      operationContext.value = captureOperationActionContext(
         action,
         task.workOrderId,
         task.operationTaskId,
@@ -348,7 +353,7 @@ async function runAction(action: ActionKind) {
   if (action !== 'complete') {
     if (!operationResultUnknown.value) {
       operationKey.value = makeIdempotencyKey()
-      operationContextIdentity.value = captureOperationActionContextIdentity(
+      operationContext.value = captureOperationActionContext(
         action,
         task.workOrderId,
         task.operationTaskId,
@@ -359,10 +364,11 @@ async function runAction(action: ActionKind) {
   const workOrderId = task.workOrderId
   const displayReference = taskDisplayReference(task)
   const key = operationKey.value
-  const contextIdentity = operationContextIdentity.value
+  const context = operationContext.value
+  if (!context) return
   closeSheet()
   try {
-    await ACTION_FNS[action](workOrderId, id, key, contextIdentity)
+    await ACTION_FNS[action](workOrderId, id, key, context)
     operationResultUnknown.value = false
     result.value = {
       status: 'success',
@@ -372,7 +378,7 @@ async function runAction(action: ActionKind) {
       displayReference,
       workOrderId,
       taskId: id,
-      contextIdentity,
+      context,
     }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
@@ -388,7 +394,7 @@ async function runAction(action: ActionKind) {
       displayReference,
       workOrderId,
       taskId: id,
-      contextIdentity,
+      context,
     }
   }
 }
@@ -401,12 +407,12 @@ async function retry() {
   }
   const state = result.value
   if (!state) return
-  const { action, displayReference, workOrderId, taskId, contextIdentity } = state
+  const { action, displayReference, workOrderId, taskId, context } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
   result.value = null
   try {
-    await ACTION_FNS[action](workOrderId, taskId, key, contextIdentity)
+    await ACTION_FNS[action](workOrderId, taskId, key, context)
     operationResultUnknown.value = false
     result.value = {
       status: 'success',
@@ -416,7 +422,7 @@ async function retry() {
       displayReference,
       workOrderId,
       taskId,
-      contextIdentity,
+      context,
     }
   } catch (e) {
     if (isLifecycleActionUpdated(e)) {
@@ -432,7 +438,7 @@ async function retry() {
       displayReference,
       workOrderId,
       taskId,
-      contextIdentity,
+      context,
     }
   }
 }
@@ -442,13 +448,13 @@ function continueWork() {
   result.value = null
   // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
   operationKey.value = ''
-  operationContextIdentity.value = ''
+  operationContext.value = null
 }
 function backToList() {
   if (operationResultUnknown.value) return
   result.value = null
   operationKey.value = ''
-  operationContextIdentity.value = ''
+  operationContext.value = null
   router.push('/').catch(() => {})
 }
 
@@ -461,15 +467,17 @@ function onScan(value: string) {
   <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
-        <button
+        <NvMobileButton
           type="button"
           aria-label="返回"
           :disabled="operationResultUnknown"
-          class="text-sm text-muted-foreground"
+          variant="text"
+          size="sm"
+          class="text-muted-foreground"
           @click="backToList"
         >
           返回
-        </button>
+        </NvMobileButton>
         <h1 class="text-lg font-semibold text-foreground">工序执行</h1>
       </div>
     </template>

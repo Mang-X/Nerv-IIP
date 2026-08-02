@@ -840,9 +840,11 @@ public sealed class MesEndpointContractTests
         Assert.Empty(detail.BlockingReasons);
         var detailOperation = Assert.Single(detail.OperationTasks);
         Assert.Equal("OP-10", detailOperation.OperationTaskId);
+        Assert.Null(detailOperation.OperationTaskNo);
         Assert.Equal("OP-MIX", detailOperation.OperationCode);
         var operation = Assert.Single(operations.Items);
         Assert.Equal("OP-10", operation.OperationTaskId);
+        Assert.Null(operation.OperationTaskNo);
         Assert.Equal("OP-MIX", operation.OperationCode);
         var wipRow = Assert.Single(wip.Items);
         Assert.Equal(10m, wipRow.PlannedQuantity);
@@ -928,6 +930,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1, result.Total);
         Assert.Equal("WO-EXACT-A", item.WorkOrderId);
         Assert.Equal("OP-A", item.OperationTaskId);
+        Assert.Null(item.OperationTaskNo);
     }
 
     [Fact]

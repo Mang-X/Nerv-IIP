@@ -200,7 +200,8 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   // 点行打开 BottomSheet 动作面板（teleport 到 body）。
   await row.click()
   await expect(page.getByText('MO-2026-0001', { exact: true })).toBeVisible()
-  await expect(page.getByText('OP-TASK-0010', { exact: true })).toBeVisible()
+  await expect(page.getByText('工序任务信息未提供', { exact: true })).toBeVisible()
+  await expect(page.getByText('OP-1', { exact: true })).toHaveCount(0)
   await expect(page.getByText('一号数控机床（CNC-01）')).toBeVisible()
   await expect(page.getByText('device-asset-cnc-01')).toHaveCount(0)
   await expect(page.getByText(/门禁评估/)).toBeVisible()
@@ -218,7 +219,8 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('工序已完成')).toBeVisible()
-  await expect(result.getByText('MO-2026-0001 · OP-TASK-0010')).toBeVisible()
+  await expect(result.getByText('MO-2026-0001 · 工序任务信息未提供')).toBeVisible()
+  await expect(result.getByText('OP-1', { exact: true })).toHaveCount(0)
   await expect
     .poll(() => exactPairs)
     .toContainEqual({
@@ -283,7 +285,7 @@ test('工序执行：accepted/unconfirmed 回执不显示成功并保留双强 I
   await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
   const errorResult = page.locator('[data-result][data-status="error"]')
   await expect(errorResult).toBeVisible()
-  await expect(errorResult).toContainText('MO-2026-0001 · OP-TASK-0010')
+  await expect(errorResult).toContainText('MO-2026-0001 · 工序任务信息未提供')
   await expect(errorResult).not.toContainText('WO-1 · OP-1')
   await expect(errorResult).toContainText('结果尚未核实')
 })

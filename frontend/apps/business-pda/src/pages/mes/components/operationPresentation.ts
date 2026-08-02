@@ -1,5 +1,6 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { operationTaskStatusLabel } from '@nerv-iip/business-core'
+import type { OperationActionContext } from '@/composables/useBusinessMes'
 
 export type OperationActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
@@ -11,7 +12,7 @@ export type OperationResultState = {
   displayReference: string
   workOrderId: string
   taskId: string
-  contextIdentity: string
+  context: OperationActionContext
 }
 
 const recognizedActions = new Set<OperationActionKind>(['start', 'pause', 'resume', 'complete'])

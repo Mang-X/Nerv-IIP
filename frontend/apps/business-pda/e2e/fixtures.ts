@@ -322,7 +322,8 @@ export const mesOperationTasks = [
     operationSequence: 10,
     workCenterId: 'WC-A',
     workOrderNo: 'MO-2026-0001',
-    operationTaskNo: 'OP-TASK-0010',
+    // MES currently has no separate business task number; the public optional field is null.
+    operationTaskNo: null,
     operationCode: 'OP-CUT',
     deviceAssetId: 'device-asset-cnc-01',
     deviceAssetCode: 'CNC-01',
