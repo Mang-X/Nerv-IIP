@@ -1,20 +1,19 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import {
-  openDownloadGrantBlob,
-  operationTaskStatusLabel,
-  statusActionGate,
-} from '@nerv-iip/business-core'
+import { openDownloadGrantBlob } from '@nerv-iip/business-core'
 import {
   createTimeoutFetch,
   describeRequestError,
   isIndeterminateError,
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
-import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
+import {
+  type OperationActionContext,
+  useMesCurrentOperationSops,
+  useMesOperationTasks,
+} from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
   isLifecycleActionUpdated,
@@ -23,17 +22,26 @@ import {
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import {
   NvAppShellMobile,
-  NvBottomSheet,
   NvListRow,
+  NvMobileButton,
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
-  NvMobileResult,
   NvMobileToast,
   NvScanBar,
   type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import MesOperationExecutionPanel from './components/MesOperationExecutionPanel.vue'
+import {
+  actionsForOperationTask as actionsFor,
+  OPERATION_SUCCESS_TITLES as SUCCESS_TITLES,
+  operationTaskRowSubtitle as rowSubtitle,
+  operationTaskRowTitle as rowTitle,
+  taskDisplayReference,
+  type OperationActionKind as ActionKind,
+  type OperationResultState as ResultState,
+} from './components/operationPresentation'
 
 definePage({
   meta: {
@@ -63,10 +71,13 @@ const {
   actionPending,
   operationListScope,
   operationListContextIdentity,
+  operationActionContextIdentity,
   operationListScopeMessage,
   operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
+  captureOperationActionContext,
+  isOperationActionContextCurrent,
   refresh,
   lastUpdatedAt,
   hasSuccessfulResponse,
@@ -92,7 +103,14 @@ const hasInvalidTaskDeepLink = computed(
 )
 const deepLinkIdentity = computed(
   () =>
-    `${operationListContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+    `${operationListContextIdentity.value}\u0000${operationActionContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+)
+const operationPageGeneration = ref(0)
+const operationSelectionGeneration = shallowRef(0)
+const operationSelectionIdentity = shallowRef('')
+const operationPageIdentity = computed(
+  () =>
+    `${operationListContextIdentity.value}\u0000${operationActionContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
 )
 const deepLinkMessage = ref('')
 
@@ -151,49 +169,31 @@ const {
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
 const downloadFetch = createTimeoutFetch()
 
-// 可读中文状态标签来自 @nerv-iip/business-core（不暴露原始状态码）。
-const statusLabel = operationTaskStatusLabel
-
-type ActionKind = 'start' | 'pause' | 'resume' | 'complete'
-
-// 只消费服务端持久化 canonical status；未知/终态固定只读。
-function actionsFor(status?: string): ActionKind[] {
-  return (['start', 'pause', 'resume', 'complete'] as const).filter(
-    (action) =>
-      statusActionGate({
-        domain: 'mes-operation-task',
-        action,
-        facts: { status },
-      }).executable,
-  )
-}
-
-const ACTION_LABELS: Record<ActionKind, string> = {
-  start: '开始',
-  pause: '暂停',
-  resume: '恢复',
-  complete: '完成',
-}
-
-// 成功后的可读标题
-const SUCCESS_TITLES: Record<ActionKind, string> = {
-  start: '工序已开始',
-  pause: '工序已暂停',
-  resume: '工序已恢复',
-  complete: '工序已完成',
-}
-
-const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Promise<unknown>> = {
-  start: (id, idempotencyKey) => startTask(id, { idempotencyKey }),
-  pause: (id, idempotencyKey) => pauseTask(id, { idempotencyKey }),
-  resume: (id, idempotencyKey) => resumeTask(id, { idempotencyKey }),
-  complete: (id, idempotencyKey) => completeTask(id, { idempotencyKey }),
+const ACTION_FNS: Record<
+  ActionKind,
+  (
+    workOrderId: string,
+    operationTaskId: string,
+    idempotencyKey: string,
+    context: OperationActionContext,
+  ) => Promise<unknown>
+> = {
+  start: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    startTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  pause: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    pauseTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  resume: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    resumeTask(workOrderId, operationTaskId, { idempotencyKey, context }),
+  complete: (workOrderId, operationTaskId, idempotencyKey, context) =>
+    completeTask(workOrderId, operationTaskId, { idempotencyKey, context }),
 }
 
 // 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
 // 换动作或重新打开面板 → 新键。
 const operationKey = ref('')
+const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
+const operationResultContextConflict = shallowRef<'identity' | 'route' | null>(null)
 usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
@@ -208,19 +208,12 @@ const sheetOpen = computed({
 const confirmingComplete = ref(false)
 
 // --- 结果反馈 ---
-type ResultState = {
-  status: 'success' | 'error'
-  title: string
-  description?: string
-  action: ActionKind
-  taskId: string
-}
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
 const toast = reactive({ show: false, message: '', type: 'error' as const })
 
-const availableActions = computed(() => actionsFor(selected.value?.status))
+const availableActions = computed(() => actionsFor(selected.value))
 
 const scanActive = computed(() => selected.value === null && result.value === null)
 const statusOptions: DropdownOption[] = [
@@ -240,6 +233,37 @@ const taskFilterState = computed(() => ({
   keyword: filters.keyword ?? '',
 }))
 
+function clearOperationResultIntent() {
+  result.value = null
+  operationKey.value = ''
+  operationContext.value = null
+  operationResultUnknown.value = false
+  operationResultContextConflict.value = null
+}
+
+function shouldPreserveOperationContextConflict(
+  routeWorkOrderId: string,
+  routeOperationTaskId: string,
+) {
+  const state = result.value
+  const conflict = operationResultContextConflict.value
+  if (!conflict || !state) return false
+  if (conflict === 'route') return true
+  if (!routeWorkOrderId && !routeOperationTaskId) return true
+  return state.workOrderId === routeWorkOrderId && state.taskId === routeOperationTaskId
+}
+
+function isOperationResultRouteCurrent(state: ResultState) {
+  if (!hasAnyTaskDeepLink.value) return true
+  if (!hasCompleteTaskDeepLink.value) return false
+  return (
+    requestedWorkOrderId.value === state.workOrderId &&
+    requestedOperationTaskId.value === state.taskId &&
+    requestedWorkOrderId.value === state.context.workOrderId &&
+    requestedOperationTaskId.value === state.context.operationTaskId
+  )
+}
+
 function restoreTaskListState(state: { filters: Record<string, unknown> }) {
   if (hasAnyTaskDeepLink.value) return
   const status = state.filters.status
@@ -248,26 +272,16 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
   filters.keyword = typeof keyword === 'string' && keyword ? keyword : undefined
 }
 
-function rowTitle(task: Task) {
-  const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`
-  const wo = task.workOrderId ?? '无工单'
-  return seq ? `${wo} · ${seq}` : wo
-}
-function rowSubtitle(task: Task) {
-  const parts = [statusLabel(task.status)]
-  if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
-  if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
-  if (task.assignedUserName) parts.push(`受派 ${task.assignedUserName}`)
-  return parts.join(' · ')
-}
-
 function openSheet(task: Task) {
   if (operationResultUnknown.value) return
-  result.value = null
+  const selectionIdentity = `${task.workOrderId ?? ''}\u0000${task.operationTaskId ?? ''}`
+  if (operationSelectionIdentity.value !== selectionIdentity) {
+    operationSelectionIdentity.value = selectionIdentity
+    operationSelectionGeneration.value += 1
+  }
+  clearOperationResultIntent()
   sopFileError.value = ''
   confirmingComplete.value = false
-  // 重新打开面板 → 新一轮操作，作废上一个幂等键
-  if (!operationResultUnknown.value) operationKey.value = ''
   selected.value = task
   sopFilters.operationCode = task.operationCode?.trim() ?? ''
   sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
@@ -278,15 +292,27 @@ function openSheet(task: Task) {
 
 const deepLinkOpenedIdentity = ref('')
 watch(
-  [requestedWorkOrderId, requestedOperationTaskId, operationListContextIdentity],
+  [
+    requestedWorkOrderId,
+    requestedOperationTaskId,
+    operationListContextIdentity,
+    operationActionContextIdentity,
+  ],
   ([workOrderId, operationTaskId]) => {
+    operationPageGeneration.value += 1
     closeSheet()
-    if (!operationResultUnknown.value) result.value = null
+    if (
+      !operationResultUnknown.value &&
+      !shouldPreserveOperationContextConflict(workOrderId, operationTaskId)
+    ) {
+      clearOperationResultIntent()
+    }
     deepLinkOpenedIdentity.value = ''
     deepLinkMessage.value = ''
     const completePair = Boolean(workOrderId && operationTaskId)
     filters.workOrderId = completePair ? workOrderId : undefined
-    filters.keyword = completePair ? operationTaskId : undefined
+    filters.operationTaskId = completePair ? operationTaskId : undefined
+    filters.keyword = undefined
     if ((workOrderId || operationTaskId) && !completePair) {
       deepLinkMessage.value = '工序任务链接缺少工单或任务标识，无法安全打开。'
     }
@@ -294,14 +320,21 @@ watch(
   { immediate: true },
 )
 watch(
-  [visibleOperationTasks, pending, hasSuccessfulResponse, deepLinkIdentity],
-  ([tasks, isPending, successful, identity]) => {
-    if (
-      !hasCompleteTaskDeepLink.value ||
-      deepLinkOpenedIdentity.value === identity ||
-      isPending ||
-      !successful
-    )
+  [
+    visibleOperationTasks,
+    pending,
+    hasSuccessfulResponse,
+    operationScopeReady,
+    deepLinkIdentity,
+    operationResultContextConflict,
+  ],
+  ([tasks, isPending, successful, manageScopeReady, identity, contextConflict]) => {
+    if (!hasCompleteTaskDeepLink.value) return
+    if (contextConflict) {
+      deepLinkOpenedIdentity.value = identity
+      return
+    }
+    if (deepLinkOpenedIdentity.value === identity || isPending || !successful || !manageScopeReady)
       return
     const exactTask = tasks[0]
     if (!exactTask) {
@@ -312,7 +345,7 @@ watch(
     deepLinkOpenedIdentity.value = identity
     openSheet(exactTask)
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 )
 
 function closeSheet() {
@@ -322,9 +355,7 @@ function closeSheet() {
 
 async function recoverLifecycleUpdate() {
   closeSheet()
-  result.value = null
-  operationKey.value = ''
-  operationResultUnknown.value = false
+  clearOperationResultIntent()
   try {
     await refresh()
   } catch {
@@ -333,6 +364,53 @@ async function recoverLifecycleUpdate() {
   toast.message = LIFECYCLE_ACTION_UPDATED_MESSAGE
   toast.show = true
 }
+
+type OperationPageSnapshot = {
+  generation: number
+  identity: string
+  selectionGeneration: number
+  selectionIdentity: string
+  context: OperationActionContext
+}
+
+function captureOperationPageSnapshot(context: OperationActionContext): OperationPageSnapshot {
+  return {
+    generation: operationPageGeneration.value,
+    identity: operationPageIdentity.value,
+    selectionGeneration: operationSelectionGeneration.value,
+    selectionIdentity: operationSelectionIdentity.value,
+    context,
+  }
+}
+
+function isOperationPageSnapshotCurrent(snapshot: OperationPageSnapshot) {
+  return (
+    operationPageGeneration.value === snapshot.generation &&
+    operationPageIdentity.value === snapshot.identity &&
+    operationSelectionGeneration.value === snapshot.selectionGeneration &&
+    operationSelectionIdentity.value === snapshot.selectionIdentity &&
+    isOperationActionContextCurrent(snapshot.context)
+  )
+}
+
+async function discardStaleOperationResult(snapshot: OperationPageSnapshot) {
+  if (result.value?.context === snapshot.context) {
+    result.value = null
+    operationResultContextConflict.value = null
+  }
+  if (operationContext.value === snapshot.context) {
+    operationKey.value = ''
+    operationContext.value = null
+    operationResultUnknown.value = false
+    operationResultContextConflict.value = null
+  }
+  try {
+    await refresh()
+  } catch {
+    // 上下文已变化时只丢弃旧结果；当前列表仍可由用户再次手动刷新。
+  }
+}
+
 async function openSopFile(sop: CurrentSop) {
   const fileId = sop.fileId?.trim()
   if (!fileId) {
@@ -359,36 +437,78 @@ async function runAction(action: ActionKind) {
     return
   }
   const task = selected.value
-  if (!task?.operationTaskId) return
+  if (!task?.workOrderId || !task.operationTaskId || !availableActions.value.includes(action))
+    return
   // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
   if (action === 'complete' && !confirmingComplete.value) {
     confirmingComplete.value = true
-    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) {
+      operationKey.value = makeIdempotencyKey()
+      operationContext.value = captureOperationActionContext(
+        action,
+        task.workOrderId,
+        task.operationTaskId,
+      )
+    }
     return
   }
   // 非完成动作点击即发起；完成动作此处为确认（沿用进入确认时铸造的键）
   if (action !== 'complete') {
-    if (!operationResultUnknown.value) operationKey.value = makeIdempotencyKey()
+    if (!operationResultUnknown.value) {
+      operationKey.value = makeIdempotencyKey()
+      operationContext.value = captureOperationActionContext(
+        action,
+        task.workOrderId,
+        task.operationTaskId,
+      )
+    }
   }
   const id = task.operationTaskId
+  const workOrderId = task.workOrderId
+  const displayReference = taskDisplayReference(task)
   const key = operationKey.value
+  const context = operationContext.value
+  if (!context) return
+  const pageSnapshot = captureOperationPageSnapshot(context)
   closeSheet()
   try {
-    await ACTION_FNS[action](id, key)
+    await ACTION_FNS[action](workOrderId, id, key, context)
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult(pageSnapshot)
+      return
+    }
     operationResultUnknown.value = false
-    result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
+    operationResultContextConflict.value = null
+    result.value = {
+      status: 'success',
+      title: SUCCESS_TITLES[action],
+      description: displayReference,
+      action,
+      displayReference,
+      workOrderId,
+      taskId: id,
+      context,
+    }
   } catch (e) {
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult(pageSnapshot)
+      return
+    }
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
+    operationResultContextConflict.value = null
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
+      description: `${displayReference}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      displayReference,
+      workOrderId,
       taskId: id,
+      context,
     }
   }
 }
@@ -401,50 +521,89 @@ async function retry() {
   }
   const state = result.value
   if (!state) return
-  const { action, taskId } = state
+  const { action, displayReference, workOrderId, taskId, context } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
+  if (!isOperationResultRouteCurrent(state)) {
+    operationResultUnknown.value = false
+    operationResultContextConflict.value = 'route'
+    result.value = {
+      ...state,
+      status: 'error',
+      title: '操作失败',
+      description: `${displayReference}\n工序任务链接已变化，旧操作不能在当前链接重试。请恢复原工单与任务链接后重试，或返回当前列表重新发起。`,
+    }
+    return
+  }
+  if (!isOperationActionContextCurrent(context)) {
+    operationResultUnknown.value = false
+    operationResultContextConflict.value = 'identity'
+    result.value = {
+      ...state,
+      status: 'error',
+      title: '操作失败',
+      description: `${displayReference}\n账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。`,
+    }
+    return
+  }
+  const pageSnapshot = captureOperationPageSnapshot(context)
+  operationResultContextConflict.value = null
   result.value = null
   try {
-    await ACTION_FNS[action](taskId, key)
+    await ACTION_FNS[action](workOrderId, taskId, key, context)
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult(pageSnapshot)
+      return
+    }
     operationResultUnknown.value = false
-    result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
+    operationResultContextConflict.value = null
+    result.value = {
+      status: 'success',
+      title: SUCCESS_TITLES[action],
+      description: displayReference,
+      action,
+      displayReference,
+      workOrderId,
+      taskId,
+      context,
+    }
   } catch (e) {
+    if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
+      await discardStaleOperationResult(pageSnapshot)
+      return
+    }
     if (isLifecycleActionUpdated(e)) {
       await recoverLifecycleUpdate()
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
+    operationResultContextConflict.value = null
     result.value = {
       status: 'error',
       title: '操作失败',
-      description: describeRequestError(e, '请检查网络后重试。').message,
+      description: `${displayReference}\n${describeRequestError(e, '请检查网络后重试。').message}`,
       action,
+      displayReference,
+      workOrderId,
       taskId,
+      context,
     }
   }
 }
 
 function continueWork() {
   if (operationResultUnknown.value) return
-  result.value = null
   // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
-  operationKey.value = ''
+  clearOperationResultIntent()
 }
 function backToList() {
   if (operationResultUnknown.value) return
-  result.value = null
-  operationKey.value = ''
+  clearOperationResultIntent()
   router.push('/').catch(() => {})
 }
 
 function onScan(value: string) {
   filters.keyword = value
-}
-function formatDate(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
 </script>
 
@@ -452,58 +611,46 @@ function formatDate(value?: string | null) {
   <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
-        <button
+        <NvMobileButton
           type="button"
           aria-label="返回"
           :disabled="operationResultUnknown"
-          class="text-sm text-muted-foreground"
+          variant="text"
+          size="sm"
+          class="min-h-touch text-muted-foreground"
           @click="backToList"
         >
           返回
-        </button>
+        </NvMobileButton>
         <h1 class="text-lg font-semibold text-foreground">工序执行</h1>
       </div>
     </template>
 
-    <!-- 动作结果反馈 -->
-    <NvMobileResult
-      v-if="result"
-      :status="result.status"
-      :title="result.title"
-      :description="result.description"
-    >
-      <template #actions>
-        <button
-          v-if="result.status === 'success'"
-          type="button"
-          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="continueWork"
-        >
-          继续
-        </button>
-        <button
-          v-else
-          type="button"
-          data-testid="retry-action"
-          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="retry"
-        >
-          重试
-        </button>
-        <button
-          type="button"
-          data-testid="back-to-list"
-          :disabled="operationResultUnknown"
-          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
-          @click="backToList"
-        >
-          返回列表
-        </button>
-      </template>
-    </NvMobileResult>
+    <MesOperationExecutionPanel
+      :result="result"
+      :selected="selected"
+      :open="sheetOpen"
+      :action-pending="actionPending"
+      :operation-scope-ready="operationScopeReady"
+      :confirming-complete="confirmingComplete"
+      :current-sops="currentSops"
+      :sops-pending="sopsPending"
+      :sops-error="sopsError"
+      :opening-sop-file-id="openingSopFileId"
+      :sop-file-error="sopFileError"
+      :operation-result-unknown="operationResultUnknown"
+      @update:open="sheetOpen = $event"
+      @action="runAction"
+      @retry="retry"
+      @continue="continueWork"
+      @back="backToList"
+      @cancel-complete="confirmingComplete = false"
+      @refresh-sops="() => refreshSops()"
+      @open-sop="openSopFile"
+    />
 
     <TaskListShell
-      v-else
+      v-if="!result"
       state-key="mes-operation-tasks"
       :scope="mesScope"
       source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
@@ -582,121 +729,6 @@ function formatDate(value?: string | null) {
         </div>
       </div>
     </TaskListShell>
-
-    <!-- 动作面板 -->
-    <NvBottomSheet
-      :open="sheetOpen"
-      :title="selected ? rowTitle(selected) : ''"
-      @update:open="sheetOpen = $event"
-    >
-      <div v-if="selected" class="space-y-3 pb-2">
-        <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(selected.status) }}</p>
-        <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
-          受派工人：{{ selected.assignedUserName }}
-        </p>
-
-        <section class="space-y-2 rounded-lg border border-border px-3 py-3">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="text-sm font-semibold text-foreground">当前SOP</h2>
-            <span v-if="selected.operationCode" class="font-mono text-xs text-muted-foreground">{{
-              selected.operationCode
-            }}</span>
-          </div>
-          <p v-if="!selected.operationCode" class="text-sm text-muted-foreground">
-            当前任务未绑定标准工序。
-          </p>
-          <RetryableListError
-            v-else-if="sopsError"
-            :error="sopsError"
-            :pending="sopsPending"
-            fallback="加载SOP失败，请稍后重试。"
-            test-id="sops-error"
-            @retry="() => refreshSops()"
-          />
-          <template v-else>
-            <p v-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
-            <div v-else-if="currentSops.length" class="space-y-2">
-              <div
-                v-for="sop in currentSops"
-                :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
-                class="rounded-md bg-muted px-3 py-2 text-sm"
-              >
-                <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
-                <p class="text-xs text-muted-foreground">
-                  {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
-                  {{ formatDate(sop.effectiveDate) }}
-                </p>
-                <button
-                  type="button"
-                  class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
-                  :disabled="openingSopFileId === sop.fileId"
-                  @click="openSopFile(sop)"
-                >
-                  查看SOP
-                </button>
-              </div>
-            </div>
-            <p v-else class="text-sm text-muted-foreground">当前没有已生效SOP。</p>
-            <!-- 打开文件失败（含超时/离线）：独立展示，保留 SOP 列表与“查看SOP”按钮以便再次尝试。 -->
-            <p
-              v-if="sopFileError"
-              data-testid="sop-file-error"
-              class="text-sm text-destructive"
-              role="alert"
-            >
-              {{ sopFileError }}
-            </p>
-          </template>
-        </section>
-
-        <!-- 完成的二次确认 -->
-        <div v-if="confirmingComplete" class="space-y-3">
-          <p class="text-sm text-foreground">完成后该工序将进入终态，确认完成？</p>
-          <button
-            type="button"
-            data-testid="confirm-complete"
-            :disabled="actionPending || !operationScopeReady"
-            class="min-h-touch w-full rounded-lg bg-destructive text-base font-medium text-destructive-foreground disabled:opacity-60"
-            @click="runAction('complete')"
-          >
-            确认完成
-          </button>
-          <button
-            type="button"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
-            @click="confirmingComplete = false"
-          >
-            取消
-          </button>
-        </div>
-
-        <!-- 动作列表 -->
-        <div v-else class="space-y-2">
-          <button
-            v-for="action in availableActions"
-            :key="action"
-            type="button"
-            :data-testid="`action-${action}`"
-            :disabled="actionPending || !operationScopeReady"
-            class="min-h-touch w-full rounded-lg text-base font-medium disabled:opacity-60"
-            :class="
-              action === 'complete'
-                ? 'bg-destructive text-destructive-foreground'
-                : 'bg-primary text-primary-foreground'
-            "
-            @click="runAction(action)"
-          >
-            {{ ACTION_LABELS[action] }}
-          </button>
-          <p
-            v-if="availableActions.length === 0"
-            class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground"
-          >
-            当前状态无可执行动作
-          </p>
-        </div>
-      </div>
-    </NvBottomSheet>
 
     <NvMobileToast
       :show="toast.show"

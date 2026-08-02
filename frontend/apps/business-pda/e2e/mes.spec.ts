@@ -175,16 +175,44 @@ test('作业范围：授权清单渲染成移动端选择器，切换后按新�
 })
 
 test('工序执行：列表 → 完成（二次确认）→ 成功结果', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const exactPairs: Array<{ workOrderId: string | null; operationTaskId: string | null }> = []
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() === 'GET') {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('operationTaskId')) {
+        exactPairs.push({
+          workOrderId: url.searchParams.get('workOrderId'),
+          operationTaskId: url.searchParams.get('operationTaskId'),
+        })
+      }
+    }
+    return routeBusinessConsoleApi(route)
+  })
   await page.goto('/mes/operation')
 
   await expect(page.getByRole('heading', { name: '工序执行' })).toBeVisible()
+  const headerBackButton = page.getByRole('button', { name: '返回', exact: true })
+  const headerBackBox = await headerBackButton.boundingBox()
+  expect(headerBackBox).not.toBeNull()
+  expect(headerBackBox!.height).toBeGreaterThanOrEqual(44)
 
-  // Running 工序任务行（OP-1）渲染：title=工单·工序，subtitle=状态·工作中心。
-  const row = page.getByText('WO-1 · 工序 10')
+  // MES 当前没有独立业务工单号，列表显式展示缺失态，强 ID 仍只用于绑定。
+  const row = page.getByRole('button', {
+    name: /工单信息未提供 · 工序 10 执行中 · 工作中心 WC-A/,
+  })
   await expect(row).toBeVisible()
+  await expect(page.getByText('WO-1', { exact: true })).toHaveCount(0)
 
   // 点行打开 BottomSheet 动作面板（teleport 到 body）。
   await row.click()
+  await expect(page.getByText('工单信息未提供', { exact: true })).toBeVisible()
+  await expect(page.getByText('工序任务信息未提供', { exact: true })).toBeVisible()
+  await expect(page.getByText('OP-1', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('设备信息未提供', { exact: true })).toBeVisible()
+  await expect(page.getByText('WO-1', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('device-asset-cnc-01')).toHaveCount(0)
+  await expect(page.getByText(/门禁评估/)).toBeVisible()
   // Running → 可用动作含「完成」（终态、destructive）。
   const completeBtn = page.getByTestId('action-complete')
   await expect(completeBtn).toBeVisible()
@@ -199,23 +227,241 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('工序已完成')).toBeVisible()
+  await expect(result.getByText('工单信息未提供 · 工序任务信息未提供')).toBeVisible()
+  await expect(result.getByText('WO-1', { exact: true })).toHaveCount(0)
+  await expect(result.getByText('OP-1', { exact: true })).toHaveCount(0)
+  await expect
+    .poll(() => exactPairs)
+    .toContainEqual({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    })
+})
+
+test('工序执行：375×812 阻塞任务展示前序/齐套/设备/质量原因且不能开始', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-2')
+
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 20', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('工序任务信息未提供', { exact: true })).toBeVisible()
+  const blockers = page.getByTestId('operation-block-reasons')
+  await expect(blockers).toContainText('当前不能开始')
+  await expect(blockers).toContainText('前序工序尚未完成（工序 10）')
+  await expect(blockers).toContainText('物料齐套')
+  await expect(blockers).toContainText('设备')
+  await expect(blockers).toContainText('质量')
+  await expect(page.getByText('OP-TASK-0020', { exact: true })).toHaveCount(0)
+  await expect(blockers).not.toContainText('OP-1')
+  await expect(blockers).not.toContainText('OP-2')
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
+  await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
+  await expect(page.locator('html')).toHaveJSProperty('scrollWidth', 375)
+})
+
+test('工序执行：accepted/unconfirmed 回执不显示成功并保留双强 ID', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.route(
+    /\/api\/business-console\/v1\/mes\/operation-tasks\/OP-1\/complete(?:\?|$)/,
+    async (route) => {
+      const body = (route.request().postDataJSON() ?? {}) as { idempotencyKey?: string }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            operationReceipt: {
+              operationType: 'mes.operation-task.complete',
+              authority: 'business-gateway',
+              resourceType: 'mes.operation-task',
+              resourceId: 'OP-1',
+              idempotencyKey: body.idempotencyKey,
+              outcome: 'accepted',
+              stateConfirmed: false,
+              readbackRequired: true,
+              readbackMethod: 'GET',
+              readbackPath:
+                '/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&operationTaskId=OP-1',
+              changedAtUtc: '2026-08-02T08:35:00.000Z',
+            },
+          },
+        }),
+      })
+    },
+  )
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
+  await page.getByTestId('action-complete').click()
+  await page.getByTestId('confirm-complete').click()
+
+  await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
+  const errorResult = page.locator('[data-result][data-status="error"]')
+  await expect(errorResult).toBeVisible()
+  await expect(errorResult).toContainText('工单信息未提供 · 工序任务信息未提供')
+  await expect(errorResult).not.toContainText('WO-1 · OP-1')
+  await expect(errorResult).toContainText('结果尚未核实')
+})
+
+test('工序执行：409 后权威刷新并撤销旧动作', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  let listReads = 0
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() === 'GET') listReads += 1
+    return routeBusinessConsoleApi(route)
+  })
+  await page.route(
+    /\/api\/business-console\/v1\/mes\/operation-tasks\/OP-1\/complete(?:\?|$)/,
+    async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, message: 'lifecycle-conflict', data: null }),
+      })
+    },
+  )
+  await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
+  const readsBeforeAction = listReads
+  await page.getByTestId('action-complete').click()
+  await page.getByTestId('confirm-complete').click()
+
+  await expect(page.getByText('状态已被其他操作更新')).toBeVisible()
+  await expect(page.getByTestId('confirm-complete')).toHaveCount(0)
+  await expect(page.getByTestId('retry-action')).toHaveCount(0)
+  await expect.poll(() => listReads).toBeGreaterThan(readsBeforeAction)
+})
+
+test('工序执行：完成态服务端返回空动作时详情只读', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    if (route.request().method() !== 'GET') return routeBusinessConsoleApi(route)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: [
+            {
+              operationTaskId: 'OP-DONE',
+              workOrderId: 'WO-DONE',
+              workOrderNo: null,
+              operationTaskNo: null,
+              status: 'Completed',
+              operationSequence: 30,
+              workCenterId: 'WC-A',
+              qualityStatus: 'Passed',
+              allowedActions: [],
+              blockReasons: [],
+              evaluatedAtUtc: '2026-08-02T08:40:00.000Z',
+            },
+          ],
+          total: 1,
+        },
+      }),
+    })
+  })
+  await page.goto('/mes/operation?workOrderId=WO-DONE&operationTaskId=OP-DONE')
+
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 30', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
+  await expect(page.locator('[data-testid^="action-"]')).toHaveCount(0)
 })
 
 test('工序执行：same-route query push 与 back/forward 始终只打开当前双强 ID', async ({ page }) => {
   await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
-  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toBeVisible()
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
 
   await page.evaluate(async (target) => {
     const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
     await router.push(target)
   }, '/mes/operation?workOrderId=WO-2&operationTaskId=OP-3')
-  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByTestId('action-start')).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toHaveCount(0)
 
   await page.goBack()
-  await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toBeVisible()
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
   await page.goForward()
-  await expect(page.getByRole('heading', { name: 'WO-2 · 工序 10', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByTestId('action-start')).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toHaveCount(0)
+})
+
+test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个相似 ID 挤出首屏的任务', async ({
+  page,
+}) => {
+  const targetOperationTaskId = 'OP-COLLISION-2'
+  const workOrderId = 'WO-COLLISION'
+  const requests: Array<{ operationTaskId: string | null; keyword: string | null }> = []
+  const collisions = Array.from({ length: 21 }, (_, index) => ({
+    operationTaskId: `${targetOperationTaskId}-${String(index + 1).padStart(2, '0')}`,
+    workOrderId,
+    workOrderNo: null,
+    operationTaskNo: null,
+    status: 'Queued',
+    operationSequence: index + 1,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+    allowedActions: [],
+  }))
+  const target = {
+    operationTaskId: targetOperationTaskId,
+    workOrderId,
+    workOrderNo: null,
+    operationTaskNo: null,
+    status: 'Queued',
+    operationSequence: 99,
+    workCenterId: 'WC-A',
+    qualityStatus: 'Pending',
+    allowedActions: [],
+  }
+
+  await page.route('**/api/business-console/v1/mes/operation-tasks**', async (route) => {
+    const url = new URL(route.request().url())
+    const exact = url.searchParams.get('operationTaskId')
+    const keyword = url.searchParams.get('keyword')
+    requests.push({ operationTaskId: exact, keyword })
+    const all = [...collisions, target]
+    const matched = exact
+      ? all.filter((task) => task.operationTaskId === exact)
+      : keyword
+        ? all.filter((task) => task.operationTaskId.includes(keyword))
+        : all
+    const skip = Number(url.searchParams.get('skip') ?? 0)
+    const take = Number(url.searchParams.get('take') ?? 20)
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items: matched.slice(skip, skip + take), total: matched.length },
+      }),
+    })
+  })
+
+  await page.goto(
+    `/mes/operation?workOrderId=${workOrderId}&operationTaskId=${targetOperationTaskId}`,
+  )
+
+  await expect(
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 99', exact: true }),
+  ).toBeVisible()
+  expect(requests).toContainEqual({ operationTaskId: targetOperationTaskId, keyword: null })
 })
 
 test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新 scope 响应重开', async ({ page }) => {
@@ -237,6 +483,8 @@ test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
+              workOrderNo: null,
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence,
               workCenterId: scopeId,
@@ -251,17 +499,25 @@ test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新
 
   try {
     await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toHaveCount(0)
 
     const scopeTrigger = page.getByTestId('mes-work-scope-select').locator('button').first()
     await scopeTrigger.click()
     await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toHaveCount(0)
 
     releaseScopeB()
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 30', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 30', exact: true }),
+    ).toBeVisible()
   } finally {
     releaseScopeB()
   }
@@ -282,6 +538,8 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
+              workOrderNo: null,
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence: 10,
               workCenterId: 'WC-A',
@@ -297,20 +555,26 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
 
   try {
     await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toHaveCount(0)
 
     const scopeTrigger = page.getByTestId('mes-work-scope-select').locator('button').first()
     await scopeTrigger.click()
     await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toHaveCount(0)
 
     releaseScopeB()
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
       '未在当前主体授权作业范围内找到指定工序任务',
     )
-    await expect(page.getByRole('heading', { name: /WO-1 · 工序/ })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /工单信息未提供 · 工序/ })).toHaveCount(0)
   } finally {
     releaseScopeB()
   }
@@ -337,6 +601,8 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
+              workOrderNo: null,
+              operationTaskNo: null,
               status: 'InProgress',
               operationSequence: 10,
               workCenterId: 'WC-A',
@@ -363,7 +629,9 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
     )
 
     releaseScopeA()
-    await expect(page.getByRole('heading', { name: 'WO-1 · 工序 10', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
+    ).toHaveCount(0)
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
       '未在当前主体授权作业范围内找到指定工序任务',
     )

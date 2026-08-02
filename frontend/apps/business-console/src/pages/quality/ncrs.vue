@@ -526,7 +526,7 @@ watch(
                   <NvFieldLabel>评审人</NvFieldLabel>
                   <p class="text-sm text-foreground">{{ mrbReviewerLabel }}</p>
                 </NvField>
-                <NvField class="flex-row items-center justify-between gap-2">
+                <NvField orientation="horizontal" class="justify-between">
                   <NvFieldLabel for="ncr-mrb-approved">
                     本人代表 MRB 评审通过该处置方案 <span class="text-destructive">*</span>
                   </NvFieldLabel>

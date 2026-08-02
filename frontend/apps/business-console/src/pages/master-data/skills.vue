@@ -371,7 +371,7 @@ async function submitSkill() {
         <thead>
           <tr class="border-b border-border bg-muted/40">
             <th
-              class="sticky left-0 z-10 min-w-44 bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground"
+              class="sticky left-0 z-10 min-w-44 bg-muted px-3 py-2 text-left font-medium text-muted-foreground"
             >
               工人
             </th>

@@ -227,7 +227,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
 <template>
   <div class="grid gap-2 rounded-lg border bg-muted/20 p-3" data-testid="receiving-quality-flow">
     <div class="flex flex-wrap items-center gap-2">
-      <NvStatusBadge :value="summary.label" />
+      <NvStatusBadge :value="summary.value" :label="summary.label" />
       <span class="text-sm font-medium">{{ flowLabel }}</span>
       <span class="text-sm text-muted-foreground">{{ summary.description }}</span>
     </div>
@@ -286,7 +286,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       <span class="font-medium">
         第 {{ line.gate.lineNo }} 行 · {{ skuLabel(line.gate.skuCode) }}
       </span>
-      <NvStatusBadge :value="gateLabel(line.gate)" />
+      <NvStatusBadge :value="line.gate.qualityGateStatus" :label="gateLabel(line.gate)" />
       <span
         v-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
         class="text-destructive"

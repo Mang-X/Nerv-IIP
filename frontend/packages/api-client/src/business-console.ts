@@ -1012,6 +1012,7 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListResponse,
   ListBusinessConsoleMesWorkOrdersData,
+  ListBusinessConsoleMesOperationTasksData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsListRequest,
@@ -2027,6 +2028,7 @@ export type BusinessConsoleMesWorkOrderItem =
 export type BusinessConsoleMesWorkOrderListResponse =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListResponse
 export type { ListBusinessConsoleMesWorkOrdersData }
+export type { ListBusinessConsoleMesOperationTasksData }
 export type BusinessConsoleMrpPeggingItem =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrpPeggingItem
 export type BusinessConsoleMrpRunItem =
