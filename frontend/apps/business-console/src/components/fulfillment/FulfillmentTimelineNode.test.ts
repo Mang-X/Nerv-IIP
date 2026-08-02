@@ -1,6 +1,6 @@
 import type { FulfillmentNode } from '@/composables/useFulfillmentTimeline'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import FulfillmentTimelineNode from './FulfillmentTimelineNode.vue'
 
 const stubs = {
@@ -16,6 +16,40 @@ function mountNode(node: FulfillmentNode) {
 }
 
 describe('FulfillmentTimelineNode — four-state state machine', () => {
+  /**
+   * 紧急度分级（特急/紧急/高风险…）的词表归 `urgencyLevelPresentation` 所有，
+   * 不在共享 `STATUS_LABELS` 里。此前把它翻译完的中文塞进 `detailStatus`，
+   * 组件照例拿去过 `resolveStatus()`——那函数吃裸码值，每次都报「词表缺失: 高风险」，
+   * 只是回吐原值恰好还是对的中文，屏上看不出来。成对断言：现成文案照原样上屏，
+   * **且不再触发漏词告警**（后者才是这次要拦的东西）。
+   */
+  it('established: detailStatusLabel 是现成文案，照原样上屏且不报漏词', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mountNode({
+      key: 'schedule-urgency',
+      title: '订单紧急度',
+      status: 'established',
+      businessNo: 'SO-1',
+      detailStatusLabel: '高风险',
+      source: 'Planning · 紧急度读面',
+    })
+    expect(wrapper.text()).toContain('高风险')
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('词表缺失')
+    warn.mockRestore()
+  })
+
+  it('established: 没给现成文案时仍按 detailStatus 走状态词表', () => {
+    const wrapper = mountNode({
+      key: 'mes-work-order',
+      title: 'MES 工单',
+      status: 'established',
+      businessNo: 'WO-1',
+      detailStatus: 'released',
+      source: 'MES · 工单读面',
+    })
+    expect(wrapper.text()).toContain('已下达')
+  })
+
   it('established: renders readable business number, status and a drill link', () => {
     const wrapper = mountNode({
       key: 'delivery-order',
