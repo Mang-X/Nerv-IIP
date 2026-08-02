@@ -105,7 +105,8 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
 </script>
 
 <template>
-  <section class="rounded-lg border bg-card" aria-labelledby="equipment-health-title">
+  <!-- `@container`：内部两列必须按**这张卡自己的宽度**决定，不能按视口。见下方 grid 注释。 -->
+  <section class="@container rounded-lg border bg-card" aria-labelledby="equipment-health-title">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
       <div>
         <h2 id="equipment-health-title" class="text-sm font-semibold text-foreground">设备健康</h2>
@@ -124,7 +125,11 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
     <div v-else-if="!health" class="p-6 text-sm text-muted-foreground">暂无设备健康数据。</div>
 
     <template v-else>
-      <div class="grid gap-4 p-4 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+      <!-- 原来写的是 `sm:`——**视口**断点。设备详情页把这张卡放在约 360px 的左栏里，
+           视口 1366px 时规则照样生效：220px 固定列加间距吃掉大半，右侧 dl 只剩 20 来 px，
+           「暂无可追溯记录」被压成一列单字并溢出卡片边界（第六轮走查实拍）。
+           改用容器断点：卡宽不足 28rem 就单列堆叠，够宽才分两列。 -->
+      <div class="grid gap-4 p-4 @md:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
         <div class="grid content-start gap-3">
           <!-- 数据完全缺失时走 alert 变体：只说明「为什么没有结论」，绝不渲染评分与达成条。 -->
           <NvMetricCard
