@@ -321,13 +321,14 @@ export const mesOperationTasks = [
     status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
-    workOrderNo: 'MO-2026-0001',
-    // MES currently has no separate business task number; the public optional field is null.
+    // MES currently has no separate business work-order/task number or device display snapshot;
+    // public optional display fields stay null instead of echoing strong IDs.
+    workOrderNo: null,
     operationTaskNo: null,
     operationCode: 'OP-CUT',
     deviceAssetId: 'device-asset-cnc-01',
-    deviceAssetCode: 'CNC-01',
-    deviceAssetName: '一号数控机床',
+    deviceAssetCode: null,
+    deviceAssetName: null,
     qualityStatus: 'Pending',
     allowedActions: ['pause', 'complete', 'report'],
     blockReasons: [],
@@ -339,12 +340,12 @@ export const mesOperationTasks = [
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
-    workOrderNo: 'MO-2026-0001',
+    workOrderNo: null,
     operationTaskNo: 'OP-TASK-0020',
     operationCode: 'OP-ASSEMBLE',
     deviceAssetId: 'device-asset-lathe-02',
-    deviceAssetCode: 'LATHE-02',
-    deviceAssetName: '二号车床',
+    deviceAssetCode: null,
+    deviceAssetName: null,
     qualityStatus: 'Pending',
     allowedActions: [],
     blockReasons: [
@@ -358,7 +359,7 @@ export const mesOperationTasks = [
   {
     operationTaskId: 'OP-3',
     workOrderId: 'WO-2',
-    workOrderNo: 'MO-2026-0002',
+    workOrderNo: null,
     operationTaskNo: 'OP-TASK-0030',
     status: 'Queued',
     operationSequence: 10,
@@ -373,7 +374,7 @@ export const mesOperationTasks = [
 const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskId: `OP-${index + 1}`,
   workOrderId: 'WO-501',
-  workOrderNo: 'MO-2026-0501',
+  workOrderNo: null,
   operationTaskNo: `OP-TASK-${String(index + 1).padStart(4, '0')}`,
   status: 'Queued',
   operationSequence: index + 1,

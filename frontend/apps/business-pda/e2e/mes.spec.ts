@@ -193,16 +193,20 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
 
   await expect(page.getByRole('heading', { name: '工序执行' })).toBeVisible()
 
-  // Running 工序任务行渲染：title=可读工单号·工序，subtitle=状态·工作中心。
-  const row = page.getByText('MO-2026-0001 · 工序 10')
+  // MES 当前没有独立业务工单号，列表显式展示缺失态，强 ID 仍只用于绑定。
+  const row = page.getByRole('button', {
+    name: /工单信息未提供 · 工序 10 执行中 · 工作中心 WC-A/,
+  })
   await expect(row).toBeVisible()
+  await expect(page.getByText('WO-1', { exact: true })).toHaveCount(0)
 
   // 点行打开 BottomSheet 动作面板（teleport 到 body）。
   await row.click()
-  await expect(page.getByText('MO-2026-0001', { exact: true })).toBeVisible()
+  await expect(page.getByText('工单信息未提供', { exact: true })).toBeVisible()
   await expect(page.getByText('工序任务信息未提供', { exact: true })).toBeVisible()
   await expect(page.getByText('OP-1', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('一号数控机床（CNC-01）')).toBeVisible()
+  await expect(page.getByText('设备信息未提供', { exact: true })).toBeVisible()
+  await expect(page.getByText('WO-1', { exact: true })).toHaveCount(0)
   await expect(page.getByText('device-asset-cnc-01')).toHaveCount(0)
   await expect(page.getByText(/门禁评估/)).toBeVisible()
   // Running → 可用动作含「完成」（终态、destructive）。
@@ -219,7 +223,8 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('工序已完成')).toBeVisible()
-  await expect(result.getByText('MO-2026-0001 · 工序任务信息未提供')).toBeVisible()
+  await expect(result.getByText('工单信息未提供 · 工序任务信息未提供')).toBeVisible()
+  await expect(result.getByText('WO-1', { exact: true })).toHaveCount(0)
   await expect(result.getByText('OP-1', { exact: true })).toHaveCount(0)
   await expect
     .poll(() => exactPairs)
@@ -234,7 +239,7 @@ test('工序执行：375×812 阻塞任务展示前序/齐套/设备/质量原�
   await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-2')
 
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-0001 · 工序 20', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 20', exact: true }),
   ).toBeVisible()
   const blockers = page.getByTestId('operation-block-reasons')
   await expect(blockers).toContainText('当前不能开始')
@@ -285,7 +290,7 @@ test('工序执行：accepted/unconfirmed 回执不显示成功并保留双强 I
   await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
   const errorResult = page.locator('[data-result][data-status="error"]')
   await expect(errorResult).toBeVisible()
-  await expect(errorResult).toContainText('MO-2026-0001 · 工序任务信息未提供')
+  await expect(errorResult).toContainText('工单信息未提供 · 工序任务信息未提供')
   await expect(errorResult).not.toContainText('WO-1 · OP-1')
   await expect(errorResult).toContainText('结果尚未核实')
 })
@@ -332,7 +337,7 @@ test('工序执行：完成态服务端返回空动作时详情只读', async ({
             {
               operationTaskId: 'OP-DONE',
               workOrderId: 'WO-DONE',
-              workOrderNo: 'MO-2026-DONE',
+              workOrderNo: null,
               operationTaskNo: 'OP-TASK-DONE',
               status: 'Completed',
               operationSequence: 30,
@@ -351,7 +356,7 @@ test('工序执行：完成态服务端返回空动作时详情只读', async ({
   await page.goto('/mes/operation?workOrderId=WO-DONE&operationTaskId=OP-DONE')
 
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-DONE · 工序 30', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 30', exact: true }),
   ).toBeVisible()
   await expect(page.getByText('当前状态无可执行动作')).toBeVisible()
   await expect(page.locator('[data-testid^="action-"]')).toHaveCount(0)
@@ -360,28 +365,33 @@ test('工序执行：完成态服务端返回空动作时详情只读', async ({
 test('工序执行：same-route query push 与 back/forward 始终只打开当前双强 ID', async ({ page }) => {
   await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
   ).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toBeVisible()
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
 
   await page.evaluate(async (target) => {
     const { router } = await import(/* @vite-ignore */ '/src/router/index.ts')
     await router.push(target)
   }, '/mes/operation?workOrderId=WO-2&operationTaskId=OP-3')
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-0002 · 工序 10', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
   ).toBeVisible()
-  await expect(
-    page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
-  ).toHaveCount(0)
+  await expect(page.getByTestId('action-start')).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toHaveCount(0)
 
   await page.goBack()
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
   ).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toBeVisible()
+  await expect(page.getByTestId('action-start')).toHaveCount(0)
   await page.goForward()
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-0002 · 工序 10', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
   ).toBeVisible()
+  await expect(page.getByTestId('action-start')).toBeVisible()
+  await expect(page.getByTestId('action-complete')).toHaveCount(0)
 })
 
 test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个相似 ID 挤出首屏的任务', async ({
@@ -393,7 +403,7 @@ test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个
   const collisions = Array.from({ length: 21 }, (_, index) => ({
     operationTaskId: `${targetOperationTaskId}-${String(index + 1).padStart(2, '0')}`,
     workOrderId,
-    workOrderNo: 'MO-2026-COLLISION',
+    workOrderNo: null,
     operationTaskNo: `OP-TASK-COLLISION-${index + 1}`,
     status: 'Queued',
     operationSequence: index + 1,
@@ -404,7 +414,7 @@ test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个
   const target = {
     operationTaskId: targetOperationTaskId,
     workOrderId,
-    workOrderNo: 'MO-2026-COLLISION',
+    workOrderNo: null,
     operationTaskNo: 'OP-TASK-EXACT',
     status: 'Queued',
     operationSequence: 99,
@@ -441,7 +451,7 @@ test('工序执行：完整双强 ID deep link 用 exact filter 命中被 20 个
   )
 
   await expect(
-    page.getByRole('heading', { name: 'MO-2026-COLLISION · 工序 99', exact: true }),
+    page.getByRole('heading', { name: '工单信息未提供 · 工序 99', exact: true }),
   ).toBeVisible()
   expect(requests).toContainEqual({ operationTaskId: targetOperationTaskId, keyword: null })
 })
@@ -465,7 +475,7 @@ test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
-              workOrderNo: 'MO-2026-0001',
+              workOrderNo: null,
               operationTaskNo: 'OP-TASK-0010',
               status: 'InProgress',
               operationSequence,
@@ -482,23 +492,23 @@ test('工序执行：固定双强 ID 切换 scope 后关闭旧对象并只从新
   try {
     await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
 
     const scopeTrigger = page.getByTestId('mes-work-scope-select').locator('button').first()
     await scopeTrigger.click()
     await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
 
     releaseScopeB()
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 30', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 30', exact: true }),
     ).toBeVisible()
   } finally {
     releaseScopeB()
@@ -520,7 +530,7 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
-              workOrderNo: 'MO-2026-0001',
+              workOrderNo: null,
               operationTaskNo: 'OP-TASK-0010',
               status: 'InProgress',
               operationSequence: 10,
@@ -538,25 +548,25 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
   try {
     await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-1')
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
 
     const scopeTrigger = page.getByTestId('mes-work-scope-select').locator('button').first()
     await scopeTrigger.click()
     await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
 
     releaseScopeB()
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
       '未在当前主体授权作业范围内找到指定工序任务',
     )
-    await expect(page.getByRole('heading', { name: /MO-2026-0001 · 工序/ })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /工单信息未提供 · 工序/ })).toHaveCount(0)
   } finally {
     releaseScopeB()
   }
@@ -583,7 +593,7 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
             {
               operationTaskId: 'OP-1',
               workOrderId: 'WO-1',
-              workOrderNo: 'MO-2026-0001',
+              workOrderNo: null,
               operationTaskNo: 'OP-TASK-0010',
               status: 'InProgress',
               operationSequence: 10,
@@ -612,7 +622,7 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
 
     releaseScopeA()
     await expect(
-      page.getByRole('heading', { name: 'MO-2026-0001 · 工序 10', exact: true }),
+      page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
       '未在当前主体授权作业范围内找到指定工序任务',

@@ -811,6 +811,7 @@ public sealed class MesEndpointContractTests
                     TimeSpan.FromMinutes(30),
                     OperationCode: "OP-MIX"),
             ]);
+        tasks.Single().Assign(null, "device-asset-cnc-01", null, dueUtc.AddMinutes(-40));
         workOrder.Start(dueUtc.AddMinutes(-30));
         tasks.Single().Start(dueUtc.AddMinutes(-30));
         dbContext.WorkOrders.Add(workOrder);
@@ -840,11 +841,21 @@ public sealed class MesEndpointContractTests
         Assert.Empty(detail.BlockingReasons);
         var detailOperation = Assert.Single(detail.OperationTasks);
         Assert.Equal("OP-10", detailOperation.OperationTaskId);
+        Assert.Equal("WO-001", detailOperation.WorkOrderId);
+        Assert.Null(detailOperation.WorkOrderNo);
         Assert.Null(detailOperation.OperationTaskNo);
+        Assert.Equal("device-asset-cnc-01", detailOperation.DeviceAssetId);
+        Assert.Null(detailOperation.DeviceAssetCode);
+        Assert.Null(detailOperation.DeviceAssetName);
         Assert.Equal("OP-MIX", detailOperation.OperationCode);
         var operation = Assert.Single(operations.Items);
         Assert.Equal("OP-10", operation.OperationTaskId);
+        Assert.Equal("WO-001", operation.WorkOrderId);
+        Assert.Null(operation.WorkOrderNo);
         Assert.Null(operation.OperationTaskNo);
+        Assert.Equal("device-asset-cnc-01", operation.DeviceAssetId);
+        Assert.Null(operation.DeviceAssetCode);
+        Assert.Null(operation.DeviceAssetName);
         Assert.Equal("OP-MIX", operation.OperationCode);
         var wipRow = Assert.Single(wip.Items);
         Assert.Equal(10m, wipRow.PlannedQuantity);
