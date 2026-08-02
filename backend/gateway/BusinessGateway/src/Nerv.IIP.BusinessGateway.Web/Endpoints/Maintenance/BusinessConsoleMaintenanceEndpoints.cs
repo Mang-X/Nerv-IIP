@@ -46,7 +46,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var sourceAlarmId = request.SourceAlarmId?.Trim();
+        var sourceAlarmId = NormalizeSourceAlarmId(request.SourceAlarmId);
         if (!string.IsNullOrEmpty(sourceAlarmId))
         {
             var alarms = await industrialTelemetry.ListAlarmsAsync(
@@ -138,6 +138,12 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
         Guid.TryParseExact(value?.Trim(), "D", out var parsed) && parsed != Guid.Empty
             ? parsed.ToString("D")
             : null;
+
+    private static string? NormalizeSourceAlarmId(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? trimmed : NormalizeGuid(trimmed) ?? trimmed;
+    }
 }
 
 [Tags("Business Console Maintenance")]

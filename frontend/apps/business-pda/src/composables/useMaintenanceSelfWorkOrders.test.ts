@@ -10,10 +10,12 @@ import {
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
+  detail: vi.fn(),
   workers: vi.fn(),
   resourceDetail: vi.fn(),
   queryFactories: new Map<string, () => Record<string, unknown>>(),
   data: new Map<string, ShallowRef<unknown>>(),
+  rawData: new Map<string, ShallowRef<unknown>>(),
   errors: new Map<string, ShallowRef<unknown>>(),
   loading: new Map<string, ShallowRef<boolean>>(),
   refetches: new Map<string, ReturnType<typeof vi.fn>>(),
@@ -21,6 +23,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMaintenanceWorkOrders: api.list,
+  getBusinessConsoleMaintenanceWorkOrder: api.detail,
   listBusinessConsoleWorkers: api.workers,
   getBusinessConsoleMasterDataResourceDetail: api.resourceDetail,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn((request) => ({
@@ -47,11 +50,40 @@ vi.mock('@pinia/colada', () => ({
     const key = (options.key as Array<{ _id?: string }> | undefined)?.[0]
     const id = key?._id ?? ''
     api.queryFactories.set(id, factory)
-    const data = shallowRef()
+    const rawData = shallowRef()
+    const data = {
+      get value() {
+        return rawData.value
+      },
+      set value(value: unknown) {
+        if (value === undefined) {
+          rawData.value = undefined
+          return
+        }
+        if (
+          value &&
+          typeof value === 'object' &&
+          'generation' in value &&
+          'identity' in value &&
+          'value' in value
+        ) {
+          rawData.value = value
+          return
+        }
+        const currentOptions = factory()
+        const currentKey = (currentOptions.key as Array<Record<string, unknown>> | undefined)?.[0]
+        rawData.value = {
+          generation: currentKey?.generation,
+          identity: currentKey?.identity,
+          value,
+        }
+      },
+    } as ShallowRef<unknown>
     const error = shallowRef()
     const isLoading = shallowRef(false)
     const refetch = vi.fn(async () => undefined)
     api.data.set(id, data)
+    api.rawData.set(id, rawData)
     api.errors.set(id, error)
     api.loading.set(id, isLoading)
     api.refetches.set(id, refetch)
@@ -84,6 +116,20 @@ function seedPrincipal(overrides: Record<string, unknown> = {}) {
 function requestFor(id: string) {
   const options = api.queryFactories.get(id)?.()
   return (options?.key as Array<{ request?: unknown }> | undefined)?.[0]?.request
+}
+
+function queryMetadata(id: string) {
+  const options = api.queryFactories.get(id)?.()
+  return (options?.key as Array<Record<string, unknown>> | undefined)?.[0]
+}
+
+function publishedValue(id: string) {
+  const published = api.data.get(id)?.value as { value?: unknown } | undefined
+  return published?.value
+}
+
+function publishCached(id: string, generation: number, identity: string, value: unknown) {
+  api.rawData.get(id)!.value = { generation, identity, value }
 }
 
 function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
@@ -224,6 +270,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     vi.clearAllMocks()
     api.queryFactories.clear()
     api.data.clear()
+    api.rawData.clear()
     api.errors.clear()
     api.loading.clear()
     api.refetches.clear()
@@ -277,6 +324,48 @@ describe('useMaintenanceSelfWorkOrders', () => {
         take: 20,
       },
     })
+  })
+
+  it('normalizes GUID filters case-insensitively while preserving code case and Ordinal dedupe', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    const publicId = '019f0000-0000-7000-8000-000000000001'
+
+    result.filters.deviceAssetIds = [publicId.toUpperCase(), publicId]
+    await nextTick()
+    expect(
+      (requestFor('maintenance-list') as { query: { deviceAssetIds?: string } }).query
+        .deviceAssetIds,
+    ).toBe(publicId)
+
+    result.filters.deviceAssetIds = ['DEV-A', 'dev-a', 'DEV-A']
+    await nextTick()
+    expect(
+      (requestFor('maintenance-list') as { query: { deviceAssetIds?: string } }).query
+        .deviceAssetIds,
+    ).toBe('DEV-A,dev-a')
+  })
+
+  it('keeps scope and filter query identities collision-free for delimiter-bearing values', async () => {
+    seedPrincipal({ organizationId: 'org:env', environmentId: 'x' })
+    const result = useMaintenanceSelfWorkOrders()
+    const firstScopeKey = result.scopeKey.value
+    const firstIdentity = queryMetadata('maintenance-list')?.identity
+
+    seedPrincipal({ organizationId: 'org', environmentId: 'env:x' })
+    await nextTick()
+    expect(result.scopeKey.value).not.toBe(firstScopeKey)
+    expect(queryMetadata('maintenance-list')?.identity).not.toBe(firstIdentity)
+
+    result.filters.deviceAssetIds = ['DEV-A,DEV-B']
+    result.filters.keyword = `bearing\u001fteam`
+    await nextTick()
+    const delimiterIdentity = queryMetadata('maintenance-list')?.identity
+
+    result.filters.deviceAssetIds = ['DEV-A', 'DEV-B']
+    result.filters.keyword = 'bearing'
+    await nextTick()
+    expect(queryMetadata('maintenance-list')?.identity).not.toBe(delimiterIdentity)
   })
 
   it('drops an unknown restored status instead of sending it to the service', async () => {
@@ -346,6 +435,55 @@ describe('useMaintenanceSelfWorkOrders', () => {
     await nextTick()
 
     expect(result.items.value[0]).toMatchObject({ workOrderId, deviceAssetId })
+  })
+
+  it('requires a fresh list generation when scope returns A to B to A', async () => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    const aMetadata = queryMetadata('maintenance-list')!
+    const aEnvelope = {
+      success: true,
+      data: { items: [authoritativeListItem(1)], total: 1, skip: 0, take: 20 },
+    }
+    api.data.get('maintenance-list')!.value = aEnvelope
+    await nextTick()
+    expect(result.items.value[0]?.workOrderId).toBe(workOrderGuid(1))
+
+    seedPrincipal({ principalId: 'principal-2' })
+    await nextTick()
+    expect(result.items.value).toEqual([])
+    expect(queryMetadata('maintenance-list')?.generation).not.toBe(aMetadata.generation)
+
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: {
+        items: [authoritativeListItem(2, { assignedTechnicianUserId: 'principal-2' })],
+        total: 1,
+        skip: 0,
+        take: 20,
+      },
+    }
+    await nextTick()
+    expect(result.items.value[0]?.workOrderId).toBe(workOrderGuid(2))
+
+    seedPrincipal()
+    await nextTick()
+    publishCached(
+      'maintenance-list',
+      aMetadata.generation as number,
+      aMetadata.identity as string,
+      aEnvelope,
+    )
+    await nextTick()
+
+    expect(result.items.value).toEqual([])
+    expect(result.hasSuccessfulResponse.value).toBe(false)
+    expect(result.pending.value).toBe(true)
+
+    api.errors.get('maintenance-list')!.value = { status: 403 }
+    await nextTick()
+    expect(result.items.value).toEqual([])
+    expect(result.hasFailedResponse.value).toBe(true)
   })
 
   it.each(invalidListEnvelopes)(
@@ -753,8 +891,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         ...assignments,
       },
     }
-    const data = (api.data.get('maintenance-detail')!.value as { data: Record<string, unknown> })
-      .data
+    const data = (publishedValue('maintenance-detail') as { data: Record<string, unknown> }).data
     if (!('assignedTechnicianUserId' in assignments)) delete data.assignedTechnicianUserId
     if (!('assignedTeamId' in assignments)) delete data.assignedTeamId
     await nextTick()
@@ -1207,6 +1344,74 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.identities.value).toBeUndefined()
   })
 
+  it('rejects cached and delayed detail generations when route returns A to B to A', async () => {
+    seedPrincipal()
+    const workOrderA = '019f0000-0000-7000-8000-000000000102'
+    const workOrderB = '019f0000-0000-7000-8000-000000000103'
+    const routeId = shallowRef(workOrderA)
+    const result = useMaintenanceSelfWorkOrderDetail(routeId)
+    const aMetadata = queryMetadata('maintenance-detail')!
+    const aEnvelope = {
+      success: true,
+      data: {
+        ...authoritativeDetail(workOrderA, 'DEV-A'),
+        lifecycle: [
+          {
+            action: 'accept',
+            fromStatus: 'open',
+            toStatus: 'accepted',
+            actorPrincipalId: 'principal-1',
+            technicianUserId: 'principal-1',
+            teamId: null,
+            reason: '旧 A 生命周期',
+            resultingVersion: 7,
+            occurredAtUtc: '2026-08-02T01:02:03.000Z',
+          },
+        ],
+      },
+    }
+    api.data.get('maintenance-detail')!.value = aEnvelope
+    await nextTick()
+    expect(result.authoritativeWorkOrder.value?.lifecycle[0]?.reason).toBe('旧 A 生命周期')
+
+    routeId.value = workOrderB
+    await nextTick()
+    publishCached(
+      'maintenance-detail',
+      aMetadata.generation as number,
+      aMetadata.identity as string,
+      aEnvelope,
+    )
+    await nextTick()
+    expect(result.authoritativeWorkOrder.value).toBeUndefined()
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderB, 'DEV-B'),
+    }
+    await nextTick()
+    expect(result.authoritativeWorkOrder.value?.workOrderId).toBe(workOrderB)
+
+    routeId.value = workOrderA
+    await nextTick()
+    publishCached(
+      'maintenance-detail',
+      aMetadata.generation as number,
+      aMetadata.identity as string,
+      aEnvelope,
+    )
+    await nextTick()
+    expect(result.authoritativeWorkOrder.value).toBeUndefined()
+    expect(result.identities.value).toBeUndefined()
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+
+    api.errors.get('maintenance-detail')!.value = { status: 403 }
+    await nextTick()
+    expect(result.authoritativeHasFailedResponse.value).toBe(true)
+    expect(result.authoritativeWorkOrder.value).toBeUndefined()
+  })
+
   it('treats the strong-ID device detail as part of aggregate detail state', async () => {
     seedPrincipal()
     const routeId = shallowRef('019f0000-0000-7000-8000-000000000104')
@@ -1440,6 +1645,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
     }
+    await nextTick()
     api.data.get('device-detail')!.value = {
       success: true,
       data: {

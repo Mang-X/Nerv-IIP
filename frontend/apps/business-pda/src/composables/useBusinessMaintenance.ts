@@ -25,6 +25,7 @@ import {
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'
+import { normalizeMaintenanceDeviceReference } from './maintenancePublicIds'
 import { useTaskListPagination } from './useTaskListPagination'
 
 const WORK_ORDER_PAGE_SIZE = 20
@@ -228,6 +229,7 @@ export function useBusinessMaintenance() {
     )
     const body = {
       ...input,
+      deviceAssetId: normalizeMaintenanceDeviceReference(input.deviceAssetId),
       idempotencyKey,
       organizationId: organizationId.value,
       environmentId: environmentId.value,

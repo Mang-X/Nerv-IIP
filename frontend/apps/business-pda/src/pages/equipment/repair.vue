@@ -26,7 +26,7 @@ import {
   NvScanBar,
   NvSearchBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -186,6 +186,27 @@ const devicePickerOpen = ref(false)
 const prioritySheetOpen = ref(false)
 const reasonFocused = ref(false)
 
+function applyRouteRepairPair(deviceAssetId: string, alarmId: string | undefined) {
+  form.deviceAssetId = deviceAssetId
+  sourceAlarmId.value = alarmId
+  selectedDevice.value = deviceAssetId
+    ? {
+        deviceAssetId,
+        displayName: deviceAssetId,
+        source: 'route',
+      }
+    : null
+}
+
+watch(
+  [queryDeviceAssetId, routeSourceAlarmId],
+  ([deviceAssetId, alarmId]) => {
+    if (phase.value !== 'form' || intentLocked.value) return
+    applyRouteRepairPair(deviceAssetId, alarmId)
+  },
+  { flush: 'sync' },
+)
+
 // 优先级选项仅使用 business-core 的三项稳定值，ActionSheet 负责移动选择。
 const priorityOptions = Object.keys(maintenancePriorityLabels).map((value) => ({
   value,
@@ -303,17 +324,9 @@ function resetForm() {
   submittedIntent.value = null
   intentLocked.value = false
   createdWorkOrderId.value = ''
-  form.deviceAssetId = queryDeviceAssetId.value
+  applyRouteRepairPair(queryDeviceAssetId.value, routeSourceAlarmId.value)
   form.priority = ''
   form.assetUnavailableReason = ''
-  sourceAlarmId.value = routeSourceAlarmId.value
-  selectedDevice.value = queryDeviceAssetId.value
-    ? {
-        deviceAssetId: queryDeviceAssetId.value,
-        displayName: queryDeviceAssetId.value,
-        source: 'route',
-      }
-    : null
   reset()
 }
 

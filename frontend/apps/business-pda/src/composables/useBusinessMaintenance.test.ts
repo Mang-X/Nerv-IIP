@@ -198,6 +198,27 @@ describe('useBusinessMaintenance', () => {
     expect(arg.body.openedBy).toBe('admin')
   })
 
+  it('normalizes a public device GUID at the create request boundary without folding codes', async () => {
+    seedPrincipal()
+    const { createWorkOrder } = useBusinessMaintenance()
+
+    await createWorkOrder({
+      deviceAssetId: ' 019F1000-0000-7000-8000-0000000000AB ',
+      priority: 'high',
+      assetUnavailableReason: 'bearing damage',
+    } as never)
+    await createWorkOrder({
+      deviceAssetId: ' DEV-A ',
+      priority: 'high',
+      assetUnavailableReason: 'bearing damage',
+    } as never)
+
+    expect(coladaState.mutate.createWorkOrder.mock.calls[0][0].body.deviceAssetId).toBe(
+      '019f1000-0000-7000-8000-0000000000ab',
+    )
+    expect(coladaState.mutate.createWorkOrder.mock.calls[1][0].body.deviceAssetId).toBe('DEV-A')
+  })
+
   it('clears a work-order intent after a determinate 422 so a corrected attempt can use a new key', async () => {
     seedPrincipal()
     coladaState.mutate.createWorkOrder

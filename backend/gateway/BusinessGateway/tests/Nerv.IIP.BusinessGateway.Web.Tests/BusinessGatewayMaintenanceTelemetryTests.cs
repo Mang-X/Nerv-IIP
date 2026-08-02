@@ -1241,10 +1241,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     [Fact]
     public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create()
     {
+        const string alarmId = "019f2000-0000-7000-8000-0000000000ab";
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient
         {
-            AlarmListResponse = AlarmResponse(Alarm("alarm-001", "DEV-PRESS-01")),
+            AlarmListResponse = AlarmResponse(Alarm(alarmId, "DEV-PRESS-01")),
         };
         var deviceId = DeviceId(1);
         var masterData = new RecordingMasterDataClient
@@ -1265,12 +1266,16 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await PostAlarmRepairAsync(client, deviceId.ToUpperInvariant());
+        var response = await PostAlarmRepairAsync(
+            client,
+            deviceId.ToUpperInvariant(),
+            alarmId.ToUpperInvariant());
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, maintenance.CreateWorkOrderCallCount);
         Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest(
-            "org-001", "env-dev", null, null, 0, 2, AlarmEventId: "alarm-001"), telemetry.LastAlarmListRequest);
+            "org-001", "env-dev", null, null, 0, 2, AlarmEventId: alarmId), telemetry.LastAlarmListRequest);
+        Assert.Equal(alarmId, maintenance.LastCreateWorkOrderRequest.GetProperty("sourceAlarmId").GetString());
         Assert.Equal(2, masterData.DetailRequests.Count);
         Assert.Contains(masterData.DetailRequests, x => x.Code == deviceId.ToUpperInvariant());
         Assert.Contains(masterData.DetailRequests, x => x.Code == "DEV-PRESS-01");
@@ -1899,14 +1904,15 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
     private static async Task<HttpResponseMessage> PostAlarmRepairAsync(
         HttpClient client,
-        string deviceAssetId) =>
+        string deviceAssetId,
+        string sourceAlarmId = "alarm-001") =>
         await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             deviceAssetId,
             priority = "high",
-            sourceAlarmId = "alarm-001",
+            sourceAlarmId,
             openedBy = "untrusted-client",
             idempotencyKey = "maintenance-alarm-create-test",
         });

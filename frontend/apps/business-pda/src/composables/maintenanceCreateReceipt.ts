@@ -1,13 +1,5 @@
 import { BusinessOperationUnconfirmedError } from '@nerv-iip/api-client'
-
-const CANONICAL_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
-
-function normalizeCanonicalGuid(value: unknown) {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase()
-  return CANONICAL_GUID.test(normalized) && normalized !== EMPTY_GUID ? normalized : undefined
-}
+import { normalizeCanonicalGuid } from './maintenancePublicIds'
 
 export function confirmedMaintenanceCreateWorkOrderId(envelope: unknown) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {

@@ -1,10 +1,8 @@
 import {
-  getBusinessConsoleMasterDataResourceDetailQueryOptions,
   getBusinessConsoleMasterDataResourceDetail,
-  getBusinessConsoleMaintenanceWorkOrderQueryOptions,
+  getBusinessConsoleMaintenanceWorkOrder,
   listBusinessConsoleWorkers,
   listBusinessConsoleMaintenanceWorkOrders,
-  listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
   type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsoleMaintenanceWorkOrderItem,
   type BusinessConsoleWorkerDirectoryItem,
@@ -14,7 +12,7 @@ import {
   type MaintenanceWorkOrderStatusCode,
 } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useListFreshness, useScopeBoundListResponse } from './useListFreshness'
 import { useTaskListPagination } from './useTaskListPagination'
@@ -24,11 +22,15 @@ import {
 } from '@/permissions/maintenanceReadModelAccess'
 import { useAuthStore } from '@/stores/auth'
 import { isStrictRfc3339DateTime } from '@/utils/strictRfc3339'
+import {
+  normalizeCanonicalGuid,
+  normalizeMaintenanceDeviceReference,
+  normalizeMaintenanceDeviceReferences,
+  serializeMaintenanceKey,
+} from './maintenancePublicIds'
 
 const PAGE_SIZE = 20
 const MAX_IDENTITY_REFERENCES = 20
-const CANONICAL_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 type WorkOrderListEnvelope =
   | {
       success?: boolean
@@ -52,6 +54,12 @@ type DeviceAssetDetailEnvelope =
 interface WorkOrderPage {
   items: BusinessConsoleMaintenanceWorkOrderItem[]
   total: number
+}
+
+interface FreshGenerationValue<TValue> {
+  generation: number
+  identity: string
+  value: TValue
 }
 
 export interface MaintenanceSelfWorkOrderFilters {
@@ -95,34 +103,11 @@ function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-function normalizeCanonicalGuid(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase()
-  return CANONICAL_GUID.test(normalized) && normalized !== '00000000-0000-0000-0000-000000000000'
-    ? normalized
-    : undefined
-}
-
 function isCanonicalGuid(value: unknown): value is string {
   return normalizeCanonicalGuid(value) !== undefined
 }
 
-function normalizeDeviceReference(value: string) {
-  return normalizeCanonicalGuid(value) ?? value.trim()
-}
-
-export function normalizeMaintenanceDeviceReferences(values: unknown): string[] {
-  if (!Array.isArray(values)) return []
-  const unique = new Map<string, string>()
-  for (const value of values) {
-    if (typeof value !== 'string') continue
-    const normalized = value.trim()
-    if (!normalized) continue
-    const key = normalized.toLowerCase()
-    if (!unique.has(key)) unique.set(key, normalized)
-  }
-  return [...unique.values()].slice(0, 2)
-}
+export { normalizeMaintenanceDeviceReferences } from './maintenancePublicIds'
 
 function isExplicitAssignment(value: unknown) {
   return value === null || isNonBlankString(value)
@@ -178,7 +163,7 @@ function parseWorkOrderPage(
   const items = data.items.map((item) => ({
     ...item,
     workOrderId: normalizeCanonicalGuid(item.workOrderId)!,
-    deviceAssetId: normalizeDeviceReference(item.deviceAssetId!),
+    deviceAssetId: normalizeMaintenanceDeviceReference(item.deviceAssetId!),
   }))
   if (items.length > take || total < skip + items.length || (skip < total && items.length === 0)) {
     throw new Error('维修工单分页信息不一致，请重试。')
@@ -318,6 +303,39 @@ function parseExactTeam(
     : undefined
 }
 
+function useMaintenanceQueryGeneration(
+  identity: MaybeRefOrGetter<string>,
+  enabled: MaybeRefOrGetter<boolean>,
+) {
+  const generation = shallowRef(0)
+  watch(
+    [() => toValue(identity), () => toValue(enabled)],
+    ([nextIdentity, ready], [previousIdentity, wasReady]) => {
+      if (!ready || !wasReady || nextIdentity !== previousIdentity) generation.value += 1
+    },
+    { flush: 'sync' },
+  )
+  return generation
+}
+
+function useFreshGenerationProjection<TValue>(
+  data: MaybeRefOrGetter<FreshGenerationValue<TValue> | undefined>,
+  identity: MaybeRefOrGetter<string>,
+  generation: MaybeRefOrGetter<number>,
+  enabled: MaybeRefOrGetter<boolean>,
+) {
+  const generationIdentity = computed(() =>
+    toValue(enabled) ? serializeMaintenanceKey([toValue(identity), toValue(generation)]) : '',
+  )
+  const bound = useScopeBoundListResponse(data, generationIdentity, enabled)
+  return computed(() => {
+    const result = bound.value
+    return result?.identity === toValue(identity) && result.generation === toValue(generation)
+      ? result.value
+      : undefined
+  })
+}
+
 function useMaintenanceSelfScope() {
   const auth = useAuthStore()
   const organizationId = computed(() => auth.principal?.organizationId?.trim() ?? '')
@@ -337,7 +355,12 @@ function useMaintenanceSelfScope() {
   )
   const scopeKey = computed(() =>
     scopeReady.value
-      ? `${organizationId.value}:${environmentId.value}:self:${principalId.value}`
+      ? serializeMaintenanceKey([
+          organizationId.value,
+          environmentId.value,
+          'self',
+          principalId.value,
+        ])
       : '',
   )
   const queryScope = () => ({
@@ -377,33 +400,60 @@ export function useMaintenanceSelfWorkOrders() {
     deviceAssetIds: trimToUndefined(normalizedDeviceAssetIds.value.join(',')),
     keyword: trimToUndefined(filters.keyword),
   })
-  const identity = computed(
-    () =>
-      `${scope.scopeKey.value}:${normalizeMaintenanceWorkOrderStatusFilter(filters.status)}:${normalizedDeviceAssetIds.value.join('\u001f')}:${filters.keyword.trim()}`,
+  const identity = computed(() =>
+    serializeMaintenanceKey({
+      scope: [
+        scope.organizationId.value,
+        scope.environmentId.value,
+        'self',
+        scope.principalId.value,
+      ],
+      filters: {
+        status: normalizeMaintenanceWorkOrderStatusFilter(filters.status),
+        deviceAssetIds: normalizedDeviceAssetIds.value,
+        keyword: filters.keyword.trim(),
+      },
+    }),
   )
-  const principalIdentityQuery = useQuery(() => ({
-    key: [{ _id: 'maintenance-list-principal', scope: scope.scopeKey.value }],
-    enabled: scope.scopeReady.value,
-    query: async () => {
-      const { data } = await listBusinessConsoleWorkers({
-        query: {
-          organizationId: scope.organizationId.value,
-          environmentId: scope.environmentId.value,
-          userId: scope.principalId.value,
-          pageIndex: 1,
-          pageSize: 1,
-          includeDisabled: true,
+  const generation = useMaintenanceQueryGeneration(identity, scope.scopeReady)
+  const principalIdentityQuery = useQuery(() => {
+    const requestedGeneration = generation.value
+    const requestedIdentity = identity.value
+    const organizationId = scope.organizationId.value
+    const environmentId = scope.environmentId.value
+    const principalId = scope.principalId.value
+    return {
+      key: [
+        {
+          _id: 'maintenance-list-principal',
+          scope: [organizationId, environmentId, principalId],
+          generation: requestedGeneration,
+          identity: requestedIdentity,
         },
-        throwOnError: true,
-      })
-      const displayName = parseExactWorker(data, scope.principalId.value)
-      if (!displayName) throw new Error('身份资料暂不可用')
-      return displayName
-    },
-  }))
-  const principalIdentityResponse = useScopeBoundListResponse(
+      ],
+      enabled: scope.scopeReady.value,
+      query: async () => {
+        const { data } = await listBusinessConsoleWorkers({
+          query: {
+            organizationId,
+            environmentId,
+            userId: principalId,
+            pageIndex: 1,
+            pageSize: 1,
+            includeDisabled: true,
+          },
+          throwOnError: true,
+        })
+        const displayName = parseExactWorker(data, principalId)
+        if (!displayName) throw new Error('身份资料暂不可用')
+        return { generation: requestedGeneration, identity: requestedIdentity, value: displayName }
+      },
+    }
+  })
+  const principalIdentityResponse = useFreshGenerationProjection(
     () => principalIdentityQuery.data.value,
-    scope.scopeKey,
+    identity,
+    generation,
     scope.scopeReady,
   )
   const principalDisplayName = computed(() =>
@@ -412,17 +462,45 @@ export function useMaintenanceSelfWorkOrders() {
       : undefined,
   )
 
-  const listQuery = useQuery(() => ({
-    ...listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
+  const listQuery = useQuery(() => {
+    const requestedGeneration = generation.value
+    const requestedIdentity = identity.value
+    const request = {
       query: {
         ...listQueryParameters(),
         skip: 0,
         take: PAGE_SIZE,
       },
-    }),
-    enabled: scope.scopeReady.value,
-  }))
-  const response = useScopeBoundListResponse(() => listQuery.data.value, identity, scope.scopeReady)
+    }
+    return {
+      key: [
+        {
+          _id: 'maintenance-list',
+          request,
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+        },
+      ],
+      enabled: scope.scopeReady.value,
+      query: async () => {
+        const { data } = await listBusinessConsoleMaintenanceWorkOrders({
+          ...request,
+          throwOnError: true,
+        })
+        return {
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+          value: data as WorkOrderListEnvelope,
+        }
+      },
+    }
+  })
+  const response = useFreshGenerationProjection(
+    () => listQuery.data.value,
+    identity,
+    generation,
+    scope.scopeReady,
+  )
   const firstPageState = computed<{ page?: WorkOrderPage; error?: Error }>(() => {
     if (response.value === undefined) return {}
     try {
@@ -434,25 +512,34 @@ export function useMaintenanceSelfWorkOrders() {
     }
   })
   const firstPage = computed(() => firstPageState.value.page)
+  const pagerIdentity = computed(() => serializeMaintenanceKey([identity.value, generation.value]))
   const pager = useTaskListPagination<BusinessConsoleMaintenanceWorkOrderItem>({
-    identity,
+    identity: pagerIdentity,
     firstPage,
     pageSize: PAGE_SIZE,
     itemKey: (item) => item.workOrderId ?? '',
     fetchPage: async ({ skip, take }) => {
+      const query = listQueryParameters()
+      const principalId = scope.principalId.value
       const { data } = await listBusinessConsoleMaintenanceWorkOrders({
         query: {
-          ...listQueryParameters(),
+          ...query,
           skip,
           take,
         },
         throwOnError: true,
       })
-      return parseWorkOrderPage(data, skip, take, scope.principalId.value)
+      return parseWorkOrderPage(data, skip, take, principalId)
     },
     refreshFirstPage: listQuery.refetch,
   })
-  const pending = computed(() => listQuery.isLoading.value || pager.refreshing.value)
+  const pending = computed(
+    () =>
+      scope.scopeReady.value &&
+      (listQuery.isLoading.value ||
+        pager.refreshing.value ||
+        (!listQuery.error.value && response.value === undefined)),
+  )
   const hasSuccessfulResponse = computed(
     () =>
       scope.scopeReady.value &&
@@ -517,18 +604,53 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const workOrderId = computed(() => normalizeCanonicalGuid(toValue(requestedWorkOrderId)) ?? '')
   const enabled = computed(() => scope.scopeReady.value && Boolean(workOrderId.value))
   const detailIdentity = computed(() =>
-    enabled.value ? `${scope.scopeKey.value}:work-order:${workOrderId.value}` : '',
+    enabled.value
+      ? serializeMaintenanceKey({
+          scope: [
+            scope.organizationId.value,
+            scope.environmentId.value,
+            'self',
+            scope.principalId.value,
+          ],
+          workOrderId: workOrderId.value,
+        })
+      : '',
   )
-  const detailQuery = useQuery(() => ({
-    ...getBusinessConsoleMaintenanceWorkOrderQueryOptions({
+  const detailGeneration = useMaintenanceQueryGeneration(detailIdentity, enabled)
+  const detailQuery = useQuery(() => {
+    const requestedGeneration = detailGeneration.value
+    const requestedIdentity = detailIdentity.value
+    const request = {
       path: { workOrderId: workOrderId.value },
       query: scope.queryScope(),
-    }),
-    enabled: enabled.value,
-  }))
-  const detailEnvelope = useScopeBoundListResponse(
-    () => detailQuery.data.value as WorkOrderDetailEnvelope,
+    }
+    return {
+      key: [
+        {
+          _id: 'maintenance-detail',
+          request,
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+        },
+      ],
+      enabled: enabled.value,
+      query: async () => {
+        const { data } = await getBusinessConsoleMaintenanceWorkOrder({
+          ...request,
+          throwOnError: true,
+        })
+        return {
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+          value: data as WorkOrderDetailEnvelope,
+        }
+      },
+    }
+  })
+  const detailEnvelope = useFreshGenerationProjection(
+    () => detailQuery.data.value,
     detailIdentity,
+    detailGeneration,
     enabled,
   )
   const validatedWorkOrder = computed(() => {
@@ -542,11 +664,16 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       ? {
           ...item,
           workOrderId: normalizeCanonicalGuid(item.workOrderId)!,
-          deviceAssetId: normalizeDeviceReference(item.deviceAssetId),
+          deviceAssetId: normalizeMaintenanceDeviceReference(item.deviceAssetId),
         }
       : undefined
   })
-  const authoritativePending = computed(() => enabled.value && detailQuery.isLoading.value)
+  const authoritativePending = computed(
+    () =>
+      enabled.value &&
+      (detailQuery.isLoading.value ||
+        (!detailQuery.error.value && detailEnvelope.value === undefined)),
+  )
   const authoritativeHasSuccessfulResponse = computed(
     () =>
       enabled.value &&
@@ -576,60 +703,81 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   )
   const identityKey = computed(() =>
     identityEnabled.value
-      ? `${detailIdentity.value}:identities:${identityReferences.value.userIds.join(',')}:${identityReferences.value.teamIds.join(',')}`
+      ? serializeMaintenanceKey({
+          detail: [detailIdentity.value, detailGeneration.value],
+          users: identityReferences.value.userIds,
+          teams: identityReferences.value.teamIds,
+        })
       : '',
   )
-  const identityQuery = useQuery(() => ({
-    key: [{ _id: 'maintenance-identities', identity: identityKey.value }],
-    enabled: identityEnabled.value,
-    query: async (): Promise<MaintenanceWorkOrderIdentityDirectory> => {
-      const userEntries = await Promise.all(
-        identityReferences.value.userIds.map(async (userId) => {
-          const { data } = await listBusinessConsoleWorkers({
-            query: {
-              organizationId: scope.organizationId.value,
-              environmentId: scope.environmentId.value,
-              userId,
-              pageIndex: 1,
-              pageSize: 1,
-              includeDisabled: true,
-            },
-            throwOnError: true,
-          })
-          const displayName = parseExactWorker(data, userId)
-          if (!displayName) throw new Error('身份资料暂不可用')
-          return [userId, displayName] as const
-        }),
-      )
-      const teamEntries = await Promise.all(
-        identityReferences.value.teamIds.map(async (teamId) => {
-          const { data } = await getBusinessConsoleMasterDataResourceDetail({
-            path: { resourceType: 'team', code: teamId },
-            query: {
-              organizationId: scope.organizationId.value,
-              environmentId: scope.environmentId.value,
-            },
-            throwOnError: true,
-          })
-          const displayName = parseExactTeam(
-            data,
-            teamId,
-            scope.organizationId.value,
-            scope.environmentId.value,
-          )
-          if (!displayName) throw new Error('身份资料暂不可用')
-          return [teamId, displayName] as const
-        }),
-      )
-      return {
-        users: Object.fromEntries(userEntries),
-        teams: Object.fromEntries(teamEntries),
-      }
-    },
-  }))
-  const identityResponse = useScopeBoundListResponse(
+  const identityQuery = useQuery(() => {
+    const requestedGeneration = detailGeneration.value
+    const requestedIdentity = identityKey.value
+    const userIds = [...identityReferences.value.userIds]
+    const teamIds = [...identityReferences.value.teamIds]
+    const organizationId = scope.organizationId.value
+    const environmentId = scope.environmentId.value
+    return {
+      key: [
+        {
+          _id: 'maintenance-identities',
+          detail: [detailIdentity.value, requestedGeneration],
+          users: userIds,
+          teams: teamIds,
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+        },
+      ],
+      enabled: identityEnabled.value,
+      query: async (): Promise<FreshGenerationValue<MaintenanceWorkOrderIdentityDirectory>> => {
+        const userEntries = await Promise.all(
+          userIds.map(async (userId) => {
+            const { data } = await listBusinessConsoleWorkers({
+              query: {
+                organizationId,
+                environmentId,
+                userId,
+                pageIndex: 1,
+                pageSize: 1,
+                includeDisabled: true,
+              },
+              throwOnError: true,
+            })
+            const displayName = parseExactWorker(data, userId)
+            if (!displayName) throw new Error('身份资料暂不可用')
+            return [userId, displayName] as const
+          }),
+        )
+        const teamEntries = await Promise.all(
+          teamIds.map(async (teamId) => {
+            const { data } = await getBusinessConsoleMasterDataResourceDetail({
+              path: { resourceType: 'team', code: teamId },
+              query: {
+                organizationId,
+                environmentId,
+              },
+              throwOnError: true,
+            })
+            const displayName = parseExactTeam(data, teamId, organizationId, environmentId)
+            if (!displayName) throw new Error('身份资料暂不可用')
+            return [teamId, displayName] as const
+          }),
+        )
+        return {
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+          value: {
+            users: Object.fromEntries(userEntries),
+            teams: Object.fromEntries(teamEntries),
+          },
+        }
+      },
+    }
+  })
+  const identityResponse = useFreshGenerationProjection(
     () => identityQuery.data.value,
     identityKey,
+    detailGeneration,
     identityEnabled,
   )
   const identities = computed(() =>
@@ -648,15 +796,24 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
 
   const deviceAssetId = computed(() =>
     validatedWorkOrder.value
-      ? normalizeDeviceReference(validatedWorkOrder.value.deviceAssetId)
+      ? normalizeMaintenanceDeviceReference(validatedWorkOrder.value.deviceAssetId)
       : '',
   )
-  const deviceEnabled = computed(() => enabled.value && Boolean(deviceAssetId.value))
-  const deviceIdentity = computed(() =>
-    deviceEnabled.value ? `${scope.scopeKey.value}:device:${deviceAssetId.value}` : '',
+  const deviceEnabled = computed(
+    () => authoritativeHasSuccessfulResponse.value && Boolean(deviceAssetId.value),
   )
-  const deviceQuery = useQuery(() => ({
-    ...getBusinessConsoleMasterDataResourceDetailQueryOptions({
+  const deviceIdentity = computed(() =>
+    deviceEnabled.value
+      ? serializeMaintenanceKey({
+          detail: [detailIdentity.value, detailGeneration.value],
+          deviceReference: deviceAssetId.value,
+        })
+      : '',
+  )
+  const deviceQuery = useQuery(() => {
+    const requestedGeneration = detailGeneration.value
+    const requestedIdentity = deviceIdentity.value
+    const request = {
       path: {
         resourceType: 'device-asset',
         code: deviceAssetId.value,
@@ -665,12 +822,34 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
         organizationId: scope.organizationId.value,
         environmentId: scope.environmentId.value,
       },
-    }),
-    enabled: deviceEnabled.value,
-  }))
-  const deviceResponse = useScopeBoundListResponse(
-    () => deviceQuery.data.value as DeviceAssetDetailEnvelope,
+    }
+    return {
+      key: [
+        {
+          _id: 'device-detail',
+          request,
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+        },
+      ],
+      enabled: deviceEnabled.value,
+      query: async () => {
+        const { data } = await getBusinessConsoleMasterDataResourceDetail({
+          ...request,
+          throwOnError: true,
+        })
+        return {
+          generation: requestedGeneration,
+          identity: requestedIdentity,
+          value: data as DeviceAssetDetailEnvelope,
+        }
+      },
+    }
+  })
+  const deviceResponse = useFreshGenerationProjection(
+    () => deviceQuery.data.value,
     deviceIdentity,
+    detailGeneration,
     deviceEnabled,
   )
   const validatedDevice = computed<BusinessConsoleMasterDataResourceDetail | undefined>(() => {
@@ -730,7 +909,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       (detailQuery.isLoading.value ||
         Boolean(
           !detailQuery.error.value &&
-          validatedWorkOrder.value &&
+          authoritativeHasSuccessfulResponse.value &&
           (deviceQuery.isLoading.value ||
             (!deviceResponseAvailable.value && !deviceQuery.error.value)),
         )),

@@ -6,7 +6,7 @@ import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
 const push = vi.fn(() => Promise.resolve())
-const route = { query: {} as Record<string, string> }
+const route = reactive({ query: {} as Record<string, string> })
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   useRoute: () => route,
@@ -229,6 +229,29 @@ describe('PDA equipment repair page', () => {
       assetUnavailableReason: '',
       sourceAlarmId: 'ALM-9',
       idempotencyKey: expect.any(String),
+    })
+  })
+
+  it('reactively replaces the route device and alarm as one pair on the same page instance', async () => {
+    route.query = { deviceAssetId: 'DEV-A', sourceAlarmId: 'ALM-A' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    route.query = { deviceAssetId: 'DEV-B', sourceAlarmId: 'ALM-B' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-B')
+    expect(wrapper.text()).toContain('报警上下文 · ALM-B')
+
+    route.query = { deviceAssetId: 'DEV-A', sourceAlarmId: 'ALM-A' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-A')
+    expect(wrapper.text()).toContain('报警上下文 · ALM-A')
+
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).toMatchObject({
+      deviceAssetId: 'DEV-A',
+      sourceAlarmId: 'ALM-A',
     })
   })
 
@@ -506,6 +529,8 @@ describe('PDA equipment repair page', () => {
     const firstPayload = createWorkOrder.mock.calls[0][0]
 
     await wrapper.get('[data-testid="retry"]').trigger('click')
+    route.query = { deviceAssetId: 'DEV-ROUTE-CHANGED', sourceAlarmId: 'ALM-CHANGED' }
+    await wrapper.vm.$nextTick()
     const scanInput = wrapper.find('input[placeholder*="扫描"]')
     await scanInput.setValue('DEV-CHANGED')
     await scanInput.trigger('keydown.enter')

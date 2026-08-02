@@ -458,6 +458,7 @@ export {
   listBusinessConsoleMaintenancePlans,
   listBusinessConsoleMaintenanceSpareParts,
   listBusinessConsoleMaintenanceWorkOrders,
+  getBusinessConsoleMaintenanceWorkOrder,
   listBusinessConsoleTelemetryAlarmRules,
   listBusinessConsoleTelemetryAlarms,
   listBusinessConsoleTelemetryTags,
