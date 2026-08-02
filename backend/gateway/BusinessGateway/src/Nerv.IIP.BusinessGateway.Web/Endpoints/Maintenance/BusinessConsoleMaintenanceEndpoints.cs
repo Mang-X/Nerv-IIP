@@ -4,6 +4,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 using System.Net;
 using System.Text.Json;
@@ -201,13 +202,12 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        BusinessConsoleMaintenanceWorkOrderListRequest scopedRequest;
+        BusinessConsoleMaintenanceWorkOrderListRequest workScopedRequest;
+        AuthorizationDataScope? deviceDataScope;
         if (string.IsNullOrWhiteSpace(request.ScopeKind) && string.IsNullOrWhiteSpace(request.ScopeId))
         {
-            scopedRequest = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
-                request,
-                AuthorizationResult?.DataScope,
-                cancellationToken);
+            workScopedRequest = request;
+            deviceDataScope = AuthorizationResult?.DataScope;
         }
         else
         {
@@ -221,9 +221,23 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
             {
                 return new BusinessConsoleMaintenanceWorkOrderListResponse([], request.Skip, request.Take, 0);
             }
-            scopedRequest = projection.Request;
+            workScopedRequest = projection.Request;
+            deviceDataScope = null;
         }
-        var response = await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+
+        var deviceProjection = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
+            workScopedRequest,
+            deviceDataScope,
+            cancellationToken);
+        if (deviceProjection.DenyAll)
+        {
+            return new BusinessConsoleMaintenanceWorkOrderListResponse([], request.Skip, request.Take, 0);
+        }
+
+        var response = await maintenance.ListWorkOrdersAsync(
+            tokenProvider.BearerToken,
+            deviceProjection.Request,
+            cancellationToken);
         var items = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
             response.Items,
             masterData,
