@@ -13,7 +13,7 @@ export function normalizeMaintenancePublicReference(value: unknown): string {
 }
 
 export function normalizeMaintenanceDeviceReference(value: unknown): string {
-  return normalizeMaintenancePublicReference(value)
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 export function normalizeMaintenanceDeviceReferences(values: unknown): string[] {

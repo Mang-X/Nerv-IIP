@@ -56,7 +56,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（12）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
+- `e2e/equipment.spec.ts`（13）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
   `skip/take` 为安全整数且与请求精确一致；HTTP 200 + `success:false` 或错页响应显式错误与重试
   （不渲染空态、不保留旧行，也不缓存错页）、强 `workOrderId` 详情重校验与只读生命周期；工单设备引用可为
   设备公开 ID 或设备编码，设备位置查询只接收当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用
@@ -65,7 +65,8 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   fail closed，维修队列与设备目录请求均为 0；主体 ID 缺失时列表、详情和设备目录请求也均为 0，
   且单元回归覆盖 Self scope/筛选/路由 A→B→A 时拒绝旧 A cache、403 前不闪回旧详情、迟到旧请求不污染
   当前 generation，设备/人员/班组 enrichment 只消费 fresh 权威详情；结构化 query key 覆盖冒号、逗号和
-  unit-separator 碰撞，公开 Guid 大小写归一而 `DEV-A`/`dev-a` 保持两个 Ordinal 业务编码；
+  unit-separator 碰撞；只有 MasterData 明确返回的强 `DeviceAssetId` 做 Guid 小写 canonicalize，未标注设备引用与
+  `Code` 只 trim 并保持 Ordinal，因此大写 Guid-shaped Code 在筛选、详情权威查询和报修提交中均不被改写；
   且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选实际触点高度 ≥48px，详情返回按钮实际触点高度 ≥44px；
   终态详情不提供写动作。报警行详情「去报修」后，从已确认创建回执取得强 `workOrderId`，但创建默认
   未指派，首次同一 principal 的 Self GET 返回 403，成功态仅显示等待派工且无详情入口；测试模拟外部

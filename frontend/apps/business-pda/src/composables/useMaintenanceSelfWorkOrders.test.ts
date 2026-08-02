@@ -367,7 +367,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     })
   })
 
-  it('normalizes GUID filters case-insensitively while preserving code case and Ordinal dedupe', async () => {
+  it('preserves GUID-shaped device references as opaque Ordinal codes', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
     const publicId = '019f0000-0000-7000-8000-000000000001'
@@ -377,7 +377,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(
       (requestFor('maintenance-list') as { query: { deviceAssetReferences?: string[] } }).query
         .deviceAssetReferences,
-    ).toEqual([publicId])
+    ).toEqual([publicId.toUpperCase(), publicId])
 
     result.filters.deviceAssetIds = ['DEV-A', 'dev-a', 'DEV-A']
     await nextTick()
@@ -453,7 +453,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
     expect(result.total.value).toBe(0)
   })
 
-  it('normalizes uppercase public GUIDs returned by the list contract', async () => {
+  it('canonicalizes the strong work-order ID but preserves the untyped device reference', async () => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrders()
     const workOrderId = workOrderGuid(1)
@@ -475,7 +475,10 @@ describe('useMaintenanceSelfWorkOrders', () => {
     }
     await nextTick()
 
-    expect(result.items.value[0]).toMatchObject({ workOrderId, deviceAssetId })
+    expect(result.items.value[0]).toMatchObject({
+      workOrderId,
+      deviceAssetId: deviceAssetId.toUpperCase(),
+    })
   })
 
   it('requires a fresh list generation when scope returns A to B to A', async () => {
@@ -1160,7 +1163,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     },
   )
 
-  it('accepts a device detail resolved by public ID when its business code differs', async () => {
+  it('accepts an uppercase device reference resolved to a canonical strong ID', async () => {
     seedPrincipal()
     const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
     const workOrderId = '019f0000-0000-7000-8000-000000000101'
@@ -1173,7 +1176,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     expect(requestFor('maintenance-detail')).toMatchObject({ path: { workOrderId } })
     expect(requestFor('device-detail')).toMatchObject({
-      path: { resourceType: 'device-asset', code: deviceAssetId },
+      path: { resourceType: 'device-asset', code: deviceAssetId.toUpperCase() },
     })
 
     api.data.get('device-detail')!.value = {
@@ -1192,8 +1195,48 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await nextTick()
 
     expect(result.hasSuccessfulResponse.value).toBe(true)
-    expect(result.workOrder.value).toMatchObject({ workOrderId, deviceAssetId })
+    expect(result.workOrder.value).toMatchObject({
+      workOrderId,
+      deviceAssetId: deviceAssetId.toUpperCase(),
+    })
     expect(result.device.value?.code).toBe('DEV-CNC-01')
+  })
+
+  it('preserves an uppercase GUID-shaped device code through detail authority lookup', async () => {
+    seedPrincipal()
+    const deviceCode = '019F0000-0000-7000-8000-0000000000AA'
+    const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+    const workOrderId = '019f0000-0000-7000-8000-000000000101'
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => workOrderId))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderId, deviceCode),
+    }
+    await nextTick()
+
+    expect(requestFor('device-detail')).toMatchObject({
+      path: { resourceType: 'device-asset', code: deviceCode },
+    })
+
+    api.data.get('device-detail')!.value = {
+      success: true,
+      data: {
+        resourceType: 'device-asset',
+        deviceAssetId: deviceAssetId.toUpperCase(),
+        code: deviceCode,
+        displayName: 'GUID 编码设备',
+        active: true,
+        snapshotVersion: 'device-v1',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+    }
+    await nextTick()
+
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.workOrder.value?.deviceAssetId).toBe(deviceCode)
+    expect(result.device.value?.deviceAssetId).toBe(deviceAssetId)
+    expect(result.device.value?.code).toBe(deviceCode)
   })
 
   it.each([

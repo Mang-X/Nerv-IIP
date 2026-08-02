@@ -166,44 +166,74 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
 {
     public async Task<MaintenanceWorkOrderDetail> Handle(GetMaintenanceWorkOrderQuery request, CancellationToken cancellationToken)
     {
-        var listed = await new ListMaintenanceWorkOrdersQueryHandler(dbContext).Handle(
-            new ListMaintenanceWorkOrdersQuery(
-                request.OrganizationId,
-                request.EnvironmentId,
-                Take: 1,
-                WorkOrderId: request.WorkOrderId.ToString()),
-            cancellationToken);
-        var workOrder = listed.Items.SingleOrDefault()
+        var snapshot = await SnapshotQuery(dbContext, request)
+            .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
-        var lifecycle = await dbContext.MaintenanceWorkOrderLifecycleEvents
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
-            .OrderBy(x => x.OccurredAtUtc)
-            .Select(x => new MaintenanceWorkOrderLifecycleEventItem(
-                x.Action.ToString(),
-                x.FromStatus.ToString(),
-                x.ToStatus.ToString(),
-                x.ActorPrincipalId,
-                x.TechnicianUserId,
-                x.TeamId,
-                x.Reason,
-                x.ResultingVersion,
-                x.OccurredAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var completionDataComplete = await dbContext.MaintenanceWorkOrders
+        var lifecycle = snapshot.Lifecycle
+            .OrderBy(item => item.OccurredAtUtc)
+            .ThenBy(item => item.ResultingVersion)
+            .ToArray();
+        var eligibility = MaintenanceWorkOrderEligibility.Evaluate(
+            snapshot.WorkOrder.Status,
+            snapshot.CompletionDataComplete);
+        return new MaintenanceWorkOrderDetail(
+            snapshot.WorkOrder,
+            lifecycle,
+            eligibility.AllowedActions,
+            eligibility.BlockReasons);
+    }
+
+    private static IQueryable<MaintenanceWorkOrderDetailSnapshot> SnapshotQuery(
+        ApplicationDbContext dbContext,
+        GetMaintenanceWorkOrderQuery request) =>
+        dbContext.MaintenanceWorkOrders
+            .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.Id == request.WorkOrderId)
-            .Select(x => x.CompletionResult != null
-                && x.DowntimeReasonCode != null
-                && x.DowntimeMinutes != null
-                && x.DowntimeMinutes > 0
-                && x.CompletedAtUtc != null)
-            .SingleAsync(cancellationToken);
-        var eligibility = MaintenanceWorkOrderEligibility.Evaluate(workOrder.Status, completionDataComplete);
-        return new MaintenanceWorkOrderDetail(workOrder, lifecycle, eligibility.AllowedActions, eligibility.BlockReasons);
-    }
+            .Select(x => new MaintenanceWorkOrderDetailSnapshot(
+                new MaintenanceWorkOrderListItem(
+                    x.Id,
+                    x.DeviceAssetId,
+                    x.Priority,
+                    x.Status.ToString(),
+                    x.SourceAlarmId,
+                    x.OpenedAtUtc,
+                    x.AssignedTechnicianUserId,
+                    x.ActualTechnicianUserId,
+                    x.EstimatedLaborMinutes,
+                    x.ActualLaborMinutes,
+                    x.SparePartCostAmount,
+                    x.ExternalServiceCostAmount,
+                    x.CostCurrencyCode,
+                    x.SourceReferenceId,
+                    x.AssignedTeamId,
+                    x.Version),
+                x.CompletionResult != null
+                    && x.DowntimeReasonCode != null
+                    && x.DowntimeMinutes != null
+                    && x.DowntimeMinutes > 0
+                    && x.CompletedAtUtc != null,
+                dbContext.MaintenanceWorkOrderLifecycleEvents
+                    .Where(lifecycle => lifecycle.OrganizationId == request.OrganizationId
+                        && lifecycle.EnvironmentId == request.EnvironmentId
+                        && lifecycle.WorkOrderId == x.Id)
+                    .Select(lifecycle => new MaintenanceWorkOrderLifecycleEventItem(
+                        lifecycle.Action.ToString(),
+                        lifecycle.FromStatus.ToString(),
+                        lifecycle.ToStatus.ToString(),
+                        lifecycle.ActorPrincipalId,
+                        lifecycle.TechnicianUserId,
+                        lifecycle.TeamId,
+                        lifecycle.Reason,
+                        lifecycle.ResultingVersion,
+                        lifecycle.OccurredAtUtc))
+                    .ToArray()));
+
+    private sealed record MaintenanceWorkOrderDetailSnapshot(
+        MaintenanceWorkOrderListItem WorkOrder,
+        bool CompletionDataComplete,
+        IReadOnlyCollection<MaintenanceWorkOrderLifecycleEventItem> Lifecycle);
 }
 
 public sealed record ProbeMaintenanceWorkOrderAssignmentReplayQuery(

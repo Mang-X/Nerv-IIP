@@ -1,3 +1,9 @@
+using System.Data.Common;
+using MediatR;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
@@ -144,11 +150,151 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     }
 
     [Fact]
+    public async Task Detail_reads_assignment_version_completion_and_lifecycle_from_one_atomic_snapshot()
+    {
+        var databaseName = $"maintenance-detail-race-{Guid.CreateVersion7():N}";
+        var connectionString = $"Data Source={databaseName};Mode=Memory;Cache=Shared";
+        await using var keeper = new SqliteConnection(connectionString);
+        await keeper.OpenAsync();
+        var mediator = new NoopMediator();
+        var baseOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+        MaintenanceWorkOrderId workOrderId;
+        await using (var seed = new ApplicationDbContext(baseOptions, mediator))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            var workOrder = MaintenanceWorkOrder.OpenManual(
+                "org-001", "env-dev", "DEV-RACE", "high", "reporter");
+            workOrder.Assign("tech-old", "team-old");
+            seed.MaintenanceWorkOrders.Add(workOrder);
+            seed.MaintenanceWorkOrderLifecycleEvents.Add(MaintenanceWorkOrderLifecycleEvent.Record(
+                workOrder,
+                MaintenanceWorkOrderAction.Assign,
+                MaintenanceWorkOrderStatus.Open,
+                "dispatcher-old",
+                "tech-old",
+                "team-old",
+                "initial assignment",
+                "assign-old",
+                "payload-old",
+                DateTimeOffset.UtcNow.AddMinutes(-1)));
+            await seed.SaveChangesAsync();
+            workOrderId = workOrder.Id;
+        }
+
+        var race = new ReassignAfterWorkOrderReaderInterceptor(() =>
+        {
+            using var writer = new ApplicationDbContext(baseOptions, mediator);
+            var workOrder = writer.MaintenanceWorkOrders.Single(x => x.Id == workOrderId);
+            workOrder.Assign("tech-new", "team-new");
+            writer.MaintenanceWorkOrderLifecycleEvents.Add(MaintenanceWorkOrderLifecycleEvent.Record(
+                workOrder,
+                MaintenanceWorkOrderAction.Assign,
+                MaintenanceWorkOrderStatus.Open,
+                "dispatcher-new",
+                "tech-new",
+                "team-new",
+                "race reassignment",
+                "assign-new",
+                "payload-new",
+                DateTimeOffset.UtcNow));
+            writer.SaveChanges();
+        });
+        var readerOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connectionString)
+            .AddInterceptors(race)
+            .Options;
+        await using var reader = new ApplicationDbContext(readerOptions, mediator);
+
+        var detail = await new GetMaintenanceWorkOrderQueryHandler(reader).Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", workOrderId),
+            CancellationToken.None);
+
+        Assert.True(race.Triggered);
+        Assert.Equal(1, race.ReaderCount);
+        var latestLifecycle = Assert.Single(detail.Lifecycle);
+        Assert.Equal(detail.WorkOrder.AssignedTechnicianUserId, latestLifecycle.TechnicianUserId);
+        Assert.Equal(detail.WorkOrder.AssignedTeamId, latestLifecycle.TeamId);
+        Assert.Equal(detail.WorkOrder.Version, latestLifecycle.ResultingVersion);
+    }
+
+    [Fact]
+    public void Detail_atomic_snapshot_projection_translates_for_postgresql()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=translation_only;Username=unused;Password=unused")
+            .Options;
+        using var db = new ApplicationDbContext(options, new NoopMediator());
+        var workOrderId = new MaintenanceWorkOrderId(Guid.CreateVersion7());
+
+        var snapshotQuery = typeof(GetMaintenanceWorkOrderQueryHandler).GetMethod(
+            "SnapshotQuery",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        var query = Assert.IsAssignableFrom<IQueryable>(snapshotQuery?.Invoke(
+            null,
+            [db, new GetMaintenanceWorkOrderQuery("org-001", "env-dev", workOrderId)]));
+        var sql = query.ToQueryString();
+
+        Assert.Contains("SELECT", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("maintenance_work_order_lifecycle_events", sql, StringComparison.Ordinal);
+        Assert.Contains("assigned_technician_user_id", sql, StringComparison.Ordinal);
+        Assert.Contains("completion_result", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Unknown_status_is_read_only_and_explainable()
     {
         var eligibility = MaintenanceWorkOrderEligibility.Evaluate("FutureState", completionDataComplete: true);
 
         Assert.Empty(eligibility.AllowedActions);
         Assert.Equal(["unknown-status"], eligibility.BlockReasons);
+    }
+
+    private sealed class ReassignAfterWorkOrderReaderInterceptor(Action reassign) : DbCommandInterceptor
+    {
+        public bool Triggered { get; private set; }
+
+        public int ReaderCount { get; private set; }
+
+        public override InterceptionResult DataReaderDisposing(
+            DbCommand command,
+            DataReaderDisposingEventData eventData,
+            InterceptionResult result)
+        {
+            ReaderCount++;
+            if (!Triggered && command.CommandText.Contains("assigned_technician_user_id", StringComparison.OrdinalIgnoreCase))
+            {
+                Triggered = true;
+                reassign();
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

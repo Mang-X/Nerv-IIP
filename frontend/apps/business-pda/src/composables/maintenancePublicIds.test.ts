@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  normalizeCanonicalGuid,
   normalizeMaintenanceDeviceReference,
   normalizeMaintenanceDeviceReferences,
   normalizeMaintenancePublicReference,
@@ -7,15 +8,21 @@ import {
 } from './maintenancePublicIds'
 
 describe('maintenance public identifiers', () => {
-  it('normalizes public GUIDs while preserving business-code Ordinal semantics', () => {
-    const publicId = '019F0000-0000-7000-8000-000000000001'
+  it('keeps untyped device references Ordinal while canonicalizing only explicit strong GUIDs', () => {
+    const guidShapedCode = '019F0000-0000-7000-8000-000000000001'
 
-    expect(normalizeMaintenanceDeviceReference(publicId)).toBe(publicId.toLowerCase())
+    expect(normalizeCanonicalGuid(guidShapedCode)).toBe(guidShapedCode.toLowerCase())
+    expect(normalizeMaintenanceDeviceReference(guidShapedCode)).toBe(guidShapedCode)
     expect(
-      normalizeMaintenanceDeviceReferences([publicId, publicId.toLowerCase(), 'DEV-A', 'dev-a']),
-    ).toEqual([publicId.toLowerCase(), 'DEV-A'])
+      normalizeMaintenanceDeviceReferences([
+        guidShapedCode,
+        guidShapedCode.toLowerCase(),
+        'DEV-A',
+        'dev-a',
+      ]),
+    ).toEqual([guidShapedCode, guidShapedCode.toLowerCase()])
     expect(normalizeMaintenanceDeviceReferences(['DEV-A', 'dev-a'])).toEqual(['DEV-A', 'dev-a'])
-    expect(normalizeMaintenancePublicReference(publicId)).toBe(publicId.toLowerCase())
+    expect(normalizeMaintenancePublicReference(guidShapedCode)).toBe(guidShapedCode.toLowerCase())
     expect(normalizeMaintenancePublicReference('ALM-A')).toBe('ALM-A')
     expect(normalizeMaintenancePublicReference('alm-a')).toBe('alm-a')
   })

@@ -4,9 +4,10 @@ import MaintenanceWorkOrderFilters from './components/MaintenanceWorkOrderFilter
 import MaintenanceWorkOrderList from './components/MaintenanceWorkOrderList.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
+  normalizeCanonicalGuid,
   normalizeMaintenanceDeviceReferences,
-  useMaintenanceSelfWorkOrders,
-} from '@/composables/useMaintenanceSelfWorkOrders'
+} from '@/composables/maintenancePublicIds'
+import { useMaintenanceSelfWorkOrders } from '@/composables/useMaintenanceSelfWorkOrders'
 import type {
   BusinessConsoleMaintenanceWorkOrderItem,
   BusinessConsoleResourceItem,
@@ -60,7 +61,7 @@ const filterState = computed(() => ({
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   const deviceCode = device.code?.trim()
-  const publicId = device.deviceAssetId.trim()
+  const publicId = normalizeCanonicalGuid(device.deviceAssetId)
   if (!deviceCode || !publicId) return
   filters.deviceAssetIds = normalizeMaintenanceDeviceReferences([publicId, deviceCode])
   selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'

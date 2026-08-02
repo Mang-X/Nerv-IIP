@@ -72,7 +72,7 @@ async function mountPage() {
           name: 'DeviceAssetPicker',
           props: ['open'],
           template:
-            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019f0000-0000-7000-8000-000000000302', code: 'DEV-CNC-01', displayName: '一号数控机床' })\">选择设备</button>",
+            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019F0000-0000-7000-8000-000000000302', code: '019F0000-0000-7000-8000-0000000000AA', displayName: '一号数控机床' })\">选择设备</button>",
         },
       },
     },
@@ -175,7 +175,7 @@ describe('maintenance self work-order queue page', () => {
     )
   })
 
-  it('stores the maintenance device code selected from the server directory', async () => {
+  it('canonicalizes the selected strong device ID without folding a GUID-shaped device code', async () => {
     state.scopeReady = true
     const { wrapper } = await mountPage()
 
@@ -183,7 +183,7 @@ describe('maintenance self work-order queue page', () => {
 
     expect(state.filters.deviceAssetIds).toEqual([
       '019f0000-0000-7000-8000-000000000302',
-      'DEV-CNC-01',
+      '019F0000-0000-7000-8000-0000000000AA',
     ])
     expect(wrapper.text()).toContain('一号数控机床')
   })

@@ -306,6 +306,142 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
 })
 
+test('维修工单：GUID 形设备编码在筛选、详情与报修中保持 Ordinal', async ({ page }) => {
+  const deviceCode = '019F0000-0000-7000-8000-0000000000AA'
+  const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+  const workOrderId = selfWorkOrderId(88)
+  const listRequests: URL[] = []
+  const deviceDetailRequests: URL[] = []
+  const postBodies: Record<string, unknown>[] = []
+  const device = {
+    deviceAssetId,
+    code: deviceCode,
+    displayName: 'GUID 编码设备',
+    active: true,
+    workshopCode: 'WS-GUID',
+  }
+  const workOrder = {
+    workOrderId,
+    sourceReferenceId: 'MWO-GUID-CODE',
+    deviceAssetId: deviceCode,
+    priority: 'high',
+    status: 'accepted',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    assignedTechnicianUserId: principal.principalId,
+    assignedTeamId: null,
+    version: 2,
+    allowedActions: [],
+    blockReasons: [],
+    lifecycle: [
+      {
+        action: 'accept',
+        fromStatus: 'open',
+        toStatus: 'accepted',
+        actorPrincipalId: principal.principalId,
+        technicianUserId: principal.principalId,
+        teamId: null,
+        reason: '现场接单',
+        resultingVersion: 2,
+        occurredAtUtc: '2026-08-02T01:01:00.000Z',
+      },
+    ],
+  }
+
+  await page.route('**/api/business-console/v1/master-data/device-assets**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { resources: [device], total: 1, truncated: false, limit: 20 },
+      }),
+    }),
+  )
+  await page.route('**/api/business-console/v1/master-data/resources/device-asset/**', (route) => {
+    deviceDetailRequests.push(new URL(route.request().url()))
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          ...device,
+          resourceType: 'device-asset',
+          organizationId: principal.organizationId,
+          environmentId: principal.environmentId,
+          retiredOn: null,
+          snapshotVersion: 'device-guid-code-v1',
+        },
+      }),
+    })
+  })
+  await page.route('**/api/business-console/v1/maintenance/work-orders**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const base = '/api/business-console/v1/maintenance/work-orders'
+    if (request.method() === 'POST' && url.pathname === base) {
+      postBodies.push(request.postDataJSON() as Record<string, unknown>)
+      return route.fallback()
+    }
+    if (request.method() !== 'GET') return route.fallback()
+    if (url.pathname === `${base}/${workOrderId}`) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: workOrder }),
+      })
+    }
+    if (url.pathname !== base) return route.fallback()
+    listRequests.push(url)
+    const skip = Number(url.searchParams.get('skip') ?? 0)
+    const take = Number(url.searchParams.get('take') ?? 20)
+    const requestedReferences = url.searchParams.getAll('deviceAssetReferences')
+    const items =
+      requestedReferences.length === 0 || requestedReferences.includes(deviceCode)
+        ? [workOrder]
+        : []
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items, total: items.length, skip, take },
+      }),
+    })
+  })
+
+  await page.goto('/equipment/work-orders')
+  await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(1)
+  await page.getByTestId('maintenance-device-filter').click()
+  await page.getByTestId(`device-option-${deviceAssetId}`).click()
+  await expect
+    .poll(() => listRequests.at(-1)?.searchParams.getAll('deviceAssetReferences'))
+    .toEqual([deviceAssetId, deviceCode])
+
+  await page.getByTestId('maintenance-work-order-row').press('Enter')
+  await expect(page).toHaveURL(`/equipment/work-orders/${workOrderId}`)
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('GUID 编码设备')
+  expect(deviceDetailRequests.at(-1)?.pathname).toBe(
+    `/api/business-console/v1/master-data/resources/device-asset/${deviceCode}`,
+  )
+
+  const sourceAlarmId = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'
+  await page.goto(`/equipment/repair?deviceAssetId=${deviceCode}&sourceAlarmId=${sourceAlarmId}`)
+  await expect(page.getByTestId('device-trigger')).toContainText(deviceCode)
+  await page.getByTestId('priority-trigger').click()
+  await page
+    .locator('[data-slot="mobile-sheet-content"]')
+    .getByRole('button', { name: '高', exact: true })
+    .click()
+  await page.getByTestId('submit').click()
+  await expect.poll(() => postBodies.length).toBe(1)
+  expect(postBodies[0]).toMatchObject({
+    deviceAssetId: deviceCode,
+    sourceAlarmId,
+    priority: 'high',
+  })
+})
+
 test('维修工单：HTTP 200 错位 skip/take 响应失败关闭且不渲染空态', async ({ page }) => {
   await page.route('**/api/business-console/v1/maintenance/work-orders**', async (route) => {
     const url = new URL(route.request().url())
@@ -342,6 +478,7 @@ test('维修工单：HTTP 200 错位 skip/take 响应失败关闭且不渲染空
 test('维修工单：畸形设备资料失败关闭，重试公开 ID 后不泄露机器来源引用', async ({ page }) => {
   const workOrderId = '019f1000-0000-7000-8000-000000000099'
   const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+  const deviceReference = deviceAssetId.toUpperCase()
   const deviceDetailRequests: URL[] = []
   let rejectMalformedDevice = true
   page.on('request', (request) => {
@@ -361,7 +498,7 @@ test('维修工单：畸形设备资料失败关闭，重试公开 ID 后不泄�
           data: {
             workOrderId: workOrderId.toUpperCase(),
             sourceReferenceId: '019f2000-0000-7000-8000-000000000099',
-            deviceAssetId: deviceAssetId.toUpperCase(),
+            deviceAssetId: deviceReference,
             priority: 'high',
             status: 'accepted',
             openedAtUtc: '2026-08-02T01:00:00.000Z',
@@ -377,7 +514,7 @@ test('维修工单：畸形设备资料失败关闭，重试公开 ID 后不泄�
     },
   )
   await page.route(
-    `**/api/business-console/v1/master-data/resources/device-asset/${deviceAssetId}**`,
+    `**/api/business-console/v1/master-data/resources/device-asset/${deviceReference}**`,
     async (route) => {
       await route.fulfill({
         status: 200,
@@ -423,7 +560,7 @@ test('维修工单：畸形设备资料失败关闭，重试公开 ID 后不泄�
     deviceDetailRequests.every(
       (url) =>
         url.pathname ===
-        `/api/business-console/v1/master-data/resources/device-asset/${deviceAssetId}`,
+        `/api/business-console/v1/master-data/resources/device-asset/${deviceReference}`,
     ),
   ).toBe(true)
 })

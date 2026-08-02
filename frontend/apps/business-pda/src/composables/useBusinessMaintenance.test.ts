@@ -198,7 +198,7 @@ describe('useBusinessMaintenance', () => {
     expect(arg.body.openedBy).toBe('admin')
   })
 
-  it('normalizes a public device GUID at the create request boundary without folding codes', async () => {
+  it('preserves an untyped GUID-shaped device code at the create request boundary', async () => {
     seedPrincipal()
     const { createWorkOrder } = useBusinessMaintenance()
 
@@ -214,7 +214,7 @@ describe('useBusinessMaintenance', () => {
     } as never)
 
     expect(coladaState.mutate.createWorkOrder.mock.calls[0][0].body.deviceAssetId).toBe(
-      '019f1000-0000-7000-8000-0000000000ab',
+      '019F1000-0000-7000-8000-0000000000AB',
     )
     expect(coladaState.mutate.createWorkOrder.mock.calls[1][0].body.deviceAssetId).toBe('DEV-A')
   })
