@@ -671,6 +671,7 @@ describe('business MES composables', () => {
     ).toEqual({
       code: 'MATERIAL_SHORTAGE',
       label: '物料缺料',
+      category: '物料齐套',
       detail: '物料 MAT-OIL，批次 LOT-OIL-A 缺口 2',
       nextStep: '在工单详情「用料齐套」发起领料；物料到线边后确认收料',
     })

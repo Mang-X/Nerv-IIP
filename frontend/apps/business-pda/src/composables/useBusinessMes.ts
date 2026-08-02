@@ -53,6 +53,7 @@ import {
   formatWorkScopeKey,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  statusActionGate,
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
@@ -61,7 +62,10 @@ import {
   useScopeBoundListResponse,
 } from '@/composables/useListFreshness'
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
-import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import {
+  assertLifecycleActionExecutable,
+  LifecycleActionUnavailableError,
+} from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskListPagination } from './useTaskListPagination'
 
@@ -85,6 +89,7 @@ export interface MesListFilters {
   environmentId: string
   status?: string
   keyword?: string
+  operationTaskId?: string
   workOrderId?: string
   workCenterId?: string
   deviceAssetId?: string
@@ -129,6 +134,7 @@ function toListQuery(filters: MesListFilters) {
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
+    ...optionalQuery('operationTaskId', filters.operationTaskId),
     ...optionalQuery('workOrderId', filters.workOrderId),
     ...optionalQuery('workCenterId', filters.workCenterId),
     ...optionalQuery('deviceAssetId', filters.deviceAssetId),
@@ -812,9 +818,30 @@ export function useMesExactOperationTask(
 export interface OperationActionOptions {
   reasonCode?: string
   idempotencyKey: string
+  context: OperationActionContext
 }
 
-type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+export type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+
+export interface OperationActionContext {
+  readonly principalId: string
+  readonly organizationId: string
+  readonly environmentId: string
+  readonly scopeKind: string
+  readonly scopeId: string
+  readonly action: OperationAction
+  readonly workOrderId: string
+  readonly operationTaskId: string
+}
+
+export class MesOperationActionContextChangedError extends Error {
+  readonly code = 'mes-operation-action-context-changed'
+
+  constructor() {
+    super('账号、组织、环境或作业范围已变化，旧操作不能重试。请返回当前列表重新发起。')
+    this.name = 'MesOperationActionContextChangedError'
+  }
+}
 
 async function readExactOperationTask(
   filters: MesScope,
@@ -829,7 +856,7 @@ async function readExactOperationTask(
       ...(workOrderId ? { workOrderId } : {}),
       scopeKind: selectedScope.kind,
       scopeId: selectedScope.id,
-      keyword: operationTaskId,
+      ...(source === 'operations' ? { operationTaskId } : { keyword: operationTaskId }),
       skip: 0,
       take: 2,
     },
@@ -865,11 +892,22 @@ export function useMesOperationTasks() {
       selectedScope?.id ?? '',
     ].join('\u0000')
   })
+  const operationActionContextIdentity = computed(() => {
+    const selectedScope = operationScope.selectedScope.value
+    return [
+      (auth.principal?.principalId ?? auth.sessionId ?? '').trim(),
+      filters.organizationId.trim(),
+      filters.environmentId.trim(),
+      selectedScope?.kind.trim() ?? '',
+      selectedScope?.id.trim() ?? '',
+    ].join('\u0000')
+  })
   const operationTasksIdentity = computed(() => {
     return [
       operationListContextIdentity.value,
       filters.status?.trim() ?? '',
       filters.keyword?.trim() ?? '',
+      filters.operationTaskId?.trim() ?? '',
       filters.workOrderId?.trim() ?? '',
       filters.workCenterId?.trim() ?? '',
       filters.deviceAssetId?.trim() ?? '',
@@ -958,18 +996,108 @@ export function useMesOperationTasks() {
     onSuccess: invalidate,
   })
 
-  function actionPayload(
+  function currentOperationActionContext(
+    action: OperationAction,
+    workOrderId: string,
     operationTaskId: string,
-    selectedScope: MesSelectedWorkScope,
-    options: OperationActionOptions,
+  ): OperationActionContext | null {
+    const selectedScope = operationScope.selectedScope.value
+    const context = {
+      principalId: (auth.principal?.principalId ?? auth.sessionId ?? '').trim(),
+      organizationId: filters.organizationId.trim(),
+      environmentId: filters.environmentId.trim(),
+      scopeKind: selectedScope?.kind.trim() ?? '',
+      scopeId: selectedScope?.id.trim() ?? '',
+      action,
+      workOrderId: workOrderId.trim(),
+      operationTaskId: operationTaskId.trim(),
+    } satisfies OperationActionContext
+    return Object.values(context).every((value) => value.length > 0) ? context : null
+  }
+
+  function captureOperationActionContext(
+    action: OperationAction,
+    workOrderId: string,
+    operationTaskId: string,
+  ): OperationActionContext {
+    operationScope.requireSelectedScope()
+    const context = currentOperationActionContext(action, workOrderId, operationTaskId)
+    if (!context) throw new MesOperationActionContextChangedError()
+    return Object.freeze(context)
+  }
+
+  function requireFrozenOperationActionContext(
+    value: OperationActionContext | undefined,
+    action: OperationAction,
+    workOrderId: string,
+    operationTaskId: string,
+  ): OperationActionContext {
+    if (!value || typeof value !== 'object') throw new MesOperationActionContextChangedError()
+    const expectedPair = {
+      action,
+      workOrderId: workOrderId.trim(),
+      operationTaskId: operationTaskId.trim(),
+    }
+    const fields = [
+      value.principalId,
+      value.organizationId,
+      value.environmentId,
+      value.scopeKind,
+      value.scopeId,
+      value.action,
+      value.workOrderId,
+      value.operationTaskId,
+    ]
+    if (
+      fields.some((field) => typeof field !== 'string' || field.trim().length === 0) ||
+      value.action !== expectedPair.action ||
+      value.workOrderId !== expectedPair.workOrderId ||
+      value.operationTaskId !== expectedPair.operationTaskId
+    ) {
+      throw new MesOperationActionContextChangedError()
+    }
+    return value
+  }
+
+  function sameOperationActionContext(
+    left: OperationActionContext | null,
+    right: OperationActionContext,
   ) {
+    return (
+      left !== null &&
+      left.principalId === right.principalId &&
+      left.organizationId === right.organizationId &&
+      left.environmentId === right.environmentId &&
+      left.scopeKind === right.scopeKind &&
+      left.scopeId === right.scopeId &&
+      left.action === right.action &&
+      left.workOrderId === right.workOrderId &&
+      left.operationTaskId === right.operationTaskId
+    )
+  }
+
+  function assertOperationActionContextCurrent(context: OperationActionContext) {
+    if (!isOperationActionContextCurrent(context)) {
+      throw new MesOperationActionContextChangedError()
+    }
+  }
+
+  function isOperationActionContextCurrent(context: OperationActionContext) {
+    return sameOperationActionContext(
+      currentOperationActionContext(context.action, context.workOrderId, context.operationTaskId),
+      context,
+    )
+  }
+
+  function actionPayload(context: OperationActionContext, options: OperationActionOptions) {
     const { reasonCode, idempotencyKey } = options
     return {
-      path: { operationTaskId },
+      path: { operationTaskId: context.operationTaskId },
       query: {
-        ...scopeQuery(filters),
-        scopeKind: selectedScope.kind,
-        scopeId: selectedScope.id,
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        scopeKind: context.scopeKind,
+        scopeId: context.scopeId,
       },
       body: {
         ...(reasonCode === undefined ? {} : { reasonCode }),
@@ -981,26 +1109,54 @@ export function useMesOperationTasks() {
   async function performAction(
     action: OperationAction,
     mutation: typeof startMutation,
+    workOrderId: string,
     operationTaskId: string,
     options: OperationActionOptions,
   ) {
-    const selectedScope = operationScope.requireSelectedScope()
+    const context = requireFrozenOperationActionContext(
+      options.context,
+      action,
+      workOrderId,
+      operationTaskId,
+    )
+    assertOperationActionContextCurrent(context)
     const scope = {
-      principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-      operationType: `mes.operation-task.${action}`,
-      payloadFingerprint: `${operationTaskId}:${selectedScope.kind}:${selectedScope.id}:${options.reasonCode ?? ''}`,
+      principalId: context.principalId,
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      operationType: `mes.operation-task.${context.action}`,
+      payloadFingerprint: `${context.workOrderId}:${context.operationTaskId}:${context.scopeKind}:${context.scopeId}:${options.reasonCode ?? ''}`,
     }
     const isReplay = Boolean(peekPendingBusinessIntent(scope))
     const pending = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
     try {
-      const authoritative = await readExactOperationTask(filters, operationTaskId, selectedScope)
-      assertLifecycleActionExecutable({
-        domain: 'mes-operation-task',
-        action,
-        facts: { status: authoritative?.status, idempotentReplay: isReplay },
-      })
+      const authoritative = await readExactOperationTask(
+        { organizationId: context.organizationId, environmentId: context.environmentId },
+        context.operationTaskId,
+        { kind: context.scopeKind, id: context.scopeId },
+        context.workOrderId,
+      )
+      assertOperationActionContextCurrent(context)
+      const serverAllowsAction =
+        authoritative?.allowedActions?.some(
+          (allowedAction) => allowedAction.trim().toLowerCase() === action,
+        ) ?? false
+      if (!serverAllowsAction) {
+        // A same-key replay may legitimately observe the transition's resulting state.
+        // A new intent must never reconstruct permission from status: an absent server
+        // action is authoritative and fails closed.
+        const replayGate = statusActionGate({
+          domain: 'mes-operation-task',
+          action,
+          facts: {
+            status: authoritative?.status,
+            idempotentReplay: isReplay,
+          },
+        })
+        if (!replayGate.legalNoop) {
+          throw new LifecycleActionUnavailableError(replayGate)
+        }
+      }
     } catch (error) {
       if (!isReplay) clearPendingBusinessIntent(scope)
       throw error
@@ -1008,15 +1164,15 @@ export function useMesOperationTasks() {
     return completePendingBusinessIntent(scope, async () =>
       confirmBusinessConsoleOperation(
         await mutation.mutateAsync(
-          actionPayload(operationTaskId, selectedScope, {
+          actionPayload(context, {
             ...options,
             idempotencyKey: pending.idempotencyKey,
           }),
         ),
         {
-          expectedOperationType: `mes.operation-task.${action}`,
+          expectedOperationType: `mes.operation-task.${context.action}`,
           expectedIdempotencyKey: pending.idempotencyKey,
-          expectedResourceId: operationTaskId,
+          expectedResourceId: context.operationTaskId,
         },
       ),
     )
@@ -1036,12 +1192,15 @@ export function useMesOperationTasks() {
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
     operationListContextIdentity,
+    operationActionContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,
     operationListScopePending: operationListScope.scopePending,
     operationListScopeReady: operationListScope.scopeReady,
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
+    captureOperationActionContext,
+    isOperationActionContextCurrent,
     lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
@@ -1050,14 +1209,14 @@ export function useMesOperationTasks() {
       queryCache.cancelQueries({
         predicate: isBusinessQuery('listBusinessConsoleMesOperationTasks'),
       }),
-    startTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('start', startMutation, operationTaskId, options),
-    pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('pause', pauseMutation, operationTaskId, options),
-    resumeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('resume', resumeMutation, operationTaskId, options),
-    completeTask: (operationTaskId: string, options: OperationActionOptions) =>
-      performAction('complete', completeMutation, operationTaskId, options),
+    startTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('start', startMutation, workOrderId, operationTaskId, options),
+    pauseTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('pause', pauseMutation, workOrderId, operationTaskId, options),
+    resumeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('resume', resumeMutation, workOrderId, operationTaskId, options),
+    completeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
+      performAction('complete', completeMutation, workOrderId, operationTaskId, options),
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||

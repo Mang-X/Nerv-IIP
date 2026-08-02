@@ -1624,7 +1624,7 @@ public sealed class BusinessGatewayProxyTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
-            "/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A&status=Queued&keyword=OP-10&skip=2&take=20");
+            "/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=TEAM-A&status=Queued&keyword=OP-10&operationTaskId=OP-10-EXACT&skip=2&take=20");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("TEAM-A", mes.LastOperationTaskListRequest!.TeamIds);
@@ -1632,6 +1632,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(mes.LastOperationTaskListRequest.WorkCenterIds);
         Assert.Equal("Queued", mes.LastOperationTaskListRequest.Status);
         Assert.Equal("OP-10", mes.LastOperationTaskListRequest.Keyword);
+        Assert.Equal("OP-10-EXACT", mes.LastOperationTaskListRequest.OperationTaskId);
         Assert.Equal(2, mes.LastOperationTaskListRequest.Skip);
         Assert.Equal(20, mes.LastOperationTaskListRequest.Take);
     }
@@ -1675,6 +1676,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user-admin", mes.LastReportableOperationTaskListRequest!.AssignedUserIds);
+        Assert.Null(mes.LastReportableOperationTaskListRequest.OperationTaskId);
         Assert.Equal(BusinessGatewayPermissions.MesReportingRead, auth.LastRequirement!.PermissionCode);
         Assert.True(auth.LastRequirement.IncludePrincipalContext);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
