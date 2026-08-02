@@ -46,6 +46,11 @@ public sealed class BusinessGatewayDataScopeFilter(
         AuthorizationDataScope? dataScope,
         CancellationToken cancellationToken)
     {
+        if (dataScope?.DenyAll == true)
+        {
+            return MaintenanceWorkOrderDataScopeProjection.Deny(request);
+        }
+
         var requested = DeviceReferenceGroups(request);
         var hasRestrictedScope = dataScope is { HasRestrictions: true };
         if (!requested.Specified && !hasRestrictedScope)
@@ -330,8 +335,9 @@ public sealed class BusinessGatewayDataScopeFilter(
                 && detail.Active
                 && !string.IsNullOrWhiteSpace(detail.SnapshotVersion)
                 && !string.IsNullOrWhiteSpace(code)
+                && deviceAssetId is not null
                 && referenceMatches
-                ? new ResolvedDeviceIdentity(deviceAssetId!, code, detail.SnapshotVersion.Trim())
+                ? new ResolvedDeviceIdentity(deviceAssetId, code, detail.SnapshotVersion.Trim())
                 : null;
         }
         catch (BusinessServiceProxyException)
@@ -469,15 +475,20 @@ public sealed class BusinessGatewayDataScopeFilter(
                 return null;
             }
 
-            var reverseResolved = await Task.WhenAll(resolved.Select(async result =>
-                (result.Reference, Initial: result.Device!, Reverse: await ResolveCachedAsync(result.Device!.Code))));
-            if (reverseResolved.Any(result => result.Reverse is null
-                || !SameDevice(result.Initial, result.Reverse)))
+            var authorityResolved = await Task.WhenAll(resolved.Select(async result =>
+                (result.Reference,
+                    Initial: result.Device!,
+                    ByCanonicalId: await ResolveCachedAsync(result.Device!.DeviceAssetId),
+                    ByCode: await ResolveCachedAsync(result.Device!.Code))));
+            if (authorityResolved.Any(result => result.ByCanonicalId is null
+                || result.ByCode is null
+                || !SameDevice(result.Initial, result.ByCanonicalId)
+                || !SameDevice(result.Initial, result.ByCode)))
             {
                 return null;
             }
 
-            return reverseResolved.ToDictionary(
+            return authorityResolved.ToDictionary(
                 result => result.Reference,
                 result => new VerifiedDeviceIdentity(
                     new DeviceSnapshotIdentity(result.Initial.DeviceAssetId, result.Initial.SnapshotVersion),

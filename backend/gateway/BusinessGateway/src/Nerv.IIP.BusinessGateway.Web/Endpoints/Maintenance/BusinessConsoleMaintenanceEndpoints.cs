@@ -282,19 +282,24 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var workOrderId = Route<string>("workOrderId")!;
-        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
-            workScopeResolver,
-            maintenance,
-            tokenProvider.BearerToken,
+        var scope = await workScopeResolver.ResolveAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
             BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
             request.ScopeKind,
             request.ScopeId,
+            cancellationToken);
+        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            scope,
             workOrderId,
             cancellationToken);
         var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, workOrderId, request, cancellationToken);
+        MaintenanceWorkScopeAccess.EnsureCurrentAssignment(scope, workOrder);
         var manageBlockReason = await GetManageBlockReasonAsync(request, bearerToken, workOrderId, cancellationToken);
         if (manageBlockReason is not null)
         {
@@ -570,6 +575,26 @@ internal static class MaintenanceWorkScopeAccess
         }
 
         return workOrder;
+    }
+
+    public static void EnsureCurrentAssignment(
+        PrincipalWorkScopeSelection scope,
+        BusinessConsoleMaintenanceWorkOrderItem workOrder)
+    {
+        if (scope.Kind == "organization")
+        {
+            return;
+        }
+
+        if ((scope.Kind == "self"
+                && string.Equals(workOrder.AssignedTechnicianUserId, scope.Id, StringComparison.Ordinal))
+            || (scope.Kind == "team"
+                && string.Equals(workOrder.AssignedTeamId, scope.Id, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        throw Forbidden();
     }
 
     public static async Task EnsureAssignmentTargetsAsync(

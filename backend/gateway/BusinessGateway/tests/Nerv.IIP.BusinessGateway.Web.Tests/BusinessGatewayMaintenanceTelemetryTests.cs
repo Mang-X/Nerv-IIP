@@ -641,6 +641,198 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Theory]
+    [InlineData("unrestricted", null)]
+    [InlineData("unrestricted", "")]
+    [InlineData("unrestricted", "not-a-guid")]
+    [InlineData("self", null)]
+    [InlineData("self", "")]
+    [InlineData("self", "not-a-guid")]
+    [InlineData("team", null)]
+    [InlineData("team", "")]
+    [InlineData("team", "not-a-guid")]
+    public async Task Maintenance_device_filter_fails_closed_when_master_data_returns_an_invalid_canonical_id(
+        string scopeScenario,
+        string? invalidCanonicalId)
+    {
+        IReadOnlyCollection<AuthorizationScopeGrant> scopeGrants = scopeScenario switch
+        {
+            "self" =>
+            [
+                new AuthorizationScopeGrant(
+                    "membership", "self-001", "self", "user-admin",
+                    [BusinessGatewayPermissions.MaintenanceWorkOrdersRead]),
+            ],
+            "team" =>
+            [
+                new AuthorizationScopeGrant(
+                    "membership", "team-001", "team", "team-a",
+                    [BusinessGatewayPermissions.MaintenanceWorkOrdersRead]),
+            ],
+            _ => [],
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: scopeGrants);
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = scopeScenario switch
+            {
+                "self" => PrincipalWorkContext(
+                    new BusinessMasterDataWorkContextCandidateScope(
+                        "self", "user-admin", "Current worker", "worker-user", [])),
+                "team" => PrincipalWorkContext(
+                    new BusinessMasterDataWorkContextCandidateScope(
+                        "team", "team-a", "Team A", "team", [])),
+                _ => null,
+            },
+            ResourceDetailFactory = request => DeviceDetail(request, invalidCanonicalId!, "DEV-A"),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var scopeQuery = scopeScenario switch
+        {
+            "self" => "&scopeKind=self&scopeId=user-admin",
+            "team" => "&scopeKind=team&scopeId=team-a",
+            _ => string.Empty,
+        };
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences=DEV-A&skip=4&take=8{scopeQuery}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+        Assert.Single(masterData.DetailRequests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+        Assert.Equal(4, data.GetProperty("skip").GetInt32());
+        Assert.Equal(8, data.GetProperty("take").GetInt32());
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Maintenance_code_filter_fails_closed_when_its_canonical_guid_collides_with_another_device_code()
+    {
+        var deviceAId = DeviceId(1);
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => request.Code switch
+            {
+                "DEV-A" => DeviceDetail(request, deviceAId, "DEV-A"),
+                _ when request.Code == deviceAId => throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "device-reference-ambiguous"),
+                _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
+            },
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences=DEV-A");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+        Assert.Equal(["DEV-A", deviceAId], masterData.DetailRequests.Select(request => request.Code).ToArray());
+        Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
+    }
+
+    [Fact]
+    public async Task Maintenance_guid_filter_fails_closed_when_its_device_code_collides_with_another_canonical_guid()
+    {
+        var deviceAId = DeviceId(1);
+        var deviceBId = DeviceId(2);
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => request.Code switch
+            {
+                _ when request.Code == deviceAId => DeviceDetail(request, deviceAId, deviceBId),
+                _ when request.Code == deviceBId => throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "device-reference-ambiguous"),
+                _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
+            },
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences={deviceAId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+        Assert.Equal([deviceAId, deviceBId], masterData.DetailRequests.Select(request => request.Code).ToArray());
+        Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
+    }
+
+    [Fact]
+    public async Task Maintenance_deny_all_short_circuits_before_resolving_a_valid_device_filter()
+    {
+        var deviceId = DeviceId(1);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], DenyAll: true));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-A"),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&deviceAssetReferences=DEV-A&skip=6&take=12");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+        Assert.Equal(0, masterData.ListResourcesCallCount);
+        Assert.Empty(masterData.DetailRequests);
+        Assert.Null(masterData.LastPrincipalWorkContextRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+        Assert.Equal(6, data.GetProperty("skip").GetInt32());
+        Assert.Equal(12, data.GetProperty("take").GetInt32());
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+    }
+
+    [Theory]
     [InlineData("missing")]
     [InlineData("outside-scope")]
     [InlineData("inactive")]
@@ -813,6 +1005,106 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=forged-user");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         Assert.Equal("user-admin", maintenance.LastWorkOrderListRequest.AssignedTechnicianUserIds);
+    }
+
+    [Fact]
+    public async Task Maintenance_self_detail_rechecks_the_current_assignment_after_the_list_preflight()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], SelfIds: ["user-admin"]),
+            [
+                new AuthorizationScopeGrant(
+                    "membership", "self-001", "self", "user-admin",
+                    [BusinessGatewayPermissions.MaintenanceWorkOrdersRead]),
+            ]);
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem(
+                    "wo-toctou-self", "DEV-A", "high", "Open", null, null, DateTimeOffset.UtcNow,
+                    AssignedTechnicianUserId: "user-admin"),
+            ],
+            WorkOrderDetailItem = new BusinessConsoleMaintenanceWorkOrderItem(
+                "wo-toctou-self", "DEV-A", "high", "Open", null, null, DateTimeOffset.UtcNow,
+                AssignedTechnicianUserId: "other-technician"),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self", "user-admin", "Current worker", "worker-user", [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders/wo-toctou-self?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("wo-toctou-self", maintenance.LastWorkOrderDetailId);
+        Assert.Empty(masterData.DetailRequests);
+        Assert.DoesNotContain("other-technician", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Maintenance_team_detail_rechecks_the_current_assignment_after_the_list_preflight()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership", "team-001", "team", "team-a",
+                    [BusinessGatewayPermissions.MaintenanceWorkOrdersRead]),
+            ]);
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem(
+                    "wo-toctou-team", "DEV-A", "high", "Open", null, null, DateTimeOffset.UtcNow,
+                    AssignedTeamId: "team-a"),
+            ],
+            WorkOrderDetailItem = new BusinessConsoleMaintenanceWorkOrderItem(
+                "wo-toctou-team", "DEV-A", "high", "Open", null, null, DateTimeOffset.UtcNow,
+                AssignedTeamId: "team-b"),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "team", "team-a", "Team A", "team", [])),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders/wo-toctou-team?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId=team-a");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("wo-toctou-team", maintenance.LastWorkOrderDetailId);
+        Assert.Empty(masterData.DetailRequests);
+        Assert.DoesNotContain("team-b", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2621,6 +2913,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public IReadOnlyCollection<string> WorkOrderDetailBlockReasons { get; init; } = [];
 
+    public BusinessConsoleMaintenanceWorkOrderItem? WorkOrderDetailItem { get; init; }
+
     public BusinessServiceProxyException? CompleteWorkOrderFailure { get; init; }
 
     public int CreateWorkOrderCallCount { get; private set; }
@@ -2728,7 +3022,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     {
         LastInternalToken = internalBearerToken;
         LastWorkOrderDetailId = workOrderId;
-        var configured = WorkOrderItems?.SingleOrDefault(item =>
+        var configured = WorkOrderDetailItem ?? WorkOrderItems?.SingleOrDefault(item =>
             string.Equals(item.WorkOrderId, workOrderId, StringComparison.Ordinal));
         return Task.FromResult((configured ?? new BusinessConsoleMaintenanceWorkOrderItem(
                 workOrderId,
