@@ -331,7 +331,18 @@ export const mesOperationTasks = [
     status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
+    // MES currently has no separate business work-order/task number or device display snapshot;
+    // public optional display fields stay null instead of echoing strong IDs.
+    workOrderNo: null,
+    operationTaskNo: null,
+    operationCode: 'OP-CUT',
+    deviceAssetId: 'device-asset-cnc-01',
+    deviceAssetCode: null,
+    deviceAssetName: null,
     qualityStatus: 'Pending',
+    allowedActions: ['pause', 'complete', 'report'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
   },
   {
     operationTaskId: 'OP-2',
@@ -339,25 +350,49 @@ export const mesOperationTasks = [
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    workOrderNo: null,
+    operationTaskNo: null,
+    operationCode: 'OP-ASSEMBLE',
+    deviceAssetId: 'device-asset-lathe-02',
+    deviceAssetCode: null,
+    deviceAssetName: null,
     qualityStatus: 'Pending',
+    allowedActions: [],
+    blockReasons: [
+      'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（工序 10）',
+      'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
+      'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
+      'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
+    ],
+    evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
   },
   {
     operationTaskId: 'OP-3',
     workOrderId: 'WO-2',
+    workOrderNo: null,
+    operationTaskNo: null,
     status: 'Queued',
     operationSequence: 10,
     workCenterId: 'WC-C',
     qualityStatus: 'Pending',
+    allowedActions: ['start'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:32:00.000Z',
   },
 ]
 
 const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
   operationTaskId: `OP-${index + 1}`,
   workOrderId: 'WO-501',
+  workOrderNo: null,
+  operationTaskNo: null,
   status: 'Queued',
   operationSequence: index + 1,
   workCenterId: 'WC-MANY',
   qualityStatus: 'Pending',
+  allowedActions: ['start'],
+  blockReasons: [],
+  evaluatedAtUtc: '2026-08-02T08:33:00.000Z',
 }))
 
 function confirmedOperation(
@@ -848,6 +883,10 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, envelope({ items: mesDispatchTasks, total: mesDispatchTasks.length }))
   }
 
+  if (pathname === `${base}/operation-sops/current`) {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
   // Operation-task actions: start/pause/resume/complete → 成功信封 + 权威回执。
   const operationActionMatch = pathname.match(
     /\/mes\/operation-tasks\/([^/]+)\/(start|pause|resume|complete)$/,
@@ -872,12 +911,16 @@ export async function routeBusinessConsoleApi(route: Route) {
   // 可报工工序精确回读（报工写前的权威事实来源）——与工序任务列表同一份数据、同样的分页。
   if (pathname === `${base}/reportable-operation-tasks` || pathname === `${base}/operation-tasks`) {
     const workOrderId = requestUrl.searchParams.get('workOrderId')
-    const scopedItems =
+    const operationTaskId = requestUrl.searchParams.get('operationTaskId')?.trim()
+    const workOrderScopedItems =
       workOrderId === 'WO-501'
         ? mesManyOperationTasks
         : workOrderId
           ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
           : mesOperationTasks
+    const scopedItems = operationTaskId
+      ? workOrderScopedItems.filter((task) => task.operationTaskId === operationTaskId)
+      : workOrderScopedItems
     const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
     const take = Number(requestUrl.searchParams.get('take') ?? 100)
     const items = scopedItems.slice(skip, skip + take)

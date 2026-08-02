@@ -1,9 +1,23 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
+import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent, h, nextTick, reactive, ref, shallowRef } from 'vue'
 
+type OperationTaskFixture = Omit<BusinessConsoleMesOperationTaskRow, 'status'> & { status?: string }
+
 const push = vi.fn()
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
 }))
@@ -28,11 +42,45 @@ vi.mock('vue-router', async () => {
 })
 
 // --- composable mock: 2 operation tasks with different statuses ---
-type ActionOptions = { reasonCode?: string; idempotencyKey: string }
-const completeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const startTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const pauseTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
-const resumeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
+type OperationActionContext = {
+  principalId: string
+  organizationId: string
+  environmentId: string
+  scopeKind: string
+  scopeId: string
+  action: 'start' | 'pause' | 'resume' | 'complete'
+  workOrderId: string
+  operationTaskId: string
+}
+type ActionOptions = {
+  reasonCode?: string
+  idempotencyKey: string
+  context: OperationActionContext
+}
+const completeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const startTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const pauseTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const resumeTask = vi.fn(
+  async (_workOrderId: string, _operationTaskId: string, _options: ActionOptions) => {},
+)
+const captureOperationActionContext = vi.fn(
+  (action: OperationActionContext['action'], workOrderId: string, operationTaskId: string) => ({
+    principalId: 'principal-001',
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    scopeKind: 'work-center',
+    scopeId: 'WC-A',
+    action,
+    workOrderId,
+    operationTaskId,
+  }),
+)
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
 const createSopFileDownloadGrant = vi.fn()
@@ -42,6 +90,7 @@ const filters = reactive({
   environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
+  operationTaskId: undefined as string | undefined,
 })
 const tasksErrorRef = ref<unknown>(null)
 const sopsErrorRef = ref<unknown>(null)
@@ -55,25 +104,51 @@ const operationListScopeRef = ref({
 const operationListContextIdentityRef = ref(
   'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
 )
+const operationActionContextIdentityRef = ref(
+  'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
+)
 
-const defaultTasks = [
+function isOperationActionContextCurrent(context: OperationActionContext) {
+  return (
+    operationActionContextIdentityRef.value ===
+    [
+      context.principalId,
+      context.organizationId,
+      context.environmentId,
+      context.scopeKind,
+      context.scopeId,
+    ].join('\u0000')
+  )
+}
+
+const defaultTasks: [OperationTaskFixture, OperationTaskFixture] = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
+    workOrderNo: 'MO-2026-0001',
+    operationTaskNo: null,
     status: 'InProgress',
     operationSequence: 10,
     operationCode: 'OP-CODE-1',
     workCenterId: 'WC-A',
+    allowedActions: ['pause', 'complete'],
+    blockReasons: [] as string[],
+    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
   },
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-2026-0002',
+    workOrderNo: 'MO-2026-0002',
+    operationTaskNo: null,
     status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    allowedActions: ['start'],
+    blockReasons: [] as string[],
+    evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
   },
 ]
-const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
+const operationTasksRef = ref<OperationTaskFixture[]>(defaultTasks)
 const tasksPendingRef = ref(false)
 const tasksRefreshingRef = ref(false)
 const tasksSuccessfulRef = ref(true)
@@ -103,11 +178,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
     actionPending: ref(false),
     operationListScope: operationListScopeRef,
     operationListContextIdentity: operationListContextIdentityRef,
+    operationActionContextIdentity: operationActionContextIdentityRef,
     operationListScopeMessage: ref(''),
     operationListScopeReady: ref(true),
     operationScopeMessage: operationScopeMessageRef,
     operationScopePending: ref(false),
     operationScopeReady: operationScopeReadyRef,
+    captureOperationActionContext,
+    isOperationActionContextCurrent,
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -133,10 +211,10 @@ import OperationPage from './operation.vue'
 
 describe('PDA MES operation execution page', () => {
   beforeEach(() => {
-    completeTask.mockClear()
-    startTask.mockClear()
-    pauseTask.mockClear()
-    resumeTask.mockClear()
+    completeTask.mockReset().mockResolvedValue(undefined)
+    startTask.mockReset().mockResolvedValue(undefined)
+    pauseTask.mockReset().mockResolvedValue(undefined)
+    resumeTask.mockReset().mockResolvedValue(undefined)
     refresh.mockClear()
     refreshSops.mockClear()
     tasksErrorRef.value = null
@@ -151,15 +229,20 @@ describe('PDA MES operation execution page', () => {
     }
     operationListContextIdentityRef.value =
       'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
     operationTasksRef.value = defaultTasks
     tasksPendingRef.value = false
     tasksSuccessfulRef.value = true
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
-    push.mockClear()
+    push.mockReset().mockResolvedValue(undefined)
     routeGuardState.guard = undefined
     filters.keyword = undefined
+    filters.organizationId = 'org-001'
+    filters.environmentId = 'env-dev'
     filters.workOrderId = undefined
+    filters.operationTaskId = undefined
     routeState.replaceQuery?.({})
   })
 
@@ -178,11 +261,54 @@ describe('PDA MES operation execution page', () => {
     return event
   }
 
+  type PageDriftKind = 'route' | 'principal' | 'organization-environment' | 'manage-scope'
+  const pageDriftCases: Array<{ drift: PageDriftKind; label: string }> = [
+    { drift: 'route', label: 'route pair' },
+    { drift: 'principal', label: 'principal' },
+    { drift: 'organization-environment', label: 'organization/environment' },
+    { drift: 'manage-scope', label: 'manage scope' },
+  ]
+  const staleOutcomes = ['success', 'error'] as const
+
+  async function applyPageDrift(drift: PageDriftKind) {
+    if (drift === 'route') {
+      routeState.replaceQuery?.({
+        workOrderId: 'WO-2026-0002',
+        operationTaskId: 'OP-2',
+      })
+    } else if (drift === 'principal') {
+      operationListContextIdentityRef.value =
+        'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+      operationActionContextIdentityRef.value =
+        'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    } else if (drift === 'organization-environment') {
+      filters.organizationId = 'org-002'
+      filters.environmentId = 'env-qa'
+      operationListContextIdentityRef.value =
+        'principal-001\u0000org-002\u0000env-qa\u0000work-center\u0000WC-A'
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-002\u0000env-qa\u0000work-center\u0000WC-A'
+    } else {
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    }
+    await nextTick()
+  }
+
+  async function beginCompleteAction(wrapper: ReturnType<typeof mount>) {
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await nextTick()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await nextTick()
+  }
+
   it('renders the scan bar and an operation ListRow per task', () => {
     const wrapper = mount(OperationPage)
     expect(wrapper.find('input[placeholder^="扫"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0001')
-    expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).toContain('MO-2026-0001')
+    expect(wrapper.text()).toContain('MO-2026-0002')
     expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
     // 工序序号可读呈现
     expect(wrapper.text()).toContain('工序 10')
@@ -206,6 +332,96 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
+  it('renders a non-null readable operationTaskNo with server-evaluated blocker details', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workOrderId: 'work-order-internal-42',
+        operationTaskId: 'operation-task-internal-20',
+        workOrderNo: 'MO-2026-0042',
+        operationTaskNo: 'OP-TASK-0020',
+        operationCode: 'OP-CUT',
+        deviceAssetId: 'device-asset-lathe-07',
+        deviceAssetCode: 'DEV-LATHE-07',
+        deviceAssetName: '七号数控车床',
+        allowedActions: [],
+        blockReasons: [
+          'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（工序 10）',
+          'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
+          'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
+          'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
+        ],
+        evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('MO-2026-0042')
+    expect(document.body.textContent).toContain('OP-TASK-0020')
+    expect(document.body.textContent).toContain('七号数控车床（DEV-LATHE-07）')
+    expect(document.body.textContent).not.toContain('work-order-internal-42')
+    expect(document.body.textContent).not.toContain('operation-task-internal-20')
+    expect(document.body.textContent).not.toContain('device-asset-lathe-07')
+    expect(document.body.textContent).toContain('2026')
+    expect(document.body.textContent).toContain('前序工序')
+    expect(document.body.textContent).toContain('物料齐套')
+    expect(document.body.textContent).toContain('设备')
+    expect(document.body.textContent).toContain('质量')
+    expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
+  })
+
+  it('shows explicit unavailable copy instead of raw identifiers when readable references are absent', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[1],
+        workOrderId: 'work-order-internal-missing',
+        operationTaskId: 'operation-task-internal-missing',
+        workOrderNo: undefined,
+        operationTaskNo: undefined,
+        operationCode: 'OP-STANDARD-20',
+        deviceAssetId: 'device-asset-internal-missing',
+        allowedActions: [],
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('工单信息未提供')
+    expect(document.body.textContent).toContain('工序任务信息未提供')
+    const taskDefinition = [...document.body.querySelectorAll('dt')].find(
+      (term) => term.textContent === '工序任务',
+    )?.nextElementSibling
+    expect(taskDefinition?.textContent).toBe('工序任务信息未提供')
+    expect(document.body.textContent).toContain('OP-STANDARD-20')
+    expect(document.body.textContent).toContain('设备信息未提供')
+    expect(document.body.textContent).not.toContain('work-order-internal-missing')
+    expect(document.body.textContent).not.toContain('operation-task-internal-missing')
+    expect(document.body.textContent).not.toContain('device-asset-internal-missing')
+  })
+
+  it('renders lifecycle buttons only from server allowedActions instead of local status guesses', async () => {
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[0],
+        status: 'InProgress',
+        allowedActions: ['resume'],
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="action-resume"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="action-pause"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="action-complete"]')).toBeNull()
+  })
+
   it('consumes the workOrderId and operationTaskId deep link and opens that exact task', async () => {
     routeState.replaceQuery?.({
       workOrderId: 'WO-2026-0002',
@@ -216,8 +432,10 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
-    expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(filters.operationTaskId).toBe('OP-2')
+    expect(filters.keyword).toBeUndefined()
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes the old task and waits for the new pair response when the reused route query changes', async () => {
@@ -227,7 +445,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -239,16 +457,19 @@ describe('PDA MES operation execution page', () => {
     await nextTick()
 
     expect(filters.workOrderId).toBe('WO-2026-0002')
-    expect(filters.keyword).toBe('OP-2')
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(filters.operationTaskId).toBe('OP-2')
+    expect(filters.keyword).toBeUndefined()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
 
     operationTasksRef.value = [defaultTasks[1]]
     tasksSuccessfulRef.value = true
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0002 · 工序 20')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes a fixed-pair sheet and reopens only from the new scope response', async () => {
@@ -258,7 +479,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -271,7 +492,9 @@ describe('PDA MES operation execution page', () => {
       'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
     await nextTick()
 
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
 
     operationTasksRef.value = [
       {
@@ -284,8 +507,8 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 30')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 30')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
   })
 
   it('closes a fixed-pair sheet and fails closed when the new scope omits the task', async () => {
@@ -295,7 +518,7 @@ describe('PDA MES operation execution page', () => {
     })
     const wrapper = mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -308,7 +531,9 @@ describe('PDA MES operation execution page', () => {
       'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
     await nextTick()
 
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
 
     operationTasksRef.value = []
     tasksSuccessfulRef.value = true
@@ -318,7 +543,9 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.get('[data-testid="operation-deep-link-message"]').text()).toContain(
       '未在当前主体授权作业范围内找到指定工序任务',
     )
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
   })
 
   it('does not revive a fixed-pair sheet from a stale response after rapid scope changes', async () => {
@@ -328,7 +555,7 @@ describe('PDA MES operation execution page', () => {
     })
     mount(OperationPage, { attachTo: document.body })
     await flushPromises()
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
 
     tasksPendingRef.value = true
     tasksSuccessfulRef.value = false
@@ -341,7 +568,9 @@ describe('PDA MES operation execution page', () => {
 
     operationTasksRef.value = [defaultTasks[0]]
     await flushPromises()
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
 
     operationTasksRef.value = [
       {
@@ -354,8 +583,33 @@ describe('PDA MES operation execution page', () => {
     tasksPendingRef.value = false
     await flushPromises()
 
-    expect(document.body.textContent).toContain('WO-2026-0001 · 工序 40')
-    expect(document.body.textContent).not.toContain('WO-2026-0001 · 工序 10')
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 40')
+    expect(document.body.textContent).not.toContain('MO-2026-0001 · 工序 10')
+  })
+
+  it('waits for the manage scope when exact task data arrives first, then opens the deep link', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    operationScopeReadyRef.value = false
+    operationActionContextIdentityRef.value = 'principal-001\u0000org-001\u0000env-dev\u0000\u0000'
+    mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
+
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    operationScopeReadyRef.value = true
+    await flushPromises()
+
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).not.toBeNull()
+    expect(document.body.textContent).toContain('MO-2026-0001 · 工序 10')
   })
 
   it('fails closed when a reused route changes to an incomplete task identity', async () => {
@@ -367,7 +621,9 @@ describe('PDA MES operation execution page', () => {
       '缺少工单或任务标识',
     )
     expect(wrapper.findAll('[data-row]')).toHaveLength(0)
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
   })
 
   it('fails closed when the exact pair is absent from the authorized response', async () => {
@@ -382,7 +638,9 @@ describe('PDA MES operation execution page', () => {
       '未在当前主体授权作业范围内找到指定工序任务',
     )
     expect(wrapper.findAll('[data-row]')).toHaveLength(0)
-    expect(document.body.querySelector('[data-slot="bottom-sheet"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+    ).toBeNull()
   })
 
   it('shows the missing-scope reason and disables lifecycle actions', async () => {
@@ -405,7 +663,7 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
-  it('completes a task only after explicit confirmation, calling completeTask with the id', async () => {
+  it('completes a task only after explicit confirmation, calling completeTask with the exact pair', async () => {
     const wrapper = mount(OperationPage, { attachTo: document.body })
     const rows = wrapper.findAll('[data-row]')
     await rows[0].trigger('click')
@@ -422,17 +680,164 @@ describe('PDA MES operation execution page', () => {
     confirmBtn.click()
     await flushPromises()
     expect(completeTask).toHaveBeenCalledWith(
+      'WO-2026-0001',
       'OP-1',
       expect.objectContaining({ idempotencyKey: expect.any(String) }),
     )
-    expect(completeTask.mock.calls[0][1].idempotencyKey).toBeTruthy()
+    expect(completeTask.mock.calls[0][2].idempotencyKey).toBeTruthy()
 
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
+    expect(wrapper.text()).toContain('MO-2026-0001 · 工序任务信息未提供')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
+  })
+
+  it.each(
+    pageDriftCases.flatMap(({ drift, label }) =>
+      staleOutcomes.map((outcome) => ({ drift, label, outcome })),
+    ),
+  )(
+    'drops stale $outcome from an in-flight action after $label drift',
+    async ({ drift, outcome }) => {
+      const pendingMutation = deferred<void>()
+      completeTask.mockImplementationOnce(() => pendingMutation.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      await applyPageDrift(drift)
+
+      if (outcome === 'success') pendingMutation.resolve()
+      else pendingMutation.reject(new Error('stale mutation failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('工序已完成')
+      expect(wrapper.text()).not.toContain('操作失败')
+    },
+  )
+
+  it.each(
+    pageDriftCases.flatMap(({ drift, label }) =>
+      staleOutcomes.map((outcome) => ({ drift, label, outcome })),
+    ),
+  )(
+    'drops stale $outcome from an in-flight retry after $label drift',
+    async ({ drift, outcome }) => {
+      const pendingRetry = deferred<void>()
+      completeTask
+        .mockRejectedValueOnce(new RequestTimeoutError())
+        .mockImplementationOnce(() => pendingRetry.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      await flushPromises()
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      expect(completeTask).toHaveBeenCalledTimes(2)
+      await applyPageDrift(drift)
+
+      if (outcome === 'success') pendingRetry.resolve()
+      else pendingRetry.reject(new Error('stale retry failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('工序已完成')
+      expect(wrapper.text()).not.toContain('操作失败')
+    },
+  )
+
+  it.each(staleOutcomes)(
+    'keeps list selection B when an in-flight action for A returns stale $outcome',
+    async (outcome) => {
+      const pendingMutation = deferred<void>()
+      completeTask.mockImplementationOnce(() => pendingMutation.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      await wrapper.findAll('[data-row]')[1].trigger('click')
+      await flushPromises()
+      expect(
+        document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+      ).not.toBeNull()
+      expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+
+      if (outcome === 'success') pendingMutation.resolve()
+      else pendingMutation.reject(new Error('stale selection failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(
+        document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+      ).not.toBeNull()
+      expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    },
+  )
+
+  it.each(staleOutcomes)(
+    'keeps list selection B when an in-flight retry for A returns stale $outcome',
+    async (outcome) => {
+      const pendingRetry = deferred<void>()
+      completeTask
+        .mockRejectedValueOnce({ status: 422, message: '数量校验失败' })
+        .mockImplementationOnce(() => pendingRetry.promise)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+
+      await beginCompleteAction(wrapper)
+      await flushPromises()
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      await wrapper.findAll('[data-row]')[1].trigger('click')
+      await flushPromises()
+      expect(
+        document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+      ).not.toBeNull()
+      expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+
+      if (outcome === 'success') pendingRetry.resolve()
+      else pendingRetry.reject(new Error('stale selection retry failure'))
+      await flushPromises()
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(false)
+      expect(
+        document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
+      ).not.toBeNull()
+      expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    },
+  )
+
+  it('does not show success for an accepted but unconfirmed operation receipt', async () => {
+    completeTask.mockRejectedValueOnce(
+      Object.assign(new Error('请求已受理，但权威状态尚未确认'), {
+        code: 'business-operation-unconfirmed',
+      }),
+    )
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('MO-2026-0001 · 工序任务信息未提供')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
+    expect(wrapper.text()).toContain('结果尚未核实')
   })
 
   it('shows an error Result without locking route/refresh leave after a determinate 4xx', async () => {
@@ -510,8 +915,8 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(completeTask).toHaveBeenCalledTimes(2)
-    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
-    const retryKey = completeTask.mock.calls[1][1].idempotencyKey
+    const firstKey = completeTask.mock.calls[0][2].idempotencyKey
+    const retryKey = completeTask.mock.calls[1][2].idempotencyKey
     expect(firstKey).toBeTruthy()
     expect(retryKey).toBe(firstKey)
 
@@ -528,7 +933,7 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(pauseTask).toHaveBeenCalledTimes(1)
-    const pauseKey = pauseTask.mock.calls[0][1].idempotencyKey
+    const pauseKey = pauseTask.mock.calls[0][2].idempotencyKey
     expect(pauseKey).toBeTruthy()
     expect(pauseKey).not.toBe(firstKey)
     wrapper.unmount()
@@ -544,7 +949,7 @@ describe('PDA MES operation execution page', () => {
     document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
 
-    const firstKey = completeTask.mock.calls[0][1].idempotencyKey
+    const firstKey = completeTask.mock.calls[0][2].idempotencyKey
     const back = wrapper.get('[data-testid="back-to-list"]')
     expect(back.attributes('disabled')).toBeDefined()
     await back.trigger('click')
@@ -556,10 +961,275 @@ describe('PDA MES operation execution page', () => {
     await wrapper.get('[data-testid="retry-action"]').trigger('click')
     await flushPromises()
     expect(completeTask).toHaveBeenCalledTimes(2)
-    expect(completeTask.mock.calls[1][1].idempotencyKey).toBe(firstKey)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstKey)
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
     wrapper.unmount()
+  })
+
+  it.each([
+    {
+      label: 'principal',
+      identity: 'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'organization',
+      identity: 'principal-001\u0000org-002\u0000env-dev\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'environment',
+      identity: 'principal-001\u0000org-001\u0000env-qa\u0000work-center\u0000WC-A',
+    },
+    {
+      label: 'manage scope',
+      identity: 'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B',
+    },
+  ])(
+    'preflights frozen retry context after $label drift without calling the mutation',
+    async ({ identity }) => {
+      completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+      const wrapper = mount(OperationPage, { attachTo: document.body })
+      await wrapper.findAll('[data-row]')[0].trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+      await flushPromises()
+
+      const firstOptions = completeTask.mock.calls[0][2]
+      operationActionContextIdentityRef.value = identity
+      await nextTick()
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+      expect(wrapper.text()).not.toContain('网络')
+      expect(wrapper.text()).not.toContain('WO-2026-0001')
+      expect(wrapper.text()).not.toContain('OP-1')
+      expect(wrapper.get('[data-testid="back-to-list"]').attributes('disabled')).toBeUndefined()
+
+      operationActionContextIdentityRef.value =
+        'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+      await nextTick()
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+      expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="retry-action"]').trigger('click')
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(2)
+      expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+      expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+    },
+  )
+
+  it('preflights an unknown result against the exact deep-link pair and recovers the same intent after returning', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-2',
+    })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    await nextTick()
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
+  it('fails closed on an incomplete deep-link query without consuming the retained intent', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    routeState.replaceQuery?.({ operationTaskId: 'OP-1' })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
+  it('keeps a deep-link context conflict through identity restoration without auto reopening the task', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
+  it('clears a context-conflict retry when the route moves to another exact pair', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+
+    routeState.replaceQuery?.({ workOrderId: 'WO-2026-0002', operationTaskId: 'OP-2' })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+  })
+
+  it('lets the operator leave a context conflict and open a fresh task selection', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="back-to-list"]').trigger('click')
+    expect(wrapper.text()).not.toContain('账号、组织、环境或作业范围已变化')
+    await wrapper.findAll('[data-row]')[1].trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.querySelector('[data-testid="action-start"]')).not.toBeNull()
+  })
+
+  it('clears an ordinary determinate error when the action identity changes', async () => {
+    completeTask.mockRejectedValueOnce(new Error('当前工序仍有未完成检查项。'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前工序仍有未完成检查项')
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('当前工序仍有未完成检查项')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+  })
+
+  it('presents readable predecessor sequences from a rejected complete command without raw task IDs', async () => {
+    completeTask.mockRejectedValueOnce(new Error('前序工序尚未完成：工序 10、工序 20 等 4 道。'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('前序工序尚未完成：工序 10、工序 20 等 4 道。')
+    expect(wrapper.text()).not.toContain('WO-2026-0001')
+    expect(wrapper.text()).not.toContain('OP-1')
+    expect(wrapper.text()).not.toContain('OP-10')
+    expect(wrapper.text()).not.toContain('OP-20')
   })
 
   it('removes the beforeunload guard when the operation route component is removed', async () => {

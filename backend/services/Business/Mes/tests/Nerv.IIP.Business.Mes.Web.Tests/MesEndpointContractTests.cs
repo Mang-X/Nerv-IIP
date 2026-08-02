@@ -89,6 +89,40 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Complete_operation_endpoint_preserves_readable_predecessor_sequences_without_raw_task_ids()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new PreviousOperationIncompleteSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/operation-tasks/OP-CURRENT-INTERNAL/complete",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                idempotencyKey = "complete-predecessor-rejected",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("前序工序尚未完成：工序 10、工序 20 等 4 道。", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-PREVIOUS-INTERNAL", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-CURRENT-INTERNAL", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Convert_plan_endpoint_returns_422_with_routing_snapshot_error_code()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -811,6 +845,7 @@ public sealed class MesEndpointContractTests
                     TimeSpan.FromMinutes(30),
                     OperationCode: "OP-MIX"),
             ]);
+        tasks.Single().Assign(null, "device-asset-cnc-01", null, dueUtc.AddMinutes(-40));
         workOrder.Start(dueUtc.AddMinutes(-30));
         tasks.Single().Start(dueUtc.AddMinutes(-30));
         dbContext.WorkOrders.Add(workOrder);
@@ -840,9 +875,21 @@ public sealed class MesEndpointContractTests
         Assert.Empty(detail.BlockingReasons);
         var detailOperation = Assert.Single(detail.OperationTasks);
         Assert.Equal("OP-10", detailOperation.OperationTaskId);
+        Assert.Equal("WO-001", detailOperation.WorkOrderId);
+        Assert.Null(detailOperation.WorkOrderNo);
+        Assert.Null(detailOperation.OperationTaskNo);
+        Assert.Equal("device-asset-cnc-01", detailOperation.DeviceAssetId);
+        Assert.Null(detailOperation.DeviceAssetCode);
+        Assert.Null(detailOperation.DeviceAssetName);
         Assert.Equal("OP-MIX", detailOperation.OperationCode);
         var operation = Assert.Single(operations.Items);
         Assert.Equal("OP-10", operation.OperationTaskId);
+        Assert.Equal("WO-001", operation.WorkOrderId);
+        Assert.Null(operation.WorkOrderNo);
+        Assert.Null(operation.OperationTaskNo);
+        Assert.Equal("device-asset-cnc-01", operation.DeviceAssetId);
+        Assert.Null(operation.DeviceAssetCode);
+        Assert.Null(operation.DeviceAssetName);
         Assert.Equal("OP-MIX", operation.OperationCode);
         var wipRow = Assert.Single(wip.Items);
         Assert.Equal(10m, wipRow.PlannedQuantity);
@@ -928,10 +975,11 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1, result.Total);
         Assert.Equal("WO-EXACT-A", item.WorkOrderId);
         Assert.Equal("OP-A", item.OperationTaskId);
+        Assert.Null(item.OperationTaskNo);
     }
 
     [Fact]
-    public async Task List_operation_tasks_endpoint_forwards_exact_work_order_id()
+    public async Task List_operation_tasks_endpoint_forwards_exact_strong_id_pair()
     {
         var sender = new CapturingListOperationTasksSender();
         await using var factory = new WebApplicationFactory<Program>()
@@ -949,13 +997,14 @@ public sealed class MesEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
 
         var response = await client.GetAsync(
-            "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&workOrderId=WO-EXACT-A&skip=0&take=100");
+            "/api/business/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&workOrderId=WO-EXACT-A&operationTaskId=OP-EXACT-A&skip=0&take=100");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(sender.Query);
         Assert.Equal("org-001", sender.Query.OrganizationId);
         Assert.Equal("env-dev", sender.Query.EnvironmentId);
         Assert.Equal("WO-EXACT-A", sender.Query.WorkOrderId);
+        Assert.Equal("OP-EXACT-A", sender.Query.OperationTaskId);
     }
 
     [Fact]
@@ -1510,11 +1559,11 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1, operationTasks.Total);
         var operationTask = Assert.Single(operationTasks.Items);
         Assert.Equal("OP-FILTER-10", operationTask.OperationTaskId);
-        Assert.Equal("WO-FILTER-001", operationTask.WorkOrderNo);
-        Assert.Equal("OP-FILTER-10", operationTask.OperationTaskNo);
+        Assert.Null(operationTask.WorkOrderNo);
+        Assert.Null(operationTask.OperationTaskNo);
         Assert.Equal("WC-FILTER", operationTask.WorkCenterCode);
         Assert.Null(operationTask.WorkCenterName);
-        Assert.Equal("DEV-FILTER", operationTask.DeviceAssetCode);
+        Assert.Null(operationTask.DeviceAssetCode);
         Assert.Null(operationTask.DeviceAssetName);
         Assert.Equal(1, dispatchTasks.Total);
         var dispatchTask = Assert.Single(dispatchTasks.Items);
@@ -2171,6 +2220,38 @@ public sealed class MesEndpointContractTests
             _ = cancellationToken;
             return Task.FromException<TResponse>(
                 new MesRoutingSnapshotMissingException("product-engineering:missing-production-version"));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class PreviousOperationIncompleteSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Assert.IsType<ChangeOperationTaskStateCommand>(request);
+            return Task.FromException<TResponse>(
+                new KnownException("前序工序尚未完成：工序 10、工序 20 等 4 道。"));
         }
 
         public Task Send<TRequest>(

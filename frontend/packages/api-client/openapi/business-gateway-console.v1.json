@@ -16113,6 +16113,14 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "operationTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -44679,6 +44687,10 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReportableOperationTaskListRequest": {
         "type": "object",
         "additionalProperties": false
       },

@@ -366,7 +366,9 @@ public sealed class MesIssue557ExecutionTests
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-20", "complete", Utc("2026-06-29T10:00:00Z")),
             CancellationToken.None));
 
-        Assert.Contains("前序工序", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("前序工序尚未完成：工序 10。", exception.Message);
+        Assert.DoesNotContain("OP-10", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-20", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

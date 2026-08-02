@@ -2841,7 +2841,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesOperationTasks"
-      ]
+      ],
+      "note": "The exposed facade preserves the MES exact operationTaskId filter together with workOrderId and principal-derived scope before paging; PDA action readback uses this strong-ID query instead of keyword search."
     },
     {
       "service": "Mes",
