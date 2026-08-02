@@ -1086,6 +1086,11 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     ['closed status', { status: 'closed', allowedActions: ['start'] }],
     ['cancelled status', { status: 'cancelled', allowedActions: ['accept'] }],
     ['terminal block reason', { blockReasons: ['terminal-status'], allowedActions: ['start'] }],
+    [
+      'non-terminal status with terminal reason',
+      { status: 'open', blockReasons: ['terminal-status'] },
+    ],
+    ['terminal status without terminal reason', { status: 'closed', blockReasons: [] }],
   ])('rejects contradictory terminal action facts: %s', async (_, override) => {
     seedPrincipal()
     const result = useMaintenanceSelfWorkOrderDetail(
@@ -1103,6 +1108,31 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
+  it.each([
+    ['closed', ['terminal-status']],
+    ['cancelled', ['terminal-status', 'manage-permission-required']],
+    ['open', ['manage-permission-required']],
+  ])('accepts consistent terminal and non-terminal facts: %s', async (status, blockReasons) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: {
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
+        status,
+        blockReasons,
+        allowedActions: [],
+      },
+    }
+    await nextTick()
+
+    expect(result.authoritativeHasSuccessfulResponse.value).toBe(true)
+    expect(result.authoritativeWorkOrder.value?.status).toBe(status)
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(true)
   })
 
   it.each([[null], [1]])(

@@ -183,16 +183,18 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
   requestedWorkOrderId: string,
   principalId: string,
 ): value is AuthoritativeMaintenanceWorkOrderDetail {
-  const terminalStatus =
+  const terminalStatus = Boolean(
     value &&
     isNonBlankString(value.status) &&
-    ['closed', 'cancelled'].includes(value.status.trim().toLowerCase())
-  const terminalBlock =
+    ['closed', 'cancelled'].includes(value.status.trim().toLowerCase()),
+  )
+  const terminalBlock = Boolean(
     value &&
     Array.isArray(value.blockReasons) &&
     value.blockReasons.some(
       (reason) => isNonBlankString(reason) && reason.trim().toLowerCase() === 'terminal-status',
-    )
+    ),
+  )
   return Boolean(
     value &&
     typeof value === 'object' &&
@@ -207,9 +209,10 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     isValidVersion(value.version) &&
     Array.isArray(value.allowedActions) &&
     value.allowedActions.every(isNonBlankString) &&
-    (!(terminalStatus || terminalBlock) || value.allowedActions.length === 0) &&
     Array.isArray(value.blockReasons) &&
     value.blockReasons.every(isNonBlankString) &&
+    terminalStatus === terminalBlock &&
+    (!terminalStatus || value.allowedActions.length === 0) &&
     value.assignedTechnicianUserId === principalId &&
     Object.hasOwn(value, 'assignedTeamId') &&
     isExplicitAssignment(value.assignedTeamId) &&
