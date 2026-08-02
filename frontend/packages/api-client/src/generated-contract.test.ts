@@ -95,6 +95,7 @@ import type {
   GetBusinessConsolePrincipalWorkContextData,
   GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMesOperationTasksData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
   ListBusinessConsoleWmsCountOperationalCandidatesData,
@@ -371,6 +372,30 @@ describe('generated API client contract', () => {
       sortOrder?: string | null
       filterSearch?: string | null
     }>()
+  })
+
+  it('keeps exact MES operation-task ids distinct in the generated query contract and key', () => {
+    const exactQuery: ListBusinessConsoleMesOperationTasksData['query'] = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-001',
+      operationTaskId: 'ot-10',
+    }
+    const similarQuery: ListBusinessConsoleMesOperationTasksData['query'] = {
+      ...exactQuery,
+      operationTaskId: 'ot-100',
+    }
+
+    const exact = listBusinessConsoleMesOperationTasksQueryOptions({ query: exactQuery })
+    const similar = listBusinessConsoleMesOperationTasksQueryOptions({ query: similarQuery })
+
+    expect(exact.key[0]).toMatchObject({
+      query: { workOrderId: 'wo-001', operationTaskId: 'ot-10' },
+    })
+    expect(similar.key[0]).toMatchObject({
+      query: { workOrderId: 'wo-001', operationTaskId: 'ot-100' },
+    })
+    expect(exact.key).not.toEqual(similar.key)
   })
 
   it('exports Console IAM Admin generated operations through stable api-client entry points', () => {

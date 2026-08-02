@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -128,6 +129,7 @@ public sealed class MesTaskScopeQueryTests
                 null,
                 Take: 1,
                 AssignedUserIds: "emp010",
+                WorkOrderId: "WO-Z-SCOPE",
                 OperationTaskId: "OP-Z-SCOPE"),
             CancellationToken.None);
 
@@ -339,6 +341,15 @@ public sealed class MesTaskScopeQueryTests
             now));
         await dbContext.SaveChangesAsync();
 
+        var evaluatedReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateAsync(blocked, now, CancellationToken.None);
+        var evaluatorPredecessorReason = Assert.Single(
+            evaluatedReadiness.BlockReasons,
+            x => x.Contains("PREVIOUS_OPERATION_INCOMPLETE", StringComparison.Ordinal));
+        Assert.Contains("工序 10", evaluatorPredecessorReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-10", evaluatorPredecessorReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-20", evaluatorPredecessorReason, StringComparison.Ordinal);
+
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
             new ListOperationTasksQuery(
                 "org-001",
@@ -350,9 +361,13 @@ public sealed class MesTaskScopeQueryTests
 
         var row = Assert.Single(result.Items);
         Assert.Empty(row.AllowedActions);
-        Assert.Contains(row.BlockReasons, x =>
-            x.Contains("PREVIOUS_OPERATION_INCOMPLETE", StringComparison.Ordinal) &&
-            x.Contains("前序工序尚未完成", StringComparison.Ordinal));
+        var servicePredecessorReason = Assert.Single(
+            row.BlockReasons,
+            x => x.Contains("PREVIOUS_OPERATION_INCOMPLETE", StringComparison.Ordinal));
+        Assert.Contains("前序工序尚未完成", servicePredecessorReason, StringComparison.Ordinal);
+        Assert.Contains("工序 10", servicePredecessorReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-10", servicePredecessorReason, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-20", servicePredecessorReason, StringComparison.Ordinal);
         Assert.Contains(row.BlockReasons, x =>
             x.Contains("MATERIAL_SHORTAGE", StringComparison.Ordinal) &&
             x.Contains("物料 MAT-BEARING", StringComparison.Ordinal) &&
