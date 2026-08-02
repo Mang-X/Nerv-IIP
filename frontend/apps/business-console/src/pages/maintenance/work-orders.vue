@@ -676,10 +676,12 @@ watch(
       empty-message="暂无维护工单。设备报警或巡检发现异常时在此开单。"
     >
       <template #cell-warrantyStatus="{ row }"
-        ><NvStatusBadge :value="warrantyStatusLabel(row.warrantyStatus)"
+        ><NvStatusBadge
+          :value="row.warrantyStatus"
+          :label="warrantyStatusLabel(row.warrantyStatus)"
       /></template>
       <template #cell-priority="{ row }"
-        ><NvStatusBadge :value="priorityLabel(row.priority)"
+        ><NvStatusBadge :value="row.priority" :label="priorityLabel(row.priority)"
       /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
