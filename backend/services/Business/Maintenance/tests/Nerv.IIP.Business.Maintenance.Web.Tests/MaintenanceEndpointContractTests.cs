@@ -106,6 +106,68 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Null(sender.LastRequest);
     }
 
+    [Fact]
+    public async Task Internal_work_order_query_accepts_bounded_assignment_csv_and_legacy_empty_separators_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var boundaryTokens = Enumerable.Range(0, 200)
+            .Select(index => $"{index:000}{new string('x', 147)}")
+            .ToArray();
+        var boundaryCsv = string.Join(',', boundaryTokens);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deviceAssetReferences = new[] { "DEVICE-001" },
+                assignedTechnicianUserIds = boundaryCsv,
+                assignedTeamIds = $"{boundaryTokens[0]},, ,{boundaryTokens[1]}",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(boundaryCsv, sender.LastRequest?.AssignedTechnicianUserIds);
+        Assert.Equal($"{boundaryTokens[0]},, ,{boundaryTokens[1]}", sender.LastRequest?.AssignedTeamIds);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_rejects_unbounded_or_unsupported_csv_before_handler_over_real_kestrel()
+    {
+        (string FieldName, string Value)[] invalidFields =
+        [
+            ("deviceAssetIds", "DEVICE-001"),
+            ("assignedTechnicianUserIds", string.Join(',', Enumerable.Range(0, 201).Select(index => $"user-{index:000}"))),
+            ("assignedTeamIds", new string('t', 151)),
+            ("assignedTeamIds", new string('t', 30_200)),
+        ];
+
+        foreach (var invalid in invalidFields)
+        {
+            var sender = new RecordingWorkOrderListSender();
+            await using var factory = CreateWorkOrderListKestrelFactory(sender);
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+            var payload = new Dictionary<string, object?>
+            {
+                ["organizationId"] = "org-001",
+                ["environmentId"] = "env-dev",
+                ["deviceAssetReferences"] = new[] { "DEVICE-001" },
+                [invalid.FieldName] = invalid.Value,
+            };
+
+            var response = await client.PostAsJsonAsync(
+                "/api/business/internal/v1/maintenance/work-orders/query",
+                payload);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Null(sender.LastRequest);
+        }
+    }
+
     [Theory]
     [InlineData("""{"organizationId":null,"environmentId":"env-dev","deviceAssetReferences":["DEVICE-001"]}""")]
     [InlineData("""{"organizationId":" ","environmentId":"env-dev","deviceAssetReferences":["DEVICE-001"]}""")]

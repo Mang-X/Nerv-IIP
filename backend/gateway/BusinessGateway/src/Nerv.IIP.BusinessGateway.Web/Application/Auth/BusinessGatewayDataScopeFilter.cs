@@ -71,16 +71,24 @@ public sealed class BusinessGatewayDataScopeFilter(
                 request.EnvironmentId,
                 dataScope!,
                 cancellationToken);
-            verifiedByReference = await ResolveDeviceReferencesAsync(
+            var verifiedAllowedDevices = await ResolveDeviceReferencesAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 resolved.DeviceAssets.Select(device => device.DeviceAssetId),
                 cancellationToken);
-            allowedDevices = ResolveAllowedDevices(resolved.DeviceAssets, verifiedByReference);
+            allowedDevices = ResolveAllowedDevices(resolved.DeviceAssets, verifiedAllowedDevices);
             if (allowedDevices is null)
             {
                 return MaintenanceWorkOrderDataScopeProjection.Deny(request);
             }
+
+            verifiedByReference = requested.Specified
+                ? await ResolveDeviceReferencesAsync(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    requested.Groups.SelectMany(group => group),
+                    cancellationToken)
+                : verifiedAllowedDevices;
         }
         else
         {
@@ -94,10 +102,7 @@ public sealed class BusinessGatewayDataScopeFilter(
         var requestedDevices = requested.Specified
             ? ResolveRequestedDevices(
                 requested,
-                hasRestrictedScope
-                    ? AliasIndex(verifiedByReference)
-                    : verifiedByReference,
-                requireAllReferences: !hasRestrictedScope)
+                verifiedByReference)
             : null;
         if (requested.Specified && requestedDevices is null)
         {
@@ -106,9 +111,10 @@ public sealed class BusinessGatewayDataScopeFilter(
 
         var selectedIdentities = requestedDevices?.Identities.ToHashSet()
             ?? allowedDevices!.Identities.ToHashSet();
-        if (allowedDevices is not null)
+        if (allowedDevices is not null
+            && selectedIdentities.Any(identity => !allowedDevices.Identities.Contains(identity)))
         {
-            selectedIdentities.IntersectWith(allowedDevices.Identities);
+            return MaintenanceWorkOrderDataScopeProjection.Deny(request);
         }
         if (selectedIdentities.Count == 0)
         {
@@ -246,8 +252,7 @@ public sealed class BusinessGatewayDataScopeFilter(
 
     private static VerifiedDeviceSelection? ResolveRequestedDevices(
         DeviceReferenceFilter requested,
-        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference,
-        bool requireAllReferences)
+        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference)
     {
         var references = requested.Groups
             .SelectMany(group => group)
@@ -259,7 +264,7 @@ public sealed class BusinessGatewayDataScopeFilter(
         }
 
         if (byReference is null
-            || (requireAllReferences && references.Any(reference => !byReference.ContainsKey(reference))))
+            || references.Any(reference => !byReference.ContainsKey(reference)))
         {
             return null;
         }
@@ -402,28 +407,6 @@ public sealed class BusinessGatewayDataScopeFilter(
         {
             return null;
         }
-    }
-
-    private static IReadOnlyDictionary<string, VerifiedDeviceIdentity>? AliasIndex(
-        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference)
-    {
-        if (byReference is null)
-        {
-            return null;
-        }
-
-        var byAlias = new Dictionary<string, VerifiedDeviceIdentity>(StringComparer.Ordinal);
-        foreach (var device in byReference.Values.DistinctBy(item => item.Identity))
-        {
-            foreach (var alias in device.Aliases)
-            {
-                if (!byAlias.TryAdd(alias, device))
-                {
-                    return null;
-                }
-            }
-        }
-        return byAlias;
     }
 
     private static bool AliasesAreUnique(IEnumerable<VerifiedDeviceIdentity> devices)

@@ -248,6 +248,10 @@ public sealed record QueryInternalMaintenanceWorkOrdersRequest(
 public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
     : Validator<QueryInternalMaintenanceWorkOrdersRequest>
 {
+    private const int MaxCsvTokens = 200;
+    private const int MaxCsvTokenLength = 150;
+    private const int MaxCsvLength = MaxCsvTokens * MaxCsvTokenLength + MaxCsvTokens - 1;
+
     public QueryInternalMaintenanceWorkOrdersRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
@@ -258,6 +262,15 @@ public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.WorkOrderId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetIds)
+            .Null()
+            .WithMessage("DeviceAssetIds is not supported by the internal work-order query; use DeviceAssetReferences.");
+        RuleFor(x => x.AssignedTechnicianUserIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned technician user IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
+        RuleFor(x => x.AssignedTeamIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned team IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
         RuleFor(x => x.DeviceAssetReferences)
             .NotNull()
             .Must(references => references is { Length: > 0 and <= ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences })
@@ -265,6 +278,24 @@ public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
         RuleForEach(x => x.DeviceAssetReferences)
             .NotEmpty()
             .MaximumLength(150);
+    }
+
+    private static bool BeBoundedCsv(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+        if (value.Length > MaxCsvLength)
+        {
+            return false;
+        }
+
+        // Keep the query handler's legacy behavior: empty separators inside an otherwise
+        // valid CSV are ignored. A provided value must still contain at least one token.
+        var tokens = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tokens.Length is > 0 and <= MaxCsvTokens
+            && tokens.All(token => token.Length is > 0 and <= MaxCsvTokenLength);
     }
 }
 
