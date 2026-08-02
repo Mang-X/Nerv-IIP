@@ -184,7 +184,22 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
     string? WorkOrderId = null,
-    string[]? DeviceAssetReferences = null);
+    string[]? DeviceAssetReferences = null)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences);
+}
 
 public sealed class ListMaintenanceWorkOrdersRequestValidator : Validator<ListMaintenanceWorkOrdersRequest>
 {
@@ -444,19 +459,19 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.Skip,
-            req.Take,
-            req.DeviceAssetIds,
-            req.Status,
-            req.DeviceAssetId,
-            req.Keyword,
-            req.AssignedTechnicianUserIds,
-            req.AssignedTeamIds,
-            req.WorkOrderId,
-            req.DeviceAssetReferences), ct);
+        var result = await sender.Send(req.ToQuery(), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersEndpoint(ISender sender)
+    : MaintenanceEndpoint<ListMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryInternalMaintenanceWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(req.ToQuery(), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -782,6 +797,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
+        new(typeof(QueryInternalMaintenanceWorkOrdersEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/query", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryInternalMaintenanceWorkOrders"),
         new(typeof(GetMaintenanceWorkOrderEndpoint), "GET", "/api/business/v1/maintenance/work-orders/{workOrderId}", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceWorkOrder"),
         new(typeof(AssignMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "assignMaintenanceWorkOrder"),
         new(typeof(ProbeMaintenanceWorkOrderAssignmentReplayEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "probeMaintenanceWorkOrderAssignmentReplay"),

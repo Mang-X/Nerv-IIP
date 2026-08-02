@@ -42,7 +42,7 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
-    public async Task Work_order_list_endpoint_binds_200_canonical_devices_as_400_repeated_aliases()
+    public async Task Internal_work_order_query_accepts_200_devices_as_400_body_aliases_over_real_kestrel()
     {
         var sender = new RecordingWorkOrderListSender();
         await using var factory = new WebApplicationFactory<Program>()
@@ -57,17 +57,53 @@ public sealed class MaintenanceEndpointContractTests
                     services.AddSingleton<ISender>(sender);
                 });
             });
+        factory.UseKestrel(0);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
         var deviceIds = Enumerable.Range(0, 200).Select(_ => Guid.CreateVersion7().ToString()).ToArray();
         var aliases = deviceIds.SelectMany((id, index) => new[] { id, $"DEVICE-{index:000}" }).ToArray();
-        var query = string.Join("&", aliases.Select(reference => $"deviceAssetReferences={Uri.EscapeDataString(reference)}"));
 
-        var response = await client.GetAsync(
-            $"/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&{query}");
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest(
+                "org-001",
+                "env-dev",
+                DeviceAssetReferences: aliases));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(aliases, sender.LastRequest?.DeviceAssetReferences);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_rejects_missing_service_auth_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest("org-001", "env-dev", DeviceAssetReferences: ["DEVICE-001"]));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(sender.LastRequest);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_accepts_400_aliases_and_rejects_401_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var aliases = Enumerable.Range(0, 401).Select(index => $"DEVICE-{index:000}").ToArray();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest("org-001", "env-dev", DeviceAssetReferences: aliases));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(sender.LastRequest);
     }
 
     [Fact]
@@ -75,11 +111,12 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(25, contracts.Length);
+        Assert.Equal(26, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/maintenance/work-orders/query" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "queryInternalMaintenanceWorkOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "assignMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "probeMaintenanceWorkOrderAssignmentReplay");
@@ -1778,6 +1815,24 @@ public sealed class MaintenanceEndpointContractTests
         var property = typeof(MaintenanceWorkOrder).GetProperty(propertyName)
             ?? throw new InvalidOperationException($"MaintenanceWorkOrder.{propertyName} is required for traceable inspection work orders.");
         return Assert.IsType<string>(property.GetValue(workOrder));
+    }
+
+    private static WebApplicationFactory<Program> CreateWorkOrderListKestrelFactory(RecordingWorkOrderListSender sender)
+    {
+        var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        factory.UseKestrel(0);
+        return factory;
     }
 
     private sealed class NoopMediator : IMediator

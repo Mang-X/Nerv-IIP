@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Text;
 using MediatR;
@@ -5,7 +6,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
@@ -293,6 +296,52 @@ public sealed class MasterDataApiContractTests
             Assert.Equal("org-001", reference.OrganizationId);
             Assert.Equal("env-dev", reference.EnvironmentId);
         });
+    }
+
+    [Fact]
+    public async Task Device_reference_batch_uses_two_fixed_relational_reads_in_sqlite_for_one_and_two_hundred_references()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var counter = new RelationalReadCounter();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(counter)
+            .Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await dbContext.Database.EnsureCreatedAsync();
+        var devices = Enumerable.Range(1, 200)
+            .Select(index => DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                $"DEV-{index:000}",
+                $"Device {index:000}",
+                "LINE-A",
+                "WC-A"))
+            .ToArray();
+        dbContext.DeviceAssets.AddRange(devices);
+        await dbContext.SaveChangesAsync();
+        var handler = new ResolveMasterDataReferencesQueryHandler(dbContext);
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                [new MasterDataReferenceRequest("device-asset", devices[0].Id.ToString())]),
+            CancellationToken.None);
+        var oneReferenceReads = counter.ReadCount;
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                devices.Select(device => new MasterDataReferenceRequest("device-asset", device.Id.ToString())).ToArray()),
+            CancellationToken.None);
+
+        Assert.Equal(2, oneReferenceReads);
+        Assert.Equal(oneReferenceReads, counter.ReadCount);
     }
 
     [Fact]
@@ -2415,6 +2464,32 @@ public sealed class MasterDataApiContractTests
         public IAsyncEnumerable<object?> CreateStream(
             object request,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RelationalReadCounter : DbCommandInterceptor
+    {
+        public int ReadCount { get; private set; }
+
+        public void Reset() => ReadCount = 0;
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            ReadCount++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            ReadCount++;
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler

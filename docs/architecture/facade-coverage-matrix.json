@@ -1957,7 +1957,7 @@
       "gatewayOperationIds": [
         "listBusinessConsoleMaintenanceWorkOrders"
       ],
-      "note": "The exposed list facade preserves legacy deviceAssetId/deviceAssetIds filters and adds repeated deviceAssetReferences values for exact device codes (including commas) or canonical DeviceAssetIds; BusinessGateway operationId: listBusinessConsoleMaintenanceWorkOrders."
+      "note": "The exposed list facade preserves legacy deviceAssetId/deviceAssetIds filters and accepts repeated deviceAssetReferences values for exact device codes (including commas) or canonical DeviceAssetIds. The public maximum of 200 is an application validation limit, not a guarantee that arbitrary maximum-length values fit an HTTP request target; after scope verification BusinessGateway uses the internal body-based batch query for exact aliases. BusinessGateway operationId: listBusinessConsoleMaintenanceWorkOrders."
     },
     {
       "service": "Maintenance",
@@ -2010,6 +2010,14 @@
       "gatewayOperationIds": [
         "assignBusinessConsoleMaintenanceWorkOrder"
       ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/query",
+      "operationId": "queryInternalMaintenanceWorkOrders",
+      "classification": "internal",
+      "rationale": "Body-based service-to-service batch list used by BusinessGateway for up to 400 verified DeviceAssetId and code aliases without relying on request-target size; it reuses the list query handler and is not a public facade."
     },
     {
       "service": "Maintenance",

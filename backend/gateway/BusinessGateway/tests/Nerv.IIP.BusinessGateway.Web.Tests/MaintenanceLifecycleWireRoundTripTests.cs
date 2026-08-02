@@ -77,7 +77,7 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
     }
 
     [Fact]
-    public async Task Gateway_client_forwards_exact_device_references_as_repeated_query_parameters()
+    public async Task Gateway_client_forwards_exact_device_references_in_internal_post_body()
     {
         var handler = new RecordingListWireHandler();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
@@ -89,10 +89,11 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                 "org-001", "env-dev", DeviceAssetReferences: ["DEV,A", "DEV-B"]),
             CancellationToken.None);
 
-        Assert.Equal(2, handler.Query.Split("deviceAssetReferences=", StringSplitOptions.None).Length - 1);
-        Assert.Contains("deviceAssetReferences=DEV%2CA", handler.Query, StringComparison.Ordinal);
-        Assert.Contains("deviceAssetReferences=DEV-B", handler.Query, StringComparison.Ordinal);
-        Assert.DoesNotContain("deviceAssetReferences=DEV&", handler.Query, StringComparison.Ordinal);
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("/api/business/internal/v1/maintenance/work-orders/query", handler.Path);
+        Assert.Equal(["DEV,A", "DEV-B"], handler.Body.GetProperty("deviceAssetReferences").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal("test-internal-token", handler.AuthorizationParameter);
     }
 
     [Fact]
@@ -110,13 +111,32 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                 "org-001", "env-dev", DeviceAssetReferences: aliases),
             CancellationToken.None);
 
-        var values = handler.Query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Where(part => part.StartsWith("deviceAssetReferences=", StringComparison.Ordinal))
-            .Select(part => Uri.UnescapeDataString(part["deviceAssetReferences=".Length..]))
+        var values = handler.Body.GetProperty("deviceAssetReferences")
+            .EnumerateArray()
+            .Select(element => element.GetString())
             .ToArray();
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("/api/business/internal/v1/maintenance/work-orders/query", handler.Path);
         Assert.Equal(400, values.Length);
         Assert.Equal(aliases, values);
+    }
+
+    [Fact]
+    public async Task Gateway_client_keeps_small_scalar_filter_on_public_get_contract()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetId: "DEVICE-001"),
+            CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Get, handler.Method);
+        Assert.Equal("/api/business/v1/maintenance/work-orders", handler.Path);
+        Assert.Contains("deviceAssetId=DEVICE-001", handler.Query, StringComparison.Ordinal);
     }
 
     private sealed class RecordingWireHandler(string workOrderId) : HttpMessageHandler
@@ -214,15 +234,28 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
 
     private sealed class RecordingListWireHandler : HttpMessageHandler
     {
+        public HttpMethod? Method { get; private set; }
+        public string Path { get; private set; } = string.Empty;
         public string Query { get; private set; } = string.Empty;
+        public JsonElement Body { get; private set; }
+        public string? AuthorizationScheme { get; private set; }
+        public string? AuthorizationParameter { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            Assert.Equal(HttpMethod.Get, request.Method);
+            Method = request.Method;
+            Path = request.RequestUri!.AbsolutePath;
             Query = request.RequestUri!.Query;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            AuthorizationScheme = request.Headers.Authorization?.Scheme;
+            AuthorizationParameter = request.Headers.Authorization?.Parameter;
+            if (request.Content is not null)
+            {
+                Body = JsonSerializer.Deserialize<JsonElement>(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new
                 {
@@ -234,7 +267,7 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                         total = 0,
                     },
                 }),
-            });
+            };
         }
     }
 }

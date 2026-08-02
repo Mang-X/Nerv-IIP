@@ -6373,25 +6373,49 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
-        var scalarQuery = Query(
-            ("organizationId", request.OrganizationId),
-            ("environmentId", request.EnvironmentId),
-            ("skip", request.Skip),
-            ("take", request.Take),
-            ("deviceAssetIds", request.DeviceAssetIds),
-            ("status", request.Status),
-            ("deviceAssetId", request.DeviceAssetId),
-            ("keyword", request.Keyword),
-            ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
-            ("assignedTeamIds", request.AssignedTeamIds),
-            ("workOrderId", request.WorkOrderId));
-        var exactReferenceQuery = RepeatedQuery("deviceAssetReferences", request.DeviceAssetReferences);
-        var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
-            internalBearerToken,
-            HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + JoinQuery(scalarQuery, exactReferenceQuery),
-            null,
-            cancellationToken);
+        DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem> workOrders;
+        if (request.DeviceAssetReferences is { Length: > 0 })
+        {
+            workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
+                internalBearerToken,
+                HttpMethod.Post,
+                "/api/business/internal/v1/maintenance/work-orders/query",
+                new DownstreamListMaintenanceWorkOrdersRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.Skip,
+                    request.Take,
+                    request.DeviceAssetIds,
+                    request.Status,
+                    request.DeviceAssetId,
+                    request.Keyword,
+                    request.AssignedTechnicianUserIds,
+                    request.AssignedTeamIds,
+                    request.WorkOrderId,
+                    request.DeviceAssetReferences),
+                cancellationToken);
+        }
+        else
+        {
+            var scalarQuery = Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("deviceAssetIds", request.DeviceAssetIds),
+                ("status", request.Status),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("keyword", request.Keyword),
+                ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
+                ("assignedTeamIds", request.AssignedTeamIds),
+                ("workOrderId", request.WorkOrderId));
+            workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
+                internalBearerToken,
+                HttpMethod.Get,
+                "/api/business/v1/maintenance/work-orders?" + scalarQuery,
+                null,
+                cancellationToken);
+        }
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
             new BusinessConsoleMaintenanceWorkOrderItem(
                 FormatMaintenanceWorkOrderId(workOrder.WorkOrderId),
@@ -7010,6 +7034,20 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             : FormatJsonScalar(value.Value);
 
     private sealed record DownstreamMaintenancePagedResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
+
+    private sealed record DownstreamListMaintenanceWorkOrdersRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        int Skip,
+        int Take,
+        string? DeviceAssetIds,
+        string? Status,
+        string? DeviceAssetId,
+        string? Keyword,
+        string? AssignedTechnicianUserIds,
+        string? AssignedTeamIds,
+        string? WorkOrderId,
+        string[] DeviceAssetReferences);
 
     private sealed record DownstreamDowntimeReasonDirectoryItem(
         JsonElement DowntimeReasonId,
