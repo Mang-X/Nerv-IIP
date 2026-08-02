@@ -133,3 +133,16 @@
 - [x] Preserve only that conflict, its frozen context and idempotency key when principal/org/environment/manage-scope identity settles or returns to the safe identity; keep the Retry and Back actions available.
 - [x] Clear the conflict and intent when the route changes to another pair or the operator returns and opens a new selection; continue clearing ordinary determinate errors on identity changes.
 - [x] Reproduce the false-positive timing with `nextTick` plus promise flushing, capture four failing identity cases, then turn all 55 operation-page tests green.
+
+### Task 10: Bind retained retries to the live deep-link pair
+
+**Files:**
+
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.test.ts`
+- Modify: MAN-637 behavior and testing documentation
+
+- [x] Before retry mutation, require any present deep-link query to be a complete exact pair matching both the retained result and frozen action context; another pair or an incomplete query fails closed without consuming the intent.
+- [x] Distinguish route and identity conflicts so a route conflict survives until the original pair returns, while the established route/selection cleanup boundary for identity conflicts remains intact.
+- [x] Suppress deep-link auto-reopen while a retained conflict exists, preventing `openSheet` from clearing the result/context/key after identity restoration.
+- [x] Capture three deterministic red tests for A→B, incomplete query and identity-restore auto-reopen, then turn all 58 operation-page tests green while retaining ordinary list selection coverage.

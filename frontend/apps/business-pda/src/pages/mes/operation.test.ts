@@ -1026,6 +1026,127 @@ describe('PDA MES operation execution page', () => {
     },
   )
 
+  it('preflights an unknown result against the exact deep-link pair and recovers the same intent after returning', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-2',
+    })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    await nextTick()
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
+  it('fails closed on an incomplete deep-link query without consuming the retained intent', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    routeState.replaceQuery?.({ operationTaskId: 'OP-1' })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('工序任务链接已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    await nextTick()
+    await flushPromises()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
+  it('keeps a deep-link context conflict through identity restoration without auto reopening the task', async () => {
+    routeState.replaceQuery?.({
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError()).mockResolvedValueOnce(undefined)
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const firstOptions = completeTask.mock.calls[0][2]
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    expect(completeTask).toHaveBeenCalledTimes(2)
+    expect(completeTask.mock.calls[1][2].idempotencyKey).toBe(firstOptions.idempotencyKey)
+    expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
+  })
+
   it('clears a context-conflict retry when the route moves to another exact pair', async () => {
     completeTask.mockRejectedValueOnce(new RequestTimeoutError())
     const wrapper = mount(OperationPage, { attachTo: document.body })

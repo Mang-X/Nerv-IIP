@@ -193,7 +193,7 @@ const ACTION_FNS: Record<
 const operationKey = ref('')
 const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
-const operationResultContextConflict = ref(false)
+const operationResultContextConflict = shallowRef<'identity' | 'route' | null>(null)
 usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
@@ -238,7 +238,7 @@ function clearOperationResultIntent() {
   operationKey.value = ''
   operationContext.value = null
   operationResultUnknown.value = false
-  operationResultContextConflict.value = false
+  operationResultContextConflict.value = null
 }
 
 function shouldPreserveOperationContextConflict(
@@ -246,9 +246,22 @@ function shouldPreserveOperationContextConflict(
   routeOperationTaskId: string,
 ) {
   const state = result.value
-  if (!operationResultContextConflict.value || !state) return false
+  const conflict = operationResultContextConflict.value
+  if (!conflict || !state) return false
+  if (conflict === 'route') return true
   if (!routeWorkOrderId && !routeOperationTaskId) return true
   return state.workOrderId === routeWorkOrderId && state.taskId === routeOperationTaskId
+}
+
+function isOperationResultRouteCurrent(state: ResultState) {
+  if (!hasAnyTaskDeepLink.value) return true
+  if (!hasCompleteTaskDeepLink.value) return false
+  return (
+    requestedWorkOrderId.value === state.workOrderId &&
+    requestedOperationTaskId.value === state.taskId &&
+    requestedWorkOrderId.value === state.context.workOrderId &&
+    requestedOperationTaskId.value === state.context.operationTaskId
+  )
 }
 
 function restoreTaskListState(state: { filters: Record<string, unknown> }) {
@@ -307,15 +320,21 @@ watch(
   { immediate: true },
 )
 watch(
-  [visibleOperationTasks, pending, hasSuccessfulResponse, operationScopeReady, deepLinkIdentity],
-  ([tasks, isPending, successful, manageScopeReady, identity]) => {
-    if (
-      !hasCompleteTaskDeepLink.value ||
-      deepLinkOpenedIdentity.value === identity ||
-      isPending ||
-      !successful ||
-      !manageScopeReady
-    )
+  [
+    visibleOperationTasks,
+    pending,
+    hasSuccessfulResponse,
+    operationScopeReady,
+    deepLinkIdentity,
+    operationResultContextConflict,
+  ],
+  ([tasks, isPending, successful, manageScopeReady, identity, contextConflict]) => {
+    if (!hasCompleteTaskDeepLink.value) return
+    if (contextConflict) {
+      deepLinkOpenedIdentity.value = identity
+      return
+    }
+    if (deepLinkOpenedIdentity.value === identity || isPending || !successful || !manageScopeReady)
       return
     const exactTask = tasks[0]
     if (!exactTask) {
@@ -377,13 +396,13 @@ function isOperationPageSnapshotCurrent(snapshot: OperationPageSnapshot) {
 async function discardStaleOperationResult(snapshot: OperationPageSnapshot) {
   if (result.value?.context === snapshot.context) {
     result.value = null
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
   }
   if (operationContext.value === snapshot.context) {
     operationKey.value = ''
     operationContext.value = null
     operationResultUnknown.value = false
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
   }
   try {
     await refresh()
@@ -459,7 +478,7 @@ async function runAction(action: ActionKind) {
       return
     }
     operationResultUnknown.value = false
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
@@ -480,7 +499,7 @@ async function runAction(action: ActionKind) {
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -505,9 +524,20 @@ async function retry() {
   const { action, displayReference, workOrderId, taskId, context } = state
   // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
   const key = operationKey.value
+  if (!isOperationResultRouteCurrent(state)) {
+    operationResultUnknown.value = false
+    operationResultContextConflict.value = 'route'
+    result.value = {
+      ...state,
+      status: 'error',
+      title: '操作失败',
+      description: `${displayReference}\n工序任务链接已变化，旧操作不能在当前链接重试。请恢复原工单与任务链接后重试，或返回当前列表重新发起。`,
+    }
+    return
+  }
   if (!isOperationActionContextCurrent(context)) {
     operationResultUnknown.value = false
-    operationResultContextConflict.value = true
+    operationResultContextConflict.value = 'identity'
     result.value = {
       ...state,
       status: 'error',
@@ -517,7 +547,7 @@ async function retry() {
     return
   }
   const pageSnapshot = captureOperationPageSnapshot(context)
-  operationResultContextConflict.value = false
+  operationResultContextConflict.value = null
   result.value = null
   try {
     await ACTION_FNS[action](workOrderId, taskId, key, context)
@@ -526,7 +556,7 @@ async function retry() {
       return
     }
     operationResultUnknown.value = false
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
@@ -547,7 +577,7 @@ async function retry() {
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
-    operationResultContextConflict.value = false
+    operationResultContextConflict.value = null
     result.value = {
       status: 'error',
       title: '操作失败',
