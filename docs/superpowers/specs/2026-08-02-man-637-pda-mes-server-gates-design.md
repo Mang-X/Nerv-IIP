@@ -13,7 +13,7 @@
 ## 组件与数据流
 
 - `src/composables/useBusinessMes.ts`：保持 principal/scope-bound 列表查询；完整 deep link 使用独立 `operationTaskId` filter，query identity、首屏与后续分页均携带 exact 参数且清空 fuzzy keyword。动作 API 接收完整 `workOrderId + operationTaskId`，写前精确回读同一 pair，并只在回读行的 `allowedActions` 包含目标动作时调用 mutation。初次动作同时冻结 principal、org/env、manage scope kind/id、pair 与 operation type；未确认重试先在 composable 边界比较当前 identity，漂移时在 acquire/mutation 前 fail closed。composable 同时暴露不含动作/pair 的 manage-action identity 与当前 context 判定，供页面隔离异步结果。
-- `src/pages/mes/operation.vue`：只保留 route/query/action orchestration、稳定幂等键和冻结 context snapshot；列表继续绑定所选 pair。首次动作与重试调用前冻结由 route pair、principal/org/env、读范围和 manage scope 组成的页面 identity 及单调 generation；await 后写入 success/error 前必须仍为同一代，否则清除旧结果/意图并刷新当前上下文。generation 防止 A→B→A 回切误接纳旧结果。
+- `src/pages/mes/operation.vue`：只保留 route/query/action orchestration、稳定幂等键和冻结 context snapshot；列表继续绑定所选 pair。首次动作与重试调用前冻结由 route pair、principal/org/env、读范围和 manage scope 组成的页面 identity 及单调 generation；普通列表选中 pair 另有独立 generation/identity，只有打开不同 pair 才推进，内部关闭不推进。await 后写入 success/error 前必须同时仍是同一页面代与选择代，否则只清除仍属于旧 context 的结果/意图并刷新当前上下文，不能清除新的选择。完整 deep link 的打开 identity 同时包含 manage-action identity，并仅在写范围 ready 后打开精确 pair。
 - `src/pages/mes/components/MesOperationExecutionPanel.vue` 与 `operationPresentation.ts`：作为 `routesFolder.exclude` 覆盖的 page-private presentation 层，以 typed props/events 展示详情、服务端门禁、SOP 与结果。工序任务实例只显示 `operationTaskNo` 或明确“工序任务信息未提供”；`operationCode` 仅出现在工序/SOP 上下文。
 - `e2e/fixtures.ts` 与 `e2e/mes.spec.ts`：生产形态 operation-task fixture 的可选 `operationTaskNo` 保持 `null`；以 375×812 Chromium 覆盖显式缺失文案、前序 `operationSequence` 可读引用、当前/前序 raw ID 不出现、服务端动作门禁、双强 ID、409 刷新、未确认回执、完成态只读和 history 快速切换。非空 `operationTaskNo` 只保留在明确命名的单元/组件覆盖中。
 - 产品/架构文档：同步说明 PDA 工序页不从本地状态推断动作，且只有 confirmed 或权威回读确认才显示成功。
@@ -25,9 +25,11 @@
 - 未确认后 principal、组织、环境或 manage scope 漂移：保留旧 pair/key 的历史事实但禁止在新 context 重放；页面只显示可读冲突提示，不泄露 raw ID。
 - route query、scope 或 principal identity 变化：立即关闭旧详情，只能由新 identity 的成功响应重新打开精确 pair。
 - 首次动作或重试 await 期间发生 route、principal、组织/环境、读范围或 manage scope 漂移：旧 success/error 都静默丢弃，清除旧结果/意图并刷新当前上下文；上下文变化本身不显示“操作失败”。
+- 首次动作或重试 await 期间从普通列表 pair A 改选 pair B：A 的旧 success/error 都静默丢弃并刷新当前列表，只清理仍属于 A 的意图；B 的 sheet、选择和结果不被关闭或覆盖。
+- 完整 deep link 的任务数据先于 manage scope 到达：未 ready 时不打开；manage identity 就绪后按新的打开 identity 重新评估并只打开精确 pair。
 - 前序阻塞：MES 以权威 `operationSequence` 返回“工序 N”，不把当前或前序 `operationTaskId` 放入面向操作员的说明。
 - 未知 `allowedActions` 值不渲染按钮；空数组只读，不从 status 推导兜底动作。
 
 ## 测试策略
 
-先在 composable、page-private component 与页面单元测试中新增失败断言，再做最小实现；route contract 直接检查 generated route table 不包含 `components`。页面延迟 mutation 表格测试覆盖 route/principal/org-env/manage-scope × success/error × initial/retry；readiness evaluator 与 service contract 直接断言“工序 N”且 current/predecessor raw ID 缺席。375×812 Playwright 增加同工单 20 个以上 substring collisions 的 deep-link 场景，断言请求携带 exact `operationTaskId` 且不携带 keyword，并覆盖生产形态缺号与可读前序引用。最终运行 Gateway/MES/Facade、api-client/business-core/PC/PDA、PDA typecheck/build、MES 与完整 PDA e2e、逐文件格式和 OpenAPI drift；仅在存在受管场景时通过 `nerv.ps1 fullstack run` 留存公开 BusinessGateway 证据。
+先在 composable、page-private component 与页面单元测试中新增失败断言，再做最小实现；route contract 直接检查 generated route table 不包含 `components`。页面延迟 mutation 表格测试覆盖 route/principal/org-env/manage-scope × success/error × initial/retry，并覆盖普通列表选择 A→B 的 initial/retry × success/error；另以任务数据先到、manage scope 后到的确定性用例验证 deep-link 打开顺序。BottomSheet 黑盒断言使用真实 Portal 契约 `[data-slot="mobile-sheet-content"][data-state="open"]`，关闭动画保留的 `data-state="closed"` 节点不算打开。readiness evaluator 与 service contract 直接断言“工序 N”且 current/predecessor raw ID 缺席。375×812 Playwright 增加同工单 20 个以上 substring collisions 的 deep-link 场景，断言请求携带 exact `operationTaskId` 且不携带 keyword，并覆盖生产形态缺号与可读前序引用。最终运行 Gateway/MES/Facade、api-client/business-core/PC/PDA、PDA typecheck/build、MES 与完整 PDA e2e、逐文件格式和 OpenAPI drift；仅在存在受管场景时通过 `nerv.ps1 fullstack run` 留存公开 BusinessGateway 证据。

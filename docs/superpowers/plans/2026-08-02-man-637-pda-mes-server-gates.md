@@ -93,3 +93,16 @@
 - [x] Render predecessor blockers from authoritative `operationSequence` as “工序 N” and prove evaluator/service/PDA output omits current and predecessor raw IDs.
 - [x] Keep every production-shape browser operation-task fixture at `operationTaskNo=null`; retain non-null coverage only in a clearly named unit test.
 - [x] Capture TDD red for all three gaps, then turn the focused unit, backend and 375×812 browser tests green.
+
+### Task 7: Isolate ordinary list selections and order manage-scope deep links
+
+**Files:**
+
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.test.ts`
+- Modify: MAN-637 architecture, product, testing and user documentation
+
+- [x] Add an independent selected-pair generation/identity that advances only when a different pair opens, not when the page internally closes a sheet.
+- [x] Discard stale initial/retry success and error for pair A without clearing or closing a newly selected pair B; refresh the current list in all four cases.
+- [x] Include manage-action identity/readiness in deep-link opening so task data arriving before scope resolution cannot be opened and then permanently closed by the reset watcher.
+- [x] Capture five deterministic red tests, use the real open-state Portal selector, and turn all 48 operation-page tests green.

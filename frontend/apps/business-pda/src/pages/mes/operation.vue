@@ -103,9 +103,11 @@ const hasInvalidTaskDeepLink = computed(
 )
 const deepLinkIdentity = computed(
   () =>
-    `${operationListContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
+    `${operationListContextIdentity.value}\u0000${operationActionContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
 )
 const operationPageGeneration = ref(0)
+const operationSelectionGeneration = shallowRef(0)
+const operationSelectionIdentity = shallowRef('')
 const operationPageIdentity = computed(
   () =>
     `${operationListContextIdentity.value}\u0000${operationActionContextIdentity.value}\u0000${requestedWorkOrderId.value}\u0000${requestedOperationTaskId.value}`,
@@ -240,6 +242,11 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
 
 function openSheet(task: Task) {
   if (operationResultUnknown.value) return
+  const selectionIdentity = `${task.workOrderId ?? ''}\u0000${task.operationTaskId ?? ''}`
+  if (operationSelectionIdentity.value !== selectionIdentity) {
+    operationSelectionIdentity.value = selectionIdentity
+    operationSelectionGeneration.value += 1
+  }
   result.value = null
   sopFileError.value = ''
   confirmingComplete.value = false
@@ -281,13 +288,14 @@ watch(
   { immediate: true },
 )
 watch(
-  [visibleOperationTasks, pending, hasSuccessfulResponse, deepLinkIdentity],
-  ([tasks, isPending, successful, identity]) => {
+  [visibleOperationTasks, pending, hasSuccessfulResponse, operationScopeReady, deepLinkIdentity],
+  ([tasks, isPending, successful, manageScopeReady, identity]) => {
     if (
       !hasCompleteTaskDeepLink.value ||
       deepLinkOpenedIdentity.value === identity ||
       isPending ||
-      !successful
+      !successful ||
+      !manageScopeReady
     )
       return
     const exactTask = tasks[0]
@@ -299,7 +307,7 @@ watch(
     deepLinkOpenedIdentity.value = identity
     openSheet(exactTask)
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 )
 
 function closeSheet() {
@@ -325,6 +333,8 @@ async function recoverLifecycleUpdate() {
 type OperationPageSnapshot = {
   generation: number
   identity: string
+  selectionGeneration: number
+  selectionIdentity: string
   context: OperationActionContext
 }
 
@@ -332,6 +342,8 @@ function captureOperationPageSnapshot(context: OperationActionContext): Operatio
   return {
     generation: operationPageGeneration.value,
     identity: operationPageIdentity.value,
+    selectionGeneration: operationSelectionGeneration.value,
+    selectionIdentity: operationSelectionIdentity.value,
     context,
   }
 }
@@ -340,16 +352,19 @@ function isOperationPageSnapshotCurrent(snapshot: OperationPageSnapshot) {
   return (
     operationPageGeneration.value === snapshot.generation &&
     operationPageIdentity.value === snapshot.identity &&
+    operationSelectionGeneration.value === snapshot.selectionGeneration &&
+    operationSelectionIdentity.value === snapshot.selectionIdentity &&
     isOperationActionContextCurrent(snapshot.context)
   )
 }
 
-async function discardStaleOperationResult() {
-  closeSheet()
-  result.value = null
-  operationKey.value = ''
-  operationContext.value = null
-  operationResultUnknown.value = false
+async function discardStaleOperationResult(snapshot: OperationPageSnapshot) {
+  if (result.value?.context === snapshot.context) result.value = null
+  if (operationContext.value === snapshot.context) {
+    operationKey.value = ''
+    operationContext.value = null
+    operationResultUnknown.value = false
+  }
   try {
     await refresh()
   } catch {
@@ -420,7 +435,7 @@ async function runAction(action: ActionKind) {
   try {
     await ACTION_FNS[action](workOrderId, id, key, context)
     if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
-      await discardStaleOperationResult()
+      await discardStaleOperationResult(pageSnapshot)
       return
     }
     operationResultUnknown.value = false
@@ -436,7 +451,7 @@ async function runAction(action: ActionKind) {
     }
   } catch (e) {
     if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
-      await discardStaleOperationResult()
+      await discardStaleOperationResult(pageSnapshot)
       return
     }
     if (isLifecycleActionUpdated(e)) {
@@ -473,7 +488,7 @@ async function retry() {
   try {
     await ACTION_FNS[action](workOrderId, taskId, key, context)
     if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
-      await discardStaleOperationResult()
+      await discardStaleOperationResult(pageSnapshot)
       return
     }
     operationResultUnknown.value = false
@@ -489,7 +504,7 @@ async function retry() {
     }
   } catch (e) {
     if (!isOperationPageSnapshotCurrent(pageSnapshot)) {
-      await discardStaleOperationResult()
+      await discardStaleOperationResult(pageSnapshot)
       return
     }
     if (isLifecycleActionUpdated(e)) {
