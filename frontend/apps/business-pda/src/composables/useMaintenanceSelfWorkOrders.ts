@@ -29,6 +29,8 @@ type WorkOrderListEnvelope =
       data?: {
         items?: BusinessConsoleMaintenanceWorkOrderItem[]
         total?: number
+        skip?: number
+        take?: number
       } | null
     }
   | undefined
@@ -114,7 +116,11 @@ function parseWorkOrderPage(
     !Array.isArray(data.items) ||
     !data.items.every((item) => isWorkOrderListItem(item, principalId)) ||
     !Number.isSafeInteger(data.total) ||
-    (data.total ?? -1) < 0
+    (data.total ?? -1) < 0 ||
+    !Number.isSafeInteger(data.skip) ||
+    data.skip !== skip ||
+    !Number.isSafeInteger(data.take) ||
+    data.take !== take
   ) {
     throw new Error('维修工单读取失败，请重试。')
   }
@@ -138,7 +144,9 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
   const terminalBlock =
     value &&
     Array.isArray(value.blockReasons) &&
-    value.blockReasons.some((reason) => reason.trim().toLowerCase() === 'terminal-status')
+    value.blockReasons.some(
+      (reason) => isNonBlankString(reason) && reason.trim().toLowerCase() === 'terminal-status',
+    )
   return Boolean(
     value &&
     typeof value === 'object' &&
@@ -395,7 +403,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       item.resourceType?.trim().toLowerCase() === 'device-asset' &&
       item.organizationId?.trim() === scope.organizationId.value &&
       item.environmentId?.trim() === scope.environmentId.value &&
-      item.code === deviceAssetId.value
+      (item.code === deviceAssetId.value || item.deviceAssetId === deviceAssetId.value)
       ? item
       : undefined
   })

@@ -47798,6 +47798,10 @@
           "phone": {
             "type": "string",
             "nullable": true
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

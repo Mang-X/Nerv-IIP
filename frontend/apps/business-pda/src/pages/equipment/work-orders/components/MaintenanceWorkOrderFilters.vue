@@ -42,6 +42,7 @@ const statusOptions = [{ label: '全部状态', value: '' }, ...maintenanceWorkO
         title="设备"
         :subtitle="deviceAssetId ? deviceLabel || '已选择设备' : '全部设备'"
         @select="emit('chooseDevice')"
+        @keydown.space.prevent="emit('chooseDevice')"
       />
     </div>
     <NvMobileButton

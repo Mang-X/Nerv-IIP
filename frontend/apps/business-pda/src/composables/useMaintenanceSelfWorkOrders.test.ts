@@ -98,6 +98,15 @@ function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
   }
 }
 
+function withPagination(envelope: unknown, skip: number, take: number) {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return envelope
+  const response = envelope as { data?: unknown }
+  if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+    return envelope
+  }
+  return { ...response, data: { ...response.data, skip, take } }
+}
+
 const invalidListEnvelopes = [
   ['null data', { success: true, data: null }],
   ['missing data', { success: true }],
@@ -190,6 +199,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
       data: {
         items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
         total: 1,
+        skip: 0,
+        take: 20,
       },
     }
     await nextTick()
@@ -200,6 +211,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
       data: {
         items: [{ workOrderId: 'BAD-WO', assignedTechnicianUserId: 'principal-1' }],
         total: 1,
+        skip: 0,
+        take: 20,
       },
     }
     await nextTick()
@@ -215,7 +228,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
       seedPrincipal()
       const result = useMaintenanceSelfWorkOrders()
 
-      api.data.get('maintenance-list')!.value = envelope
+      api.data.get('maintenance-list')!.value = withPagination(envelope, 0, 20)
       await nextTick()
 
       expect(result.hasSuccessfulResponse.value).toBe(false)
@@ -225,6 +238,26 @@ describe('useMaintenanceSelfWorkOrders', () => {
     },
   )
 
+  it.each([
+    ['missing skip', { take: 20 }],
+    ['missing take', { skip: 0 }],
+    ['unsafe skip', { skip: Number.MAX_SAFE_INTEGER + 1, take: 20 }],
+    ['fractional take', { skip: 0, take: 20.5 }],
+    ['misaligned skip', { skip: 20, take: 20 }],
+    ['misaligned take', { skip: 0, take: 10 }],
+  ])('rejects invalid first-page response pagination: %s', async (_, pagination) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: { items: [], total: 0, ...pagination },
+    }
+    await nextTick()
+
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.items.value).toEqual([])
+  })
+
   it.each([null, undefined, 'principal-other'])(
     'rejects a first-page row not authoritatively assigned to the current principal: %s',
     async (assignedTechnicianUserId) => {
@@ -232,7 +265,12 @@ describe('useMaintenanceSelfWorkOrders', () => {
       const result = useMaintenanceSelfWorkOrders()
       api.data.get('maintenance-list')!.value = {
         success: true,
-        data: { items: [{ workOrderId: 'WO-1', assignedTechnicianUserId }], total: 1 },
+        data: {
+          items: [{ workOrderId: 'WO-1', assignedTechnicianUserId }],
+          total: 1,
+          skip: 0,
+          take: 20,
+        },
       }
       await nextTick()
 
@@ -254,9 +292,11 @@ describe('useMaintenanceSelfWorkOrders', () => {
             assignedTechnicianUserId: 'principal-1',
           })),
           total: 21,
+          skip: 0,
+          take: 20,
         },
       }
-      api.list.mockResolvedValueOnce({ data: envelope })
+      api.list.mockResolvedValueOnce({ data: withPagination(envelope, 20, 20) })
       await nextTick()
 
       await result.loadMore()
@@ -265,6 +305,43 @@ describe('useMaintenanceSelfWorkOrders', () => {
       expect(result.items.value).toHaveLength(20)
     },
   )
+
+  it.each([
+    ['misaligned skip', { skip: 0, take: 20 }],
+    ['misaligned take', { skip: 20, take: 10 }],
+  ])('rejects invalid next-page response pagination: %s', async (_, pagination) => {
+    seedPrincipal()
+    const result = useMaintenanceSelfWorkOrders()
+    api.data.get('maintenance-list')!.value = {
+      success: true,
+      data: {
+        items: Array.from({ length: 20 }, (_, index) => ({
+          workOrderId: `WO-${index}`,
+          assignedTechnicianUserId: 'principal-1',
+        })),
+        total: 21,
+        skip: 0,
+        take: 20,
+      },
+    }
+    api.list.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [{ workOrderId: 'WO-20', assignedTechnicianUserId: 'principal-1' }],
+          total: 21,
+          ...pagination,
+        },
+      },
+    })
+    await nextTick()
+
+    await result.loadMore()
+
+    expect(result.loadMoreError.value).toBeInstanceOf(Error)
+    expect(result.items.value).toHaveLength(20)
+    expect(result.items.value.find((item) => item.workOrderId === 'WO-20')).toBeUndefined()
+  })
 
   it.each([null, undefined, 'principal-other'])(
     'rejects a next-page row not authoritatively assigned to the current principal: %s',
@@ -279,12 +356,19 @@ describe('useMaintenanceSelfWorkOrders', () => {
             assignedTechnicianUserId: 'principal-1',
           })),
           total: 21,
+          skip: 0,
+          take: 20,
         },
       }
       api.list.mockResolvedValueOnce({
         data: {
           success: true,
-          data: { items: [{ workOrderId: 'WO-20', assignedTechnicianUserId }], total: 21 },
+          data: {
+            items: [{ workOrderId: 'WO-20', assignedTechnicianUserId }],
+            total: 21,
+            skip: 20,
+            take: 20,
+          },
         },
       })
       await nextTick()
@@ -304,6 +388,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
       data: {
         items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
         total: 1,
+        skip: 0,
+        take: 20,
       },
     }
     await nextTick()
@@ -344,6 +430,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
           assignedTechnicianUserId: 'principal-1',
         })),
         total: 21,
+        skip: 0,
+        take: 20,
       },
     }
     api.list.mockResolvedValueOnce({
@@ -352,6 +440,8 @@ describe('useMaintenanceSelfWorkOrders', () => {
         data: {
           items: [{ workOrderId: 'WO-20', assignedTechnicianUserId: 'principal-1' }],
           total: 21,
+          skip: 20,
+          take: 20,
         },
       },
     })
@@ -543,6 +633,60 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasFailedResponse.value).toBe(true)
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
+  it.each([[null], [1]])(
+    'rejects malformed block reasons without throwing during render: %j',
+    async (blockReason) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+
+      expect(() => {
+        api.data.get('maintenance-detail')!.value = {
+          success: true,
+          data: {
+            ...authoritativeDetail('WO-DETAIL', 'device-1'),
+            blockReasons: [blockReason],
+          },
+        }
+      }).not.toThrow()
+      await nextTick()
+
+      expect(result.workOrder.value).toBeUndefined()
+      expect(result.hasFailedResponse.value).toBe(true)
+      expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+    },
+  )
+
+  it('accepts a device detail resolved by public ID when its business code differs', async () => {
+    seedPrincipal()
+    const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-DETAIL', deviceAssetId),
+    }
+    await nextTick()
+
+    expect(requestFor('device-detail')).toMatchObject({
+      path: { resourceType: 'device-asset', code: deviceAssetId },
+    })
+
+    api.data.get('device-detail')!.value = {
+      success: true,
+      data: {
+        resourceType: 'device-asset',
+        deviceAssetId,
+        code: 'DEV-CNC-01',
+        displayName: '一号数控机床',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+    }
+    await nextTick()
+
+    expect(result.hasSuccessfulResponse.value).toBe(true)
+    expect(result.device.value?.code).toBe('DEV-CNC-01')
   })
 
   it('treats the strong-ID device detail as part of aggregate detail state', async () => {

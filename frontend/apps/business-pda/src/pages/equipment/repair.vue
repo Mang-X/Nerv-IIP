@@ -123,6 +123,8 @@ const createdWorkOrderId = ref('')
 const {
   workOrder: confirmedCreatedWorkOrder,
   hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+  pending: createdDetailPending,
+  refresh: refreshCreatedWorkOrder,
 } = useMaintenanceSelfWorkOrderDetail(createdWorkOrderId)
 const canViewCreatedWorkOrder = computed(
   () =>
@@ -319,6 +321,12 @@ function viewCreatedWorkOrder() {
     .catch(() => {})
 }
 
+async function recheckCreatedWorkOrderAssignment() {
+  if (!createdWorkOrderId.value || !canReadWorkOrderDetail.value || createdDetailPending.value)
+    return
+  await refreshCreatedWorkOrder()
+}
+
 function workOrderSubtitle(item: { priority?: string; status?: string; openedAtUtc?: string }) {
   const parts = [
     `优先级 ${maintenancePriorityLabel(item.priority)}`,
@@ -344,9 +352,30 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       v-if="phase === 'success'"
       status="success"
       title="报修已提交"
-      description="维修工单已创建，等待处理。"
+      description="维修工单已创建，正在等待派工。"
     >
       <template #actions>
+        <p
+          data-testid="created-work-order-assignment-state"
+          class="text-sm leading-6 text-muted-foreground"
+        >
+          {{
+            canViewCreatedWorkOrder
+              ? '已确认工单指派给当前维修人员，可查看详情。'
+              : '工单尚未指派给当前账号，当前暂不可查看详情。'
+          }}
+        </p>
+        <NvMobileButton
+          v-if="!canViewCreatedWorkOrder && canReadWorkOrderDetail && createdWorkOrderId"
+          data-testid="recheck-created-work-order-assignment"
+          variant="outline"
+          size="lg"
+          block
+          :disabled="createdDetailPending"
+          @click="recheckCreatedWorkOrderAssignment"
+        >
+          {{ createdDetailPending ? '正在核验指派状态…' : '重新核验指派状态' }}
+        </NvMobileButton>
         <NvMobileButton
           v-if="canViewCreatedWorkOrder"
           data-testid="view-created-work-order"

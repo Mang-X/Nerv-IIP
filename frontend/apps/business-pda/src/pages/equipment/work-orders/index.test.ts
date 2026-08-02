@@ -56,6 +56,8 @@ async function mountPage() {
       plugins: [router],
       stubs: {
         DeviceAssetPicker: {
+          name: 'DeviceAssetPicker',
+          props: ['open'],
           template:
             "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019f-device-guid', code: 'DEV-CNC-01', displayName: '一号数控机床' })\">选择设备</button>",
         },
@@ -142,6 +144,15 @@ describe('maintenance self work-order queue page', () => {
 
     expect(state.filters.deviceAssetId).toBe('DEV-CNC-01')
     expect(wrapper.text()).toContain('一号数控机床')
+  })
+
+  it('opens the device filter with Space', async () => {
+    state.scopeReady = true
+    const { wrapper } = await mountPage()
+
+    await wrapper.get('[data-testid="maintenance-device-filter"]').trigger('keydown', { key: ' ' })
+
+    expect(wrapper.getComponent({ name: 'DeviceAssetPicker' }).props('open')).toBe(true)
   })
 
   it('drops an unknown status restored from session state', async () => {

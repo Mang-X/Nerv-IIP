@@ -733,6 +733,8 @@ export async function routeBusinessConsoleApi(route: Route) {
           },
         ],
         total: 1,
+        skip: Number(requestUrl.searchParams.get('skip') ?? 0),
+        take: Number(requestUrl.searchParams.get('take') ?? 20),
       }),
     )
   }

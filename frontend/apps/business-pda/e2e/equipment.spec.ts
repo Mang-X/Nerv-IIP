@@ -118,7 +118,12 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { items: workOrders.slice(skip, skip + take), total: workOrders.length },
+          data: {
+            items: workOrders.slice(skip, skip + take),
+            total: workOrders.length,
+            skip,
+            take,
+          },
         }),
       })
     }
@@ -552,11 +557,24 @@ test('点检：数字键盘录入（含负号）+ 超差警示 + 提交确认', 
 
 test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文并按 Self 重校验', async ({ page }) => {
   const detailRequests: URL[] = []
+  let createdWorkOrderAssigned = false
   await page.route(
     `**/api/business-console/v1/maintenance/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}**`,
     async (route) => {
       const url = new URL(route.request().url())
       detailRequests.push(url)
+      if (!createdWorkOrderAssigned) {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            message: '新建工单尚未指派给当前维修人员',
+            data: null,
+          }),
+        })
+        return
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -606,6 +624,18 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   await page.getByRole('button', { name: '高', exact: true }).click()
   await page.getByTestId('submit').click()
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
+  await expect(page.getByTestId('created-work-order-assignment-state')).toContainText(
+    '尚未指派给当前账号',
+  )
+  await expect(page.getByTestId('view-created-work-order')).toHaveCount(0)
+
+  // 创建回执真实保持未指派；此处模拟外部派工，再由用户显式回读 Self 详情。
+  createdWorkOrderAssigned = true
+  await page.getByTestId('recheck-created-work-order-assignment').click()
+  await expect(page.getByTestId('created-work-order-assignment-state')).toContainText(
+    '已确认工单指派给当前维修人员',
+  )
+  await expect(page.getByTestId('view-created-work-order')).toBeVisible()
   await page.getByTestId('view-created-work-order').click()
 
   await expect(page).toHaveURL(
@@ -619,9 +649,11 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-1',
   )
-  expect(detailRequests).toHaveLength(1)
-  expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
-  expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
+  expect(detailRequests.length).toBeGreaterThanOrEqual(2)
+  for (const request of detailRequests) {
+    expect(request.searchParams.get('scopeKind')).toBe('self')
+    expect(request.searchParams.get('scopeId')).toBe(principal.principalId)
+  }
 })
 
 test('首页 → 报修：点应用墙「报修」跳 /equipment/repair', async ({ page }) => {

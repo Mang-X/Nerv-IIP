@@ -18,6 +18,8 @@ const createPending = ref(false)
 const canReadWorkOrderDetail = ref(true)
 const confirmedCreatedWorkOrder = ref<Record<string, unknown>>()
 const createdDetailHasSuccessfulResponse = ref(false)
+const createdDetailPending = ref(false)
+const refreshCreatedWorkOrder = vi.fn(async () => {})
 const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '11111111-1111-1111-1111-111111111111',
@@ -75,6 +77,8 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
   useMaintenanceSelfWorkOrderDetail: () => ({
     workOrder: confirmedCreatedWorkOrder,
     hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+    pending: createdDetailPending,
+    refresh: refreshCreatedWorkOrder,
   }),
 }))
 
@@ -113,6 +117,8 @@ beforeEach(() => {
   canReadWorkOrderDetail.value = true
   confirmedCreatedWorkOrder.value = undefined
   createdDetailHasSuccessfulResponse.value = false
+  createdDetailPending.value = false
+  refreshCreatedWorkOrder.mockReset()
   workOrdersError.value = null
   workOrdersPending.value = false
   workOrdersRefreshing.value = false
@@ -338,21 +344,38 @@ describe('PDA equipment repair page', () => {
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('报修已提交')
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '尚未指派给当前账号',
+    )
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="recheck-created-work-order-assignment"]').text()).toContain(
+      '重新核验指派状态',
+    )
   })
 
-  it('opens the confirmed strong-ID detail from alarm-sourced repair success', async () => {
+  it('rechecks authoritative assignment before opening alarm-sourced repair detail', async () => {
     route.query = { deviceAssetId: 'DEV-9', sourceAlarmId: 'ALM-9' }
-    confirmedCreatedWorkOrder.value = {
-      workOrderId: '33333333-3333-3333-3333-333333333333',
-      assignedTechnicianUserId: 'principal-1',
-      sourceAlarmId: 'ALM-9',
-    }
-    createdDetailHasSuccessfulResponse.value = true
+    refreshCreatedWorkOrder.mockImplementationOnce(async () => {
+      confirmedCreatedWorkOrder.value = {
+        workOrderId: '33333333-3333-3333-3333-333333333333',
+        assignedTechnicianUserId: 'principal-1',
+        sourceAlarmId: 'ALM-9',
+      }
+      createdDetailHasSuccessfulResponse.value = true
+    })
     const wrapper = mount(RepairPage)
     await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="recheck-created-work-order-assignment"]').trigger('click')
+    await flushPromises()
+
+    expect(refreshCreatedWorkOrder).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '已确认工单指派给当前维修人员',
+    )
     await wrapper.get('[data-testid="view-created-work-order"]').trigger('click')
 
     expect(push).toHaveBeenCalledWith({
@@ -369,6 +392,9 @@ describe('PDA equipment repair page', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      true,
+    )
   })
 
   it('does not offer detail navigation without both maintenance and device location reads', async () => {
@@ -380,6 +406,9 @@ describe('PDA equipment repair page', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      false,
+    )
     canReadWorkOrderDetail.value = true
   })
 
