@@ -166,6 +166,20 @@ const invalidListEnvelopes = [
     },
   ],
   [
+    'numeric source reference',
+    {
+      success: true,
+      data: { items: [authoritativeListItem(1, { sourceReferenceId: 42 })], total: 1 },
+    },
+  ],
+  [
+    'object source reference',
+    {
+      success: true,
+      data: { items: [authoritativeListItem(1, { sourceReferenceId: {} })], total: 1 },
+    },
+  ],
+  [
     'missing device',
     { success: true, data: { items: [withoutListField('deviceAssetId')], total: 1 } },
   ],
@@ -230,7 +244,9 @@ describe('useMaintenanceSelfWorkOrders', () => {
     seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] })
 
     const list = useMaintenanceSelfWorkOrders()
-    const detail = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const detail = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
 
     expect(list.scopeReady.value).toBe(false)
     expect(api.queryFactories.get('maintenance-list')?.().enabled).toBe(false)
@@ -553,12 +569,32 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     api.refetches.clear()
   })
 
+  it.each(['', 'WO-DETAIL', '00000000-0000-0000-0000-000000000000'])(
+    'keeps an invalid or empty strong ID locally unavailable without downstream requests: %j',
+    async (routeId) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => routeId))
+
+      expect(result.enabled.value).toBe(false)
+      expect(api.queryFactories.get('maintenance-detail')?.().enabled).toBe(false)
+      expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+      expect(api.queryFactories.get('maintenance-identities')?.().enabled).toBe(false)
+
+      await result.refresh()
+
+      expect(api.refetches.get('maintenance-detail')).not.toHaveBeenCalled()
+      expect(api.refetches.get('device-detail')).not.toHaveBeenCalled()
+      expect(api.workers).not.toHaveBeenCalled()
+      expect(api.resourceDetail).not.toHaveBeenCalled()
+    },
+  )
+
   it('revalidates the strong ID with the authenticated self scope', () => {
     seedPrincipal()
-    useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    useMaintenanceSelfWorkOrderDetail(computed(() => '019f0000-0000-7000-8000-000000000101'))
 
     expect(requestFor('maintenance-detail')).toEqual({
-      path: { workOrderId: 'WO-DETAIL' },
+      path: { workOrderId: '019f0000-0000-7000-8000-000000000101' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -570,12 +606,14 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('rejects and clears a matching-ID detail when authoritative fields are incomplete', async () => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
       data: {
-        workOrderId: 'WO-DETAIL',
+        workOrderId: '019f0000-0000-7000-8000-000000000101',
         deviceAssetId: 'device-1',
         priority: 'high',
         status: 'accepted',
@@ -595,7 +633,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     api.data.get('maintenance-detail')!.value = {
       success: true,
       data: {
-        workOrderId: 'WO-DETAIL',
+        workOrderId: '019f0000-0000-7000-8000-000000000101',
         deviceAssetId: 'device-1',
         priority: 'high',
         status: 'accepted',
@@ -612,17 +650,57 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
 
+  it.each([42, { inspectionId: 'opaque' }])(
+    'rejects a malformed detail source reference without throwing: %j',
+    async (sourceReferenceId) => {
+      seedPrincipal()
+      const workOrderId = '019f0000-0000-7000-8000-000000000101'
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => workOrderId))
+
+      expect(() => {
+        api.data.get('maintenance-detail')!.value = {
+          success: true,
+          data: { ...authoritativeDetail(workOrderId, 'DEV-CNC-01'), sourceReferenceId },
+        }
+      }).not.toThrow()
+      await nextTick()
+
+      expect(result.authoritativeHasFailedResponse.value).toBe(true)
+      expect(result.authoritativeWorkOrder.value).toBeUndefined()
+      expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+    },
+  )
+
+  it('rejects a non-canonical response ID even when it exactly matches an invalid route value', async () => {
+    seedPrincipal()
+    const routeId = shallowRef('019f0000-0000-7000-8000-000000000101')
+    const result = useMaintenanceSelfWorkOrderDetail(routeId)
+
+    routeId.value = 'WO-DETAIL'
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+    }
+    await nextTick()
+
+    expect(result.enabled.value).toBe(false)
+    expect(result.authoritativeWorkOrder.value).toBeUndefined()
+    expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+  })
+
   it.each([
     ['technician', { assignedTeamId: null }],
     ['team', { assignedTechnicianUserId: 'principal-1' }],
     ['both', {}],
   ])('rejects detail when the explicit %s assignment field is missing', async (_, assignments) => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
       data: {
-        ...authoritativeDetail('WO-DETAIL', 'device-1'),
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
         assignedTechnicianUserId: undefined,
         assignedTeamId: undefined,
         ...assignments,
@@ -643,11 +721,13 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     'rejects detail assigned to a different or absent technician: %s',
     async (assignedTechnicianUserId) => {
       seedPrincipal()
-      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      const result = useMaintenanceSelfWorkOrderDetail(
+        computed(() => '019f0000-0000-7000-8000-000000000101'),
+      )
       api.data.get('maintenance-detail')!.value = {
         success: true,
         data: {
-          ...authoritativeDetail('WO-DETAIL', 'device-1'),
+          ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
           assignedTechnicianUserId,
         },
       }
@@ -666,7 +746,9 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     ['team', { teamId: undefined }],
   ])('rejects detail when a lifecycle event has an invalid %s audit field', async (_, override) => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     const event: Record<string, unknown> = {
       action: 'accept',
       fromStatus: 'opened',
@@ -683,7 +765,10 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     if (Object.hasOwn(override, 'teamId')) delete event.teamId
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), lifecycle: [event] },
+      data: {
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
+        lifecycle: [event],
+      },
     }
     await nextTick()
 
@@ -696,10 +781,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     'rejects a non-RFC3339 or impossible opened timestamp: %s',
     async (openedAtUtc) => {
       seedPrincipal()
-      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      const result = useMaintenanceSelfWorkOrderDetail(
+        computed(() => '019f0000-0000-7000-8000-000000000101'),
+      )
       api.data.get('maintenance-detail')!.value = {
         success: true,
-        data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), openedAtUtc },
+        data: {
+          ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
+          openedAtUtc,
+        },
       }
       await nextTick()
 
@@ -712,11 +802,13 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     'rejects a non-RFC3339 or impossible lifecycle timestamp: %s',
     async (occurredAtUtc) => {
       seedPrincipal()
-      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      const result = useMaintenanceSelfWorkOrderDetail(
+        computed(() => '019f0000-0000-7000-8000-000000000101'),
+      )
       api.data.get('maintenance-detail')!.value = {
         success: true,
         data: {
-          ...authoritativeDetail('WO-DETAIL', 'device-1'),
+          ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
           lifecycle: [
             {
               action: 'accept',
@@ -746,10 +838,12 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     'keeps authoritative assignment confirmed when device enrichment returns %s',
     async (_, outcome) => {
       seedPrincipal()
-      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      const result = useMaintenanceSelfWorkOrderDetail(
+        computed(() => '019f0000-0000-7000-8000-000000000101'),
+      )
       api.data.get('maintenance-detail')!.value = {
         success: true,
-        data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+        data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
       }
       await nextTick()
       if ('error' in outcome) api.errors.get('device-detail')!.value = outcome.error
@@ -769,10 +863,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     ['terminal block reason', { blockReasons: ['terminal-status'], allowedActions: ['start'] }],
   ])('rejects contradictory terminal action facts: %s', async (_, override) => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: { ...authoritativeDetail('WO-DETAIL', 'device-1'), ...override },
+      data: {
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
+        ...override,
+      },
     }
     await nextTick()
 
@@ -785,13 +884,15 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     'rejects malformed block reasons without throwing during render: %j',
     async (blockReason) => {
       seedPrincipal()
-      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      const result = useMaintenanceSelfWorkOrderDetail(
+        computed(() => '019f0000-0000-7000-8000-000000000101'),
+      )
 
       expect(() => {
         api.data.get('maintenance-detail')!.value = {
           success: true,
           data: {
-            ...authoritativeDetail('WO-DETAIL', 'device-1'),
+            ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'device-1'),
             blockReasons: [blockReason],
           },
         }
@@ -807,10 +908,12 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
   it('accepts a device detail resolved by public ID when its business code differs', async () => {
     seedPrincipal()
     const deviceAssetId = '019f0000-0000-7000-8000-000000000001'
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', deviceAssetId),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', deviceAssetId),
     }
     await nextTick()
 
@@ -835,13 +938,60 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.device.value?.code).toBe('DEV-CNC-01')
   })
 
+  it.each([
+    ['resource type', { resourceType: 42 }],
+    ['organization', { organizationId: {} }],
+    ['environment', { environmentId: 42 }],
+    ['code', { code: {} }],
+    ['device public ID', { deviceAssetId: '00000000-0000-0000-0000-000000000000' }],
+    ['display name', { displayName: 42 }],
+    ['site', { siteCode: {} }],
+    ['plant', { plantCode: 42 }],
+    ['workshop', { workshopCode: {} }],
+    ['line', { lineCode: 42 }],
+    ['work center', { workCenterCode: {} }],
+    ['station', { stationCode: 42 }],
+  ])('fails malformed device %s data closed without a computed exception', async (_, override) => {
+    seedPrincipal()
+    const workOrderId = '019f0000-0000-7000-8000-000000000101'
+    const result = useMaintenanceSelfWorkOrderDetail(computed(() => workOrderId))
+    api.data.get('maintenance-detail')!.value = {
+      success: true,
+      data: authoritativeDetail(workOrderId, 'DEV-CNC-01'),
+    }
+    await nextTick()
+
+    expect(() => {
+      api.data.get('device-detail')!.value = {
+        success: true,
+        data: {
+          resourceType: 'device-asset',
+          deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+          code: 'DEV-CNC-01',
+          displayName: '一号数控机床',
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          ...override,
+        },
+      }
+    }).not.toThrow()
+    await nextTick()
+
+    expect(result.authoritativeHasSuccessfulResponse.value).toBe(true)
+    expect(result.deviceHasFailedResponse.value).toBe(true)
+    expect(result.hasFailedResponse.value).toBe(true)
+    expect(result.device.value).toBeUndefined()
+  })
+
   it('resolves readable users and teams through exact scoped MasterData contracts', async () => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
       data: {
-        ...authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
         assignedTeamId: 'TEAM-A',
       },
     }
@@ -912,10 +1062,10 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('fails identity enrichment closed when an exact worker response returns another user', async () => {
     seedPrincipal()
-    useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    useMaintenanceSelfWorkOrderDetail(computed(() => '019f0000-0000-7000-8000-000000000101'))
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
     }
     await nextTick()
     api.workers.mockResolvedValueOnce({
@@ -947,11 +1097,13 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('bounds identity enrichment requests for an oversized lifecycle', async () => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
       data: {
-        ...authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+        ...authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
         lifecycle: Array.from({ length: 21 }, (_, index) => ({
           action: 'accept',
           fromStatus: 'open',
@@ -974,11 +1126,11 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('clears retained identity names synchronously when the work-order identity changes', async () => {
     seedPrincipal()
-    const routeId = shallowRef('WO-A')
+    const routeId = shallowRef('019f0000-0000-7000-8000-000000000102')
     const result = useMaintenanceSelfWorkOrderDetail(routeId)
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-A', 'DEV-A'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000102', 'DEV-A'),
     }
     await nextTick()
     api.data.get('maintenance-identities')!.value = {
@@ -988,10 +1140,10 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     await nextTick()
     expect(result.identities.value?.users['principal-1']).toBe('旧人员')
 
-    routeId.value = 'WO-B'
+    routeId.value = '019f0000-0000-7000-8000-000000000103'
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-B', 'DEV-B'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000103', 'DEV-B'),
     }
     await nextTick()
 
@@ -1000,12 +1152,12 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('treats the strong-ID device detail as part of aggregate detail state', async () => {
     seedPrincipal()
-    const routeId = shallowRef('WO-NEW')
+    const routeId = shallowRef('019f0000-0000-7000-8000-000000000104')
     const result = useMaintenanceSelfWorkOrderDetail(routeId)
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: { workOrderId: 'WO-OLD', deviceAssetId: 'device-old' },
+      data: { workOrderId: '019f0000-0000-7000-8000-000000000105', deviceAssetId: 'device-old' },
     }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
@@ -1019,7 +1171,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-NEW', 'DEV-CNC-01'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000104', 'DEV-CNC-01'),
     }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
@@ -1107,7 +1259,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       displayName: '一号数控机床',
       workshopCode: 'WS-1',
     })
-    expect(result.workOrder.value?.workOrderId).toBe('WO-NEW')
+    expect(result.workOrder.value?.workOrderId).toBe('019f0000-0000-7000-8000-000000000104')
     expect(result.hasSuccessfulResponse.value).toBe(true)
     expect(result.hasFailedResponse.value).toBe(false)
 
@@ -1118,10 +1270,10 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.hasFailedResponse.value).toBe(true)
     api.errors.get('maintenance-detail')!.value = undefined
 
-    routeId.value = 'WO-LATEST'
+    routeId.value = '019f0000-0000-7000-8000-000000000106'
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-LATEST', 'DEV-LATEST'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000106', 'DEV-LATEST'),
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
@@ -1147,10 +1299,12 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('retries the work order first and then the newly resolved device detail', async () => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
     }
     await nextTick()
 
@@ -1179,10 +1333,12 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it('hides retained aggregate detail during work-order and device refreshes', async () => {
     seedPrincipal()
-    const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+    const result = useMaintenanceSelfWorkOrderDetail(
+      computed(() => '019f0000-0000-7000-8000-000000000101'),
+    )
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
+      data: authoritativeDetail('019f0000-0000-7000-8000-000000000101', 'DEV-CNC-01'),
     }
     api.data.get('device-detail')!.value = {
       success: true,
@@ -1196,7 +1352,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       },
     }
     await nextTick()
-    expect(result.workOrder.value?.workOrderId).toBe('WO-DETAIL')
+    expect(result.workOrder.value?.workOrderId).toBe('019f0000-0000-7000-8000-000000000101')
     expect(result.device.value?.displayName).toBe('旧设备')
 
     api.loading.get('maintenance-detail')!.value = true

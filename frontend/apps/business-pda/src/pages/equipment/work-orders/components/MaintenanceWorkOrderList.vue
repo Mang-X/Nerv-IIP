@@ -3,15 +3,13 @@ import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-clie
 import { maintenancePriorityLabel, maintenanceWorkOrderStatusLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileTag } from '@nerv-iip/ui-mobile'
 
+import { maintenanceWorkOrderTitle } from '../maintenanceWorkOrderPresentation'
+
 const props = defineProps<{
   items: BusinessConsoleMaintenanceWorkOrderItem[]
   principalDisplayName?: string
 }>()
 const emit = defineEmits<{ select: [workOrder: BusinessConsoleMaintenanceWorkOrderItem] }>()
-
-function title(item: BusinessConsoleMaintenanceWorkOrderItem) {
-  return item.sourceReferenceId?.trim() || '维修工单'
-}
 
 function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
   return [
@@ -33,7 +31,7 @@ function select(item: BusinessConsoleMaintenanceWorkOrderItem) {
       :key="item.workOrderId"
       data-testid="maintenance-work-order-row"
       :data-work-order-id="item.workOrderId"
-      :title="title(item)"
+      :title="maintenanceWorkOrderTitle(item.sourceReferenceId)"
       :subtitle="subtitle(item)"
       :interactive="Boolean(item.workOrderId)"
       @select="select(item)"

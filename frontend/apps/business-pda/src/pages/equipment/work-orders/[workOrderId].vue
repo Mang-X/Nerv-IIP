@@ -16,6 +16,7 @@ const requestedWorkOrderId = computed(() => {
 })
 const {
   scopeReady,
+  enabled,
   workOrder,
   device,
   identities,
@@ -56,11 +57,19 @@ function backToList() {
     </template>
 
     <div
-      v-if="!scopeReady || !requestedWorkOrderId"
+      v-if="!scopeReady"
       class="m-4 rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center"
     >
       <h2 class="font-semibold text-foreground">工单不可查看</h2>
       <p class="mt-2 text-sm text-muted-foreground">当前账号暂无法查看，请重新登录或联系管理员。</p>
+    </div>
+
+    <div
+      v-else-if="!enabled"
+      class="m-4 rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center"
+    >
+      <h2 class="font-semibold text-foreground">工单不可查看</h2>
+      <p class="mt-2 text-sm text-muted-foreground">工单标识无效，请返回列表重新选择。</p>
     </div>
 
     <div v-else-if="pending && !workOrder" class="p-8 text-center text-sm text-muted-foreground">

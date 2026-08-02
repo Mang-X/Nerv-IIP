@@ -7,7 +7,16 @@ import type {
 type MaintenanceDevice = BusinessConsoleResourceItem | BusinessConsoleMasterDataResourceDetail
 
 function normalize(value?: string | null) {
-  return value?.trim().toLowerCase() ?? ''
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+const GUID_REFERENCE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function maintenanceWorkOrderTitle(sourceReferenceId: unknown) {
+  if (typeof sourceReferenceId !== 'string') return '维修工单'
+  const reference = sourceReferenceId.trim()
+  if (!reference || GUID_REFERENCE.test(reference) || reference.includes(':')) return '维修工单'
+  return reference
 }
 
 export function maintenanceDeviceTitle(
@@ -15,8 +24,8 @@ export function maintenanceDeviceTitle(
   device?: MaintenanceDevice,
 ) {
   return (
-    device?.displayName?.trim() ||
-    device?.code?.trim() ||
+    (typeof device?.displayName === 'string' ? device.displayName.trim() : '') ||
+    (typeof device?.code === 'string' ? device.code.trim() : '') ||
     (workOrder.deviceAssetId ? '设备资料不可用' : '设备未标识')
   )
 }
@@ -31,7 +40,7 @@ export function maintenanceDeviceLocation(device?: MaintenanceDevice) {
     device.workCenterCode,
     device.stationCode,
   ]
-    .map((part) => part?.trim())
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
     .filter((part): part is string => Boolean(part))
     .filter((part, index, all) => all.indexOf(part) === index)
   return parts.length ? parts.join(' · ') : '位置未登记'

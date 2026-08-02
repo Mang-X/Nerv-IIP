@@ -8,6 +8,7 @@ import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useM
 
 const state = vi.hoisted(() => ({
   scopeReady: true,
+  enabled: true,
   pending: false,
   failed: false,
   error: undefined as unknown,
@@ -26,6 +27,7 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
     state.requestedId = requestedId
     return {
       scopeReady: shallowRef(state.scopeReady),
+      enabled: shallowRef(state.enabled),
       pending: shallowRef(state.pending),
       error: shallowRef(state.error),
       hasFailedResponse: shallowRef(state.failed),
@@ -45,7 +47,7 @@ function authoritativeWorkOrder(
   overrides: Partial<AuthoritativeMaintenanceWorkOrderDetail> = {},
 ): AuthoritativeMaintenanceWorkOrderDetail {
   return {
-    workOrderId: 'WO-DETAIL',
+    workOrderId: '019f0000-0000-7000-8000-000000000101',
     deviceAssetId: 'device-1',
     priority: 'medium',
     status: 'open',
@@ -60,7 +62,7 @@ function authoritativeWorkOrder(
   }
 }
 
-async function mountPage(path = '/equipment/work-orders/WO-DETAIL') {
+async function mountPage(path = '/equipment/work-orders/019f0000-0000-7000-8000-000000000101') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -78,6 +80,7 @@ describe('maintenance work-order authoritative detail page', () => {
     vi.clearAllMocks()
     Object.assign(state, {
       scopeReady: true,
+      enabled: true,
       pending: false,
       failed: false,
       error: undefined,
@@ -122,10 +125,10 @@ describe('maintenance work-order authoritative detail page', () => {
     }
 
     const wrapper = await mountPage(
-      '/equipment/work-orders/WO-DETAIL?source=repair&sourceAlarmId=ALM-9',
+      '/equipment/work-orders/019f0000-0000-7000-8000-000000000101?source=repair&sourceAlarmId=ALM-9',
     )
 
-    expect(state.requestedId?.value).toBe('WO-DETAIL')
+    expect(state.requestedId?.value).toBe('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
@@ -135,7 +138,7 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('技师快照 张维修')
     expect(wrapper.text()).toContain('班组快照 甲班')
     expect(wrapper.text()).toContain('来源：报警报修创建结果')
-    expect(wrapper.text()).not.toContain('WO-DETAIL')
+    expect(wrapper.text()).not.toContain('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).not.toContain('device-1')
     expect(wrapper.text()).not.toContain('principal-1')
     expect(wrapper.text()).not.toContain('team-a')
@@ -166,7 +169,7 @@ describe('maintenance work-order authoritative detail page', () => {
     state.workOrder = authoritativeWorkOrder({ sourceAlarmId: 'ALM-AUTHORITATIVE' })
 
     const wrapper = await mountPage(
-      '/equipment/work-orders/WO-DETAIL?source=repair&sourceAlarmId=ALM-EDITED',
+      '/equipment/work-orders/019f0000-0000-7000-8000-000000000101?source=repair&sourceAlarmId=ALM-EDITED',
     )
 
     expect(wrapper.find('[data-testid="maintenance-source-context"]').exists()).toBe(false)
@@ -175,7 +178,9 @@ describe('maintenance work-order authoritative detail page', () => {
   it('does not claim ordinary repair source context without an authoritative alarm link', async () => {
     state.workOrder = authoritativeWorkOrder()
 
-    const wrapper = await mountPage('/equipment/work-orders/WO-DETAIL?source=repair')
+    const wrapper = await mountPage(
+      '/equipment/work-orders/019f0000-0000-7000-8000-000000000101?source=repair',
+    )
 
     expect(wrapper.find('[data-testid="maintenance-source-context"]').exists()).toBe(false)
   })
@@ -214,13 +219,23 @@ describe('maintenance work-order authoritative detail page', () => {
     }
   })
 
-  it('fails closed for forbidden, invalid, or unmatched IDs without rendering old detail', async () => {
+  it('shows an invalid route ID as locally unavailable without retry controls', async () => {
+    state.enabled = false
+
+    const wrapper = await mountPage('/equipment/work-orders/WO-INVALID')
+
+    expect(wrapper.text()).toContain('工单标识无效，请返回列表重新选择')
+    expect(wrapper.find('[data-testid="maintenance-work-order-detail-error"]').exists()).toBe(false)
+    expect(state.refresh).not.toHaveBeenCalled()
+  })
+
+  it('fails closed for forbidden or unmatched strong IDs without rendering old detail', async () => {
     state.failed = true
     state.error = { status: 403 }
 
-    const wrapper = await mountPage('/equipment/work-orders/invalid-id')
+    const wrapper = await mountPage('/equipment/work-orders/019f0000-0000-7000-8000-000000000109')
 
-    expect(state.requestedId?.value).toBe('invalid-id')
+    expect(state.requestedId?.value).toBe('019f0000-0000-7000-8000-000000000109')
     expect(wrapper.text()).toContain('工单不可查看')
     expect(wrapper.text()).toContain('当前账号不可查看')
     expect(wrapper.text()).not.toContain('Self')

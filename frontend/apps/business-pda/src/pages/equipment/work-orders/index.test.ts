@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 
 const state = vi.hoisted(() => ({
+  scopeKey: 'org-001:env-dev:self:principal-1',
   scopeReady: false,
   hasSuccessfulResponse: false,
   hasFailedResponse: false,
@@ -29,6 +30,7 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
         ]
       : [],
   useMaintenanceSelfWorkOrders: () => ({
+    scopeKey: shallowRef(state.scopeKey),
     scopeReady: shallowRef(state.scopeReady),
     hasSuccessfulResponse: shallowRef(state.hasSuccessfulResponse),
     hasFailedResponse: shallowRef(state.hasFailedResponse),
@@ -70,7 +72,7 @@ async function mountPage() {
           name: 'DeviceAssetPicker',
           props: ['open'],
           template:
-            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019f-device-guid', code: 'DEV-CNC-01', displayName: '一号数控机床' })\">选择设备</button>",
+            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019f0000-0000-7000-8000-000000000302', code: 'DEV-CNC-01', displayName: '一号数控机床' })\">选择设备</button>",
         },
       },
     },
@@ -82,6 +84,7 @@ describe('maintenance self work-order queue page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     state.scopeReady = false
+    state.scopeKey = 'org-001:env-dev:self:principal-1'
     state.hasSuccessfulResponse = false
     state.hasFailedResponse = false
     state.error = undefined
@@ -126,7 +129,7 @@ describe('maintenance self work-order queue page', () => {
     state.hasSuccessfulResponse = true
     state.items = [
       {
-        workOrderId: '019f-strong-id',
+        workOrderId: '019f0000-0000-7000-8000-000000000301',
         sourceReferenceId: 'MWO-2026-0042',
         deviceAssetId: 'device-1',
         status: 'accepted',
@@ -145,7 +148,9 @@ describe('maintenance self work-order queue page', () => {
     await wrapper.get('[data-testid="maintenance-work-order-row"]').trigger('keydown', { key: ' ' })
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/equipment/work-orders/019f-strong-id')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/equipment/work-orders/019f0000-0000-7000-8000-000000000301',
+    )
   })
 
   it('stores the maintenance device code selected from the server directory', async () => {
@@ -154,7 +159,10 @@ describe('maintenance self work-order queue page', () => {
 
     await wrapper.get('[data-testid="select-device"]').trigger('click')
 
-    expect(state.filters.deviceAssetIds).toEqual(['019f-device-guid', 'DEV-CNC-01'])
+    expect(state.filters.deviceAssetIds).toEqual([
+      '019f0000-0000-7000-8000-000000000302',
+      'DEV-CNC-01',
+    ])
     expect(wrapper.text()).toContain('一号数控机床')
   })
 
@@ -177,5 +185,32 @@ describe('maintenance self work-order queue page', () => {
     await flushPromises()
 
     expect(state.filters.status).toBe('')
+  })
+
+  it('isolates restored device filters, labels, and scroll state by organization and environment', async () => {
+    state.scopeReady = true
+    sessionStorage.setItem(
+      'nerv-iip.business-pda.task-list.maintenance-self-work-orders:org-old:env-old:self:principal-1',
+      JSON.stringify({
+        filters: {
+          status: 'accepted',
+          deviceAssetIds: ['019f0000-0000-7000-8000-000000000001', 'DEV-OLD'],
+          deviceLabel: '旧环境设备',
+          keyword: '旧环境关键字',
+        },
+        scrollTop: 286,
+      }),
+    )
+
+    const { wrapper } = await mountPage()
+    await flushPromises()
+
+    const shell = wrapper.getComponent(TaskListShell)
+    expect(shell.props('stateKey')).toBe(
+      'maintenance-self-work-orders:org-001:env-dev:self:principal-1',
+    )
+    expect(state.filters).toEqual({ status: '', deviceAssetIds: [], keyword: '' })
+    expect(wrapper.text()).not.toContain('旧环境设备')
+    expect((wrapper.get('.nv-m-pr-scroll').element as HTMLElement).scrollTop).toBe(0)
   })
 })

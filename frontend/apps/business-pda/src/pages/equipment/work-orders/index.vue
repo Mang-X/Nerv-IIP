@@ -20,7 +20,7 @@ definePage({ meta: { requiresAuth: true, title: '维修工单' } })
 
 const router = useRouter()
 const {
-  principalId,
+  scopeKey,
   scopeReady,
   items,
   total,
@@ -93,7 +93,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
 
     <div class="flex h-full min-h-0 flex-col">
       <TaskListShell
-        :state-key="`maintenance-self-work-orders:${principalId}`"
+        :state-key="`maintenance-self-work-orders:${scopeKey}`"
         :scope="scopeLabel"
         source="维修工单"
         :loaded="loaded"

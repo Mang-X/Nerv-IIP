@@ -87,6 +87,10 @@ function isNonBlankString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function isNullableString(value: unknown): value is string | null | undefined {
+  return value === null || value === undefined || typeof value === 'string'
+}
+
 function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
@@ -125,6 +129,7 @@ function isWorkOrderListItem(
     typeof value === 'object' &&
     !Array.isArray(value) &&
     isCanonicalGuid((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId) &&
+    isNullableString((value as BusinessConsoleMaintenanceWorkOrderItem).sourceReferenceId) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).deviceAssetId) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).priority) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).status) &&
@@ -187,7 +192,10 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
   return Boolean(
     value &&
     typeof value === 'object' &&
+    isCanonicalGuid(requestedWorkOrderId) &&
+    isCanonicalGuid(value.workOrderId) &&
     value.workOrderId === requestedWorkOrderId &&
+    isNullableString(value.sourceReferenceId) &&
     isNonBlankString(value.deviceAssetId) &&
     isNonBlankString(value.priority) &&
     isNonBlankString(value.status) &&
@@ -490,7 +498,7 @@ export function useMaintenanceSelfWorkOrders() {
 export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRefOrGetter<string>) {
   const scope = useMaintenanceSelfScope()
   const workOrderId = computed(() => toValue(requestedWorkOrderId).trim())
-  const enabled = computed(() => scope.scopeReady.value && Boolean(workOrderId.value))
+  const enabled = computed(() => scope.scopeReady.value && isCanonicalGuid(workOrderId.value))
   const detailIdentity = computed(() =>
     enabled.value ? `${scope.scopeKey.value}:work-order:${workOrderId.value}` : '',
   )
@@ -644,10 +652,31 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     const envelope = deviceResponse.value
     if (envelope?.success !== true) return undefined
     const item = envelope.data
-    return item &&
-      item.resourceType?.trim().toLowerCase() === 'device-asset' &&
-      item.organizationId?.trim() === scope.organizationId.value &&
-      item.environmentId?.trim() === scope.environmentId.value &&
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return undefined
+
+    const presentationFields = [
+      item.siteCode,
+      item.plantCode,
+      item.workshopCode,
+      item.lineCode,
+      item.workCenterCode,
+      item.stationCode,
+    ]
+    if (
+      !isNonBlankString(item.resourceType) ||
+      !isNonBlankString(item.organizationId) ||
+      !isNonBlankString(item.environmentId) ||
+      !isNonBlankString(item.code) ||
+      !isCanonicalGuid(item.deviceAssetId) ||
+      !isNonBlankString(item.displayName) ||
+      !presentationFields.every(isNullableString)
+    ) {
+      return undefined
+    }
+
+    return item.resourceType.trim().toLowerCase() === 'device-asset' &&
+      item.organizationId.trim() === scope.organizationId.value &&
+      item.environmentId.trim() === scope.environmentId.value &&
       (item.code === deviceAssetId.value || item.deviceAssetId === deviceAssetId.value)
       ? item
       : undefined
