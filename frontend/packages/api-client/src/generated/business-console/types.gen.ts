@@ -5025,7 +5025,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     jobTitle?: string | null;
     employmentStatus?: string | null;
     phone?: string | null;
-    deviceAssetId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent = {

@@ -3,6 +3,7 @@ import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
@@ -119,6 +120,17 @@ const operationFingerprint = ref('')
 const submittedIntent = ref<RepairIntent | null>(null)
 const intentLocked = ref(false)
 const createdWorkOrderId = ref('')
+const {
+  workOrder: confirmedCreatedWorkOrder,
+  hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+} = useMaintenanceSelfWorkOrderDetail(createdWorkOrderId)
+const canViewCreatedWorkOrder = computed(
+  () =>
+    canReadWorkOrderDetail.value &&
+    Boolean(createdWorkOrderId.value) &&
+    createdDetailHasSuccessfulResponse.value &&
+    confirmedCreatedWorkOrder.value?.workOrderId === createdWorkOrderId.value,
+)
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 目录选择 -----------------------
 const queryDeviceAssetId = computed(() => {
@@ -195,7 +207,9 @@ function onScan(value: string) {
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   if (intentLocked.value) return
-  form.deviceAssetId = device.deviceAssetId
+  const deviceCode = device.code?.trim()
+  if (!deviceCode) return
+  form.deviceAssetId = deviceCode
   selectedDevice.value = { ...device, source: 'directory' }
 }
 
@@ -295,14 +309,12 @@ function goBack() {
 }
 
 function viewCreatedWorkOrder() {
-  if (!createdWorkOrderId.value || !canReadWorkOrderDetail.value) return
+  if (!canViewCreatedWorkOrder.value) return
+  const confirmedAlarmId = submittedIntent.value?.sourceAlarmId
   router
     .push({
       path: `/equipment/work-orders/${encodeURIComponent(createdWorkOrderId.value)}`,
-      query: {
-        source: 'repair',
-        ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
-      },
+      ...(confirmedAlarmId ? { query: { sourceAlarmId: confirmedAlarmId } } : {}),
     })
     .catch(() => {})
 }
@@ -336,7 +348,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
     >
       <template #actions>
         <NvMobileButton
-          v-if="createdWorkOrderId && canReadWorkOrderDetail"
+          v-if="canViewCreatedWorkOrder"
           data-testid="view-created-work-order"
           variant="primary"
           size="lg"

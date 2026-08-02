@@ -46,8 +46,8 @@ export const workerProfile = {
 
 const deviceAssets = [
   {
-    deviceAssetId: 'device-asset-cnc-01',
-    code: 'CNC-01',
+    deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+    code: 'DEV-CNC-01',
     displayName: '一号数控机床',
     active: true,
     workshopCode: 'WS-1',
@@ -55,15 +55,15 @@ const deviceAssets = [
     stationCode: 'ST-9',
   },
   {
-    deviceAssetId: 'device-asset-lathe-02',
-    code: 'LATHE-02',
+    deviceAssetId: '019f0000-0000-7000-8000-000000000002',
+    code: 'DEV-LATHE-02',
     displayName: '二号车床',
     active: true,
     workshopCode: 'WS-2',
     lineCode: 'LINE-B',
   },
   {
-    deviceAssetId: 'DEV-A',
+    deviceAssetId: '019f0000-0000-7000-8000-000000000003',
     code: 'DEV-A',
     displayName: '装配线冲压机',
     active: true,
@@ -665,15 +665,20 @@ export async function routeBusinessConsoleApi(route: Route) {
     /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
   )
   if (deviceDetailMatch) {
-    const requestedId = decodeURIComponent(deviceDetailMatch[1])
-    const device = deviceAssets.find((item) => item.deviceAssetId === requestedId)
+    const requestedCode = decodeURIComponent(deviceDetailMatch[1])
+    const device = deviceAssets.find((item) => item.code === requestedCode)
     return fulfillJson(
       route,
       envelope(
         device
           ? {
-              ...device,
               resourceType: 'device-asset',
+              code: device.code,
+              displayName: device.displayName,
+              active: device.active,
+              workshopCode: device.workshopCode,
+              lineCode: device.lineCode,
+              stationCode: device.stationCode,
               organizationId: principal.organizationId,
               environmentId: principal.environmentId,
               snapshotVersion: 'v1',
@@ -681,6 +686,18 @@ export async function routeBusinessConsoleApi(route: Route) {
           : null,
       ),
       device ? 200 : 404,
+    )
+  }
+
+  if (
+    method === 'GET' &&
+    pathname ===
+      `/api/business-console/v1/maintenance/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}`
+  ) {
+    return fulfillJson(
+      route,
+      { success: false, message: '新建工单尚未指派给当前维修人员', data: null },
+      403,
     )
   }
 
@@ -712,6 +729,7 @@ export async function routeBusinessConsoleApi(route: Route) {
             status: 'open',
             openedBy: principal.loginName,
             openedAtUtc: '2026-06-10T01:00:00.000Z',
+            assignedTechnicianUserId: principal.principalId,
           },
         ],
         total: 1,

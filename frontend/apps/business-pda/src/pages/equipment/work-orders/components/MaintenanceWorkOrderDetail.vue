@@ -31,8 +31,8 @@ const blockReasons = computed(() => props.workOrder.blockReasons)
 const lifecycle = computed(() => props.workOrder.lifecycle)
 const assignment = computed(() => {
   const parts = [
-    props.workOrder.assignedTechnicianUserId ? '当前维修人员' : '未指派维修人员',
-    props.workOrder.assignedTeamId ? '班组名称暂不可用' : undefined,
+    `维修人员 ${props.workOrder.assignedTechnicianUserId}`,
+    props.workOrder.assignedTeamId ? `班组 ${props.workOrder.assignedTeamId}` : '未指派班组',
   ].filter((part): part is string => Boolean(part))
   return parts.join(' · ')
 })
@@ -123,8 +123,9 @@ const assignment = computed(() => {
             {{ maintenanceWorkOrderActionLabel(event.action) }} · {{ event.reason || '原因未记录' }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            {{ event.actorPrincipalId ? '操作人已记录' : '操作人未记录' }} · 版本
-            {{ event.resultingVersion }} ·
+            操作人 {{ event.actorPrincipalId }} · 技师快照
+            {{ event.technicianUserId || '未指派' }} · 班组快照 {{ event.teamId || '未指派' }} ·
+            版本 {{ event.resultingVersion }} ·
             {{ formatMaintenanceDateTime(event.occurredAtUtc) }}
           </p>
         </li>

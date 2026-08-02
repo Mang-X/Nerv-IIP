@@ -73,7 +73,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   const workOrders = Array.from({ length: 25 }, (_, index) => ({
     workOrderId: `WO-SELF-${index + 1}`,
     sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
-    deviceAssetId: 'device-asset-cnc-01',
+    deviceAssetId: 'DEV-CNC-01',
     priority: 'high',
     status: 'accepted',
     openedAtUtc: '2026-08-02T01:00:00.000Z',
@@ -147,9 +147,9 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(listRequests[0].searchParams.get('take')).toBe('20')
   await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText('已接单')
   await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
-    'device-asset-cnc-01',
+    'DEV-CNC-01',
   )
-  await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
+  await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText(
     principal.principalId,
   )
 
@@ -157,7 +157,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await page.getByRole('button', { name: '全部状态' }).click()
   await page.getByRole('button', { name: '已接单', exact: true }).click()
   await page.getByTestId('maintenance-device-filter').click()
-  await page.getByTestId('device-option-device-asset-cnc-01').click()
+  await page.getByTestId('device-option-019f0000-0000-7000-8000-000000000001').click()
   await expectMinimumTouchHeight(page.getByTestId('maintenance-device-clear'))
   await expect
     .poll(() => {
@@ -176,7 +176,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       scopeKind: 'self',
       scopeId: principal.principalId,
       status: 'accepted',
-      deviceAssetId: 'device-asset-cnc-01',
+      deviceAssetId: 'DEV-CNC-01',
       keyword: '主轴',
     })
 
@@ -187,7 +187,8 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     .toBe(true)
   await expect(page.getByTestId('task-list-meta')).toContainText('已加载 25 / 共 25')
 
-  await page.getByTestId('maintenance-work-order-row').first().click()
+  await page.getByTestId('maintenance-work-order-row').first().focus()
+  await page.getByTestId('maintenance-work-order-row').first().press('Space')
   await expect(page).toHaveURL('/equipment/work-orders/WO-SELF-1')
   await expectMinimumTouchHeight(page.getByRole('button', { name: '返回维修工单列表' }))
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
@@ -195,19 +196,17 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
     'WS-1 · LINE-A · ST-9',
   )
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('当前维修人员')
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('班组名称暂不可用')
-  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
-  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText(
-    principal.principalId,
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
+    `维修人员 ${principal.principalId}`,
   )
-  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('team-a')
+  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('班组 team-a')
+  await expect(page.getByTestId('maintenance-work-order-detail')).not.toContainText('WO-SELF-1')
   expect(detailRequests).toHaveLength(1)
   expect(detailRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
   expect(deviceDetailRequests).toHaveLength(1)
   expect(deviceDetailRequests[0].pathname).toBe(
-    '/api/business-console/v1/master-data/resources/device-asset/device-asset-cnc-01',
+    '/api/business-console/v1/master-data/resources/device-asset/DEV-CNC-01',
   )
   expect(deviceDetailRequests[0].searchParams.get('organizationId')).toBe('org-001')
   expect(deviceDetailRequests[0].searchParams.get('environmentId')).toBe('env-dev')
@@ -295,7 +294,7 @@ test('维修工单：终态矛盾事实失败关闭，修正后强 ID 回读且�
           data: {
             workOrderId: 'WO-CLOSED',
             sourceReferenceId: 'MWO-2026-CLOSED',
-            deviceAssetId: 'device-asset-cnc-01',
+            deviceAssetId: 'DEV-CNC-01',
             priority: 'medium',
             status: 'closed',
             openedAtUtc: '2026-08-02T01:00:00.000Z',
@@ -393,7 +392,7 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await expect(page.getByTestId('priority-trigger')).toContainText('高')
   await expect(page.getByTestId('reason-input')).toHaveValue('主轴异响，无法运转')
 
-  // 再用现有 facade 的服务端 keyword 选择稳定 ID；请求保持 principal scope + 有界分页。
+  // 再用现有 facade 的服务端 keyword 选择设备编码；请求保持 principal scope + 有界分页。
   await page.getByTestId('device-trigger').click()
   const deviceSheet = page.locator('[data-slot="mobile-sheet-content"]')
   const searchInput = deviceSheet.locator('input[type="search"]')
@@ -416,12 +415,12 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   expect(requestUrl.searchParams.get('skip')).toBe('0')
   expect(requestUrl.searchParams.get('take')).toBe('20')
   const deviceOption = deviceSheet.getByRole('button', { name: /一号数控机床/ })
-  await expect(deviceOption).toContainText('CNC-01')
+  await expect(deviceOption).toContainText('DEV-CNC-01')
   await expect(deviceOption).toContainText('WS-1 · LINE-A · ST-9')
   await expect48(deviceOption)
   await deviceOption.click()
   await expect(page.getByTestId('device-trigger')).toContainText('一号数控机床')
-  await expect(page.getByTestId('device-trigger')).toContainText('CNC-01')
+  await expect(page.getByTestId('device-trigger')).toContainText('DEV-CNC-01')
 
   // 仅属 mock Chromium 证据：缩短 viewport 模拟软键盘占位，不能代表 Android/iOS 真 IME。
   await page.setViewportSize({ width: 375, height: 520 })
@@ -435,12 +434,13 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   expect(submitBox!.y + submitBox!.height).toBeLessThanOrEqual(520)
   await submit.click()
 
-  // 单击只产生一次 create；设备 ID 必须是 facade 返回的强 ID，报警 ID 保持 route-only。
+  // 单击只产生一次 create；Maintenance 使用 facade 返回的设备编码，报警 ID 保持 route-only。
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
   await expect(page.getByText('报修已提交')).toBeVisible()
+  await expect(page.getByTestId('view-created-work-order')).toHaveCount(0)
   expect(postBodies).toEqual([
     {
-      deviceAssetId: 'device-asset-cnc-01',
+      deviceAssetId: 'DEV-CNC-01',
       priority: 'high',
       assetUnavailableReason: '主轴异响，无法运转',
       sourceAlarmId: 'ALM-9',
@@ -572,8 +572,9 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
             allowedActions: ['accept'],
             blockReasons: [],
             lifecycle: [],
-            assignedTechnicianUserId: null,
+            assignedTechnicianUserId: principal.principalId,
             assignedTeamId: null,
+            sourceAlarmId: 'ALM-1',
           },
         }),
       })
@@ -610,7 +611,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
     new RegExp(`/equipment/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}\\?`),
   )
   const detailUrl = new URL(page.url())
-  expect(detailUrl.searchParams.get('source')).toBe('repair')
+  expect(detailUrl.searchParams.get('source')).toBeNull()
   expect(detailUrl.searchParams.get('sourceAlarmId')).toBe('ALM-1')
   await expect(page.getByTestId('maintenance-source-context')).toHaveText('来源：报警报修创建结果')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('装配线冲压机')

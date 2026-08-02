@@ -14,8 +14,12 @@ function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
   return [
     item.deviceAssetId?.trim() ? '设备已关联' : '设备未标识',
     `优先级 ${maintenancePriorityLabel(item.priority)}`,
-    item.assignedTechnicianUserId ? '当前维修人员' : '未指派维修人员',
+    `维修人员 ${item.assignedTechnicianUserId}`,
   ].join(' · ')
+}
+
+function select(item: BusinessConsoleMaintenanceWorkOrderItem) {
+  if (item.workOrderId) emit('select', item)
 }
 </script>
 
@@ -29,7 +33,8 @@ function subtitle(item: BusinessConsoleMaintenanceWorkOrderItem) {
       :title="title(item)"
       :subtitle="subtitle(item)"
       :interactive="Boolean(item.workOrderId)"
-      @select="item.workOrderId && emit('select', item)"
+      @select="select(item)"
+      @keydown.space.prevent="select(item)"
     >
       <template #trailing>
         <NvMobileTag variant="default">

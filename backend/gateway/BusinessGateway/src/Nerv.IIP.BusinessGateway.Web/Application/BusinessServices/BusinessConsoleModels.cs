@@ -955,8 +955,7 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null,
-    string? DeviceAssetId = null);
+    string? Phone = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,

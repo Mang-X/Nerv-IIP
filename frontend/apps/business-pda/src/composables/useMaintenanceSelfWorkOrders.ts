@@ -62,7 +62,7 @@ export type AuthoritativeMaintenanceWorkOrderDetail = BusinessConsoleMaintenance
   allowedActions: string[]
   blockReasons: string[]
   lifecycle: NonNullable<BusinessConsoleMaintenanceWorkOrderItem['lifecycle']>
-  assignedTechnicianUserId: string | null
+  assignedTechnicianUserId: string
   assignedTeamId: string | null
 }
 
@@ -82,16 +82,25 @@ function isExplicitAssignment(value: unknown) {
   return value === null || isNonBlankString(value)
 }
 
-function isWorkOrderListItem(value: unknown): value is BusinessConsoleMaintenanceWorkOrderItem {
+function isWorkOrderListItem(
+  value: unknown,
+  principalId: string,
+): value is BusinessConsoleMaintenanceWorkOrderItem {
   return Boolean(
     value &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
-    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId),
+    isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId) &&
+    (value as BusinessConsoleMaintenanceWorkOrderItem).assignedTechnicianUserId === principalId,
   )
 }
 
-function parseWorkOrderPage(envelope: unknown, skip: number, take: number): WorkOrderPage {
+function parseWorkOrderPage(
+  envelope: unknown,
+  skip: number,
+  take: number,
+  principalId: string,
+): WorkOrderPage {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     throw new Error('维修工单读取失败，请重试。')
   }
@@ -103,7 +112,7 @@ function parseWorkOrderPage(envelope: unknown, skip: number, take: number): Work
     typeof data !== 'object' ||
     Array.isArray(data) ||
     !Array.isArray(data.items) ||
-    !data.items.every(isWorkOrderListItem) ||
+    !data.items.every((item) => isWorkOrderListItem(item, principalId)) ||
     !Number.isSafeInteger(data.total) ||
     (data.total ?? -1) < 0
   ) {
@@ -120,6 +129,7 @@ function parseWorkOrderPage(envelope: unknown, skip: number, take: number): Work
 function isAuthoritativeMaintenanceWorkOrderDetail(
   value: BusinessConsoleMaintenanceWorkOrderItem | null | undefined,
   requestedWorkOrderId: string,
+  principalId: string,
 ): value is AuthoritativeMaintenanceWorkOrderDetail {
   const terminalStatus =
     value &&
@@ -144,8 +154,7 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     (!(terminalStatus || terminalBlock) || value.allowedActions.length === 0) &&
     Array.isArray(value.blockReasons) &&
     value.blockReasons.every(isNonBlankString) &&
-    Object.hasOwn(value, 'assignedTechnicianUserId') &&
-    isExplicitAssignment(value.assignedTechnicianUserId) &&
+    value.assignedTechnicianUserId === principalId &&
     Object.hasOwn(value, 'assignedTeamId') &&
     isExplicitAssignment(value.assignedTeamId) &&
     Array.isArray(value.lifecycle) &&
@@ -244,7 +253,7 @@ export function useMaintenanceSelfWorkOrders() {
   const firstPageState = computed<{ page?: WorkOrderPage; error?: Error }>(() => {
     if (response.value === undefined) return {}
     try {
-      return { page: parseWorkOrderPage(response.value, 0, PAGE_SIZE) }
+      return { page: parseWorkOrderPage(response.value, 0, PAGE_SIZE, scope.principalId.value) }
     } catch (error) {
       return {
         error: error instanceof Error ? error : new Error('维修工单读取失败，请重试。'),
@@ -266,7 +275,7 @@ export function useMaintenanceSelfWorkOrders() {
         },
         throwOnError: true,
       })
-      return parseWorkOrderPage(data, skip, take)
+      return parseWorkOrderPage(data, skip, take, scope.principalId.value)
     },
     refreshFirstPage: listQuery.refetch,
   })
@@ -346,7 +355,13 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const validatedWorkOrder = computed(() => {
     const envelope = detailEnvelope.value
     const item = envelope?.success === true ? envelope.data : undefined
-    return isAuthoritativeMaintenanceWorkOrderDetail(item, workOrderId.value) ? item : undefined
+    return isAuthoritativeMaintenanceWorkOrderDetail(
+      item,
+      workOrderId.value,
+      scope.principalId.value,
+    )
+      ? item
+      : undefined
   })
 
   const deviceAssetId = computed(() => validatedWorkOrder.value?.deviceAssetId?.trim() ?? '')
@@ -380,7 +395,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       item.resourceType?.trim().toLowerCase() === 'device-asset' &&
       item.organizationId?.trim() === scope.organizationId.value &&
       item.environmentId?.trim() === scope.environmentId.value &&
-      item.deviceAssetId?.trim() === deviceAssetId.value
+      item.code === deviceAssetId.value
       ? item
       : undefined
   })

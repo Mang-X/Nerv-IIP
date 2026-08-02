@@ -93,7 +93,7 @@ function authoritativeDetail(workOrderId: string, deviceAssetId: string) {
     allowedActions: [],
     blockReasons: [],
     lifecycle: [],
-    assignedTechnicianUserId: null,
+    assignedTechnicianUserId: 'principal-1',
     assignedTeamId: null,
   }
 }
@@ -187,14 +187,20 @@ describe('useMaintenanceSelfWorkOrders', () => {
 
     api.data.get('maintenance-list')!.value = {
       success: true,
-      data: { items: [{ workOrderId: 'STALE-WO' }], total: 1 },
+      data: {
+        items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
+        total: 1,
+      },
     }
     await nextTick()
     expect(result.items.value).toHaveLength(1)
 
     api.data.get('maintenance-list')!.value = {
       success: false,
-      data: { items: [{ workOrderId: 'BAD-WO' }], total: 1 },
+      data: {
+        items: [{ workOrderId: 'BAD-WO', assignedTechnicianUserId: 'principal-1' }],
+        total: 1,
+      },
     }
     await nextTick()
 
@@ -219,6 +225,22 @@ describe('useMaintenanceSelfWorkOrders', () => {
     },
   )
 
+  it.each([null, undefined, 'principal-other'])(
+    'rejects a first-page row not authoritatively assigned to the current principal: %s',
+    async (assignedTechnicianUserId) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrders()
+      api.data.get('maintenance-list')!.value = {
+        success: true,
+        data: { items: [{ workOrderId: 'WO-1', assignedTechnicianUserId }], total: 1 },
+      }
+      await nextTick()
+
+      expect(result.hasFailedResponse.value).toBe(true)
+      expect(result.items.value).toEqual([])
+    },
+  )
+
   it.each(invalidListEnvelopes)(
     'rejects a malformed next-page envelope: %s',
     async (_, envelope) => {
@@ -227,11 +249,44 @@ describe('useMaintenanceSelfWorkOrders', () => {
       api.data.get('maintenance-list')!.value = {
         success: true,
         data: {
-          items: Array.from({ length: 20 }, (_, index) => ({ workOrderId: `WO-${index}` })),
+          items: Array.from({ length: 20 }, (_, index) => ({
+            workOrderId: `WO-${index}`,
+            assignedTechnicianUserId: 'principal-1',
+          })),
           total: 21,
         },
       }
       api.list.mockResolvedValueOnce({ data: envelope })
+      await nextTick()
+
+      await result.loadMore()
+
+      expect(result.loadMoreError.value).toBeInstanceOf(Error)
+      expect(result.items.value).toHaveLength(20)
+    },
+  )
+
+  it.each([null, undefined, 'principal-other'])(
+    'rejects a next-page row not authoritatively assigned to the current principal: %s',
+    async (assignedTechnicianUserId) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrders()
+      api.data.get('maintenance-list')!.value = {
+        success: true,
+        data: {
+          items: Array.from({ length: 20 }, (_, index) => ({
+            workOrderId: `WO-${index}`,
+            assignedTechnicianUserId: 'principal-1',
+          })),
+          total: 21,
+        },
+      }
+      api.list.mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [{ workOrderId: 'WO-20', assignedTechnicianUserId }], total: 21 },
+        },
+      })
       await nextTick()
 
       await result.loadMore()
@@ -246,7 +301,10 @@ describe('useMaintenanceSelfWorkOrders', () => {
     const result = useMaintenanceSelfWorkOrders()
     api.data.get('maintenance-list')!.value = {
       success: true,
-      data: { items: [{ workOrderId: 'STALE-WO' }], total: 1 },
+      data: {
+        items: [{ workOrderId: 'STALE-WO', assignedTechnicianUserId: 'principal-1' }],
+        total: 1,
+      },
     }
     await nextTick()
     expect(result.items.value).toHaveLength(1)
@@ -281,12 +339,21 @@ describe('useMaintenanceSelfWorkOrders', () => {
     api.data.get('maintenance-list')!.value = {
       success: true,
       data: {
-        items: Array.from({ length: 20 }, (_, index) => ({ workOrderId: `WO-${index}` })),
+        items: Array.from({ length: 20 }, (_, index) => ({
+          workOrderId: `WO-${index}`,
+          assignedTechnicianUserId: 'principal-1',
+        })),
         total: 21,
       },
     }
     api.list.mockResolvedValueOnce({
-      data: { success: true, data: { items: [{ workOrderId: 'WO-20' }], total: 21 } },
+      data: {
+        success: true,
+        data: {
+          items: [{ workOrderId: 'WO-20', assignedTechnicianUserId: 'principal-1' }],
+          total: 21,
+        },
+      },
     })
     await nextTick()
 
@@ -352,7 +419,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
         allowedActions: [],
         blockReasons: [],
         lifecycle: [],
-        assignedTechnicianUserId: null,
+        assignedTechnicianUserId: 'principal-1',
         assignedTeamId: null,
       },
     }
@@ -382,7 +449,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
   it.each([
     ['technician', { assignedTeamId: null }],
-    ['team', { assignedTechnicianUserId: null }],
+    ['team', { assignedTechnicianUserId: 'principal-1' }],
     ['both', {}],
   ])('rejects detail when the explicit %s assignment field is missing', async (_, assignments) => {
     seedPrincipal()
@@ -406,6 +473,26 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     expect(result.hasFailedResponse.value).toBe(true)
     expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
   })
+
+  it.each([null, 'principal-other'])(
+    'rejects detail assigned to a different or absent technician: %s',
+    async (assignedTechnicianUserId) => {
+      seedPrincipal()
+      const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
+      api.data.get('maintenance-detail')!.value = {
+        success: true,
+        data: {
+          ...authoritativeDetail('WO-DETAIL', 'device-1'),
+          assignedTechnicianUserId,
+        },
+      }
+      await nextTick()
+
+      expect(result.workOrder.value).toBeUndefined()
+      expect(result.hasFailedResponse.value).toBe(true)
+      expect(api.queryFactories.get('device-detail')?.().enabled).toBe(false)
+    },
+  )
 
   it.each([
     ['actor principal', { actorPrincipalId: ' ' }],
@@ -479,13 +566,13 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
 
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-NEW', 'device-new'),
+      data: authoritativeDetail('WO-NEW', 'DEV-CNC-01'),
     }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
     expect(result.pending.value).toBe(true)
     expect(requestFor('device-detail')).toEqual({
-      path: { resourceType: 'device-asset', code: 'device-new' },
+      path: { resourceType: 'device-asset', code: 'DEV-CNC-01' },
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -496,8 +583,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: {
         resourceType: 'device-asset',
-        deviceAssetId: 'device-old',
-        code: 'CNC-OLD',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-OLD',
         displayName: '迟到的旧设备',
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -525,8 +612,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: {
         resourceType: 'work-center',
-        deviceAssetId: 'device-new',
-        code: 'CNC-NEW',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-01',
         organizationId: 'org-001',
         environmentId: 'env-dev',
       },
@@ -538,8 +625,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: {
         resourceType: 'device-asset',
-        deviceAssetId: 'device-new',
-        code: 'CNC-NEW',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-01',
         organizationId: 'org-other',
         environmentId: 'env-dev',
       },
@@ -553,8 +640,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: {
         resourceType: 'device-asset',
-        deviceAssetId: 'device-new',
-        code: 'CNC-NEW',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-01',
         displayName: '一号数控机床',
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -563,8 +650,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     }
     await nextTick()
     expect(result.device.value).toMatchObject({
-      deviceAssetId: 'device-new',
-      code: 'CNC-NEW',
+      code: 'DEV-CNC-01',
       displayName: '一号数控机床',
       workshopCode: 'WS-1',
     })
@@ -582,7 +668,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     routeId.value = 'WO-LATEST'
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-LATEST', 'device-latest'),
+      data: authoritativeDetail('WO-LATEST', 'DEV-LATEST'),
     }
     await nextTick()
     expect(result.device.value).toBeUndefined()
@@ -593,8 +679,8 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
       success: true,
       data: {
         resourceType: 'device-asset',
-        deviceAssetId: 'device-new',
-        code: 'CNC-NEW',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-01',
         displayName: '迟到的一号数控机床',
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -611,7 +697,7 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', 'device-1'),
+      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
     }
     await nextTick()
 
@@ -643,14 +729,14 @@ describe('useMaintenanceSelfWorkOrderDetail', () => {
     const result = useMaintenanceSelfWorkOrderDetail(computed(() => 'WO-DETAIL'))
     api.data.get('maintenance-detail')!.value = {
       success: true,
-      data: authoritativeDetail('WO-DETAIL', 'device-1'),
+      data: authoritativeDetail('WO-DETAIL', 'DEV-CNC-01'),
     }
     api.data.get('device-detail')!.value = {
       success: true,
       data: {
         resourceType: 'device-asset',
-        deviceAssetId: 'device-1',
-        code: 'CNC-01',
+        deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+        code: 'DEV-CNC-01',
         displayName: '旧设备',
         organizationId: 'org-001',
         environmentId: 'env-dev',

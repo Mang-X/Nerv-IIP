@@ -47,7 +47,7 @@ function authoritativeWorkOrder(
     allowedActions: [],
     blockReasons: [],
     lifecycle: [],
-    assignedTechnicianUserId: null,
+    assignedTechnicianUserId: 'principal-1',
     assignedTeamId: null,
     ...overrides,
   }
@@ -87,6 +87,7 @@ describe('maintenance work-order authoritative detail page', () => {
       status: 'accepted',
       assignedTechnicianUserId: 'principal-1',
       assignedTeamId: 'team-a',
+      sourceAlarmId: 'ALM-9',
       version: 7,
       allowedActions: ['start', 'cancel'],
       blockReasons: ['manage-permission-required'],
@@ -121,14 +122,14 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
     expect(wrapper.text()).toContain('高')
-    expect(wrapper.text()).toContain('当前维修人员')
-    expect(wrapper.text()).toContain('班组名称暂不可用')
-    expect(wrapper.text()).toContain('操作人已记录')
+    expect(wrapper.text()).toContain('维修人员 principal-1')
+    expect(wrapper.text()).toContain('班组 team-a')
+    expect(wrapper.text()).toContain('操作人 principal-1')
+    expect(wrapper.text()).toContain('技师快照 principal-1')
+    expect(wrapper.text()).toContain('班组快照 team-a')
     expect(wrapper.text()).toContain('来源：报警报修创建结果')
     expect(wrapper.text()).not.toContain('WO-DETAIL')
     expect(wrapper.text()).not.toContain('device-1')
-    expect(wrapper.text()).not.toContain('principal-1')
-    expect(wrapper.text()).not.toContain('team-a')
     expect(wrapper.text()).toContain('版本 7')
     expect(wrapper.text()).toContain('开工')
     expect(wrapper.text()).toContain('取消')
@@ -140,10 +141,9 @@ describe('maintenance work-order authoritative detail page', () => {
   })
 
   it.each([
-    [{}, '未指派维修人员'],
-    [{ assignedTechnicianUserId: 'principal-1' }, '当前维修人员'],
-    [{ assignedTeamId: 'team-a' }, '未指派维修人员 · 班组名称暂不可用'],
-  ])('renders truthful self assignment without exposing identifiers', async (assignment, label) => {
+    [{}, '维修人员 principal-1 · 未指派班组'],
+    [{ assignedTeamId: 'team-a' }, '维修人员 principal-1 · 班组 team-a'],
+  ])('renders stable self assignment identifiers', async (assignment, label) => {
     state.workOrder = authoritativeWorkOrder({
       ...assignment,
     })
@@ -151,8 +151,24 @@ describe('maintenance work-order authoritative detail page', () => {
     const wrapper = await mountPage()
 
     expect(wrapper.text()).toContain(label)
-    expect(wrapper.text()).not.toContain('principal-1')
-    expect(wrapper.text()).not.toContain('team-a')
+  })
+
+  it('does not trust an editable source alarm query that differs from the work order', async () => {
+    state.workOrder = authoritativeWorkOrder({ sourceAlarmId: 'ALM-AUTHORITATIVE' })
+
+    const wrapper = await mountPage(
+      '/equipment/work-orders/WO-DETAIL?source=repair&sourceAlarmId=ALM-EDITED',
+    )
+
+    expect(wrapper.find('[data-testid="maintenance-source-context"]').exists()).toBe(false)
+  })
+
+  it('does not claim ordinary repair source context without an authoritative alarm link', async () => {
+    state.workOrder = authoritativeWorkOrder()
+
+    const wrapper = await mountPage('/equipment/work-orders/WO-DETAIL?source=repair')
+
+    expect(wrapper.find('[data-testid="maintenance-source-context"]').exists()).toBe(false)
   })
 
   it('shows a validated terminal work order as read-only with no stale actions', async () => {

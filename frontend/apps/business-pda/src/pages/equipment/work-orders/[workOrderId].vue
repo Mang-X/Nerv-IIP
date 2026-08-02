@@ -14,14 +14,14 @@ const requestedWorkOrderId = computed(() => {
   const value = route.params.workOrderId
   return typeof value === 'string' ? value.trim() : ''
 })
-const sourceContext = computed(() => {
-  if (route.query.source !== 'repair') return ''
-  return typeof route.query.sourceAlarmId === 'string'
-    ? '来源：报警报修创建结果'
-    : '来源：报修创建结果'
-})
 const { scopeReady, workOrder, device, pending, error, hasFailedResponse, refresh } =
   useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId)
+const sourceContext = computed(() => {
+  const sourceAlarmId = route.query.sourceAlarmId
+  return typeof sourceAlarmId === 'string' && workOrder.value?.sourceAlarmId === sourceAlarmId
+    ? '来源：报警报修创建结果'
+    : ''
+})
 
 function backToList() {
   router.push('/equipment/work-orders').catch(() => {})

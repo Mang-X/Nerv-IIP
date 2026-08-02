@@ -57,7 +57,7 @@ async function mountPage() {
       stubs: {
         DeviceAssetPicker: {
           template:
-            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: 'device-1', displayName: '一号数控机床' })\">选择设备</button>",
+            "<button data-testid=\"select-device\" @click=\"$emit('select', { deviceAssetId: '019f-device-guid', code: 'DEV-CNC-01', displayName: '一号数控机床' })\">选择设备</button>",
         },
       },
     },
@@ -118,28 +118,29 @@ describe('maintenance self work-order queue page', () => {
         deviceAssetId: 'device-1',
         status: 'accepted',
         priority: 'high',
+        assignedTechnicianUserId: 'principal-1',
       },
     ]
     const { wrapper, router } = await mountPage()
 
-    expect(wrapper.text()).toContain('分派给当前维修人员')
+    expect(wrapper.text()).toContain('维修人员 principal-1')
     expect(wrapper.text()).not.toContain('Self')
     expect(wrapper.text()).not.toContain('服务端')
     expect(wrapper.text()).toContain('设备已关联')
     expect(wrapper.text()).not.toContain('device-1')
-    await wrapper.get('[data-testid="maintenance-work-order-row"]').trigger('click')
+    await wrapper.get('[data-testid="maintenance-work-order-row"]').trigger('keydown', { key: ' ' })
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/equipment/work-orders/019f-strong-id')
   })
 
-  it('stores the stable device ID selected from the server directory', async () => {
+  it('stores the maintenance device code selected from the server directory', async () => {
     state.scopeReady = true
     const { wrapper } = await mountPage()
 
     await wrapper.get('[data-testid="select-device"]').trigger('click')
 
-    expect(state.filters.deviceAssetId).toBe('device-1')
+    expect(state.filters.deviceAssetId).toBe('DEV-CNC-01')
     expect(wrapper.text()).toContain('一号数控机床')
   })
 

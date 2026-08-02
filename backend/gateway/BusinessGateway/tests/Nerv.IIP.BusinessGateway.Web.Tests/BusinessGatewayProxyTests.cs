@@ -6770,43 +6770,6 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Master_data_http_client_preserves_device_asset_strong_id_on_detail_read()
-    {
-        const string deviceAssetId = "0198b7d4-25f7-7e0d-bf8e-526f881cc5e1";
-        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
-        {
-            data = new
-            {
-                resourceType = "device-asset",
-                code = "CNC-NEW",
-                displayName = "一号数控机床",
-                active = true,
-                snapshotVersion = "v1",
-                organizationId = "org-001",
-                environmentId = "env-dev",
-                deviceAssetId,
-            },
-            success = true,
-            message = string.Empty,
-            code = 0,
-        }));
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
-        var client = new HttpBusinessMasterDataClient(httpClient);
-
-        var response = await client.GetResourceDetailAsync(
-            "internal-token-001",
-            new BusinessConsoleMasterDataResourceRequest("org-001", "env-dev", "device-asset", deviceAssetId),
-            CancellationToken.None);
-
-        Assert.Equal(deviceAssetId, response.DeviceAssetId);
-        Assert.Equal("CNC-NEW", response.Code);
-        AssertRequest(
-            handler.Requests.Single(),
-            HttpMethod.Get,
-            $"/api/business/v1/master-data/resources/device-asset/{deviceAssetId}?organizationId=org-001&environmentId=env-dev");
-    }
-
-    [Fact]
     public async Task Master_data_http_client_omits_default_false_include_disabled_query()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

@@ -596,7 +596,6 @@ public sealed class MasterDataApiContractTests
         var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
             new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", "DEV-001"),
             CancellationToken.None);
-        Assert.Equal(device.DeviceAssetId, detail.DeviceAssetId);
         Assert.Equal(new DateOnly(2024, 1, 15), detail.PurchaseDate);
         Assert.Equal(125000m, detail.PurchaseCost);
         Assert.Equal("CNY", detail.PurchaseCurrencyCode);
@@ -609,7 +608,6 @@ public sealed class MasterDataApiContractTests
             new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", device.DeviceAssetId!),
             CancellationToken.None);
         Assert.Equal("DEV-001", detailByPublicId.Code);
-        Assert.Equal(device.DeviceAssetId, detailByPublicId.DeviceAssetId);
         Assert.Equal(new DateOnly(2027, 1, 14), detailByPublicId.WarrantyExpiresOn);
 
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
@@ -775,7 +773,6 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
 
         Assert.Equal("supplier", detail.PartnerType);
-        Assert.Null(detail.DeviceAssetId);
         Assert.Equal(["supplier", "customer", "carrier"], detail.PartnerRoles);
         Assert.Equal("TAX-001", detail.TaxId);
 

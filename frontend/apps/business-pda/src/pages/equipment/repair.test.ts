@@ -16,6 +16,8 @@ vi.mock('vue-router', () => ({
 const createWorkOrder = vi.fn(async (_input: Record<string, unknown>) => ({}))
 const createPending = ref(false)
 const canReadWorkOrderDetail = ref(true)
+const confirmedCreatedWorkOrder = ref<Record<string, unknown>>()
+const createdDetailHasSuccessfulResponse = ref(false)
 const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '11111111-1111-1111-1111-111111111111',
@@ -69,6 +71,13 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
+vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+  useMaintenanceSelfWorkOrderDetail: () => ({
+    workOrder: confirmedCreatedWorkOrder,
+    hasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+  }),
+}))
+
 vi.mock('@/components/equipment/DeviceAssetPicker.vue', () => ({
   default: {
     name: 'DeviceAssetPicker',
@@ -102,6 +111,8 @@ beforeEach(() => {
   route.query = {}
   createPending.value = false
   canReadWorkOrderDetail.value = true
+  confirmedCreatedWorkOrder.value = undefined
+  createdDetailHasSuccessfulResponse.value = false
   workOrdersError.value = null
   workOrdersPending.value = false
   workOrdersRefreshing.value = false
@@ -331,6 +342,12 @@ describe('PDA equipment repair page', () => {
 
   it('opens the confirmed strong-ID detail from alarm-sourced repair success', async () => {
     route.query = { deviceAssetId: 'DEV-9', sourceAlarmId: 'ALM-9' }
+    confirmedCreatedWorkOrder.value = {
+      workOrderId: '33333333-3333-3333-3333-333333333333',
+      assignedTechnicianUserId: 'principal-1',
+      sourceAlarmId: 'ALM-9',
+    }
+    createdDetailHasSuccessfulResponse.value = true
     const wrapper = mount(RepairPage)
     await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
@@ -340,8 +357,18 @@ describe('PDA equipment repair page', () => {
 
     expect(push).toHaveBeenCalledWith({
       path: '/equipment/work-orders/33333333-3333-3333-3333-333333333333',
-      query: { source: 'repair', sourceAlarmId: 'ALM-9' },
+      query: { sourceAlarmId: 'ALM-9' },
     })
+  })
+
+  it('does not offer a detail link until the self detail is authoritatively confirmed', async () => {
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
   })
 
   it('does not offer detail navigation without both maintenance and device location reads', async () => {

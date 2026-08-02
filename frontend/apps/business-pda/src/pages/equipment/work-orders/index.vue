@@ -54,7 +54,9 @@ const filterState = computed(() => ({
 }))
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
-  filters.deviceAssetId = device.deviceAssetId
+  const deviceCode = device.code?.trim()
+  if (!deviceCode) return
+  filters.deviceAssetId = deviceCode
   selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'
 }
 
