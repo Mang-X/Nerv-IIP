@@ -120,6 +120,12 @@ reads. The facade preserves stable IDs, readable labels, scope context, owner
 identity, deterministic paging, and explicit unavailable ranking metadata; it
 does not copy cross-service facts or create business decision scores.
 
+For MAN-641, Maintenance `listMaintenanceWorkOrders` remains `exposed` through
+BusinessGateway `listBusinessConsoleMaintenanceWorkOrders`. The facade preserves
+the legacy `deviceAssetId` / CSV `deviceAssetIds` filters and additionally forwards
+repeated `deviceAssetReferences` values as exact device codes (including commas)
+or canonical `DeviceAssetId` values.
+
 For connector configured-tag coverage, the declaration is exact: service
 operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
 Connector Host callback; service operation `getBusinessIiotConnectorTagCoverage`

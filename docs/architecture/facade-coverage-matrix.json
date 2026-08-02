@@ -1956,7 +1956,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMaintenanceWorkOrders"
-      ]
+      ],
+      "note": "The exposed list facade preserves legacy deviceAssetId/deviceAssetIds filters and adds repeated deviceAssetReferences values for exact device codes (including commas) or canonical DeviceAssetIds; BusinessGateway operationId: listBusinessConsoleMaintenanceWorkOrders."
     },
     {
       "service": "Maintenance",

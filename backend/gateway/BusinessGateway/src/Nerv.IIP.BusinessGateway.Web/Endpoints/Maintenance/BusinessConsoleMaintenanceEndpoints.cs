@@ -1313,15 +1313,36 @@ public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Va
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
         RuleFor(x => x.Status).MaximumLength(40);
-        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
-        RuleFor(x => x.DeviceAssetReferences).Must(values => values is null || values.Length <= 200)
-            .WithMessage("deviceAssetReferences must contain no more than 200 values");
-        RuleForEach(x => x.DeviceAssetReferences).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DeviceAssetId)
+            .Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("deviceAssetId cannot be blank")
+            .MaximumLength(150)
+            .When(x => x.DeviceAssetId is not null);
+        RuleFor(x => x.DeviceAssetIds)
+            .Must(HasValidLegacyDeviceReferences)
+            .When(x => x.DeviceAssetIds is not null)
+            .WithMessage("deviceAssetIds must contain between 1 and 200 non-empty references of at most 150 characters");
+        RuleFor(x => x.DeviceAssetReferences)
+            .Must(values => values is null || values.Length is > 0 and <= 200)
+            .WithMessage("deviceAssetReferences must contain between 1 and 200 values");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("deviceAssetReferences cannot contain blank values")
+            .MaximumLength(150);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.ScopeKind).MaximumLength(40);
         RuleFor(x => x.ScopeId).MaximumLength(150);
         RuleFor(x => x).Must(x => string.IsNullOrWhiteSpace(x.ScopeKind) == string.IsNullOrWhiteSpace(x.ScopeId))
             .WithMessage("scopeKind and scopeId must be supplied together");
+    }
+
+    private static bool HasValidLegacyDeviceReferences(string? value)
+    {
+        var references = value?.Split(
+            ',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        return references.Length is > 0 and <= 200
+            && references.All(reference => reference.Length <= 150);
     }
 }
 

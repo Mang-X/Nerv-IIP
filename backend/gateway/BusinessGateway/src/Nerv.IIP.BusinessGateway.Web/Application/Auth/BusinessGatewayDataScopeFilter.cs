@@ -304,34 +304,49 @@ public sealed class BusinessGatewayDataScopeFilter(
     private static DeviceReferenceFilter DeviceReferenceGroups(BusinessConsoleMaintenanceWorkOrderListRequest request)
     {
         var groups = new List<HashSet<string>>();
-        AddGroup(groups, request.DeviceAssetReferences ?? []);
-        if (!string.IsNullOrWhiteSpace(request.DeviceAssetIds))
+        var specified = false;
+        if (request.DeviceAssetReferences is not null)
         {
-            AddGroup(
+            specified = true;
+            if (!TryAddExactGroup(groups, request.DeviceAssetReferences))
+            {
+                return new DeviceReferenceFilter(true, []);
+            }
+        }
+        if (request.DeviceAssetIds is not null)
+        {
+            specified = true;
+            if (!TryAddExactGroup(
                 groups,
-                request.DeviceAssetIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                request.DeviceAssetIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+            {
+                return new DeviceReferenceFilter(true, []);
+            }
         }
-        if (!string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        if (request.DeviceAssetId is not null)
         {
-            AddGroup(groups, [request.DeviceAssetId!]);
+            specified = true;
+            if (!TryAddExactGroup(groups, [request.DeviceAssetId]))
+            {
+                return new DeviceReferenceFilter(true, []);
+            }
         }
-        if (groups.Count == 0)
-        {
-            return new DeviceReferenceFilter(false, []);
-        }
-        return new DeviceReferenceFilter(true, groups);
+        return new DeviceReferenceFilter(specified, groups);
     }
 
-    private static void AddGroup(List<HashSet<string>> groups, IEnumerable<string> values)
+    private static bool TryAddExactGroup(List<HashSet<string>> groups, IEnumerable<string> values)
     {
-        var normalized = values
-            .Where(value => !string.IsNullOrWhiteSpace(value))
+        var supplied = values.ToArray();
+        if (supplied.Length == 0 || supplied.Any(string.IsNullOrWhiteSpace))
+        {
+            return false;
+        }
+
+        var normalized = supplied
             .Select(value => value.Trim())
             .ToHashSet(StringComparer.Ordinal);
-        if (normalized.Count > 0)
-        {
-            groups.Add(normalized);
-        }
+        groups.Add(normalized);
+        return true;
     }
 
     private static HashSet<string> Normalize(IReadOnlyCollection<string> values) =>

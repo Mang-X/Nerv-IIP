@@ -297,6 +297,80 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(2, masterData.DetailRequests.Select(x => x.Code).Distinct(StringComparer.Ordinal).Count());
     }
 
+    [Fact]
+    public async Task Maintenance_data_scope_filter_fails_closed_when_a_provided_reference_group_is_empty_or_blank()
+    {
+        var allowedDeviceId = DeviceId(1);
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+            ],
+            ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
+        };
+        var filter = new BusinessGatewayDataScopeFilter(
+            masterData,
+            new TestInternalServiceTokenProvider("internal-test-token"));
+        var dataScope = new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]);
+        BusinessConsoleMaintenanceWorkOrderListRequest[] requests =
+        [
+            new("org-001", "env-dev", DeviceAssetId: " "),
+            new("org-001", "env-dev", DeviceAssetIds: ",,,"),
+            new("org-001", "env-dev", DeviceAssetReferences: []),
+            new("org-001", "env-dev", DeviceAssetReferences: ["DEV-A", " "]),
+        ];
+
+        foreach (var request in requests)
+        {
+            var scoped = await filter.ApplyToMaintenanceWorkOrdersAsync(request, dataScope, CancellationToken.None);
+
+            Assert.Equal(["__iam_scope_no_match__"], Assert.IsType<string[]>(scoped.DeviceAssetReferences));
+        }
+    }
+
+    [Theory]
+    [InlineData("singular blank", "deviceAssetId=%20")]
+    [InlineData("legacy empty delimiters", "deviceAssetIds=%2C%2C%2C")]
+    [InlineData("exact blank", "deviceAssetReferences=%20")]
+    [InlineData("exact mixed valid and blank", "deviceAssetReferences=DEV-A&deviceAssetReferences=%20")]
+    public async Task Maintenance_work_order_list_rejects_provided_but_invalid_device_filters(
+        string _,
+        string query)
+    {
+        var allowedDeviceId = DeviceId(1);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: allowedDeviceId),
+            ],
+            ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+    }
+
     [Theory]
     [InlineData("missing")]
     [InlineData("outside-scope")]
@@ -1234,6 +1308,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 200)).IsValid);
         Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", -1, 10)).IsValid);
         Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 201)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetId: " ")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetIds: ",,,")).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetReferences: [])).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetReferences: ["DEV-A", " "])).IsValid);
+        Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetIds: "DEV-A,, ,DEV-B")).IsValid);
+        Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetReferences: ["DEV,A"])).IsValid);
     }
 
     [Fact]
