@@ -24,6 +24,40 @@ public sealed class WorldHistorySeedServiceTests
     /// </summary>
     private const double ShortageScale = 0.2d;
 
+    /// <summary>
+    /// 待排池装的是「已下达 + 在制」两档，排产优先级必须在**整池**上有区分度。
+    ///
+    /// <para>
+    /// 第五轮走查实测：优先级配额一开始只挂在已下达档，池子首屏看着有轻重
+    /// （100/50/500…），往下滚两屏全是在制单的 <c>10</c>——改了一半等于没改。
+    /// 这条锁住两件事：整池不只有一个值，且在制档确实拿到了配额。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Schedulable_work_orders_get_spread_priorities_not_a_single_value()
+    {
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        // 待排池口径：已下达且未完工（排除已完工与补产单）。
+        var pool = await dbContext.WorkOrders
+            .Where(workOrder => !workOrder.WorkOrderIdValue.StartsWith("WO-2026-R", StringComparison.Ordinal))
+            .Select(workOrder => new { workOrder.WorkOrderIdValue, workOrder.Status, workOrder.Priority })
+            .ToListAsync();
+        var schedulable = pool
+            .Where(row => !string.Equals(row.Status, "closed", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        Assert.NotEmpty(schedulable);
+        var distinct = schedulable.Select(row => row.Priority).Distinct().ToArray();
+        // 修复前这里恒为 1（全是 10）。
+        Assert.True(
+            distinct.Length >= 3,
+            $"可排产工单的优先级只有 {distinct.Length} 种取值：{string.Join(",", distinct.Order())}——" +
+            "配额没有铺开，待排池分不出轻重。");
+        Assert.Contains(500, distinct);
+    }
+
     [Fact]
     public async Task History_seed_writes_the_full_work_order_chain_and_passes_its_own_validator()
     {

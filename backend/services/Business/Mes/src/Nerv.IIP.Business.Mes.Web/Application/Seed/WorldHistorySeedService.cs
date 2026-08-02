@@ -79,6 +79,8 @@ public sealed class WorldHistorySeedService(
         // 推导，不能从本批或库内已有行推导：种子是幂等的，第二次跑只补差集，按写入顺序编号会让
         // 同一张单在两次跑之间换档。
         var releasedCohortOrdinals = BuildReleasedCohortOrdinals(plans);
+        // 排产优先级铺到「已下达 + 在制」整池，见 BuildSchedulableCohortOrdinals。
+        var schedulableCohortOrdinals = BuildSchedulableCohortOrdinals(plans);
         var written = 0;
         for (var batchStart = 0; batchStart < plans.Count; batchStart += BatchSize)
         {
@@ -93,6 +95,7 @@ public sealed class WorldHistorySeedService(
                 var workOrderPlan = WorldHistoryMesSpec.BuildWorkOrderPlan(plan.WorkOrderNo, plan.SkuCode, plan.Quantity);
                 var execution = ResolveExecution(plan.Stage);
                 var releasedCohortOrdinal = releasedCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo);
+                var schedulableCohortOrdinal = schedulableCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo);
                 // 已下达待开工的那批按配额跨 asOfDate 铺开交期（四逾期六未到期）；其余档位仍用
                 // 订单前置期推出来的历史交期——在制/完工单的交期是既成事实，不该被改写。
                 var dueDate =
@@ -107,7 +110,8 @@ public sealed class WorldHistorySeedService(
                     execution,
                     sourcePlanReference: CreatePlanningSuggestionSourceReference(plan),
                     dueDate: dueDate,
-                    releasedCohortOrdinal: releasedCohortOrdinal);
+                    releasedCohortOrdinal: releasedCohortOrdinal,
+                    schedulableCohortOrdinal: schedulableCohortOrdinal);
                 added++;
             }
 
@@ -131,6 +135,37 @@ public sealed class WorldHistorySeedService(
         var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var plan in plans.Where(plan => ResolveExecution(plan.Stage) == WorldHistoryExecution.ReleasedOnly))
         {
+            ordinals[plan.WorkOrderNo] = ordinals.Count + 1;
+        }
+
+        return ordinals;
+    }
+
+    /// <summary>
+    /// 「可排产」队列序号：已下达待开工 **与在制** 都算——待排工单池装的正是这两档
+    /// （MES 已下达且未完工），排产优先级要在整池上都有区分度。
+    ///
+    /// <para>
+    /// 与 <see cref="BuildReleasedCohortOrdinals"/> 分开，因为两者语义不同：齐套缺口只对
+    /// 「下达时刻尚未领料」的单成立（在制单领料已过账，缺口恒被 clamp 回 0）；而
+    /// **优先级是排产输入、不是执行事实**，在制单的剩余工序照样要排。
+    /// </para>
+    /// <para>
+    /// 第五轮走查实测：只按已下达档铺优先级时，待排池里在制那批仍是整片 <c>10</c>——
+    /// 首屏看着有轻重，往下滚两屏就全一样了，等于没改。
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, int> BuildSchedulableCohortOrdinals(IReadOnlyList<WorldHistoryOrderPlan> plans)
+    {
+        var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var plan in plans)
+        {
+            var execution = ResolveExecution(plan.Stage);
+            if (execution is not (WorldHistoryExecution.ReleasedOnly or WorldHistoryExecution.Partial))
+            {
+                continue;
+            }
+
             ordinals[plan.WorkOrderNo] = ordinals.Count + 1;
         }
 
@@ -215,6 +250,8 @@ public sealed class WorldHistorySeedService(
                         sourceDemandReference: null),
                     dueDate: source.RequiredDate,
                     releasedCohortOrdinal: null,
+                    // 补产工单恒定 90（返修优先），不参与可排产配额。
+                    schedulableCohortOrdinal: null,
                     isRework: true);
                 added++;
             }
@@ -257,6 +294,7 @@ public sealed class WorldHistorySeedService(
         SourcePlanReference sourcePlanReference,
         DateOnly dueDate,
         int? releasedCohortOrdinal,
+        int? schedulableCohortOrdinal,
         bool isRework = false)
     {
         var dueUtc = new DateTimeOffset(dueDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
@@ -286,9 +324,11 @@ public sealed class WorldHistorySeedService(
             plan.WorkOrderQuantity,
             // 返修单恒定 90；已下达待开工的那批按配额铺开（重点单少、常规单多），
             // 其余档位沿用 10——历史单的优先级不影响排产，铺开只会给读面添噪。
+            // 返修单恒定 90；可排产的（已下达 + 在制）按配额铺开，重点单少常规单多；
+            // 已完工档回落 10——它们不进待排池，铺开只是给读面添噪。
             priority: isRework
                 ? 90
-                : WorldHistoryMesSpec.ReleasedPriority(execution, releasedCohortOrdinal) ?? 10,
+                : WorldHistoryMesSpec.SchedulablePriority(execution, schedulableCohortOrdinal) ?? 10,
             dueUtc,
             WorldHistorySpec.UomCode,
             sourcePlanReference);
