@@ -33,10 +33,22 @@ test('履约链数据可演示性', async ({ page }) => {
   await page.goto('/erp/sales/orders', { waitUntil: 'networkidle', timeout: 60_000 })
   await page.waitForTimeout(3_000)
 
+  // 列表按创建时间倒序 → **第一页是最新、也就是进度最浅的单**。只看第一页会得出
+  // 「链路只能演到 MES 工单」的错判，翻页才看得到走完发货/应收的老单。
+  const skipPages = Number(process.env.NERV_IIP_R6_PROBE_SKIP_PAGES ?? 0)
+  for (let p = 0; p < skipPages; p += 1) {
+    await page
+      .getByRole('button', { name: /下一页|next/i })
+      .first()
+      .click()
+      .catch(() => {})
+    await page.waitForTimeout(2_000)
+  }
+
   const rows = await page.locator('tbody tr').count()
   const findings: unknown[] = []
 
-  for (let i = 0; i < Math.min(rows, 8); i += 1) {
+  for (let i = 0; i < Math.min(rows, Number(process.env.NERV_IIP_R6_PROBE_ROWS ?? 8)); i += 1) {
     const tr = page.locator('tbody tr').nth(i)
     const orderNo = (
       await tr
@@ -68,12 +80,16 @@ test('履约链数据可演示性', async ({ page }) => {
         .first()
         .innerText()
         .catch(() => '')) ?? ''
+    // 别数「尚未产生」的出现次数——节点的解释文案里也含这个词，一个空节点会被数两次
+    // （第一版就是这么数的，八张单齐刷刷 established=0，差点得出"整个功能是空壳"的错判）。
+    // 节点文本第二行是业务编号/摘要：有值＝这一节点真的建立了。
+    const established = (nodes ?? []).filter((t) => (t.split(' | ')[1] ?? '').trim().length > 0)
     findings.push({
       i,
       orderNo,
-      established: (text.match(/已建立|已产生/g) ?? []).length,
-      pending: (text.match(/尚未产生|尚未建立关联/g) ?? []).length,
-      nodes,
+      // nodes 里每个节点会出现两次（外层容器 + 内层节点都被选中），去重后才是节点数。
+      depth: new Set(established.map((t) => t.split(' | ')[0])).size,
+      established: [...new Set(established.map((t) => t.split(' | ')[0]))],
     })
     await page.keyboard.press('Escape').catch(() => {})
     await page.waitForTimeout(800)
