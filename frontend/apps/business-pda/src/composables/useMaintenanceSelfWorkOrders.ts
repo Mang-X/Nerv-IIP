@@ -429,9 +429,23 @@ export function useMaintenanceSelfWorkOrders() {
     }),
   )
   const generation = useMaintenanceQueryGeneration(identity, scope.scopeReady)
+  const principalIdentity = computed(() =>
+    scope.scopeReady.value
+      ? serializeMaintenanceKey({
+          scope: [
+            scope.organizationId.value,
+            scope.environmentId.value,
+            'self',
+            scope.principalId.value,
+          ],
+          instanceNonce,
+        })
+      : '',
+  )
+  const principalGeneration = useMaintenanceQueryGeneration(principalIdentity, scope.scopeReady)
   const principalIdentityQuery = useQuery(() => {
-    const requestedGeneration = generation.value
-    const requestedIdentity = identity.value
+    const requestedGeneration = principalGeneration.value
+    const requestedIdentity = principalIdentity.value
     const organizationId = scope.organizationId.value
     const environmentId = scope.environmentId.value
     const principalId = scope.principalId.value
@@ -465,8 +479,8 @@ export function useMaintenanceSelfWorkOrders() {
   })
   const principalIdentityResponse = useFreshGenerationProjection(
     () => principalIdentityQuery.data.value,
-    identity,
-    generation,
+    principalIdentity,
+    principalGeneration,
     scope.scopeReady,
   )
   const principalDisplayName = computed(() =>
@@ -589,11 +603,15 @@ export function useMaintenanceSelfWorkOrders() {
     if (!scope.scopeReady.value) return
     const requestedIdentity = identity.value
     const requestedGeneration = generation.value
+    const requestedPrincipalIdentity = principalIdentity.value
+    const requestedPrincipalGeneration = principalGeneration.value
     await pager.refresh()
     if (
       !scope.scopeReady.value ||
       identity.value !== requestedIdentity ||
-      generation.value !== requestedGeneration
+      generation.value !== requestedGeneration ||
+      principalIdentity.value !== requestedPrincipalIdentity ||
+      principalGeneration.value !== requestedPrincipalGeneration
     ) {
       return
     }
@@ -721,7 +739,8 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
   const identityReferences = computed(() => collectIdentityReferences(validatedWorkOrder.value))
   const identityEnabled = computed(
     () =>
-      authoritativeHasSuccessfulResponse.value &&
+      enabled.value &&
+      Boolean(validatedWorkOrder.value) &&
       identityReferences.value.bounded &&
       identityReferences.value.userIds.length + identityReferences.value.teamIds.length > 0,
   )
@@ -805,7 +824,10 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     identityEnabled,
   )
   const identities = computed(() =>
-    identityEnabled.value && !identityQuery.isLoading.value && !identityQuery.error.value
+    authoritativeHasSuccessfulResponse.value &&
+    identityEnabled.value &&
+    !identityQuery.isLoading.value &&
+    !identityQuery.error.value
       ? identityResponse.value
       : undefined,
   )
@@ -824,7 +846,7 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
       : '',
   )
   const deviceEnabled = computed(
-    () => authoritativeHasSuccessfulResponse.value && Boolean(deviceAssetId.value),
+    () => enabled.value && Boolean(validatedWorkOrder.value) && Boolean(deviceAssetId.value),
   )
   const deviceIdentity = computed(() =>
     deviceEnabled.value
@@ -958,6 +980,8 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     if (!enabled.value) return
     const requestedIdentity = detailIdentity.value
     const requestedGeneration = detailGeneration.value
+    const requestedDeviceIdentity = deviceIdentity.value
+    const requestedIdentityKey = identityKey.value
     await detailQuery.refetch()
     if (
       !enabled.value ||
@@ -968,8 +992,12 @@ export function useMaintenanceSelfWorkOrderDetail(requestedWorkOrderId: MaybeRef
     }
     if (validatedWorkOrder.value && !detailQuery.error.value) {
       const enrichmentRefreshes: Promise<unknown>[] = []
-      if (deviceEnabled.value) enrichmentRefreshes.push(deviceQuery.refetch())
-      if (identityEnabled.value) enrichmentRefreshes.push(identityQuery.refetch())
+      if (deviceEnabled.value && deviceIdentity.value === requestedDeviceIdentity) {
+        enrichmentRefreshes.push(deviceQuery.refetch())
+      }
+      if (identityEnabled.value && identityKey.value === requestedIdentityKey) {
+        enrichmentRefreshes.push(identityQuery.refetch())
+      }
       await Promise.all(enrichmentRefreshes)
     }
   }
