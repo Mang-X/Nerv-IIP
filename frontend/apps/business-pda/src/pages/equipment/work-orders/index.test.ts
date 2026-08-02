@@ -133,13 +133,14 @@ describe('maintenance self work-order queue page', () => {
         sourceReferenceId: 'MWO-2026-0042',
         deviceAssetId: 'device-1',
         status: 'accepted',
-        priority: 'high',
+        priority: 'critical',
         assignedTechnicianUserId: 'principal-1',
       },
     ]
     const { wrapper, router } = await mountPage()
 
     expect(wrapper.text()).toContain('维修人员 张维修')
+    expect(wrapper.text()).toContain('优先级 紧急')
     expect(wrapper.text()).not.toContain('principal-1')
     expect(wrapper.text()).not.toContain('Self')
     expect(wrapper.text()).not.toContain('服务端')

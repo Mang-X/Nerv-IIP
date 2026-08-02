@@ -78,10 +78,13 @@ export function equipmentStateLabel(value: string | null | undefined): string {
   return lookup(equipmentStateLabels, value, '未知状态')
 }
 
-/** 维修工单优先级（high/medium/low）。 */
+/** 维修工单生产优先级（人工建单 + 报警自动开单等来源）。 */
 export const maintenancePriorityLabels: Record<string, string> = {
+  critical: '紧急',
+  urgent: '紧急',
   high: '高',
   medium: '中',
+  normal: '中',
   low: '低',
 }
 

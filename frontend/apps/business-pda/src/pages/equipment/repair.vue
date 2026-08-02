@@ -9,7 +9,6 @@ import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWrite
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
   maintenancePriorityLabel,
-  maintenancePriorityLabels,
   maintenanceWorkOrderStatusLabel,
   maintenanceWorkOrderStatusOptions,
   repairOrderFlow,
@@ -207,8 +206,9 @@ watch(
   { flush: 'sync' },
 )
 
-// 优先级选项仅使用 business-core 的三项稳定值，ActionSheet 负责移动选择。
-const priorityOptions = Object.keys(maintenancePriorityLabels).map((value) => ({
+// 建单契约只开放高/中/低三档；完整生产词表还包含自动开单读面值，不能反向扩张写入选项。
+const maintenanceCreatePriorityValues = ['high', 'medium', 'low'] as const
+const priorityOptions = maintenanceCreatePriorityValues.map((value) => ({
   value,
   label: maintenancePriorityLabel(value),
 }))
@@ -250,7 +250,7 @@ function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId:
 
 function onPrioritySelected(priority: string) {
   if (intentLocked.value) return
-  if (priority in maintenancePriorityLabels) {
+  if (maintenanceCreatePriorityValues.some((value) => value === priority)) {
     form.priority = priority
   }
 }

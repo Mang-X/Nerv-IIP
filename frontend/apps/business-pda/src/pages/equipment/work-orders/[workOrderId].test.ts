@@ -95,7 +95,7 @@ describe('maintenance work-order authoritative detail page', () => {
   it('revalidates route context and renders every required authoritative read field', async () => {
     state.workOrder = authoritativeWorkOrder({
       sourceReferenceId: 'MWO-2026-0042',
-      priority: 'high',
+      priority: 'urgent',
       status: 'accepted',
       assignedTechnicianUserId: 'principal-1',
       assignedTeamId: 'team-a',
@@ -133,7 +133,7 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(state.requestedId?.value).toBe('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).toContain('一号数控机床')
     expect(wrapper.text()).toContain('WS-1 · LINE-A · ST-9')
-    expect(wrapper.text()).toContain('高')
+    expect(wrapper.text()).toContain('紧急')
     expect(wrapper.text()).toContain('维修人员 张维修')
     expect(wrapper.text()).toContain('班组 甲班')
     expect(wrapper.text()).toContain('操作人 张维修')

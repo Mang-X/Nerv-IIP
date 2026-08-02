@@ -189,6 +189,22 @@ describe('PDA equipment repair page', () => {
     })
   })
 
+  it('keeps create choices limited to the three writable priorities', async () => {
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
+    await flushPromises()
+
+    const labels = [
+      ...document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="mobile-sheet-content"] button',
+      ),
+    ]
+      .map((button) => button.textContent?.trim())
+      .filter((label): label is string => Boolean(label))
+    expect(labels).toEqual(['高', '中', '低', '取消'])
+  })
+
   it('keeps the selected priority when the ActionSheet is cancelled', async () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })

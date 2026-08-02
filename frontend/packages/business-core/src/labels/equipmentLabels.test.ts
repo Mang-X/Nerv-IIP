@@ -87,14 +87,17 @@ describe('equipmentStateLabel', () => {
 })
 
 describe('maintenancePriorityLabel', () => {
-  it('maps known priorities to Chinese', () => {
+  it('maps every production maintenance priority to Chinese', () => {
+    expect(maintenancePriorityLabel('critical')).toBe('紧急')
+    expect(maintenancePriorityLabel('urgent')).toBe('紧急')
     expect(maintenancePriorityLabel('high')).toBe('高')
     expect(maintenancePriorityLabel('medium')).toBe('中')
+    expect(maintenancePriorityLabel('normal')).toBe('中')
     expect(maintenancePriorityLabel('low')).toBe('低')
   })
 
   it('falls back for unknown / empty values', () => {
-    expect(maintenancePriorityLabel('urgent')).toBe('未知优先级')
+    expect(maintenancePriorityLabel('future-priority')).toBe('未知优先级')
     expect(maintenancePriorityLabel(undefined)).toBe('未知优先级')
   })
 })
