@@ -236,7 +236,7 @@ describe('PDA MES operation execution page', () => {
     tasksSuccessfulRef.value = true
     currentSopsRef.value = []
     createSopFileDownloadGrant.mockClear()
-    push.mockClear()
+    push.mockReset().mockResolvedValue(undefined)
     routeGuardState.guard = undefined
     filters.keyword = undefined
     filters.organizationId = 'org-001'
@@ -1011,6 +1011,12 @@ describe('PDA MES operation execution page', () => {
 
       operationActionContextIdentityRef.value =
         'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+      await nextTick()
+      await flushPromises()
+
+      expect(completeTask).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+      expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(true)
       await wrapper.get('[data-testid="retry-action"]').trigger('click')
       await flushPromises()
 
@@ -1019,6 +1025,74 @@ describe('PDA MES operation execution page', () => {
       expect(completeTask.mock.calls[1][2].context).toStrictEqual(firstOptions.context)
     },
   )
+
+  it('clears a context-conflict retry when the route moves to another exact pair', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('账号、组织、环境或作业范围已变化')
+
+    routeState.replaceQuery?.({ workOrderId: 'WO-2026-0002', operationTaskId: 'OP-2' })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('账号、组织、环境或作业范围已变化')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+  })
+
+  it('lets the operator leave a context conflict and open a fresh task selection', async () => {
+    completeTask.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    operationActionContextIdentityRef.value =
+      'principal-001\u0000org-001\u0000env-dev\u0000work-center\u0000WC-B'
+    await nextTick()
+    await wrapper.get('[data-testid="retry-action"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="back-to-list"]').trigger('click')
+    expect(wrapper.text()).not.toContain('账号、组织、环境或作业范围已变化')
+    await wrapper.findAll('[data-row]')[1].trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('MO-2026-0002 · 工序 20')
+    expect(document.body.querySelector('[data-testid="action-start"]')).not.toBeNull()
+  })
+
+  it('clears an ordinary determinate error when the action identity changes', async () => {
+    completeTask.mockRejectedValueOnce(new Error('当前工序仍有未完成检查项。'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前工序仍有未完成检查项')
+
+    operationActionContextIdentityRef.value =
+      'principal-002\u0000org-001\u0000env-dev\u0000work-center\u0000WC-A'
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('当前工序仍有未完成检查项')
+    expect(wrapper.find('[data-testid="retry-action"]').exists()).toBe(false)
+  })
 
   it('presents readable predecessor sequences from a rejected complete command without raw task IDs', async () => {
     completeTask.mockRejectedValueOnce(new Error('前序工序尚未完成：工序 10、工序 20 等 4 道。'))

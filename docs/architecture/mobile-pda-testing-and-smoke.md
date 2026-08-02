@@ -47,7 +47,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   工序执行按双强 ID 绑定，但生产形态 fixture 的可选工序任务号保持缺失，详情明确提示未提供并展示设备、
   SOP、服务端门禁时间和前序/齐套/设备/质量阻塞；前序原因显示“工序 N”，375×812 断言当前/前序 raw ID 均不出现；按钮只消费
   `allowedActions`，覆盖完成（二次确认）→ confirmed 成功、409 刷新撤销旧动作、accepted/unconfirmed
-  不成功和完成态只读；375×812 还测量页头返回按钮不低于 44 px，单元测试另以具名用例覆盖非空 `operationTaskNo`。首次动作与重试的延迟 success/error 在 route、principal、组织/环境或 manage scope 漂移后均被丢弃并刷新当前上下文；未知结果点击重试前已发生的 principal、organization、environment、manage-scope 漂移则在 mutation 前安全拒绝，显示 determinate 上下文冲突并保留原 result/context/key。页面单元测试还覆盖不换 URL 的列表选择 A→B（initial/retry × success/error），证明 A 的旧结果不会关闭或覆盖 B，并覆盖任务数据先到、manage scope 后就绪时最终只打开当前 identity 的精确 pair；complete command/service/PDA 回归同时锁定“工序 N / 等 N 道”且不含 raw task ID；工序执行同组件 query push 与
+  不成功和完成态只读；375×812 还测量页头返回按钮不低于 44 px，单元测试另以具名用例覆盖非空 `operationTaskNo`。首次动作与重试的延迟 success/error 在 route、principal、组织/环境或 manage scope 漂移后均被丢弃并刷新当前上下文；未知结果点击重试前已发生的 principal、organization、environment、manage-scope 漂移则在 mutation 前安全拒绝，显示显式 determinate 上下文冲突并保留原 result/context/key。四类回归在恢复安全 identity 后先等待 watcher 与 promises 落稳，再断言冲突和 retry 入口仍存在及原 key/context 被复用；另锁定 route 换 pair、用户返回改选任务会清理冲突，普通 determinate error 不跨 identity 保留。页面单元测试还覆盖不换 URL 的列表选择 A→B（initial/retry × success/error），证明 A 的旧结果不会关闭或覆盖 B，并覆盖任务数据先到、manage scope 后就绪时最终只打开当前 identity 的精确 pair；complete command/service/PDA 回归同时锁定“工序 N / 等 N 道”且不含 raw task ID；工序执行同组件 query push 与
   浏览器 back/forward 始终关闭旧 sheet 并只打开当前 `workOrderId + operationTaskId`，且以超过 20 个
   同工单子串碰撞项证明完整 deep link 使用 exact `operationTaskId`；报工全链 → 成功结果并
   核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router

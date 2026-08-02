@@ -23,7 +23,7 @@
 - 409/lifecycle conflict：关闭旧 sheet、清除旧动作上下文和幂等键、刷新当前 scope 的权威列表；旧按钮不会继续可用。
 - `accepted`/缺失/畸形回执或权威回读未确认：保留原幂等键并显示“结果不确定”错误，不显示成功。
 - 未确认后 principal、组织、环境或 manage scope 漂移：保留旧 pair/key 的历史事实但禁止在新 context 重放；页面只显示可读冲突提示，不泄露 raw ID。
-- 点击重试前已发生的 principal、组织、环境或 manage scope 漂移：页面在 mutation 前比较冻结 context，保留结果、context 与幂等键，并把未知网络态收敛为可读且 determinate 的“上下文已变化”冲突；只有请求调用期间才发生的漂移进入 stale discard。
+- 点击重试前已发生的 principal、组织、环境或 manage scope 漂移：页面在 mutation 前比较冻结 context，保留结果、context 与幂等键，并把未知网络态收敛为显式、可读且 determinate 的“上下文已变化”冲突；identity 恢复并经过 watcher 落稳后，该冲突与安全重试入口仍保留。只有请求调用期间才发生的漂移进入 stale discard；route 换到其它 pair 或用户返回后改选任务会清理冲突，普通 determinate error 不跨 identity 保留。
 - route query、scope 或 principal identity 变化：立即关闭旧详情，只能由新 identity 的成功响应重新打开精确 pair。
 - 首次动作或重试 await 期间发生 route、principal、组织/环境、读范围或 manage scope 漂移：旧 success/error 都静默丢弃，清除旧结果/意图并刷新当前上下文；上下文变化本身不显示“操作失败”。
 - 首次动作或重试 await 期间从普通列表 pair A 改选 pair B：A 的旧 success/error 都静默丢弃并刷新当前列表，只清理仍属于 A 的意图；B 的 sheet、选择和结果不被关闭或覆盖。

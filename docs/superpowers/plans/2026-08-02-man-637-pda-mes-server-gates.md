@@ -120,3 +120,16 @@
 - [x] Raise the enabled header Back button from the `size="sm"` 32 px baseline to the 44 px PDA touch floor and assert its real 375×812 bounding box.
 - [x] Project incomplete predecessors by `OperationSequence` in the complete-command guard and transport “工序 N / 等 N 道” without current or predecessor raw task IDs through the service envelope and PDA result.
 - [x] Capture focused red for the four identity cases, 32 px browser measurement and raw-ID command error, then turn 52 page tests plus command/service and browser targets green.
+
+### Task 9: Keep the determinate context conflict through identity restoration
+
+**Files:**
+
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.vue`
+- Modify: `frontend/apps/business-pda/src/pages/mes/operation.test.ts`
+- Modify: MAN-637 behavior and testing documentation
+
+- [x] Give the retry preflight conflict an explicit state distinct from both unknown results and ordinary determinate errors.
+- [x] Preserve only that conflict, its frozen context and idempotency key when principal/org/environment/manage-scope identity settles or returns to the safe identity; keep the Retry and Back actions available.
+- [x] Clear the conflict and intent when the route changes to another pair or the operator returns and opens a new selection; continue clearing ordinary determinate errors on identity changes.
+- [x] Reproduce the false-positive timing with `nextTick` plus promise flushing, capture four failing identity cases, then turn all 55 operation-page tests green.

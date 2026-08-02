@@ -193,6 +193,7 @@ const ACTION_FNS: Record<
 const operationKey = ref('')
 const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
+const operationResultContextConflict = ref(false)
 usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
@@ -232,6 +233,24 @@ const taskFilterState = computed(() => ({
   keyword: filters.keyword ?? '',
 }))
 
+function clearOperationResultIntent() {
+  result.value = null
+  operationKey.value = ''
+  operationContext.value = null
+  operationResultUnknown.value = false
+  operationResultContextConflict.value = false
+}
+
+function shouldPreserveOperationContextConflict(
+  routeWorkOrderId: string,
+  routeOperationTaskId: string,
+) {
+  const state = result.value
+  if (!operationResultContextConflict.value || !state) return false
+  if (!routeWorkOrderId && !routeOperationTaskId) return true
+  return state.workOrderId === routeWorkOrderId && state.taskId === routeOperationTaskId
+}
+
 function restoreTaskListState(state: { filters: Record<string, unknown> }) {
   if (hasAnyTaskDeepLink.value) return
   const status = state.filters.status
@@ -247,14 +266,9 @@ function openSheet(task: Task) {
     operationSelectionIdentity.value = selectionIdentity
     operationSelectionGeneration.value += 1
   }
-  result.value = null
+  clearOperationResultIntent()
   sopFileError.value = ''
   confirmingComplete.value = false
-  // 重新打开面板 → 新一轮操作，作废上一个幂等键
-  if (!operationResultUnknown.value) {
-    operationKey.value = ''
-    operationContext.value = null
-  }
   selected.value = task
   sopFilters.operationCode = task.operationCode?.trim() ?? ''
   sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
@@ -274,7 +288,12 @@ watch(
   ([workOrderId, operationTaskId]) => {
     operationPageGeneration.value += 1
     closeSheet()
-    if (!operationResultUnknown.value) result.value = null
+    if (
+      !operationResultUnknown.value &&
+      !shouldPreserveOperationContextConflict(workOrderId, operationTaskId)
+    ) {
+      clearOperationResultIntent()
+    }
     deepLinkOpenedIdentity.value = ''
     deepLinkMessage.value = ''
     const completePair = Boolean(workOrderId && operationTaskId)
@@ -317,10 +336,7 @@ function closeSheet() {
 
 async function recoverLifecycleUpdate() {
   closeSheet()
-  result.value = null
-  operationKey.value = ''
-  operationContext.value = null
-  operationResultUnknown.value = false
+  clearOperationResultIntent()
   try {
     await refresh()
   } catch {
@@ -359,11 +375,15 @@ function isOperationPageSnapshotCurrent(snapshot: OperationPageSnapshot) {
 }
 
 async function discardStaleOperationResult(snapshot: OperationPageSnapshot) {
-  if (result.value?.context === snapshot.context) result.value = null
+  if (result.value?.context === snapshot.context) {
+    result.value = null
+    operationResultContextConflict.value = false
+  }
   if (operationContext.value === snapshot.context) {
     operationKey.value = ''
     operationContext.value = null
     operationResultUnknown.value = false
+    operationResultContextConflict.value = false
   }
   try {
     await refresh()
@@ -439,6 +459,7 @@ async function runAction(action: ActionKind) {
       return
     }
     operationResultUnknown.value = false
+    operationResultContextConflict.value = false
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
@@ -459,6 +480,7 @@ async function runAction(action: ActionKind) {
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
+    operationResultContextConflict.value = false
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -485,6 +507,7 @@ async function retry() {
   const key = operationKey.value
   if (!isOperationActionContextCurrent(context)) {
     operationResultUnknown.value = false
+    operationResultContextConflict.value = true
     result.value = {
       ...state,
       status: 'error',
@@ -494,6 +517,7 @@ async function retry() {
     return
   }
   const pageSnapshot = captureOperationPageSnapshot(context)
+  operationResultContextConflict.value = false
   result.value = null
   try {
     await ACTION_FNS[action](workOrderId, taskId, key, context)
@@ -502,6 +526,7 @@ async function retry() {
       return
     }
     operationResultUnknown.value = false
+    operationResultContextConflict.value = false
     result.value = {
       status: 'success',
       title: SUCCESS_TITLES[action],
@@ -522,6 +547,7 @@ async function retry() {
       return
     }
     operationResultUnknown.value = isIndeterminateError(e)
+    operationResultContextConflict.value = false
     result.value = {
       status: 'error',
       title: '操作失败',
@@ -537,16 +563,12 @@ async function retry() {
 
 function continueWork() {
   if (operationResultUnknown.value) return
-  result.value = null
   // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
-  operationKey.value = ''
-  operationContext.value = null
+  clearOperationResultIntent()
 }
 function backToList() {
   if (operationResultUnknown.value) return
-  result.value = null
-  operationKey.value = ''
-  operationContext.value = null
+  clearOperationResultIntent()
   router.push('/').catch(() => {})
 }
 
