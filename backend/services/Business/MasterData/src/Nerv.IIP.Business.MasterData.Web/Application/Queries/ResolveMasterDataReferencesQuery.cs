@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
@@ -11,7 +12,11 @@ public sealed record MasterDataReferenceResponse(
     bool Active,
     string DisplayName,
     string SnapshotVersion,
-    string DisabledReason);
+    string DisabledReason,
+    string? DeviceAssetId = null,
+    string? CanonicalCode = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record ResolveMasterDataReferencesResponse(IReadOnlyCollection<MasterDataReferenceResponse> References);
 
@@ -23,16 +28,189 @@ public sealed record ResolveMasterDataReferencesQuery(
 public sealed class ResolveMasterDataReferencesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ResolveMasterDataReferencesQuery, ResolveMasterDataReferencesResponse>
 {
+    private const int MaxReferences = 200;
+
     public async Task<ResolveMasterDataReferencesResponse> Handle(ResolveMasterDataReferencesQuery request, CancellationToken cancellationToken)
     {
-        var responses = new List<MasterDataReferenceResponse>();
-        foreach (var reference in request.References)
+        var references = request.References.ToArray();
+        if (references.Length is < 1 or > MaxReferences)
         {
-            responses.Add(await ResolveAsync(request.OrganizationId, request.EnvironmentId, reference, cancellationToken));
+            throw new KnownException("Master data reference batch must contain between 1 and 200 references.");
+        }
+
+        var deviceReferences = references
+            .Where(reference => string.Equals(
+                reference.ResourceType.Trim(),
+                "device-asset",
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var resolvedDevices = await ResolveDeviceAssetBatchAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceReferences,
+            cancellationToken);
+        var responses = new List<MasterDataReferenceResponse>();
+        foreach (var reference in references)
+        {
+            var type = reference.ResourceType.Trim().ToLowerInvariant();
+            responses.Add(type == "device-asset"
+                ? resolvedDevices[reference.Code.Trim()]
+                : await ResolveAsync(request.OrganizationId, request.EnvironmentId, reference, cancellationToken));
         }
 
         return new ResolveMasterDataReferencesResponse(responses);
     }
+
+    private async Task<IReadOnlyDictionary<string, MasterDataReferenceResponse>> ResolveDeviceAssetBatchAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<MasterDataReferenceRequest> references,
+        CancellationToken cancellationToken)
+    {
+        if (references.Count == 0)
+        {
+            return new Dictionary<string, MasterDataReferenceResponse>(StringComparer.Ordinal);
+        }
+
+        var requestedReferences = references.Select(reference => reference.Code.Trim()).ToArray();
+        var distinctReferences = requestedReferences.Distinct(StringComparer.Ordinal).ToArray();
+        if (distinctReferences.Length != requestedReferences.Length)
+        {
+            return distinctReferences.ToDictionary(
+                reference => reference,
+                reference => Missing("device-asset", reference, "duplicate-reference"),
+                StringComparer.Ordinal);
+        }
+
+        var requestedIds = distinctReferences
+            .Select(reference => Guid.TryParse(reference, out var parsed) && parsed != Guid.Empty
+                ? new DeviceAssetId(parsed)
+                : null)
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct()
+            .ToArray();
+        var directCandidates = await DeviceAuthorityCandidatesQuery(
+                dbContext,
+                organizationId,
+                environmentId,
+                requestedIds,
+                distinctReferences)
+            .ToArrayAsync(cancellationToken);
+
+        var authorityReferences = distinctReferences
+            .Concat(directCandidates.Select(candidate => candidate.DeviceAssetId.ToString()))
+            .Concat(directCandidates.Select(candidate => candidate.Code))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var authorityIds = authorityReferences
+            .Select(reference => Guid.TryParse(reference, out var parsed) && parsed != Guid.Empty
+                ? new DeviceAssetId(parsed)
+                : null)
+            .Where(id => id is not null)
+            .Select(id => id!)
+            .Distinct()
+            .ToArray();
+        var authorityCandidates = await DeviceAuthorityCandidatesQuery(
+                dbContext,
+                organizationId,
+                environmentId,
+                authorityIds,
+                authorityReferences)
+            .ToArrayAsync(cancellationToken);
+
+        var resolved = new Dictionary<string, DeviceAssetAuthoritySnapshot>(StringComparer.Ordinal);
+        var invalidReason = string.Empty;
+        foreach (var reference in distinctReferences)
+        {
+            var matches = MatchingDevices(reference, authorityCandidates);
+            if (matches.Length != 1)
+            {
+                invalidReason = matches.Length == 0 ? "not-found" : "ambiguous";
+                break;
+            }
+            resolved.Add(reference, matches[0]);
+        }
+
+        if (invalidReason.Length == 0)
+        {
+            foreach (var device in resolved.Values.DistinctBy(candidate => candidate.DeviceAssetId))
+            {
+                var aliases = new[] { device.DeviceAssetId.ToString(), device.Code }
+                    .Distinct(StringComparer.Ordinal);
+                if (aliases.Any(alias =>
+                {
+                    var matches = MatchingDevices(alias, authorityCandidates);
+                    return matches.Length != 1 || matches[0].DeviceAssetId != device.DeviceAssetId;
+                }))
+                {
+                    invalidReason = "ambiguous";
+                    break;
+                }
+            }
+        }
+
+        if (invalidReason.Length > 0)
+        {
+            return distinctReferences.ToDictionary(
+                reference => reference,
+                reference => Missing("device-asset", reference, invalidReason),
+                StringComparer.Ordinal);
+        }
+
+        return resolved.ToDictionary(
+            pair => pair.Key,
+            pair => FoundDevice(pair.Key, pair.Value),
+            StringComparer.Ordinal);
+    }
+
+    private static IQueryable<DeviceAssetAuthoritySnapshot> DeviceAuthorityCandidatesQuery(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<DeviceAssetId> deviceAssetIds,
+        IReadOnlyCollection<string> references) =>
+        dbContext.DeviceAssets
+            .AsNoTracking()
+            .Where(device => device.OrganizationId == organizationId && device.EnvironmentId == environmentId)
+            .Where(device => deviceAssetIds.Contains(device.Id) || references.Contains(device.Code))
+            .Select(device => new DeviceAssetAuthoritySnapshot(
+                device.Id,
+                device.Code,
+                device.Model,
+                device.Disabled,
+                device.UpdatedAtUtc,
+                device.OrganizationId,
+                device.EnvironmentId));
+
+    private static DeviceAssetAuthoritySnapshot[] MatchingDevices(
+        string reference,
+        IReadOnlyCollection<DeviceAssetAuthoritySnapshot> candidates)
+    {
+        var hasId = Guid.TryParse(reference, out var parsed) && parsed != Guid.Empty;
+        var deviceAssetId = hasId ? new DeviceAssetId(parsed) : null;
+        return candidates
+            .Where(candidate => string.Equals(candidate.Code, reference, StringComparison.Ordinal)
+                || (deviceAssetId is not null && candidate.DeviceAssetId == deviceAssetId))
+            .DistinctBy(candidate => candidate.DeviceAssetId)
+            .ToArray();
+    }
+
+    private static MasterDataReferenceResponse FoundDevice(
+        string reference,
+        DeviceAssetAuthoritySnapshot device) =>
+        new(
+            "device-asset",
+            reference,
+            true,
+            !device.Disabled,
+            device.DisplayName,
+            device.UpdatedAtUtc.ToString("O"),
+            device.Disabled ? "disabled" : string.Empty,
+            device.DeviceAssetId.ToString(),
+            device.Code,
+            device.OrganizationId,
+            device.EnvironmentId);
 
     private async Task<MasterDataReferenceResponse> ResolveAsync(
         string organizationId,
@@ -184,8 +362,17 @@ public sealed class ResolveMasterDataReferencesQueryHandler(ApplicationDbContext
         return new MasterDataReferenceResponse(resourceType, code, true, !disabled, displayName, updatedAtUtc.ToString("O"), disabled ? "disabled" : string.Empty);
     }
 
-    private static MasterDataReferenceResponse Missing(string resourceType, string code)
+    private static MasterDataReferenceResponse Missing(string resourceType, string code, string reason = "not-found")
     {
-        return new MasterDataReferenceResponse(resourceType, code, false, false, string.Empty, string.Empty, "not-found");
+        return new MasterDataReferenceResponse(resourceType, code, false, false, string.Empty, string.Empty, reason);
     }
+
+    private sealed record DeviceAssetAuthoritySnapshot(
+        DeviceAssetId DeviceAssetId,
+        string Code,
+        string DisplayName,
+        bool Disabled,
+        DateTime UpdatedAtUtc,
+        string OrganizationId,
+        string EnvironmentId);
 }

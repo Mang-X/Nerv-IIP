@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
@@ -10,7 +9,7 @@ public sealed class BusinessGatewayDataScopeFilter(
     IInternalServiceTokenProvider tokenProvider)
 {
     private const int MaxRequestedDeviceReferences = 200;
-    private const int MaxForwardedDeviceAliases = 200;
+    private const int MaxForwardedDeviceAliases = MaxRequestedDeviceReferences * 2;
     private const string NoScopeMatch = "__iam_scope_no_match__";
 
     public async Task<BusinessConsoleTelemetryAlarmListRequest> ApplyToTelemetryAlarmsAsync(
@@ -63,22 +62,8 @@ public sealed class BusinessGatewayDataScopeFilter(
             return MaintenanceWorkOrderDataScopeProjection.Deny(request);
         }
 
-        using var resolver = new DeviceAuthorityResolver(
-            reference => ResolveDeviceAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                reference,
-                cancellationToken),
-            cancellationToken);
-        var requestedDevices = requested.Specified
-            ? await ResolveRequestedDevicesAsync(requested, resolver)
-            : null;
-        if (requested.Specified && requestedDevices is null)
-        {
-            return MaintenanceWorkOrderDataScopeProjection.Deny(request);
-        }
-
         VerifiedDeviceSelection? allowedDevices = null;
+        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? verifiedByReference;
         if (hasRestrictedScope)
         {
             var resolved = await ResolveAsync(
@@ -86,11 +71,37 @@ public sealed class BusinessGatewayDataScopeFilter(
                 request.EnvironmentId,
                 dataScope!,
                 cancellationToken);
-            allowedDevices = await ResolveAllowedDevicesAsync(resolved.DeviceAssets, resolver);
+            verifiedByReference = await ResolveDeviceReferencesAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                resolved.DeviceAssets.Select(device => device.DeviceAssetId),
+                cancellationToken);
+            allowedDevices = ResolveAllowedDevices(resolved.DeviceAssets, verifiedByReference);
             if (allowedDevices is null)
             {
                 return MaintenanceWorkOrderDataScopeProjection.Deny(request);
             }
+        }
+        else
+        {
+            verifiedByReference = await ResolveDeviceReferencesAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                requested.Groups.SelectMany(group => group),
+                cancellationToken);
+        }
+
+        var requestedDevices = requested.Specified
+            ? ResolveRequestedDevices(
+                requested,
+                hasRestrictedScope
+                    ? AliasIndex(verifiedByReference)
+                    : verifiedByReference,
+                requireAllReferences: !hasRestrictedScope)
+            : null;
+        if (requested.Specified && requestedDevices is null)
+        {
+            return MaintenanceWorkOrderDataScopeProjection.Deny(request);
         }
 
         var selectedIdentities = requestedDevices?.Identities.ToHashSet()
@@ -233,9 +244,10 @@ public sealed class BusinessGatewayDataScopeFilter(
     private static string JoinOrNoMatch(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? NoScopeMatch : string.Join(',', values.Order(StringComparer.Ordinal));
 
-    private static async Task<VerifiedDeviceSelection?> ResolveRequestedDevicesAsync(
+    private static VerifiedDeviceSelection? ResolveRequestedDevices(
         DeviceReferenceFilter requested,
-        DeviceAuthorityResolver resolver)
+        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference,
+        bool requireAllReferences)
     {
         var references = requested.Groups
             .SelectMany(group => group)
@@ -246,18 +258,21 @@ public sealed class BusinessGatewayDataScopeFilter(
             return null;
         }
 
-        var byReference = await resolver.ResolveVerifiedAsync(references);
-        if (byReference is null)
+        if (byReference is null
+            || (requireAllReferences && references.Any(reference => !byReference.ContainsKey(reference))))
         {
             return null;
         }
 
         var intersection = requested.Groups[0]
+            .Where(byReference.ContainsKey)
             .Select(reference => byReference[reference].Identity)
             .ToHashSet();
         foreach (var group in requested.Groups.Skip(1))
         {
-            intersection.IntersectWith(group.Select(reference => byReference[reference].Identity));
+            intersection.IntersectWith(group
+                .Where(byReference.ContainsKey)
+                .Select(reference => byReference[reference].Identity));
         }
         if (intersection.Count == 0)
         {
@@ -271,18 +286,17 @@ public sealed class BusinessGatewayDataScopeFilter(
                 .ToDictionary(group => group.Key, group => group.First().Aliases));
     }
 
-    private static async Task<VerifiedDeviceSelection?> ResolveAllowedDevicesAsync(
+    private static VerifiedDeviceSelection? ResolveAllowedDevices(
         IReadOnlyCollection<DeviceIdentity> allowedDevices,
-        DeviceAuthorityResolver resolver)
+        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference)
     {
         if (allowedDevices.Count == 0 || allowedDevices.Count > MaxRequestedDeviceReferences)
         {
             return null;
         }
 
-        var byReference = await resolver.ResolveVerifiedAsync(
-            allowedDevices.Select(device => device.DeviceAssetId));
-        if (byReference is null)
+        if (byReference is null
+            || allowedDevices.Any(device => !byReference.ContainsKey(device.DeviceAssetId)))
         {
             return null;
         }
@@ -307,38 +321,74 @@ public sealed class BusinessGatewayDataScopeFilter(
                 .ToDictionary(group => group.Key, group => group.First().Aliases));
     }
 
-    private async Task<ResolvedDeviceIdentity?> ResolveDeviceAsync(
+    private async Task<IReadOnlyDictionary<string, VerifiedDeviceIdentity>?> ResolveDeviceReferencesAsync(
         string organizationId,
         string environmentId,
-        string reference,
+        IEnumerable<string> references,
         CancellationToken cancellationToken)
     {
+        var requested = references
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (requested.Length == 0 || requested.Length > MaxRequestedDeviceReferences)
+        {
+            return null;
+        }
+
         try
         {
-            var detail = await masterData.GetResourceDetailAsync(
+            var response = await masterData.ResolveReferencesAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleMasterDataResourceRequest(
+                new BusinessMasterDataResolveReferencesRequest(
                     organizationId,
                     environmentId,
-                    "device-asset",
-                    reference),
+                    requested.Select(reference => new BusinessMasterDataReferenceRequest(
+                        "device-asset",
+                        reference)).ToArray()),
                 cancellationToken);
-            var deviceAssetId = NormalizeDeviceAssetId(detail.DeviceAssetId);
-            var requestedDeviceAssetId = NormalizeDeviceAssetId(reference);
-            var code = detail.Code?.Trim();
-            var referenceMatches = string.Equals(code, reference, StringComparison.Ordinal)
-                || (requestedDeviceAssetId is not null
-                    && string.Equals(deviceAssetId, requestedDeviceAssetId, StringComparison.Ordinal));
-            return string.Equals(detail.ResourceType, "device-asset", StringComparison.Ordinal)
-                && string.Equals(detail.OrganizationId, organizationId, StringComparison.Ordinal)
-                && string.Equals(detail.EnvironmentId, environmentId, StringComparison.Ordinal)
-                && detail.Active
-                && !string.IsNullOrWhiteSpace(detail.SnapshotVersion)
-                && !string.IsNullOrWhiteSpace(code)
-                && deviceAssetId is not null
-                && referenceMatches
-                ? new ResolvedDeviceIdentity(deviceAssetId, code, detail.SnapshotVersion.Trim())
-                : null;
+            if (response.References is null
+                || response.References.Count != requested.Length
+                || response.References.Count > MaxRequestedDeviceReferences)
+            {
+                return null;
+            }
+
+            var mapped = new Dictionary<string, VerifiedDeviceIdentity>(StringComparer.Ordinal);
+            foreach (var item in response.References)
+            {
+                var reference = item.Code?.Trim();
+                var deviceAssetId = NormalizeDeviceAssetId(item.DeviceAssetId);
+                var canonicalCode = item.CanonicalCode?.Trim();
+                if (string.IsNullOrWhiteSpace(reference)
+                    || !requested.Contains(reference, StringComparer.Ordinal)
+                    || mapped.ContainsKey(reference)
+                    || !string.Equals(item.ResourceType, "device-asset", StringComparison.Ordinal)
+                    || !item.Exists
+                    || !item.Active
+                    || !string.Equals(item.OrganizationId, organizationId, StringComparison.Ordinal)
+                    || !string.Equals(item.EnvironmentId, environmentId, StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(item.SnapshotVersion)
+                    || string.IsNullOrWhiteSpace(canonicalCode)
+                    || deviceAssetId is null)
+                {
+                    return null;
+                }
+                mapped.Add(
+                    reference,
+                    new VerifiedDeviceIdentity(
+                        new DeviceSnapshotIdentity(deviceAssetId, item.SnapshotVersion.Trim()),
+                        canonicalCode,
+                        new[] { deviceAssetId, canonicalCode }
+                            .Distinct(StringComparer.Ordinal)
+                            .Order(StringComparer.Ordinal)
+                            .ToArray()));
+            }
+
+            if (mapped.Count != requested.Length || !AliasesAreUnique(mapped.Values))
+            {
+                return null;
+            }
+            return mapped;
         }
         catch (BusinessServiceProxyException)
         {
@@ -352,6 +402,54 @@ public sealed class BusinessGatewayDataScopeFilter(
         {
             return null;
         }
+    }
+
+    private static IReadOnlyDictionary<string, VerifiedDeviceIdentity>? AliasIndex(
+        IReadOnlyDictionary<string, VerifiedDeviceIdentity>? byReference)
+    {
+        if (byReference is null)
+        {
+            return null;
+        }
+
+        var byAlias = new Dictionary<string, VerifiedDeviceIdentity>(StringComparer.Ordinal);
+        foreach (var device in byReference.Values.DistinctBy(item => item.Identity))
+        {
+            foreach (var alias in device.Aliases)
+            {
+                if (!byAlias.TryAdd(alias, device))
+                {
+                    return null;
+                }
+            }
+        }
+        return byAlias;
+    }
+
+    private static bool AliasesAreUnique(IEnumerable<VerifiedDeviceIdentity> devices)
+    {
+        var uniqueDevices = devices.DistinctBy(device => device.Identity).ToArray();
+        var aliases = new Dictionary<string, DeviceSnapshotIdentity>(StringComparer.Ordinal);
+        var ids = uniqueDevices.ToDictionary(device => device.Identity.DeviceAssetId, device => device.Identity, StringComparer.Ordinal);
+        foreach (var device in uniqueDevices)
+        {
+            foreach (var alias in device.Aliases)
+            {
+                if (aliases.TryGetValue(alias, out var existing) && existing != device.Identity)
+                {
+                    return false;
+                }
+                aliases[alias] = device.Identity;
+            }
+            var codeAsId = NormalizeDeviceAssetId(device.Code);
+            if (codeAsId is not null
+                && ids.TryGetValue(codeAsId, out var identityById)
+                && identityById != device.Identity)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static DeviceIdentity? ToDeviceIdentity(BusinessConsoleResourceItem resource)
@@ -436,8 +534,6 @@ public sealed class BusinessGatewayDataScopeFilter(
 
     private sealed record DeviceSnapshotIdentity(string DeviceAssetId, string SnapshotVersion);
 
-    private sealed record ResolvedDeviceIdentity(string DeviceAssetId, string Code, string SnapshotVersion);
-
     private sealed record VerifiedDeviceIdentity(
         DeviceSnapshotIdentity Identity,
         string Code,
@@ -449,84 +545,6 @@ public sealed class BusinessGatewayDataScopeFilter(
 
     private sealed record DeviceReferenceFilter(bool Specified, IReadOnlyList<HashSet<string>> Groups);
 
-    private sealed class DeviceAuthorityResolver(
-        Func<string, Task<ResolvedDeviceIdentity?>> resolve,
-        CancellationToken cancellationToken) : IDisposable
-    {
-        private readonly ConcurrentDictionary<string, Lazy<Task<ResolvedDeviceIdentity?>>> cache =
-            new(StringComparer.Ordinal);
-        private readonly SemaphoreSlim throttle = new(8);
-
-        public async Task<IReadOnlyDictionary<string, VerifiedDeviceIdentity>?> ResolveVerifiedAsync(
-            IEnumerable<string> references)
-        {
-            var distinctReferences = references
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-            if (distinctReferences.Length == 0 || distinctReferences.Length > MaxRequestedDeviceReferences)
-            {
-                return null;
-            }
-
-            var resolved = await Task.WhenAll(distinctReferences.Select(async reference =>
-                (Reference: reference, Device: await ResolveCachedAsync(reference))));
-            if (resolved.Any(result => result.Device is null))
-            {
-                return null;
-            }
-
-            var authorityResolved = await Task.WhenAll(resolved.Select(async result =>
-                (result.Reference,
-                    Initial: result.Device!,
-                    ByCanonicalId: await ResolveCachedAsync(result.Device!.DeviceAssetId),
-                    ByCode: await ResolveCachedAsync(result.Device!.Code))));
-            if (authorityResolved.Any(result => result.ByCanonicalId is null
-                || result.ByCode is null
-                || !SameDevice(result.Initial, result.ByCanonicalId)
-                || !SameDevice(result.Initial, result.ByCode)))
-            {
-                return null;
-            }
-
-            return authorityResolved.ToDictionary(
-                result => result.Reference,
-                result => new VerifiedDeviceIdentity(
-                    new DeviceSnapshotIdentity(result.Initial.DeviceAssetId, result.Initial.SnapshotVersion),
-                    result.Initial.Code,
-                    new[] { result.Initial.DeviceAssetId, result.Initial.Code }
-                        .Distinct(StringComparer.Ordinal)
-                        .Order(StringComparer.Ordinal)
-                        .ToArray()),
-                StringComparer.Ordinal);
-        }
-
-        public void Dispose() => throttle.Dispose();
-
-        private Task<ResolvedDeviceIdentity?> ResolveCachedAsync(string reference) =>
-            cache.GetOrAdd(
-                reference,
-                key => new Lazy<Task<ResolvedDeviceIdentity?>>(
-                    () => ResolveThrottledAsync(key),
-                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-
-        private async Task<ResolvedDeviceIdentity?> ResolveThrottledAsync(string reference)
-        {
-            await throttle.WaitAsync(cancellationToken);
-            try
-            {
-                return await resolve(reference);
-            }
-            finally
-            {
-                throttle.Release();
-            }
-        }
-
-        private static bool SameDevice(ResolvedDeviceIdentity left, ResolvedDeviceIdentity right) =>
-            string.Equals(left.DeviceAssetId, right.DeviceAssetId, StringComparison.Ordinal)
-            && string.Equals(left.Code, right.Code, StringComparison.Ordinal)
-            && string.Equals(left.SnapshotVersion, right.SnapshotVersion, StringComparison.Ordinal);
-    }
 }
 
 public sealed record MaintenanceWorkOrderDataScopeProjection(

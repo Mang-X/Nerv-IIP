@@ -37,6 +37,11 @@ public interface IBusinessMasterDataClient
         BusinessConsoleMasterDataResourceRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessMasterDataResolveReferencesResponse> ResolveReferencesAsync(
+        string internalBearerToken,
+        BusinessMasterDataResolveReferencesRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
         BusinessConsoleUpdateMasterDataResourceRequest request,
@@ -2323,6 +2328,18 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("effectiveFrom", request.EffectiveFrom)),
             null,
             cancellationToken);
+
+    public Task<BusinessMasterDataResolveReferencesResponse> ResolveReferencesAsync(
+        string internalBearerToken,
+        BusinessMasterDataResolveReferencesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessMasterDataResolveReferencesResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/references/resolve",
+            request,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,

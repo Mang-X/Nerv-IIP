@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using MediatR;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -240,6 +241,93 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
         Assert.Contains("maintenance_work_order_lifecycle_events", sql, StringComparison.Ordinal);
         Assert.Contains("assigned_technician_user_id", sql, StringComparison.Ordinal);
         Assert.Contains("completion_result", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Detail_orders_lifecycle_by_resulting_version_when_the_authoritative_clock_moves_back()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CLOCK", "high", "reporter");
+        workOrder.Assign("tech-001", "team-a");
+        var versionOne = MaintenanceWorkOrderLifecycleEvent.Record(
+            workOrder,
+            MaintenanceWorkOrderAction.Assign,
+            MaintenanceWorkOrderStatus.Open,
+            "dispatcher-1",
+            "tech-001",
+            "team-a",
+            "version one despite later clock",
+            "clock-1",
+            "payload-1",
+            DateTimeOffset.Parse("2026-08-03T02:00:00Z", CultureInfo.InvariantCulture));
+        workOrder.Assign("tech-002", "team-b");
+        var versionTwo = MaintenanceWorkOrderLifecycleEvent.Record(
+            workOrder,
+            MaintenanceWorkOrderAction.Assign,
+            MaintenanceWorkOrderStatus.Open,
+            "dispatcher-2",
+            "tech-002",
+            "team-b",
+            "version two after clock rollback",
+            "clock-2",
+            "payload-2",
+            DateTimeOffset.Parse("2026-08-03T01:00:00Z", CultureInfo.InvariantCulture));
+        db.MaintenanceWorkOrders.Add(workOrder);
+        db.MaintenanceWorkOrderLifecycleEvents.AddRange(versionOne, versionTwo);
+        await db.SaveChangesAsync();
+
+        var detail = await new GetMaintenanceWorkOrderQueryHandler(db).Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", workOrder.Id),
+            CancellationToken.None);
+
+        Assert.Equal([1, 2], detail.Lifecycle.Select(item => item.ResultingVersion));
+        Assert.Equal(
+            ["version one despite later clock", "version two after clock rollback"],
+            detail.Lifecycle.Select(item => item.Reason));
+    }
+
+    [Fact]
+    public async Task Detail_uses_event_id_as_the_stable_tie_break_for_same_version_and_time()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-TIE", "high", "reporter");
+        workOrder.Assign("tech-001", "team-a");
+        var occurredAtUtc = DateTimeOffset.Parse("2026-08-03T01:00:00Z", CultureInfo.InvariantCulture);
+        var first = MaintenanceWorkOrderLifecycleEvent.Record(
+            workOrder,
+            MaintenanceWorkOrderAction.Assign,
+            MaintenanceWorkOrderStatus.Open,
+            "dispatcher-1",
+            "tech-001",
+            "team-a",
+            "same-time-a",
+            "tie-a",
+            "payload-a",
+            occurredAtUtc);
+        var second = MaintenanceWorkOrderLifecycleEvent.Record(
+            workOrder,
+            MaintenanceWorkOrderAction.Assign,
+            MaintenanceWorkOrderStatus.Open,
+            "dispatcher-2",
+            "tech-001",
+            "team-a",
+            "same-time-b",
+            "tie-b",
+            "payload-b",
+            occurredAtUtc);
+        db.MaintenanceWorkOrders.Add(workOrder);
+        db.MaintenanceWorkOrderLifecycleEvents.AddRange(first, second);
+        await db.SaveChangesAsync();
+        var expectedReasons = new[] { first, second }
+            .OrderBy(item => item.Id.ToString(), StringComparer.Ordinal)
+            .Select(item => item.Reason)
+            .ToArray();
+
+        var detail = await new GetMaintenanceWorkOrderQueryHandler(db).Handle(
+            new GetMaintenanceWorkOrderQuery("org-001", "env-dev", workOrder.Id),
+            CancellationToken.None);
+
+        Assert.Equal(expectedReasons, detail.Lifecycle.Select(item => item.Reason));
     }
 
     [Fact]

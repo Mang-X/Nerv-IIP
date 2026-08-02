@@ -124,7 +124,12 @@ For MAN-641, Maintenance `listMaintenanceWorkOrders` remains `exposed` through
 BusinessGateway `listBusinessConsoleMaintenanceWorkOrders`. The facade preserves
 the legacy `deviceAssetId` / CSV `deviceAssetIds` filters and additionally forwards
 repeated `deviceAssetReferences` values as exact device codes (including commas)
-or canonical `DeviceAssetId` values.
+or canonical `DeviceAssetId` values. The public facade accepts at most 200 device
+references. Restricted-scope authorization resolves at most 200 canonical devices
+through one MasterData batch snapshot and may expand them to at most 400 verified
+`DeviceAssetId` + code aliases for the internal Maintenance hop. Missing, malformed,
+duplicate, cross-scope, stale, inactive, or colliding identities deny the whole batch
+before Maintenance is called.
 
 For connector configured-tag coverage, the declaration is exact: service
 operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
@@ -210,7 +215,7 @@ three separate public contracts.
 | Inventory           | POST   | `/api/inventory/v1/status-transfers`                                         | Internal controlled-status transition driven by Quality inspection-result events; not a direct Console action.                      |
 | Maintenance         | POST   | `/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe` | Read-only BusinessGateway lookup for an exact persisted assignment receipt before mutable target validation; it never creates a receipt or changes work-order state. |
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | Service-to-service public credit read consumed by ERP sales-order credit check (#436).                                              |
-| MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data resolve consumed by other business services.                                                |
+| MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data and authoritative device-identity snapshot resolve (maximum 200 references) consumed by other business services. |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | Service-to-service batch reference-data validate consumed by other business services.                                               |
 | Scheduling          | POST   | `/api/business/internal/v1/scheduling/order-urgency-archives/restore`        | Authenticated operator recovery for exact-version compliance archives; never a Business Console action.                             |
 | Wms                 | POST   | `/api/business/v1/wms/inbound-orders/cancel-by-source`                       | Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; not a direct Console action.      |

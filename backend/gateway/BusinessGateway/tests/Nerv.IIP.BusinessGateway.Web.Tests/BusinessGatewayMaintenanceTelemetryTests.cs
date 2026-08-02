@@ -221,8 +221,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.DoesNotContain(deniedDeviceId, maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
         Assert.DoesNotContain("DEV", maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
         Assert.DoesNotContain("A", maintenance.LastWorkOrderListRequest.DeviceAssetReferences);
-        Assert.Contains(masterData.DetailRequests, request => request.Code == "DEV,A");
-        Assert.DoesNotContain(masterData.DetailRequests, request => request.Code is "DEV" or "A");
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal([allowedDeviceId], Assert.Single(masterData.ResolveReferenceRequests).References.Select(reference => reference.Code).ToArray());
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Fact]
@@ -299,8 +300,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal([allowedDeviceId, "DEV-A"], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
-        Assert.Equal(2, masterData.DetailRequests.Count);
-        Assert.Equal(2, masterData.DetailRequests.Select(x => x.Code).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal([allowedDeviceId], Assert.Single(masterData.ResolveReferenceRequests).References.Select(reference => reference.Code).ToArray());
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Fact]
@@ -551,7 +553,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal([deviceId, "DEV-A"], Assert.IsType<string[]>(maintenance.LastWorkOrderListRequest!.DeviceAssetReferences));
-        Assert.Equal([deviceId, "DEV-A"], masterData.DetailRequests.Select(request => request.Code).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal([deviceId, "DEV-A"], Assert.Single(masterData.ResolveReferenceRequests).References.Select(reference => reference.Code).ToArray());
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Fact]
@@ -600,6 +604,69 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_restricted_scope_batches_two_hundred_devices_without_detail_fan_out()
+    {
+        var deviceIds = Enumerable.Range(1, 200).Select(DeviceId).ToArray();
+        var deviceByReference = deviceIds
+            .Select((deviceId, index) => (DeviceId: deviceId, Code: $"DEV-{index + 1:000}"))
+            .SelectMany(device => new[]
+            {
+                new KeyValuePair<string, (string DeviceId, string Code)>(device.DeviceId, device),
+                new KeyValuePair<string, (string DeviceId, string Code)>(device.Code, device),
+            })
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                .. deviceIds.Select((deviceId, index) => new BusinessConsoleResourceItem(
+                    "device-asset",
+                    $"DEV-{index + 1:000}",
+                    $"Device {index + 1:000}",
+                    true,
+                    "v1",
+                    WorkCenterCode: "WC-A",
+                    DeviceAssetId: deviceId)),
+            ],
+            ResourceDetailFactory = request =>
+            {
+                if (!deviceByReference.TryGetValue(request.Code, out var device))
+                {
+                    throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                        HttpStatusCode.NotFound,
+                        "device-reference-not-found");
+                }
+                return DeviceDetail(request, device.DeviceId, device.Code);
+            },
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(maintenance.LastWorkOrderListRequest);
+        Assert.Equal(400, maintenance.LastWorkOrderListRequest.DeviceAssetReferences?.Length);
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal(200, Assert.Single(masterData.ResolveReferenceRequests).References.Count);
+        Assert.Empty(masterData.DetailRequests);
+    }
+
+    [Fact]
     public async Task Maintenance_restricted_scope_fails_closed_when_an_allowed_device_alias_is_ambiguous()
     {
         var deviceAId = DeviceId(1);
@@ -638,6 +705,69 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(maintenance.LastWorkOrderListRequest);
         Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Empty(masterData.DetailRequests);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("duplicate")]
+    [InlineData("cross-scope")]
+    public async Task Maintenance_restricted_scope_rejects_invalid_batch_snapshots_before_downstream_calls(string scenario)
+    {
+        var deviceId = DeviceId(1);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            new AuthorizationDataScope([], [], [], WorkCenterCodes: ["WC-A"]));
+        var maintenance = new RecordingMaintenanceFacadeClient { WorkOrderItems = [] };
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: deviceId),
+            ],
+            ResolveReferencesFactory = request =>
+            {
+                var item = new BusinessMasterDataReferenceResponse(
+                    "device-asset",
+                    deviceId,
+                    true,
+                    true,
+                    "Device A",
+                    "v1",
+                    string.Empty,
+                    deviceId,
+                    "DEV-A",
+                    scenario == "cross-scope" ? "org-other" : request.OrganizationId,
+                    request.EnvironmentId);
+                return new BusinessMasterDataResolveReferencesResponse(scenario switch
+                {
+                    "missing" => [],
+                    "duplicate" => [item, item],
+                    _ => [item],
+                });
+            },
+        };
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(maintenance.LastWorkOrderListRequest);
+        Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Empty(masterData.DetailRequests);
     }
 
     [Theory]
@@ -709,7 +839,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(maintenance.LastWorkOrderListRequest);
-        Assert.Single(masterData.DetailRequests);
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Single(masterData.ResolveReferenceRequests);
+        Assert.Empty(masterData.DetailRequests);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Empty(data.GetProperty("items").EnumerateArray());
@@ -751,7 +883,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(maintenance.LastWorkOrderListRequest);
-        Assert.Equal(["DEV-A", deviceAId], masterData.DetailRequests.Select(request => request.Code).ToArray());
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal(["DEV-A"], Assert.Single(masterData.ResolveReferenceRequests).References.Select(reference => reference.Code).ToArray());
+        Assert.Empty(masterData.DetailRequests);
         Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
     }
 
@@ -789,7 +923,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(maintenance.LastWorkOrderListRequest);
-        Assert.Equal([deviceAId, deviceBId], masterData.DetailRequests.Select(request => request.Code).ToArray());
+        Assert.Equal(1, masterData.ResolveReferencesCallCount);
+        Assert.Equal([deviceAId], Assert.Single(masterData.ResolveReferenceRequests).References.Select(reference => reference.Code).ToArray());
+        Assert.Empty(masterData.DetailRequests);
         Assert.Equal(0, ReadTotal(await response.Content.ReadAsStringAsync()));
     }
 
@@ -1894,6 +2030,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetReferences: ["DEV-A", " "])).IsValid);
         Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetIds: "DEV-A,, ,DEV-B")).IsValid);
         Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", DeviceAssetReferences: ["DEV,A"])).IsValid);
+        Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 200).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 201).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
     }
 
     [Fact]

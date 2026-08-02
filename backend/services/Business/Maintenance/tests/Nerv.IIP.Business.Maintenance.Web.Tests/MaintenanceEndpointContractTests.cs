@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
@@ -28,6 +30,46 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceEndpointContractTests
 {
+    [Fact]
+    public void Work_order_list_validator_accepts_400_authority_aliases_and_rejects_401()
+    {
+        var validator = new ListMaintenanceWorkOrdersRequestValidator();
+
+        Assert.True(validator.Validate(new ListMaintenanceWorkOrdersRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 400).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
+        Assert.False(validator.Validate(new ListMaintenanceWorkOrdersRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 401).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
+    }
+
+    [Fact]
+    public async Task Work_order_list_endpoint_binds_200_canonical_devices_as_400_repeated_aliases()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var deviceIds = Enumerable.Range(0, 200).Select(_ => Guid.CreateVersion7().ToString()).ToArray();
+        var aliases = deviceIds.SelectMany((id, index) => new[] { id, $"DEVICE-{index:000}" }).ToArray();
+        var query = string.Join("&", aliases.Select(reference => $"deviceAssetReferences={Uri.EscapeDataString(reference)}"));
+
+        var response = await client.GetAsync(
+            $"/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&{query}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(aliases, sender.LastRequest?.DeviceAssetReferences);
+    }
+
     [Fact]
     public void Maintenance_endpoints_expose_issue_130_routes_permissions_policies_and_operation_ids()
     {
@@ -1780,5 +1822,29 @@ public sealed class MaintenanceEndpointContractTests
             _ = cancellationToken;
             throw new NotSupportedException("Noop mediator cannot stream requests.");
         }
+    }
+
+    private sealed class RecordingWorkOrderListSender : ISender
+    {
+        public ListMaintenanceWorkOrdersQuery? LastRequest { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            LastRequest = Assert.IsType<ListMaintenanceWorkOrdersQuery>(request);
+            object response = new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], 0, 100, 0);
+            return Task.FromResult((TResponse)response);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

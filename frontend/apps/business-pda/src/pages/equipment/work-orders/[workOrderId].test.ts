@@ -154,6 +154,43 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === '取消')).toBe(false)
   })
 
+  it('renders the server causal lifecycle order even when wall-clock time moves backward', async () => {
+    state.workOrder = authoritativeWorkOrder({
+      version: 2,
+      lifecycle: [
+        {
+          action: 'assign',
+          fromStatus: 'open',
+          toStatus: 'open',
+          actorPrincipalId: 'principal-1',
+          technicianUserId: 'principal-1',
+          teamId: 'team-a',
+          reason: '版本一：较晚时钟',
+          resultingVersion: 1,
+          occurredAtUtc: '2026-08-03T02:00:00.000Z',
+        },
+        {
+          action: 'assign',
+          fromStatus: 'open',
+          toStatus: 'open',
+          actorPrincipalId: 'principal-1',
+          technicianUserId: 'principal-1',
+          teamId: 'team-a',
+          reason: '版本二：时钟回拨',
+          resultingVersion: 2,
+          occurredAtUtc: '2026-08-03T01:00:00.000Z',
+        },
+      ],
+    })
+
+    const wrapper = await mountPage()
+    const detailText = wrapper.get('[data-testid="maintenance-work-order-detail"]').text()
+
+    expect(detailText.indexOf('版本一：较晚时钟')).toBeLessThan(
+      detailText.indexOf('版本二：时钟回拨'),
+    )
+  })
+
   it.each([
     [{}, '维修人员 张维修 · 未指派班组'],
     [{ assignedTeamId: 'team-a' }, '维修人员 张维修 · 班组 甲班'],

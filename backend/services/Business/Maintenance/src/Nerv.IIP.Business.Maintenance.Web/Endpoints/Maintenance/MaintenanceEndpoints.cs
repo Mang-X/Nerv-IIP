@@ -186,6 +186,21 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? WorkOrderId = null,
     string[]? DeviceAssetReferences = null);
 
+public sealed class ListMaintenanceWorkOrdersRequestValidator : Validator<ListMaintenanceWorkOrdersRequest>
+{
+    internal const int MaxDeviceAssetReferences = 400;
+
+    public ListMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.DeviceAssetReferences)
+            .Must(references => references is null || references.Length is > 0 and <= MaxDeviceAssetReferences)
+            .WithMessage($"Device asset references must contain between 1 and {MaxDeviceAssetReferences} values when provided.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+}
+
 public sealed record GetMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string OrganizationId,

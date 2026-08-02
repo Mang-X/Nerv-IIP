@@ -170,8 +170,10 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
         var lifecycle = snapshot.Lifecycle
-            .OrderBy(item => item.OccurredAtUtc)
-            .ThenBy(item => item.ResultingVersion)
+            .OrderBy(item => item.Item.ResultingVersion)
+            .ThenBy(item => item.Item.OccurredAtUtc)
+            .ThenBy(item => item.EventId.ToString(), StringComparer.Ordinal)
+            .Select(item => item.Item)
             .ToArray();
         var eligibility = MaintenanceWorkOrderEligibility.Evaluate(
             snapshot.WorkOrder.Status,
@@ -218,22 +220,28 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                     .Where(lifecycle => lifecycle.OrganizationId == request.OrganizationId
                         && lifecycle.EnvironmentId == request.EnvironmentId
                         && lifecycle.WorkOrderId == x.Id)
-                    .Select(lifecycle => new MaintenanceWorkOrderLifecycleEventItem(
-                        lifecycle.Action.ToString(),
-                        lifecycle.FromStatus.ToString(),
-                        lifecycle.ToStatus.ToString(),
-                        lifecycle.ActorPrincipalId,
-                        lifecycle.TechnicianUserId,
-                        lifecycle.TeamId,
-                        lifecycle.Reason,
-                        lifecycle.ResultingVersion,
-                        lifecycle.OccurredAtUtc))
+                    .Select(lifecycle => new MaintenanceWorkOrderLifecycleSnapshot(
+                        lifecycle.Id,
+                        new MaintenanceWorkOrderLifecycleEventItem(
+                            lifecycle.Action.ToString(),
+                            lifecycle.FromStatus.ToString(),
+                            lifecycle.ToStatus.ToString(),
+                            lifecycle.ActorPrincipalId,
+                            lifecycle.TechnicianUserId,
+                            lifecycle.TeamId,
+                            lifecycle.Reason,
+                            lifecycle.ResultingVersion,
+                            lifecycle.OccurredAtUtc)))
                     .ToArray()));
 
     private sealed record MaintenanceWorkOrderDetailSnapshot(
         MaintenanceWorkOrderListItem WorkOrder,
         bool CompletionDataComplete,
-        IReadOnlyCollection<MaintenanceWorkOrderLifecycleEventItem> Lifecycle);
+        IReadOnlyCollection<MaintenanceWorkOrderLifecycleSnapshot> Lifecycle);
+
+    private sealed record MaintenanceWorkOrderLifecycleSnapshot(
+        MaintenanceWorkOrderLifecycleEventId EventId,
+        MaintenanceWorkOrderLifecycleEventItem Item);
 }
 
 public sealed record ProbeMaintenanceWorkOrderAssignmentReplayQuery(

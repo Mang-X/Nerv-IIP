@@ -95,6 +95,30 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
         Assert.DoesNotContain("deviceAssetReferences=DEV&", handler.Query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Gateway_client_forwards_200_canonical_devices_as_400_wire_safe_aliases()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+        var deviceIds = Enumerable.Range(0, 200).Select(_ => Guid.CreateVersion7().ToString()).ToArray();
+        var aliases = deviceIds.SelectMany((id, index) => new[] { id, $"DEVICE-{index:000}" }).ToArray();
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetReferences: aliases),
+            CancellationToken.None);
+
+        var values = handler.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Where(part => part.StartsWith("deviceAssetReferences=", StringComparison.Ordinal))
+            .Select(part => Uri.UnescapeDataString(part["deviceAssetReferences=".Length..]))
+            .ToArray();
+        Assert.Equal(400, values.Length);
+        Assert.Equal(aliases, values);
+    }
+
     private sealed class RecordingWireHandler(string workOrderId) : HttpMessageHandler
     {
         public List<JsonElement> Requests { get; } = [];
