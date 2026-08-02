@@ -93,6 +93,28 @@ const displayedDecisions = computed(() => {
   if (detailDecisions.length) return detailDecisions
   return approval.decisions.value
 })
+/**
+ * 「当前链路」上屏的可读身份。
+ *
+ * 契约里审批链**没有业务编号**（`ApprovalChainItem` 只有 chainId/templateCode/
+ * templateVersion/status/…），此前就直接把 chainId 摆上去，抽屉里赫然一串
+ * `019fc117-357d-7120-a0d1-63a7a37ef7f6`——而同一个面板的下拉项早就在显示
+ * 「NCR-2026-0078 · 已批准」，一个面板两套口径。
+ *
+ * 拿现有字段拼出人能念的身份：模板编码 + 版本；模板缺失时退到链号后 8 位
+ * （`链路 #63a7a37ef7f6`），仍比整串 GUID 可念、可口头对账。完整 GUID 移到
+ * title 里，排障要复制照样拿得到。
+ */
+const displayedChainLabel = computed(() => {
+  const chain = selectedChain.value
+  const template = chain?.templateCode?.trim()
+  if (template) {
+    return chain?.templateVersion != null ? `${template} v${chain.templateVersion}` : template
+  }
+  const id = displayedChainId.value
+  return id ? `链路 #${id.slice(-12)}` : ''
+})
+
 const legacyReferenceLabel = computed(() =>
   boundChainId.value && !selectedChain.value && !approval.chainDetailPending.value
     ? boundChainId.value
@@ -269,8 +291,8 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="grid gap-1">
           <span class="text-xs text-muted-foreground">当前链路</span>
-          <span class="text-sm font-medium break-all">{{
-            displayedChainId || '尚未关联审批链'
+          <span class="text-sm font-medium break-all" :title="displayedChainId || undefined">{{
+            displayedChainLabel || '尚未关联审批链'
           }}</span>
           <span v-if="legacyReferenceLabel" class="text-xs text-muted-foreground">
             历史登记：<span class="font-medium break-all text-foreground">{{

@@ -170,6 +170,55 @@ describe('OrderUrgencyBadge display modes', () => {
   })
 })
 
+/**
+ * 判定表的空值语义。
+ *
+ * owner 第五轮亲验：某工单权威事实已过期，CR 算不出来显示 `—`，而判定列照写「未触发」
+ * ——把「没算出来」讲成「这项检查过了」。空值必须自成一态。
+ */
+describe('OrderUrgencyBadge 判定表空值语义', () => {
+  function openExplain(urgency: BusinessConsoleOrderUrgency) {
+    const wrapper = mountBadge({ orderReference: 'WO-1', urgency })
+    return wrapper
+  }
+
+  it('当前值缺失时判定列显示「未计算」，不冒充「未触发」', async () => {
+    const wrapper = openExplain({
+      ...urgency,
+      timeCriticality: {
+        ...urgency.timeCriticality!,
+        criticalRatio: null,
+        slackHours: null,
+        reasonCodes: [],
+      },
+    })
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('未计算')
+    // 两行当前值都是空，就不该出现任何「未触发」——那是在替没算过的检查背书。
+    expect(text).not.toContain('未触发')
+  })
+
+  it('当前值在但没命中阈值时，仍然如实说「未触发」', async () => {
+    const wrapper = openExplain({
+      ...urgency,
+      timeCriticality: {
+        ...urgency.timeCriticality!,
+        criticalRatio: 3,
+        slackHours: 48,
+        reasonCodes: [],
+      },
+    })
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('未触发')
+    expect(wrapper.text()).not.toContain('未计算')
+  })
+})
+
 describe('OrderUrgencyBadge priority editing', () => {
   it('submits a governed priority payload with the required reason and optional expiry', async () => {
     const wrapper = mountBadge({ orderReference: 'SO-001', urgency, mode: 'level' })

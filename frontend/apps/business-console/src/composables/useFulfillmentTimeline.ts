@@ -101,8 +101,18 @@ export interface FulfillmentNode {
   status: FulfillmentNodeStatus
   /** established：可读业务编号（绝不裸 GUID）。 */
   businessNo?: string
-  /** established：单据当前状态。 */
+  /** established：单据当前状态**原始码值**——节点组件会拿它过状态词表。 */
   detailStatus?: string
+  /**
+   * established：已本地化好的状态文案，绕开状态词表直接上屏。
+   *
+   * 紧急度分级（特急/紧急/高风险/关注/正常）的词表归 `urgencyLevelPresentation`
+   * 所有，不在共享 `STATUS_LABELS` 里。此前这里把它翻译完的中文塞进 `detailStatus`，
+   * 节点组件照例拿去过 `resolveStatus()`——那函数吃的是裸码值，于是每次都报
+   * 「词表缺失: 高风险」，只是回吐原值恰好还是对的中文，屏上看不出来。
+   * 两套词表各归各位，别把翻译结果再喂给翻译器。
+   */
+  detailStatusLabel?: string
   /** established：最近更新时间（ISO）。 */
   updatedAt?: string
   /** established：使用的关联键说明，供演示时核对来源。 */
@@ -376,6 +386,7 @@ interface RecordNodeInput<T> {
   present: (record: T) => {
     businessNo?: string
     detailStatus?: string
+    detailStatusLabel?: string
     updatedAt?: string
     linkLabel?: string
     drill?: RouteLocationRaw
@@ -886,7 +897,9 @@ export function useFulfillmentTimeline(
         record: receivable,
         present: (record) => ({
           businessNo: record.receivableNo ?? undefined,
-          detailStatus: record.openAmount != null ? `未结 ${record.openAmount}` : undefined,
+          // 「未结 1234」是现成文案不是码值，走 detailStatusLabel；塞给 detailStatus
+          // 会被节点组件拿去过状态词表，白报一条漏词。
+          detailStatusLabel: record.openAmount != null ? `未结 ${record.openAmount}` : undefined,
           updatedAt: record.createdAtUtc ?? undefined,
           linkLabel: `sourceDocumentNo = ${record.sourceDocumentNo ?? '-'}（发货单号）`,
           drill: { path: '/erp/finance/ar-ap' },
@@ -922,7 +935,7 @@ export function useFulfillmentTimeline(
         record: urgency,
         present: (record) => ({
           businessNo: record.businessReference ?? record.orderId ?? undefined,
-          detailStatus: describeUrgencyLevel(record.level),
+          detailStatusLabel: describeUrgencyLevel(record.level),
           updatedAt: record.calculatedAtUtc ?? undefined,
           linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
           drill: { path: '/scheduling' },

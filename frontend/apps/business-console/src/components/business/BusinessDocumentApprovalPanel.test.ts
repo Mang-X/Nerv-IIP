@@ -21,6 +21,8 @@ const approvalState = vi.hoisted(() => ({
       sourceService: 'quality',
       status: 'Running',
       templateCode: 'ncr-disposition-default',
+      // mock 对象的类型由首个字面量推断，字段不在基线夹具里就写不进去。
+      templateVersion: 1,
       startedBy: 'qa-lead',
     },
   ],
@@ -160,6 +162,7 @@ describe('business document approval panel', () => {
         sourceService: 'quality',
         status: 'Running',
         templateCode: 'ncr-disposition-default',
+        templateVersion: 1,
         startedBy: 'qa-lead',
       },
     ]
@@ -216,6 +219,53 @@ describe('business document approval panel', () => {
     expect(wrapper.text()).toContain('同意返工')
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.find('[data-router-link]').exists()).toBe(true)
+  })
+
+  /**
+   * 第六轮走查在 NCR 处置抽屉里拍到：「当前链路」那行摆着一串
+   * `019fc117-357d-7120-a0d1-63a7a37ef7f6`——而同一个面板的下拉项早就在显示
+   * 「NCR-260701-001 · 运行中」，一个面板两套口径。
+   *
+   * 契约里审批链没有业务编号，所以断言的不是"显示某个编号"，而是**GUID 不上屏**
+   * 且换上了人能念的身份。完整 id 仍留在 title 里，排障能复制——这也一并钉住，
+   * 免得后来者为了"干净"把它删掉。
+   */
+  it('当前链路显示可读身份而不是裸 GUID，完整 id 退到 title', async () => {
+    const rawChainId = '019fc117-357d-7120-a0d1-63a7a37ef7f6'
+    approvalState.chains = [
+      {
+        chainId: rawChainId,
+        documentType: 'quality-ncr',
+        documentId: 'NCR-260701-001',
+        sourceService: 'quality',
+        status: 'Approved',
+        templateCode: 'ncr-disposition-default',
+        templateVersion: 2,
+        startedBy: 'qa-lead',
+      },
+    ]
+    approvalState.chainDetail = {
+      chainId: rawChainId,
+      status: 'Approved',
+      documentId: 'NCR-260701-001',
+      steps: [],
+      decisions: [],
+    }
+
+    const wrapper = mount(BusinessDocumentApprovalPanel, {
+      props: {
+        modelValue: rawChainId,
+        sourceService: 'quality',
+        documentType: 'quality-ncr',
+        documentId: 'NCR-260701-001',
+      },
+      global: { stubs: uiStubs },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ncr-disposition-default v2')
+    expect(wrapper.text()).not.toContain(rawChainId)
+    expect(wrapper.html()).toContain(`title="${rawChainId}"`)
   })
 
   it('starts a real approval chain for the business document and emits the returned chain id', async () => {
