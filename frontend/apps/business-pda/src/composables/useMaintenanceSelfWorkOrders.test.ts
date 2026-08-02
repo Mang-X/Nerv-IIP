@@ -359,7 +359,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
         scopeKind: 'self',
         scopeId: 'principal-1',
         status: 'accepted',
-        deviceAssetIds: '019f0000-0000-7000-8000-000000000001,DEV-CNC-01',
+        deviceAssetReferences: ['019f0000-0000-7000-8000-000000000001', 'DEV-CNC-01'],
         keyword: '主轴',
         skip: 0,
         take: 20,
@@ -375,16 +375,16 @@ describe('useMaintenanceSelfWorkOrders', () => {
     result.filters.deviceAssetIds = [publicId.toUpperCase(), publicId]
     await nextTick()
     expect(
-      (requestFor('maintenance-list') as { query: { deviceAssetIds?: string } }).query
-        .deviceAssetIds,
-    ).toBe(publicId)
+      (requestFor('maintenance-list') as { query: { deviceAssetReferences?: string[] } }).query
+        .deviceAssetReferences,
+    ).toEqual([publicId])
 
     result.filters.deviceAssetIds = ['DEV-A', 'dev-a', 'DEV-A']
     await nextTick()
     expect(
-      (requestFor('maintenance-list') as { query: { deviceAssetIds?: string } }).query
-        .deviceAssetIds,
-    ).toBe('DEV-A,dev-a')
+      (requestFor('maintenance-list') as { query: { deviceAssetReferences?: string[] } }).query
+        .deviceAssetReferences,
+    ).toEqual(['DEV-A', 'dev-a'])
   })
 
   it('keeps scope and filter query identities collision-free for delimiter-bearing values', async () => {
@@ -773,7 +773,7 @@ describe('useMaintenanceSelfWorkOrders', () => {
         scopeKind: 'self',
         scopeId: 'principal-1',
         status: 'inProgress',
-        deviceAssetIds: 'device-2,DEV-2',
+        deviceAssetReferences: ['device-2', 'DEV-2'],
         keyword: '轴承',
         skip: 20,
         take: 20,

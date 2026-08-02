@@ -27,7 +27,8 @@ public sealed record ListMaintenanceWorkOrdersQuery(
     string? Keyword = null,
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
-    string? WorkOrderId = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
 
 public sealed record MaintenanceWorkOrderListItem(
     MaintenanceWorkOrderId WorkOrderId,
@@ -55,6 +56,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
         var skip = NormalizeSkip(request.Skip);
         var take = NormalizeTake(request.Take);
         var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
+        var deviceAssetReferences = NormalizeExactReferences(request.DeviceAssetReferences);
         var assignedTechnicianUserIds = SplitCsv(request.AssignedTechnicianUserIds);
         var assignedTeamIds = SplitCsv(request.AssignedTeamIds);
         MaintenanceWorkOrderStatus? status = null;
@@ -75,6 +77,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => deviceAssetReferences.Count == 0 || deviceAssetReferences.Contains(x.DeviceAssetId))
             .Where(x => status == null || x.Status == status)
             .Where(x => assignedTechnicianUserIds.Count == 0 || (x.AssignedTechnicianUserId != null && assignedTechnicianUserIds.Contains(x.AssignedTechnicianUserId)))
             .Where(x => assignedTeamIds.Count == 0 || (x.AssignedTeamId != null && assignedTeamIds.Contains(x.AssignedTeamId)))
@@ -124,6 +127,15 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
+    }
+
+    private static IReadOnlyCollection<string> NormalizeExactReferences(IEnumerable<string>? values)
+    {
+        return values?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray() ?? [];
     }
 }
 

@@ -22262,6 +22262,19 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "deviceAssetReferences",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "nullable": true,
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {

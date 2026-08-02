@@ -49,7 +49,18 @@ public sealed class BusinessGatewayDataScopeFilter(
         }
 
         var resolved = await ResolveAsync(request.OrganizationId, request.EnvironmentId, dataScope, cancellationToken);
-        return request with { DeviceAssetIds = JoinOrNoMatch(resolved.DeviceAssetIds) };
+        var allowed = resolved.DeviceAssetReferences.ToHashSet(StringComparer.Ordinal);
+        var requested = ExactDeviceReferences(request);
+        var narrowed = (!requested.Specified ? allowed : requested.Values.Where(allowed.Contains))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return request with
+        {
+            DeviceAssetIds = null,
+            DeviceAssetId = null,
+            DeviceAssetReferences = narrowed.Length == 0 ? [NoScopeMatch] : narrowed,
+        };
     }
 
     private async Task<ResolvedDataScope> ResolveAsync(
@@ -67,7 +78,7 @@ public sealed class BusinessGatewayDataScopeFilter(
             || dataScope.TeamCodes?.Count > 0
             || dataScope.OrganizationIds?.Any(x => !string.Equals(x.Trim(), organizationId, StringComparison.Ordinal)) == true)
         {
-            return new ResolvedDataScope([], []);
+            return new ResolvedDataScope([], [], []);
         }
 
         var lines = await ListResourcesAsync(organizationId, environmentId, "production-line", cancellationToken);
@@ -93,16 +104,25 @@ public sealed class BusinessGatewayDataScopeFilter(
         var workCenterSet = scopedWorkCenterCodes.ToHashSet(StringComparer.Ordinal);
 
         var devices = await ListResourcesAsync(organizationId, environmentId, "device-asset", cancellationToken);
-        var scopedDeviceAssetIds = devices
+        var scopedDevices = devices
             .Where(x => Matches(x.SiteCode, siteCodes)
                 || Matches(x.WorkshopCode, workshopCodes)
                 || Matches(x.LineCode, lineSet)
                 || Matches(x.WorkCenterCode, workCenterSet))
+            .ToArray();
+        var scopedDeviceAssetIds = scopedDevices
             .Select(x => string.IsNullOrWhiteSpace(x.DeviceAssetId) ? x.Code : x.DeviceAssetId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        return new ResolvedDataScope(scopedWorkCenterCodes, scopedDeviceAssetIds);
+        var scopedDeviceAssetReferences = scopedDevices
+            .SelectMany(x => new[] { x.DeviceAssetId, x.Code })
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return new ResolvedDataScope(scopedWorkCenterCodes, scopedDeviceAssetIds, scopedDeviceAssetReferences);
     }
 
     private async Task<IReadOnlyCollection<BusinessConsoleResourceItem>> ListResourcesAsync(
@@ -150,6 +170,45 @@ public sealed class BusinessGatewayDataScopeFilter(
     private static string JoinOrNoMatch(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? NoScopeMatch : string.Join(',', values.Order(StringComparer.Ordinal));
 
+    private static DeviceReferenceFilter ExactDeviceReferences(BusinessConsoleMaintenanceWorkOrderListRequest request)
+    {
+        var groups = new List<HashSet<string>>();
+        AddGroup(groups, request.DeviceAssetReferences ?? []);
+        if (!string.IsNullOrWhiteSpace(request.DeviceAssetIds))
+        {
+            AddGroup(
+                groups,
+                request.DeviceAssetIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        if (!string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            AddGroup(groups, [request.DeviceAssetId!]);
+        }
+        if (groups.Count == 0)
+        {
+            return new DeviceReferenceFilter(false, []);
+        }
+
+        var intersection = groups[0];
+        foreach (var group in groups.Skip(1))
+        {
+            intersection.IntersectWith(group);
+        }
+        return new DeviceReferenceFilter(true, intersection);
+    }
+
+    private static void AddGroup(List<HashSet<string>> groups, IEnumerable<string> values)
+    {
+        var normalized = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+        if (normalized.Count > 0)
+        {
+            groups.Add(normalized);
+        }
+    }
+
     private static HashSet<string> Normalize(IReadOnlyCollection<string> values) =>
         values
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -161,5 +220,8 @@ public sealed class BusinessGatewayDataScopeFilter(
 
     private sealed record ResolvedDataScope(
         IReadOnlyCollection<string> WorkCenterCodes,
-        IReadOnlyCollection<string> DeviceAssetIds);
+        IReadOnlyCollection<string> DeviceAssetIds,
+        IReadOnlyCollection<string> DeviceAssetReferences);
+
+    private sealed record DeviceReferenceFilter(bool Specified, HashSet<string> Values);
 }

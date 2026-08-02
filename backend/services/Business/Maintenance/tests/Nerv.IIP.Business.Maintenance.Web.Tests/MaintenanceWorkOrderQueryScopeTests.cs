@@ -87,6 +87,31 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     }
 
     [Fact]
+    public async Task Exact_device_references_preserve_commas_and_do_not_match_split_fragments()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var exact = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV,A", "high", "reporter", assignedTechnicianUserId: "tech-001");
+        var firstFragment = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV", "high", "reporter", assignedTechnicianUserId: "tech-001");
+        var secondFragment = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "A", "high", "reporter", assignedTechnicianUserId: "tech-001");
+        db.MaintenanceWorkOrders.AddRange(exact, firstFragment, secondFragment);
+        await db.SaveChangesAsync();
+
+        var result = await new ListMaintenanceWorkOrdersQueryHandler(db).Handle(
+            new ListMaintenanceWorkOrdersQuery(
+                "org-001",
+                "env-dev",
+                DeviceAssetReferences: ["DEV,A"],
+                AssignedTechnicianUserIds: "tech-001"),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal(exact.Id, Assert.Single(result.Items).WorkOrderId);
+    }
+
+    [Fact]
     public async Task Detail_derives_actions_and_block_reasons_from_status_and_persisted_business_data()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();

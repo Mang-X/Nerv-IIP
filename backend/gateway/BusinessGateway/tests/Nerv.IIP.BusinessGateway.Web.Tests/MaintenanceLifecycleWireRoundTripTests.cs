@@ -76,6 +76,25 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
         Assert.Equal(workOrderId, handler.AssignmentRequest.GetProperty("workOrderId").GetProperty("id").GetString());
     }
 
+    [Fact]
+    public async Task Gateway_client_forwards_exact_device_references_as_repeated_query_parameters()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetReferences: ["DEV,A", "DEV-B"]),
+            CancellationToken.None);
+
+        Assert.Equal(2, handler.Query.Split("deviceAssetReferences=", StringSplitOptions.None).Length - 1);
+        Assert.Contains("deviceAssetReferences=DEV%2CA", handler.Query, StringComparison.Ordinal);
+        Assert.Contains("deviceAssetReferences=DEV-B", handler.Query, StringComparison.Ordinal);
+        Assert.DoesNotContain("deviceAssetReferences=DEV&", handler.Query, StringComparison.Ordinal);
+    }
+
     private sealed class RecordingWireHandler(string workOrderId) : HttpMessageHandler
     {
         public List<JsonElement> Requests { get; } = [];
@@ -166,6 +185,32 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                     },
                 }),
             };
+        }
+    }
+
+    private sealed class RecordingListWireHandler : HttpMessageHandler
+    {
+        public string Query { get; private set; } = string.Empty;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Query = request.RequestUri!.Query;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        items = Array.Empty<object>(),
+                        skip = 0,
+                        take = 100,
+                        total = 0,
+                    },
+                }),
+            });
         }
     }
 }

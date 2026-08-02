@@ -1997,6 +1997,24 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         return string.Join('&', pairs);
     }
 
+    protected static string RepeatedQuery(string name, IEnumerable<string>? values)
+    {
+        if (values is null)
+        {
+            return string.Empty;
+        }
+
+        var encodedName = Uri.EscapeDataString(name);
+        return string.Join(
+            '&',
+            values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => $"{encodedName}={Uri.EscapeDataString(value.Trim())}"));
+    }
+
+    protected static string JoinQuery(params string[] parts) =>
+        string.Join('&', parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+
     protected static bool? TrueFlag(bool value) => value ? true : null;
 
     private static string FormatValue(object value) => value switch
@@ -6338,21 +6356,23 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
+        var scalarQuery = Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("skip", request.Skip),
+            ("take", request.Take),
+            ("deviceAssetIds", request.DeviceAssetIds),
+            ("status", request.Status),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("keyword", request.Keyword),
+            ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
+            ("assignedTeamIds", request.AssignedTeamIds),
+            ("workOrderId", request.WorkOrderId));
+        var exactReferenceQuery = RepeatedQuery("deviceAssetReferences", request.DeviceAssetReferences);
         var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("skip", request.Skip),
-                ("take", request.Take),
-                ("deviceAssetIds", request.DeviceAssetIds),
-                ("status", request.Status),
-                ("deviceAssetId", request.DeviceAssetId),
-                ("keyword", request.Keyword),
-                ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
-                ("assignedTeamIds", request.AssignedTeamIds),
-                ("workOrderId", request.WorkOrderId)),
+            "/api/business/v1/maintenance/work-orders?" + JoinQuery(scalarQuery, exactReferenceQuery),
             null,
             cancellationToken);
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>

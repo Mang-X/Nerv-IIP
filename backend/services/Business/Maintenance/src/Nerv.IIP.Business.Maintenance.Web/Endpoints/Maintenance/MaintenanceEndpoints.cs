@@ -183,7 +183,8 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? Keyword = null,
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null);
 
 public sealed record GetMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -439,7 +440,8 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
             req.Keyword,
             req.AssignedTechnicianUserIds,
             req.AssignedTeamIds,
-            req.WorkOrderId), ct);
+            req.WorkOrderId,
+            req.DeviceAssetReferences), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

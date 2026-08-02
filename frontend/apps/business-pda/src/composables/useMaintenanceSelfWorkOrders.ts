@@ -408,7 +408,8 @@ export function useMaintenanceSelfWorkOrders() {
   const listQueryParameters = () => ({
     ...scope.queryScope(),
     status: trimToUndefined(normalizeMaintenanceWorkOrderStatusFilter(filters.status)),
-    deviceAssetIds: trimToUndefined(normalizedDeviceAssetIds.value.join(',')),
+    deviceAssetReferences:
+      normalizedDeviceAssetIds.value.length > 0 ? normalizedDeviceAssetIds.value : undefined,
     keyword: trimToUndefined(filters.keyword),
   })
   const identity = computed(() =>

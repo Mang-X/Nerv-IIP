@@ -17500,6 +17500,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
         assignedTechnicianUserIds?: string | null;
         assignedTeamIds?: string | null;
         workOrderId?: string | null;
+        deviceAssetReferences?: Array<string> | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders';
 };

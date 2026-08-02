@@ -1314,6 +1314,9 @@ public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Va
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
         RuleFor(x => x.Status).MaximumLength(40);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetReferences).Must(values => values is null || values.Length <= 200)
+            .WithMessage("deviceAssetReferences must contain no more than 200 values");
+        RuleForEach(x => x.DeviceAssetReferences).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.ScopeKind).MaximumLength(40);
         RuleFor(x => x.ScopeId).MaximumLength(150);

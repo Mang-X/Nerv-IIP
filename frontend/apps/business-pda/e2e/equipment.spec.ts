@@ -74,10 +74,46 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       deviceDetailRequests.push(url)
     }
   })
+  const commaDevice = {
+    deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+    code: 'DEV,CNC-01',
+    displayName: '一号数控机床',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-9',
+  }
+  await page.route('**/api/business-console/v1/master-data/device-assets**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { resources: [commaDevice], total: 1, truncated: false, limit: 20 },
+      }),
+    }),
+  )
+  await page.route('**/api/business-console/v1/master-data/resources/device-asset/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          ...commaDevice,
+          resourceType: 'device-asset',
+          organizationId: principal.organizationId,
+          environmentId: principal.environmentId,
+          retiredOn: null,
+          snapshotVersion: 'device-v1',
+        },
+      }),
+    }),
+  )
   const matchingWorkOrders = Array.from({ length: 25 }, (_, index) => ({
     workOrderId: selfWorkOrderId(index + 1),
     sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
-    deviceAssetId: 'DEV-CNC-01',
+    deviceAssetId: 'DEV,CNC-01',
     priority: 'high',
     status: 'accepted',
     openedAtUtc: '2026-08-02T01:00:00.000Z',
@@ -134,6 +170,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       const take = Number(url.searchParams.get('take') ?? 20)
       const status = url.searchParams.get('status')?.trim().toLowerCase()
       const deviceReferences = [
+        ...url.searchParams.getAll('deviceAssetReferences'),
         ...(url.searchParams.get('deviceAssetIds')?.split(',') ?? []),
         url.searchParams.get('deviceAssetId') ?? '',
       ]
@@ -192,7 +229,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(listRequests[0].searchParams.get('take')).toBe('20')
   await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText('已接单')
   await expect(page.getByTestId('maintenance-work-order-row').first()).not.toContainText(
-    'DEV-CNC-01',
+    'DEV,CNC-01',
   )
   await expect(page.getByTestId('maintenance-work-order-row').first()).toContainText(
     workerProfile.displayName,
@@ -215,7 +252,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
             scopeKind: last.searchParams.get('scopeKind'),
             scopeId: last.searchParams.get('scopeId'),
             status: last.searchParams.get('status'),
-            deviceAssetIds: last.searchParams.get('deviceAssetIds'),
+            deviceAssetReferences: last.searchParams.getAll('deviceAssetReferences'),
             keyword: last.searchParams.get('keyword'),
           }
         : undefined
@@ -224,7 +261,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       scopeKind: 'self',
       scopeId: principal.principalId,
       status: 'accepted',
-      deviceAssetIds: '019f0000-0000-7000-8000-000000000001,DEV-CNC-01',
+      deviceAssetReferences: ['019f0000-0000-7000-8000-000000000001', 'DEV,CNC-01'],
       keyword: 'MWO-2026-',
     })
 
@@ -238,8 +275,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect(page.getByText('MWO-2026-0025', { exact: false })).toBeVisible()
   await expect(page.getByText('MWO-OPEN-DISTRACTOR', { exact: false })).toHaveCount(0)
 
-  await page.getByTestId('maintenance-work-order-row').first().focus()
-  await page.getByTestId('maintenance-work-order-row').first().press('Space')
+  await page.getByTestId('maintenance-work-order-row').first().press('Enter')
   await expect(page).toHaveURL(`/equipment/work-orders/${selfWorkOrderId(1)}`)
   await expectMinimumTouchHeight(page.getByRole('button', { name: '返回维修工单列表' }))
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('一号数控机床')
@@ -263,7 +299,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(detailRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
   expect(deviceDetailRequests).toHaveLength(1)
   expect(deviceDetailRequests[0].pathname).toBe(
-    '/api/business-console/v1/master-data/resources/device-asset/DEV-CNC-01',
+    '/api/business-console/v1/master-data/resources/device-asset/DEV%2CCNC-01',
   )
   expect(deviceDetailRequests[0].searchParams.get('organizationId')).toBe('org-001')
   expect(deviceDetailRequests[0].searchParams.get('environmentId')).toBe('env-dev')
