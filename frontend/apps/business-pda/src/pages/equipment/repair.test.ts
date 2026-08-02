@@ -33,7 +33,7 @@ const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '22222222-2222-2222-2222-222222222222',
     deviceAssetId: 'DEV-2002',
-    priority: 'low',
+    priority: 'planned',
     status: 'completed',
     openedAtUtc: '2026-06-09T10:30:00Z',
   },
@@ -330,6 +330,7 @@ describe('PDA equipment repair page', () => {
     expect(text).toContain('高') // priority high
     expect(text).toContain('待处理') // status open
     expect(text).toContain('DEV-2002')
+    expect(text).toContain('计划保养') // priority planned
     expect(text).toContain('已完成') // status completed
   })
 

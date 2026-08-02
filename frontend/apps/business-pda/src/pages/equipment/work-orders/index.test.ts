@@ -154,6 +154,27 @@ describe('maintenance self work-order queue page', () => {
     )
   })
 
+  it('renders a plan-generated work order with a stable Chinese priority', async () => {
+    state.scopeReady = true
+    state.hasSuccessfulResponse = true
+    state.items = [
+      {
+        workOrderId: '019f0000-0000-7000-8000-000000000303',
+        sourceReferenceId: 'PM-2026-0042',
+        deviceAssetId: 'device-1',
+        status: 'open',
+        priority: 'planned',
+        assignedTechnicianUserId: 'principal-1',
+      },
+    ]
+
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.get('[data-testid="maintenance-work-order-row"]').text()).toContain(
+      '优先级 计划保养',
+    )
+  })
+
   it('stores the maintenance device code selected from the server directory', async () => {
     state.scopeReady = true
     const { wrapper } = await mountPage()

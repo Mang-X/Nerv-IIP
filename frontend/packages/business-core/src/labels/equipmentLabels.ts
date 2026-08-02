@@ -86,6 +86,7 @@ export const maintenancePriorityLabels: Record<string, string> = {
   medium: '中',
   normal: '中',
   low: '低',
+  planned: '计划保养',
 }
 
 export function maintenancePriorityLabel(value: string | null | undefined): string {

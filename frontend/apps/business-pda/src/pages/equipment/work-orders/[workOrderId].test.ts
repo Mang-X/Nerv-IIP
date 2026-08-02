@@ -167,6 +167,16 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain(label)
   })
 
+  it('renders a plan-generated work order with a stable Chinese priority', async () => {
+    state.workOrder = authoritativeWorkOrder({ priority: 'planned' })
+
+    const wrapper = await mountPage()
+
+    expect(wrapper.get('[data-testid="maintenance-work-order-detail"]').text()).toContain(
+      '计划保养',
+    )
+  })
+
   it('does not trust an editable source alarm query that differs from the work order', async () => {
     state.workOrder = authoritativeWorkOrder({ sourceAlarmId: 'ALM-AUTHORITATIVE' })
 

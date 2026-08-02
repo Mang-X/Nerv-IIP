@@ -94,6 +94,7 @@ describe('maintenancePriorityLabel', () => {
     expect(maintenancePriorityLabel('medium')).toBe('中')
     expect(maintenancePriorityLabel('normal')).toBe('中')
     expect(maintenancePriorityLabel('low')).toBe('低')
+    expect(maintenancePriorityLabel('planned')).toBe('计划保养')
   })
 
   it('falls back for unknown / empty values', () => {
