@@ -227,6 +227,20 @@ function formatNumber(value?: number | null) {
   return value == null ? '—' : String(value)
 }
 
+/**
+ * 判定结论。**当前值缺失时不许说「未触发」**——那是把「没算出来」讲成「没问题」。
+ *
+ * 原来两行都是「没命中原因码 → 未触发」，于是 CR 为空（权威事实过期、算不出比值）时
+ * 判定列照样写「未触发」，读的人会当成「这项检查过了」。owner 第五轮亲验点名。
+ */
+function verdictOf(value: number | null | undefined, ...matches: [string, string][]) {
+  if (value == null) return '未计算'
+  for (const [reasonCode, label] of matches) {
+    if (hasTimeReason(reasonCode)) return label
+  }
+  return '未触发'
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -472,11 +486,11 @@ function hasTimeReason(code: string) {
                   <td class="py-2 pr-3">&lt; 1 紧急；≤ 1.2 关注</td>
                   <td class="py-2">
                     {{
-                      hasTimeReason('time.cr.belowOne')
-                        ? '紧急'
-                        : hasTimeReason('time.cr.attention')
-                          ? '关注'
-                          : '未触发'
+                      verdictOf(
+                        urgency.timeCriticality?.criticalRatio,
+                        ['time.cr.belowOne', '紧急'],
+                        ['time.cr.attention', '关注'],
+                      )
                     }}
                   </td>
                 </tr>
@@ -488,11 +502,11 @@ function hasTimeReason(code: string) {
                   <td class="py-2 pr-3">&lt; 0 紧急；&lt; 8 h 高风险</td>
                   <td class="py-2">
                     {{
-                      hasTimeReason('time.slack.negative')
-                        ? '紧急'
-                        : hasTimeReason('time.slack.withinShift')
-                          ? '高风险'
-                          : '未触发'
+                      verdictOf(
+                        urgency.timeCriticality?.slackHours,
+                        ['time.slack.negative', '紧急'],
+                        ['time.slack.withinShift', '高风险'],
+                      )
                     }}
                   </td>
                 </tr>
