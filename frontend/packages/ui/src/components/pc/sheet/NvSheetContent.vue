@@ -68,6 +68,14 @@ const sizeClass = computed(
           // 各自在自己的 overflow 容器里横向滚动（NvDataTable 本就自带 overflow-auto），
           // 而不是把整个抽屉顶破。
           '[&>*]:min-w-0',
+          // 正文子元素补水平内边距：基类只有 `gap-4`，**一点水平 padding 都没有**，
+          // 于是不自己写 `px-*` 的抽屉，内容左右两侧直接贴死在面板边缘——owner 第五轮
+          // 亲验点名（工单紧急度解释抽屉里「计算时间」「保存优先级」与 CR/Slack 判定表
+          // 全压在右缘上），而 #1421 当时只加了 overflow 与 min-w-0，没管内边距。
+          //
+          // 头/尾自带 `p-4` 且是 sticky、要整幅 `bg-card` 背景，必须排除：否则双重内边距，
+          // 且背景跟着缩进后会在两侧露出底色。
+          '[&>*:not([data-slot=nv-sheet-header]):not([data-slot=nv-sheet-footer])]:px-4',
           props.class,
         )
       "
