@@ -120,7 +120,38 @@
 1. **Phase A3 wire 解包基建票**：7/23 重规划要求新开票，未检索到独立票；疑似已随 MAN-689~700 批次部分交付。A1 的 MAN-658 已把该 bug 家族收编为动机，开工前核实剩余缺口。
 2. 前端 fmt 基线票（§3.1 遗留建议）是否立案。
 
-## 6. 附录：与既有文档的关系
+## 6. 执行排期（实施会话领票指南，2026-08-03 定）
+
+Linear 状态约定：**Todo = 当前批次可直接领**；Backlog = 后续批次。新增两张即时票：#1460/MAN-792（fmt 基线）、#1461/MAN-793（concurrency 取消旧运行）。
+
+### 第一批（已置 Todo，可并行，互不依赖）
+
+| 票 | 内容 | 分派通道 | 注意 |
+|---|---|---|---|
+| MAN-793 / #1461 | ci.yml concurrency 取消同 PR 旧运行 | codex sol medium | 30 分钟级；main push 不取消 |
+| MAN-792 / #1460 | 全仓 fmt 基线 + check 进门禁 | 主会话/Claude | 两个 PR：纯格式化大 diff 与 workflow 变更分离；先确认在途前端 PR 清空 |
+| MAN-661 / #1228 | 测试耗时/skip/重跑证据基线（M0） | GPT 5.6 后端 | 一切优化的对照基线，优先合入 |
+| MAN-662 / #1229 | 统一测试时钟/Eventually/静态隔离（M1） | GPT 5.6 后端，Fable 审 | 共享基建，先出 helper 再迁移代表用例 |
+| MAN-650 / #1201 | 随机红总口（M1） | 随 MAN-662 收敛 | 具体实例 MAN-788/789/733 挂 M1，由 662 的基建逐个消 |
+| MAN-656 / #1223 | Current/Deprecated 生命周期标记 | Fable/主会话 | 纯文档规则 |
+| MAN-659 / #1226 | AGENTS Agent 架构护栏 | Fable/主会话 | 与 MAN-656 可同 PR |
+
+串行约束：凡改 `.github/workflows` 的票（MAN-793、MAN-792 第二个 PR、后续 MAN-668/669）相互串行，避免 workflow 互相覆盖。
+
+### 第二批（第一批合入后）
+
+- MAN-663（BusinessGateway 共享宿主、恢复并行）——依赖 MAN-662 的隔离基建；改造期间 BusinessGateway 测试大改串行。
+- MAN-668 + MAN-669（影响感知门禁 + shard）——依赖 MAN-661 的耗时数据；branch protection 与条件 job 的坑见票内。
+- MAN-658（A1 先行裁决 ADR spike）——架构裁决，Fable/GPT 高推理位做，不派 codex；产出 ADR 后解锁 MAN-655/657。
+- MAN-660（大文件增量门禁）。
+
+### 第三批（M3/A2 与模块轮审启动）
+
+- MAN-688 → MAN-423/MAN-767/MAN-751/MAN-507（真实 PG/Redis lane 及消费者）。
+- #877 CAP 管道（A2）：Fable 出 ADR/设计，GPT 实现，#754/#777 首批迁移验收。
+- 模块轮审 R1（MasterData/IAM）开审——前置：CI M1 止血落地。
+
+## 7. 附录：与既有文档的关系
 
 - 7/23 重规划（`2026-07-23-leader-demo-sprint-replan-and-roadmap.md`）Phase A 架构债专项由本文 §3.2 承接（A1→A2 里程碑、A2→CI M3、A3→MAN-658、A4→A2）；Phase B Scheduling 由 R6 承接（冻结 ADR 0022 已合并）；Phase C FileStorage 冻结顺延；Phase D backlog 项目已整体转 Backlog，待模块轮审后按新路线图重启。
 - 演示彩排/冒烟资产（MAN-524 主链 16 跳对照表、fullstack run harness）不废弃：作为 CI 项目 M3 统一验收矩阵（#1240）的 scenario 素材。
