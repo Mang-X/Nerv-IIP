@@ -222,12 +222,9 @@ function Get-CSharpSanitizedText {
             if ($isRawString) {
                 $quoteCount = $quoteRunLength
                 $rawClosingIndex = -1
-                $afterQuoteRun = $index + $quoteRunLength
-                $isEmptyRawString = $quoteRunLength % 2 -eq 0 -and
-                    $quoteRunLength / 2 -ge 3 -and
-                    ($afterQuoteRun -ge $length -or $Text[$afterQuoteRun] -in @(';', ',', ')', ']', '}'))
+                $isEmptyRawString = $quoteRunLength -eq 6
                 if ($isEmptyRawString) {
-                    $quoteCount = [int] ($quoteRunLength / 2)
+                    $quoteCount = 3
                     $rawClosingIndex = $index + $quoteCount
                 }
                 else {

@@ -142,6 +142,38 @@ function New-OccurrenceCase {
     }
 }
 
+function New-RawContinuationCase {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [string] $ExpressionLine,
+
+        [Parameter(Mandatory)]
+        [int] $DelayMilliseconds
+    )
+
+    $caseRoot = Join-Path $generatedFixtureRoot $Name
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'continuation.cs'
+    $sourceLines = @(
+        'using System.Threading.Tasks;',
+        '',
+        'public static class RawEmptyContinuationFixture',
+        '{',
+        '    public static async Task RunAsync()',
+        '    {',
+        "        $ExpressionLine",
+        "        await Task.Delay($DelayMilliseconds);",
+        '    }',
+        '}'
+    )
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    return $sourcePath
+}
+
 function Assert-CheckerCase {
     param(
         [Parameter(Mandatory)]
@@ -202,6 +234,33 @@ try {
         -BaselinePath $emptyBaselinePath `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('Task.Delay')
+
+    $rawContinuationCases = @(
+        [pscustomobject]@{
+            Name = 'empty raw string concatenation'
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-concatenation' -ExpressionLine 'var value = """""" + string.Empty;' -DelayMilliseconds 701
+        },
+        [pscustomobject]@{
+            Name = 'empty raw string member access'
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-member-access' -ExpressionLine 'var length = """""".Length;' -DelayMilliseconds 702
+        },
+        [pscustomobject]@{
+            Name = 'empty raw string null coalescing'
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-null-coalescing' -ExpressionLine 'var fallback = """""" ?? string.Empty;' -DelayMilliseconds 703
+        },
+        [pscustomobject]@{
+            Name = 'empty raw string conditional'
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-conditional' -ExpressionLine 'var selected = true ? """""" : string.Empty;' -DelayMilliseconds 704
+        }
+    )
+    foreach ($rawContinuationCase in $rawContinuationCases) {
+        Assert-CheckerCase `
+            -Name $rawContinuationCase.Name `
+            -SourceRoot $rawContinuationCase.SourcePath `
+            -BaselinePath $emptyBaselinePath `
+            -ExpectedExitCode 1 `
+            -ExpectedOutput @(':8 [Task.Delay]')
+    }
 
     Assert-CheckerCase `
         -Name 'raw text and non-interpolation braces stay clean' `
