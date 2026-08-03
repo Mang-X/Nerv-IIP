@@ -70,7 +70,7 @@ jobs:
         run: |
           mkdir -p TestResults/backend-tests-business-gateway
           set -o pipefail
-          dotnet test backend/ci/backend-tests-business-gateway.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-gateway.trx" --results-directory TestResults/backend-tests-business-gateway 2>&1 | tee TestResults/backend-tests-business-gateway/backend-tests-business-gateway.log
+          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-gateway -ResultsDirectory TestResults/backend-tests-business-gateway -TrxFilePrefix backend-tests-business-gateway 2>&1 | tee TestResults/backend-tests-business-gateway/backend-tests-business-gateway.log
 
       - name: Upload BusinessGateway shard diagnostics
         if: always()
@@ -105,7 +105,7 @@ jobs:
         run: |
           mkdir -p TestResults/backend-tests-platform
           set -o pipefail
-          dotnet test backend/ci/backend-tests-platform.slnf --configuration Release --logger "trx;LogFileName=backend-tests-platform.trx" --results-directory TestResults/backend-tests-platform 2>&1 | tee TestResults/backend-tests-platform/backend-tests-platform.log
+          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId platform -ResultsDirectory TestResults/backend-tests-platform -TrxFilePrefix backend-tests-platform 2>&1 | tee TestResults/backend-tests-platform/backend-tests-platform.log
 
       - name: Upload platform shard diagnostics
         if: always()
@@ -140,7 +140,7 @@ jobs:
         run: |
           mkdir -p TestResults/backend-tests-business-core-a
           set -o pipefail
-          dotnet test backend/ci/backend-tests-business-core-a.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-core-a.trx" --results-directory TestResults/backend-tests-business-core-a 2>&1 | tee TestResults/backend-tests-business-core-a/backend-tests-business-core-a.log
+          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-core-a -ResultsDirectory TestResults/backend-tests-business-core-a -TrxFilePrefix backend-tests-business-core-a 2>&1 | tee TestResults/backend-tests-business-core-a/backend-tests-business-core-a.log
 
       - name: Upload business core A shard diagnostics
         if: always()
@@ -175,7 +175,7 @@ jobs:
         run: |
           mkdir -p TestResults/backend-tests-business-core-b
           set -o pipefail
-          dotnet test backend/ci/backend-tests-business-core-b.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-core-b.trx" --results-directory TestResults/backend-tests-business-core-b 2>&1 | tee TestResults/backend-tests-business-core-b/backend-tests-business-core-b.log
+          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-core-b -ResultsDirectory TestResults/backend-tests-business-core-b -TrxFilePrefix backend-tests-business-core-b 2>&1 | tee TestResults/backend-tests-business-core-b/backend-tests-business-core-b.log
 
       - name: Upload business core B shard diagnostics
         if: always()

@@ -11,7 +11,9 @@
 
 [CmdletBinding()]
 param(
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json'),
+
+    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +36,53 @@ function Add-ValidationError {
     )
 
     $Errors.Add($Message)
+}
+
+function ConvertFrom-CiWorkflowYaml {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $WorkingDirectory
+    )
+
+    $rubyProgram = "require 'yaml'; require 'json'; puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0))))"
+    $result = Invoke-NativeCommandOutput -Command 'ruby' -Arguments @(
+        '-ryaml',
+        '-rjson',
+        '-e', $rubyProgram,
+        $Path
+    ) -WorkingDirectory $WorkingDirectory -Name 'parse-ci-workflow'
+
+    return ($result.Stdout | ConvertFrom-Json -ErrorAction Stop)
+}
+
+function Get-WorkflowStepValues {
+    param(
+        [AllowNull()] [object[]] $Steps,
+        [Parameter(Mandatory)] [string] $PropertyName
+    )
+
+    return @(
+        foreach ($step in @($Steps)) {
+            $property = $step.PSObject.Properties[$PropertyName]
+            if ($null -ne $property) {
+                [string] $property.Value
+            }
+        }
+    )
+}
+
+function Get-OptionalObjectArrayProperty {
+    param(
+        [Parameter(Mandatory)] [object] $Object,
+        [Parameter(Mandatory)] [string] $PropertyName
+    )
+
+    $property = $Object.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return @()
+    }
+
+    return @($property.Value)
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -65,6 +114,10 @@ foreach ($shard in $fastShards) {
     foreach ($project in @($shard.projects)) {
         $classificationEntries += [pscustomobject]@{ Lane = $shard.id; Project = [string] $project; Fast = $true }
     }
+
+    if ([string]::IsNullOrWhiteSpace([string] $shard.excludedTestLane)) {
+        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare the heavy lane that owns its excluded real tests."
+    }
 }
 foreach ($lane in $heavyLanes) {
     if ([string]::IsNullOrWhiteSpace($lane.id)) {
@@ -75,11 +128,43 @@ foreach ($lane in $heavyLanes) {
     foreach ($project in @($lane.projects)) {
         $classificationEntries += [pscustomobject]@{ Lane = $lane.id; Project = [string] $project; Fast = $false }
     }
+
+    if ([string]::IsNullOrWhiteSpace([string] $lane.ownerScript)) {
+        Add-ValidationError -Errors $errors -Message "Heavy lane '$($lane.id)' must declare an executable ownerScript."
+    }
+    elseif (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot ([string] $lane.ownerScript)) -PathType Leaf)) {
+        Add-ValidationError -Errors $errors -Message "Heavy lane '$($lane.id)' ownerScript does not exist: $($lane.ownerScript)."
+    }
 }
 
 $allLaneIds = @($fastShards.id) + @($heavyLanes.id)
 foreach ($duplicateLaneId in $allLaneIds | Group-Object | Where-Object Count -gt 1) {
     Add-ValidationError -Errors $errors -Message "Duplicate shard or lane id: $($duplicateLaneId.Name)."
+}
+
+$excludedClassOwners = @{}
+foreach ($shard in $fastShards) {
+    $excludedLane = [string] $shard.excludedTestLane
+    if ($allLaneIds -notcontains $excludedLane -or $fastShards.id -contains $excludedLane) {
+        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'."
+    }
+
+    foreach ($testName in @(
+            (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses') +
+                (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests') |
+                Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
+                ForEach-Object { [string] $_ }
+        )) {
+        if ($testName -notmatch '^[A-Za-z_][A-Za-z0-9_.]+$') {
+            Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' has an invalid excluded test selector: $testName."
+            continue
+        }
+        if ($excludedClassOwners.ContainsKey($testName)) {
+            Add-ValidationError -Errors $errors -Message "Excluded real test selector is assigned more than once: $testName ($($excludedClassOwners[$testName]), $($shard.id))."
+            continue
+        }
+        $excludedClassOwners[$testName] = $shard.id
+    }
 }
 
 $projectOwners = @{}
@@ -173,8 +258,82 @@ foreach ($shard in $fastShards) {
     }
 }
 
+$resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
+if ($null -eq $resolvedWorkflowPath) {
+    Add-ValidationError -Errors $errors -Message "Configured CI workflow does not exist: $WorkflowPath."
+}
+else {
+    try {
+        $workflow = ConvertFrom-CiWorkflowYaml -Path $resolvedWorkflowPath.Path -WorkingDirectory $repositoryRoot
+        $jobs = $workflow.jobs
+        if ($null -eq $jobs) {
+            Add-ValidationError -Errors $errors -Message 'CI workflow must contain a jobs mapping.'
+        }
+        else {
+            $fastJobIds = @($fastShards | ForEach-Object { "backend-tests-$($_.id)" })
+            foreach ($shard in $fastShards) {
+                $jobId = "backend-tests-$($shard.id)"
+                $job = $jobs.PSObject.Properties[$jobId].Value
+                if ($null -eq $job) {
+                    Add-ValidationError -Errors $errors -Message "CI workflow is missing fast shard job '$jobId'."
+                    continue
+                }
+
+                $runText = (Get-WorkflowStepValues -Steps @($job.steps) -PropertyName 'run') -join "`n"
+                if ($runText -notmatch [regex]::Escape("scripts/run-backend-test-shard.ps1 -ShardId $($shard.id)")) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must run the governed shard runner for '$($shard.id)'."
+                }
+
+                $resultsDirectory = "TestResults/$jobId"
+                if ($runText -notmatch [regex]::Escape("-ResultsDirectory $resultsDirectory")) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must write its declared results directory '$resultsDirectory'."
+                }
+                if ($runText -notmatch [regex]::Escape("-TrxFilePrefix $jobId")) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must use its unique TRX file prefix '$jobId'."
+                }
+
+                $uploads = @($job.steps | Where-Object {
+                        $uses = $_.PSObject.Properties['uses']
+                        $null -ne $uses -and [string] $uses.Value -eq 'actions/upload-artifact@v4'
+                    })
+                if ($uploads.Count -ne 1 -or [string] $uploads[0].if -ne 'always()') {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must always upload exactly one diagnostic artifact."
+                }
+                elseif ([string] $uploads[0].with.path -ne $resultsDirectory) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' diagnostic artifact must upload '$resultsDirectory'."
+                }
+            }
+
+            $aggregate = $jobs.PSObject.Properties['backend-tests'].Value
+            if ($null -eq $aggregate) {
+                Add-ValidationError -Errors $errors -Message "CI workflow is missing the stable 'backend-tests' aggregate job."
+            }
+            else {
+                $expectedNeeds = @('backend-test-shard-governance') + $fastJobIds
+                $actualNeeds = @($aggregate.needs | ForEach-Object { [string] $_ })
+                if ((@($actualNeeds | Sort-Object) -join '|') -ne (@($expectedNeeds | Sort-Object) -join '|')) {
+                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must need exactly the governance and four fast shard jobs."
+                }
+                if ([string] $aggregate.name -ne 'Backend Tests' -or [string] $aggregate.if -ne 'always()') {
+                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must retain name 'Backend Tests' and if: always()."
+                }
+
+                $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
+                foreach ($requiredJob in $expectedNeeds) {
+                    if ($aggregateRun -notmatch [regex]::Escape("needs.$requiredJob.result")) {
+                        Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must propagate failure from '$requiredJob'."
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        Add-ValidationError -Errors $errors -Message "CI workflow must be valid structured YAML: $($_.Exception.Message)"
+    }
+}
+
 if ($errors.Count -gt 0) {
     throw ("Backend test shard governance failed:`n  " + ($errors -join "`n  "))
 }
 
-Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes."
+Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards."
