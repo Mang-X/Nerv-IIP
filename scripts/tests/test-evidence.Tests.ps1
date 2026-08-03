@@ -102,4 +102,25 @@ Assert-Violation $expiredViolations 'illegal-quarantine'
 $allowedCodes = @('unregistered-skip', 'illegal-quarantine', 'zero-execution')
 Assert-Equal 0 @($expiredViolations | Where-Object { $allowedCodes -notcontains $_.code }).Count 'Evidence layer emitted an unapproved hard-gate code.'
 
+$artifactRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-artifacts-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $sensitiveRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
+    $summary = New-NervTestEvidenceSummary -Records $sensitiveRecords -RunMetadata $run -Violations @() -Baseline (Get-Content (Join-Path $fixtures 'baseline-report-only.json') -Raw | ConvertFrom-Json) -PriorAttemptOutcome 'failure' -TopCount 5
+    Write-NervTestEvidenceArtifacts -Records $sensitiveRecords -Summary $summary -SourceTrxPaths @((Join-Path $fixtures 'sensitive-results.trx')) -OutputDirectory $artifactRoot
+    foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) {
+        Assert-True (Test-Path (Join-Path $artifactRoot $required)) "Missing retained artifact '$required'."
+    }
+    Assert-True (@(Get-ChildItem (Join-Path $artifactRoot 'trx') -Filter '*.trx').Count -gt 0) 'Normalized TRX artifact is missing.'
+    $retainedText = [string]::Join("`n", @(Get-ChildItem $artifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
+    foreach ($sentinel in @('user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'Fixture Address', 'request body must never be retained')) {
+        Assert-True (-not $retainedText.Contains($sentinel)) "Retained evidence leaked sentinel '$sentinel'."
+    }
+    Assert-True ($summary.attemptClassification -eq 'recovered-after-rerun') 'Prior failure and current clean rerun must be classified report-only.'
+    Assert-True ($summary.baseline.enforcement -eq 'report-only') 'Baseline delta must remain report-only.'
+    Assert-True ((Get-Content (Join-Path $artifactRoot 'summary.md') -Raw).Contains('recovered-after-rerun')) 'Markdown must render rerun classification.'
+}
+finally {
+    if (Test-Path $artifactRoot) { Remove-Item $artifactRoot -Recurse -Force }
+}
+
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."

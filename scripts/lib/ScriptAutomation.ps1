@@ -114,6 +114,11 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    $redacted = [regex]::Replace($redacted, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?i)(["''](?:customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
+        '$1<redacted>$2')
     $patterns = @(
         '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+',
         '(?i)(password\s*=\s*)[^;\s]+',
@@ -121,6 +126,7 @@ function Protect-ScriptAutomationText {
         '(?i)(token\s*[:=]\s*)[^\s''";]+',
         '(?i)(secret\s*[:=]\s*)[^\s''";]+',
         '(?i)(client_secret\s*[:=]\s*)[^\s''";]+',
+        '(?i)((?:customerName|phone|email|address)\s*=\s*)[^;\s,}]+',
         '(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+',
         '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+'
     )

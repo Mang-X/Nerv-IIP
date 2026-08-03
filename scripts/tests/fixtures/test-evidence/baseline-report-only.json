@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "assemblies": [
+    { "assembly": "Nerv.IIP.Sample.Tests.dll", "durationMilliseconds": 250.0 }
+  ]
+}
