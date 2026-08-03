@@ -91,9 +91,20 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
         var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingResponse);
         Assert.NotNull(pending);
-        var dispatch = Assert.Single(pending.Items);
+        var dispatch = Assert.Single(
+            pending.Items,
+            item => item.OperationTaskId == createdTask.OperationTaskId);
         Assert.Equal(createdTask.OperationTaskId, dispatch.OperationTaskId);
+        Assert.Equal(createRequest.OrganizationId, dispatch.OrganizationId);
+        Assert.Equal(createRequest.EnvironmentId, dispatch.EnvironmentId);
         Assert.Equal("connector-host-001", dispatch.ConnectorHostId);
+        Assert.Equal(createRequest.InstanceKey, dispatch.InstanceKey);
+        Assert.Equal(createRequest.OperationCode, dispatch.OperationCode);
+        Assert.Equal(createRequest.CorrelationId, dispatch.CorrelationId);
+        Assert.Empty(dispatch.Parameters);
+        Assert.Equal(1, dispatch.AttemptNo);
+        Assert.Equal(300, dispatch.LeaseDurationSeconds);
+        Assert.Equal(3, dispatch.MaxAttempts);
 
         var dispatchedResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
 

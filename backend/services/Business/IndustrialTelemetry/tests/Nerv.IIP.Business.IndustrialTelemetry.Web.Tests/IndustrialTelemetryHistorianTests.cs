@@ -100,7 +100,9 @@ public sealed class IndustrialTelemetryHistorianTests
         var databaseName = nameof(Historian_scheduler_runs_again_after_fake_time_advances_to_second_tick);
         await using var setupContext = CreateDbContext(databaseName);
         setupContext.TelemetryTags.Add(TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "temperature", "number", "celsius", "sample-60s;raw=1d;hourly=30d;daily=365d"));
-        setupContext.TelemetryRawSamples.Add(Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 20m, 20m, 20m, 20m, 20m, "raw-first"));
+        setupContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-06-29T08:00:00Z", "2026-06-29T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "raw-first-expired-marker"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 20m, 20m, 20m, 20m, 20m, "raw-first"));
         await setupContext.SaveChangesAsync();
 
         await using var services = new ServiceCollection()
@@ -128,7 +130,7 @@ public sealed class IndustrialTelemetryHistorianTests
         await WaitForHistorianStateAsync(
             databaseName,
             "historian:hourly:DEV-CNC-01:temperature:1782892800000",
-            "missing-raw");
+            "raw-first-expired-marker");
 
         await using (var secondTickContext = CreateDbContext(databaseName))
         {
