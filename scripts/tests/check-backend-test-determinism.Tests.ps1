@@ -148,7 +148,10 @@ function New-RawContinuationCase {
         [string] $Name,
 
         [Parameter(Mandatory)]
-        [string] $ExpressionLine,
+        [string] $OpeningLine,
+
+        [Parameter(Mandatory)]
+        [string] $ClosingLine,
 
         [Parameter(Mandatory)]
         [int] $DelayMilliseconds
@@ -164,8 +167,31 @@ function New-RawContinuationCase {
         '{',
         '    public static async Task RunAsync()',
         '    {',
-        "        $ExpressionLine",
+        "        $OpeningLine",
+        '',
+        "        $ClosingLine",
         "        await Task.Delay($DelayMilliseconds);",
+        '    }',
+        '}'
+    )
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    return $sourcePath
+}
+
+function New-SixQuoteRawFollowedByDelayCase {
+    $caseRoot = Join-Path $generatedFixtureRoot 'raw-six-quote-followed-by-delay'
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'followed-by-delay.cs'
+    $sourceLines = @(
+        'using System.Threading.Tasks;',
+        '',
+        'public static class SixQuoteRawFollowedByDelayFixture',
+        '{',
+        '    public static async Task RunAsync()',
+        '    {',
+        '        var literalText = """"""Task.Delay(802)"""""";',
+        '        await Task.Delay(803);',
         '    }',
         '}'
     )
@@ -190,6 +216,8 @@ function Assert-CheckerCase {
 
         [string[]] $ExpectedOutput = @(),
 
+        [string[]] $UnexpectedOutput = @(),
+
         [hashtable] $MinimumOccurrences = @{}
     )
 
@@ -201,6 +229,10 @@ function Assert-CheckerCase {
 
     foreach ($expected in $ExpectedOutput) {
         Assert-True -Condition $result.Output.Contains($expected) -Message "Expected '$Name' output to contain '$expected'. Output: $($result.Output)"
+    }
+
+    foreach ($unexpected in $UnexpectedOutput) {
+        Assert-True -Condition (-not $result.Output.Contains($unexpected)) -Message "Expected '$Name' output not to contain '$unexpected'. Output: $($result.Output)"
     }
 
     foreach ($entry in $MinimumOccurrences.GetEnumerator()) {
@@ -238,19 +270,19 @@ try {
     $rawContinuationCases = @(
         [pscustomobject]@{
             Name = 'empty raw string concatenation'
-            SourcePath = New-RawContinuationCase -Name 'raw-empty-concatenation' -ExpressionLine 'var value = """""" + string.Empty;' -DelayMilliseconds 701
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-concatenation' -OpeningLine 'var value = """' -ClosingLine '""" + string.Empty;' -DelayMilliseconds 701
         },
         [pscustomobject]@{
             Name = 'empty raw string member access'
-            SourcePath = New-RawContinuationCase -Name 'raw-empty-member-access' -ExpressionLine 'var length = """""".Length;' -DelayMilliseconds 702
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-member-access' -OpeningLine 'var length = """' -ClosingLine '""".Length;' -DelayMilliseconds 702
         },
         [pscustomobject]@{
             Name = 'empty raw string null coalescing'
-            SourcePath = New-RawContinuationCase -Name 'raw-empty-null-coalescing' -ExpressionLine 'var fallback = """""" ?? string.Empty;' -DelayMilliseconds 703
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-null-coalescing' -OpeningLine 'var fallback = (string?)"""' -ClosingLine '""" ?? string.Empty;' -DelayMilliseconds 703
         },
         [pscustomobject]@{
             Name = 'empty raw string conditional'
-            SourcePath = New-RawContinuationCase -Name 'raw-empty-conditional' -ExpressionLine 'var selected = true ? """""" : string.Empty;' -DelayMilliseconds 704
+            SourcePath = New-RawContinuationCase -Name 'raw-empty-conditional' -OpeningLine 'var selected = true ? """' -ClosingLine '""" : string.Empty;' -DelayMilliseconds 704
         }
     )
     foreach ($rawContinuationCase in $rawContinuationCases) {
@@ -259,8 +291,16 @@ try {
             -SourceRoot $rawContinuationCase.SourcePath `
             -BaselinePath $emptyBaselinePath `
             -ExpectedExitCode 1 `
-            -ExpectedOutput @(':8 [Task.Delay]')
+            -ExpectedOutput @(':10 [Task.Delay]')
     }
+
+    Assert-CheckerCase `
+        -Name 'six quote raw text is hidden before a later delay' `
+        -SourceRoot (New-SixQuoteRawFollowedByDelayCase) `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @(':8 [Task.Delay]', 'Task.Delay(803)') `
+        -UnexpectedOutput @('Task.Delay(802)')
 
     Assert-CheckerCase `
         -Name 'raw text and non-interpolation braces stay clean' `

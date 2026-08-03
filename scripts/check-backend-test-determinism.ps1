@@ -222,30 +222,23 @@ function Get-CSharpSanitizedText {
             if ($isRawString) {
                 $quoteCount = $quoteRunLength
                 $rawClosingIndex = -1
-                $isEmptyRawString = $quoteRunLength -eq 6
-                if ($isEmptyRawString) {
-                    $quoteCount = 3
-                    $rawClosingIndex = $index + $quoteCount
-                }
-                else {
-                    $rawSearchIndex = $index + $quoteCount
-                    while ($rawSearchIndex -lt $length) {
-                        if ($Text[$rawSearchIndex] -ne '"') {
-                            $rawSearchIndex++
-                            continue
-                        }
-
-                        $closingQuoteRun = 1
-                        while ($rawSearchIndex + $closingQuoteRun -lt $length -and
-                            $Text[$rawSearchIndex + $closingQuoteRun] -eq '"') {
-                            $closingQuoteRun++
-                        }
-                        if ($closingQuoteRun -ge $quoteCount) {
-                            $rawClosingIndex = $rawSearchIndex
-                            break
-                        }
-                        $rawSearchIndex += $closingQuoteRun
+                $rawSearchIndex = $index + $quoteCount
+                while ($rawSearchIndex -lt $length) {
+                    if ($Text[$rawSearchIndex] -ne '"') {
+                        $rawSearchIndex++
+                        continue
                     }
+
+                    $closingQuoteRun = 1
+                    while ($rawSearchIndex + $closingQuoteRun -lt $length -and
+                        $Text[$rawSearchIndex + $closingQuoteRun] -eq '"') {
+                        $closingQuoteRun++
+                    }
+                    if ($closingQuoteRun -ge $quoteCount) {
+                        $rawClosingIndex = $rawSearchIndex
+                        break
+                    }
+                    $rawSearchIndex += $closingQuoteRun
                 }
 
                 if ($rawClosingIndex -lt 0) {

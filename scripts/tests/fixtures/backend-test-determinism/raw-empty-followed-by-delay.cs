@@ -4,7 +4,9 @@ public static class RawEmptyFollowedByDelayFixture
 {
     public static async Task RunAsync()
     {
-        var empty = """""";
+        var empty = """
+
+        """;
         await Task
             .Delay(321);
     }
