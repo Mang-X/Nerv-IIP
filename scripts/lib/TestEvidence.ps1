@@ -228,3 +228,75 @@ function Read-NervTrxResults {
     }
     @($records)
 }
+
+function Test-NervRuleApplies {
+    param(
+        [Parameter(Mandatory)] [object] $Rule,
+        [Parameter(Mandatory)] [string[]] $SelectedLanes,
+        [Parameter(Mandatory)] [string] $RunnerOs
+    )
+
+    $baseLanes = @($SelectedLanes | ForEach-Object { $_ -replace '-shard-[1-9][0-9]*$', '' })
+    if (@($Rule.allowedLanes).Count -gt 0 -and @($baseLanes | Where-Object { @($Rule.allowedLanes) -ccontains $_ }).Count -eq 0) {
+        return $false
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$Rule.requiredLane) -and @($baseLanes) -ccontains [string]$Rule.requiredLane) {
+        return $false
+    }
+    if (@($Rule.allowedOperatingSystems).Count -gt 0 -and -not (@($Rule.allowedOperatingSystems) -ccontains $RunnerOs)) {
+        return $false
+    }
+    return $true
+}
+
+function Get-NervTestEvidenceViolations {
+    param(
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Records,
+        [Parameter(Mandatory)] [object] $Policy,
+        [Parameter(Mandatory)] [string[]] $SelectedLanes,
+        [Parameter(Mandatory)] [string] $RunnerOs
+    )
+
+    $violations = [Collections.Generic.List[object]]::new()
+    $safeRecords = if ($null -eq $Records) { @() } else { @($Records) }
+    foreach ($rule in @($Policy.rules | Where-Object classification -eq 'quarantined')) {
+        $expiry = [DateTimeOffset]::MinValue
+        $validDate = [DateTimeOffset]::TryParseExact(
+            [string]$rule.expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$expiry)
+        if ([string]::IsNullOrWhiteSpace([string]$rule.responsibilityIssue) -or
+            [string]::IsNullOrWhiteSpace([string]$rule.exitCondition) -or
+            -not $validDate -or $expiry.Date -lt [DateTimeOffset]::UtcNow.UtcDateTime.Date) {
+            $violations.Add((New-NervTestEvidenceViolation 'illegal-quarantine' ([string]$rule.id) 'Quarantine metadata is missing, invalid, or expired.'))
+        }
+    }
+
+    foreach ($record in @($safeRecords | Where-Object outcome -eq 'skipped')) {
+        $matches = @($Policy.rules | Where-Object {
+            [string]$record.testName -cmatch [string]$_.testPattern -and
+            [string]$record.skipReason -cmatch [string]$_.reasonPattern -and
+            (Test-NervRuleApplies -Rule $_ -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
+        })
+        if ($matches.Count -ne 1) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$record.testName) "Runtime skip matched $($matches.Count) applicable rules."))
+        }
+    }
+
+    foreach ($selectedLane in $SelectedLanes) {
+        $laneMatches = @($Policy.lanes | Where-Object { $selectedLane -cmatch [string]$_.namePattern })
+        if ($laneMatches.Count -ne 1) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' $selectedLane "Selected lane matched $($laneMatches.Count) lane contracts."))
+            continue
+        }
+        if ([bool]$laneMatches[0].realDependency) {
+            $executed = @($safeRecords | Where-Object {
+                $_.outcome -in @('passed', 'failed') -and
+                ([string]$_.lane -ceq $selectedLane -or ([string]$_.lane -replace '-shard-[1-9][0-9]*$', '') -ceq ($selectedLane -replace '-shard-[1-9][0-9]*$', ''))
+            }).Count
+            if ($executed -eq 0) {
+                $violations.Add((New-NervTestEvidenceViolation 'zero-execution' $selectedLane 'Selected real-dependency lane executed no passed or failed tests.'))
+            }
+        }
+    }
+    @($violations)
+}

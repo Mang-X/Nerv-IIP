@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testId="33333333-3333-3333-3333-333333333301" duration="00:00:00" outcome="NotExecuted"><Output><ErrorInfo><Message>Unknown skip.</Message></ErrorInfo></Output></UnitTestResult></Results><TestDefinitions><UnitTest id="33333333-3333-3333-3333-333333333301" storage="Unknown.Tests.dll"><TestMethod className="Unknown.Tests" name="Skipped" /></UnitTest></TestDefinitions></TestRun>
