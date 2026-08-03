@@ -4,6 +4,12 @@ import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite-plus'
 import VueRouter from 'vue-router/vite'
 
+const frozenShadcnSourceIgnorePatterns = [
+  'packages/ui/src/components/ui/**/*',
+  '!packages/ui/src/components/ui/file-preview/',
+  '!packages/ui/src/components/ui/file-preview/**',
+] as const
+
 export default defineConfig({
   fmt: {
     semi: false,
@@ -16,7 +22,7 @@ export default defineConfig({
       'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/openapi/**',
       'packages/api-client/src/generated/**',
-      'packages/ui/src/components/ui/**',
+      ...frozenShadcnSourceIgnorePatterns,
       'packages/scheduling/vendor/dhtmlx/**',
     ],
   },
@@ -66,6 +72,7 @@ export default defineConfig({
       'apps/business-console/typed-router.d.ts',
       'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/src/generated/**',
+      ...frozenShadcnSourceIgnorePatterns,
       'packages/scheduling/vendor/dhtmlx/**',
     ],
   },
