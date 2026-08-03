@@ -211,7 +211,7 @@ The collector writes as much safe summary information as possible before returni
 
 ## Rerun Correlation
 
-`workflowRunId` is the stable identity shared by GitHub Actions attempts. `runAttempt`, `headSha`, `testedSha`, and `lane` distinguish individual evidence records. `headSha` is the event branch head; `testedSha` is the checkout proven by `git rev-parse HEAD`. They may differ on `pull_request` because GitHub tests a synthetic merge commit, and must be identical on `push`.
+`workflowRunId` is the stable identity shared by GitHub Actions attempts. `runAttempt`, `headSha`, `testedSha`, and `lane` distinguish individual evidence records. `headSha` is the event branch head; `testedSha` is the checkout proven by `git rev-parse HEAD`. They may differ on `pull_request` because GitHub tests a synthetic merge commit, and must be identical on `push`. Artifact refresh and legacy console import both recover `testedSha` from an independently downloaded job log: current logs use `tested-sha=<sha>`, while historical console support is limited to the exact checkout `git log -1 --format=%H` command and its following SHA. Missing or conflicting checkout authority is an error; copying `headSha` into `testedSha` is not valid provenance.
 
 For attempt `1`, classification is `initial`. For attempt greater than `1`, the workflow performs a read-only lookup of the same named job in the immediately preceding attempt and passes its conclusion to the collector. The collector reports:
 
@@ -263,7 +263,7 @@ pwsh scripts/generate-test-evidence-baseline.ps1 `
   -OutputPath scripts/test-evidence-baseline.json
 ```
 
-At generation time, the initial project-level baseline imports the latest clean first-attempt successful main run after #1442. Run `30819675007` is the current candidate and must be replaced only when a newer qualifying main run exists. The generator records `granularity: project`; the first successful main run with MAN-661 TRX refreshes it to `test` granularity using the same command.
+At generation time, the initial project-level baseline imports the latest clean first-attempt successful main run after #1442. Run `30819675007` is the current candidate and must be replaced only when a newer qualifying main run exists. Its tested checkout is taken from the historical checkout command in the authoritative Backend Tests job log, not inferred from the run head. The shared checkout validator accepts a distinct branch head and synthetic merge SHA when validating pull-request provenance, but pull-request runs remain ineligible baseline sources. The generator records `granularity: project`; the first successful main run with MAN-661 TRX refreshes it to `test` granularity using the same command.
 
 A refresh is required after the first successful main run following any of:
 

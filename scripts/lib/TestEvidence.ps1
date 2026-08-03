@@ -930,13 +930,42 @@ function Get-NervGitHubRunnerProvenance {
         elseif ($image.StartsWith('windows-', [StringComparison]::Ordinal)) { 'Windows' }
         elseif ($image.StartsWith('macos-', [StringComparison]::Ordinal)) { 'macOS' }
         else { throw "Unsupported Actions runner image '$image'." }
-    $testedShaMatch = [regex]::Match($Text, '(?im)^.*tested-sha=(?<sha>[0-9a-f]{40})\s*$')
+    $testedShaCandidates = [Collections.Generic.List[string]]::new()
+    foreach ($match in [regex]::Matches($Text, '(?im)^.*tested-sha=(?<sha>[0-9a-f]{40})\s*$')) {
+        $testedShaCandidates.Add($match.Groups['sha'].Value)
+    }
+    $checkoutPattern = '(?im)^.*\[command\].*git\s+log\s+-1\s+--format=%H\s*$\r?\n^.*?(?<sha>[0-9a-f]{40})\s*$'
+    foreach ($match in [regex]::Matches($Text, $checkoutPattern)) {
+        $testedShaCandidates.Add($match.Groups['sha'].Value)
+    }
+    $uniqueTestedShas = @($testedShaCandidates | Sort-Object -Unique)
+    if ($uniqueTestedShas.Count -ne 1) {
+        throw 'Actions log must contain exactly one authoritative tested SHA from the checkout log or tested-sha marker.'
+    }
     [pscustomobject]@{
         runnerOs = $runnerOs
         runnerImage = "$normalizedImage@$imageVersion"
         dotnetSdk = $sdkMatch.Groups['sdk'].Value
-        testedSha = if ($testedShaMatch.Success) { $testedShaMatch.Groups['sha'].Value } else { '' }
+        testedSha = [string]$uniqueTestedShas[0]
     }
+}
+
+function Assert-NervGitHubRunCheckoutProvenance {
+    param(
+        [Parameter(Mandatory)] [object] $Run,
+        [Parameter(Mandatory)] [object] $RunnerProvenance
+    )
+
+    $eventName = [string]$Run.event
+    $headSha = [string]$Run.headSha
+    $testedSha = [string]$RunnerProvenance.testedSha
+    if ($eventName -notin @('push', 'pull_request') -or $headSha -notmatch '^[0-9a-f]{40}$' -or $testedSha -notmatch '^[0-9a-f]{40}$') {
+        throw 'GitHub run checkout provenance requires a supported event and authoritative head/tested SHAs.'
+    }
+    if ($eventName -ceq 'push' -and $headSha -cne $testedSha) {
+        throw 'Push checkout provenance requires the authoritative tested SHA to equal the run head SHA.'
+    }
+    [pscustomobject][ordered]@{ headSha = $headSha; testedSha = $testedSha }
 }
 
 function Resolve-NervPriorAttemptAuthority {
@@ -1034,10 +1063,12 @@ function Assert-NervEvidenceRootAuthority {
             throw "Authoritative Actions log for job '$($summary.jobName)' is missing."
         }
         $authority = Get-NervGitHubRunnerProvenance -Text (Protect-ScriptAutomationText ([string]$JobLogs[[string]$summary.jobName]))
-        if ([string]$summary.runnerOs -cne [string]$authority.runnerOs -or
+        $checkout = Assert-NervGitHubRunCheckoutProvenance -Run $Run -RunnerProvenance $authority
+        if ([string]$summary.headSha -cne [string]$checkout.headSha -or
+            [string]$summary.testedSha -cne [string]$checkout.testedSha -or
+            [string]$summary.runnerOs -cne [string]$authority.runnerOs -or
             [string]$summary.runnerImage -cne [string]$authority.runnerImage -or
-            [string]$summary.dotnetSdk -cne [string]$authority.dotnetSdk -or
-            [string]$summary.testedSha -cne [string]$authority.testedSha) {
+            [string]$summary.dotnetSdk -cne [string]$authority.dotnetSdk) {
             throw "Evidence runner provenance for lane '$($summary.lane)' does not match the authoritative Actions log."
         }
     }

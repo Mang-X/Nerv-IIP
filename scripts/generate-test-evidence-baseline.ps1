@@ -31,17 +31,20 @@ if ($PSCmdlet.ParameterSetName -eq 'GitHubConsole') {
     $jobs = @($run.jobs | Where-Object { [string]$_.databaseId -eq $GitHubJobId })
     if ($jobs.Count -ne 1) { throw "GitHub job '$GitHubJobId' was missing or ambiguous in run '$GitHubRunId'." }
     $job = $jobs[0]
-    if ([string]$run.event -cne 'push' -or [string]$run.headBranch -cne 'main' -or [int]$run.attempt -ne 1 -or
-        [string]$run.conclusion -cne 'success' -or [string]$job.conclusion -cne 'success' -or
+    if ([int]$run.attempt -ne 1 -or [string]$run.conclusion -cne 'success' -or [string]$job.conclusion -cne 'success' -or
         [string]$run.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$job.name -cne 'Backend Tests') {
-        throw 'Baseline source must be a successful attempt-1 main push and successful Backend Tests job with a full SHA.'
+        throw 'Baseline source must be a successful attempt-1 run and successful Backend Tests job with a full head SHA.'
     }
     $logResult = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('run', 'view', $GitHubRunId, '--repo', $Repository, '--job', $GitHubJobId, '--log') -WorkingDirectory $repoRoot -TimeoutSeconds 180 -Name 'man-661-baseline-log'
     $safeLog = Protect-ScriptAutomationText $logResult.Stdout
     $runnerProvenance = Get-NervGitHubRunnerProvenance -Text $safeLog
+    $checkoutProvenance = Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]$run) -RunnerProvenance $runnerProvenance
+    if ([string]$run.event -cne 'push' -or [string]$run.headBranch -cne 'main') {
+        throw 'Baseline source must be a main push; pull-request checkout provenance is validated but is not baseline-eligible.'
+    }
     $metadata = @{
         sourceKind = 'github-console'; repository = $Repository; workflowRunId = $GitHubRunId
-        runAttempt = [int]$run.attempt; jobId = $GitHubJobId; headSha = [string]$run.headSha; testedSha = [string]$run.headSha
+        runAttempt = [int]$run.attempt; jobId = $GitHubJobId; headSha = [string]$checkoutProvenance.headSha; testedSha = [string]$checkoutProvenance.testedSha
         sourceUrl = [string]$run.url; event = [string]$run.event; headBranch = [string]$run.headBranch
         conclusion = [string]$run.conclusion; jobConclusion = [string]$job.conclusion
         runnerOs = $runnerProvenance.runnerOs; runnerImage = $runnerProvenance.runnerImage; dotnetSdk = $runnerProvenance.dotnetSdk; selectedLanes = @('backend'); lane = 'backend'

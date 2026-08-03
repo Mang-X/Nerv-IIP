@@ -255,6 +255,24 @@ finally {
 }
 
 $metadata = Get-Content (Join-Path $fixtures 'github-run-metadata.json') -Raw | ConvertFrom-Json -AsHashtable
+$runnerLogBase = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-sdk=10.0.302"
+$missingTestedShaFailed = $false
+try { Get-NervGitHubRunnerProvenance -Text $runnerLogBase | Out-Null } catch { $missingTestedShaFailed = $true }
+Assert-True $missingTestedShaFailed 'Runner provenance without independent tested-SHA authority must fail closed.'
+$historicalCheckoutLog = "$runnerLogBase`n[command]/usr/bin/git log -1 --format=%H`n9dafb512c992b240222c8d9b5ada43e4bfc8ac3d"
+$historicalCheckout = Get-NervGitHubRunnerProvenance -Text $historicalCheckoutLog
+Assert-Equal '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' $historicalCheckout.testedSha 'Historical checkout log authority must resolve the tested SHA.'
+$ambiguousCheckoutFailed = $false
+try { Get-NervGitHubRunnerProvenance -Text "$historicalCheckoutLog`ntested-sha=1123456789abcdef0123456789abcdef01234567" | Out-Null } catch { $ambiguousCheckoutFailed = $true }
+Assert-True $ambiguousCheckoutFailed 'Conflicting checkout authorities must fail closed.'
+$pushCheckout = Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]@{ event = 'push'; headSha = '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' }) -RunnerProvenance $historicalCheckout
+Assert-Equal $pushCheckout.headSha $pushCheckout.testedSha 'Push checkout authority must match the run head.'
+$pushMismatchFailed = $false
+try { Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]@{ event = 'push'; headSha = '0123456789abcdef0123456789abcdef01234567' }) -RunnerProvenance $historicalCheckout | Out-Null } catch { $pushMismatchFailed = $true }
+Assert-True $pushMismatchFailed 'Push checkout authority must reject a tested SHA different from run head.'
+$prCheckout = Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]@{ event = 'pull_request'; headSha = '0123456789abcdef0123456789abcdef01234567' }) -RunnerProvenance $historicalCheckout
+Assert-Equal '0123456789abcdef0123456789abcdef01234567' $prCheckout.headSha 'PR provenance must retain the branch head.'
+Assert-Equal '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' $prCheckout.testedSha 'PR provenance must allow a distinct synthetic merge checkout.'
 $imported = ConvertFrom-NervDotNetConsoleSummary -Text (Get-Content (Join-Path $fixtures 'github-backend-console.log.txt') -Raw) -RunMetadata $metadata
 Assert-Equal 'project' $imported.granularity 'Console import is project-granularity.'
 Assert-Equal 822000 ($imported.assemblies | Where-Object assembly -eq 'Nerv.IIP.BusinessGateway.Web.Tests.dll').elapsedMilliseconds '13m42s must normalize to milliseconds.'
