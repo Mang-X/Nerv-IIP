@@ -121,7 +121,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm -C frontend install --frozen-lockfile
 
-      - name: Check frontend formatting
+      - name: Check frontend format and lint
         run: pnpm -C frontend check
 
       - name: Typecheck frontend

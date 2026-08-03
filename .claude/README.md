@@ -20,7 +20,7 @@ artifacts, so it only does real work on a fresh worktree:
 | Command | Action |
 |---|---|
 | `/setup-env` | Full env setup (frontend deps + backend `dotnet restore`). |
-| `/frontend-gate` | Frontend quality gate: `typecheck` + `test` + `build`. |
+| `/frontend-gate` | Frontend quality gate: `check` + `typecheck` + `test` + `build`. |
 
 Add more under [`commands/`](commands/) — each `*.md` is a prompt run when invoked.
 

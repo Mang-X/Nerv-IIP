@@ -83,7 +83,7 @@ scripts/verify-*.ps1                  # Verification scripts
 | Backend service / endpoint | implementation-readiness, api-contract-and-codegen, facade-coverage-matrix | `dotnet test backend/Nerv.IIP.sln` (includes the facade-coverage gate); declare each new/changed business endpoint `exposed`/`deferred`/`internal` in `facade-coverage-matrix.json`; if contract changed: export OpenAPI |
 | Gateway route / contract | api-contract-and-codegen | backend tests; export OpenAPI; `pnpm -C frontend generate:api` |
 | DB schema / migration | database-schema-conventions, database-schema-catalog | migration + schema convention tests; update catalog + comments |
-| Frontend page / feature | frontend-structure | `pnpm -C frontend typecheck && pnpm -C frontend test && pnpm -C frontend build` |
+| Frontend page / feature | frontend-structure | `pnpm -C frontend check && pnpm -C frontend typecheck && pnpm -C frontend test && pnpm -C frontend build` |
 | Scripts | script-automation-governance | `scripts/check-script-governance.ps1` |
 | Connector Host | connector boundary docs | `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`; no backend service impl references |
 | Infra / Aspire | deployment-baseline | `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` |
@@ -94,8 +94,8 @@ Capacitor artifacts are affected.
 
 ## Known Baseline Caveats
 
-- GitHub CI runs `typecheck` + `build` for frontend (not the full gate) — run the
-  full gate locally per the Change Decision Table.
+- GitHub CI runs `check` + `typecheck` + `build` for frontend; `test` remains part
+  of the full local gate in the Change Decision Table.
 - Docker-dependent `verify-*.ps1` scripts require a running Docker daemon; if
   unavailable, report and skip — not a code failure.
 
