@@ -5,6 +5,7 @@
 #   Writes:
 #     - bin/ and obj/ build outputs under the classified test projects
 #     - artifacts/script-logs/**
+#     - artifacts/real-postgres-tests/** TRX evidence
 #   Cleanup:
 #     - None
 #   Requires:
@@ -35,6 +36,7 @@ function Get-OptionalObjectArrayProperty {
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
 $lane = @($manifest.heavyLanes | Where-Object { $_.id -eq 'real-postgres' })
 if ($lane.Count -ne 1) {
@@ -63,6 +65,8 @@ if ($classes.Count -eq 0) {
 }
 
 foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -eq 'real-postgres' })) {
+    $classSelectors = @(Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses' | ForEach-Object { [string] $_ })
+    $methodSelectors = @(Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests' | ForEach-Object { [string] $_ })
     $shardTests = @(
         (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses') +
             (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests') |
@@ -74,13 +78,33 @@ foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -
         continue
     }
 
-    $filter = ($shardTests | ForEach-Object { "FullyQualifiedName~$_" }) -join '|'
-    Invoke-DotNet -Name "backend-real-postgres-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
-        'test',
-        [string] $shard.solutionFilter,
-        '--configuration', 'Release',
-        '--filter', $filter
-    )
+    foreach ($selector in $shardTests) {
+        $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
+            'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
+        )
+        $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith($selector, [StringComparison]::Ordinal) })
+        $isMethodSelector = $methodSelectors -contains $selector
+        if ($discovered.Count -eq 0 -or ($isMethodSelector -and $discovered.Count -ne 1)) {
+            throw "Real PostgreSQL selector '$selector' discovery must match $($(if ($isMethodSelector) { 'exactly one test' } else { 'at least one test' })); matched $($discovered.Count)."
+        }
+
+        $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
+        $selectorDirectory = Join-Path $resultsRoot $selectorSlug
+        New-Item -ItemType Directory -Force -Path $selectorDirectory | Out-Null
+        Invoke-DotNetOutput -Name "backend-real-postgres-execution-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
+            'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--filter', "FullyQualifiedName~$selector",
+            '--logger', "trx;LogFilePrefix=$selectorSlug", '--results-directory', $selectorDirectory
+        ) | Out-Null
+        $trx = Get-ChildItem -LiteralPath $selectorDirectory -Filter '*.trx' -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+        if ($null -eq $trx) {
+            throw "Real PostgreSQL selector '$selector' executed without TRX evidence."
+        }
+        [xml] $trxXml = Get-Content -LiteralPath $trx.FullName -Raw
+        $results = @($trxXml.TestRun.Results.UnitTestResult | Where-Object { [string] $_.testName -like "$selector*" })
+        if ($results.Count -lt $discovered.Count -or @($results | Where-Object { [string] $_.outcome -ne 'Passed' }).Count -gt 0) {
+            throw "Real PostgreSQL selector '$selector' must execute every discovered test as Passed; discovered=$($discovered.Count), trx=$($results.Count)."
+        }
+    }
 }
 
-Write-Host "Verified $($classes.Count) real PostgreSQL test classes through the explicit heavy lane."
+Write-Host "Verified $($classes.Count) real PostgreSQL test selectors through discovery and TRX evidence."

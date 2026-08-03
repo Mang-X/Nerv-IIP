@@ -142,7 +142,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
 | `verify-second-slice-ops.ps1` | `verify` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免直接命令/进程调用；迁移时需收敛 Gateway/Ops/Connector Host 进程树、日志和端口清理。 |
 
-当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption；新增脚本不得复用该例外口径。
+当前 baseline 除 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption 外，还记录 `scripts/tests/**` 中的测试 harness/fixture 债务：这些脚本故意以动态调用、直接进程或缺失声明来验证治理规则本身。每项豁免均限制为精确 path + rule，新增测试脚本不得复用；迁移计划是在对应 harness 改为 ScriptAutomation 后逐项删除。`scripts/tests/backend-test-shards.Tests.ps1` 已纳入完整扫描且没有豁免。
 
 ## 新脚本准入
 

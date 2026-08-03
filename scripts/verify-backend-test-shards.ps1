@@ -8,6 +8,7 @@
 #     - None
 #   Requires:
 #     - PowerShell 7
+#     - Ruby 3.4 with yaml/json standard libraries
 
 [CmdletBinding()]
 param(
@@ -320,8 +321,9 @@ else {
 
                 $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
                 foreach ($requiredJob in $expectedNeeds) {
-                    if ($aggregateRun -notmatch [regex]::Escape("needs.$requiredJob.result")) {
-                        Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must propagate failure from '$requiredJob'."
+                    $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
+                    if ($aggregateRun -notmatch [regex]::Escape($requiredAssertion)) {
+                        Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must fail when '$requiredJob' is not success."
                     }
                 }
             }

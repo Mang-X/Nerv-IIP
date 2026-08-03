@@ -664,11 +664,14 @@ function Invoke-NativeCommandOutput {
                 -StdoutCapture $stdoutCapture `
                 -StderrCapture $stderrCapture
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
-            if ($drain.TimedOut) {
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
-            }
-            throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            $failure = [TimeoutException]::new("Command '$Command' timed out after $TimeoutSeconds seconds while reading output. Logs: $($drain.LogDirectory)")
+            $failure.Data['Stdout'] = $drain.Stdout
+            $failure.Data['Stderr'] = $drain.Stderr
+            $failure.Data['LogDirectory'] = "$($drain.LogDirectory)"
+            $failure.Data['PartialOutput'] = [bool] $drain.TimedOut
+            throw $failure
         }
 
         $exitCode = $process.ExitCode
