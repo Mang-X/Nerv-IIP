@@ -16,21 +16,21 @@
 
 ## 页面入口
 
-| 环节 | Business Console 路由 | 当前事实或缺口 |
-| --- | --- | --- |
-| 物料与产品 | `/master-data/skus` | 已在基础数据域暴露，用于确认 SKU、UOM、分类和生命周期。 |
-| 计量单位 | `/master-data/units` | 已在基础数据域暴露，用于确认产品和组件的单位。 |
-| 工厂结构 | `/master-data/facilities` | 已在基础数据域暴露，用于确认工厂、产线和工作中心。 |
-| 设备台账 | `/master-data/devices` | 已在基础数据域暴露，用于确认设备资产。 |
-| 工程资料工作台 | `/engineering` | 已有 route-ready 汇总页；顶部导航默认进入生产版本页。 |
-| 工程物料 | `/engineering/items` | 已在产品工程域暴露。 |
-| 工程文档 | `/engineering/documents` | 已在产品工程域暴露，可按物料和文档类型过滤。 |
-| EBOM | `/engineering/ebom` | 已在产品工程域暴露。 |
-| MBOM | `/engineering/mbom` | 已在产品工程域暴露。 |
-| 标准工序 | `/engineering/standard-operations` | 已在产品工程域暴露。 |
-| 工艺路线 | `/engineering/routings` | 已在产品工程域暴露。 |
-| 生产版本 | `/engineering/production-versions` | 已在产品工程域暴露，是计划和 MES 引用的关键结果。 |
-| ECO/ECN | `/engineering/eco` | 已在产品工程域暴露；延迟生效切换仍是缺口。 |
+| 环节           | Business Console 路由              | 当前事实或缺口                                          |
+| -------------- | ---------------------------------- | ------------------------------------------------------- |
+| 物料与产品     | `/master-data/skus`                | 已在基础数据域暴露，用于确认 SKU、UOM、分类和生命周期。 |
+| 计量单位       | `/master-data/units`               | 已在基础数据域暴露，用于确认产品和组件的单位。          |
+| 工厂结构       | `/master-data/facilities`          | 已在基础数据域暴露，用于确认工厂、产线和工作中心。      |
+| 设备台账       | `/master-data/devices`             | 已在基础数据域暴露，用于确认设备资产。                  |
+| 工程资料工作台 | `/engineering`                     | 已有 route-ready 汇总页；顶部导航默认进入生产版本页。   |
+| 工程物料       | `/engineering/items`               | 已在产品工程域暴露。                                    |
+| 工程文档       | `/engineering/documents`           | 已在产品工程域暴露，可按物料和文档类型过滤。            |
+| EBOM           | `/engineering/ebom`                | 已在产品工程域暴露。                                    |
+| MBOM           | `/engineering/mbom`                | 已在产品工程域暴露。                                    |
+| 标准工序       | `/engineering/standard-operations` | 已在产品工程域暴露。                                    |
+| 工艺路线       | `/engineering/routings`            | 已在产品工程域暴露。                                    |
+| 生产版本       | `/engineering/production-versions` | 已在产品工程域暴露，是计划和 MES 引用的关键结果。       |
+| ECO/ECN        | `/engineering/eco`                 | 已在产品工程域暴露；延迟生效切换仍是缺口。              |
 
 ## 操作步骤
 

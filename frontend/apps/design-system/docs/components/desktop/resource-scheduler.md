@@ -165,8 +165,14 @@ const model = ref(toModel(plan)) // 含 groupDimensions 时左轴维度可切换
 
 function onDrag(p) {
   // 改时间 / 改派;接后端时改为「锁定 → 重预览」的编辑闭环
-  model.value = { ...model.value, tasks: model.value.tasks.map((t) =>
-    t.id === p.taskId ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId } : t) }
+  model.value = {
+    ...model.value,
+    tasks: model.value.tasks.map((t) =>
+      t.id === p.taskId
+        ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId }
+        : t,
+    ),
+  }
 }
 </script>
 
@@ -362,8 +368,12 @@ import { computed, ref } from 'vue'
 
 const model = ref(toModel(plan))
 const editId = ref<string | null>(null)
-const editTask = computed(() => model.value.tasks.find((t) =>
-  t.id === editId.value && t.type === 'operation' && !t.isMilestone && !t.blockKind) ?? null)
+const editTask = computed(
+  () =>
+    model.value.tasks.find(
+      (t) => t.id === editId.value && t.type === 'operation' && !t.isMilestone && !t.blockKind,
+    ) ?? null,
+)
 
 function patch(id: string, fn: (t) => typeof t) {
   model.value = { ...model.value, tasks: model.value.tasks.map((t) => (t.id === id ? fn(t) : t)) }
@@ -382,7 +392,9 @@ function setStart(iso: string) {
 // 改资源:同步 resourceId / workCenterId / dimensions.workCenter,让卡片换道
 function setResource(rid: string) {
   patch(editTask.value.id, (t) => ({
-    ...t, resourceId: rid, workCenterId: rid,
+    ...t,
+    resourceId: rid,
+    workCenterId: rid,
     dimensions: { ...t.dimensions, workCenter: { id: rid, label: rid } },
   }))
 }
@@ -398,13 +410,13 @@ function setResource(rid: string) {
 
 与 `GanttChart` 一致(差异仅在视角:排产板按资源泳道)。
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `model` | 排程数据模型(`toModel` 输出) | `ScheduleModel` | — |
-| `scale` | 时间刻度 | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
-| `readOnly` | 只读(禁用拖拽) | `boolean` | `false` |
-| `loading` | 加载态 | `boolean` | `false` |
-| `engineKind` | 渲染引擎选择 | `'auto' \| 'dhtmlx'` | `'auto'` |
+| 属性         | 说明                         | 类型                                             | 默认     |
+| ------------ | ---------------------------- | ------------------------------------------------ | -------- |
+| `model`      | 排程数据模型(`toModel` 输出) | `ScheduleModel`                                  | —        |
+| `scale`      | 时间刻度                     | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
+| `readOnly`   | 只读(禁用拖拽)               | `boolean`                                        | `false`  |
+| `loading`    | 加载态                       | `boolean`                                        | `false`  |
+| `engineKind` | 渲染引擎选择                 | `'auto' \| 'dhtmlx'`                             | `'auto'` |
 
 **Emits**:`taskSelect(taskId)`、`taskDragEnd(payload)`(`kind: 'move' \| 'reassign'`)、`conflictClick(taskId)`。
 **Expose**:`command(cmd)`。

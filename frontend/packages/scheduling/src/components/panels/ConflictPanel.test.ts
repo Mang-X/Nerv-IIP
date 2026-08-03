@@ -7,7 +7,14 @@ describe('ConflictPanel', () => {
     const wrapper = mount(ConflictPanel, {
       props: {
         conflicts: [
-          { id: 'c1', reason: 'capacity', severity: 'warning', orderId: 'WO-001', message: '产能不足', taskId: 'a2' },
+          {
+            id: 'c1',
+            reason: 'capacity',
+            severity: 'warning',
+            orderId: 'WO-001',
+            message: '产能不足',
+            taskId: 'a2',
+          },
         ],
       },
     })

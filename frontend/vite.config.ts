@@ -16,6 +16,8 @@ export default defineConfig({
       'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/openapi/**',
       'packages/api-client/src/generated/**',
+      'packages/ui/src/components/ui/**',
+      'packages/scheduling/vendor/dhtmlx/**',
     ],
   },
   plugins: [

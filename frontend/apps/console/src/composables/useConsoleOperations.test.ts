@@ -9,11 +9,7 @@ import {
   listConsoleInstancesQueryOptions,
   restartConsoleInstanceMutationOptions,
 } from '@nerv-iip/api-client'
-import {
-  useConsoleInstances,
-  useOperationTask,
-  useRestartOperation,
-} from './useConsoleOperations'
+import { useConsoleInstances, useOperationTask, useRestartOperation } from './useConsoleOperations'
 
 vi.mock('@nerv-iip/api-client', () => ({
   getConsoleInstanceDetailQueryOptions: vi.fn(() => ({

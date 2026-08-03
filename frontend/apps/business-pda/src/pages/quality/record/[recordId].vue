@@ -33,7 +33,9 @@ function openNcr(ncrId: string) {
   <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
-        <NvMobileButton variant="text" size="sm" aria-label="返回" @click="goBack">返回</NvMobileButton>
+        <NvMobileButton variant="text" size="sm" aria-label="返回" @click="goBack"
+          >返回</NvMobileButton
+        >
         <h1 class="text-lg font-semibold text-foreground">检验记录</h1>
       </div>
     </template>

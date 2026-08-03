@@ -20,10 +20,7 @@ const centerSpan = computed(() =>
 </script>
 
 <template>
-  <div
-    data-slot="page"
-    :class="cn('mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8', props.class)"
-  >
+  <div data-slot="page" :class="cn('mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8', props.class)">
     <div :class="isGrid && 'lg:grid lg:grid-cols-10 lg:gap-8'">
       <aside v-if="hasLeft" class="hidden lg:col-span-2 lg:block">
         <slot name="left" />

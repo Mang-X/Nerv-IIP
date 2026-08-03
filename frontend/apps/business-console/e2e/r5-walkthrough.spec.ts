@@ -60,7 +60,12 @@ const ROUTE: Stop[] = [
   // ── 第 7 棒 采购 ──
   { id: '07-01', chapter: '7-采购', title: '采购申请', path: '/erp/procurement/requisitions' },
   { id: '07-02', chapter: '7-采购', title: '询价 RFQ', path: '/erp/procurement/rfqs' },
-  { id: '07-03', chapter: '7-采购', title: '供应商报价', path: '/erp/procurement/supplier-quotations' },
+  {
+    id: '07-03',
+    chapter: '7-采购',
+    title: '供应商报价',
+    path: '/erp/procurement/supplier-quotations',
+  },
   { id: '07-04', chapter: '7-采购', title: '采购订单', path: '/erp/procurement/purchase-orders' },
   { id: '07-05', chapter: '7-采购', title: '采购收货', path: '/erp/procurement/receipts' },
   // ── 第 8 棒 财务 ──
@@ -76,7 +81,12 @@ const ROUTE: Stop[] = [
   { id: '09-05', chapter: '9-设备', title: '设备报警', path: '/equipment/alarms' },
   { id: '09-06', chapter: '9-设备', title: '报警规则', path: '/equipment/telemetry/alarm-rules' },
   { id: '09-07', chapter: '9-设备', title: 'OEE 与可用性', path: '/equipment/telemetry/oee' },
-  { id: '09-08', chapter: '9-设备', title: '控制通道绑定', path: '/equipment/telemetry/control-bindings' },
+  {
+    id: '09-08',
+    chapter: '9-设备',
+    title: '控制通道绑定',
+    path: '/equipment/telemetry/control-bindings',
+  },
   { id: '09-09', chapter: '9-设备', title: '保养计划', path: '/maintenance/plans' },
   { id: '09-10', chapter: '9-设备', title: '维护工单', path: '/maintenance/work-orders' },
   { id: '09-11', chapter: '9-设备', title: '点检记录', path: '/maintenance/inspections' },
@@ -142,7 +152,11 @@ test('第五轮走查取证', async ({ page }) => {
     const file = path.join(shotDir, `${stop.id}-${stop.title}.png`)
     await page.screenshot({ path: file, fullPage: false })
 
-    const bodyText = (await page.locator('body').innerText().catch(() => '')) ?? ''
+    const bodyText =
+      (await page
+        .locator('body')
+        .innerText()
+        .catch(() => '')) ?? ''
     findings.push({
       id: stop.id,
       chapter: stop.chapter,

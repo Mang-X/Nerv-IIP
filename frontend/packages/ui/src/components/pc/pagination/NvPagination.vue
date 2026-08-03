@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, ref, watch } from 'vue'
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronsLeftIcon,
-  ChevronsRightIcon,
-} from '@lucide/vue'
+import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import { NvSelect, NvSelectContent, NvSelectItem, NvSelectTrigger, NvSelectValue } from '../select'
 

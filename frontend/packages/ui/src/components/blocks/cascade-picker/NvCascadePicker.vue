@@ -2,9 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { cn } from '../../../lib/utils'
-import NvSearchSelect, {
-  type SearchSelectOption,
-} from '../../pc/combobox/NvSearchSelect.vue'
+import NvSearchSelect, { type SearchSelectOption } from '../../pc/combobox/NvSearchSelect.vue'
 
 /**
  * Blocks — 级联选择器：一行多级依赖选择（如 车间 → 产线 → 设备），每级都是
@@ -38,10 +36,7 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'update:modelValue', value: Record<string, string>): void }>()
 
 const levelOptions = computed(() =>
-  props.levels.map((level) => [
-    { value: '', label: level.allLabel ?? '全部' },
-    ...level.options,
-  ]),
+  props.levels.map((level) => [{ value: '', label: level.allLabel ?? '全部' }, ...level.options]),
 )
 
 function onPick(index: number, value: string) {
@@ -64,7 +59,7 @@ function onPick(index: number, value: string) {
       <NvSearchSelect
         :model-value="modelValue[level.key] ?? ''"
         :options="levelOptions[index]!"
-        :placeholder="level.placeholder ?? (level.allLabel ?? '全部')"
+        :placeholder="level.placeholder ?? level.allLabel ?? '全部'"
         :search-placeholder="`搜索${level.label}…`"
         :aria-label="level.label"
         :loading="level.loading"

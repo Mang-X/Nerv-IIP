@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { ConsoleIamUserResponse, ConsoleResetIamUserPasswordRequest } from '@nerv-iip/api-client'
+import type {
+  ConsoleIamUserResponse,
+  ConsoleResetIamUserPasswordRequest,
+} from '@nerv-iip/api-client'
 import {
   Button,
   Dialog,
@@ -68,9 +71,7 @@ watch(open, (isOpen) => {
     <DialogContent>
       <DialogHeader>
         <DialogTitle>重置密码</DialogTitle>
-        <DialogDescription>
-          为 {{ user?.loginName || '该用户' }} 设置新密码。
-        </DialogDescription>
+        <DialogDescription> 为 {{ user?.loginName || '该用户' }} 设置新密码。 </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
@@ -89,9 +90,7 @@ watch(open, (isOpen) => {
         </FieldGroup>
 
         <DialogFooter show-close-button>
-          <Button type="submit">
-            重置密码
-          </Button>
+          <Button type="submit"> 重置密码 </Button>
         </DialogFooter>
       </form>
     </DialogContent>

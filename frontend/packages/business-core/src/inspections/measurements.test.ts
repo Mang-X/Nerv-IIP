@@ -39,21 +39,37 @@ describe('hasMeasurementInput', () => {
 
 describe('isMeasurementRowValid', () => {
   it('requires characteristic, measured value and uom', () => {
-    expect(isMeasurementRowValid(row({ characteristicCode: 'temp', measuredValue: '65', uomCode: 'C' }))).toBe(true)
+    expect(
+      isMeasurementRowValid(row({ characteristicCode: 'temp', measuredValue: '65', uomCode: 'C' })),
+    ).toBe(true)
     expect(isMeasurementRowValid(row({ measuredValue: '65', uomCode: 'C' }))).toBe(false)
     expect(isMeasurementRowValid(row({ characteristicCode: 'temp', uomCode: 'C' }))).toBe(false)
-    expect(isMeasurementRowValid(row({ characteristicCode: 'temp', measuredValue: '65' }))).toBe(false)
+    expect(isMeasurementRowValid(row({ characteristicCode: 'temp', measuredValue: '65' }))).toBe(
+      false,
+    )
   })
 
   it('rejects lower limit greater than upper limit', () => {
     expect(
       isMeasurementRowValid(
-        row({ characteristicCode: 'temp', measuredValue: '65', uomCode: 'C', lowerSpecLimit: '70', upperSpecLimit: '10' }),
+        row({
+          characteristicCode: 'temp',
+          measuredValue: '65',
+          uomCode: 'C',
+          lowerSpecLimit: '70',
+          upperSpecLimit: '10',
+        }),
       ),
     ).toBe(false)
     expect(
       isMeasurementRowValid(
-        row({ characteristicCode: 'temp', measuredValue: '65', uomCode: 'C', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+        row({
+          characteristicCode: 'temp',
+          measuredValue: '65',
+          uomCode: 'C',
+          lowerSpecLimit: '0',
+          upperSpecLimit: '70',
+        }),
       ),
     ).toBe(true)
   })
@@ -68,15 +84,35 @@ describe('measurementRowsValid', () => {
 
 describe('measurementOutOfTolerance', () => {
   it('flags a value below lower or above upper spec limit', () => {
-    expect(measurementOutOfTolerance(row({ measuredValue: '75', lowerSpecLimit: '0', upperSpecLimit: '70' }))).toBe(true)
-    expect(measurementOutOfTolerance(row({ measuredValue: '-1', lowerSpecLimit: '0', upperSpecLimit: '70' }))).toBe(true)
+    expect(
+      measurementOutOfTolerance(
+        row({ measuredValue: '75', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      ),
+    ).toBe(true)
+    expect(
+      measurementOutOfTolerance(
+        row({ measuredValue: '-1', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      ),
+    ).toBe(true)
   })
 
   it('is false within limits, with no limits, or when the value is not yet a number', () => {
-    expect(measurementOutOfTolerance(row({ measuredValue: '65', lowerSpecLimit: '0', upperSpecLimit: '70' }))).toBe(false)
+    expect(
+      measurementOutOfTolerance(
+        row({ measuredValue: '65', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      ),
+    ).toBe(false)
     expect(measurementOutOfTolerance(row({ measuredValue: '65' }))).toBe(false)
-    expect(measurementOutOfTolerance(row({ measuredValue: '', lowerSpecLimit: '0', upperSpecLimit: '70' }))).toBe(false)
-    expect(measurementOutOfTolerance(row({ measuredValue: 'abc', lowerSpecLimit: '0', upperSpecLimit: '70' }))).toBe(false)
+    expect(
+      measurementOutOfTolerance(
+        row({ measuredValue: '', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      ),
+    ).toBe(false)
+    expect(
+      measurementOutOfTolerance(
+        row({ measuredValue: 'abc', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      ),
+    ).toBe(false)
   })
 
   it('respects a single-sided limit', () => {
@@ -88,13 +124,31 @@ describe('measurementOutOfTolerance', () => {
 describe('toMeasurementPayload', () => {
   it('drops pristine rows and normalizes numbers with null limits', () => {
     const payload = toMeasurementPayload([
-      row({ characteristicCode: 'temp', measuredValue: '65', uomCode: 'C', lowerSpecLimit: '0', upperSpecLimit: '70' }),
+      row({
+        characteristicCode: 'temp',
+        measuredValue: '65',
+        uomCode: 'C',
+        lowerSpecLimit: '0',
+        upperSpecLimit: '70',
+      }),
       row(),
       row({ characteristicCode: 'vibration', measuredValue: '2.1', uomCode: 'mm/s' }),
     ])
     expect(payload).toEqual([
-      { characteristicCode: 'temp', measuredValue: 65, uomCode: 'C', lowerSpecLimit: 0, upperSpecLimit: 70 },
-      { characteristicCode: 'vibration', measuredValue: 2.1, uomCode: 'mm/s', lowerSpecLimit: null, upperSpecLimit: null },
+      {
+        characteristicCode: 'temp',
+        measuredValue: 65,
+        uomCode: 'C',
+        lowerSpecLimit: 0,
+        upperSpecLimit: 70,
+      },
+      {
+        characteristicCode: 'vibration',
+        measuredValue: 2.1,
+        uomCode: 'mm/s',
+        lowerSpecLimit: null,
+        upperSpecLimit: null,
+      },
     ])
   })
 })

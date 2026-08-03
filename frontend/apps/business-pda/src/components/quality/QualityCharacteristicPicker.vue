@@ -36,10 +36,7 @@ function pick(c: PlanCharacteristic) {
   <NvBottomSheet :open="open" title="选择检验特性" @update:open="open = $event">
     <div class="space-y-3 pb-2">
       <NvSearchBar v-model="search" placeholder="搜索特性名 / 编码" />
-      <div
-        v-if="filtered.length === 0"
-        class="px-4 py-6 text-center text-sm text-muted-foreground"
-      >
+      <div v-if="filtered.length === 0" class="px-4 py-6 text-center text-sm text-muted-foreground">
         无匹配的检验特性
       </div>
       <div v-else class="max-h-[50vh] overflow-y-auto rounded-lg border border-border">

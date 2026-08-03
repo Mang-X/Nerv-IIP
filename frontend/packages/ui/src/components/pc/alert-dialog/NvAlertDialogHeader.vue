@@ -10,7 +10,12 @@ const props = defineProps<{
 <template>
   <div
     data-slot="nv-alert-dialog-header"
-    :class="cn('grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=nv-alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=nv-alert-dialog-media]:gap-x-4 sm:place-items-start sm:text-left sm:has-data-[slot=nv-alert-dialog-media]:grid-rows-[auto_1fr]', props.class)"
+    :class="
+      cn(
+        'grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=nv-alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=nv-alert-dialog-media]:gap-x-4 sm:place-items-start sm:text-left sm:has-data-[slot=nv-alert-dialog-media]:grid-rows-[auto_1fr]',
+        props.class,
+      )
+    "
   >
     <slot />
   </div>

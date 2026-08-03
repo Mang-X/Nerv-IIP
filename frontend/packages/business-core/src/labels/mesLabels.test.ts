@@ -96,8 +96,9 @@ describe('workOrderTitle / workOrderSubtitle', () => {
   })
 
   it('joins status with optional sku and quantity in the subtitle', () => {
-    expect(workOrderSubtitle({ status: 'Released', skuId: 'SKU-1', quantity: 10 }))
-      .toBe('已下达 · 物料 SKU-1 · 计划 10')
+    expect(workOrderSubtitle({ status: 'Released', skuId: 'SKU-1', quantity: 10 })).toBe(
+      '已下达 · 物料 SKU-1 · 计划 10',
+    )
     expect(workOrderSubtitle({ status: 'Planned' })).toBe('已计划')
     expect(workOrderSubtitle({ status: 'Released', quantity: 0 })).toBe('已下达 · 计划 0')
   })

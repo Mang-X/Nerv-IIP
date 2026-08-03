@@ -17,17 +17,20 @@ import {
 } from '@nerv-iip/ui'
 import { reactive, shallowRef, watch } from 'vue'
 
-const props = withDefaults(defineProps<{
-  pending?: boolean
-  permissions: ConsoleIamPermissionResponse[]
-}>(), {
-  pending: false,
-})
+const props = withDefaults(
+  defineProps<{
+    pending?: boolean
+    permissions: ConsoleIamPermissionResponse[]
+  }>(),
+  {
+    pending: false,
+  },
+)
 
 const open = defineModel<boolean>('open', { default: false })
 
 const emit = defineEmits<{
-  submit: [payload: { roleName: string, permissionCodes: string[] }]
+  submit: [payload: { roleName: string; permissionCodes: string[] }]
 }>()
 
 const roleName = shallowRef('')
@@ -79,9 +82,7 @@ watch(open, (isOpen) => {
     >
       <DialogHeader>
         <DialogTitle>新建角色</DialogTitle>
-        <DialogDescription>
-          创建 IAM 角色并从权限目录中分配权限。
-        </DialogDescription>
+        <DialogDescription> 创建 IAM 角色并从权限目录中分配权限。 </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
@@ -97,16 +98,11 @@ watch(open, (isOpen) => {
             <FieldError v-if="errors.roleName" :errors="[errors.roleName]" />
           </Field>
 
-          <RolePermissionEditor
-            v-model="permissionCodes"
-            :permissions="props.permissions"
-          />
+          <RolePermissionEditor v-model="permissionCodes" :permissions="props.permissions" />
         </FieldGroup>
 
         <DialogFooter show-close-button>
-          <Button type="submit" :disabled="props.pending">
-            新建角色
-          </Button>
+          <Button type="submit" :disabled="props.pending"> 新建角色 </Button>
         </DialogFooter>
       </form>
     </DialogContent>
