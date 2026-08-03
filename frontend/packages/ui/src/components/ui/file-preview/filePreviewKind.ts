@@ -16,7 +16,13 @@ import {
 } from '../../../lib/file'
 import { nervMotion } from '../../../lib/motion'
 
-export type FilePreviewKind = 'pdf' | 'image' | 'office-docx' | 'office-xlsx' | 'office-pptx' | 'unsupported'
+export type FilePreviewKind =
+  | 'pdf'
+  | 'image'
+  | 'office-docx'
+  | 'office-xlsx'
+  | 'office-pptx'
+  | 'unsupported'
 
 export interface FilePreviewKindMeta {
   label: string
@@ -84,35 +90,40 @@ export function getFilePreviewKindMeta(kind: FilePreviewKind): FilePreviewKindMe
         label: 'PDF',
         icon: FileTypeIcon,
         iconClass: 'text-red-600 dark:text-red-300',
-        iconContainerClass: 'border-red-500/25 bg-red-500/10 dark:border-red-400/25 dark:bg-red-400/10',
+        iconContainerClass:
+          'border-red-500/25 bg-red-500/10 dark:border-red-400/25 dark:bg-red-400/10',
       }
     case 'image':
       return {
         label: 'Image',
         icon: FileImageIcon,
         iconClass: 'text-violet-600 dark:text-violet-300',
-        iconContainerClass: 'border-violet-500/25 bg-violet-500/10 dark:border-violet-400/25 dark:bg-violet-400/10',
+        iconContainerClass:
+          'border-violet-500/25 bg-violet-500/10 dark:border-violet-400/25 dark:bg-violet-400/10',
       }
     case 'office-docx':
       return {
         label: 'Word',
         icon: FileTextIcon,
         iconClass: 'text-blue-600 dark:text-blue-300',
-        iconContainerClass: 'border-blue-500/25 bg-blue-500/10 dark:border-blue-400/25 dark:bg-blue-400/10',
+        iconContainerClass:
+          'border-blue-500/25 bg-blue-500/10 dark:border-blue-400/25 dark:bg-blue-400/10',
       }
     case 'office-xlsx':
       return {
         label: 'Excel',
         icon: FileSpreadsheetIcon,
         iconClass: 'text-emerald-600 dark:text-emerald-300',
-        iconContainerClass: 'border-emerald-500/25 bg-emerald-500/10 dark:border-emerald-400/25 dark:bg-emerald-400/10',
+        iconContainerClass:
+          'border-emerald-500/25 bg-emerald-500/10 dark:border-emerald-400/25 dark:bg-emerald-400/10',
       }
     case 'office-pptx':
       return {
         label: 'PowerPoint',
         icon: PresentationIcon,
         iconClass: 'text-orange-600 dark:text-orange-300',
-        iconContainerClass: 'border-orange-500/25 bg-orange-500/10 dark:border-orange-400/25 dark:bg-orange-400/10',
+        iconContainerClass:
+          'border-orange-500/25 bg-orange-500/10 dark:border-orange-400/25 dark:bg-orange-400/10',
       }
     default:
       return {

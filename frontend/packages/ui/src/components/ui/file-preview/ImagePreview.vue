@@ -46,7 +46,10 @@ function onImageError() {
 </script>
 
 <template>
-  <div data-slot="file-preview-image-view" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+  <div
+    data-slot="file-preview-image-view"
+    class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
+  >
     <div class="flex items-center gap-1 border-b border-border/70 bg-muted/35 px-2 py-1.5">
       <Button variant="ghost" size="icon-sm" :aria-label="`Zoom out ${fileName}`" @click="zoomOut">
         <ZoomOutIcon aria-hidden="true" />
@@ -61,10 +64,20 @@ function onImageError() {
         <ZoomInIcon aria-hidden="true" />
       </Button>
       <div class="ml-1 h-5 w-px bg-border" aria-hidden="true" />
-      <Button variant="ghost" size="icon-sm" :aria-label="`Rotate left ${fileName}`" @click="rotateLeft">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        :aria-label="`Rotate left ${fileName}`"
+        @click="rotateLeft"
+      >
         <RotateCcwIcon aria-hidden="true" />
       </Button>
-      <Button variant="ghost" size="icon-sm" :aria-label="`Rotate right ${fileName}`" @click="rotateRight">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        :aria-label="`Rotate right ${fileName}`"
+        @click="rotateRight"
+      >
         <RotateCwIcon aria-hidden="true" />
       </Button>
     </div>

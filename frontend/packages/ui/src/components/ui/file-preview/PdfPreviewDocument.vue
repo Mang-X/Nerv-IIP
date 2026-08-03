@@ -36,11 +36,17 @@ watch(
 </script>
 
 <template>
-  <DocumentContent :document-id="documentId" v-slot="{ isLoading, isError, isLoaded, documentState: slotState }">
+  <DocumentContent
+    :document-id="documentId"
+    v-slot="{ isLoading, isError, isLoaded, documentState: slotState }"
+  >
     <div v-if="isLoaded" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
       <PdfPreviewToolbar :document-id="documentId" />
       <div class="min-h-0 overflow-hidden bg-slate-100 text-slate-950 [color-scheme:light]">
-        <Viewport :document-id="documentId" class="h-full min-h-0 w-full overflow-hidden bg-slate-100">
+        <Viewport
+          :document-id="documentId"
+          class="h-full min-h-0 w-full overflow-hidden bg-slate-100"
+        >
           <Scroller :document-id="documentId">
             <template #default="{ page }">
               <div
