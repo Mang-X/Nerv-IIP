@@ -14,12 +14,13 @@ public static partial class TestDiagnostic
 
         if (sensitiveValues is not null)
         {
-            foreach (var sensitiveValue in sensitiveValues)
+            foreach (var sensitiveValue in sensitiveValues
+                         .OfType<string>()
+                         .Where(static value => value.Length > 0)
+                         .Distinct(StringComparer.Ordinal)
+                         .OrderByDescending(static value => value.Length))
             {
-                if (!string.IsNullOrEmpty(sensitiveValue))
-                {
-                    sanitized = sanitized.Replace(sensitiveValue, Redacted, StringComparison.Ordinal);
-                }
+                sanitized = sanitized.Replace(sensitiveValue, Redacted, StringComparison.Ordinal);
             }
         }
 
@@ -41,7 +42,7 @@ public static partial class TestDiagnostic
     private static partial Regex ConnectionStringRegex();
 
     [GeneratedRegex(
-        @"(?<key>headers?|requestbody|body)(?<separator>\s*:\s*)(?<value>[^;\r\n]+)",
+        @"(?<key>headers?|requestbody|body)(?<separator>\s*:\s*)(?<value>[^\r\n]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RequestMaterialRegex();
 

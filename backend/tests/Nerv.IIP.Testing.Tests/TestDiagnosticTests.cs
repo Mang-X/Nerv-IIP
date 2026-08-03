@@ -14,6 +14,26 @@ public sealed class TestDiagnosticTests
         Assert.Equal("request failed for [REDACTED]", diagnostic);
     }
 
+    [Fact]
+    public void Sanitize_RedactsOverlappingExplicitValuesLongestFirst()
+    {
+        var diagnostic = TestDiagnostic.Sanitize(
+            "short=abc long=abcdef",
+            ["abc", "abcdef"]);
+
+        Assert.Equal("short=[REDACTED] long=[REDACTED]", diagnostic);
+    }
+
+    [Fact]
+    public void Sanitize_HandlesDuplicateExplicitValuesWithoutLeaking()
+    {
+        var diagnostic = TestDiagnostic.Sanitize(
+            "first=abcdef second=abcdef",
+            ["abcdef", "abcdef"]);
+
+        Assert.Equal("first=[REDACTED] second=[REDACTED]", diagnostic);
+    }
+
     [Theory]
     [InlineData("password=hunter2", "password=[REDACTED]")]
     [InlineData("SECRET: open-sesame", "SECRET: [REDACTED]")]
@@ -36,5 +56,19 @@ public sealed class TestDiagnosticTests
         Assert.DoesNotContain("raw-body", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain("Host=db", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain("pwd", diagnostic, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        "headers: Accept=x; Cookie=session-secret\nnext=visible",
+        "headers: [REDACTED]\nnext=visible")]
+    [InlineData(
+        "body: safe=x; raw-secret\nnext=visible",
+        "body: [REDACTED]\nnext=visible")]
+    public void Sanitize_RedactsAllLabeledRequestMaterialThroughTheLineBoundary(
+        string input,
+        string expected)
+    {
+        Assert.Equal(expected, TestDiagnostic.Sanitize(input));
     }
 }

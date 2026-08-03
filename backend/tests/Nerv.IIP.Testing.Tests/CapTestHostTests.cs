@@ -58,7 +58,10 @@ public sealed class CapTestHostTests
         const string credential = "credential-secret";
         var timeProvider = new FakeTimeProvider();
         await using var bootstrapper = new FakeBootstrapper(
-            cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+            cancellationToken => Task.Delay(
+                Timeout.InfiniteTimeSpan,
+                timeProvider,
+                cancellationToken));
         await bootstrapper.StartAsync(CancellationToken.None);
         var services = new StubServiceProvider(bootstrapper, credential);
         var wait = CapTestHost.WaitForCapBootstrapAsync(
@@ -74,6 +77,28 @@ public sealed class CapTestHostTests
         Assert.DoesNotContain(credential, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(nameof(StubServiceProvider), exception.Message, StringComparison.Ordinal);
         await bootstrapper.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task WaitForCapBootstrapAsync_UsesOneFakeClockForBootstrapAndDeadline()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var bootstrapper = new FakeBootstrapper(
+            cancellationToken => Task.Delay(
+                TimeSpan.FromSeconds(20),
+                timeProvider,
+                cancellationToken));
+        await bootstrapper.StartAsync(CancellationToken.None);
+        var wait = CapTestHost.WaitForCapBootstrapAsync(
+            new StubServiceProvider(bootstrapper),
+            timeProvider: timeProvider).AsTask();
+
+        await Task.Yield();
+        timeProvider.Advance(TimeSpan.FromSeconds(20));
+        await Task.Yield();
+
+        Assert.True(wait.IsCompletedSuccessfully);
+        await wait;
     }
 
     private sealed class FakeBootstrapper(Func<CancellationToken, Task> bootstrap) :
