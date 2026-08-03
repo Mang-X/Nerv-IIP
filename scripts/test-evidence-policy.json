@@ -440,7 +440,7 @@
       "id": "acceptance-runtime-maintenance",
       "sourceId": "acceptance-runtime-maintenance",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.RuntimeHoursMaintenancePostgresAcceptanceTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.(?:RuntimeHoursMaintenancePostgresAcceptanceTests|WmsInventoryRpcIdempotencyAcceptanceTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL runtime-hours to Maintenance acceptance test\\.$",
       "allowedLanes": [
         "backend"
@@ -560,7 +560,7 @@
       "id": "inventory-postgres-profile",
       "sourceId": "inventory-postgres-profile",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.InventoryPostgresProfileTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.(?:InventoryPostgresProfileTests|WorldHistoryInventorySeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Inventory PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -650,7 +650,7 @@
       "id": "scheduling-postgres",
       "sourceId": "scheduling-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.RecordSchedulePlanInvalidationsPostgresProfileTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -680,7 +680,7 @@
       "id": "industrialtelemetry-postgres",
       "sourceId": "industrialtelemetry-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.IndustrialTelemetryIdempotentConcurrencyTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.(?:IndustrialTelemetryDeviceControlReadFaceTests|IndustrialTelemetryHistorianTests|IndustrialTelemetryIdempotentConcurrencyTests|IndustrialTelemetryOeePostgresQueryTests|WorldHistoryDeviceSeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions\\.$",
       "allowedLanes": [
         "backend"
@@ -725,7 +725,7 @@
       "id": "quality-postgres",
       "sourceId": "quality-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.QualityCapaRedrivePostgresProfileTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -740,7 +740,7 @@
       "id": "masterdata-postgres",
       "sourceId": "masterdata-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.MasterDataPostgresProfileTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.(?:MasterDataPostgresProfileTests|MasterDataWorldBibleSeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -770,7 +770,7 @@
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.TelemetryProductionReportCandidatePostgresTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:LeaderDemoScaleSeedPostgresTests|MesSchedulePlanProvenancePostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
       "allowedLanes": [
         "backend"

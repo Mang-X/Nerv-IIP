@@ -172,6 +172,7 @@ function Read-NervTrxResults {
     }
     $outcomeMap = @{ Passed = 'passed'; Failed = 'failed'; NotExecuted = 'skipped' }
     $records = [Collections.Generic.List[object]]::new()
+    $trxElapsedMilliseconds = 0.0
     foreach ($trxPath in @($Path | Sort-Object)) {
         try {
             $document = [Xml.XmlDocument]::new()
@@ -181,6 +182,19 @@ function Read-NervTrxResults {
         catch {
             $safePath = [IO.Path]::GetFullPath($trxPath)
             throw [IO.InvalidDataException]::new("Failed to parse TRX '$safePath'.")
+        }
+
+        $times = $document.SelectSingleNode("//*[local-name()='Times']")
+        if ($null -ne $times -and
+            -not [string]::IsNullOrWhiteSpace([string]$times.start) -and
+            -not [string]::IsNullOrWhiteSpace([string]$times.finish)) {
+            $start = [DateTimeOffset]::MinValue
+            $finish = [DateTimeOffset]::MinValue
+            if ([DateTimeOffset]::TryParse([string]$times.start, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$start) -and
+                [DateTimeOffset]::TryParse([string]$times.finish, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$finish) -and
+                $finish -ge $start) {
+                $trxElapsedMilliseconds += ($finish - $start).TotalMilliseconds
+            }
         }
 
         $definitions = @{}
@@ -226,6 +240,7 @@ function Read-NervTrxResults {
             })
         }
     }
+    $RunMetadata.trxElapsedMilliseconds = [double]$trxElapsedMilliseconds
     @($records)
 }
 
@@ -279,6 +294,10 @@ function Get-NervTestEvidenceViolations {
         })
         if ($matches.Count -ne 1) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$record.testName) "Runtime skip matched $($matches.Count) applicable rules."))
+        }
+        else {
+            $record | Add-Member -NotePropertyName skipClassification -NotePropertyValue ([string]$matches[0].classification) -Force
+            $record | Add-Member -NotePropertyName skipPolicyId -NotePropertyValue ([string]$matches[0].id) -Force
         }
     }
 
@@ -372,6 +391,10 @@ function New-NervTestEvidenceSummary {
         slowestAssemblies = @($assemblies | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'assembly'; Descending = $false } | Select-Object -First $TopCount)
         slowestTests = @($safeRecords | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'testName'; Descending = $false } | Select-Object -First $TopCount | ForEach-Object { [pscustomobject]@{ testName = $_.testName; assembly = $_.assembly; durationMilliseconds = $_.durationMilliseconds } })
         skipReasons = @($safeRecords | Where-Object outcome -eq 'skipped' | Group-Object skipReason | Sort-Object Name | ForEach-Object { [pscustomobject]@{ reason = Protect-NervTestEvidenceText $_.Name; count = $_.Count } })
+        skipClassifications = @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and $_.PSObject.Properties.Name -contains 'skipClassification' } | Group-Object skipClassification | Sort-Object Name | ForEach-Object { [pscustomobject]@{ classification = $_.Name; count = $_.Count } })
+        skipPolicies = @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and $_.PSObject.Properties.Name -contains 'skipPolicyId' } | Group-Object skipPolicyId | Sort-Object Name | ForEach-Object {
+            [pscustomobject]@{ policyId = $_.Name; classification = [string]$_.Group[0].skipClassification; count = $_.Count }
+        })
         violations = $safeViolations
         baseline = [pscustomobject][ordered]@{ enforcement = 'report-only'; assemblies = $deltas }
         priorAttemptStatus = $priorStatus
@@ -412,6 +435,8 @@ function Write-NervTestEvidenceArtifacts {
                 durationMilliseconds = [double]$record.durationMilliseconds
                 outcome = [string]$record.outcome
                 skipReason = Protect-NervTestEvidenceText ([string]$record.skipReason)
+                skipClassification = if ($record.PSObject.Properties.Name -contains 'skipClassification') { [string]$record.skipClassification } else { $null }
+                skipPolicyId = if ($record.PSObject.Properties.Name -contains 'skipPolicyId') { [string]$record.skipPolicyId } else { $null }
             }
             $safeRecord | ConvertTo-Json -Compress -Depth 20
         }
@@ -423,8 +448,36 @@ function Write-NervTestEvidenceArtifacts {
             '',
             "- Run: $($Summary.workflowRunId), attempt $($Summary.runAttempt), commit $($Summary.commitSha)",
             "- Counts: passed=$($Summary.passed), failed=$($Summary.failed), skipped=$($Summary.skipped), executed=$($Summary.executed), total=$($Summary.total)",
+            "- Duration: summed tests=$($Summary.testDurationMilliseconds)ms, TRX elapsed=$($Summary.trxElapsedMilliseconds)ms",
             "- Attempt: $($Summary.attemptClassification) (prior: $($Summary.priorAttemptStatus))",
             '- Timing and baseline deltas: report-only',
+            '- Retained artifact: tests.jsonl, summary.json, summary.md, diagnostics.log, and normalized trx/',
+            '',
+            '## Skip policy matches',
+            ''
+        )
+        if (@($Summary.skipPolicies).Count -eq 0) {
+            $markdown += '- No registered runtime skips.'
+        }
+        foreach ($policyMatch in @($Summary.skipPolicies)) {
+            $markdown += "- $($policyMatch.classification) / $($policyMatch.policyId): $($policyMatch.count)"
+        }
+        $markdown += @(
+            '',
+            '## Evidence policy gates',
+            ''
+        )
+        if (@($Summary.violations).Count -eq 0) {
+            $markdown += '- unregistered-skip: pass'
+            $markdown += '- illegal-quarantine: pass'
+            $markdown += '- zero-execution: pass'
+        }
+        else {
+            foreach ($gateName in @('unregistered-skip', 'illegal-quarantine', 'zero-execution')) {
+                $markdown += "- $gateName`: $(@($Summary.violations | Where-Object code -eq $gateName).Count) violation(s)"
+            }
+        }
+        $markdown += @(
             '',
             '## Assembly baseline deltas',
             ''
