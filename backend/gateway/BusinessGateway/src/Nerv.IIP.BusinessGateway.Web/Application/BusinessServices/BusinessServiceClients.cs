@@ -37,6 +37,11 @@ public interface IBusinessMasterDataClient
         BusinessConsoleMasterDataResourceRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessMasterDataResolveReferencesResponse> ResolveReferencesAsync(
+        string internalBearerToken,
+        BusinessMasterDataResolveReferencesRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
         BusinessConsoleUpdateMasterDataResourceRequest request,
@@ -1997,6 +2002,24 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         return string.Join('&', pairs);
     }
 
+    protected static string RepeatedQuery(string name, IEnumerable<string>? values)
+    {
+        if (values is null)
+        {
+            return string.Empty;
+        }
+
+        var encodedName = Uri.EscapeDataString(name);
+        return string.Join(
+            '&',
+            values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => $"{encodedName}={Uri.EscapeDataString(value.Trim())}"));
+    }
+
+    protected static string JoinQuery(params string[] parts) =>
+        string.Join('&', parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+
     protected static bool? TrueFlag(bool value) => value ? true : null;
 
     private static string FormatValue(object value) => value switch
@@ -2305,6 +2328,18 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("effectiveFrom", request.EffectiveFrom)),
             null,
             cancellationToken);
+
+    public Task<BusinessMasterDataResolveReferencesResponse> ResolveReferencesAsync(
+        string internalBearerToken,
+        BusinessMasterDataResolveReferencesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessMasterDataResolveReferencesResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/references/resolve",
+            request,
+            cancellationToken,
+            failClosedOnFailureEnvelope: true);
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
@@ -6338,10 +6373,31 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
-        var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
-            internalBearerToken,
-            HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + Query(
+        DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem> workOrders;
+        if (request.DeviceAssetReferences is { Length: > 0 })
+        {
+            workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
+                internalBearerToken,
+                HttpMethod.Post,
+                "/api/business/internal/v1/maintenance/work-orders/query",
+                new DownstreamListMaintenanceWorkOrdersRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.Skip,
+                    request.Take,
+                    request.DeviceAssetIds,
+                    request.Status,
+                    request.DeviceAssetId,
+                    request.Keyword,
+                    request.AssignedTechnicianUserIds,
+                    request.AssignedTeamIds,
+                    request.WorkOrderId,
+                    request.DeviceAssetReferences),
+                cancellationToken);
+        }
+        else
+        {
+            var scalarQuery = Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skip", request.Skip),
@@ -6352,9 +6408,14 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 ("keyword", request.Keyword),
                 ("assignedTechnicianUserIds", request.AssignedTechnicianUserIds),
                 ("assignedTeamIds", request.AssignedTeamIds),
-                ("workOrderId", request.WorkOrderId)),
-            null,
-            cancellationToken);
+                ("workOrderId", request.WorkOrderId));
+            workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
+                internalBearerToken,
+                HttpMethod.Get,
+                "/api/business/v1/maintenance/work-orders?" + scalarQuery,
+                null,
+                cancellationToken);
+        }
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
             new BusinessConsoleMaintenanceWorkOrderItem(
                 FormatMaintenanceWorkOrderId(workOrder.WorkOrderId),
@@ -6973,6 +7034,20 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             : FormatJsonScalar(value.Value);
 
     private sealed record DownstreamMaintenancePagedResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
+
+    private sealed record DownstreamListMaintenanceWorkOrdersRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        int Skip,
+        int Take,
+        string? DeviceAssetIds,
+        string? Status,
+        string? DeviceAssetId,
+        string? Keyword,
+        string? AssignedTechnicianUserIds,
+        string? AssignedTeamIds,
+        string? WorkOrderId,
+        string[] DeviceAssetReferences);
 
     private sealed record DownstreamDowntimeReasonDirectoryItem(
         JsonElement DowntimeReasonId,

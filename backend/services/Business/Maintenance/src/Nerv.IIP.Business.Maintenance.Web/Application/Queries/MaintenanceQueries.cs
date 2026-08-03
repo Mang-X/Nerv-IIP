@@ -27,7 +27,8 @@ public sealed record ListMaintenanceWorkOrdersQuery(
     string? Keyword = null,
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
-    string? WorkOrderId = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
 
 public sealed record MaintenanceWorkOrderListItem(
     MaintenanceWorkOrderId WorkOrderId,
@@ -55,6 +56,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
         var skip = NormalizeSkip(request.Skip);
         var take = NormalizeTake(request.Take);
         var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
+        var deviceAssetReferences = NormalizeExactReferences(request.DeviceAssetReferences);
         var assignedTechnicianUserIds = SplitCsv(request.AssignedTechnicianUserIds);
         var assignedTeamIds = SplitCsv(request.AssignedTeamIds);
         MaintenanceWorkOrderStatus? status = null;
@@ -75,6 +77,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => deviceAssetReferences.Count == 0 || deviceAssetReferences.Contains(x.DeviceAssetId))
             .Where(x => status == null || x.Status == status)
             .Where(x => assignedTechnicianUserIds.Count == 0 || (x.AssignedTechnicianUserId != null && assignedTechnicianUserIds.Contains(x.AssignedTechnicianUserId)))
             .Where(x => assignedTeamIds.Count == 0 || (x.AssignedTeamId != null && assignedTeamIds.Contains(x.AssignedTeamId)))
@@ -125,6 +128,15 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
     }
+
+    private static IReadOnlyCollection<string> NormalizeExactReferences(IEnumerable<string>? values)
+    {
+        return values?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray() ?? [];
+    }
 }
 
 public sealed record GetMaintenanceWorkOrderQuery(
@@ -154,44 +166,82 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
 {
     public async Task<MaintenanceWorkOrderDetail> Handle(GetMaintenanceWorkOrderQuery request, CancellationToken cancellationToken)
     {
-        var listed = await new ListMaintenanceWorkOrdersQueryHandler(dbContext).Handle(
-            new ListMaintenanceWorkOrdersQuery(
-                request.OrganizationId,
-                request.EnvironmentId,
-                Take: 1,
-                WorkOrderId: request.WorkOrderId.ToString()),
-            cancellationToken);
-        var workOrder = listed.Items.SingleOrDefault()
+        var snapshot = await SnapshotQuery(dbContext, request)
+            .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
-        var lifecycle = await dbContext.MaintenanceWorkOrderLifecycleEvents
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
-            .OrderBy(x => x.OccurredAtUtc)
-            .Select(x => new MaintenanceWorkOrderLifecycleEventItem(
-                x.Action.ToString(),
-                x.FromStatus.ToString(),
-                x.ToStatus.ToString(),
-                x.ActorPrincipalId,
-                x.TechnicianUserId,
-                x.TeamId,
-                x.Reason,
-                x.ResultingVersion,
-                x.OccurredAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var completionDataComplete = await dbContext.MaintenanceWorkOrders
+        var lifecycle = snapshot.Lifecycle
+            .OrderBy(item => item.Item.ResultingVersion)
+            .ThenBy(item => item.Item.OccurredAtUtc)
+            .ThenBy(item => item.EventId.ToString(), StringComparer.Ordinal)
+            .Select(item => item.Item)
+            .ToArray();
+        var eligibility = MaintenanceWorkOrderEligibility.Evaluate(
+            snapshot.WorkOrder.Status,
+            snapshot.CompletionDataComplete);
+        return new MaintenanceWorkOrderDetail(
+            snapshot.WorkOrder,
+            lifecycle,
+            eligibility.AllowedActions,
+            eligibility.BlockReasons);
+    }
+
+    private static IQueryable<MaintenanceWorkOrderDetailSnapshot> SnapshotQuery(
+        ApplicationDbContext dbContext,
+        GetMaintenanceWorkOrderQuery request) =>
+        dbContext.MaintenanceWorkOrders
+            .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.Id == request.WorkOrderId)
-            .Select(x => x.CompletionResult != null
-                && x.DowntimeReasonCode != null
-                && x.DowntimeMinutes != null
-                && x.DowntimeMinutes > 0
-                && x.CompletedAtUtc != null)
-            .SingleAsync(cancellationToken);
-        var eligibility = MaintenanceWorkOrderEligibility.Evaluate(workOrder.Status, completionDataComplete);
-        return new MaintenanceWorkOrderDetail(workOrder, lifecycle, eligibility.AllowedActions, eligibility.BlockReasons);
-    }
+            .Select(x => new MaintenanceWorkOrderDetailSnapshot(
+                new MaintenanceWorkOrderListItem(
+                    x.Id,
+                    x.DeviceAssetId,
+                    x.Priority,
+                    x.Status.ToString(),
+                    x.SourceAlarmId,
+                    x.OpenedAtUtc,
+                    x.AssignedTechnicianUserId,
+                    x.ActualTechnicianUserId,
+                    x.EstimatedLaborMinutes,
+                    x.ActualLaborMinutes,
+                    x.SparePartCostAmount,
+                    x.ExternalServiceCostAmount,
+                    x.CostCurrencyCode,
+                    x.SourceReferenceId,
+                    x.AssignedTeamId,
+                    x.Version),
+                x.CompletionResult != null
+                    && x.DowntimeReasonCode != null
+                    && x.DowntimeMinutes != null
+                    && x.DowntimeMinutes > 0
+                    && x.CompletedAtUtc != null,
+                dbContext.MaintenanceWorkOrderLifecycleEvents
+                    .Where(lifecycle => lifecycle.OrganizationId == request.OrganizationId
+                        && lifecycle.EnvironmentId == request.EnvironmentId
+                        && lifecycle.WorkOrderId == x.Id)
+                    .Select(lifecycle => new MaintenanceWorkOrderLifecycleSnapshot(
+                        lifecycle.Id,
+                        new MaintenanceWorkOrderLifecycleEventItem(
+                            lifecycle.Action.ToString(),
+                            lifecycle.FromStatus.ToString(),
+                            lifecycle.ToStatus.ToString(),
+                            lifecycle.ActorPrincipalId,
+                            lifecycle.TechnicianUserId,
+                            lifecycle.TeamId,
+                            lifecycle.Reason,
+                            lifecycle.ResultingVersion,
+                            lifecycle.OccurredAtUtc)))
+                    .ToArray()));
+
+    private sealed record MaintenanceWorkOrderDetailSnapshot(
+        MaintenanceWorkOrderListItem WorkOrder,
+        bool CompletionDataComplete,
+        IReadOnlyCollection<MaintenanceWorkOrderLifecycleSnapshot> Lifecycle);
+
+    private sealed record MaintenanceWorkOrderLifecycleSnapshot(
+        MaintenanceWorkOrderLifecycleEventId EventId,
+        MaintenanceWorkOrderLifecycleEventItem Item);
 }
 
 public sealed record ProbeMaintenanceWorkOrderAssignmentReplayQuery(

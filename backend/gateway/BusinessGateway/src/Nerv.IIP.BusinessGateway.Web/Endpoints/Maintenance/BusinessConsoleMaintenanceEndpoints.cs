@@ -4,6 +4,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 using System.Net;
 using System.Text.Json;
@@ -25,6 +26,8 @@ public abstract class AuthorizedBusinessMaintenanceProxyEndpoint<TRequest, TResp
 public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceWorkOrderRequest, BusinessConsoleCreateMaintenanceWorkOrderResponse>(
         auth,
@@ -38,16 +41,109 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
 
     protected override string? ResourceId(BusinessConsoleCreateMaintenanceWorkOrderRequest request) => request.DeviceAssetId;
 
-    protected override Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> ForwardAsync(
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        return maintenance.CreateWorkOrderAsync(
+        var sourceAlarmId = NormalizeSourceAlarmId(request.SourceAlarmId);
+        if (!string.IsNullOrEmpty(sourceAlarmId))
+        {
+            var alarms = await industrialTelemetry.ListAlarmsAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleTelemetryAlarmListRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    DeviceAssetId: null,
+                    Status: null,
+                    Skip: 0,
+                    Take: 2,
+                    AlarmEventId: sourceAlarmId),
+                cancellationToken);
+            var alarm = alarms.Items is { Count: 1 } && alarms.Total == 1
+                ? alarms.Items.Single()
+                : null;
+            if (alarm is null ||
+                !string.Equals(alarm.AlarmEventId, sourceAlarmId, StringComparison.Ordinal) ||
+                !string.Equals(alarm.OrganizationId, request.OrganizationId, StringComparison.Ordinal) ||
+                !string.Equals(alarm.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "source-alarm-unavailable");
+            }
+
+            var requestedDeviceId = await ResolveDeviceAggregateIdAsync(
+                request.DeviceAssetId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken);
+            var alarmDeviceId = await ResolveDeviceAggregateIdAsync(
+                alarm.DeviceAssetId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken);
+            if (!string.Equals(requestedDeviceId, alarmDeviceId, StringComparison.Ordinal))
+            {
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.Conflict,
+                    "source-alarm-device-mismatch");
+            }
+        }
+
+        return await maintenance.CreateWorkOrderAsync(
             tokenProvider.BearerToken,
-            request with { OpenedBy = actorRef },
+            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
             cancellationToken);
+    }
+
+    private async Task<string> ResolveDeviceAggregateIdAsync(
+        string deviceReference,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(deviceReference))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "device-reference-unavailable");
+        }
+        var normalizedReference = deviceReference.Trim();
+        var detail = await masterData.GetResourceDetailAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleMasterDataResourceRequest(
+                organizationId,
+                environmentId,
+                "device-asset",
+                normalizedReference),
+            cancellationToken);
+        var aggregateId = NormalizeGuid(detail.DeviceAssetId);
+        var referenceMatches = string.Equals(detail.Code, normalizedReference, StringComparison.Ordinal) ||
+            string.Equals(aggregateId, NormalizeGuid(normalizedReference), StringComparison.Ordinal);
+        if (!string.Equals(detail.ResourceType, "device-asset", StringComparison.Ordinal) ||
+            !string.Equals(detail.OrganizationId, organizationId, StringComparison.Ordinal) ||
+            !string.Equals(detail.EnvironmentId, environmentId, StringComparison.Ordinal) ||
+            !referenceMatches ||
+            aggregateId is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "device-reference-unavailable");
+        }
+        return aggregateId;
+    }
+
+    private static string? NormalizeGuid(string? value) =>
+        Guid.TryParseExact(value?.Trim(), "D", out var parsed) && parsed != Guid.Empty
+            ? parsed.ToString("D")
+            : null;
+
+    private static string? NormalizeSourceAlarmId(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? trimmed : NormalizeGuid(trimmed) ?? trimmed;
     }
 }
 
@@ -106,13 +202,12 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        BusinessConsoleMaintenanceWorkOrderListRequest scopedRequest;
+        BusinessConsoleMaintenanceWorkOrderListRequest workScopedRequest;
+        AuthorizationDataScope? deviceDataScope;
         if (string.IsNullOrWhiteSpace(request.ScopeKind) && string.IsNullOrWhiteSpace(request.ScopeId))
         {
-            scopedRequest = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
-                request,
-                AuthorizationResult?.DataScope,
-                cancellationToken);
+            workScopedRequest = request;
+            deviceDataScope = AuthorizationResult?.DataScope;
         }
         else
         {
@@ -126,9 +221,23 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
             {
                 return new BusinessConsoleMaintenanceWorkOrderListResponse([], request.Skip, request.Take, 0);
             }
-            scopedRequest = projection.Request;
+            workScopedRequest = projection.Request;
+            deviceDataScope = null;
         }
-        var response = await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+
+        var deviceProjection = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
+            workScopedRequest,
+            deviceDataScope,
+            cancellationToken);
+        if (deviceProjection.DenyAll)
+        {
+            return new BusinessConsoleMaintenanceWorkOrderListResponse([], request.Skip, request.Take, 0);
+        }
+
+        var response = await maintenance.ListWorkOrdersAsync(
+            tokenProvider.BearerToken,
+            deviceProjection.Request,
+            cancellationToken);
         var items = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
             response.Items,
             masterData,
@@ -173,19 +282,24 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var workOrderId = Route<string>("workOrderId")!;
-        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
-            workScopeResolver,
-            maintenance,
-            tokenProvider.BearerToken,
+        var scope = await workScopeResolver.ResolveAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
             BusinessGatewayPermissions.MaintenanceWorkOrdersRead,
             request.ScopeKind,
             request.ScopeId,
+            cancellationToken);
+        await MaintenanceWorkScopeAccess.EnsureWorkOrderAccessAsync(
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            scope,
             workOrderId,
             cancellationToken);
         var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, workOrderId, request, cancellationToken);
+        MaintenanceWorkScopeAccess.EnsureCurrentAssignment(scope, workOrder);
         var manageBlockReason = await GetManageBlockReasonAsync(request, bearerToken, workOrderId, cancellationToken);
         if (manageBlockReason is not null)
         {
@@ -461,6 +575,26 @@ internal static class MaintenanceWorkScopeAccess
         }
 
         return workOrder;
+    }
+
+    public static void EnsureCurrentAssignment(
+        PrincipalWorkScopeSelection scope,
+        BusinessConsoleMaintenanceWorkOrderItem workOrder)
+    {
+        if (scope.Kind == "organization")
+        {
+            return;
+        }
+
+        if ((scope.Kind == "self"
+                && string.Equals(workOrder.AssignedTechnicianUserId, scope.Id, StringComparison.Ordinal))
+            || (scope.Kind == "team"
+                && string.Equals(workOrder.AssignedTeamId, scope.Id, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        throw Forbidden();
     }
 
     public static async Task EnsureAssignmentTargetsAsync(
@@ -1218,12 +1352,36 @@ public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Va
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
         RuleFor(x => x.Status).MaximumLength(40);
-        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetId)
+            .Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("deviceAssetId cannot be blank")
+            .MaximumLength(150)
+            .When(x => x.DeviceAssetId is not null);
+        RuleFor(x => x.DeviceAssetIds)
+            .Must(HasValidLegacyDeviceReferences)
+            .When(x => x.DeviceAssetIds is not null)
+            .WithMessage("deviceAssetIds must contain between 1 and 200 non-empty references of at most 150 characters");
+        RuleFor(x => x.DeviceAssetReferences)
+            .Must(values => values is null || values.Length is > 0 and <= 200)
+            .WithMessage("deviceAssetReferences must contain between 1 and 200 values");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("deviceAssetReferences cannot contain blank values")
+            .MaximumLength(150);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.ScopeKind).MaximumLength(40);
         RuleFor(x => x.ScopeId).MaximumLength(150);
         RuleFor(x => x).Must(x => string.IsNullOrWhiteSpace(x.ScopeKind) == string.IsNullOrWhiteSpace(x.ScopeId))
             .WithMessage("scopeKind and scopeId must be supplied together");
+    }
+
+    private static bool HasValidLegacyDeviceReferences(string? value)
+    {
+        var references = value?.Split(
+            ',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        return references.Length is > 0 and <= 200
+            && references.All(reference => reference.Length <= 150);
     }
 }
 
@@ -1235,7 +1393,7 @@ public sealed class BusinessConsoleCreateMaintenanceWorkOrderRequestValidator : 
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Priority).NotEmpty().MaximumLength(40);
-        RuleFor(x => x.SourceAlarmId).MaximumLength(100);
+        RuleFor(x => x.SourceAlarmId).NotEmpty().MaximumLength(100).When(x => x.SourceAlarmId is not null);
         RuleFor(x => x.OpenedBy).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(200);

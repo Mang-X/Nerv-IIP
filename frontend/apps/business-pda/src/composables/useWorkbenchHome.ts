@@ -12,6 +12,7 @@ import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
+import { MAINTENANCE_READ_MODEL_PERMISSIONS } from '@/permissions/maintenanceReadModelAccess'
 import {
   useListFreshness,
   useListResponseState,
@@ -29,12 +30,14 @@ import {
 /** 首页各板块的权限门槛（与 BusinessGateway 各 facade 实际要求一致）。 */
 export const HOME_PERMISSIONS = {
   mesOperations: 'business.mes.operations.read',
-  workerProfile: 'business.masterdata.resources.read',
+  workerProfile: MAINTENANCE_READ_MODEL_PERMISSIONS.masterDataResources,
   wmsReceipts: 'business.wms.receipts.read',
   wmsShipments: 'business.wms.shipments.read',
   wmsCounts: 'business.wms.counts.read',
   quality: 'business.quality.inspection-records.read',
   alarms: 'business.iiot.alarms.read',
+  maintenanceWorkOrders: MAINTENANCE_READ_MODEL_PERMISSIONS.workOrders,
+  masterDataResources: MAINTENANCE_READ_MODEL_PERMISSIONS.masterDataResources,
 } as const
 
 const HOME_TAKE = 100
@@ -85,6 +88,7 @@ export function usePdaIdentity() {
     organizationId,
     environmentId,
     hasScope,
+    permissionCodes,
     can,
     worker,
     displayName: computed(() => worker.value?.displayName || loginName.value),

@@ -16,6 +16,7 @@ import {
   completePendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 import {
   useListFreshness,
   useListResponseState,
@@ -23,11 +24,12 @@ import {
 } from '@/composables/useListFreshness'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'
+import { normalizeMaintenanceDeviceReference } from './maintenancePublicIds'
 import { useTaskListPagination } from './useTaskListPagination'
 
 const WORK_ORDER_PAGE_SIZE = 20
 const AUXILIARY_LIST_TAKE = 100
-
 export interface MaintenanceListFilters {
   status?: string
   keyword?: string
@@ -89,6 +91,10 @@ export function useBusinessMaintenance() {
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const loginName = computed(() => auth.principal?.loginName ?? '')
+  const permissionCodes = computed(() => new Set(auth.principal?.permissionCodes ?? []))
+  const canReadWorkOrderDetail = computed(() =>
+    canAccessMaintenanceWorkOrderReadModel(permissionCodes.value),
+  )
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
   const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
 
@@ -223,18 +229,30 @@ export function useBusinessMaintenance() {
     )
     const body = {
       ...input,
+      deviceAssetId: normalizeMaintenanceDeviceReference(input.deviceAssetId),
       idempotencyKey,
       organizationId: organizationId.value,
       environmentId: environmentId.value,
       openedBy: loginName.value,
     } satisfies CreateMaintenanceWorkOrderRequest
-    return completePendingBusinessIntent(scope, async () =>
-      confirmBusinessConsoleOperation(await createMutation.mutateAsync({ body }), {
+    return completePendingBusinessIntent(scope, async () => {
+      const response = await createMutation.mutateAsync({ body })
+      const workOrderId = confirmedMaintenanceCreateWorkOrderId(response)
+      const receipt = response.data!.operationReceipt!
+      const normalizedResponse = {
+        ...response,
+        data: {
+          ...response.data!,
+          workOrderId,
+          operationReceipt: { ...receipt, resourceId: workOrderId },
+        },
+      }
+      return confirmBusinessConsoleOperation(normalizedResponse, {
         expectedOperationType: 'maintenance.work-order.create',
         expectedIdempotencyKey: idempotencyKey,
-        expectedResourceIdSelector: (envelope) => envelope.data?.workOrderId,
-      }),
-    )
+        expectedResourceIdSelector: () => workOrderId,
+      })
+    })
   }
 
   async function recordInspection(input: RecordInspectionInput) {
@@ -263,6 +281,7 @@ export function useBusinessMaintenance() {
     organizationId,
     environmentId,
     scopeReady,
+    canReadWorkOrderDetail,
     workOrders: workOrderPager.items,
     workOrdersTotal: workOrderPager.total,
     workOrdersLoaded: workOrderPager.loaded,

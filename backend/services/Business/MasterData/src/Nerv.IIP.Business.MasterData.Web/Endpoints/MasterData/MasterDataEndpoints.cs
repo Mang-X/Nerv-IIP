@@ -1718,6 +1718,24 @@ public sealed class ResolveMasterDataReferencesEndpoint(ISender sender)
     }
 }
 
+public sealed class ResolveMasterDataReferencesQueryValidator : Validator<ResolveMasterDataReferencesQuery>
+{
+    public ResolveMasterDataReferencesQueryValidator()
+    {
+        RuleFor(request => request.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(request => request.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(request => request.References)
+            .Must(references => references is { Count: >= 1 and <= 200 })
+            .WithMessage("references must contain between 1 and 200 values");
+        RuleForEach(request => request.References).ChildRules(reference =>
+        {
+            reference.RuleFor(item => item.ResourceType).NotEmpty().MaximumLength(100);
+            reference.RuleFor(item => item.Code).NotEmpty().MaximumLength(150);
+            reference.RuleFor(item => item.CodeSet).MaximumLength(100);
+        });
+    }
+}
+
 public sealed class ValidateMasterDataReferencesEndpoint(ISender sender)
     : MasterDataEndpoint<ValidateMasterDataReferencesQuery, ResponseData<ValidateMasterDataReferencesResponse>>
 {

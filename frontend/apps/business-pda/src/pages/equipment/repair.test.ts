@@ -5,8 +5,8 @@ import { computed, reactive, ref } from 'vue'
 import { NvScanBar } from '@nerv-iip/ui-mobile'
 
 // ---- vue-router mock（默认无 query；个别用例覆写 useRoute）---------------------
-const push = vi.fn()
-const route = { query: {} as Record<string, string> }
+const push = vi.fn(() => Promise.resolve())
+const route = reactive({ query: {} as Record<string, string> })
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   useRoute: () => route,
@@ -15,6 +15,13 @@ vi.mock('vue-router', () => ({
 // ---- useBusinessMaintenance mock ----------------------------------------------
 const createWorkOrder = vi.fn(async (_input: Record<string, unknown>) => ({}))
 const createPending = ref(false)
+const canReadWorkOrderDetail = ref(true)
+const confirmedCreatedWorkOrder = ref<Record<string, unknown>>()
+const createdDetailHasSuccessfulResponse = ref(false)
+const createdDetailPending = ref(false)
+const createdDetailHasFailedResponse = ref(false)
+const createdDeviceHasFailedResponse = ref(false)
+const refreshCreatedWorkOrder = vi.fn(async () => {})
 const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '11111111-1111-1111-1111-111111111111',
@@ -26,7 +33,7 @@ const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '22222222-2222-2222-2222-222222222222',
     deviceAssetId: 'DEV-2002',
-    priority: 'low',
+    priority: 'planned',
     status: 'completed',
     openedAtUtc: '2026-06-09T10:30:00Z',
   },
@@ -64,6 +71,18 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     workOrderFilters: reactive({ skip: 0, take: 20, status: undefined, keyword: undefined }),
     createWorkOrder,
     createPending,
+    canReadWorkOrderDetail,
+  }),
+}))
+
+vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+  useMaintenanceSelfWorkOrderDetail: () => ({
+    authoritativeWorkOrder: confirmedCreatedWorkOrder,
+    authoritativeHasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+    authoritativePending: createdDetailPending,
+    authoritativeHasFailedResponse: createdDetailHasFailedResponse,
+    deviceHasFailedResponse: createdDeviceHasFailedResponse,
+    refresh: refreshCreatedWorkOrder,
   }),
 }))
 
@@ -77,6 +96,26 @@ vi.mock('@/components/equipment/DeviceAssetPicker.vue', () => ({
 }))
 
 import RepairPage from './repair.vue'
+
+const createdWorkOrderId = '33333333-3333-3333-3333-333333333333'
+
+function confirmedCreateResponse(resourceId = createdWorkOrderId) {
+  return {
+    success: true,
+    data: {
+      workOrderId: createdWorkOrderId,
+      operationReceipt: {
+        operationType: 'maintenance.work-order.create',
+        resourceType: 'maintenance-work-order',
+        resourceId,
+        outcome: 'confirmed',
+        stateConfirmed: true,
+        accepted: false,
+        idempotencyKey: 'page-composable-confirmed',
+      },
+    },
+  }
+}
 
 async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | '中' | '低') {
   await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
@@ -92,10 +131,17 @@ async function selectPriority(wrapper: ReturnType<typeof mount>, label: '高' | 
 beforeEach(() => {
   push.mockClear()
   createWorkOrder.mockClear()
-  createWorkOrder.mockResolvedValue({})
+  createWorkOrder.mockResolvedValue(confirmedCreateResponse())
   refreshWorkOrders.mockClear()
   route.query = {}
   createPending.value = false
+  canReadWorkOrderDetail.value = true
+  confirmedCreatedWorkOrder.value = undefined
+  createdDetailHasSuccessfulResponse.value = false
+  createdDetailPending.value = false
+  createdDetailHasFailedResponse.value = false
+  createdDeviceHasFailedResponse.value = false
+  refreshCreatedWorkOrder.mockReset()
   workOrdersError.value = null
   workOrdersPending.value = false
   workOrdersRefreshing.value = false
@@ -143,6 +189,22 @@ describe('PDA equipment repair page', () => {
     })
   })
 
+  it('keeps create choices limited to the three writable priorities', async () => {
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    await wrapper.get('[data-testid="priority-trigger"]').trigger('click')
+    await flushPromises()
+
+    const labels = [
+      ...document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="mobile-sheet-content"] button',
+      ),
+    ]
+      .map((button) => button.textContent?.trim())
+      .filter((label): label is string => Boolean(label))
+    expect(labels).toEqual(['高', '中', '低', '取消'])
+  })
+
   it('keeps the selected priority when the ActionSheet is cancelled', async () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
@@ -186,8 +248,31 @@ describe('PDA equipment repair page', () => {
     })
   })
 
-  it('lets scan replace the selected device without clearing priority or reason', async () => {
-    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+  it('reactively replaces the route device and alarm as one pair on the same page instance', async () => {
+    route.query = { deviceAssetId: 'DEV-A', sourceAlarmId: 'ALM-A' }
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    route.query = { deviceAssetId: 'DEV-B', sourceAlarmId: 'ALM-B' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-B')
+    expect(wrapper.text()).toContain('报警上下文 · ALM-B')
+
+    route.query = { deviceAssetId: 'DEV-A', sourceAlarmId: 'ALM-A' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-A')
+    expect(wrapper.text()).toContain('报警上下文 · ALM-A')
+
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).toMatchObject({
+      deviceAssetId: 'DEV-A',
+      sourceAlarmId: 'ALM-A',
+    })
+  })
+
+  it('lets scan replace the selected device and clears stale alarm provenance', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1', sourceAlarmId: 'ALM-9' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
     await selectPriority(wrapper, '低')
     await wrapper.get('[data-testid="reason-input"]').setValue('液压压力异常')
@@ -198,6 +283,7 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-SCAN-9')
     expect(wrapper.get('[data-testid="priority-trigger"]').text()).toContain('低')
+    expect(wrapper.text()).not.toContain('报警上下文')
     expect((wrapper.get('[data-testid="reason-input"]').element as HTMLTextAreaElement).value).toBe(
       '液压压力异常',
     )
@@ -208,6 +294,7 @@ describe('PDA equipment repair page', () => {
       priority: 'low',
       assetUnavailableReason: '液压压力异常',
     })
+    expect(createWorkOrder.mock.calls.at(-1)?.[0]).not.toHaveProperty('sourceAlarmId')
   })
 
   it('pauses ScanBar focus reclaim while the reason textarea is focused', async () => {
@@ -243,6 +330,7 @@ describe('PDA equipment repair page', () => {
     expect(text).toContain('高') // priority high
     expect(text).toContain('待处理') // status open
     expect(text).toContain('DEV-2002')
+    expect(text).toContain('计划保养') // priority planned
     expect(text).toContain('已完成') // status completed
   })
 
@@ -321,6 +409,114 @@ describe('PDA equipment repair page', () => {
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('报修已提交')
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '尚未确认工单指派给当前账号',
+    )
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="recheck-created-work-order-assignment"]').text()).toContain(
+      '重新核验指派状态',
+    )
+  })
+
+  it('fails closed when payload and receipt repeat the same non-GUID identifier', async () => {
+    createWorkOrder.mockResolvedValueOnce({
+      success: true,
+      data: {
+        workOrderId: 'WO-INVALID',
+        operationReceipt: { resourceId: 'WO-INVALID' },
+      },
+    })
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('keeps confirmed assignment visible when device enrichment fails', async () => {
+    route.query = { deviceAssetId: 'DEV-ROUTE-1' }
+    confirmedCreatedWorkOrder.value = {
+      workOrderId: '33333333-3333-3333-3333-333333333333',
+    }
+    createdDetailHasSuccessfulResponse.value = true
+    createdDeviceHasFailedResponse.value = true
+    const wrapper = mount(RepairPage, { attachTo: document.body })
+
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '已确认工单指派给当前维修人员',
+    )
+    expect(wrapper.get('[data-testid="created-work-order-device-state"]').text()).toContain(
+      '设备资料暂不可用',
+    )
+  })
+
+  it('rechecks authoritative assignment before opening alarm-sourced repair detail', async () => {
+    route.query = { deviceAssetId: 'DEV-9', sourceAlarmId: 'ALM-9' }
+    refreshCreatedWorkOrder.mockImplementationOnce(async () => {
+      confirmedCreatedWorkOrder.value = {
+        workOrderId: '33333333-3333-3333-3333-333333333333',
+        assignedTechnicianUserId: 'principal-1',
+        sourceAlarmId: 'ALM-9',
+      }
+      createdDetailHasSuccessfulResponse.value = true
+    })
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="recheck-created-work-order-assignment"]').trigger('click')
+    await flushPromises()
+
+    expect(refreshCreatedWorkOrder).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="created-work-order-assignment-state"]').text()).toContain(
+      '已确认工单指派给当前维修人员',
+    )
+    await wrapper.get('[data-testid="view-created-work-order"]').trigger('click')
+
+    expect(push).toHaveBeenCalledWith({
+      path: '/equipment/work-orders/33333333-3333-3333-3333-333333333333',
+      query: { sourceAlarmId: 'ALM-9' },
+    })
+  })
+
+  it('does not offer a detail link until the self detail is authoritatively confirmed', async () => {
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it('does not offer detail navigation without both maintenance and device location reads', async () => {
+    canReadWorkOrderDetail.value = false
+    route.query = { deviceAssetId: 'DEV-9' }
+    const wrapper = mount(RepairPage)
+    await selectPriority(wrapper, '高')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="view-created-work-order"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recheck-created-work-order-assignment"]').exists()).toBe(
+      false,
+    )
+    canReadWorkOrderDetail.value = true
   })
 
   it('shows an error Result with retry when submit fails', async () => {
@@ -350,6 +546,8 @@ describe('PDA equipment repair page', () => {
     const firstPayload = createWorkOrder.mock.calls[0][0]
 
     await wrapper.get('[data-testid="retry"]').trigger('click')
+    route.query = { deviceAssetId: 'DEV-ROUTE-CHANGED', sourceAlarmId: 'ALM-CHANGED' }
+    await wrapper.vm.$nextTick()
     const scanInput = wrapper.find('input[placeholder*="扫描"]')
     await scanInput.setValue('DEV-CHANGED')
     await scanInput.trigger('keydown.enter')

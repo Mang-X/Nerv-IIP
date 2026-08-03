@@ -5029,6 +5029,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     jobTitle?: string | null;
     employmentStatus?: string | null;
     phone?: string | null;
+    deviceAssetId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent = {
@@ -17499,6 +17500,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
         assignedTechnicianUserIds?: string | null;
         assignedTeamIds?: string | null;
         workOrderId?: string | null;
+        deviceAssetReferences?: Array<string> | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders';
 };

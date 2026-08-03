@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { ClipboardCheck, Factory, PackageOpen } from '@lucide/vue'
+import { ClipboardCheck, Factory, PackageOpen, Wrench } from '@lucide/vue'
 import { NvAppShellMobile, NvCellGroup, NvNavBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
 import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/useWorkbenchHome'
+import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 
 definePage({ meta: { requiresAuth: true, title: '任务' } })
 
 const identity = usePdaIdentity()
 const canSeeMesOperations = computed(() => identity.can(HOME_PERMISSIONS.mesOperations))
 const canSeeQualitySelfTasks = computed(() => identity.can(HOME_PERMISSIONS.quality))
+const canSeeMaintenanceSelfQueue = computed(() =>
+  canAccessMaintenanceWorkOrderReadModel(identity.permissionCodes.value),
+)
 const warehouseEntrances = computed(() => {
   const entries: Array<{ title: string; note: string; route: string }> = []
   if (identity.can(HOME_PERMISSIONS.wmsReceipts)) {
@@ -37,8 +41,8 @@ const warehouseEntrances = computed(() => {
           <PdaNavigationCell
             to="/mes/operation"
             title="生产作业"
-            note="服务端按当前主体与授权作业范围过滤"
-            accessible-name="生产作业，服务端按当前主体与授权作业范围过滤"
+            note="查看当前账号可执行的生产作业"
+            accessible-name="生产作业，查看当前账号可执行的生产作业"
           >
             <template #icon><Factory /></template>
           </PdaNavigationCell>
@@ -52,9 +56,23 @@ const warehouseEntrances = computed(() => {
             data-testid="quality-self-tasks"
             to="/quality/tasks"
             title="我的质检任务"
-            note="服务端按当前主体 Self 范围返回"
+            note="查看分派给当前账号的质检任务"
           >
             <template #icon><ClipboardCheck /></template>
+          </PdaNavigationCell>
+        </NvCellGroup>
+      </section>
+
+      <section v-if="canSeeMaintenanceSelfQueue">
+        <h2 class="mb-2 text-sm font-semibold text-foreground">维修任务</h2>
+        <NvCellGroup class="overflow-hidden rounded-xl border border-border">
+          <PdaNavigationCell
+            data-testid="maintenance-self-work-orders"
+            to="/equipment/work-orders"
+            title="维修工单"
+            note="查看分派给当前维修人员的工单与设备位置"
+          >
+            <template #icon><Wrench /></template>
           </PdaNavigationCell>
         </NvCellGroup>
       </section>

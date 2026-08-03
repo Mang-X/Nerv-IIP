@@ -789,6 +789,32 @@ public sealed record BusinessConsoleMasterDataResourceRequest(
     string? CodeSet = null,
     DateOnly? EffectiveFrom = null);
 
+public sealed record BusinessMasterDataReferenceRequest(
+    string ResourceType,
+    string Code,
+    string? CodeSet = null);
+
+public sealed record BusinessMasterDataResolveReferencesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<BusinessMasterDataReferenceRequest> References);
+
+public sealed record BusinessMasterDataReferenceResponse(
+    string ResourceType,
+    string Code,
+    bool Exists,
+    bool Active,
+    string DisplayName,
+    string SnapshotVersion,
+    string DisabledReason,
+    string? DeviceAssetId = null,
+    string? CanonicalCode = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed record BusinessMasterDataResolveReferencesResponse(
+    IReadOnlyCollection<BusinessMasterDataReferenceResponse> References);
+
 public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -955,7 +981,8 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? DeviceAssetId = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,

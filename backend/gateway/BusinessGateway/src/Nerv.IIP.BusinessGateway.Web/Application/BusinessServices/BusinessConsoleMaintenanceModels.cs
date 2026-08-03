@@ -32,7 +32,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderListRequest(
     string? ScopeId = null,
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null);
 
 public enum BusinessConsoleMaintenanceWorkOrderAction
 {

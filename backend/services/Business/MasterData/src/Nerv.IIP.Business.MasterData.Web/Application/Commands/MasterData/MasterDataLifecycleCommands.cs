@@ -767,7 +767,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             Criticality: x.Criticality,
             Maintainable: x.Maintainable,
             TelemetryEnabled: x.TelemetryEnabled,
-            Status: x.Disabled ? "disabled" : "active");
+            Status: x.Disabled ? "disabled" : "active",
+            DeviceAssetId: x.Id.ToString());
 
     internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
         new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");

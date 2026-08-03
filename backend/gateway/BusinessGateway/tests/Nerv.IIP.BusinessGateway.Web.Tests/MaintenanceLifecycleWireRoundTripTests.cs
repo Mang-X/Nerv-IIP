@@ -76,6 +76,69 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
         Assert.Equal(workOrderId, handler.AssignmentRequest.GetProperty("workOrderId").GetProperty("id").GetString());
     }
 
+    [Fact]
+    public async Task Gateway_client_forwards_exact_device_references_in_internal_post_body()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetReferences: ["DEV,A", "DEV-B"]),
+            CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("/api/business/internal/v1/maintenance/work-orders/query", handler.Path);
+        Assert.Equal(["DEV,A", "DEV-B"], handler.Body.GetProperty("deviceAssetReferences").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal("test-internal-token", handler.AuthorizationParameter);
+    }
+
+    [Fact]
+    public async Task Gateway_client_forwards_200_canonical_devices_as_400_wire_safe_aliases()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+        var deviceIds = Enumerable.Range(0, 200).Select(_ => Guid.CreateVersion7().ToString()).ToArray();
+        var aliases = deviceIds.SelectMany((id, index) => new[] { id, $"DEVICE-{index:000}" }).ToArray();
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetReferences: aliases),
+            CancellationToken.None);
+
+        var values = handler.Body.GetProperty("deviceAssetReferences")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .ToArray();
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.Equal("/api/business/internal/v1/maintenance/work-orders/query", handler.Path);
+        Assert.Equal(400, values.Length);
+        Assert.Equal(aliases, values);
+    }
+
+    [Fact]
+    public async Task Gateway_client_keeps_small_scalar_filter_on_public_get_contract()
+    {
+        var handler = new RecordingListWireHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.ListWorkOrdersAsync(
+            "test-internal-token",
+            new BusinessConsoleMaintenanceWorkOrderListRequest(
+                "org-001", "env-dev", DeviceAssetId: "DEVICE-001"),
+            CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Get, handler.Method);
+        Assert.Equal("/api/business/v1/maintenance/work-orders", handler.Path);
+        Assert.Contains("deviceAssetId=DEVICE-001", handler.Query, StringComparison.Ordinal);
+    }
+
     private sealed class RecordingWireHandler(string workOrderId) : HttpMessageHandler
     {
         public List<JsonElement> Requests { get; } = [];
@@ -163,6 +226,45 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                         status = "Open",
                         changedAtUtc = DateTimeOffset.Parse("2026-08-01T00:01:00Z"),
                         version = 1,
+                    },
+                }),
+            };
+        }
+    }
+
+    private sealed class RecordingListWireHandler : HttpMessageHandler
+    {
+        public HttpMethod? Method { get; private set; }
+        public string Path { get; private set; } = string.Empty;
+        public string Query { get; private set; } = string.Empty;
+        public JsonElement Body { get; private set; }
+        public string? AuthorizationScheme { get; private set; }
+        public string? AuthorizationParameter { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Method = request.Method;
+            Path = request.RequestUri!.AbsolutePath;
+            Query = request.RequestUri!.Query;
+            AuthorizationScheme = request.Headers.Authorization?.Scheme;
+            AuthorizationParameter = request.Headers.Authorization?.Parameter;
+            if (request.Content is not null)
+            {
+                Body = JsonSerializer.Deserialize<JsonElement>(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        items = Array.Empty<object>(),
+                        skip = 0,
+                        take = 100,
+                        total = 0,
                     },
                 }),
             };

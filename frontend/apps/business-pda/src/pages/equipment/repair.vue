@@ -3,12 +3,14 @@ import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { confirmedMaintenanceCreateWorkOrderId } from '@/composables/maintenanceCreateReceipt'
+import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
   maintenancePriorityLabel,
-  maintenancePriorityLabels,
   maintenanceWorkOrderStatusLabel,
+  maintenanceWorkOrderStatusOptions,
   repairOrderFlow,
   type RepairCtx,
 } from '@nerv-iip/business-core'
@@ -22,9 +24,8 @@ import {
   NvMobileResult,
   NvScanBar,
   NvSearchBar,
-  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -50,6 +51,7 @@ const {
   refreshWorkOrders,
   createWorkOrder,
   createPending,
+  canReadWorkOrderDetail,
   organizationId,
   environmentId,
   scopeReady,
@@ -83,12 +85,9 @@ const workOrderStatusModel = computed<string | number>({
     workOrderFilters.status = String(value) || undefined
   },
 })
-const workOrderStatusOptions: DropdownOption[] = [
+const workOrderStatusOptions = [
   { label: '全部状态', value: '' },
-  { label: '待处理', value: 'open' },
-  { label: '处理中', value: 'inProgress' },
-  { label: '已完成', value: 'completed' },
-  { label: '已取消', value: 'cancelled' },
+  ...maintenanceWorkOrderStatusOptions,
 ]
 
 function restoreWorkOrderState(state: { filters: Record<string, unknown> }) {
@@ -120,16 +119,39 @@ const operationKey = ref('')
 const operationFingerprint = ref('')
 const submittedIntent = ref<RepairIntent | null>(null)
 const intentLocked = ref(false)
+const createdWorkOrderId = ref('')
+const {
+  authoritativeWorkOrder: confirmedCreatedWorkOrder,
+  authoritativeHasSuccessfulResponse: createdDetailHasSuccessfulResponse,
+  authoritativePending: createdDetailPending,
+  authoritativeHasFailedResponse: createdDetailHasFailedResponse,
+  deviceHasFailedResponse: createdDeviceHasFailedResponse,
+  refresh: refreshCreatedWorkOrder,
+} = useMaintenanceSelfWorkOrderDetail(createdWorkOrderId)
+const canViewCreatedWorkOrder = computed(
+  () =>
+    canReadWorkOrderDetail.value &&
+    Boolean(createdWorkOrderId.value) &&
+    createdDetailHasSuccessfulResponse.value &&
+    confirmedCreatedWorkOrder.value?.workOrderId === createdWorkOrderId.value,
+)
+const createdAssignmentState = computed(() => {
+  if (createdDetailPending.value) return '正在核验工单指派状态…'
+  if (canViewCreatedWorkOrder.value) return '已确认工单指派给当前维修人员，可查看详情。'
+  if (createdDetailHasFailedResponse.value) return '工单指派状态暂不可核实，请稍后重试。'
+  return '尚未确认工单指派给当前账号，当前暂不可查看详情。'
+})
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 目录选择 -----------------------
 const queryDeviceAssetId = computed(() => {
   const v = route.query.deviceAssetId
   return typeof v === 'string' ? v.trim() : ''
 })
-const sourceAlarmId = computed(() => {
+const routeSourceAlarmId = computed(() => {
   const v = route.query.sourceAlarmId
-  return typeof v === 'string' && v.length > 0 ? v : undefined
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined
 })
+const sourceAlarmId = ref(routeSourceAlarmId.value)
 
 // 报修表单 = repairOrderFlow 的上下文（selectDevice → fillDetails → create）。
 const form = reactive<RepairCtx & { assetUnavailableReason: string }>({
@@ -163,8 +185,30 @@ const devicePickerOpen = ref(false)
 const prioritySheetOpen = ref(false)
 const reasonFocused = ref(false)
 
-// 优先级选项仅使用 business-core 的三项稳定值，ActionSheet 负责移动选择。
-const priorityOptions = Object.keys(maintenancePriorityLabels).map((value) => ({
+function applyRouteRepairPair(deviceAssetId: string, alarmId: string | undefined) {
+  form.deviceAssetId = deviceAssetId
+  sourceAlarmId.value = alarmId
+  selectedDevice.value = deviceAssetId
+    ? {
+        deviceAssetId,
+        displayName: deviceAssetId,
+        source: 'route',
+      }
+    : null
+}
+
+watch(
+  [queryDeviceAssetId, routeSourceAlarmId],
+  ([deviceAssetId, alarmId]) => {
+    if (phase.value !== 'form' || intentLocked.value) return
+    applyRouteRepairPair(deviceAssetId, alarmId)
+  },
+  { flush: 'sync' },
+)
+
+// 建单契约只开放高/中/低三档；完整生产词表还包含自动开单读面值，不能反向扩张写入选项。
+const maintenanceCreatePriorityValues = ['high', 'medium', 'low'] as const
+const priorityOptions = maintenanceCreatePriorityValues.map((value) => ({
   value,
   label: maintenancePriorityLabel(value),
 }))
@@ -187,6 +231,7 @@ function onScan(value: string) {
   const deviceAssetId = value.trim()
   if (!deviceAssetId) return
   form.deviceAssetId = deviceAssetId
+  sourceAlarmId.value = undefined
   selectedDevice.value = {
     deviceAssetId,
     displayName: deviceAssetId,
@@ -196,13 +241,16 @@ function onScan(value: string) {
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   if (intentLocked.value) return
-  form.deviceAssetId = device.deviceAssetId
+  const deviceCode = device.code?.trim()
+  if (!deviceCode) return
+  form.deviceAssetId = deviceCode
+  sourceAlarmId.value = undefined
   selectedDevice.value = { ...device, source: 'directory' }
 }
 
 function onPrioritySelected(priority: string) {
   if (intentLocked.value) return
-  if (priority in maintenancePriorityLabels) {
+  if (maintenanceCreatePriorityValues.some((value) => value === priority)) {
     form.priority = priority
   }
 }
@@ -254,12 +302,14 @@ async function submit() {
   }
   operationFingerprint.value = fingerprint
   submittedIntent.value = intent
-  await run(() =>
-    createWorkOrder({
+  await run(async () => {
+    const response = await createWorkOrder({
       ...intent,
       idempotencyKey: operationKey.value,
-    }),
-  )
+    })
+    createdWorkOrderId.value = confirmedMaintenanceCreateWorkOrderId(response)
+    return response
+  })
 }
 
 function retrySubmission() {
@@ -273,21 +323,32 @@ function resetForm() {
   operationFingerprint.value = ''
   submittedIntent.value = null
   intentLocked.value = false
-  form.deviceAssetId = queryDeviceAssetId.value
+  createdWorkOrderId.value = ''
+  applyRouteRepairPair(queryDeviceAssetId.value, routeSourceAlarmId.value)
   form.priority = ''
   form.assetUnavailableReason = ''
-  selectedDevice.value = queryDeviceAssetId.value
-    ? {
-        deviceAssetId: queryDeviceAssetId.value,
-        displayName: queryDeviceAssetId.value,
-        source: 'route',
-      }
-    : null
   reset()
 }
 
 function goBack() {
   router.push('/').catch(() => {})
+}
+
+function viewCreatedWorkOrder() {
+  if (!canViewCreatedWorkOrder.value) return
+  const confirmedAlarmId = submittedIntent.value?.sourceAlarmId
+  router
+    .push({
+      path: `/equipment/work-orders/${encodeURIComponent(createdWorkOrderId.value)}`,
+      ...(confirmedAlarmId ? { query: { sourceAlarmId: confirmedAlarmId } } : {}),
+    })
+    .catch(() => {})
+}
+
+async function recheckCreatedWorkOrderAssignment() {
+  if (!createdWorkOrderId.value || !canReadWorkOrderDetail.value || createdDetailPending.value)
+    return
+  await refreshCreatedWorkOrder()
 }
 
 function workOrderSubtitle(item: { priority?: string; status?: string; openedAtUtc?: string }) {
@@ -315,9 +376,43 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       v-if="phase === 'success'"
       status="success"
       title="报修已提交"
-      description="维修工单已创建，等待处理。"
+      description="维修工单已创建，正在等待派工。"
     >
       <template #actions>
+        <p
+          data-testid="created-work-order-assignment-state"
+          class="text-sm leading-6 text-muted-foreground"
+        >
+          {{ createdAssignmentState }}
+        </p>
+        <p
+          v-if="createdDeviceHasFailedResponse"
+          data-testid="created-work-order-device-state"
+          class="text-sm leading-6 text-muted-foreground"
+        >
+          设备资料暂不可用，不影响已确认的工单指派结果。
+        </p>
+        <NvMobileButton
+          v-if="!canViewCreatedWorkOrder && canReadWorkOrderDetail && createdWorkOrderId"
+          data-testid="recheck-created-work-order-assignment"
+          variant="outline"
+          size="lg"
+          block
+          :disabled="createdDetailPending"
+          @click="recheckCreatedWorkOrderAssignment"
+        >
+          {{ createdDetailPending ? '正在核验指派状态…' : '重新核验指派状态' }}
+        </NvMobileButton>
+        <NvMobileButton
+          v-if="canViewCreatedWorkOrder"
+          data-testid="view-created-work-order"
+          variant="primary"
+          size="lg"
+          block
+          @click="viewCreatedWorkOrder"
+        >
+          查看工单详情
+        </NvMobileButton>
         <NvMobileButton variant="primary" size="lg" block @click="resetForm">
           继续报修
         </NvMobileButton>

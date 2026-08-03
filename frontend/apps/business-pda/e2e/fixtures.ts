@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test'
 
 export const STORAGE_KEY = 'nerv-iip.business-pda.auth'
+export const CREATED_MAINTENANCE_WORK_ORDER_ID = '33333333-3333-3333-3333-333333333333'
 
 export const principal = {
   principalId: 'principal-1',
@@ -39,14 +40,15 @@ export const workerProfile = {
   jobTitle: '操作工',
   employmentStatus: 'active',
   active: true,
+  snapshotVersion: 'worker-v1',
   teams: [{ teamCode: 'TEAM-WB-AS-A', teamName: '装配车间早班组' }],
   skills: [],
 }
 
 const deviceAssets = [
   {
-    deviceAssetId: 'device-asset-cnc-01',
-    code: 'CNC-01',
+    deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+    code: 'DEV-CNC-01',
     displayName: '一号数控机床',
     active: true,
     workshopCode: 'WS-1',
@@ -54,12 +56,21 @@ const deviceAssets = [
     stationCode: 'ST-9',
   },
   {
-    deviceAssetId: 'device-asset-lathe-02',
-    code: 'LATHE-02',
+    deviceAssetId: '019f0000-0000-7000-8000-000000000002',
+    code: 'DEV-LATHE-02',
     displayName: '二号车床',
     active: true,
     workshopCode: 'WS-2',
     lineCode: 'LINE-B',
+  },
+  {
+    deviceAssetId: '019f0000-0000-7000-8000-000000000003',
+    code: 'DEV-A',
+    displayName: '装配线冲压机',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-1',
   },
 ]
 
@@ -670,6 +681,7 @@ export async function routeBusinessConsoleApi(route: Route) {
     const matched = keyword
       ? deviceAssets.filter(
           (item) =>
+            item.deviceAssetId.toLowerCase().includes(keyword) ||
             item.displayName.toLowerCase().includes(keyword) ||
             item.code.toLowerCase().includes(keyword),
         )
@@ -685,6 +697,77 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  const deviceDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
+  )
+  if (deviceDetailMatch) {
+    const requestedCode = decodeURIComponent(deviceDetailMatch[1])
+    const device = deviceAssets.find(
+      (item) => item.code === requestedCode || item.deviceAssetId === requestedCode,
+    )
+    return fulfillJson(
+      route,
+      envelope(
+        device
+          ? {
+              resourceType: 'device-asset',
+              deviceAssetId: device.deviceAssetId,
+              code: device.code,
+              displayName: device.displayName,
+              active: device.active,
+              workshopCode: device.workshopCode,
+              lineCode: device.lineCode,
+              stationCode: device.stationCode,
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      device ? 200 : 404,
+    )
+  }
+
+  const teamDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/team\/([^/]+)$/,
+  )
+  if (teamDetailMatch) {
+    const requestedCode = decodeURIComponent(teamDetailMatch[1])
+    const teamName =
+      requestedCode === 'team-a'
+        ? '甲班'
+        : workerProfile.teams.find((team) => team.teamCode === requestedCode)?.teamName
+    return fulfillJson(
+      route,
+      envelope(
+        teamName
+          ? {
+              resourceType: 'team',
+              code: requestedCode,
+              displayName: teamName,
+              active: true,
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      teamName ? 200 : 404,
+    )
+  }
+
+  if (
+    method === 'GET' &&
+    pathname ===
+      `/api/business-console/v1/maintenance/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}`
+  ) {
+    return fulfillJson(
+      route,
+      { success: false, message: '新建工单尚未指派给当前维修人员', data: null },
+      403,
+    )
+  }
+
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
@@ -692,10 +775,10 @@ export async function routeBusinessConsoleApi(route: Route) {
       return fulfillJson(
         route,
         envelope({
-          workOrderId: 'WO-M-new',
+          workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
           operationReceipt: confirmedOperation(
             'maintenance.work-order.create',
-            'WO-M-new',
+            CREATED_MAINTENANCE_WORK_ORDER_ID,
             body.idempotencyKey,
             'open',
           ),
@@ -713,9 +796,12 @@ export async function routeBusinessConsoleApi(route: Route) {
             status: 'open',
             openedBy: principal.loginName,
             openedAtUtc: '2026-06-10T01:00:00.000Z',
+            assignedTechnicianUserId: principal.principalId,
           },
         ],
         total: 1,
+        skip: Number(requestUrl.searchParams.get('skip') ?? 0),
+        take: Number(requestUrl.searchParams.get('take') ?? 20),
       }),
     )
   }

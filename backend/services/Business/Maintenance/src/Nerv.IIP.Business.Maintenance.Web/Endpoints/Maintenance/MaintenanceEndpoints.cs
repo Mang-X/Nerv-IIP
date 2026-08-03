@@ -183,7 +183,121 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? Keyword = null,
     string? AssignedTechnicianUserIds = null,
     string? AssignedTeamIds = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences);
+}
+
+public sealed class ListMaintenanceWorkOrdersRequestValidator : Validator<ListMaintenanceWorkOrdersRequest>
+{
+    internal const int MaxDeviceAssetReferences = 400;
+
+    public ListMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.DeviceAssetReferences)
+            .Must(references => references is null || references.Length is > 0 and <= MaxDeviceAssetReferences)
+            .WithMessage($"Device asset references must contain between 1 and {MaxDeviceAssetReferences} values when provided.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+}
+
+public sealed record QueryInternalMaintenanceWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null,
+    string[] DeviceAssetReferences = null!)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new ListMaintenanceWorkOrdersRequest(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences).ToQuery();
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
+    : Validator<QueryInternalMaintenanceWorkOrdersRequest>
+{
+    private const int MaxCsvTokens = 200;
+    private const int MaxCsvTokenLength = 150;
+    private const int MaxCsvLength = MaxCsvTokens * MaxCsvTokenLength + MaxCsvTokens - 1;
+
+    public QueryInternalMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.Status).MaximumLength(40);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.WorkOrderId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetIds)
+            .Null()
+            .WithMessage("DeviceAssetIds is not supported by the internal work-order query; use DeviceAssetReferences.");
+        RuleFor(x => x.AssignedTechnicianUserIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned technician user IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
+        RuleFor(x => x.AssignedTeamIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned team IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
+        RuleFor(x => x.DeviceAssetReferences)
+            .NotNull()
+            .Must(references => references is { Length: > 0 and <= ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences })
+            .WithMessage($"Device asset references must contain between 1 and {ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences} values.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+
+    private static bool BeBoundedCsv(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+        if (value.Length > MaxCsvLength)
+        {
+            return false;
+        }
+
+        // Keep the query handler's legacy behavior: empty separators inside an otherwise
+        // valid CSV are ignored. A provided value must still contain at least one token.
+        var tokens = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tokens.Length is > 0 and <= MaxCsvTokens
+            && tokens.All(token => token.Length is > 0 and <= MaxCsvTokenLength);
+    }
+}
 
 public sealed record GetMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -428,18 +542,19 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.Skip,
-            req.Take,
-            req.DeviceAssetIds,
-            req.Status,
-            req.DeviceAssetId,
-            req.Keyword,
-            req.AssignedTechnicianUserIds,
-            req.AssignedTeamIds,
-            req.WorkOrderId), ct);
+        var result = await sender.Send(req.ToQuery(), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryInternalMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryInternalMaintenanceWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(QueryInternalMaintenanceWorkOrdersRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(req.ToQuery(), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -765,6 +880,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
+        new(typeof(QueryInternalMaintenanceWorkOrdersEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/query", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryInternalMaintenanceWorkOrders"),
         new(typeof(GetMaintenanceWorkOrderEndpoint), "GET", "/api/business/v1/maintenance/work-orders/{workOrderId}", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceWorkOrder"),
         new(typeof(AssignMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "assignMaintenanceWorkOrder"),
         new(typeof(ProbeMaintenanceWorkOrderAssignmentReplayEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "probeMaintenanceWorkOrderAssignmentReplay"),
