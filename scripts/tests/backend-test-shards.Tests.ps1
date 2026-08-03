@@ -191,6 +191,28 @@ try {
     }
     Assert-Contract ($maskedFailureValidationText.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
 
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(\s+- name: Require all backend fast shards\r?\n)', ('$1        continue-on-error: true' + [Environment]::NewLine)) -NoNewline
+    $continueOnErrorValidationText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-continue-on-error-contract' | Out-Null
+        throw 'An aggregate step with continue-on-error must fail structured shard governance.'
+    }
+    catch {
+        $continueOnErrorValidationText = $_.Exception.Message
+    }
+    Assert-Contract ($continueOnErrorValidationText.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
+
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(    if: always\(\)\r?\n)', ('$1    continue-on-error: true' + [Environment]::NewLine)) -NoNewline
+    $jobContinueOnErrorValidationText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-job-continue-on-error-contract' | Out-Null
+        throw 'An aggregate job with continue-on-error must fail structured shard governance.'
+    }
+    catch {
+        $jobContinueOnErrorValidationText = $_.Exception.Message
+    }
+    Assert-Contract ($jobContinueOnErrorValidationText.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
+
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)(-TrxFilePrefix backend-tests-platform)', '$1 -TestCommand "Write-Output pass"') -NoNewline
     $bypassValidationText = ''
     try {

@@ -321,6 +321,12 @@ else {
                 if ([string] $aggregate.name -ne 'Backend Tests' -or [string] $aggregate.if -ne 'always()') {
                     Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must retain name 'Backend Tests' and if: always()."
                 }
+                $aggregateHasContinueOnError = $null -ne $aggregate.PSObject.Properties['continue-on-error'] -or @(
+                    @($aggregate.steps) | Where-Object { $null -ne $_.PSObject.Properties['continue-on-error'] }
+                ).Count -gt 0
+                if ($aggregateHasContinueOnError) {
+                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must not set 'continue-on-error' on the job or any step."
+                }
 
                 $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
                 $aggregateCommands = @(
