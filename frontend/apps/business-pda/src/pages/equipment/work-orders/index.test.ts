@@ -175,17 +175,32 @@ describe('maintenance self work-order queue page', () => {
     )
   })
 
-  it('canonicalizes the selected strong device ID without folding a GUID-shaped device code', async () => {
+  it('queries only by the selected strong device ID and retains the code only for session state', async () => {
     state.scopeReady = true
     const { wrapper } = await mountPage()
 
     await wrapper.get('[data-testid="select-device"]').trigger('click')
 
-    expect(state.filters.deviceAssetIds).toEqual([
-      '019f0000-0000-7000-8000-000000000302',
-      '019F0000-0000-7000-8000-0000000000AA',
-    ])
+    expect(state.filters.deviceAssetIds).toEqual(['019f0000-0000-7000-8000-000000000302'])
+    expect(wrapper.getComponent(TaskListShell).props('filterState')).toMatchObject({
+      deviceAssetIds: ['019f0000-0000-7000-8000-000000000302'],
+      deviceCode: '019F0000-0000-7000-8000-0000000000AA',
+    })
     expect(wrapper.text()).toContain('一号数控机床')
+  })
+
+  it('fails closed when a picker or scan payload has no canonical strong device ID', async () => {
+    state.scopeReady = true
+    const { wrapper } = await mountPage()
+
+    wrapper.getComponent({ name: 'DeviceAssetPicker' }).vm.$emit('select', {
+      code: 'DEV-SCAN-ONLY',
+      displayName: '仅编码设备',
+    })
+    await flushPromises()
+
+    expect(state.filters.deviceAssetIds).toEqual([])
+    expect(wrapper.text()).not.toContain('仅编码设备')
   })
 
   it('opens the device filter with Space', async () => {
@@ -207,6 +222,48 @@ describe('maintenance self work-order queue page', () => {
     await flushPromises()
 
     expect(state.filters.status).toBe('')
+  })
+
+  it('restores only a validated strong device ID and keeps its code out of query references', async () => {
+    state.scopeReady = true
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(TaskListShell).vm.$emit('restore', {
+      filters: {
+        status: '',
+        deviceAssetIds: ['019F0000-0000-7000-8000-000000000302'],
+        deviceCode: 'DEV-OLD-CODE',
+        deviceLabel: '恢复设备',
+        keyword: '',
+      },
+    })
+    await flushPromises()
+
+    expect(state.filters.deviceAssetIds).toEqual(['019f0000-0000-7000-8000-000000000302'])
+    expect(wrapper.getComponent(TaskListShell).props('filterState')).toMatchObject({
+      deviceAssetIds: ['019f0000-0000-7000-8000-000000000302'],
+      deviceCode: 'DEV-OLD-CODE',
+    })
+    expect(wrapper.text()).toContain('恢复设备')
+  })
+
+  it('drops restored device code and label when the strong device ID is absent', async () => {
+    state.scopeReady = true
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(TaskListShell).vm.$emit('restore', {
+      filters: {
+        status: '',
+        deviceAssetIds: ['DEV-SCAN-ONLY'],
+        deviceCode: 'DEV-SCAN-ONLY',
+        deviceLabel: '不可信设备',
+        keyword: '',
+      },
+    })
+    await flushPromises()
+
+    expect(state.filters.deviceAssetIds).toEqual([])
+    expect(wrapper.text()).not.toContain('不可信设备')
   })
 
   it('isolates restored device filters, labels, and scroll state by organization and environment', async () => {

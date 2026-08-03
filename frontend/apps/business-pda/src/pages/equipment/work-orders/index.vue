@@ -3,10 +3,7 @@ import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import MaintenanceWorkOrderFilters from './components/MaintenanceWorkOrderFilters.vue'
 import MaintenanceWorkOrderList from './components/MaintenanceWorkOrderList.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import {
-  normalizeCanonicalGuid,
-  normalizeMaintenanceDeviceReferences,
-} from '@/composables/maintenancePublicIds'
+import { normalizeCanonicalGuid } from '@/composables/maintenancePublicIds'
 import { useMaintenanceSelfWorkOrders } from '@/composables/useMaintenanceSelfWorkOrders'
 import type {
   BusinessConsoleMaintenanceWorkOrderItem,
@@ -42,6 +39,7 @@ const {
 } = useMaintenanceSelfWorkOrders()
 const devicePickerOpen = shallowRef(false)
 const selectedDeviceLabel = shallowRef('')
+const selectedDeviceCode = shallowRef('')
 const displayError = computed(
   () =>
     error.value ?? (hasFailedResponse.value ? new Error('维修工单读取失败，请重试。') : undefined),
@@ -55,15 +53,17 @@ const scopeLabel = computed(() => {
 const filterState = computed(() => ({
   status: filters.status,
   deviceAssetIds: filters.deviceAssetIds,
-  deviceLabel: selectedDeviceLabel.value,
+  deviceCode: filters.deviceAssetIds.length === 1 ? selectedDeviceCode.value : '',
+  deviceLabel: filters.deviceAssetIds.length === 1 ? selectedDeviceLabel.value : '',
   keyword: filters.keyword,
 }))
 
 function onDeviceSelected(device: BusinessConsoleResourceItem & { deviceAssetId: string }) {
   const deviceCode = device.code?.trim()
-  const publicId = normalizeCanonicalGuid(device.deviceAssetId)
-  if (!deviceCode || !publicId) return
-  filters.deviceAssetIds = normalizeMaintenanceDeviceReferences([publicId, deviceCode])
+  const deviceAssetId = normalizeCanonicalGuid(device.deviceAssetId)
+  if (!deviceCode || !deviceAssetId) return
+  filters.deviceAssetIds = [deviceAssetId]
+  selectedDeviceCode.value = deviceCode
   selectedDeviceLabel.value = device.displayName?.trim() || device.code?.trim() || '已选择设备'
 }
 
@@ -78,9 +78,20 @@ function openDetail(item: BusinessConsoleMaintenanceWorkOrderItem) {
 
 function restoreState(state: { filters: Record<string, unknown> }) {
   const restored = state.filters
+  const restoredDeviceReferences = Array.isArray(restored.deviceAssetIds)
+    ? restored.deviceAssetIds
+    : []
+  const restoredDeviceAssetId =
+    restoredDeviceReferences.length === 1
+      ? normalizeCanonicalGuid(restoredDeviceReferences[0])
+      : undefined
+  const restoredDeviceCode =
+    typeof restored.deviceCode === 'string' ? restored.deviceCode.trim() : ''
   filters.status = normalizeMaintenanceWorkOrderStatusFilter(restored.status)
-  filters.deviceAssetIds = normalizeMaintenanceDeviceReferences(restored.deviceAssetIds)
+  filters.deviceAssetIds =
+    restoredDeviceAssetId && restoredDeviceCode ? [restoredDeviceAssetId] : []
   filters.keyword = typeof restored.keyword === 'string' ? restored.keyword : ''
+  selectedDeviceCode.value = filters.deviceAssetIds.length ? restoredDeviceCode : ''
   selectedDeviceLabel.value =
     filters.deviceAssetIds.length && typeof restored.deviceLabel === 'string'
       ? restored.deviceLabel.trim()

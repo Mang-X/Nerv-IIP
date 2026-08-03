@@ -113,7 +113,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   const matchingWorkOrders = Array.from({ length: 25 }, (_, index) => ({
     workOrderId: selfWorkOrderId(index + 1),
     sourceReferenceId: `MWO-2026-${String(index + 1).padStart(4, '0')}`,
-    deviceAssetId: 'DEV,CNC-01',
+    deviceAssetId: index === 24 ? commaDevice.deviceAssetId : commaDevice.code,
     priority: 'high',
     status: 'accepted',
     openedAtUtc: '2026-08-02T01:00:00.000Z',
@@ -176,10 +176,13 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       ]
         .map((value) => value.trim())
         .filter(Boolean)
+      const authorizedAliases = deviceReferences.includes(commaDevice.deviceAssetId)
+        ? [commaDevice.deviceAssetId, commaDevice.code]
+        : deviceReferences
       const keyword = url.searchParams.get('keyword')?.trim().toLowerCase()
       const filtered = workOrders.filter((item) => {
         if (status && item.status.toLowerCase() !== status) return false
-        if (deviceReferences.length > 0 && !deviceReferences.includes(item.deviceAssetId)) {
+        if (authorizedAliases.length > 0 && !authorizedAliases.includes(item.deviceAssetId)) {
           return false
         }
         if (!keyword) return true
@@ -261,7 +264,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
       scopeKind: 'self',
       scopeId: principal.principalId,
       status: 'accepted',
-      deviceAssetReferences: ['019f0000-0000-7000-8000-000000000001', 'DEV,CNC-01'],
+      deviceAssetReferences: ['019f0000-0000-7000-8000-000000000001'],
       keyword: 'MWO-2026-',
     })
 
@@ -304,6 +307,91 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   expect(deviceDetailRequests[0].searchParams.get('organizationId')).toBe('org-001')
   expect(deviceDetailRequests[0].searchParams.get('environmentId')).toBe('env-dev')
   await expect(page.getByRole('button', { name: '开工', exact: true })).toHaveCount(0)
+})
+
+test('维修工单：设备编码换绑后只以强 ID 筛选且不扩入另一设备', async ({ page }) => {
+  const deviceAId = '019f0000-0000-7000-8000-000000000011'
+  const deviceBId = '019f0000-0000-7000-8000-000000000012'
+  const reboundCode = 'DEV-REBIND'
+  const currentDeviceACode = 'DEV-A-CURRENT'
+  const listRequests: URL[] = []
+  const listItem = (workOrderId: string, sourceReferenceId: string, deviceAssetId: string) => ({
+    workOrderId,
+    sourceReferenceId,
+    deviceAssetId,
+    priority: 'high',
+    status: 'accepted',
+    openedAtUtc: '2026-08-02T01:00:00.000Z',
+    assignedTechnicianUserId: principal.principalId,
+    assignedTeamId: null,
+    version: 1,
+  })
+  const deviceAWorkOrders = [
+    listItem(selfWorkOrderId(91), 'MWO-A-GUID', deviceAId),
+    listItem(selfWorkOrderId(92), 'MWO-A-CODE', currentDeviceACode),
+  ]
+  const deviceBWorkOrder = listItem(selfWorkOrderId(93), 'MWO-B-REBOUND', deviceBId)
+
+  await page.route('**/api/business-console/v1/master-data/device-assets**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          resources: [
+            {
+              deviceAssetId: deviceAId,
+              code: reboundCode,
+              displayName: '设备 A',
+              active: true,
+            },
+          ],
+          total: 1,
+          truncated: false,
+          limit: 20,
+        },
+      }),
+    }),
+  )
+  await page.route('**/api/business-console/v1/maintenance/work-orders**', (route) => {
+    const url = new URL(route.request().url())
+    if (
+      route.request().method() !== 'GET' ||
+      url.pathname !== '/api/business-console/v1/maintenance/work-orders'
+    ) {
+      return route.fallback()
+    }
+    listRequests.push(url)
+    const requestedReferences = url.searchParams.getAll('deviceAssetReferences')
+    const items =
+      requestedReferences.length === 0
+        ? [...deviceAWorkOrders, deviceBWorkOrder]
+        : deviceAWorkOrders
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { items, total: items.length, skip: 0, take: 20 },
+      }),
+    })
+  })
+
+  await page.goto('/equipment/work-orders')
+  await page.getByTestId('maintenance-device-filter').click()
+  await page.getByTestId(`device-option-${deviceAId}`).click()
+
+  await expect
+    .poll(() => listRequests.at(-1)?.searchParams.getAll('deviceAssetReferences'))
+    .toEqual([deviceAId])
+  await expect(page.getByTestId('maintenance-device-filter')).toContainText('设备 A')
+  await expect(page.getByText('MWO-A-GUID', { exact: false })).toBeVisible()
+  await expect(page.getByText('MWO-A-CODE', { exact: false })).toBeVisible()
+  await expect(page.getByText('MWO-B-REBOUND', { exact: false })).toHaveCount(0)
+  expect(listRequests.at(-1)?.searchParams.getAll('deviceAssetReferences')).not.toContain(
+    reboundCode,
+  )
 })
 
 test('维修工单：GUID 形设备编码在筛选、详情与报修中保持 Ordinal', async ({ page }) => {
@@ -397,7 +485,7 @@ test('维修工单：GUID 形设备编码在筛选、详情与报修中保持 Or
     const take = Number(url.searchParams.get('take') ?? 20)
     const requestedReferences = url.searchParams.getAll('deviceAssetReferences')
     const items =
-      requestedReferences.length === 0 || requestedReferences.includes(deviceCode)
+      requestedReferences.length === 0 || requestedReferences.includes(deviceAssetId)
         ? [workOrder]
         : []
     return route.fulfill({
@@ -416,7 +504,7 @@ test('维修工单：GUID 形设备编码在筛选、详情与报修中保持 Or
   await page.getByTestId(`device-option-${deviceAssetId}`).click()
   await expect
     .poll(() => listRequests.at(-1)?.searchParams.getAll('deviceAssetReferences'))
-    .toEqual([deviceAssetId, deviceCode])
+    .toEqual([deviceAssetId])
 
   await page.getByTestId('maintenance-work-order-row').press('Enter')
   await expect(page).toHaveURL(`/equipment/work-orders/${workOrderId}`)
