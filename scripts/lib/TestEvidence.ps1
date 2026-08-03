@@ -451,7 +451,7 @@ function Protect-NervTestEvidenceText {
 
 function New-NervTestEvidenceSummary {
     param(
-        [Parameter(Mandatory)] [object[]] $Records,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Records,
         [Parameter(Mandatory)] [hashtable] $RunMetadata,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Violations,
         [AllowNull()] [object] $Baseline,
@@ -532,7 +532,7 @@ function New-NervTestEvidenceSummary {
         skipped = $skipped
         executed = $passed + $failed
         total = $safeRecords.Count
-        testDurationMilliseconds = [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum)
+        testDurationMilliseconds = if ($safeRecords.Count -gt 0) { [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum) } else { 0.0 }
         trxElapsedMilliseconds = if ($RunMetadata.ContainsKey('trxElapsedMilliseconds')) { [double]$RunMetadata.trxElapsedMilliseconds } else { $null }
         assemblies = $assemblies
         slowestAssemblies = @($assemblies | Sort-Object @{ Expression = 'elapsedMilliseconds'; Descending = $true }, @{ Expression = 'assembly'; Descending = $false } | Select-Object -First $TopCount)
@@ -543,7 +543,7 @@ function New-NervTestEvidenceSummary {
             [pscustomobject]@{ policyId = $_.Name; classification = [string]$_.Group[0].skipClassification; count = $_.Count }
         })
         violations = $safeViolations
-        redactionCount = [int](($safeRecords | Measure-Object redactionCount -Sum).Sum) + @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and (-not ($_.PSObject.Properties.Name -contains 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$_.skipPolicyId)) }).Count
+        redactionCount = $(if ($safeRecords.Count -gt 0) { [int](($safeRecords | Measure-Object redactionCount -Sum).Sum) } else { 0 }) + @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and (-not ($_.PSObject.Properties.Name -contains 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$_.skipPolicyId)) }).Count
         baseline = [pscustomobject][ordered]@{
             enforcement = 'report-only'
             source = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'source') { $Baseline.source } else { $null }

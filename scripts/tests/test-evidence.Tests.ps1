@@ -157,6 +157,11 @@ try {
     $recoveryRun = $run.Clone(); $recoveryRun.currentTestOutcome = 'success'; $recoveryRun.priorAttemptVerified = $true
     $recoverySummary = New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure'
     Assert-True ($recoverySummary.attemptClassification -eq 'recovered-after-rerun') 'Verified prior failure and current successful non-empty rerun must be report-only recovery.'
+    $failedCurrentRun = $recoveryRun.Clone(); $failedCurrentRun.currentTestOutcome = 'failure'
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $failedCurrentRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A failed current native test step must never be called recovered.'
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records @() -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A zero-execution rerun must never be called recovered.'
+    $unverifiedPriorRun = $recoveryRun.Clone(); $unverifiedPriorRun.priorAttemptVerified = $false
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $unverifiedPriorRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'Unverified prior-attempt provenance must never be called recovered.'
     Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -SourceTrxPaths @((Join-Path $fixtures 'parameterized-results.trx')) -OutputDirectory $parameterArtifactRoot
     $parameterRoundTripRun = $recoveryRun.Clone()
     $parameterRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
