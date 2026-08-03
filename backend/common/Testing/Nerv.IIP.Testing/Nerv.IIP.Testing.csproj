@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="DotNetCore.CAP" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
 </Project>

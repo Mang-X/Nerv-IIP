@@ -49,7 +49,14 @@ public static class CapTestHost
     /// Call once per test host, right after the host has started (e.g. after <c>CreateClient()</c>).
     /// </summary>
     /// <param name="services">The root service provider of the test host (e.g. <c>factory.Services</c>).</param>
-    public static async ValueTask WaitForCapBootstrapAsync(IServiceProvider services)
+    /// <param name="timeout">Optional bootstrap budget. Defaults to 30 seconds.</param>
+    /// <param name="cancellationToken">Caller cancellation token.</param>
+    /// <param name="timeProvider">Optional time provider for deterministic tests.</param>
+    public static async ValueTask WaitForCapBootstrapAsync(
+        IServiceProvider services,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -60,9 +67,16 @@ public static class CapTestHost
 
         try
         {
-            await executeTask.WaitAsync(BootstrapTimeout).ConfigureAwait(false);
+            await TestTimeout.RunAsync(
+                "CAP bootstrap completion",
+                waitCancellationToken => new ValueTask(
+                    executeTask.WaitAsync(waitCancellationToken)),
+                timeout ?? BootstrapTimeout,
+                cancellationToken,
+                timeProvider).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (
+            executeTask.IsCanceled && !cancellationToken.IsCancellationRequested)
         {
             // The host is already stopping; ExecuteTask has completed (canceled), which still guarantees
             // ConsumerRegister.StartAsync has returned and the dispose guard cannot be re-armed.
