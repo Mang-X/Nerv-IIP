@@ -527,6 +527,7 @@ function New-NervTestEvidenceSummary {
         dotnetSdk = if ($RunMetadata.ContainsKey('dotnetSdk')) { [string]$RunMetadata.dotnetSdk } else { '' }
         artifactName = if ($RunMetadata.ContainsKey('artifactName')) { [string]$RunMetadata.artifactName } else { '' }
         retentionDays = if ($RunMetadata.ContainsKey('retentionDays')) { [int]$RunMetadata.retentionDays } else { 0 }
+        retentionLocation = if ($RunMetadata.ContainsKey('retentionLocation')) { [string]$RunMetadata.retentionLocation } else { 'local-output' }
         passed = $passed
         failed = $failed
         skipped = $skipped
@@ -557,6 +558,24 @@ function New-NervTestEvidenceSummary {
 function Write-NervUtf8NoBom {
     param([string] $Path, [AllowNull()] [string] $Text)
     [IO.File]::WriteAllText($Path, $(if ($null -eq $Text) { '' } else { $Text }), [Text.UTF8Encoding]::new($false))
+}
+
+function ConvertTo-NervEvidenceIdentity {
+    param(
+        [AllowNull()] [string] $Text,
+        [Parameter(Mandatory)] [string] $Pattern,
+        [Parameter(Mandatory)] [string] $Fallback,
+        [ValidateRange(1, 256)] [int] $MaximumLength = 128
+    )
+    $safe = Protect-NervTestEvidenceText $Text
+    if ([string]::IsNullOrWhiteSpace($safe) -or $safe.Length -gt $MaximumLength -or $safe -cnotmatch $Pattern) { return $Fallback }
+    return $safe
+}
+
+function Write-NervEvidenceOutputPath {
+    param([Parameter(Mandatory)] [string] $Path, [AllowNull()] [string] $ManifestPath)
+    if ([string]::IsNullOrWhiteSpace($ManifestPath)) { return }
+    [IO.File]::AppendAllText($ManifestPath, "evidence-path=$Path`n", [Text.UTF8Encoding]::new($false))
 }
 
 function Write-NervTestEvidenceArtifacts {
@@ -613,15 +632,15 @@ function Write-NervTestEvidenceArtifacts {
             "- Baseline source: $baselineSource",
             "- Privacy redactions: $($Summary.redactionCount)",
             '- Timing and baseline deltas: report-only',
-            "- Retained artifact: $($Summary.artifactName), retention=$($Summary.retentionDays) days; tests.jsonl, summary.json, summary.md, diagnostics.log, normalized trx/",
+            "- Retained artifact: $($Summary.artifactName), retention=$($Summary.retentionDays) days, location=$($Summary.retentionLocation); tests.jsonl, summary.json, summary.md, diagnostics.log, normalized trx/",
             '',
             '## Assemblies',
             '',
-            '| Lane | Assembly | Passed | Failed | Skipped | Test duration (ms) | TRX elapsed (ms) |',
-            '|---|---|---:|---:|---:|---:|---:|'
+            '| Lane | Assembly | Passed | Failed | Skipped | Executed | Total | Test duration (ms) | TRX elapsed (ms) |',
+            '|---|---|---:|---:|---:|---:|---:|---:|---:|'
         )
         foreach ($assembly in @($Summary.assemblies)) {
-            $markdown += "| $($assembly.lane) | $($assembly.assembly) | $($assembly.passed) | $($assembly.failed) | $($assembly.skipped) | $($assembly.testDurationMilliseconds) | $($assembly.elapsedMilliseconds) |"
+            $markdown += "| $($assembly.lane) | $($assembly.assembly) | $($assembly.passed) | $($assembly.failed) | $($assembly.skipped) | $($assembly.executed) | $($assembly.total) | $($assembly.testDurationMilliseconds) | $($assembly.elapsedMilliseconds) |"
         }
         $markdown += @(
             '',
@@ -718,29 +737,46 @@ function Write-NervTestEvidenceFailureArtifacts {
         [Parameter(Mandatory)] [hashtable] $RunMetadata,
         [Parameter(Mandatory)] [string] $Diagnostic
     )
-    if (Test-Path -LiteralPath $OutputDirectory) { return }
-    $parent = Split-Path -Parent $OutputDirectory
+    $target = $OutputDirectory
+    if (Test-Path -LiteralPath $target) {
+        $target = "$OutputDirectory.failure"
+        $suffix = 1
+        while (Test-Path -LiteralPath $target) {
+            $suffix++
+            $target = "$OutputDirectory.failure-$suffix"
+        }
+    }
+    $parent = Split-Path -Parent $target
     [IO.Directory]::CreateDirectory($parent) | Out-Null
-    $temporary = "$OutputDirectory.tmp-$([Guid]::NewGuid().ToString('N'))"
+    $temporary = "$target.tmp-$([Guid]::NewGuid().ToString('N'))"
     [IO.Directory]::CreateDirectory($temporary) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $temporary 'trx')) | Out-Null
     $safeDiagnostic = Protect-NervTestEvidenceText $Diagnostic
     if ($safeDiagnostic.Length -gt 1024) { $safeDiagnostic = $safeDiagnostic.Substring(0, 1024) }
+    $safeLane = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.lane) '^[a-z0-9]+(?:-[a-z0-9]+)*(?:-shard-[1-9][0-9]*)?$' 'invalid-lane' 64
+    $safeRun = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.workflowRunId) '^[A-Za-z0-9._-]+$' 'invalid-run' 64
+    $safeCommit = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.commitSha) '^[0-9a-f]{40}$' 'invalid-commit' 40
+    $safeRepository = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.repository) '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' 'invalid-repository' 128
+    $safeJob = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.jobName) '^[A-Za-z0-9 ._/-]+$' 'invalid-job' 128
     $failure = [pscustomobject][ordered]@{
         schemaVersion = 1
         collectionStatus = 'failed'
-        workflowRunId = [string]$RunMetadata.workflowRunId
-        runAttempt = [int]$RunMetadata.runAttempt
-        commitSha = [string]$RunMetadata.commitSha
-        lane = [string]$RunMetadata.lane
+        workflowRunId = $safeRun
+        runAttempt = if ([int]$RunMetadata.runAttempt -ge 1 -and [int]$RunMetadata.runAttempt -le 1000) { [int]$RunMetadata.runAttempt } else { 0 }
+        commitSha = $safeCommit
+        lane = $safeLane
+        repository = $safeRepository
+        jobName = $safeJob
         passed = 0; failed = 0; skipped = 0; executed = 0; total = 0
-        violations = @([pscustomobject]@{ code = 'evidence-collection-failed'; id = [string]$RunMetadata.lane; message = $safeDiagnostic })
+        violations = @([pscustomobject]@{ code = 'evidence-collection-failed'; id = $safeLane; message = $safeDiagnostic })
     }
     Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ''
     Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') (($failure | ConvertTo-Json -Depth 20) + "`n")
-    Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') "# Test evidence collection failed`n`n- lane: $($RunMetadata.lane)`n- evidence-collection-failed: $safeDiagnostic`n"
+    $safeMarkdown = "# Test evidence collection failed`n`n- run: $safeRun`n- lane: $safeLane`n- repository: $safeRepository`n- job: $safeJob`n- evidence-collection-failed: $safeDiagnostic`n"
+    Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') (Protect-NervTestEvidenceText $safeMarkdown)
     Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ($safeDiagnostic + "`n")
-    [IO.Directory]::Move($temporary, $OutputDirectory)
+    [IO.Directory]::Move($temporary, $target)
+    return $target
 }
 
 function ConvertFrom-NervDotNetConsoleSummary {
@@ -777,6 +813,29 @@ function ConvertFrom-NervDotNetConsoleSummary {
     }
 }
 
+function Get-NervGitHubRunnerProvenance {
+    param([Parameter(Mandatory)] [string] $Text)
+    $lines = @($Text -split '\r?\n')
+    $image = $null
+    $imageVersion = $null
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        $match = [regex]::Match($lines[$index], 'Image:\s*(?<value>(?:ubuntu|windows|macos)-[^\s]+)\s*$')
+        if (-not $match.Success) { continue }
+        $image = $match.Groups['value'].Value
+        for ($next = $index + 1; $next -lt [Math]::Min($lines.Count, $index + 6); $next++) {
+            $versionMatch = [regex]::Match($lines[$next], 'Version:\s*(?<value>[0-9][0-9A-Za-z._-]+)\s*$')
+            if ($versionMatch.Success) { $imageVersion = $versionMatch.Groups['value'].Value; break }
+        }
+        break
+    }
+    $sdkMatch = [regex]::Match($Text, "(?im)(?:\.NET Core SDK with version\s+'|dotnet-sdk=|dotnet-sdk\s+)(?<sdk>[0-9]+\.[0-9]+\.[0-9]+)'?")
+    if ([string]::IsNullOrWhiteSpace($image) -or [string]::IsNullOrWhiteSpace($imageVersion) -or -not $sdkMatch.Success) {
+        throw 'Actions log does not contain resolved runner image/version and exact dotnet SDK provenance.'
+    }
+    $normalizedImage = if ($image -match '^ubuntu-(?<major>[0-9]{2})\.04$') { "ubuntu$($Matches['major'])" } else { $image }
+    [pscustomobject]@{ runnerImage = "$normalizedImage@$imageVersion"; dotnetSdk = $sdkMatch.Groups['sdk'].Value }
+}
+
 function New-NervTestEvidenceBaseline {
     param(
         [Parameter(Mandatory)] [object[]] $Summaries,
@@ -784,6 +843,10 @@ function New-NervTestEvidenceBaseline {
         [Parameter(Mandatory)] [DateTimeOffset] $GeneratedAtUtc
     )
 
+    if ([string]$SourceMetadata.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
+        [string]$SourceMetadata.runnerImage -match '(?i)latest' -or [string]$SourceMetadata.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+        throw 'Baseline provenance requires a resolved runner image/version and exact dotnet SDK.'
+    }
     $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)
         [pscustomobject][ordered]@{

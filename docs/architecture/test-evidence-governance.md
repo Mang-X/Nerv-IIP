@@ -17,7 +17,7 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 └── diagnostics.log
 ```
 
-Credential URL user info, bearer authorization, quoted or unquoted password/token/secret/client_secret values, PEM blocks, and named `customerName`, `phone`, `email`, and `address` fields are replaced before retention. Raw failed-test messages and unregistered skip reasons are omitted by construction; approved skip reasons are bounded to 512 characters. A collector failure still publishes the same retained bundle with `collectionStatus: failed`, an `evidence-collection-failed` summary, bounded diagnostics, and a nonzero exit. Retention is 14 days. GitHub permissions are only `actions: read` and `contents: read`.
+Credential URL user info, bearer authorization, quoted or unquoted password/token/secret/client_secret values, PEM blocks, and named `customerName`, `phone`, `email`, and `address` fields are replaced before retention. Raw failed-test messages and unregistered skip reasons are omitted by construction; approved skip reasons are bounded to 512 characters. A collector failure publishes a retained bundle with `collectionStatus: failed`, an `evidence-collection-failed` summary, allowlisted and bounded run identity/diagnostics, and a nonzero exit. If the requested output directory already contains files, the failure bundle uses the first free deterministic sibling (`.failure`, `.failure-2`, ...) and reports that exact path through the collector step output; upload consumes that output and never overwrites the pre-existing directory. Retention is 14 days. GitHub permissions are only `actions: read` and `contents: read`.
 
 ## Schema v1
 
@@ -25,7 +25,7 @@ Credential URL user info, bearer authorization, quoted or unquoted password/toke
 | --- | --- |
 | Test record | `schemaVersion`, run identity, lane/project/assembly, method identity, bounded parameterized `displayName`, stable `definitionId`/`testInstanceId`, duration, outcome, approved `skipReason`, redaction count |
 | Outcome | `passed`, `failed`, or `skipped` |
-| Summary | run/job/runner/artifact provenance; passed/failed/skipped/executed/total per lane+assembly; summed test duration; separate TRX elapsed duration; slowest tests/assemblies; skip aggregation; baseline source and compatible report-only delta; redaction count; attempt classification; violations |
+| Summary | run/job/runner/artifact name, retention days, and retention location; passed/failed/skipped/executed/total per lane+assembly; summed test duration; separate TRX elapsed duration; slowest tests/assemblies; skip aggregation; concrete baseline source and compatible report-only delta; redaction count; attempt classification; violations |
 | Lane | `<family>` or `<family>-shard-<positive-integer>` |
 
 `backend-shard-1` is therefore an ordinary schema-v1 lane. MAN-669 may add shard lane invocations and policy rows, but it must not introduce a shard envelope or a second collector.
@@ -46,11 +46,11 @@ There are exactly three semantic hard gates:
 - `illegal-quarantine`: missing/invalid metadata or expired quarantine.
 - `zero-execution`: a selected `realDependency: true` lane has no passed or failed runtime result; skipped is not execution.
 
-Timing, trends, skip totals, baseline deltas, and `recovered-after-rerun` are report-only. A recovery label requires a prior failed job from the same workflow run, commit SHA, and lane plus a successful current native test step with nonzero execution, zero failed tests, and zero policy violations. When lookup is unavailable the summary says `prior-attempt-unavailable`; attempt number alone never proves recovery.
+Timing, trends, skip totals, baseline deltas, and `recovered-after-rerun` are report-only. A recovery label requires an authenticated GitHub Actions lookup of the exact prior attempt and the lane's allowlisted job name, matching workflow run and commit SHA, with a failed prior job plus a successful current native test step with nonzero execution, zero failed tests, and zero policy violations. Caller-supplied prior-attempt fields are not proof. When lookup is unavailable the summary says `prior-attempt-unavailable`; attempt number alone never proves recovery. Tests may use the explicit fixture-only seam, which production workflow YAML must never pass.
 
 ## Baseline ownership and refresh
 
-The committed baseline was generated from the latest qualifying source available during implementation: GitHub Actions CI push to `main`, run `30819675007`, attempt 1, Backend Tests job `91706113150`, commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d`, with successful run and job conclusions. It is a legacy console-import baseline at project granularity, not a timing gate.
+The committed baseline was generated from the latest qualifying source available during implementation: GitHub Actions CI push to `main`, run `30819675007`, attempt 1, Backend Tests job `91706113150`, commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d`, with successful run and job conclusions. The authoritative job log resolves the hosted runner to `ubuntu24@20260720.247.2` and the SDK to `10.0.302`; selectors such as `ubuntu-latest` or `10.0.x` are rejected as baseline provenance. It is a legacy console-import baseline at project granularity, not a timing gate.
 
 Only `scripts/generate-test-evidence-baseline.ps1` may write `scripts/test-evidence-baseline.json`. The initial source command is:
 
@@ -64,6 +64,6 @@ After MAN-661 merges and normalized main-branch artifacts exist, refresh to test
 pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json
 ```
 
-Refresh is mandatory after MAN-663 changes shared BusinessGateway host profiles and after MAN-669 changes lane/shard topology. Other intentional test-topology changes should refresh only from the latest completed attempt-1 successful `main` CI push whose required jobs succeeded. Evidence-root summaries must agree on run, attempt, SHA, repository, event, and branch and must report successful native execution with no failures or violations; the generator verifies those facts against GitHub Actions. Baseline identity is lane plus assembly, and timing deltas are emitted only when both sides use TRX elapsed timing at test granularity. Commit the script-generated diff with its resolved runner image and actual .NET SDK provenance; never hand-edit the baseline.
+Refresh is mandatory after MAN-663 changes shared BusinessGateway host profiles and after MAN-669 changes lane/shard topology. Other intentional test-topology changes should refresh only from the latest completed attempt-1 successful `main` CI push whose required jobs succeeded. Evidence-root summaries must have complete, nonempty, mutually consistent run/attempt/SHA/repository/event/branch/source URL/runner OS/resolved runner image/exact SDK provenance, unique valid lanes, the allowlisted lane-to-job mapping, successful native execution, nonzero execution, and no failures or violations. The generator verifies the run is the latest qualifying CI workflow run and verifies each required job and job log against GitHub Actions. Baseline identity is lane plus assembly, and timing deltas are emitted only when both sides use TRX elapsed timing at test granularity. Commit the script-generated diff with its resolved runner image and actual .NET SDK provenance; never hand-edit the baseline.
 
 Local fixture results, local full solution execution, PR CI and artifact availability, merge status, and post-merge test-granularity baseline refresh are separate delivery states. None implies another.

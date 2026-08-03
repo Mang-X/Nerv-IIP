@@ -39,7 +39,7 @@ jobs:
         id: backend-evidence-environment
         shell: pwsh
         run: |
-          "runner-image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
 
       - name: Test backend solution
@@ -51,6 +51,7 @@ jobs:
           --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
 
       - name: Collect backend test evidence
+        id: collect-backend-evidence
         if: always()
         shell: pwsh
         env:
@@ -82,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          path: ${{ steps.collect-backend-evidence.outputs.evidence-path }}
           if-no-files-found: error
           retention-days: 14
 
@@ -153,7 +154,7 @@ jobs:
         id: connector-evidence-environment
         shell: pwsh
         run: |
-          "runner-image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
 
       - name: Test connector host solution
@@ -165,6 +166,7 @@ jobs:
           --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
 
       - name: Collect connector host test evidence
+        id: collect-connector-host-evidence
         if: always()
         shell: pwsh
         env:
@@ -196,7 +198,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          path: ${{ steps.collect-connector-host-evidence.outputs.evidence-path }}
           if-no-files-found: error
           retention-days: 14
 

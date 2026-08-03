@@ -4,9 +4,9 @@
 
 ## MAN-661 CI/Test Evidence Governance（2026-08-04）
 
-Backend 与 Connector Host CI 现以自然 `dotnet test` 失败语义产出 TRX，并在 always-run collector 中生成脱敏 `tests.jsonl`、`summary.json`、`summary.md`、`diagnostics.log` 与重构 TRX；raw TRX/stdout/stderr 不上传。schema v1 保留 lane/shard 维度，当前精确登记 40 个源码 `Skip =` 赋值，只把 `unregistered-skip`、`illegal-quarantine`、已选 real-dependency lane 的 `zero-execution` 作为证据硬门禁；timing/trend/baseline delta/skip total/`recovered-after-rerun` 均 report-only。owner 与操作口径见 `docs/architecture/test-evidence-governance.md`。
+Backend 与 Connector Host CI 现以自然 `dotnet test` 失败语义产出 TRX，并在 always-run collector 中生成脱敏 `tests.jsonl`、`summary.json`、`summary.md`、`diagnostics.log` 与重构 TRX；raw TRX/stdout/stderr 不上传。collector 失败时只写 allowlist/bounded identity；目标已存在则发布到确定性 sibling，并用 step output 把实际路径交给 upload，绝不覆盖已有目录。schema v1 保留 lane/shard 维度，当前精确登记 40 个源码 `Skip =` 赋值，只把 `unregistered-skip`、`illegal-quarantine`、已选 real-dependency lane 的 `zero-execution` 作为证据硬门禁；timing/trend/baseline delta/skip total/`recovered-after-rerun` 均 report-only，后者只接受 GitHub Actions 对同 run/SHA、前一 attempt、lane 对应 allowlist job 的认证失败事实，不接受调用方自报。
 
-初始 project-granularity baseline 由唯一生成脚本从 main push run `30819675007`、Backend Tests job `91706113150`、commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d` 生成。MAN-662 仍负责共享 timing/static-state 工具，MAN-663 负责 BusinessGateway host profile 与安全并行，MAN-669 只扩 lane/sharding，MAN-668 负责 impact-aware required summary，MAN-688 负责后续长期治理。MAN-663 与 MAN-669 后必须刷新 baseline；MAN-661 合并后还需用 main 的 normalized artifacts 完成 test-granularity refresh。
+初始 project-granularity baseline 由唯一生成脚本从 main push run `30819675007`、Backend Tests job `91706113150`、commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d` 生成；该 job 权威日志解析出的实际 runner 是 `ubuntu24@20260720.247.2`、SDK 是 `10.0.302`，不再保存 `*-latest`/`*.x` selector。EvidenceRoot refresh 要求所有 summary 的完整 provenance 一致，并以最新合格 CI run、required job 和 job log 逐项复核。MAN-662 仍负责共享 timing/static-state 工具，MAN-663 负责 BusinessGateway host profile 与安全并行，MAN-669 只扩 lane/sharding，MAN-668 负责 impact-aware required summary，MAN-688 负责后续长期治理。MAN-663 与 MAN-669 后必须刷新 baseline；MAN-661 合并后还需用 main 的 normalized artifacts 完成 test-granularity refresh。
 
 本地 fixture 通过、backend/Connector Host 全量 solution test 实际执行、PR CI 与 artifact 可见、PR merge、合并后 baseline refresh 是五种独立状态，不得互相替代或推断。
 

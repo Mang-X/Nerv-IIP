@@ -30,6 +30,8 @@ param(
     [string] $PriorAttemptWorkflowRunId,
     [string] $PriorAttemptCommitSha,
     [string] $PriorAttemptLane,
+    [switch] $TestOnlyUsePriorAttemptFixture,
+    [string] $PriorAttemptFixturePath,
     [string] $Event,
     [string] $HeadBranch,
     [string] $SourceUrl,
@@ -37,7 +39,8 @@ param(
     [string] $DotnetSdk,
     [string] $ArtifactName,
     [ValidateRange(1, 90)] [int] $RetentionDays = 14,
-    [string] $StepSummaryPath
+    [string] $StepSummaryPath,
+    [string] $EvidencePathOutputFile = $env:GITHUB_OUTPUT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +64,7 @@ $runMetadata = @{
     dotnetSdk = $DotnetSdk
     artifactName = $ArtifactName
     retentionDays = $RetentionDays
+    retentionLocation = if ([string]::IsNullOrWhiteSpace($ArtifactName)) { 'local-output' } else { "artifact://$ArtifactName/" }
     priorAttemptVerified = $false
 }
 try {
@@ -78,21 +82,30 @@ try {
     $records = @(Read-NervTrxResults -Path $trxPaths -RunMetadata $runMetadata)
     $violations = @(Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
 
-    $resolvedPriorOutcome = $PriorAttemptOutcome
-    if ($RunAttempt -gt 1 -and -not [string]::IsNullOrWhiteSpace($resolvedPriorOutcome) -and
-        $PriorAttemptWorkflowRunId -ceq $WorkflowRunId -and $PriorAttemptCommitSha -ceq $CommitSha -and $PriorAttemptLane -ceq $Lane) {
-        $runMetadata.priorAttemptVerified = $true
-    }
-    if ($RunAttempt -gt 1 -and [string]::IsNullOrWhiteSpace($resolvedPriorOutcome) -and
-        -not [string]::IsNullOrWhiteSpace($Repository) -and -not [string]::IsNullOrWhiteSpace($JobName)) {
+    $resolvedPriorOutcome = $null
+    if ($RunAttempt -gt 1) {
         try {
             $priorAttempt = $RunAttempt - 1
-            $runLookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId") -WorkingDirectory $repoRoot -Name 'man-661-prior-run'
-            $run = (Protect-ScriptAutomationText $runLookup.Stdout) | ConvertFrom-Json
-            $lookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId/attempts/$priorAttempt/jobs") -WorkingDirectory $repoRoot -Name 'man-661-prior-attempt'
-            $jobs = @(((Protect-ScriptAutomationText $lookup.Stdout) | ConvertFrom-Json).jobs | Where-Object { [string]$_.name -ceq $JobName -and [int]$_.run_attempt -eq $priorAttempt })
-            if ([string]$run.id -ceq $WorkflowRunId -and [string]$run.head_sha -ceq $CommitSha -and $jobs.Count -eq 1) {
-                $resolvedPriorOutcome = [string]$jobs[0].conclusion
+            $expectedJobs = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
+            $priorRun = $null
+            $priorJobs = @()
+            if ($TestOnlyUsePriorAttemptFixture) {
+                if ([string]::IsNullOrWhiteSpace($PriorAttemptFixturePath) -or -not (Test-Path -LiteralPath $PriorAttemptFixturePath -PathType Leaf)) { throw 'Test-only prior-attempt fixture path is missing.' }
+                $fixture = Get-Content -LiteralPath $PriorAttemptFixturePath -Raw | ConvertFrom-Json
+                if ([int]$fixture.fixtureVersion -ne 1) { throw 'Unsupported test-only prior-attempt fixture version.' }
+                $priorRun = $fixture.run
+                $priorJobs = @($fixture.jobs)
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($Repository) -and -not [string]::IsNullOrWhiteSpace($JobName) -and -not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+                $runLookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId") -WorkingDirectory $repoRoot -Name 'man-661-prior-run'
+                $priorRun = (Protect-ScriptAutomationText $runLookup.Stdout) | ConvertFrom-Json
+                $lookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId/attempts/$priorAttempt/jobs") -WorkingDirectory $repoRoot -Name 'man-661-prior-attempt'
+                $priorJobs = @(((Protect-ScriptAutomationText $lookup.Stdout) | ConvertFrom-Json).jobs)
+            }
+            $jobs = @($priorJobs | Where-Object { [string]$_.name -ceq $JobName -and [int]$_.run_attempt -eq $priorAttempt -and [string]$_.conclusion -ceq 'failure' })
+            if ($expectedJobs.ContainsKey($Lane) -and [string]$expectedJobs[$Lane] -ceq $JobName -and
+                $null -ne $priorRun -and [string]$priorRun.id -ceq $WorkflowRunId -and [string]$priorRun.head_sha -ceq $CommitSha -and $jobs.Count -eq 1) {
+                $resolvedPriorOutcome = 'failure'
                 $runMetadata.priorAttemptVerified = $true
             }
         }
@@ -101,14 +114,16 @@ try {
     $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome -TopCount 10
     $summary | Add-Member -NotePropertyName collectionStatus -NotePropertyValue 'succeeded' -Force
     Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -SourceTrxPaths $trxPaths -OutputDirectory $OutputDirectory
+    Write-NervEvidenceOutputPath -Path $OutputDirectory -ManifestPath $EvidencePathOutputFile
     if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $OutputDirectory 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }
     Write-Host "Test evidence: lane=$Lane passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) executed=$($summary.executed) attempt=$($summary.attemptClassification) timing=report-only"
     if ($violations.Count -gt 0) { foreach ($violation in $violations) { Write-Error "$($violation.code): $($violation.id): $($violation.message)" -ErrorAction Continue }; exit 1 }
 }
 catch {
     $safeFailure = Protect-NervTestEvidenceText $_.Exception.Message
-    Write-NervTestEvidenceFailureArtifacts -OutputDirectory $OutputDirectory -RunMetadata $runMetadata -Diagnostic $safeFailure
-    if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $OutputDirectory 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }
+    $failureOutput = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $OutputDirectory -RunMetadata $runMetadata -Diagnostic $safeFailure
+    Write-NervEvidenceOutputPath -Path $failureOutput -ManifestPath $EvidencePathOutputFile
+    if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $failureOutput 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }
     Write-Error $safeFailure -ErrorAction Continue
     exit 1
 }
