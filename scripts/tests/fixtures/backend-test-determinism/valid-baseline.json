@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "e3107d19e76fa0935148f43a39e2084244a2918f6154204913552805fc0040f5",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described timing exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer contains the delay finding.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
+      "pattern": "Thread.Sleep",
+      "lineTextSha256": "ef9d25b29e7c414686a22cfc192be5477f47c0b2cb4ebdf3f8f6b91a83d3a8b2",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described blocking-delay exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer contains the blocking delay.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
+      "pattern": "ShortLease",
+      "lineTextSha256": "84e30fc1fce62c19ffc9a9d8d99d2cd528f7577666463f775d27ff03a7011635",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described short lease exception can be admitted.",
+      "exitCondition": "Delete when the fixture lease duration is no longer sub-second.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
+      "pattern": "ShortLease",
+      "lineTextSha256": "65f205135634c55e4dfc155a8ba783823503e064d5628579da02ada6fbade0d4",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described short renewal exception can be admitted.",
+      "exitCondition": "Delete when the fixture renewal interval is no longer sub-second.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
+      "pattern": "UnreachableAddress",
+      "lineTextSha256": "84f9afbdd72d09c1a78d3180997169036f8f45ddea314e4feee895dbb4110a46",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described loopback port-one exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer uses the unreachable endpoint sentinel.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
+      "pattern": "UnreachableAddress",
+      "lineTextSha256": "9f035df1d54112894b9be76392c438444287d2522a44866e8343ff13e1d5b4f2",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described connection-string port-one exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer uses the port-one sentinel.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "5b75f92781885d3be5682f1452c98ffb34532c1bd48d63c3434656a6fcb5e994",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described environment mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates process environment state.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "020416f85d5351eb4b3bc925983657f42db4b92fe4912298cdab6dc392796c3c",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described global validator mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates global validator options.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "aa0b5bff72e6a59228de91a445666c00d79acf34eb2e311facd37b4f3dd507aa",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described current-culture mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates current culture.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "ece4507f861b18e40557170190ef94ec7415ec0db79a6791d21fb78777f9811d",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described default-culture mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates default thread culture.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "d82d3c3e93fdd03d5fe6a1aa791586e72d76bac4eae528476a766b633e4bfaad",
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described nested global validator mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates nested global validator options.",
+      "expiresOn": "2026-09-03"
+    }
+  ]
+}

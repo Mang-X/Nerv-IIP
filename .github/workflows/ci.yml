@@ -34,6 +34,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Check backend test determinism
+        shell: pwsh
+        run: ./scripts/check-backend-test-determinism.ps1
+
       - name: Test backend solution
         run: dotnet test backend/Nerv.IIP.sln --configuration Release
 
@@ -177,6 +181,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run script governance check
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      - name: Test backend determinism checker
+        shell: pwsh
+        run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
+
+      - name: Run backend determinism checker
+        shell: pwsh
+        run: ./scripts/check-backend-test-determinism.ps1
