@@ -190,6 +190,26 @@ try {
         -ExpectedExitCode 0
 
     Assert-CheckerCase `
+        -Name 'interpolated raw expression remains executable code' `
+        -SourceRoot (Join-Path $fixtureRoot 'interpolated-raw-expression.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('Task.Delay')
+
+    Assert-CheckerCase `
+        -Name 'empty raw string does not hide following delay' `
+        -SourceRoot (Join-Path $fixtureRoot 'raw-empty-followed-by-delay.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('Task.Delay')
+
+    Assert-CheckerCase `
+        -Name 'raw text and non-interpolation braces stay clean' `
+        -SourceRoot (Join-Path $fixtureRoot 'raw-string-clean.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 0
+
+    Assert-CheckerCase `
         -Name 'unexplained delays' `
         -SourceRoot (Join-Path $fixtureRoot 'unexplained-delay.cs') `
         -BaselinePath $emptyBaselinePath `

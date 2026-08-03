@@ -213,14 +213,164 @@ function Get-CSharpSanitizedText {
         }
 
         if ($character -eq '"') {
+            $quoteRunLength = 1
+            while ($index + $quoteRunLength -lt $length -and $Text[$index + $quoteRunLength] -eq '"') {
+                $quoteRunLength++
+            }
+            $isRawString = $quoteRunLength -ge 3
+
+            if ($isRawString) {
+                $quoteCount = $quoteRunLength
+                $rawClosingIndex = -1
+                $afterQuoteRun = $index + $quoteRunLength
+                $isEmptyRawString = $quoteRunLength % 2 -eq 0 -and
+                    $quoteRunLength / 2 -ge 3 -and
+                    ($afterQuoteRun -ge $length -or $Text[$afterQuoteRun] -in @(';', ',', ')', ']', '}'))
+                if ($isEmptyRawString) {
+                    $quoteCount = [int] ($quoteRunLength / 2)
+                    $rawClosingIndex = $index + $quoteCount
+                }
+                else {
+                    $rawSearchIndex = $index + $quoteCount
+                    while ($rawSearchIndex -lt $length) {
+                        if ($Text[$rawSearchIndex] -ne '"') {
+                            $rawSearchIndex++
+                            continue
+                        }
+
+                        $closingQuoteRun = 1
+                        while ($rawSearchIndex + $closingQuoteRun -lt $length -and
+                            $Text[$rawSearchIndex + $closingQuoteRun] -eq '"') {
+                            $closingQuoteRun++
+                        }
+                        if ($closingQuoteRun -ge $quoteCount) {
+                            $rawClosingIndex = $rawSearchIndex
+                            break
+                        }
+                        $rawSearchIndex += $closingQuoteRun
+                    }
+                }
+
+                if ($rawClosingIndex -lt 0) {
+                    $rawClosingIndex = $length
+                }
+
+                $rawDollarCount = 0
+                $dollarIndex = $index - 1
+                while ($dollarIndex -ge 0 -and $Text[$dollarIndex] -eq '$') {
+                    $rawDollarCount++
+                    $dollarIndex--
+                }
+
+                if (-not $PreserveStringContent) {
+                    for ($offset = 1; $offset -le $rawDollarCount; $offset++) {
+                        $characters[$index - $offset] = ' '
+                    }
+                    for ($offset = 0; $offset -lt $quoteCount; $offset++) {
+                        $characters[$index + $offset] = ' '
+                    }
+                }
+
+                $rawContentIndex = $index + $quoteCount
+                while ($rawContentIndex -lt $rawClosingIndex) {
+                    if ($rawDollarCount -gt 0 -and $Text[$rawContentIndex] -eq '{') {
+                        $openingBraceRun = 1
+                        while ($rawContentIndex + $openingBraceRun -lt $rawClosingIndex -and
+                            $Text[$rawContentIndex + $openingBraceRun] -eq '{') {
+                            $openingBraceRun++
+                        }
+
+                        if ($openingBraceRun -ge $rawDollarCount -and $openingBraceRun -lt 2 * $rawDollarCount) {
+                            $expressionStart = $rawContentIndex + $openingBraceRun
+                            $expressionTail = $Text.Substring($expressionStart, $rawClosingIndex - $expressionStart)
+                            $sanitizedExpressionTail = if ($PreserveStringContent) {
+                                Get-CSharpSanitizedText -Text $expressionTail -PreserveStringContent
+                            }
+                            else {
+                                Get-CSharpSanitizedText -Text $expressionTail
+                            }
+
+                            $expressionCloseOffset = -1
+                            $closingBraceRun = 0
+                            $nestedBraceDepth = 0
+                            $expressionCursor = 0
+                            while ($expressionCursor -lt $sanitizedExpressionTail.Length) {
+                                if ($sanitizedExpressionTail[$expressionCursor] -eq '{') {
+                                    $nestedBraceDepth++
+                                    $expressionCursor++
+                                    continue
+                                }
+                                if ($sanitizedExpressionTail[$expressionCursor] -ne '}') {
+                                    $expressionCursor++
+                                    continue
+                                }
+
+                                $candidateClosingRun = 1
+                                while ($expressionCursor + $candidateClosingRun -lt $sanitizedExpressionTail.Length -and
+                                    $sanitizedExpressionTail[$expressionCursor + $candidateClosingRun] -eq '}') {
+                                    $candidateClosingRun++
+                                }
+                                $nestedClosingBraces = [Math]::Min($nestedBraceDepth, $candidateClosingRun)
+                                $nestedBraceDepth -= $nestedClosingBraces
+                                $remainingClosingBraces = $candidateClosingRun - $nestedClosingBraces
+                                if ($nestedBraceDepth -eq 0 -and
+                                    $remainingClosingBraces -ge $rawDollarCount -and
+                                    $remainingClosingBraces -lt 2 * $rawDollarCount) {
+                                    $expressionCloseOffset = $expressionCursor + $nestedClosingBraces
+                                    $closingBraceRun = $remainingClosingBraces
+                                    break
+                                }
+                                $expressionCursor += $candidateClosingRun
+                            }
+
+                            if ($expressionCloseOffset -ge 0) {
+                                if (-not $PreserveStringContent) {
+                                    for ($offset = 0; $offset -lt $openingBraceRun; $offset++) {
+                                        $characters[$rawContentIndex + $offset] = ' '
+                                    }
+                                }
+
+                                $expressionLength = $expressionCloseOffset
+                                $expressionText = $Text.Substring($expressionStart, $expressionLength)
+                                $sanitizedExpression = if ($PreserveStringContent) {
+                                    Get-CSharpSanitizedText -Text $expressionText -PreserveStringContent
+                                }
+                                else {
+                                    Get-CSharpSanitizedText -Text $expressionText
+                                }
+                                for ($offset = 0; $offset -lt $expressionLength; $offset++) {
+                                    $characters[$expressionStart + $offset] = $sanitizedExpression[$offset]
+                                }
+
+                                $expressionClosingIndex = $expressionStart + $expressionCloseOffset
+                                if (-not $PreserveStringContent) {
+                                    for ($offset = 0; $offset -lt $closingBraceRun; $offset++) {
+                                        $characters[$expressionClosingIndex + $offset] = ' '
+                                    }
+                                }
+                                $rawContentIndex = $expressionClosingIndex + $closingBraceRun
+                                continue
+                            }
+                        }
+                    }
+
+                    if (-not $PreserveStringContent -and
+                        $Text[$rawContentIndex] -ne "`r" -and $Text[$rawContentIndex] -ne "`n") {
+                        $characters[$rawContentIndex] = ' '
+                    }
+                    $rawContentIndex++
+                }
+
+                if (-not $PreserveStringContent -and $rawClosingIndex -lt $length) {
+                    for ($offset = 0; $offset -lt $quoteCount; $offset++) {
+                        $characters[$rawClosingIndex + $offset] = ' '
+                    }
+                }
+                $index = [Math]::Min($rawClosingIndex + $quoteCount, $length)
+                continue
+            }
+
             $quoteCount = 1
-            while ($index + $quoteCount -lt $length -and $characters[$index + $quoteCount] -eq '"') {
-                $quoteCount++
-            }
-            $isRawString = $quoteCount -ge 3
-            if (-not $isRawString) {
-                $quoteCount = 1
-            }
             $isVerbatimString = ($index -gt 0 -and $characters[$index - 1] -eq '@') -or
                 ($index -gt 1 -and $characters[$index - 1] -eq '$' -and $characters[$index - 2] -eq '@')
             $prefixIndex = $index - 1
@@ -239,22 +389,7 @@ function Get-CSharpSanitizedText {
 
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ($isRawString) {
-                    $closingQuotes = 0
-                    while ($index + $closingQuotes -lt $length -and $characters[$index + $closingQuotes] -eq '"') {
-                        $closingQuotes++
-                    }
-                    if ($closingQuotes -ge $quoteCount) {
-                        for ($offset = 0; $offset -lt $quoteCount; $offset++) {
-                            if (-not $PreserveStringContent) {
-                                $characters[$index + $offset] = ' '
-                            }
-                        }
-                        $index += $quoteCount
-                        break
-                    }
-                }
-                elseif ($isInterpolatedString -and $interpolationDepth -eq 0 -and $current -eq '{' -and
+                if ($isInterpolatedString -and $interpolationDepth -eq 0 -and $current -eq '{' -and
                     $index + 1 -lt $length -and $characters[$index + 1] -eq '{') {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '

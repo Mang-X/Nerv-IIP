@@ -32,6 +32,26 @@
       "expiresOn": "2026-09-03"
     },
     {
+      "path": "scripts/tests/fixtures/backend-test-determinism/raw-empty-followed-by-delay.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "caf904e7791e39a771904fab5478d7db7e6ad421b5476d486e2d32727e74f77b",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves an empty raw string cannot hide a following cross-line delay.",
+      "exitCondition": "Delete when the fixture no longer contains the delay after an empty raw string.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-raw-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "46e27c0eab3cbc3967832b0c5d498b2b7bb960b5cfdfa0c1fa5ddd2842500b6c",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside a raw interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the raw interpolation delay.",
+      "expiresOn": "2026-09-03"
+    },
+    {
       "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
       "pattern": "ShortLease",
       "lineTextSha256": "84e30fc1fce62c19ffc9a9d8d99d2cd528f7577666463f775d27ff03a7011635",
