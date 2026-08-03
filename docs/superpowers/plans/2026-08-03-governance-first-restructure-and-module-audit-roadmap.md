@@ -135,13 +135,14 @@ Linear 状态约定：**Todo = 当前批次可直接领**；Backlog = 后续批�
 | MAN-650 / #1201 | 随机红总口（M1） | 随 MAN-662 收敛 | 具体实例 MAN-788/789/733 挂 M1，由 662 的基建逐个消 |
 | MAN-656 / #1223 | Current/Deprecated 生命周期标记 | Fable/主会话 | 纯文档规则 |
 | MAN-659 / #1226 | AGENTS Agent 架构护栏 | Fable/主会话 | 与 MAN-656 可同 PR |
+| MAN-669 / #1236 **阶段 1** | 粗粒度项目分片（owner 要求提前）：按已知程序集耗时拆 3~4 个并行 job + 聚合 job 保持 required 名字稳定 | codex/GPT 后端 | 预期 12→7–8 分钟；下限被 BusinessGateway 串行程序集锁死，进一步压缩等 MAN-663；阶段 2（精细分片/build once/消 ERP 重复构建）留 M2 依赖 MAN-661 |
 
-串行约束：凡改 `.github/workflows` 的票（MAN-793、MAN-792 第二个 PR、后续 MAN-668/669）相互串行，避免 workflow 互相覆盖。
+串行约束：凡改 `.github/workflows` 的票相互串行，建议顺序 MAN-793 → MAN-669 阶段 1 → MAN-792 的 workflow PR（fmt 纯格式化大 diff PR 不受此限）；后续 MAN-668 / MAN-669 阶段 2 同规则。
 
 ### 第二批（第一批合入后）
 
-- MAN-663（BusinessGateway 共享宿主、恢复并行）——依赖 MAN-662 的隔离基建；改造期间 BusinessGateway 测试大改串行。
-- MAN-668 + MAN-669（影响感知门禁 + shard）——依赖 MAN-661 的耗时数据；branch protection 与条件 job 的坑见票内。
+- MAN-663（BusinessGateway 共享宿主、恢复并行）——依赖 MAN-662 的隔离基建；改造期间 BusinessGateway 测试大改串行。**它是后端墙钟压到 8 分钟以下的真正瓶颈**（5:34 串行程序集是分片后的下限）。
+- MAN-668 + MAN-669 阶段 2（影响感知门禁 + 精细 shard/build once）——依赖 MAN-661 的耗时数据；branch protection 与条件 job 的坑见票内。
 - MAN-658（A1 先行裁决 ADR spike）——架构裁决，Fable/GPT 高推理位做，不派 codex；产出 ADR 后解锁 MAN-655/657。
 - MAN-660（大文件增量门禁）。
 
