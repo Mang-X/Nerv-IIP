@@ -24,7 +24,9 @@ const slots = useSlots()
     data-slot="divider"
     role="separator"
     aria-orientation="vertical"
-    :class="cn('inline-block h-[1em] w-px shrink-0 self-center bg-border align-middle', $props.class)"
+    :class="
+      cn('inline-block h-[1em] w-px shrink-0 self-center bg-border align-middle', $props.class)
+    "
   />
   <div
     v-else-if="slots.default"

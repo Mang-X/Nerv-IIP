@@ -96,14 +96,14 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
 | Inventory           |      17 |      10 |        2 |        5 |
-| Maintenance         |      25 |      20 |        4 |        1 |
+| Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      49 |      41 |        4 |        4 |
 | Mes                 |      55 |      52 |        3 |        0 |
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **414** | **343** |   **47** |   **24** |
+| **Total**           | **415** | **343** |   **47** |   **25** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -119,6 +119,20 @@ maintenance-reason alias. MasterData and Quality reuse their existing exposed
 reads. The facade preserves stable IDs, readable labels, scope context, owner
 identity, deterministic paging, and explicit unavailable ranking metadata; it
 does not copy cross-service facts or create business decision scores.
+
+For MAN-641, Maintenance `listMaintenanceWorkOrders` remains `exposed` through
+BusinessGateway `listBusinessConsoleMaintenanceWorkOrders`. The facade preserves
+the legacy `deviceAssetId` / CSV `deviceAssetIds` filters and additionally forwards
+repeated `deviceAssetReferences` values as exact device codes (including commas)
+or canonical `DeviceAssetId` values. The public facade's maximum of 200 references
+is an application validation limit, not a guarantee that arbitrary 200-by-150-character
+values fit a Kestrel GET request target. Restricted-scope authorization resolves at
+most 200 canonical devices through one MasterData batch RPC backed by two bounded,
+non-growing relational reads, and may expand them to at most 400 verified
+`DeviceAssetId` + code aliases. BusinessGateway sends those aliases through the
+authenticated internal body-based Maintenance query instead of a long GET target.
+Missing, malformed, duplicate, cross-scope, stale, inactive, or colliding identities
+deny the whole batch before Maintenance is called.
 
 For connector configured-tag coverage, the declaration is exact: service
 operation `reportBusinessIiotConnectorTagManifest` is `internal` because it is a
@@ -202,9 +216,10 @@ three separate public contracts.
 | Inventory           | POST   | `/api/inventory/v1/reservations/fefo`                                        | Service-to-service FEFO reservation API consumed by WMS (#412).                                                                     |
 | Inventory           | POST   | `/api/inventory/v1/reservations/{reservationId}/release`                     | Service-to-service reservation release API consumed by WMS outbound cancel (#412).                                                  |
 | Inventory           | POST   | `/api/inventory/v1/status-transfers`                                         | Internal controlled-status transition driven by Quality inspection-result events; not a direct Console action.                      |
+| Maintenance         | POST   | `/api/business/internal/v1/maintenance/work-orders/query`                    | Body-based BusinessGateway batch lookup for up to 400 verified device aliases; it avoids request-target limits, reuses the list query handler, and is not a public facade. |
 | Maintenance         | POST   | `/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe` | Read-only BusinessGateway lookup for an exact persisted assignment receipt before mutable target validation; it never creates a receipt or changes work-order state. |
 | MasterData          | GET    | `/api/business/v1/master-data/partners/{customerCode}/credit`                | Service-to-service public credit read consumed by ERP sales-order credit check (#436).                                              |
-| MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data resolve consumed by other business services.                                                |
+| MasterData          | POST   | `/api/business/v1/master-data/references/resolve`                            | Service-to-service batch reference-data and authoritative device-identity snapshot resolve (maximum 200 references) consumed by other business services. |
 | MasterData          | POST   | `/api/business/v1/master-data/references/validate`                           | Service-to-service batch reference-data validate consumed by other business services.                                               |
 | Scheduling          | POST   | `/api/business/internal/v1/scheduling/order-urgency-archives/restore`        | Authenticated operator recovery for exact-version compliance archives; never a Business Console action.                             |
 | Wms                 | POST   | `/api/business/v1/wms/inbound-orders/cancel-by-source`                       | Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; not a direct Console action.      |

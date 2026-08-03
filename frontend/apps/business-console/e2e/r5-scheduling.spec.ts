@@ -33,7 +33,8 @@ test('第五轮 · 排产专场', async ({ page }) => {
   const failed: string[] = []
   page.on('response', (r) => {
     const u = new URL(r.url())
-    if (r.status() >= 400 && u.pathname.startsWith('/api/')) failed.push(`${r.status()} ${u.pathname}`)
+    if (r.status() >= 400 && u.pathname.startsWith('/api/'))
+      failed.push(`${r.status()} ${u.pathname}`)
   })
 
   // ── 登录 ──
@@ -60,12 +61,18 @@ test('第五轮 · 排产专场', async ({ page }) => {
   await page.waitForTimeout(800)
 
   // ── B. 表格 Tab ──
-  await page.getByRole('tab', { name: '表格' }).click().catch(() => {})
+  await page
+    .getByRole('tab', { name: '表格' })
+    .click()
+    .catch(() => {})
   await page.waitForTimeout(2_500)
   await shot(page, 'S-04', '表格Tab')
 
   // ── C. 甘特图 Tab ──
-  await page.getByRole('tab', { name: '甘特图' }).click().catch(() => {})
+  await page
+    .getByRole('tab', { name: '甘特图' })
+    .click()
+    .catch(() => {})
   await page.waitForTimeout(3_500)
   await shot(page, 'S-05', '甘特图Tab-默认')
 
@@ -131,7 +138,10 @@ test('第五轮 · 排产专场', async ({ page }) => {
   }
   const singleBtn = page.getByRole('button', { name: '对该单排产' }).first()
   const singleVisible = await singleBtn.isVisible().catch(() => false)
-  const singleCount = await page.getByRole('button', { name: '对该单排产' }).count().catch(() => 0)
+  const singleCount = await page
+    .getByRole('button', { name: '对该单排产' })
+    .count()
+    .catch(() => 0)
   // 行内「⋯」菜单也可能藏着它——数一下页面上有多少个，0 才是真没有。
   notes.push({
     id: 'S-11',

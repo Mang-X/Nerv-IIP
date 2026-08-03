@@ -3,9 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import QualityResultStep from './QualityResultStep.vue'
 
-function submitted(
-  over: { result?: string; ncrId?: string | null; ncrCode?: string | null } = {},
-) {
+function submitted(over: { result?: string; ncrId?: string | null; ncrCode?: string | null } = {}) {
   const state: QualityResultState = {
     phase: 'submitted',
     authoritative: {

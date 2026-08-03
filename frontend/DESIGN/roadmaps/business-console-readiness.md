@@ -8,15 +8,15 @@ Business console readiness is design-system work first and implementation work s
 
 ## Immediate Component Set
 
-| Capability | Design-System Direction | #143 Status |
-| --- | --- | --- |
-| Tabs | shadcn-vue `tabs` style and public parts. | Delivered in `@nerv-iip/ui`; used for dense detail pages such as order, work order, device and SKU detail. |
-| Sheet | shadcn-vue `sheet` style and public parts. | Delivered in `@nerv-iip/ui`; used for slide-in inspection/detail/edit panels from list pages. |
-| Date and range pickers | Popover-backed compact DateOnly controls. | Delivered in `@nerv-iip/ui`; current UI uses native date inputs, with `Calendar`/`RangeCalendar` exported only as low-level Reka roots until styled calendar-grid parts are added. |
-| Charts | shadcn-style chart shell with semantic token bridge. | Delivered in `@nerv-iip/ui`; page-level chart engines remain adapters, not a second design system. |
-| File upload | Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | Delivered in `@nerv-iip/ui`; UI talks to FileStorage upload sessions and tus/server-proxy transport, never MinIO directly. |
-| Progress | shadcn-vue `progress` style. | Delivered in `@nerv-iip/ui`; used by FileUpload and execution progress indicators. |
-| Scroll area | shadcn-vue `scroll-area` style. | Delivered in `@nerv-iip/ui`; avoids page-local scrollbar styling. |
+| Capability             | Design-System Direction                                                      | #143 Status                                                                                                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs                   | shadcn-vue `tabs` style and public parts.                                    | Delivered in `@nerv-iip/ui`; used for dense detail pages such as order, work order, device and SKU detail.                                                                         |
+| Sheet                  | shadcn-vue `sheet` style and public parts.                                   | Delivered in `@nerv-iip/ui`; used for slide-in inspection/detail/edit panels from list pages.                                                                                      |
+| Date and range pickers | Popover-backed compact DateOnly controls.                                    | Delivered in `@nerv-iip/ui`; current UI uses native date inputs, with `Calendar`/`RangeCalendar` exported only as low-level Reka roots until styled calendar-grid parts are added. |
+| Charts                 | shadcn-style chart shell with semantic token bridge.                         | Delivered in `@nerv-iip/ui`; page-level chart engines remain adapters, not a second design system.                                                                                 |
+| File upload            | Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | Delivered in `@nerv-iip/ui`; UI talks to FileStorage upload sessions and tus/server-proxy transport, never MinIO directly.                                                         |
+| Progress               | shadcn-vue `progress` style.                                                 | Delivered in `@nerv-iip/ui`; used by FileUpload and execution progress indicators.                                                                                                 |
+| Scroll area            | shadcn-vue `scroll-area` style.                                              | Delivered in `@nerv-iip/ui`; avoids page-local scrollbar styling.                                                                                                                  |
 
 ## FileUpload Direction
 

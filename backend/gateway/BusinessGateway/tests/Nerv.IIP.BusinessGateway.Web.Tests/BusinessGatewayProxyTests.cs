@@ -6771,6 +6771,45 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("idem-master-http", handler.Requests[2].Headers.GetValues("X-Idempotency-Key").Single());
     }
 
+    [Theory]
+    [InlineData("CNC-NEW")]
+    [InlineData("0198b7d4-25f7-7e0d-bf8e-526f881cc5e1")]
+    public async Task Master_data_http_client_preserves_device_code_and_public_id_on_detail_read(string requestedReference)
+    {
+        const string deviceAssetId = "0198b7d4-25f7-7e0d-bf8e-526f881cc5e1";
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                resourceType = "device-asset",
+                code = "CNC-NEW",
+                displayName = "一号数控机床",
+                active = true,
+                snapshotVersion = "v1",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deviceAssetId,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var response = await client.GetResourceDetailAsync(
+            "internal-token-001",
+            new BusinessConsoleMasterDataResourceRequest("org-001", "env-dev", "device-asset", requestedReference),
+            CancellationToken.None);
+
+        Assert.Equal(deviceAssetId, response.DeviceAssetId);
+        Assert.Equal("CNC-NEW", response.Code);
+        AssertRequest(
+            handler.Requests.Single(),
+            HttpMethod.Get,
+            $"/api/business/v1/master-data/resources/device-asset/{requestedReference}?organizationId=org-001&environmentId=env-dev");
+    }
+
     [Fact]
     public async Task Master_data_http_client_omits_default_false_include_disabled_query()
     {
@@ -10104,6 +10143,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 {
     public int ListResourcesCallCount { get; private set; }
 
+    public int ResolveReferencesCallCount { get; private set; }
+
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleListResourcesRequest? LastListResourcesRequest { get; private set; }
@@ -10115,6 +10156,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
     public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
+
+    public List<BusinessMasterDataResolveReferencesRequest> ResolveReferenceRequests { get; } = [];
 
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
 
@@ -10186,6 +10229,14 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceDetail? ResourceDetailResponse { get; set; }
 
+    public Func<BusinessConsoleMasterDataResourceRequest, BusinessConsoleMasterDataResourceDetail>?
+        ResourceDetailFactory
+    { get; init; }
+
+    public Func<BusinessMasterDataResolveReferencesRequest, BusinessMasterDataResolveReferencesResponse>?
+        ResolveReferencesFactory
+    { get; init; }
+
     public Task<BusinessMasterDataPrincipalWorkContextResponse> GetPrincipalWorkContextAsync(
         string internalBearerToken,
         BusinessMasterDataPrincipalWorkContextRequest request,
@@ -10247,8 +10298,98 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         }
 
         return Task.FromResult(
-            ResourceDetailResponse ?? ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
+            ResourceDetailFactory?.Invoke(request) ??
+            ResourceDetailResponse ??
+            ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
+
+    public Task<BusinessMasterDataResolveReferencesResponse> ResolveReferencesAsync(
+        string internalBearerToken,
+        BusinessMasterDataResolveReferencesRequest request,
+        CancellationToken cancellationToken)
+    {
+        ResolveReferencesCallCount++;
+        LastInternalToken = internalBearerToken;
+        ResolveReferenceRequests.Add(request);
+        if (ResolveReferencesFactory is not null)
+        {
+            return Task.FromResult(ResolveReferencesFactory(request));
+        }
+        if (DetailFailure is not null)
+        {
+            throw DetailFailure;
+        }
+
+        try
+        {
+            var resolved = request.References.Select(reference =>
+            {
+                var detail = ResolveDetailWithoutRecording(request, reference.Code);
+                var byId = ResolveDetailWithoutRecording(request, detail.DeviceAssetId ?? string.Empty);
+                var byCode = ResolveDetailWithoutRecording(request, detail.Code);
+                if (!SameDevice(detail, byId)
+                    || !SameDevice(detail, byCode)
+                    || !(string.Equals(reference.Code, detail.Code, StringComparison.Ordinal)
+                        || (Guid.TryParse(reference.Code, out var requestedId)
+                            && Guid.TryParse(detail.DeviceAssetId, out var resolvedId)
+                            && requestedId == resolvedId)))
+                {
+                    throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                        HttpStatusCode.BadGateway,
+                        "device-reference-ambiguous");
+                }
+                return new BusinessMasterDataReferenceResponse(
+                    "device-asset",
+                    reference.Code,
+                    true,
+                    detail.Active,
+                    detail.DisplayName,
+                    detail.SnapshotVersion,
+                    detail.Active ? string.Empty : "disabled",
+                    detail.DeviceAssetId,
+                    detail.Code,
+                    detail.OrganizationId,
+                    detail.EnvironmentId);
+            }).ToArray();
+            return Task.FromResult(new BusinessMasterDataResolveReferencesResponse(resolved));
+        }
+        catch (BusinessServiceProxyException)
+        {
+            return Task.FromResult(new BusinessMasterDataResolveReferencesResponse(
+                request.References.Select(reference => new BusinessMasterDataReferenceResponse(
+                    "device-asset",
+                    reference.Code,
+                    false,
+                    false,
+                    string.Empty,
+                    string.Empty,
+                    "ambiguous")).ToArray()));
+        }
+    }
+
+    private BusinessConsoleMasterDataResourceDetail ResolveDetailWithoutRecording(
+        BusinessMasterDataResolveReferencesRequest request,
+        string reference)
+    {
+        var detailRequest = new BusinessConsoleMasterDataResourceRequest(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "device-asset",
+            reference);
+        return ResourceDetailFactory?.Invoke(detailRequest)
+            ?? ResourceDetailResponse
+            ?? ResourceDetail("device-asset", reference, null, true);
+    }
+
+    private static bool SameDevice(
+        BusinessConsoleMasterDataResourceDetail left,
+        BusinessConsoleMasterDataResourceDetail right) =>
+        string.Equals(left.DeviceAssetId, right.DeviceAssetId, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.Code, right.Code, StringComparison.Ordinal)
+        && string.Equals(left.SnapshotVersion, right.SnapshotVersion, StringComparison.Ordinal)
+        && left.Active == right.Active
+        && string.Equals(left.OrganizationId, right.OrganizationId, StringComparison.Ordinal)
+        && string.Equals(left.EnvironmentId, right.EnvironmentId, StringComparison.Ordinal);
 
     public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
         string internalBearerToken,
@@ -13525,6 +13666,10 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
+    public BusinessConsoleTelemetryAlarmListRequest? LastAlarmListRequest { get; private set; }
+
+    public BusinessConsoleTelemetryAlarmEventListResponse? AlarmListResponse { get; init; }
+
     public BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest? LastAlarmRuleUpsertRequest { get; private set; }
 
     public BusinessConsoleTelemetryOeeRequest? LastOeeRequest { get; private set; }
@@ -13637,7 +13782,8 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleTelemetryAlarmEventListResponse([]));
+        LastAlarmListRequest = request;
+        return Task.FromResult(AlarmListResponse ?? new BusinessConsoleTelemetryAlarmEventListResponse([]));
     }
 
     public Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(

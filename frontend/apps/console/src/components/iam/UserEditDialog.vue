@@ -94,9 +94,7 @@ watch(open, (isOpen) => {
     <DialogContent>
       <DialogHeader>
         <DialogTitle>编辑用户</DialogTitle>
-        <DialogDescription>
-          更新用户的登录名、邮箱与启用状态。
-        </DialogDescription>
+        <DialogDescription> 更新用户的登录名、邮箱与启用状态。 </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
@@ -124,7 +122,10 @@ watch(open, (isOpen) => {
             <FieldError v-if="errors.email" :errors="[errors.email]" />
           </Field>
 
-          <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+          <Field
+            orientation="horizontal"
+            class="items-center justify-between rounded-lg border p-3"
+          >
             <div class="grid gap-1">
               <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
@@ -133,18 +134,12 @@ watch(open, (isOpen) => {
 
           <Field>
             <FieldLabel for="iam-edit-account-expires">账号有效期</FieldLabel>
-            <Input
-              id="iam-edit-account-expires"
-              v-model="form.accountExpiresDate"
-              type="date"
-            />
+            <Input id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
           </Field>
         </FieldGroup>
 
         <DialogFooter show-close-button>
-          <Button type="submit">
-            保存修改
-          </Button>
+          <Button type="submit"> 保存修改 </Button>
         </DialogFooter>
       </form>
     </DialogContent>

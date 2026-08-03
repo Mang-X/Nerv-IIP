@@ -70,17 +70,17 @@ For the operational foundation reset, Business Console navigation should expand 
 
 MES menu order:
 
-| Menu | Route | Role |
-| --- | --- | --- |
-| 生产驾驶舱 | `/mes` | Shift leader / dispatcher first screen. |
-| 工单与派工 | `/mes/work-orders` | Work order list, rush order entry, dispatch context. |
-| 工序执行 | `/mes/operation-tasks` | Operation task worklist and execution entry. |
-| 在制跟踪 | `/mes/wip` | WIP status and blockers. |
-| 报工记录 | `/mes/production-reports` | Report history; create action comes from work order or operation context. |
-| 完工入库 | `/mes/receipts` | Receipt requests; create action comes from completion context. |
-| 异常与产能 | `/mes/capacity` | Equipment/capacity impact and exception awareness. |
-| 规则排程 | `/mes/schedules` | Temporary MES rule result and explicit schedule-run action; APS/Gantt moves to a dedicated scheduling workspace. |
-| 生产准备检查 | `/mes/foundation` | Supporting readiness diagnostics for release/start/dispatch. |
+| Menu         | Route                     | Role                                                                                                             |
+| ------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 生产驾驶舱   | `/mes`                    | Shift leader / dispatcher first screen.                                                                          |
+| 工单与派工   | `/mes/work-orders`        | Work order list, rush order entry, dispatch context.                                                             |
+| 工序执行     | `/mes/operation-tasks`    | Operation task worklist and execution entry.                                                                     |
+| 在制跟踪     | `/mes/wip`                | WIP status and blockers.                                                                                         |
+| 报工记录     | `/mes/production-reports` | Report history; create action comes from work order or operation context.                                        |
+| 完工入库     | `/mes/receipts`           | Receipt requests; create action comes from completion context.                                                   |
+| 异常与产能   | `/mes/capacity`           | Equipment/capacity impact and exception awareness.                                                               |
+| 规则排程     | `/mes/schedules`          | Temporary MES rule result and explicit schedule-run action; APS/Gantt moves to a dedicated scheduling workspace. |
+| 生产准备检查 | `/mes/foundation`         | Supporting readiness diagnostics for release/start/dispatch.                                                     |
 
 `基础就绪` must not be a primary operator label. Use `生产准备检查` and position it after execution pages.
 
@@ -159,13 +159,13 @@ Tabs belong inside detail pages only. They are not primary navigation.
 
 Use consistent status semantics across MES, inventory and quality:
 
-| Semantics | Examples | Visual Direction |
-| --- | --- | --- |
+| Semantics          | Examples                                                        | Visual Direction    |
+| ------------------ | --------------------------------------------------------------- | ------------------- |
 | Normal / completed | `Ready`, `Completed`, `Closed`, `Passed`, `Available`, `Active` | Green status badge. |
-| In progress | `Running`, `Started`, `InProgress` | Blue status badge. |
-| Warning / pending | `Pending`, `Warning`, `ConditionalRelease` | Amber status badge. |
-| Blocked / failed | `Blocked`, `Failed`, `Rejected`, `Unavailable` | Red status badge. |
-| Unknown / neutral | Unknown code or missing value | Slate status badge. |
+| In progress        | `Running`, `Started`, `InProgress`                              | Blue status badge.  |
+| Warning / pending  | `Pending`, `Warning`, `ConditionalRelease`                      | Amber status badge. |
+| Blocked / failed   | `Blocked`, `Failed`, `Rejected`, `Unavailable`                  | Red status badge.   |
+| Unknown / neutral  | Unknown code or missing value                                   | Slate status badge. |
 
 ## Current P0 Scope
 

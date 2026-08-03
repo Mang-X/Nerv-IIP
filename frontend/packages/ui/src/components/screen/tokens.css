@@ -63,7 +63,6 @@
     /* motion — reference the shared Nv curves (value defined once in theme.css). */
     --nv-scr-ease: var(--nv-ease-out-quart);
     --nv-scr-ease-emphasized: var(--nv-ease-out-expo);
-
   }
 }
 

@@ -5,10 +5,10 @@
 
 ## 本轮已修复
 
-| 项 | 改动 | 文件 |
-| --- | --- | --- |
-| 分页 `pageSize` 类型不兼容 | `NvPagination.pageSize` 改 `number \| string`，内部统一数值化 → 读侧可直接接 `usePagedList` 的 string `pageSize`（见下方片段） | `pagination/NvPagination.vue` |
-| `NvDialogFooter` 缺 `show-close-button` | 补回该 prop（默认 `false`），开启时渲染 `NvButton(outline) 关闭`，对齐 base `DialogFooter` | `dialog/NvDialogFooter.vue` |
+| 项                                          | 改动                                                                                                                                                             | 文件                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| 分页 `pageSize` 类型不兼容                  | `NvPagination.pageSize` 改 `number \| string`，内部统一数值化 → 读侧可直接接 `usePagedList` 的 string `pageSize`（见下方片段）                                   | `pagination/NvPagination.vue`               |
+| `NvDialogFooter` 缺 `show-close-button`     | 补回该 prop（默认 `false`），开启时渲染 `NvButton(outline) 关闭`，对齐 base `DialogFooter`                                                                       | `dialog/NvDialogFooter.vue`                 |
 | `NvTabs` / `NvTabsContent` 是裸 reka 再导出 | 补成真包装：`NvTabs` 带回 `flex gap-2 group/tabs data-horizontal:flex-col`，`NvTabsContent` 带回 `flex-1 text-sm outline-none`（对齐 base `Tabs`/`TabsContent`） | `tabs/NvTabs.vue`、`tabs/NvTabsContent.vue` |
 
 ### 配 usePagedList 的分页用法
@@ -31,14 +31,14 @@
 
 `NvBadge` 是**有意的色彩语义**变体集（非缺陷），与 base `Badge` 不同名。迁移时按下表换名：
 
-| base `Badge` | → `NvBadge` | 说明 |
-| --- | --- | --- |
-| `default` | `solid` | 实心主色 |
-| `secondary` | `neutral` | 中性灰（默认值） |
-| `destructive` | `danger` | 危险红 |
-| `outline` | `neutral` | Pro 无纯描边，用中性 |
-| `success` / `warning` | `success` / `warning` | 同名 |
-| （无） | `brand` | Pro 专有：品牌色软填充 |
+| base `Badge`          | → `NvBadge`           | 说明                   |
+| --------------------- | --------------------- | ---------------------- |
+| `default`             | `solid`               | 实心主色               |
+| `secondary`           | `neutral`             | 中性灰（默认值）       |
+| `destructive`         | `danger`              | 危险红                 |
+| `outline`             | `neutral`             | Pro 无纯描边，用中性   |
+| `success` / `warning` | `success` / `warning` | 同名                   |
+| （无）                | `brand`               | Pro 专有：品牌色软填充 |
 
 证据：`pc/badge/NvBadge.vue:16-23`、`ui/badge/index.ts`。
 
@@ -67,30 +67,30 @@
 
 按 base 同名结构克隆为 NvUI PC 版（命名 `<Base>Pro<Part>`，base 原版零改动）：
 
-| 族 | 导出 | 目录 |
-| --- | --- | --- |
-| Card 子件 | `NvCardHeader / NvCardContent / NvCardFooter / NvCardTitle / NvCardDescription / NvCardAction`（补全 `NvCard` 成套） | `pc/card/` |
+| 族           | 导出                                                                                                                                                                  | 目录                |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| Card 子件    | `NvCardHeader / NvCardContent / NvCardFooter / NvCardTitle / NvCardDescription / NvCardAction`（补全 `NvCard` 成套）                                                  | `pc/card/`          |
 | DropdownMenu | `NvDropdownMenu` + 13 部件（Trigger/Content/Item/CheckboxItem/RadioGroup/RadioItem/Label/Separator/Shortcut/Group/Sub/SubTrigger/SubContent）+ `NvDropdownMenuPortal` | `pc/dropdown-menu/` |
-| Field | `NvField` + Content/Description/Error/Group/Label/Legend/Separator/Set/Title + `fieldProVariants` | `pc/field/` |
-| AlertDialog | `NvAlertDialog` + Trigger/Content/Header/Footer/Title/Description/Action/Cancel/Media（Action/Cancel 用 `NvButton`） | `pc/alert-dialog/` |
-| Sheet | `NvSheet` + Trigger/Close/Content/Header/Footer/Title/Description（Content 保留 `side` 四向 + 玻璃遮罩 + 关闭按钮） | `pc/sheet/` |
+| Field        | `NvField` + Content/Description/Error/Group/Label/Legend/Separator/Set/Title + `fieldProVariants`                                                                     | `pc/field/`         |
+| AlertDialog  | `NvAlertDialog` + Trigger/Content/Header/Footer/Title/Description/Action/Cancel/Media（Action/Cancel 用 `NvButton`）                                                  | `pc/alert-dialog/`  |
+| Sheet        | `NvSheet` + Trigger/Close/Content/Header/Footer/Title/Description（Content 保留 `side` 四向 + 玻璃遮罩 + 关闭按钮）                                                   | `pc/sheet/`         |
 
 ## 又补了一批（blocks 内部 NvUI PC 化 + 新组件）
 
-| 项 | 改动 |
-| --- | --- |
+| 项                  | 改动                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
 | `NvDateRangePicker` | 新建（`pc/date-picker/`）：起止区间，首点定起点、再点定终点（自动排序）+ 悬停预览，模型 `{ start, end }` |
-| `blocks/RowActions` | 内部 base `Button`/`DropdownMenu*` → `NvButton` + `NvDropdownMenu*` |
-| `blocks/Toolbar` | 内部 base `Input` → `NvInput`（搜索图标改用 `#leading` 槽） |
+| `blocks/RowActions` | 内部 base `Button`/`DropdownMenu*` → `NvButton` + `NvDropdownMenu*`                                      |
+| `blocks/Toolbar`    | 内部 base `Input` → `NvInput`（搜索图标改用 `#leading` 槽）                                              |
 
 文档：design-system PC 端新增 `dropdown-menu` / `field` / `alert-dialog` / `sheet` 四页 +
 `date-picker` 页补 DateRangePicker 段（已接入侧栏）。
 
 ## 仍缺口（按需后续）
 
-| 组件 | 现状 | 备注 |
-| --- | --- | --- |
+| 组件                 | 现状                                        | 备注                                                                   |
+| -------------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
 | `blocks/SectionCard` | 仍用 base `Card`（结构化：flex-col+py+gap） | 迁到裸 `NvCard` 需重加布局、低收益；`NvMetricCard` 已是 NvUI PC 指标卡 |
-| `blocks/PageHeader` | 仍用 base `Breadcrumb*` | `pc/` 暂无 `NvBreadcrumb`，建 NvUI PC 面包屑后再迁 |
+| `blocks/PageHeader`  | 仍用 base `Breadcrumb*`                     | `pc/` 暂无 `NvBreadcrumb`，建 NvUI PC 面包屑后再迁                     |
 
 > 不阻塞迁移（base/blocks 均可用）。

@@ -3,7 +3,11 @@ import type {
   BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
-import { statusActionGate } from '@nerv-iip/business-core'
+import {
+  maintenancePriorityLabel,
+  maintenancePriorityLabels,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
@@ -331,20 +335,12 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
 function workOrderNo(row: WorkOrderRow) {
   return row.sourceReferenceId ?? '无工单号'
 }
-// 建单只开放高/中/低三档，但报警自动开单等来源会带 critical/urgent 等更高档位，
-// 只查建单选项会把它们原样漏成英文码，所以显示走一张覆盖全部来源的映射表。
-const PRIORITY_LABELS: Record<string, string> = {
-  critical: '紧急',
-  urgent: '紧急',
-  high: '高',
-  medium: '中',
-  normal: '中',
-  low: '低',
-}
+// 建单只开放高/中/低三档，但报警自动开单等来源还会带 critical/urgent/normal；
+// 显示统一走 business-core 的跨端生产词表，PC 的空值/未知值继续显示破折号。
 function priorityLabel(value?: string | null) {
   const code = (value ?? '').trim().toLowerCase()
-  if (!code) return '—'
-  return PRIORITY_LABELS[code] ?? '—'
+  if (!Object.hasOwn(maintenancePriorityLabels, code)) return '—'
+  return maintenancePriorityLabel(code)
 }
 function technicianLabel(userId?: string | null) {
   if (!userId) return '未指派'

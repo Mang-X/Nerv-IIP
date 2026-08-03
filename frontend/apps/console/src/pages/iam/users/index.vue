@@ -354,11 +354,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         </template>
       </NvDataTable>
 
-      <NvPagination
-        v-model:page="page"
-        v-model:page-size="pageSize"
-        :total-items="totalCount"
-      />
+      <NvPagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalCount" />
 
       <UserCreateDialog v-model:open="createDialogOpen" @submit="handleCreate" />
       <UserEditDialog v-model:open="editDialogOpen" :user="selectedUser" @submit="handleUpdate" />

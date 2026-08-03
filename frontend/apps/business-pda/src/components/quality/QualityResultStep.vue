@@ -84,7 +84,13 @@ const resultDescription = computed(() => {
       >
         重试
       </NvMobileButton>
-      <NvMobileButton variant="outline" size="lg" block data-testid="result-back" @click="emit('back')">
+      <NvMobileButton
+        variant="outline"
+        size="lg"
+        block
+        data-testid="result-back"
+        @click="emit('back')"
+      >
         {{ state.phase === 'submitted' ? '返回工作台' : '返回' }}
       </NvMobileButton>
     </template>

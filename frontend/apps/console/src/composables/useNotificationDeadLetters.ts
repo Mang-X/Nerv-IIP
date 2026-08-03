@@ -213,7 +213,9 @@ export function useNotificationDeadLetters() {
           path: {
             deadLetterId,
           },
-        } as Parameters<typeof replayMutation.mutateAsync>[0])) as NotificationDeadLetterReplayEnvelope,
+        } as Parameters<
+          typeof replayMutation.mutateAsync
+        >[0])) as NotificationDeadLetterReplayEnvelope,
         'Unable to replay dead letter.',
       )
     } catch (error) {
@@ -235,7 +237,9 @@ export function useNotificationDeadLetters() {
             take: 100,
           },
           headers: consoleContextHeaders(context),
-        } as Parameters<typeof replayBatchMutation.mutateAsync>[0])) as NotificationDeadLetterBatchReplayEnvelope,
+        } as Parameters<
+          typeof replayBatchMutation.mutateAsync
+        >[0])) as NotificationDeadLetterBatchReplayEnvelope,
         'Unable to replay matching dead letters.',
       )
     } catch (error) {
@@ -261,7 +265,9 @@ export function useNotificationDeadLetters() {
           path: {
             deadLetterId,
           },
-        } as Parameters<typeof ignoreMutation.mutateAsync>[0])) as NotificationDeadLetterDetailEnvelope,
+        } as Parameters<
+          typeof ignoreMutation.mutateAsync
+        >[0])) as NotificationDeadLetterDetailEnvelope,
         'Unable to ignore dead letter.',
       )
     } catch (error) {
@@ -341,9 +347,7 @@ function withConsoleContextQueryKey<TOptions extends { key: unknown }>(
 }
 
 function invalidateDeadLetters(queryCache: ReturnType<typeof useQueryCache>) {
-  return queryCache
-    .invalidateQueries({ predicate: isDeadLetterEntry })
-    .catch(ignoreBackgroundError)
+  return queryCache.invalidateQueries({ predicate: isDeadLetterEntry }).catch(ignoreBackgroundError)
 }
 
 function unwrapResponseData<T>(envelope: ResponseEnvelope<T> | undefined): T | undefined {

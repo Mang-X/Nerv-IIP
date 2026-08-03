@@ -256,6 +256,24 @@ beforeEach(() => {
 })
 
 describe('maintenance work orders page', () => {
+  it('renders plan-generated work orders with a stable Chinese priority', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-planned',
+        deviceAssetId: 'DEV-PRESS-01',
+        priority: 'planned',
+        status: 'open',
+        openedAtUtc: '2026-07-06T00:00:00Z',
+      },
+    ]
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('计划保养')
+  })
+
   it('prefills maintenance work order creation from equipment alarm context', async () => {
     mount(WorkOrdersPage, mountOptions())
     await flushPromises()

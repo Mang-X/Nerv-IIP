@@ -37,7 +37,13 @@ const resultLines = computed(() => props.record?.resultLines ?? [])
       <QualityInspectionRecordSummary :record="record" />
       <QualityInspectionRecordFields :record="record" @open-ncr="(id) => emit('openNcr', id)" />
       <QualityInspectionRecordLines :lines="resultLines" />
-      <NvMobileButton variant="outline" size="lg" block data-testid="record-back" @click="emit('back')">
+      <NvMobileButton
+        variant="outline"
+        size="lg"
+        block
+        data-testid="record-back"
+        @click="emit('back')"
+      >
         返回
       </NvMobileButton>
     </template>

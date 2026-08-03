@@ -32,7 +32,13 @@ const emit = defineEmits<{ retry: []; back: []; openRecord: [recordId: string] }
     <template v-else-if="ncr">
       <QualityNcrSummary :ncr="ncr" />
       <QualityNcrFields :ncr="ncr" @open-record="(id) => emit('openRecord', id)" />
-      <NvMobileButton variant="outline" size="lg" block data-testid="ncr-back" @click="emit('back')">
+      <NvMobileButton
+        variant="outline"
+        size="lg"
+        block
+        data-testid="ncr-back"
+        @click="emit('back')"
+      >
         返回检验流程
       </NvMobileButton>
     </template>

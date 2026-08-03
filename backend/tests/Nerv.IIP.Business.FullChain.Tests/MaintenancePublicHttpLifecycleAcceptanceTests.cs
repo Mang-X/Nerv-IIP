@@ -38,6 +38,9 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
     private const string PrincipalId = "user-admin";
     private const string AlternateTechnicianId = "user-alternate";
     private const string TeamId = "team-man631-http";
+    private const string DeviceCode = "DEV-MAN631-HTTP";
+    private const string DeviceAssetId = "019f0000-0000-7000-8000-000000000631";
+    private const string SourceAlarmId = "ALARM-MAN631-HTTP";
     private const string InternalToken = "man631-public-chain-internal-token";
 
     [Fact]
@@ -66,12 +69,14 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         var gatewayLogs = new ErrorLogCapture();
         var authorization = new AllowedAuthorizationClient();
         var masterDataState = new MasterDataState();
+        var alarmAuthorityState = new AlarmAuthorityState();
         await using var gatewayFactory = CreateGatewayFactory(
             maintenanceFactory,
             downstreamCapture,
             gatewayLogs,
             authorization,
-            masterDataState);
+            masterDataState,
+            alarmAuthorityState);
         using var browser = gatewayFactory.CreateClient();
         browser.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -83,9 +88,9 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
             {
                 organizationId = OrganizationId,
                 environmentId = EnvironmentId,
-                deviceAssetId = "DEV-MAN631-HTTP",
+                deviceAssetId = DeviceCode,
                 priority = "critical",
-                sourceAlarmId = "ALARM-MAN631-HTTP",
+                sourceAlarmId = SourceAlarmId,
                 openedBy = "browser-alarm-report",
                 idempotencyKey = "man631-http-create",
                 assetUnavailableReason = "alarm-raised",
@@ -93,6 +98,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         Assert.True(
             create.IsSuccessStatusCode,
             $"Gateway create failed: {await create.Content.ReadAsStringAsync()}; Maintenance transport: {downstreamCapture}; Maintenance logs: {maintenanceLogs}");
+        Assert.Equal(1, alarmAuthorityState.ListCallCount);
+        Assert.Equal([DeviceCode, DeviceCode], masterDataState.DeviceDetailReferences);
         var createData = await DataAsync(create);
         var workOrderId = createData.GetProperty("workOrderId").GetString();
         Assert.True(Guid.TryParse(workOrderId, out var strongWorkOrderId) && strongWorkOrderId != Guid.Empty);
@@ -240,7 +247,7 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         var detail = await DataAsync(readback);
 
         Assert.Equal(workOrderId, detail.GetProperty("workOrderId").GetString());
-        Assert.Equal("ALARM-MAN631-HTTP", detail.GetProperty("sourceAlarmId").GetString());
+        Assert.Equal(SourceAlarmId, detail.GetProperty("sourceAlarmId").GetString());
         Assert.Equal("Closed", detail.GetProperty("status").GetString());
         Assert.Equal(version, detail.GetProperty("version").GetInt32());
         Assert.Empty(detail.GetProperty("allowedActions").EnumerateArray());
@@ -300,7 +307,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         DownstreamCapture capture,
         ErrorLogCapture logCapture,
         AllowedAuthorizationClient authorization,
-        MasterDataState masterDataState) =>
+        MasterDataState masterDataState,
+        AlarmAuthorityState alarmAuthorityState) =>
         new WebApplicationFactory<GatewayProgram>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureLogging(logging => logging.AddProvider(logCapture));
@@ -316,6 +324,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                 services.AddSingleton<IBusinessGatewayAuthorizationClient>(authorization);
                 services.RemoveAll<IBusinessMasterDataClient>();
                 services.AddSingleton(MasterDataProxy.Create(masterDataState));
+                services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+                services.AddSingleton(IndustrialTelemetryProxy.Create(alarmAuthorityState));
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new StaticInternalServiceTokenProvider(InternalToken));
                 services.RemoveAll<IBusinessMaintenanceClient>();
@@ -531,6 +541,10 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
         private BusinessConsoleMasterDataResourceDetail ResourceDetail(object?[]? args)
         {
             var request = Assert.IsType<BusinessConsoleMasterDataResourceRequest>(args![1]);
+            if (request.ResourceType == "device-asset")
+            {
+                state.DeviceDetailReferences.Add(request.Code);
+            }
             return new BusinessConsoleMasterDataResourceDetail(
                 request.ResourceType,
                 request.Code,
@@ -538,7 +552,8 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                 request.ResourceType != "team" || state.TeamActive,
                 "man631-http-v1",
                 request.OrganizationId,
-                request.EnvironmentId);
+                request.EnvironmentId,
+                DeviceAssetId: request.ResourceType == "device-asset" ? DeviceAssetId : null);
         }
 
         private BusinessConsoleTeamMemberListResponse TeamMembers(object?[]? args)
@@ -592,11 +607,67 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
 
     private sealed class MasterDataState
     {
+        public List<string> DeviceDetailReferences { get; } = [];
+
         public bool PrimaryWorkerActive { get; set; } = true;
 
         public bool PrimaryMembershipCurrent { get; set; } = true;
 
         public bool TeamActive { get; set; } = true;
+    }
+
+    private class IndustrialTelemetryProxy : DispatchProxy
+    {
+        private AlarmAuthorityState state = null!;
+
+        public static IBusinessIndustrialTelemetryClient Create(AlarmAuthorityState state)
+        {
+            var proxy = DispatchProxy.Create<IBusinessIndustrialTelemetryClient, IndustrialTelemetryProxy>();
+            ((IndustrialTelemetryProxy)(object)proxy).state = state;
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            ArgumentNullException.ThrowIfNull(targetMethod);
+            if (targetMethod.Name != nameof(IBusinessIndustrialTelemetryClient.ListAlarmsAsync))
+            {
+                throw new NotSupportedException(
+                    $"MAN-631 public chain did not expect IndustrialTelemetry call '{targetMethod.Name}'.");
+            }
+
+            Assert.Equal(InternalToken, Assert.IsType<string>(args![0]));
+            var request = Assert.IsType<BusinessConsoleTelemetryAlarmListRequest>(args[1]);
+            Assert.Equal(OrganizationId, request.OrganizationId);
+            Assert.Equal(EnvironmentId, request.EnvironmentId);
+            Assert.Null(request.DeviceAssetId);
+            Assert.Null(request.Status);
+            Assert.Equal(0, request.Skip);
+            Assert.Equal(2, request.Take);
+            Assert.Equal(SourceAlarmId, request.AlarmEventId);
+            Assert.IsType<CancellationToken>(args[2]).ThrowIfCancellationRequested();
+            state.ListCallCount++;
+
+            var response = new BusinessConsoleTelemetryAlarmEventListResponse(
+                [new BusinessConsoleTelemetryAlarmEventItem(
+                    SourceAlarmId,
+                    OrganizationId,
+                    EnvironmentId,
+                    DeviceCode,
+                    "equipment-failure",
+                    "critical",
+                    "raised",
+                    new DateTimeOffset(2026, 8, 2, 1, 0, 0, TimeSpan.Zero),
+                    null,
+                    "external-man631-http")],
+                1);
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class AlarmAuthorityState
+    {
+        public int ListCallCount { get; set; }
     }
 
     private static class PublicGatewayToken

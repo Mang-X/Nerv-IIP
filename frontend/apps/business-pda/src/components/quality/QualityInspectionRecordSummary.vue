@@ -13,7 +13,10 @@ const rejected = computed(() => props.record.result !== 'passed')
 
 <template>
   <!-- 摘要卡：物料 + 权威结论 + 来源上下文 -->
-  <section class="space-y-2 rounded-lg border border-border bg-card p-4" data-testid="record-detail">
+  <section
+    class="space-y-2 rounded-lg border border-border bg-card p-4"
+    data-testid="record-detail"
+  >
     <div class="flex items-center justify-between gap-2">
       <p class="text-base font-semibold text-foreground">{{ record.skuCode }}</p>
       <NvMobileTag :variant="rejected ? 'danger' : 'success'">

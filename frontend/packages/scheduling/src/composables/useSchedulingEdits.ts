@@ -95,5 +95,17 @@ export function useSchedulingEdits(model: Ref<ScheduleModel>, deps: SchedulingEd
     }
   }
 
-  return { dirty, canUndo, canRedo, busy, error, onTaskDragEnd, setLocked, undo, redo, repreview, release }
+  return {
+    dirty,
+    canUndo,
+    canRedo,
+    busy,
+    error,
+    onTaskDragEnd,
+    setLocked,
+    undo,
+    redo,
+    repreview,
+    release,
+  }
 }

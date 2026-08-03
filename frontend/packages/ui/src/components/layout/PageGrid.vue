@@ -7,10 +7,9 @@ import { cn } from '../../lib/utils'
  * PageGrid — responsive grid of equal cards (Nuxt UI style). `cols` sets the
  * large-screen column count; it always collapses to 1 col on mobile, 2 on sm.
  */
-const props = withDefaults(
-  defineProps<{ cols?: 2 | 3 | 4; class?: HTMLAttributes['class'] }>(),
-  { cols: 3 },
-)
+const props = withDefaults(defineProps<{ cols?: 2 | 3 | 4; class?: HTMLAttributes['class'] }>(), {
+  cols: 3,
+})
 
 const colsClass = computed(
   () =>

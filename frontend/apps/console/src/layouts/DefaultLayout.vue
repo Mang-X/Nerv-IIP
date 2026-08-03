@@ -2,7 +2,14 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { useAuthStore } from '@/stores/auth'
-import { BellIcon, Building2Icon, InboxIcon, LayersIcon, ShieldIcon, TriangleAlertIcon } from '@lucide/vue'
+import {
+  BellIcon,
+  Building2Icon,
+  InboxIcon,
+  LayersIcon,
+  ShieldIcon,
+  TriangleAlertIcon,
+} from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -18,7 +25,12 @@ const route = useRoute()
 // 顶部一级能力区（T 型导航的横向部分）。
 const topDomains = computed<NavDomain[]>(() => [
   { id: 'instances', title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
-  { id: 'notifications', title: t('nav.notifications'), icon: BellIcon, to: { path: '/notifications' } },
+  {
+    id: 'notifications',
+    title: t('nav.notifications'),
+    icon: BellIcon,
+    to: { path: '/notifications' },
+  },
   { id: 'business', title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
   { id: 'iam', title: t('nav.iam'), icon: ShieldIcon, to: { path: '/iam/users' } },
 ])
@@ -37,23 +49,31 @@ const currentDomainId = computed(() => resolveDomainId(route?.path ?? '/'))
 
 const sideNav = computed<SideNav>(() => {
   if (currentDomainId.value === 'notifications') {
-    return [{
-      items: [
-        { title: t('nav.notificationInbox'), icon: InboxIcon, to: { path: '/notifications' } },
-        { title: t('nav.notificationDlq'), icon: TriangleAlertIcon, to: { path: '/notifications/dlq' } },
-      ],
-    }]
+    return [
+      {
+        items: [
+          { title: t('nav.notificationInbox'), icon: InboxIcon, to: { path: '/notifications' } },
+          {
+            title: t('nav.notificationDlq'),
+            icon: TriangleAlertIcon,
+            to: { path: '/notifications/dlq' },
+          },
+        ],
+      },
+    ]
   }
 
   if (currentDomainId.value !== 'iam') return []
 
-  return [{
-    items: [
-      { title: t('nav.users'), to: { path: '/iam/users' } },
-      { title: t('nav.roles'), to: { path: '/iam/roles' } },
-      { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
-    ],
-  }]
+  return [
+    {
+      items: [
+        { title: t('nav.users'), to: { path: '/iam/users' } },
+        { title: t('nav.roles'), to: { path: '/iam/roles' } },
+        { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
+      ],
+    },
+  ]
 })
 
 const shellUser = computed(() => {

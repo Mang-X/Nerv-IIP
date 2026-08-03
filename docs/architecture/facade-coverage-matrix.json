@@ -1956,7 +1956,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMaintenanceWorkOrders"
-      ]
+      ],
+      "note": "The exposed list facade preserves legacy deviceAssetId/deviceAssetIds filters and accepts repeated deviceAssetReferences values for exact device codes (including commas) or canonical DeviceAssetIds. The public maximum of 200 is an application validation limit, not a guarantee that arbitrary maximum-length values fit an HTTP request target; after scope verification BusinessGateway uses the internal body-based batch query for exact aliases. BusinessGateway operationId: listBusinessConsoleMaintenanceWorkOrders."
     },
     {
       "service": "Maintenance",
@@ -2009,6 +2010,14 @@
       "gatewayOperationIds": [
         "assignBusinessConsoleMaintenanceWorkOrder"
       ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/query",
+      "operationId": "queryInternalMaintenanceWorkOrders",
+      "classification": "internal",
+      "rationale": "Body-based service-to-service batch list used by BusinessGateway for up to 400 verified DeviceAssetId and code aliases without relying on request-target size; it reuses the list query handler and is not a public facade."
     },
     {
       "service": "Maintenance",
@@ -2315,7 +2324,7 @@
       "route": "/api/business/v1/master-data/references/resolve",
       "operationId": "resolveBusinessMasterDataReferences",
       "classification": "internal",
-      "rationale": "Service-to-service batch reference-data resolve consumed by other business services."
+      "rationale": "Service-to-service batch reference-data and authoritative device-identity snapshot resolve (maximum 200 references) consumed by other business services."
     },
     {
       "service": "MasterData",

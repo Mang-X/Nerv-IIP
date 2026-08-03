@@ -26,7 +26,7 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（6 个 spec / 50 个用例）
+### e2e spec 清单（6 个 spec / 57 个用例）
 
 - `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
   首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
@@ -56,11 +56,25 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
   → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
   通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
   默认并行度。
-- `e2e/equipment.spec.ts`（5）：报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
+- `e2e/equipment.spec.ts`（13）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
+  `skip/take` 为安全整数且与请求精确一致；HTTP 200 + `success:false` 或错页响应显式错误与重试
+  （不渲染空态、不保留旧行，也不缓存错页）、强 `workOrderId` 详情重校验与只读生命周期；工单设备引用可为
+  设备公开 ID 或设备编码，设备位置查询只接收当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用
+  精确相等的当前事实，并覆盖编码与 Guid 不同的两种请求路径；人员与班组通过当前组织/环境下的
+  MasterData 精确契约解析为可读名称，资料失败时不回退显示裸 ID；缺少设备位置读取权限时
+  fail closed，维修队列与设备目录请求均为 0；主体 ID 缺失时列表、详情和设备目录请求也均为 0，
+  且单元回归覆盖 Self scope/筛选/路由 A→B→A 时拒绝旧 A cache、403 前不闪回旧详情、迟到旧请求不污染
+  当前 generation，设备/人员/班组 enrichment 只消费 fresh 权威详情；结构化 query key 覆盖冒号、逗号和
+  unit-separator 碰撞；只有 MasterData 明确返回的强 `DeviceAssetId` 做 Guid 小写 canonicalize，未标注设备引用与
+  `Code` 只 trim 并保持 Ordinal，因此大写 Guid-shaped Code 在筛选、详情权威查询和报修提交中均不被改写；
+  且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选实际触点高度 ≥48px，详情返回按钮实际触点高度 ≥44px；
+  终态详情不提供写动作。报警行详情「去报修」后，从已确认创建回执取得强 `workOrderId`，但创建默认
+  未指派，首次同一 principal 的 Self GET 返回 403，成功态仅显示等待派工且无详情入口；测试模拟外部
+  权威派工给当前 principal 后，用户显式点击“重新核验指派状态”，Self GET 成功才显示“查看工单详情”
+  并保留报警来源上下文，同时回读设备目录位置，不自动指派。报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
   设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
   并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
-  （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；
-  报警行详情「去报修」带参穿透报修页；首页应用墙 → `/equipment/repair`；
+  （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；首页应用墙 → `/equipment/repair`；
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
   上下限校验、触点 ≥44px、无横向溢出。**拍照取证已裁剪至 #924**（本 PR 无拍照 UI）。
