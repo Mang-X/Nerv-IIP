@@ -42,7 +42,7 @@ public sealed class TelemetryHistorianScheduler(
             interval = DefaultInterval;
         }
 
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, timeProvider);
         await TryRunAllScopesAsync(scopes, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
