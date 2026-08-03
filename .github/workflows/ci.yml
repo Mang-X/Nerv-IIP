@@ -7,6 +7,7 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -35,7 +36,37 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Test backend solution
-        run: dotnet test backend/Nerv.IIP.sln --configuration Release
+        run: >-
+          dotnet test backend/Nerv.IIP.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+
+      - name: Collect backend test evidence
+        if: always()
+        shell: pwsh
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend
+          -SelectedLanes backend
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -CommitSha ${{ github.sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests"
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload backend test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          if-no-files-found: error
+          retention-days: 14
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
@@ -101,7 +132,37 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Test connector host solution
-        run: dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --configuration Release
+        run: >-
+          dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+
+      - name: Collect connector host test evidence
+        if: always()
+        shell: pwsh
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane connector-host
+          -SelectedLanes connector-host
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -CommitSha ${{ github.sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Connector Host Tests"
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload connector host test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          if-no-files-found: error
+          retention-days: 14
 
   frontend:
     name: Frontend Typecheck and Build

@@ -193,4 +193,28 @@ finally {
     if (Test-Path $collectorRoot) { Remove-Item $collectorRoot -Recurse -Force }
 }
 
+$workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
+Assert-True ($workflow.Contains('actions: read')) 'Rerun lookup needs read-only Actions permission.'
+Assert-True (-not $workflow.Contains('continue-on-error')) 'MAN-661 forbids continue-on-error.'
+Assert-True ($workflow.Contains('--logger trx')) 'Backend and Connector Host must emit TRX.'
+Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1')) 'CI must use the governed collector.'
+Assert-True ($workflow.Contains('if: always()')) 'Collection/upload must run after failures.'
+Assert-True ($workflow.Contains('test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}')) 'Backend artifact identity mismatch.'
+Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}')) 'Connector artifact identity mismatch.'
+Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw')) 'Raw TRX must not be uploaded.'
+foreach ($laneContract in @(
+    @{ Test = '- name: Test backend solution'; Collect = '- name: Collect backend test evidence'; Upload = '- name: Upload backend test evidence' },
+    @{ Test = '- name: Test connector host solution'; Collect = '- name: Collect connector host test evidence'; Upload = '- name: Upload connector host test evidence' }
+)) {
+    $testIndex = $workflow.IndexOf($laneContract.Test, [StringComparison]::Ordinal)
+    $collectIndex = $workflow.IndexOf($laneContract.Collect, [StringComparison]::Ordinal)
+    $uploadIndex = $workflow.IndexOf($laneContract.Upload, [StringComparison]::Ordinal)
+    Assert-True ($testIndex -ge 0 -and $testIndex -lt $collectIndex -and $collectIndex -lt $uploadIndex) "Workflow order is invalid for '$($laneContract.Test)'."
+    $testBlock = $workflow.Substring($testIndex, $collectIndex - $testIndex)
+    Assert-True (-not $testBlock.Contains('if:')) 'Test step must use natural failure semantics.'
+    Assert-True (-not $testBlock.Contains('|')) 'Test step must not pipe away the dotnet exit code.'
+    $retainedBlock = $workflow.Substring($collectIndex, [Math]::Min($workflow.Length - $collectIndex, $uploadIndex - $collectIndex + 250))
+    Assert-True ($retainedBlock.Contains('if: always()')) 'Collector and upload must both be always().'
+}
+
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."
