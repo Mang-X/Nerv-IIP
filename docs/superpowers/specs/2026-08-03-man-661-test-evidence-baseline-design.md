@@ -12,15 +12,15 @@ MAN-661 builds the complete collection pipeline. MAN-669 consumes it when backen
 
 The current CI workflow runs the backend and Connector Host solutions with `dotnet test`, but relies on console output for project duration and passed/failed/skipped counts. Results are not retained as a consistent machine-readable dataset, skip reasons are not governed, and a dependency-gated test assembly can be green even when every selected real-dependency test was skipped.
 
-The most recent completed successful main run inspected while designing MAN-661 was GitHub Actions run `30782038159`, attempt `1`, commit `81a607bc3baf49c872dcdfa238a894caac1529c2`. Its Backend Tests job spent about 17 minutes 35 seconds in the test step. The recorded assembly critical path included:
+The current clean main baseline candidate is GitHub Actions run `30819675007`, attempt `1`, commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d`, after #1442 merged. Its Backend Tests job spent about 22 minutes 17 seconds in the test step. The recorded assembly critical path included:
 
 | Assembly | Duration | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: | ---: |
-| `Nerv.IIP.BusinessGateway.Web.Tests` | 10 m 1 s | 973 | 0 | 0 |
-| `Nerv.IIP.Business.IndustrialTelemetry.Web.Tests` | 1 m 29 s | 240 | 0 | 8 |
-| `Nerv.IIP.Business.Wms.Web.Tests` | 1 m 13 s | 295 | 0 | 10 |
-| `Nerv.IIP.Business.Inventory.Web.Tests` | 47 s | 231 | 0 | 2 |
-| `Nerv.IIP.Business.FullChain.Tests` | 34 s | 10 | 0 | 5 |
+| `Nerv.IIP.BusinessGateway.Web.Tests` | 13 m 42 s | 1023 | 0 | 0 |
+| `Nerv.IIP.Business.IndustrialTelemetry.Web.Tests` | 1 m 24 s | 240 | 0 | 8 |
+| `Nerv.IIP.Business.Wms.Web.Tests` | 1 m 15 s | 295 | 0 | 10 |
+| `Nerv.IIP.Business.Inventory.Web.Tests` | 51 s | 231 | 0 | 2 |
+| `Nerv.IIP.Business.FullChain.Tests` | 28 s | 10 | 0 | 5 |
 
 These figures are observations, not thresholds. They demonstrate that the critical path and skip shape already drift from the earlier issue description and justify a reproducible evidence baseline.
 
@@ -119,9 +119,9 @@ The per-test record contains at least:
 ```json
 {
   "schemaVersion": 1,
-  "workflowRunId": "30782038159",
+  "workflowRunId": "30819675007",
   "runAttempt": 1,
-  "commitSha": "81a607bc3baf49c872dcdfa238a894caac1529c2",
+  "commitSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
   "lane": "backend",
   "project": "Nerv.IIP.BusinessGateway.Web.Tests",
   "assembly": "Nerv.IIP.BusinessGateway.Web.Tests.dll",
@@ -257,7 +257,7 @@ pwsh scripts/generate-test-evidence-baseline.ps1 `
   -OutputPath scripts/test-evidence-baseline.json
 ```
 
-The initial project-level baseline may import the retained, redacted console evidence from run `30782038159`; the generator records that its granularity is `project`. The first successful main run with MAN-661 TRX refreshes it to `test` granularity using the same command.
+At generation time, the initial project-level baseline imports the latest clean first-attempt successful main run after #1442. Run `30819675007` is the current candidate and must be replaced only when a newer qualifying main run exists. The generator records `granularity: project`; the first successful main run with MAN-661 TRX refreshes it to `test` granularity using the same command.
 
 A refresh is required after the first successful main run following any of:
 
