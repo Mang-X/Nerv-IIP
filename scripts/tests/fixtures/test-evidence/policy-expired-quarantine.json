@@ -1,11 +1,31 @@
 {
   "schemaVersion": 1,
-  "lanes": [{ "namePattern": "^backend$", "realDependency": false }],
+  "lanes": [
+    {
+      "namePattern": "^backend$",
+      "realDependency": false
+    }
+  ],
   "sources": [],
-  "rules": [{
-    "id": "expired", "sourceId": "fixture", "classification": "quarantined",
-    "testPattern": "^Fixture\\.Expired$", "reasonPattern": "^Known failure\\.$",
-    "allowedLanes": ["backend"], "requiredLane": null, "allowedOperatingSystems": [],
-    "responsibilityIssue": "MAN-1", "expiresOn": "2026-08-02", "exitCondition": "Fix it."
-  }]
+  "rules": [
+    {
+      "id": "expired",
+      "sourceId": "fixture",
+      "classification": "quarantined",
+      "testPattern": "^Fixture\\.Expired$",
+      "reasonPattern": "^Known failure\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": null,
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": "MAN-1",
+      "expiresOn": "2026-08-02",
+      "exitCondition": "Fix it.",
+      "testIdentities": [
+        "Fixture.Expired"
+      ],
+      "expectedRuntimeTestCount": 1
+    }
+  ]
 }

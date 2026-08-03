@@ -265,7 +265,7 @@
       "id": "connector-unix-sigterm",
       "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Host.Tests/SimulatedConnectorHostProcessTests.cs",
       "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Exact-child graceful shutdown evidence uses Unix SIGTERM;$"
+      "sourceReasonPattern": "^Skip = \"Exact-child graceful shutdown evidence uses Unix SIGTERM; \" \\+ \"Windows runs the platform-specific executable resolution contract only\\.\";$"
     }
   ],
   "rules": [
@@ -282,7 +282,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests.OpcUaSimulatorIntegrationTests.Opcua_connector_subscribes_microsoft_opc_plc_and_posts_bucketed_sample"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "connector-opcua-daemon",
@@ -297,7 +301,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests.OpcUaSimulatorIntegrationTests.Opcua_connector_subscribes_microsoft_opc_plc_and_posts_bucketed_sample"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "connector-docker-opt-in",
@@ -312,7 +320,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.ConnectorHost.Connectors.Docker.Tests.DockerCliIntegrationTests.Docker_connector_discovers_and_restarts_a_real_container"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "connector-docker-daemon",
@@ -327,7 +339,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.ConnectorHost.Connectors.Docker.Tests.DockerCliIntegrationTests.Docker_connector_discovers_and_restarts_a_real_container"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "connector-unix-sigterm",
@@ -344,7 +360,11 @@
       ],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.ConnectorHost.Host.Tests.SimulatedConnectorHostProcessTests.Built_host_process_reports_three_simulated_connectors_and_executes_control"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "testing-postgres-lifecycle",
@@ -359,7 +379,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics",
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "fullchain-maintenance-runtime",
@@ -374,7 +399,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.Scheduler_generates_plan_work_order_only_after_real_runtime_crosses_threshold"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "fullchain-mes-inventory",
@@ -389,7 +418,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.MesInventoryProducedLotPostgresRedisAcceptanceTests.External_process_proves_exact_produced_lot_link_for_success_and_explicit_failure"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "fullchain-erp-wms",
@@ -404,7 +437,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "fullchain-sales-demand",
@@ -419,7 +456,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "fullchain-erp-return",
@@ -434,7 +475,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "acceptance-runtime-maintenance",
@@ -449,7 +494,13 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests.Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres",
+        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
+        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
+      ],
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "apphub-postgres",
@@ -464,7 +515,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "filestorage-postgres",
@@ -479,7 +534,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "demandplanning-postgres",
@@ -494,7 +553,13 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability"
+      ],
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "demandplanning-postgres-redis",
@@ -509,7 +574,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "productengineering-world-bible",
@@ -524,7 +594,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests.World_bible_seed_publishes_all_engineering_versions_within_the_startup_budget"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "wms-world-history",
@@ -539,7 +613,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "wms-quality-gate",
@@ -554,7 +632,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "inventory-postgres-profile",
@@ -569,7 +651,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema",
+        "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "wms-task-action",
@@ -584,7 +671,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_different_payload_becomes_idempotency_conflict_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "wms-short-pick",
@@ -599,7 +691,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "wms-wcs-dispatch",
@@ -614,7 +710,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock",
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "wms-assignment-migration",
@@ -629,7 +730,13 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent"
+      ],
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "barcodelabel-world-history",
@@ -644,7 +751,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "scheduling-postgres",
@@ -659,7 +770,16 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
+      ],
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "barcodelabel-postgres-profile",
@@ -674,7 +794,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "industrialtelemetry-postgres",
@@ -689,7 +813,18 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests.History_filters_by_device_status_and_time_window_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests.Postgres_downsampling_executes_pending_window_antijoin_queries",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Concurrent_shelve_with_same_key_replays_the_loser_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Exact_ordering_migration_backfills_existing_microsecond_timestamps_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Manifest_and_activation_submicrosecond_races_keep_exact_order_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Rule_alarm_race_with_changed_alarm_code_keeps_single_active_alarm_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 8
     },
     {
       "id": "maintenance-world-history",
@@ -704,7 +839,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests.Full_scale_maintenance_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "maintenance-device-pause",
@@ -719,7 +858,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "quality-postgres",
@@ -734,7 +877,19 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests.Calibration_records_are_filtered_ordered_and_scoped_on_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests.Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Assignment_scope_migration_backfills_existing_task_version_to_one",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_persists_assignment_claim_and_audit_receipts",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests.Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
+        "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 9
     },
     {
       "id": "masterdata-postgres",
@@ -749,7 +904,16 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests.World_bible_seed_persists_the_full_l0_master_data_within_the_startup_budget"
+      ],
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "mes-world-history",
@@ -764,7 +928,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "mes-production-candidate",
@@ -779,7 +947,19 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_work_orders_within_the_startup_budget",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests.Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save",
+        "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning",
+        "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior",
+        "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation",
+        "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests.Status_scope_time_predicates_and_source_uniqueness_are_enforced_by_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests.Receipt_creation_and_capitalization_serialize_without_cap_redelivery"
+      ],
+      "expectedRuntimeTestCount": 9
     },
     {
       "id": "mes-cap-postgres",
@@ -794,7 +974,13 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer"
+      ],
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "erp-world-history",
@@ -809,7 +995,12 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Scaled_down_history_seed_produces_a_tenth_of_the_volume"
+      ],
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "erp-business-partner",
@@ -824,7 +1015,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests.PostgreSQL_consumer_persists_disabled_partner_and_changes_new_PO_SO_behavior"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "erp-cost-accounting",
@@ -839,7 +1034,13 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision"
+      ],
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "erp-scale-seed",
@@ -854,7 +1055,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_sales_orders_within_the_startup_budget"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-erp",
@@ -869,7 +1074,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Performance.Tests.ErpPerformanceBaselineTests.Erp_sales_order_list_high_read_baseline_outputs_elapsed_rows_scenario_and_profile"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-inventory",
@@ -884,7 +1093,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Performance.Tests.InventoryPerformanceBaselineTests.Inventory_high_write_baseline_outputs_elapsed_rows_scenario_and_profile"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-mes",
@@ -899,7 +1112,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Performance.Tests.MesPerformanceBaselineTests.Mes_work_order_high_read_baseline_outputs_elapsed_rows_scenario_and_profile"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-scheduling",
@@ -914,7 +1131,11 @@
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": null,
-      "exitCondition": null
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Performance.Tests.SchedulingScaleBenchmarkTests.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence"
+      ],
+      "expectedRuntimeTestCount": 1
     }
   ]
 }

@@ -52,9 +52,42 @@ function Get-NervSourceSkipAssignments {
     $results = foreach ($file in @($files | Sort-Object FullName -Unique)) {
         $relative = [IO.Path]::GetRelativePath($RepoRoot, $file.FullName).Replace('\', '/')
         $content = Get-Content -LiteralPath $file.FullName -Raw
-        $matches = [regex]::Matches($content, '\bSkip\s*=\s*(?<reason>.*?);', [Text.RegularExpressions.RegexOptions]::Singleline)
-        for ($index = 0; $index -lt $matches.Count; $index++) {
-            $sourceText = [regex]::Replace($matches[$index].Value, '\s+', ' ').Trim()
+        $starts = @([regex]::Matches($content, '\bSkip\s*=') | ForEach-Object Index)
+        for ($index = 0; $index -lt $starts.Count; $index++) {
+            $start = [int]$starts[$index]
+            $position = $start
+            $quote = [char]0
+            $escaped = $false
+            $verbatim = $false
+            while ($position -lt $content.Length) {
+                $character = $content[$position]
+                if ($quote -ne [char]0) {
+                    if ($verbatim -and $character -eq '"' -and $position + 1 -lt $content.Length -and $content[$position + 1] -eq '"') {
+                        $position += 2
+                        continue
+                    }
+                    if (-not $verbatim -and $character -eq '\' -and -not $escaped) {
+                        $escaped = $true
+                        $position++
+                        continue
+                    }
+                    if ($character -eq $quote -and -not $escaped) {
+                        $quote = [char]0
+                        $verbatim = $false
+                    }
+                    $escaped = $false
+                }
+                elseif ($character -eq '"' -or $character -eq "'") {
+                    $quote = $character
+                    $verbatim = $character -eq '"' -and $position -gt 0 -and $content[$position - 1] -eq '@'
+                }
+                elseif ($character -eq ';') {
+                    break
+                }
+                $position++
+            }
+            if ($position -ge $content.Length) { continue }
+            $sourceText = [regex]::Replace($content.Substring($start, $position - $start + 1), '\s+', ' ').Trim()
             [pscustomobject]@{
                 sourcePath = $relative
                 sourceOrdinal = $index + 1
@@ -85,6 +118,10 @@ function Test-NervTestEvidencePolicy {
         catch { $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$lane.namePattern) 'Invalid lane pattern.')) }
     }
     foreach ($rule in @($Policy.rules)) {
+        $sourceMatches = @($Policy.sources | Where-Object { [string]$_.id -ceq [string]$rule.sourceId })
+        if ($sourceMatches.Count -ne 1) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) 'Rule sourceId must resolve to exactly one registered source.'))
+        }
         if ($classifications -notcontains [string]$rule.classification) {
             $violations.Add((New-NervTestEvidenceViolation 'illegal-quarantine' ([string]$rule.id) "Unknown classification '$($rule.classification)'."))
             continue
@@ -97,6 +134,16 @@ function Test-NervTestEvidencePolicy {
             }
             try { [void][regex]::new($pattern) }
             catch { $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) "Invalid $patternName.")) }
+        }
+        $identities = if ($rule.PSObject.Properties.Name -contains 'testIdentities') { @($rule.testIdentities) } else { @() }
+        $expectedCount = if ($rule.PSObject.Properties.Name -contains 'expectedRuntimeTestCount') { [int]$rule.expectedRuntimeTestCount } else { 0 }
+        if (@($identities).Count -eq 0 -or $expectedCount -ne @($identities).Count -or @($identities | Sort-Object -Unique).Count -ne @($identities).Count) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) 'Rule must freeze a non-empty unique test identity set and exact expectedRuntimeTestCount.'))
+        }
+        foreach ($identity in $identities) {
+            if ([string]$identity -cnotmatch [string]$rule.testPattern) {
+                $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) "Frozen test identity '$identity' does not match testPattern."))
+            }
         }
         foreach ($laneName in @($rule.allowedLanes) + @($rule.requiredLane | Where-Object { $_ })) {
             if (-not (Test-NervTestEvidenceLaneName ([string]$laneName))) {
@@ -132,6 +179,9 @@ function Test-NervTestEvidencePolicy {
         }
     }
     foreach ($source in @($Policy.sources)) {
+        if (@($Policy.rules | Where-Object { [string]$_.sourceId -ceq [string]$source.id }).Count -eq 0) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$source.id) 'Registered source is not referenced by any runtime rule.'))
+        }
         $matches = @($live | Where-Object {
             [string]$_.sourcePath -ceq [string]$source.sourcePath -and
             [int]$_.sourceOrdinal -eq [int]$source.sourceOrdinal
@@ -161,6 +211,30 @@ function Get-NervTrxSkipReason {
     return $null
 }
 
+function Get-NervStableEvidenceGuid {
+    param([Parameter(Mandatory)] [string] $Value)
+    $bytes = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Value))
+    $guidBytes = [byte[]]::new(16)
+    [Array]::Copy($bytes, $guidBytes, 16)
+    ([Guid]::new($guidBytes)).ToString()
+}
+
+function ConvertTo-NervRetainedFailureText {
+    param([AllowNull()] [string] $Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    return 'Test failed; raw failure details are intentionally omitted by evidence privacy policy.'
+}
+
+function Get-NervRetainedSkipReason {
+    param([Parameter(Mandatory)] [object] $Record)
+    if (-not ($Record.PSObject.Properties.Name -contains 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$Record.skipPolicyId)) {
+        return 'Skipped; raw reason omitted because no approved policy matched.'
+    }
+    $safe = Protect-NervTestEvidenceText ([string]$Record.skipReason)
+    if ($safe.Length -gt 512) { return $safe.Substring(0, 512) }
+    return $safe
+}
+
 function Read-NervTrxResults {
     param(
         [Parameter(Mandatory)] [string[]] $Path,
@@ -173,6 +247,7 @@ function Read-NervTrxResults {
     $outcomeMap = @{ Passed = 'passed'; Failed = 'failed'; NotExecuted = 'skipped' }
     $records = [Collections.Generic.List[object]]::new()
     $trxElapsedMilliseconds = 0.0
+    $trxRuns = [Collections.Generic.List[object]]::new()
     foreach ($trxPath in @($Path | Sort-Object)) {
         try {
             $document = [Xml.XmlDocument]::new()
@@ -185,17 +260,17 @@ function Read-NervTrxResults {
         }
 
         $times = $document.SelectSingleNode("//*[local-name()='Times']")
-        if ($null -ne $times -and
-            -not [string]::IsNullOrWhiteSpace([string]$times.start) -and
-            -not [string]::IsNullOrWhiteSpace([string]$times.finish)) {
-            $start = [DateTimeOffset]::MinValue
-            $finish = [DateTimeOffset]::MinValue
-            if ([DateTimeOffset]::TryParse([string]$times.start, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$start) -and
-                [DateTimeOffset]::TryParse([string]$times.finish, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$finish) -and
-                $finish -ge $start) {
-                $trxElapsedMilliseconds += ($finish - $start).TotalMilliseconds
-            }
+        if ($null -eq $times -or [string]::IsNullOrWhiteSpace([string]$times.start) -or [string]::IsNullOrWhiteSpace([string]$times.finish)) {
+            throw [IO.InvalidDataException]::new("TRX is missing valid Times metadata in '$([IO.Path]::GetFullPath($trxPath))'.")
         }
+        $start = [DateTimeOffset]::MinValue
+        $finish = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string]$times.start, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$start) -or
+            -not [DateTimeOffset]::TryParse([string]$times.finish, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$finish) -or $finish -lt $start) {
+            throw [IO.InvalidDataException]::new("TRX has invalid Times metadata in '$([IO.Path]::GetFullPath($trxPath))'.")
+        }
+        $elapsed = [double]($finish - $start).TotalMilliseconds
+        $trxElapsedMilliseconds += $elapsed
 
         $definitions = @{}
         foreach ($definition in @($document.SelectNodes("//*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))) {
@@ -205,10 +280,44 @@ function Read-NervTrxResults {
                 "$($method.className).$($method.name)"
             }
             else { [string]$definition.name }
-            $definitions[[string]$definition.id] = [pscustomobject]@{ assembly = $assembly; testName = $testName }
+            $definitions[[string]$definition.id] = [pscustomobject]@{
+                assembly = $assembly
+                testName = $testName
+                className = if ($null -ne $method) { [string]$method.className } else { '' }
+                methodName = if ($null -ne $method) { [string]$method.name } else { [string]$definition.name }
+            }
         }
 
-        foreach ($result in @($document.SelectNodes("//*[local-name()='Results']/*[local-name()='UnitTestResult']"))) {
+        $results = @($document.SelectNodes("//*[local-name()='Results']/*[local-name()='UnitTestResult']"))
+        $counters = $document.SelectSingleNode("//*[local-name()='ResultSummary']/*[local-name()='Counters']")
+        if ($null -eq $counters) { throw [IO.InvalidDataException]::new("TRX is missing ResultSummary/Counters in '$([IO.Path]::GetFullPath($trxPath))'.") }
+        $counterTotal = [int]$counters.total
+        $counterExecuted = [int]$counters.executed
+        $counterPassed = [int]$counters.passed
+        $counterFailed = [int]$counters.failed
+        $counterSkipped = $counterTotal - $counterExecuted
+        $actualPassed = @($results | Where-Object outcome -ceq 'Passed').Count
+        $actualFailed = @($results | Where-Object outcome -ceq 'Failed').Count
+        $actualSkipped = @($results | Where-Object outcome -ceq 'NotExecuted').Count
+        if ($counterTotal -ne $results.Count -or $counterExecuted -ne ($counterPassed + $counterFailed) -or
+            $counterPassed -ne $actualPassed -or $counterFailed -ne $actualFailed -or $counterSkipped -ne $actualSkipped) {
+            throw [IO.InvalidDataException]::new("TRX ResultSummary/Counters do not match Results in '$([IO.Path]::GetFullPath($trxPath))'.")
+        }
+        $assembliesInRun = @($definitions.Values | ForEach-Object { [string]$_.assembly } | Sort-Object -Unique)
+        if ($assembliesInRun.Count -gt 1) { throw [IO.InvalidDataException]::new("TRX contains multiple assemblies in '$([IO.Path]::GetFullPath($trxPath))'.") }
+        $trxRuns.Add([pscustomobject][ordered]@{
+            lane = [string]$RunMetadata.lane
+            assembly = if ($assembliesInRun.Count -eq 1) { [string]$assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }
+            elapsedMilliseconds = $elapsed
+            total = $counterTotal
+            executed = $counterExecuted
+            passed = $counterPassed
+            failed = $counterFailed
+            skipped = $counterSkipped
+        })
+
+        $ordinals = @{}
+        foreach ($result in $results) {
             $rawOutcome = [string]$result.outcome
             if (-not $outcomeMap.ContainsKey($rawOutcome)) {
                 throw [IO.InvalidDataException]::new("Unsupported TRX outcome '$rawOutcome' in '$([IO.Path]::GetFullPath($trxPath))'.")
@@ -221,6 +330,16 @@ function Read-NervTrxResults {
             if (-not [string]::IsNullOrWhiteSpace([string]$result.duration)) {
                 $duration = [TimeSpan]::Parse([string]$result.duration, [Globalization.CultureInfo]::InvariantCulture)
             }
+            $displayName = Protect-NervTestEvidenceText $result.GetAttribute('testName')
+            if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = [string]$definition.testName }
+            if ($displayName.Length -gt 512) { $displayName = $displayName.Substring(0, 512) }
+            $ordinalKey = "$($definition.testName)|$displayName"
+            $ordinal = if ($ordinals.ContainsKey($ordinalKey)) { [int]$ordinals[$ordinalKey] + 1 } else { 1 }
+            $ordinals[$ordinalKey] = $ordinal
+            $rawError = if ($rawOutcome -eq 'Failed') {
+                $node = $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
+                if ($null -ne $node) { $node.InnerText.Trim() } else { $null }
+            } else { $null }
             $records.Add([pscustomobject][ordered]@{
                 schemaVersion = 1
                 workflowRunId = [string]$RunMetadata.workflowRunId
@@ -230,17 +349,21 @@ function Read-NervTrxResults {
                 project = [IO.Path]::GetFileNameWithoutExtension([string]$definition.assembly)
                 assembly = [string]$definition.assembly
                 testName = [string]$definition.testName
+                displayName = $displayName
+                testClassName = [string]$definition.className
+                testMethodName = [string]$definition.methodName
+                definitionId = Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)"
+                testInstanceId = Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)|$displayName|$ordinal"
                 durationMilliseconds = [double]$duration.TotalMilliseconds
                 outcome = [string]$outcomeMap[$rawOutcome]
                 skipReason = if ($rawOutcome -eq 'NotExecuted') { Get-NervTrxSkipReason -UnitTestResult $result } else { $null }
-                errorMessage = if ($rawOutcome -eq 'Failed') {
-                    $node = $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
-                    if ($null -ne $node) { $node.InnerText.Trim() } else { $null }
-                } else { $null }
+                errorMessage = ConvertTo-NervRetainedFailureText $rawError
+                redactionCount = if ([string]::IsNullOrWhiteSpace($rawError)) { 0 } else { 1 }
             })
         }
     }
     $RunMetadata.trxElapsedMilliseconds = [double]$trxElapsedMilliseconds
+    $RunMetadata.trxRuns = @($trxRuns)
     @($records)
 }
 
@@ -288,6 +411,7 @@ function Get-NervTestEvidenceViolations {
 
     foreach ($record in @($safeRecords | Where-Object outcome -eq 'skipped')) {
         $matches = @($Policy.rules | Where-Object {
+            @($_.testIdentities) -ccontains [string]$record.testName -and
             [string]$record.testName -cmatch [string]$_.testPattern -and
             [string]$record.skipReason -cmatch [string]$_.reasonPattern -and
             (Test-NervRuleApplies -Rule $_ -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
@@ -310,7 +434,7 @@ function Get-NervTestEvidenceViolations {
         if ([bool]$laneMatches[0].realDependency) {
             $executed = @($safeRecords | Where-Object {
                 $_.outcome -in @('passed', 'failed') -and
-                ([string]$_.lane -ceq $selectedLane -or ([string]$_.lane -replace '-shard-[1-9][0-9]*$', '') -ceq ($selectedLane -replace '-shard-[1-9][0-9]*$', ''))
+                [string]$_.lane -ceq $selectedLane
             }).Count
             if ($executed -eq 0) {
                 $violations.Add((New-NervTestEvidenceViolation 'zero-execution' $selectedLane 'Selected real-dependency lane executed no passed or failed tests.'))
@@ -341,34 +465,46 @@ function New-NervTestEvidenceSummary {
     $passed = @($safeRecords | Where-Object outcome -eq 'passed').Count
     $failed = @($safeRecords | Where-Object outcome -eq 'failed').Count
     $skipped = @($safeRecords | Where-Object outcome -eq 'skipped').Count
-    $assemblies = @($safeRecords | Group-Object assembly | Sort-Object Name | ForEach-Object {
+    $trxRuns = if ($RunMetadata.ContainsKey('trxRuns')) { @($RunMetadata.trxRuns) } else { @() }
+    $assemblies = @($safeRecords | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)
+        $laneName = [string]$items[0].lane
+        $assemblyName = [string]$items[0].assembly
+        $runRows = @($trxRuns | Where-Object { [string]$_.lane -ceq $laneName -and [string]$_.assembly -ceq $assemblyName })
         [pscustomobject][ordered]@{
-            assembly = $_.Name
+            lane = $laneName
+            assembly = $assemblyName
             passed = @($items | Where-Object outcome -eq 'passed').Count
             failed = @($items | Where-Object outcome -eq 'failed').Count
             skipped = @($items | Where-Object outcome -eq 'skipped').Count
             executed = @($items | Where-Object { $_.outcome -in @('passed', 'failed') }).Count
             total = $items.Count
-            durationMilliseconds = [double](($items | Measure-Object durationMilliseconds -Sum).Sum)
+            testDurationMilliseconds = [double](($items | Measure-Object durationMilliseconds -Sum).Sum)
+            elapsedMilliseconds = if (@($runRows).Count -gt 0) { [double](($runRows | Measure-Object elapsedMilliseconds -Sum).Sum) } else { 0.0 }
         }
     })
     $baselineAssemblies = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'assemblies') { @($Baseline.assemblies) } else { @() }
     $deltas = @($assemblies | ForEach-Object {
         $current = $_
-        $previous = @($baselineAssemblies | Where-Object assembly -eq $current.assembly | Select-Object -First 1)
-        $baselineDuration = if ($previous.Count -eq 1) { [double]$previous[0].durationMilliseconds } else { $null }
+        $compatible = $null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'granularity' -and $Baseline.PSObject.Properties.Name -contains 'durationMetric' -and [string]$Baseline.granularity -ceq 'test' -and [string]$Baseline.durationMetric -ceq 'trx-elapsed'
+        [object[]]$previous = if ($compatible) { @($baselineAssemblies | Where-Object { [string]$_.lane -ceq $current.lane -and [string]$_.assembly -ceq $current.assembly } | Select-Object -First 1) } else { @() }
+        $baselineDuration = if (@($previous).Count -eq 1) { [double]@($previous)[0].elapsedMilliseconds } else { $null }
         [pscustomobject][ordered]@{
+            lane = $current.lane
             assembly = $current.assembly
+            metric = 'trx-elapsed'
+            available = @($previous).Count -eq 1
             baselineDurationMilliseconds = $baselineDuration
-            currentDurationMilliseconds = [double]$current.durationMilliseconds
-            deltaPercent = if ($null -ne $baselineDuration -and $baselineDuration -gt 0) { [Math]::Round((([double]$current.durationMilliseconds - $baselineDuration) / $baselineDuration) * 100, 2) } else { $null }
+            currentDurationMilliseconds = [double]$current.elapsedMilliseconds
+            deltaPercent = if ($null -ne $baselineDuration -and $baselineDuration -gt 0) { [Math]::Round((([double]$current.elapsedMilliseconds - $baselineDuration) / $baselineDuration) * 100, 2) } else { $null }
         }
     })
     $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }
-    elseif ($PriorAttemptOutcome -eq 'failure' -and $failed -eq 0 -and $safeViolations.Count -eq 0) {
+    elseif ($PriorAttemptOutcome -eq 'failure' -and $RunMetadata.ContainsKey('priorAttemptVerified') -and [bool]$RunMetadata.priorAttemptVerified -and
+        $RunMetadata.ContainsKey('currentTestOutcome') -and [string]$RunMetadata.currentTestOutcome -ceq 'success' -and
+        ($passed + $failed) -gt 0 -and $failed -eq 0 -and $safeViolations.Count -eq 0) {
         'recovered-after-rerun'
     }
     else { 'rerun' }
@@ -380,6 +516,17 @@ function New-NervTestEvidenceSummary {
         runAttempt = [int]$RunMetadata.runAttempt
         commitSha = [string]$RunMetadata.commitSha
         lane = [string]$RunMetadata.lane
+        repository = if ($RunMetadata.ContainsKey('repository')) { [string]$RunMetadata.repository } else { '' }
+        event = if ($RunMetadata.ContainsKey('event')) { [string]$RunMetadata.event } else { '' }
+        headBranch = if ($RunMetadata.ContainsKey('headBranch')) { [string]$RunMetadata.headBranch } else { '' }
+        jobName = if ($RunMetadata.ContainsKey('jobName')) { [string]$RunMetadata.jobName } else { '' }
+        currentTestOutcome = if ($RunMetadata.ContainsKey('currentTestOutcome')) { [string]$RunMetadata.currentTestOutcome } else { '' }
+        sourceUrl = if ($RunMetadata.ContainsKey('sourceUrl')) { [string]$RunMetadata.sourceUrl } else { '' }
+        runnerOs = if ($RunMetadata.ContainsKey('runnerOs')) { [string]$RunMetadata.runnerOs } else { '' }
+        runnerImage = if ($RunMetadata.ContainsKey('runnerImage')) { [string]$RunMetadata.runnerImage } else { '' }
+        dotnetSdk = if ($RunMetadata.ContainsKey('dotnetSdk')) { [string]$RunMetadata.dotnetSdk } else { '' }
+        artifactName = if ($RunMetadata.ContainsKey('artifactName')) { [string]$RunMetadata.artifactName } else { '' }
+        retentionDays = if ($RunMetadata.ContainsKey('retentionDays')) { [int]$RunMetadata.retentionDays } else { 0 }
         passed = $passed
         failed = $failed
         skipped = $skipped
@@ -388,15 +535,20 @@ function New-NervTestEvidenceSummary {
         testDurationMilliseconds = [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum)
         trxElapsedMilliseconds = if ($RunMetadata.ContainsKey('trxElapsedMilliseconds')) { [double]$RunMetadata.trxElapsedMilliseconds } else { $null }
         assemblies = $assemblies
-        slowestAssemblies = @($assemblies | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'assembly'; Descending = $false } | Select-Object -First $TopCount)
-        slowestTests = @($safeRecords | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'testName'; Descending = $false } | Select-Object -First $TopCount | ForEach-Object { [pscustomobject]@{ testName = $_.testName; assembly = $_.assembly; durationMilliseconds = $_.durationMilliseconds } })
-        skipReasons = @($safeRecords | Where-Object outcome -eq 'skipped' | Group-Object skipReason | Sort-Object Name | ForEach-Object { [pscustomobject]@{ reason = Protect-NervTestEvidenceText $_.Name; count = $_.Count } })
+        slowestAssemblies = @($assemblies | Sort-Object @{ Expression = 'elapsedMilliseconds'; Descending = $true }, @{ Expression = 'assembly'; Descending = $false } | Select-Object -First $TopCount)
+        slowestTests = @($safeRecords | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'testName'; Descending = $false } | Select-Object -First $TopCount | ForEach-Object { [pscustomobject]@{ lane = $_.lane; testName = $_.testName; displayName = $_.displayName; assembly = $_.assembly; durationMilliseconds = $_.durationMilliseconds } })
+        skipReasons = @($safeRecords | Where-Object outcome -eq 'skipped' | Group-Object { Get-NervRetainedSkipReason $_ } | Sort-Object Name | ForEach-Object { [pscustomobject]@{ reason = $_.Name; count = $_.Count } })
         skipClassifications = @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and $_.PSObject.Properties.Name -contains 'skipClassification' } | Group-Object skipClassification | Sort-Object Name | ForEach-Object { [pscustomobject]@{ classification = $_.Name; count = $_.Count } })
         skipPolicies = @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and $_.PSObject.Properties.Name -contains 'skipPolicyId' } | Group-Object skipPolicyId | Sort-Object Name | ForEach-Object {
             [pscustomobject]@{ policyId = $_.Name; classification = [string]$_.Group[0].skipClassification; count = $_.Count }
         })
         violations = $safeViolations
-        baseline = [pscustomobject][ordered]@{ enforcement = 'report-only'; assemblies = $deltas }
+        redactionCount = [int](($safeRecords | Measure-Object redactionCount -Sum).Sum) + @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and (-not ($_.PSObject.Properties.Name -contains 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$_.skipPolicyId)) }).Count
+        baseline = [pscustomobject][ordered]@{
+            enforcement = 'report-only'
+            source = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'source') { $Baseline.source } else { $null }
+            assemblies = $deltas
+        }
         priorAttemptStatus = $priorStatus
         attemptClassification = $attemptClassification
     }
@@ -432,17 +584,24 @@ function Write-NervTestEvidenceArtifacts {
                 project = [string]$record.project
                 assembly = [string]$record.assembly
                 testName = [string]$record.testName
+                displayName = [string]$record.displayName
+                testClassName = [string]$record.testClassName
+                testMethodName = [string]$record.testMethodName
+                definitionId = [string]$record.definitionId
+                testInstanceId = [string]$record.testInstanceId
                 durationMilliseconds = [double]$record.durationMilliseconds
                 outcome = [string]$record.outcome
-                skipReason = Protect-NervTestEvidenceText ([string]$record.skipReason)
+                skipReason = if ($record.outcome -eq 'skipped') { Get-NervRetainedSkipReason $record } else { $null }
                 skipClassification = if ($record.PSObject.Properties.Name -contains 'skipClassification') { [string]$record.skipClassification } else { $null }
                 skipPolicyId = if ($record.PSObject.Properties.Name -contains 'skipPolicyId') { [string]$record.skipPolicyId } else { $null }
+                redactionCount = [int]$record.redactionCount
             }
             $safeRecord | ConvertTo-Json -Compress -Depth 20
         }
         Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ([string]::Join("`n", @($recordLines)) + $(if (@($recordLines).Count -gt 0) { "`n" } else { '' }))
         $safeSummaryJson = Protect-NervTestEvidenceText ($Summary | ConvertTo-Json -Depth 100)
         Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') ($safeSummaryJson + "`n")
+        $baselineSource = if ($null -ne $Summary.baseline.source) { [string]$Summary.baseline.source.sourceUrl } else { 'unavailable' }
         $markdown = @(
             "# Test evidence: $($Summary.lane)",
             '',
@@ -450,8 +609,35 @@ function Write-NervTestEvidenceArtifacts {
             "- Counts: passed=$($Summary.passed), failed=$($Summary.failed), skipped=$($Summary.skipped), executed=$($Summary.executed), total=$($Summary.total)",
             "- Duration: summed tests=$($Summary.testDurationMilliseconds)ms, TRX elapsed=$($Summary.trxElapsedMilliseconds)ms",
             "- Attempt: $($Summary.attemptClassification) (prior: $($Summary.priorAttemptStatus))",
+            "- Provenance: job=$($Summary.jobName), outcome=$($Summary.currentTestOutcome), runner=$($Summary.runnerOs)/$($Summary.runnerImage), dotnet=$($Summary.dotnetSdk)",
+            "- Baseline source: $baselineSource",
+            "- Privacy redactions: $($Summary.redactionCount)",
             '- Timing and baseline deltas: report-only',
-            '- Retained artifact: tests.jsonl, summary.json, summary.md, diagnostics.log, and normalized trx/',
+            "- Retained artifact: $($Summary.artifactName), retention=$($Summary.retentionDays) days; tests.jsonl, summary.json, summary.md, diagnostics.log, normalized trx/",
+            '',
+            '## Assemblies',
+            '',
+            '| Lane | Assembly | Passed | Failed | Skipped | Test duration (ms) | TRX elapsed (ms) |',
+            '|---|---|---:|---:|---:|---:|---:|'
+        )
+        foreach ($assembly in @($Summary.assemblies)) {
+            $markdown += "| $($assembly.lane) | $($assembly.assembly) | $($assembly.passed) | $($assembly.failed) | $($assembly.skipped) | $($assembly.testDurationMilliseconds) | $($assembly.elapsedMilliseconds) |"
+        }
+        $markdown += @(
+            '',
+            '## Slowest assemblies and tests',
+            ''
+        )
+        foreach ($assembly in @($Summary.slowestAssemblies)) { $markdown += "- Assembly $($assembly.lane)/$($assembly.assembly): $($assembly.elapsedMilliseconds)ms elapsed" }
+        foreach ($test in @($Summary.slowestTests)) { $markdown += "- Test $($test.testName): $($test.durationMilliseconds)ms" }
+        $markdown += @(
+            '',
+            '## Skip reasons',
+            ''
+        )
+        if (@($Summary.skipReasons).Count -eq 0) { $markdown += '- None.' }
+        foreach ($reason in @($Summary.skipReasons)) { $markdown += "- $($reason.reason): $($reason.count)" }
+        $markdown += @(
             '',
             '## Skip policy matches',
             ''
@@ -489,18 +675,31 @@ function Write-NervTestEvidenceArtifacts {
         Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ''
 
         $sha8 = ([string]$Summary.commitSha).Substring(0, [Math]::Min(8, ([string]$Summary.commitSha).Length))
-        foreach ($group in @($Records | Group-Object assembly | Sort-Object Name)) {
-            $assemblyName = [regex]::Replace([string]$group.Name, '[^A-Za-z0-9_.-]', '_')
+        foreach ($group in @($Records | Group-Object lane, assembly | Sort-Object Name)) {
+            $groupRecords = @($group.Group | Sort-Object testName, displayName, testInstanceId)
+            $assemblyName = [regex]::Replace([string]$groupRecords[0].assembly, '[^A-Za-z0-9_.-]', '_')
             $fileName = "$($Summary.lane)-$assemblyName-$sha8-attempt-$($Summary.runAttempt).trx"
-            $xmlRows = foreach ($record in @($group.Group | Sort-Object testName)) {
-                $name = [Security.SecurityElement]::Escape([string]$record.testName)
+            $xmlRows = foreach ($record in $groupRecords) {
+                $name = [Security.SecurityElement]::Escape([string]$record.displayName)
                 $outcome = switch ([string]$record.outcome) { 'passed' { 'Passed' } 'failed' { 'Failed' } default { 'NotExecuted' } }
                 $duration = [TimeSpan]::FromMilliseconds([double]$record.durationMilliseconds).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
-                $message = if ($record.outcome -eq 'skipped') { Protect-NervTestEvidenceText ([string]$record.skipReason) } elseif ($record.outcome -eq 'failed') { Protect-NervTestEvidenceText ([string]$record.errorMessage) } else { $null }
+                $message = if ($record.outcome -eq 'skipped') { Get-NervRetainedSkipReason $record } elseif ($record.outcome -eq 'failed') { ConvertTo-NervRetainedFailureText ([string]$record.errorMessage) } else { $null }
                 $output = if ([string]::IsNullOrWhiteSpace($message)) { '' } else { "<Output><ErrorInfo><Message>$([Security.SecurityElement]::Escape($message))</Message></ErrorInfo></Output>" }
-                "<UnitTestResult testName=`"$name`" duration=`"$duration`" outcome=`"$outcome`">$output</UnitTestResult>"
+                "<UnitTestResult executionId=`"$($record.testInstanceId)`" testId=`"$($record.definitionId)`" testName=`"$name`" duration=`"$duration`" outcome=`"$outcome`">$output</UnitTestResult>"
             }
-            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun><Results>$([string]::Join('', @($xmlRows)))</Results></TestRun>"
+            $xmlDefinitions = foreach ($definitionGroup in @($groupRecords | Group-Object definitionId | Sort-Object Name)) {
+                $record = $definitionGroup.Group[0]
+                "<UnitTest id=`"$($record.definitionId)`" name=`"$([Security.SecurityElement]::Escape([string]$record.testName))`" storage=`"$([Security.SecurityElement]::Escape([string]$record.assembly))`"><TestMethod className=`"$([Security.SecurityElement]::Escape([string]$record.testClassName))`" name=`"$([Security.SecurityElement]::Escape([string]$record.testMethodName))`" /></UnitTest>"
+            }
+            $passedCount = @($groupRecords | Where-Object outcome -eq 'passed').Count
+            $failedCount = @($groupRecords | Where-Object outcome -eq 'failed').Count
+            $skippedCount = @($groupRecords | Where-Object outcome -eq 'skipped').Count
+            $executedCount = $passedCount + $failedCount
+            $assemblySummary = @($Summary.assemblies | Where-Object { [string]$_.lane -ceq [string]$groupRecords[0].lane -and [string]$_.assembly -ceq [string]$groupRecords[0].assembly })[0]
+            $start = [DateTimeOffset]'2000-01-01T00:00:00Z'
+            $finish = $start.AddMilliseconds([double]$assemblySummary.elapsedMilliseconds)
+            $runId = Get-NervStableEvidenceGuid "$($Summary.workflowRunId)|$($Summary.runAttempt)|$($groupRecords[0].lane)|$($groupRecords[0].assembly)"
+            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
             Write-NervUtf8NoBom (Join-Path $temporary "trx/$fileName") $safeXml
         }
         [IO.Directory]::Move($temporary, $OutputDirectory)
@@ -511,6 +710,37 @@ function Write-NervTestEvidenceArtifacts {
         }
         throw
     }
+}
+
+function Write-NervTestEvidenceFailureArtifacts {
+    param(
+        [Parameter(Mandatory)] [string] $OutputDirectory,
+        [Parameter(Mandatory)] [hashtable] $RunMetadata,
+        [Parameter(Mandatory)] [string] $Diagnostic
+    )
+    if (Test-Path -LiteralPath $OutputDirectory) { return }
+    $parent = Split-Path -Parent $OutputDirectory
+    [IO.Directory]::CreateDirectory($parent) | Out-Null
+    $temporary = "$OutputDirectory.tmp-$([Guid]::NewGuid().ToString('N'))"
+    [IO.Directory]::CreateDirectory($temporary) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $temporary 'trx')) | Out-Null
+    $safeDiagnostic = Protect-NervTestEvidenceText $Diagnostic
+    if ($safeDiagnostic.Length -gt 1024) { $safeDiagnostic = $safeDiagnostic.Substring(0, 1024) }
+    $failure = [pscustomobject][ordered]@{
+        schemaVersion = 1
+        collectionStatus = 'failed'
+        workflowRunId = [string]$RunMetadata.workflowRunId
+        runAttempt = [int]$RunMetadata.runAttempt
+        commitSha = [string]$RunMetadata.commitSha
+        lane = [string]$RunMetadata.lane
+        passed = 0; failed = 0; skipped = 0; executed = 0; total = 0
+        violations = @([pscustomobject]@{ code = 'evidence-collection-failed'; id = [string]$RunMetadata.lane; message = $safeDiagnostic })
+    }
+    Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ''
+    Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') (($failure | ConvertTo-Json -Depth 20) + "`n")
+    Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') "# Test evidence collection failed`n`n- lane: $($RunMetadata.lane)`n- evidence-collection-failed: $safeDiagnostic`n"
+    Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ($safeDiagnostic + "`n")
+    [IO.Directory]::Move($temporary, $OutputDirectory)
 }
 
 function ConvertFrom-NervDotNetConsoleSummary {
@@ -526,13 +756,14 @@ function ConvertFrom-NervDotNetConsoleSummary {
         $minutes = if ($match.Groups['minutes'].Success) { [double]$match.Groups['minutes'].Value } else { 0.0 }
         $tailMilliseconds = if ($match.Groups['unit'].Value -ceq 'ms') { [double]$match.Groups['value'].Value } else { [double]$match.Groups['value'].Value * 1000.0 }
         [pscustomobject][ordered]@{
+            lane = if ($RunMetadata.ContainsKey('lane')) { [string]$RunMetadata.lane } else { 'backend' }
             assembly = $match.Groups['assembly'].Value
             passed = [int]$match.Groups['passed'].Value
             failed = [int]$match.Groups['failed'].Value
             skipped = [int]$match.Groups['skipped'].Value
             executed = [int]$match.Groups['passed'].Value + [int]$match.Groups['failed'].Value
             total = [int]$match.Groups['total'].Value
-            durationMilliseconds = [double]($minutes * 60000.0 + $tailMilliseconds)
+            elapsedMilliseconds = [double]($minutes * 60000.0 + $tailMilliseconds)
         }
     }
     $duplicates = @($assemblies | Group-Object assembly | Where-Object Count -gt 1)
@@ -540,6 +771,7 @@ function ConvertFrom-NervDotNetConsoleSummary {
     [pscustomobject][ordered]@{
         schemaVersion = 1
         granularity = 'project'
+        durationMetric = 'project-wall-clock'
         lane = 'backend'
         assemblies = @($assemblies | Sort-Object assembly)
     }
@@ -552,16 +784,17 @@ function New-NervTestEvidenceBaseline {
         [Parameter(Mandatory)] [DateTimeOffset] $GeneratedAtUtc
     )
 
-    $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object assembly | Sort-Object Name | ForEach-Object {
+    $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)
         [pscustomobject][ordered]@{
-            assembly = $_.Name
+            lane = [string]$items[0].lane
+            assembly = [string]$items[0].assembly
             passed = [int](($items | Measure-Object passed -Sum).Sum)
             failed = [int](($items | Measure-Object failed -Sum).Sum)
             skipped = [int](($items | Measure-Object skipped -Sum).Sum)
             executed = [int](($items | Measure-Object executed -Sum).Sum)
             total = [int](($items | Measure-Object total -Sum).Sum)
-            durationMilliseconds = [double](($items | Measure-Object durationMilliseconds -Sum).Sum)
+            elapsedMilliseconds = [double](($items | Measure-Object elapsedMilliseconds -Sum).Sum)
         }
     })
     $granularities = @($Summaries.granularity | Sort-Object -Unique)
@@ -569,6 +802,7 @@ function New-NervTestEvidenceBaseline {
         schemaVersion = 1
         toolVersion = 'MAN-661-v1'
         granularity = if ($granularities.Count -eq 1) { $granularities[0] } else { 'mixed' }
+        durationMetric = if ($granularities.Count -eq 1 -and $granularities[0] -ceq 'test') { 'trx-elapsed' } else { 'project-wall-clock' }
         owner = 'Nerv-IIP Platform CI/Test Governance'
         generatedAtUtc = $GeneratedAtUtc.UtcDateTime.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
         source = [pscustomobject][ordered]@{

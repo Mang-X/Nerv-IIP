@@ -17,22 +17,22 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 └── diagnostics.log
 ```
 
-Credential URL user info, bearer authorization, password/token/secret/client_secret values, and named `customerName`, `phone`, `email`, and `address` fields are replaced before retention. Retention is 14 days. GitHub permissions are only `actions: read` and `contents: read`.
+Credential URL user info, bearer authorization, quoted or unquoted password/token/secret/client_secret values, PEM blocks, and named `customerName`, `phone`, `email`, and `address` fields are replaced before retention. Raw failed-test messages and unregistered skip reasons are omitted by construction; approved skip reasons are bounded to 512 characters. A collector failure still publishes the same retained bundle with `collectionStatus: failed`, an `evidence-collection-failed` summary, bounded diagnostics, and a nonzero exit. Retention is 14 days. GitHub permissions are only `actions: read` and `contents: read`.
 
 ## Schema v1
 
 | Area | Required fields |
 | --- | --- |
-| Test record | `schemaVersion`, `workflowRunId`, `runAttempt`, `commitSha`, `lane`, `project`, `assembly`, `testName`, `durationMilliseconds`, `outcome`, `skipReason` |
+| Test record | `schemaVersion`, run identity, lane/project/assembly, method identity, bounded parameterized `displayName`, stable `definitionId`/`testInstanceId`, duration, outcome, approved `skipReason`, redaction count |
 | Outcome | `passed`, `failed`, or `skipped` |
-| Summary | run identity; passed/failed/skipped/executed/total per assembly; summed test duration; TRX elapsed duration; slowest tests/assemblies; skip aggregation; report-only baseline delta; attempt classification; violations |
+| Summary | run/job/runner/artifact provenance; passed/failed/skipped/executed/total per lane+assembly; summed test duration; separate TRX elapsed duration; slowest tests/assemblies; skip aggregation; baseline source and compatible report-only delta; redaction count; attempt classification; violations |
 | Lane | `<family>` or `<family>-shard-<positive-integer>` |
 
 `backend-shard-1` is therefore an ordinary schema-v1 lane. MAN-669 may add shard lane invocations and policy rows, but it must not introduce a shard envelope or a second collector.
 
 ## Skip policy
 
-`scripts/test-evidence-policy.json` has `{ schemaVersion, lanes[], sources[], rules[] }`. A source row identifies one repository-relative C# `Skip =` assignment by path, one-based ordinal, and anchored source-reason pattern. A rule identifies the source, classification, anchored runtime test/reason patterns, allowed lanes/OS, optional required lane, and quarantine metadata.
+`scripts/test-evidence-policy.json` has `{ schemaVersion, lanes[], sources[], rules[] }`. A source row identifies one repository-relative C# `Skip =` assignment by path, one-based ordinal, and anchored source-reason pattern. A rule identifies the source, classification, anchored runtime test/reason patterns, an exact `testIdentities` set with `expectedRuntimeTestCount`, allowed lanes/OS, optional required lane, and quarantine metadata. Source/rule references are closed in both directions, so a new method using a shared Fact attribute cannot silently consume an existing class-wide budget.
 
 Every runtime skip must match exactly one context-applicable rule. The current inventory is 40 source assignments:
 
@@ -46,7 +46,7 @@ There are exactly three semantic hard gates:
 - `illegal-quarantine`: missing/invalid metadata or expired quarantine.
 - `zero-execution`: a selected `realDependency: true` lane has no passed or failed runtime result; skipped is not execution.
 
-Timing, trends, skip totals, baseline deltas, and `recovered-after-rerun` are report-only. A recovery label requires an observed prior `failure`, a later attempt with zero failed tests, and zero policy violations. When lookup is unavailable the summary says `prior-attempt-unavailable`; attempt number alone never proves recovery.
+Timing, trends, skip totals, baseline deltas, and `recovered-after-rerun` are report-only. A recovery label requires a prior failed job from the same workflow run, commit SHA, and lane plus a successful current native test step with nonzero execution, zero failed tests, and zero policy violations. When lookup is unavailable the summary says `prior-attempt-unavailable`; attempt number alone never proves recovery.
 
 ## Baseline ownership and refresh
 
@@ -64,6 +64,6 @@ After MAN-661 merges and normalized main-branch artifacts exist, refresh to test
 pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json
 ```
 
-Refresh is mandatory after MAN-663 changes shared BusinessGateway host profiles and after MAN-669 changes lane/shard topology. Other intentional test-topology changes should refresh only from a completed attempt-1 successful `main` push whose relevant job succeeded. Commit the script-generated diff with its provenance; never hand-edit the baseline.
+Refresh is mandatory after MAN-663 changes shared BusinessGateway host profiles and after MAN-669 changes lane/shard topology. Other intentional test-topology changes should refresh only from the latest completed attempt-1 successful `main` CI push whose required jobs succeeded. Evidence-root summaries must agree on run, attempt, SHA, repository, event, and branch and must report successful native execution with no failures or violations; the generator verifies those facts against GitHub Actions. Baseline identity is lane plus assembly, and timing deltas are emitted only when both sides use TRX elapsed timing at test granularity. Commit the script-generated diff with its resolved runner image and actual .NET SDK provenance; never hand-edit the baseline.
 
 Local fixture results, local full solution execution, PR CI and artifact availability, merge status, and post-merge test-granularity baseline refresh are separate delivery states. None implies another.

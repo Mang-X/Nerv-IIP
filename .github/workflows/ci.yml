@@ -35,7 +35,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Resolve test evidence environment
+        id: backend-evidence-environment
+        shell: pwsh
+        run: |
+          "runner-image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+
       - name: Test backend solution
+        id: backend-tests
         run: >-
           dotnet test backend/Nerv.IIP.sln
           --configuration Release
@@ -45,6 +53,8 @@ jobs:
       - name: Collect backend test evidence
         if: always()
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           ./scripts/collect-test-evidence.ps1
           -Lane backend
@@ -57,6 +67,14 @@ jobs:
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
           -JobName "Backend Tests"
+          -CurrentTestOutcome ${{ steps.backend-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch ${{ github.head_ref || github.ref_name }}
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.backend-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.backend-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
           -StepSummaryPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload backend test evidence
@@ -131,7 +149,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Resolve test evidence environment
+        id: connector-evidence-environment
+        shell: pwsh
+        run: |
+          "runner-image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+
       - name: Test connector host solution
+        id: connector-host-tests
         run: >-
           dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
           --configuration Release
@@ -141,6 +167,8 @@ jobs:
       - name: Collect connector host test evidence
         if: always()
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           ./scripts/collect-test-evidence.ps1
           -Lane connector-host
@@ -153,6 +181,14 @@ jobs:
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
           -JobName "Connector Host Tests"
+          -CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch ${{ github.head_ref || github.ref_name }}
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.connector-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.connector-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
           -StepSummaryPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload connector host test evidence

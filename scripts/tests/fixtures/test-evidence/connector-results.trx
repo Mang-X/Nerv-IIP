@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <TestRun id="22222222-2222-2222-2222-222222222222" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-03T14:00:00Z" queuing="2026-08-03T14:00:00Z" start="2026-08-03T14:00:00Z" finish="2026-08-03T14:00:00.020Z" />
   <Results><UnitTestResult testId="22222222-2222-2222-2222-222222222201" testName="connector" duration="00:00:00.0100000" outcome="Passed" /></Results>
   <TestDefinitions><UnitTest id="22222222-2222-2222-2222-222222222201" name="connector" storage="Nerv.IIP.Connector.Sample.Tests.dll"><TestMethod className="Fixture.ConnectorTests" name="connector" /></UnitTest></TestDefinitions>
   <ResultSummary outcome="Completed"><Counters total="1" executed="1" passed="1" failed="0" notExecuted="0" /></ResultSummary>

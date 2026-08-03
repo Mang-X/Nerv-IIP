@@ -114,10 +114,14 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
+        '<redacted-pem>')
     $redacted = [regex]::Replace($redacted, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
     $redacted = [regex]::Replace(
         $redacted,
-        '(?i)(["''](?:customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
+        '(?i)(["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
         '$1<redacted>$2')
     $patterns = @(
         '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+',

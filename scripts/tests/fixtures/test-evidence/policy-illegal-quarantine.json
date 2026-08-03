@@ -1,7 +1,10 @@
 {
   "schemaVersion": 1,
   "lanes": [
-    { "namePattern": "^backend$", "realDependency": false }
+    {
+      "namePattern": "^backend$",
+      "realDependency": false
+    }
   ],
   "sources": [],
   "rules": [
@@ -11,12 +14,18 @@
       "classification": "quarantined",
       "testPattern": "^Fixture\\.Quarantined$",
       "reasonPattern": "^Known failure\\.$",
-      "allowedLanes": ["backend"],
+      "allowedLanes": [
+        "backend"
+      ],
       "requiredLane": null,
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
       "expiresOn": "2026-09-01",
-      "exitCondition": "Fix the defect."
+      "exitCondition": "Fix the defect.",
+      "testIdentities": [
+        "Fixture.Quarantined"
+      ],
+      "expectedRuntimeTestCount": 1
     }
   ]
 }

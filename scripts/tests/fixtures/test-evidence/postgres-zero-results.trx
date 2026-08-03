@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results /><TestDefinitions /><ResultSummary outcome="Completed"><Counters total="0" executed="0" passed="0" failed="0" notExecuted="0" /></ResultSummary></TestRun>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Times creation="2026-08-03T14:00:00Z" queuing="2026-08-03T14:00:00Z" start="2026-08-03T14:00:00Z" finish="2026-08-03T14:00:00.100Z" /><Results /><TestDefinitions /><ResultSummary outcome="Completed"><Counters total="0" executed="0" passed="0" failed="0" notExecuted="0" /></ResultSummary></TestRun>
