@@ -12,9 +12,7 @@ const props = defineProps<{ class?: HTMLAttributes['class'] }>()
 <template>
   <div
     data-slot="page-columns"
-    :class="
-      cn('gap-4 sm:columns-2 lg:columns-3 [&>*]:mb-4 [&>*]:break-inside-avoid', props.class)
-    "
+    :class="cn('gap-4 sm:columns-2 lg:columns-3 [&>*]:mb-4 [&>*]:break-inside-avoid', props.class)"
   >
     <slot />
   </div>

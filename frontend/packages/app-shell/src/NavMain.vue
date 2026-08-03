@@ -2,11 +2,7 @@
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { ChevronRight } from '@lucide/vue'
-import {
-  CollapsibleContent,
-  CollapsibleRoot as Collapsible,
-  CollapsibleTrigger,
-} from 'reka-ui'
+import { CollapsibleContent, CollapsibleRoot as Collapsible, CollapsibleTrigger } from 'reka-ui'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   SidebarGroup,
@@ -39,8 +35,7 @@ const router = useRouter()
 function isActive(to: RouteLocationRaw): boolean {
   try {
     return router.resolve(to).path === route.path
-  }
-  catch {
+  } catch {
     return false
   }
 }
@@ -60,18 +55,15 @@ function isActive(to: RouteLocationRaw): boolean {
           </SidebarMenuButton>
         </SidebarMenuItem>
 
-        <Collapsible
-          v-else
-          as-child
-          :default-open="item.isActive"
-          class="group/collapsible"
-        >
+        <Collapsible v-else as-child :default-open="item.isActive" class="group/collapsible">
           <SidebarMenuItem>
             <CollapsibleTrigger as-child>
               <SidebarMenuButton :tooltip="item.title">
                 <component :is="item.icon" v-if="item.icon" />
                 <span>{{ item.title }}</span>
-                <ChevronRight class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                <ChevronRight
+                  class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
+                />
               </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent>

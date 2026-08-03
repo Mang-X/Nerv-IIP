@@ -71,8 +71,10 @@ function chartData(cell: NvMetricStripCell) {
  * per-point lookup — neither by crosshair nor by reading the values aloud.
  */
 function hasDatedSeries(cell: NvMetricStripCell) {
-  return (cell.seriesLabels?.length ?? 0) === (cell.series?.length ?? 0)
-    && (cell.series?.length ?? 0) > 1
+  return (
+    (cell.seriesLabels?.length ?? 0) === (cell.series?.length ?? 0) &&
+    (cell.series?.length ?? 0) > 1
+  )
 }
 
 function chartAriaLabel(cell: NvMetricStripCell) {

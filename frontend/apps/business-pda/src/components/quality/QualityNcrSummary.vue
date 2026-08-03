@@ -30,6 +30,8 @@ const statusLabel = computed(() => {
         {{ statusLabel }}
       </NvMobileTag>
     </div>
-    <p class="text-sm text-muted-foreground">检验不合格已自动发起不合格处置，请在处置流程中跟进。</p>
+    <p class="text-sm text-muted-foreground">
+      检验不合格已自动发起不合格处置，请在处置流程中跟进。
+    </p>
   </section>
 </template>

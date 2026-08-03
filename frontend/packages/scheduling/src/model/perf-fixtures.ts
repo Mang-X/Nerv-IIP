@@ -4,7 +4,11 @@ const BASE = Date.parse('2026-06-10T00:00:00.000Z')
 const HOUR = 3_600_000
 
 /** 确定性生成大规模排程计划(默认 200 工单 × 10 工序 = 2000 工序,200 资源),用于性能基线。 */
-export function makeLargePlan(orders = 200, opsPerOrder = 10, resources = 200): SchedulePlanContract {
+export function makeLargePlan(
+  orders = 200,
+  opsPerOrder = 10,
+  resources = 200,
+): SchedulePlanContract {
   const assignments = []
   for (let o = 0; o < orders; o++) {
     for (let k = 0; k < opsPerOrder; k++) {

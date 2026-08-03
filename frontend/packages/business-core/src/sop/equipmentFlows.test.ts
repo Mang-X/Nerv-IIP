@@ -6,9 +6,9 @@ describe('repairOrderFlow', () => {
     expect(repairOrderFlow.id).toBe('equipment.repair')
     expect(repairOrderFlow.currentStep({}).id).toBe('selectDevice')
     expect(repairOrderFlow.currentStep({ deviceAssetId: 'DEV-OIL-01' }).id).toBe('fillDetails')
-    expect(
-      repairOrderFlow.currentStep({ deviceAssetId: 'DEV-OIL-01', priority: 'high' }).id,
-    ).toBe('create')
+    expect(repairOrderFlow.currentStep({ deviceAssetId: 'DEV-OIL-01', priority: 'high' }).id).toBe(
+      'create',
+    )
   })
 
   it('reports completion only when the work order is created', () => {

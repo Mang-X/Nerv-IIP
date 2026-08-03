@@ -40,10 +40,7 @@ describe('useScreenData', () => {
   })
 
   it('失败保活：保留上次数据并标记 stale，不抛错', async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce('A')
-      .mockRejectedValueOnce(new Error('boom'))
+    const fetcher = vi.fn().mockResolvedValueOnce('A').mockRejectedValueOnce(new Error('boom'))
     const scope = effectScope()
     let api!: UseScreenDataReturn<string>
     scope.run(() => {

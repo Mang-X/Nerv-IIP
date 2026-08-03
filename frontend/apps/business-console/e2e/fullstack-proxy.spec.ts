@@ -30,8 +30,7 @@ test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ pag
   await expect(page).toHaveURL(new URL('/', baseURL!).toString())
 
   const skuResponse = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
+    (response) => new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
   )
   await page.goto('/master-data/skus')
   const sku = await skuResponse

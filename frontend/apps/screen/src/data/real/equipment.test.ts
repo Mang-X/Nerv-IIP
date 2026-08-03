@@ -381,9 +381,9 @@ describe('fetchRealDeviceDetail', () => {
     expect(det!.device.state).toBe('alarm') // 有 activeAlarms
     expect(det!.mtbfHours).toBe(76)
     expect(det!.mttrMinutes).toBe(42)
-    expect((det as unknown as { oee: { rate: number | null; availability: number | null } }).oee).toEqual(
-      expect.objectContaining({ rate: 0.684, availability: 0.8 }),
-    )
+    expect(
+      (det as unknown as { oee: { rate: number | null; availability: number | null } }).oee,
+    ).toEqual(expect.objectContaining({ rate: 0.684, availability: 0.8 }))
     expect(api.queryBusinessConsoleTelemetryOee).toHaveBeenCalledWith(
       expect.objectContaining({ query: expect.objectContaining({ deviceAssetId: 'DEV-OIL-02' }) }),
     )

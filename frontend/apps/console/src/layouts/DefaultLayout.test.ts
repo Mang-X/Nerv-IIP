@@ -33,10 +33,21 @@ describe('DefaultLayout', () => {
   it('passes Vue Router route locations to the T-nav top domains', () => {
     const wrapper = mountLayout([createPinia(), createConsoleI18n({ locale: 'en-US' })])
 
-    const topDomains = wrapper.getComponent(AppShellTStub).props('topDomains') as Record<string, unknown>[]
+    const topDomains = wrapper.getComponent(AppShellTStub).props('topDomains') as Record<
+      string,
+      unknown
+    >[]
     expect(topDomains[0]).toMatchObject({ id: 'instances', title: 'Instances', to: { name: '/' } })
-    expect(topDomains[1]).toMatchObject({ id: 'notifications', title: 'Notifications', to: { path: '/notifications' } })
-    expect(topDomains[2]).toMatchObject({ id: 'business', title: 'Business', to: { path: '/business' } })
+    expect(topDomains[1]).toMatchObject({
+      id: 'notifications',
+      title: 'Notifications',
+      to: { path: '/notifications' },
+    })
+    expect(topDomains[2]).toMatchObject({
+      id: 'business',
+      title: 'Business',
+      to: { path: '/business' },
+    })
     expect(topDomains[3]).toMatchObject({ id: 'iam', title: 'IAM', to: { path: '/iam/users' } })
   })
 

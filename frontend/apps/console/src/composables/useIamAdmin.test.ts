@@ -109,12 +109,16 @@ describe('useIamAdmin composables', () => {
         const { filters } = useIamUsers()
 
         return () =>
-          h('button', {
-            onClick: () => {
-              filters.filterSearch = 'alice'
-              filters.pageIndex = 2
+          h(
+            'button',
+            {
+              onClick: () => {
+                filters.filterSearch = 'alice'
+                filters.pageIndex = 2
+              },
             },
-          }, 'filter')
+            'filter',
+          )
       },
     })
 

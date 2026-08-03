@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  CircleAlertIcon,
-  CircleCheckIcon,
-  InfoIcon,
-  TriangleAlertIcon,
-  XIcon,
-} from '@lucide/vue'
+import { CircleAlertIcon, CircleCheckIcon, InfoIcon, TriangleAlertIcon, XIcon } from '@lucide/vue'
 import type { NotifyKind } from './notify'
 import { dismissNotify, useNotifyStore } from './notify'
 

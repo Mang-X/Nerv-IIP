@@ -95,11 +95,11 @@ import { nvNotification } from '@nerv-iip/ui'
 
 ## API
 
-| 方法                                               | 说明           | 参数                                          |
-| -------------------------------------------------- | -------------- | --------------------------------------------- |
+| 方法                                              | 说明           | 参数                                          |
+| ------------------------------------------------- | -------------- | --------------------------------------------- |
 | `nvMessage.info / success / warning / error`      | 顶部轻提示     | `(title: string, { duration }?)`              |
 | `nvNotification.info / success / warning / error` | 右上角通知卡片 | `(title: string, { description, duration }?)` |
-| `dismissNotify`                                    | 主动关闭指定项 | `(id: number)`                                |
+| `dismissNotify`                                   | 主动关闭指定项 | `(id: number)`                                |
 
 ## 选项
 

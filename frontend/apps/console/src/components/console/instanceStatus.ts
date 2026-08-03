@@ -4,7 +4,13 @@ import type { StatusTone } from '@nerv-iip/ui'
 // 与旧 Badge variant（destructive/success/secondary）保持等价语义。
 export function instanceTone(status?: string | null): StatusTone {
   const s = status?.toLowerCase()
-  if (s === 'failed' || s === 'unhealthy' || s === 'stopped' || s === 'cancelled' || s === 'canceled') {
+  if (
+    s === 'failed' ||
+    s === 'unhealthy' ||
+    s === 'stopped' ||
+    s === 'cancelled' ||
+    s === 'canceled'
+  ) {
     return 'danger'
   }
   if (s === 'running' || s === 'healthy') {

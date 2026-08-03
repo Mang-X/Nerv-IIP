@@ -88,9 +88,7 @@ function toUtcEndOfDay(value: string) {
     <DialogContent>
       <DialogHeader>
         <DialogTitle>新建用户</DialogTitle>
-        <DialogDescription>
-          创建一个控制台用户，填写登录名、邮箱与初始密码。
-        </DialogDescription>
+        <DialogDescription> 创建一个控制台用户，填写登录名、邮箱与初始密码。 </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
@@ -132,18 +130,12 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-account-expires">账号有效期</FieldLabel>
-            <Input
-              id="iam-create-account-expires"
-              v-model="form.accountExpiresDate"
-              type="date"
-            />
+            <Input id="iam-create-account-expires" v-model="form.accountExpiresDate" type="date" />
           </Field>
         </FieldGroup>
 
         <DialogFooter show-close-button>
-          <Button type="submit">
-            新建用户
-          </Button>
+          <Button type="submit"> 新建用户 </Button>
         </DialogFooter>
       </form>
     </DialogContent>

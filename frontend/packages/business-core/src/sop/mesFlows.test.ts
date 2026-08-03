@@ -29,17 +29,21 @@ describe('productionReportFlow', () => {
   })
 
   it('reports ordered progress for the UI step indicator', () => {
-    expect(productionReportFlow.progress({ workOrderId: 'WO-1', operationTaskId: 'OP-1' })).toEqual({
-      completed: 2,
-      total: 4,
-    })
+    expect(productionReportFlow.progress({ workOrderId: 'WO-1', operationTaskId: 'OP-1' })).toEqual(
+      {
+        completed: 2,
+        total: 4,
+      },
+    )
   })
 })
 
 describe('finishedGoodsReceiptFlow', () => {
   it('starts at selectWorkOrder and requires sku, quantity, and unit cost before create', () => {
     expect(finishedGoodsReceiptFlow.currentStep({}).id).toBe('selectWorkOrder')
-    expect(finishedGoodsReceiptFlow.currentStep({ workOrderId: 'WO-1' }).id).toBe('enterSkuQuantity')
+    expect(finishedGoodsReceiptFlow.currentStep({ workOrderId: 'WO-1' }).id).toBe(
+      'enterSkuQuantity',
+    )
     // sku without quantity stays on enterSkuQuantity
     expect(finishedGoodsReceiptFlow.currentStep({ workOrderId: 'WO-1', skuId: 'SKU-1' }).id).toBe(
       'enterSkuQuantity',

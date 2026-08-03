@@ -7,7 +7,10 @@ describe('PDA task kinds dictionary', () => {
     expect(ids).toEqual(
       expect.arrayContaining(['wms.inbound', 'wms.putaway', 'wms.pick', 'wms.count', 'mes.report']),
     )
-    expect(getPdaTaskKind('wms.inbound')).toMatchObject({ label: '收货入库', route: '/wms/inbound' })
+    expect(getPdaTaskKind('wms.inbound')).toMatchObject({
+      label: '收货入库',
+      route: '/wms/inbound',
+    })
   })
 
   it('lights up every PDA entry now that all WMS/MES/equipment pages are delivered', () => {
