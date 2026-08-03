@@ -1,0 +1,920 @@
+{
+  "schemaVersion": 1,
+  "lanes": [
+    {
+      "namePattern": "^backend(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": false
+    },
+    {
+      "namePattern": "^connector-host(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": false
+    },
+    {
+      "namePattern": "^postgres(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": true
+    },
+    {
+      "namePattern": "^full-chain(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": true
+    },
+    {
+      "namePattern": "^performance(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": true
+    },
+    {
+      "namePattern": "^connector-(?:docker|opcua)(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": true
+    }
+  ],
+  "sources": [
+    {
+      "id": "apphub-postgres",
+      "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL AppHub collection-health concurrency proof\\.\";$"
+    },
+    {
+      "id": "barcodelabel-postgres-profile",
+      "sourcePath": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL BarcodeLabel profile test\\.\";$"
+    },
+    {
+      "id": "barcodelabel-world-history",
+      "sourcePath": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL BarcodeLabel world-history test\\.\";$"
+    },
+    {
+      "id": "demandplanning-postgres",
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.\";$"
+    },
+    {
+      "id": "demandplanning-postgres-redis",
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
+      "sourceOrdinal": 2,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP bridge proof\\.\";$"
+    },
+    {
+      "id": "erp-business-partner",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP business-partner consumer acceptance test\\.\";$"
+    },
+    {
+      "id": "erp-cost-accounting",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP cost-accounting acceptance test\\.\";$"
+    },
+    {
+      "id": "erp-scale-seed",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL leader-demo scale seed measurement\\.\";$"
+    },
+    {
+      "id": "erp-world-history",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorldHistorySeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.\";$"
+    },
+    {
+      "id": "industrialtelemetry-postgres",
+      "sourcePath": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryIdempotentConcurrencyTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions\\.\";$"
+    },
+    {
+      "id": "inventory-postgres-profile",
+      "sourcePath": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryPostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run Inventory PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "maintenance-device-pause",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance device-pause acceptance test\\.\";$"
+    },
+    {
+      "id": "maintenance-world-history",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance world-history seed test\\.\";$"
+    },
+    {
+      "id": "masterdata-postgres",
+      "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataPostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "mes-cap-postgres",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesCapSubscriptionTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"PostgreSQL unavailable for MES CAP acceptance test: \\{MesPostgreSqlTestSettings\\.Describe\\(connectionString\\)\\}\";$"
+    },
+    {
+      "id": "mes-production-candidate",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/TelemetryProductionReportCandidatePostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.\";$"
+    },
+    {
+      "id": "mes-world-history",
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.\";$"
+    },
+    {
+      "id": "productengineering-world-bible",
+      "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-bible engineering seed timing proof\\.\";$"
+    },
+    {
+      "id": "quality-postgres",
+      "sourcePath": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityCapaRedrivePostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "scheduling-postgres",
+      "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/RecordSchedulePlanInvalidationsPostgresProfileTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "wms-task-action",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseTaskActionConcurrencyPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS warehouse-task action concurrency tests\\.\";$"
+    },
+    {
+      "id": "wms-wcs-dispatch",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsDispatchConcurrencyPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS WCS dispatch concurrency tests\\.\";$"
+    },
+    {
+      "id": "wms-quality-gate",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL WMS quality gate consumer test\\.\";$"
+    },
+    {
+      "id": "wms-short-pick",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsShortPickBackorderTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL WMS short-pick acceptance test\\.\";$"
+    },
+    {
+      "id": "wms-assignment-migration",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsWorkAssignmentMigrationPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS work-assignment PostgreSQL upgrade tests\\.\";$"
+    },
+    {
+      "id": "wms-world-history",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WorldHistoryWmsSeedPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS PostgreSQL profile tests\\.\";$"
+    },
+    {
+      "id": "filestorage-postgres",
+      "sourcePath": "backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the FileStorage restart persistence smoke\\.\";$"
+    },
+    {
+      "id": "acceptance-runtime-maintenance",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL runtime-hours to Maintenance acceptance test\\.\";$"
+    },
+    {
+      "id": "fullchain-erp-return",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP return closure acceptance test\\.\";$"
+    },
+    {
+      "id": "fullchain-erp-wms",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set the MAN-527 PostgreSQL, Redis, CAP version, and delivery-order variables to run the external-process replay probe\\.\";$"
+    },
+    {
+      "id": "fullchain-maintenance-runtime",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set the MAN-440 Maintenance/IndustrialTelemetry PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process PM probe\\.\";$"
+    },
+    {
+      "id": "fullchain-mes-inventory",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/MesInventoryProducedLotPostgresRedisAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set the MAN-528 MES/Inventory PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process success/failure probe\\.\";$"
+    },
+    {
+      "id": "fullchain-sales-demand",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/SalesOrderDemandPlanningPostgresRedisAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set the MAN-517 PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process fault injector\\.\";$"
+    },
+    {
+      "id": "performance-baseline",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.Performance.Tests/PerformanceBaselineFactAttribute.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = GetSkipReason\\( scenario, Environment\\.GetEnvironmentVariable\\(PerformanceBaselineSettings\\.ConnectionStringEnvironmentVariable\\), Environment\\.GetEnvironmentVariable\\(PerformanceBaselineSettings\\.ScenarioEnvironmentVariable\\), requiredEnvironmentVariable, string\\.IsNullOrWhiteSpace\\(requiredEnvironmentVariable\\) \\? null : Environment\\.GetEnvironmentVariable\\(requiredEnvironmentVariable\\)\\);$"
+    },
+    {
+      "id": "testing-postgres-lifecycle",
+      "sourcePath": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run PostgreSQL test database lifecycle tests\\.\";$"
+    },
+    {
+      "id": "connector-docker-opt-in",
+      "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/DockerCliIntegrationTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_DOCKER_INTEGRATION=1 to run real Docker integration tests\\.\";$"
+    },
+    {
+      "id": "connector-docker-daemon",
+      "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/DockerCliIntegrationTests.cs",
+      "sourceOrdinal": 2,
+      "sourceReasonPattern": "^Skip = \"Docker CLI or Docker daemon is not available\\.\";$"
+    },
+    {
+      "id": "connector-opcua-opt-in",
+      "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests/OpcUaSimulatorIntegrationTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_OPCUA_SIMULATOR_INTEGRATION=1 to run the real OPC UA simulator integration test\\.\";$"
+    },
+    {
+      "id": "connector-opcua-daemon",
+      "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests/OpcUaSimulatorIntegrationTests.cs",
+      "sourceOrdinal": 2,
+      "sourceReasonPattern": "^Skip = \"Docker CLI or Docker daemon is not available\\.\";$"
+    },
+    {
+      "id": "connector-unix-sigterm",
+      "sourcePath": "connector-hosts/tests/Nerv.IIP.ConnectorHost.Host.Tests/SimulatedConnectorHostProcessTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Exact-child graceful shutdown evidence uses Unix SIGTERM;$"
+    }
+  ],
+  "rules": [
+    {
+      "id": "connector-opcua-opt-in",
+      "sourceId": "connector-opcua-opt-in",
+      "classification": "optional",
+      "testPattern": "^Nerv\\.IIP\\.ConnectorHost\\.Connectors\\.OpcUa\\.Tests\\.OpcUaSimulatorIntegrationTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_OPCUA_SIMULATOR_INTEGRATION=1 to run the real OPC UA simulator integration test\\.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": "connector-opcua",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "connector-opcua-daemon",
+      "sourceId": "connector-opcua-daemon",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.ConnectorHost\\.Connectors\\.OpcUa\\.Tests\\.OpcUaSimulatorIntegrationTests\\..+$",
+      "reasonPattern": "^Docker CLI or Docker daemon is not available\\.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": "connector-opcua",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "connector-docker-opt-in",
+      "sourceId": "connector-docker-opt-in",
+      "classification": "optional",
+      "testPattern": "^Nerv\\.IIP\\.ConnectorHost\\.Connectors\\.Docker\\.Tests\\.DockerCliIntegrationTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_DOCKER_INTEGRATION=1 to run real Docker integration tests\\.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": "connector-docker",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "connector-docker-daemon",
+      "sourceId": "connector-docker-daemon",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.ConnectorHost\\.Connectors\\.Docker\\.Tests\\.DockerCliIntegrationTests\\..+$",
+      "reasonPattern": "^Docker CLI or Docker daemon is not available\\.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": "connector-docker",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "connector-unix-sigterm",
+      "sourceId": "connector-unix-sigterm",
+      "classification": "optional",
+      "testPattern": "^Nerv\\.IIP\\.ConnectorHost\\.Host\\.Tests\\.SimulatedConnectorHostProcessTests\\..+$",
+      "reasonPattern": "^Exact-child graceful shutdown evidence uses Unix SIGTERM; Windows runs the platform-specific executable resolution contract only\\.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": null,
+      "allowedOperatingSystems": [
+        "Windows"
+      ],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "testing-postgres-lifecycle",
+      "sourceId": "testing-postgres-lifecycle",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Testing\\.PostgreSql\\.Tests\\.PostgreSqlTestDatabaseTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run PostgreSQL test database lifecycle tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "fullchain-maintenance-runtime",
+      "sourceId": "fullchain-maintenance-runtime",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.MaintenanceRuntimeHoursPostgresRedisAcceptanceTests\\..+$",
+      "reasonPattern": "^Set the MAN-440 Maintenance/IndustrialTelemetry PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process PM probe\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "fullchain-mes-inventory",
+      "sourceId": "fullchain-mes-inventory",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.MesInventoryProducedLotPostgresRedisAcceptanceTests\\..+$",
+      "reasonPattern": "^Set the MAN-528 MES/Inventory PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process success/failure probe\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "fullchain-erp-wms",
+      "sourceId": "fullchain-erp-wms",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests\\..+$",
+      "reasonPattern": "^Set the MAN-527 PostgreSQL, Redis, CAP version, and delivery-order variables to run the external-process replay probe\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "fullchain-sales-demand",
+      "sourceId": "fullchain-sales-demand",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.SalesOrderDemandPlanningPostgresRedisAcceptanceTests\\..+$",
+      "reasonPattern": "^Set the MAN-517 PostgreSQL, Redis, CAP version, and probe-run variables to run the external-process fault injector\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "fullchain-erp-return",
+      "sourceId": "fullchain-erp-return",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.ErpReturnClosurePostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP return closure acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "acceptance-runtime-maintenance",
+      "sourceId": "acceptance-runtime-maintenance",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.RuntimeHoursMaintenancePostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL runtime-hours to Maintenance acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "apphub-postgres",
+      "sourceId": "apphub-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.AppHub\\.Web\\.Tests\\.AppHubPostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL AppHub collection-health concurrency proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "filestorage-postgres",
+      "sourceId": "filestorage-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.FileStorage\\.Web\\.Tests\\.FileStorageRestartPersistenceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the FileStorage restart persistence smoke\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "demandplanning-postgres",
+      "sourceId": "demandplanning-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.ErpSalesOrderDemandConsumerTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "demandplanning-postgres-redis",
+      "sourceId": "demandplanning-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.ErpSalesOrderDemandConsumerTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP bridge proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "productengineering-world-bible",
+      "sourceId": "productengineering-world-bible",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.ProductEngineering\\.Web\\.Tests\\.WorldBibleSeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-bible engineering seed timing proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-world-history",
+      "sourceId": "wms-world-history",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WorldHistoryWmsSeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS PostgreSQL profile tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-quality-gate",
+      "sourceId": "wms-quality-gate",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WmsQualityInspectionGateConsumerTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL WMS quality gate consumer test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "inventory-postgres-profile",
+      "sourceId": "inventory-postgres-profile",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.InventoryPostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Inventory PostgreSQL profile tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-task-action",
+      "sourceId": "wms-task-action",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WarehouseTaskActionConcurrencyPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS warehouse-task action concurrency tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-short-pick",
+      "sourceId": "wms-short-pick",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WmsShortPickBackorderTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL WMS short-pick acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-wcs-dispatch",
+      "sourceId": "wms-wcs-dispatch",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WcsDispatchConcurrencyPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS WCS dispatch concurrency tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "wms-assignment-migration",
+      "sourceId": "wms-assignment-migration",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WmsWorkAssignmentMigrationPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS work-assignment PostgreSQL upgrade tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "barcodelabel-world-history",
+      "sourceId": "barcodelabel-world-history",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.BarcodeLabel\\.Web\\.Tests\\.WorldHistoryLabelSeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL BarcodeLabel world-history test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "scheduling-postgres",
+      "sourceId": "scheduling-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.RecordSchedulePlanInvalidationsPostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "barcodelabel-postgres-profile",
+      "sourceId": "barcodelabel-postgres-profile",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.BarcodeLabel\\.Web\\.Tests\\.BarcodeLabelPostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL BarcodeLabel profile test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "industrialtelemetry-postgres",
+      "sourceId": "industrialtelemetry-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.IndustrialTelemetryIdempotentConcurrencyTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "maintenance-world-history",
+      "sourceId": "maintenance-world-history",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.WorldHistoryMaintenanceSeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance world-history seed test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "maintenance-device-pause",
+      "sourceId": "maintenance-device-pause",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.MaintenanceIntegrationEventHandlerTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance device-pause acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "quality-postgres",
+      "sourceId": "quality-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.QualityCapaRedrivePostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "masterdata-postgres",
+      "sourceId": "masterdata-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.MasterDataPostgresProfileTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "mes-world-history",
+      "sourceId": "mes-world-history",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.WorldHistorySeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "mes-production-candidate",
+      "sourceId": "mes-production-candidate",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.TelemetryProductionReportCandidatePostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "mes-cap-postgres",
+      "sourceId": "mes-cap-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.MesCapSubscriptionTests\\..+$",
+      "reasonPattern": "^PostgreSQL unavailable for MES CAP acceptance test: .+$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "erp-world-history",
+      "sourceId": "erp-world-history",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.WorldHistorySeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "erp-business-partner",
+      "sourceId": "erp-business-partner",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.BusinessPartnerChangedPostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP business-partner consumer acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "erp-cost-accounting",
+      "sourceId": "erp-cost-accounting",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.ErpCostAccountingPostgresAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP cost-accounting acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "erp-scale-seed",
+      "sourceId": "erp-scale-seed",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.LeaderDemoScaleSeedPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL leader-demo scale seed measurement\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "performance-baseline-erp",
+      "sourceId": "performance-baseline",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.ErpPerformanceBaselineTests\\.Erp_sales_order_list_high_read_baseline_outputs_elapsed_rows_scenario_and_profile$",
+      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'erp' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'erp' performance baseline\\.)$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "performance",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "performance-baseline-inventory",
+      "sourceId": "performance-baseline",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.InventoryPerformanceBaselineTests\\.Inventory_high_write_baseline_outputs_elapsed_rows_scenario_and_profile$",
+      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'inventory' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'inventory' performance baseline\\.)$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "performance",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "performance-baseline-mes",
+      "sourceId": "performance-baseline",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.MesPerformanceBaselineTests\\.Mes_work_order_high_read_baseline_outputs_elapsed_rows_scenario_and_profile$",
+      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'mes' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'mes' performance baseline\\.)$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "performance",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    },
+    {
+      "id": "performance-baseline-scheduling",
+      "sourceId": "performance-baseline",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.SchedulingScaleBenchmarkTests\\.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence$",
+      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'scheduling' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'scheduling' performance baseline\\.)$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "performance",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null
+    }
+  ]
+}
