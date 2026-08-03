@@ -259,7 +259,7 @@ public sealed class RedisCommandDistributedLock : IDistributedLock
             var delay = remaining < RetryDelay ? remaining : RetryDelay;
             if (delay > TimeSpan.Zero)
             {
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(delay, timeProvider, cancellationToken);
             }
         }
     }
@@ -439,7 +439,7 @@ public sealed class StackExchangeRedisCommandLockStore(IDatabase database, strin
         serviceName.Trim().ToLowerInvariant();
 }
 
-public sealed class InMemoryRedisCommandLockStore : IRedisCommandLockStore
+public sealed class InMemoryRedisCommandLockStore(TimeProvider timeProvider) : IRedisCommandLockStore
 {
     private readonly object syncRoot = new();
     private readonly Dictionary<string, LockEntry> locks = new(StringComparer.Ordinal);
@@ -453,7 +453,7 @@ public sealed class InMemoryRedisCommandLockStore : IRedisCommandLockStore
         _ = cancellationToken;
         lock (syncRoot)
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = timeProvider.GetUtcNow();
             if (locks.TryGetValue(key, out var current) && current.ExpiresAtUtc > now)
             {
                 return Task.FromResult(false);
@@ -488,7 +488,7 @@ public sealed class InMemoryRedisCommandLockStore : IRedisCommandLockStore
         _ = cancellationToken;
         lock (syncRoot)
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = timeProvider.GetUtcNow();
             if (!locks.TryGetValue(key, out var current)
                 || current.ExpiresAtUtc <= now
                 || !string.Equals(current.Token, token, StringComparison.Ordinal))

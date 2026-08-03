@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -9,8 +10,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
@@ -218,14 +221,13 @@ public sealed class MaintenanceCommandLockTests
     [Fact]
     public async Task Redis_distributed_lock_releases_after_normal_dispose_and_allows_retry()
     {
-        var store = new InMemoryRedisCommandLockStore();
-        var distributedLock = new RedisMaintenanceDistributedLock(store, TimeProvider.System);
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryRedisCommandLockStore(fakeTime);
+        var distributedLock = new RedisMaintenanceDistributedLock(store, fakeTime);
         await using var first = await distributedLock.AcquireAsync("pm-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
 
-        var retryTask = distributedLock.TryAcquireAsync("pm-lock", TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
-        await Task.Delay(50);
         await first.DisposeAsync();
-        await using var retry = await retryTask;
+        await using var retry = await distributedLock.TryAcquireAsync("pm-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.NotNull(retry);
     }
@@ -233,19 +235,20 @@ public sealed class MaintenanceCommandLockTests
     [Fact]
     public async Task Redis_distributed_lock_renews_lease_until_disposed()
     {
-        var store = new InMemoryRedisCommandLockStore();
-        // 时间边界要留给 CI 负载：租约 100ms + 续租 20ms 时，续租线程被饿一次超过 100ms
-        // 租约就真过期，`blocked` 会拿到锁而断言失败（CI 上反复红，见 #1201）。
-        // 契约是「续租能让持有超过一个租约周期」，用 1s 租约 / 100ms 续租 / 1.5s 观察，
-        // 结论不变但对调度抖动有 10 倍余量。
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new RenewalObservingStore(new InMemoryRedisCommandLockStore(fakeTime));
         var distributedLock = new RedisMaintenanceDistributedLock(
             store,
-            TimeProvider.System,
+            fakeTime,
             TimeSpan.FromSeconds(1),
             TimeSpan.FromMilliseconds(100));
         await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        await Task.Delay(1500);
+        for (var elapsedMilliseconds = 100; elapsedMilliseconds <= 1500; elapsedMilliseconds += 100)
+        {
+            fakeTime.Advance(TimeSpan.FromMilliseconds(100));
+            Assert.True(await store.WaitForRenewalAsync());
+        }
         await using var blocked = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.Null(blocked);
@@ -253,6 +256,24 @@ public sealed class MaintenanceCommandLockTests
         await held.DisposeAsync();
         await using var retry = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
         Assert.NotNull(retry);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_acquire_timeout_uses_controlled_time()
+    {
+        var fakeTime = new TrackingFakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryRedisCommandLockStore(fakeTime);
+        var distributedLock = new RedisMaintenanceDistributedLock(store, fakeTime);
+        await using var held = await distributedLock.AcquireAsync("pm-timeout-lock", TimeSpan.Zero, CancellationToken.None);
+
+        var blockedTask = distributedLock.TryAcquireAsync(
+            "pm-timeout-lock",
+            TimeSpan.FromSeconds(1),
+            CancellationToken.None).AsTask();
+        Assert.Equal(2, fakeTime.CreatedTimerCount);
+        fakeTime.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Null(await blockedTask);
     }
 
     [Fact]
@@ -324,8 +345,9 @@ public sealed class MaintenanceCommandLockTests
     public async Task Command_lock_behavior_releases_after_handler_exception_and_allows_retry()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IRedisCommandLockStore, InMemoryRedisCommandLockStore>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IRedisCommandLockStore>(sp =>
+            new InMemoryRedisCommandLockStore(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IDistributedLock, RedisMaintenanceDistributedLock>();
         services.AddScoped<ICommandLock<ThrowingLockedCommand>, ThrowingLockedCommandLock>();
         services.AddScoped<IRequestHandler<ThrowingLockedCommand>, ThrowingLockedCommandHandler>();
@@ -398,78 +420,70 @@ public sealed class MaintenanceCommandLockTests
     [Fact]
     public async Task Command_lock_behavior_attempts_every_reverse_release_and_stops_all_renewals_when_releases_fail()
     {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
         var store = new ReleaseFailingStore(["a-key", "z-key"]);
         var distributedLock = new RedisMaintenanceDistributedLock(
             store,
-            TimeProvider.System,
+            fakeTime,
             TimeSpan.FromMilliseconds(500),
             TimeSpan.FromMilliseconds(20));
         var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
             [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
             distributedLock);
 
-        try
-        {
-            var exception = await Record.ExceptionAsync(() => behavior.Handle(
-                new MultiKeyLockedCommand(),
-                async _ =>
-                {
-                    await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
-                    return Unit.Value;
-                },
-                CancellationToken.None));
-            var aggregate = Assert.IsType<AggregateException>(exception);
-            Assert.Equal(
-                ["release failed: z-key", "release failed: a-key"],
-                aggregate.InnerExceptions.Select(error => error.Message));
-            Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+        var behaviorTask = Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            async _ =>
+            {
+                await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                return Unit.Value;
+            },
+            CancellationToken.None));
+        fakeTime.Advance(TimeSpan.FromMilliseconds(20));
 
-            var renewalCountsAfterRelease = store.RenewalCounts;
-            await Task.Delay(100);
-            Assert.Equal(renewalCountsAfterRelease, store.RenewalCounts);
-        }
-        finally
-        {
-            store.RejectRenewals();
-            await Task.Delay(50);
-        }
+        var exception = await behaviorTask;
+        var aggregate = Assert.IsType<AggregateException>(exception);
+        Assert.Equal(
+            ["release failed: z-key", "release failed: a-key"],
+            aggregate.InnerExceptions.Select(error => error.Message));
+        Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+
+        var renewalCountsAfterRelease = store.RenewalCounts;
+        fakeTime.Advance(TimeSpan.FromMilliseconds(100));
+        Assert.Equal(renewalCountsAfterRelease, store.RenewalCounts);
     }
 
     [Fact]
     public async Task Command_lock_behavior_aggregates_handler_then_release_failures_without_masking_either()
     {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
         var store = new ReleaseFailingStore(["z-key"]);
         var distributedLock = new RedisMaintenanceDistributedLock(
             store,
-            TimeProvider.System,
+            fakeTime,
             TimeSpan.FromMilliseconds(500),
             TimeSpan.FromMilliseconds(20));
         var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
             [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
             distributedLock);
 
-        try
-        {
-            var exception = await Record.ExceptionAsync(() => behavior.Handle(
-                new MultiKeyLockedCommand(),
-                async _ =>
-                {
-                    await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
-                    throw new ApplicationException("handler failed");
-                },
-                CancellationToken.None));
-            var aggregate = Assert.IsType<AggregateException>(exception);
-            Assert.Collection(
-                aggregate.InnerExceptions,
-                error => Assert.IsType<ApplicationException>(error),
-                error => Assert.Equal("release failed: z-key", Assert.IsType<InvalidOperationException>(error).Message));
-            Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
-        }
-        finally
-        {
-            store.RejectRenewals();
-            await Task.Delay(50);
-        }
+        var behaviorTask = Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            async _ =>
+            {
+                await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                throw new ApplicationException("handler failed");
+            },
+            CancellationToken.None));
+        fakeTime.Advance(TimeSpan.FromMilliseconds(20));
+
+        var exception = await behaviorTask;
+        var aggregate = Assert.IsType<AggregateException>(exception);
+        Assert.Collection(
+            aggregate.InnerExceptions,
+            error => Assert.IsType<ApplicationException>(error),
+            error => Assert.Equal("release failed: z-key", Assert.IsType<InvalidOperationException>(error).Message));
+        Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
     }
 
     [Fact]
@@ -577,6 +591,7 @@ public sealed class MaintenanceCommandLockTests
     {
         public async Task Handle(CancellableLockedCommand request, CancellationToken cancellationToken)
         {
+            // MAN-662 real wait: cancellation primitive; exit when the fake handler exposes a completion signal.
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
     }
@@ -618,6 +633,66 @@ public sealed class MaintenanceCommandLockTests
         }
     }
 
+    private sealed class RenewalObservingStore(IRedisCommandLockStore inner) : IRedisCommandLockStore
+    {
+        private readonly Channel<bool> renewalResults = Channel.CreateUnbounded<bool>();
+
+        public Task<bool> TryAcquireAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken) =>
+            inner.TryAcquireAsync(key, token, leaseTime, cancellationToken);
+
+        public async Task<bool> RenewAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            var renewed = await inner.RenewAsync(key, token, leaseTime, cancellationToken);
+            await renewalResults.Writer.WriteAsync(renewed, cancellationToken);
+            return renewed;
+        }
+
+        public Task ReleaseAsync(
+            string key,
+            string token,
+            CancellationToken cancellationToken) =>
+            inner.ReleaseAsync(key, token, cancellationToken);
+
+        public async Task<bool> WaitForRenewalAsync() =>
+            await renewalResults.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    private sealed class TrackingFakeTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private readonly FakeTimeProvider inner = new(start);
+        private int createdTimerCount;
+
+        public int CreatedTimerCount => Volatile.Read(ref createdTimerCount);
+
+        public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
+
+        public override long TimestampFrequency => inner.TimestampFrequency;
+
+        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+
+        public override long GetTimestamp() => inner.GetTimestamp();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            Interlocked.Increment(ref createdTimerCount);
+            return inner.CreateTimer(callback, state, dueTime, period);
+        }
+
+        public void Advance(TimeSpan delta) => inner.Advance(delta);
+    }
+
     private sealed class ThrowingRenewalStore : IRedisCommandLockStore
     {
         public Task<bool> TryAcquireAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
@@ -643,7 +718,6 @@ public sealed class MaintenanceCommandLockTests
         private readonly HashSet<string> failingKeys = new(failingKeys, StringComparer.Ordinal);
         private readonly TaskCompletionSource allKeysRenewed =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private volatile bool rejectRenewals;
 
         public Task AllKeysRenewed => allKeysRenewed.Task;
 
@@ -675,7 +749,7 @@ public sealed class MaintenanceCommandLockTests
             {
                 allKeysRenewed.TrySetResult();
             }
-            return Task.FromResult(!rejectRenewals);
+            return Task.FromResult(true);
         }
 
         public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
@@ -687,8 +761,6 @@ public sealed class MaintenanceCommandLockTests
             }
             return Task.CompletedTask;
         }
-
-        public void RejectRenewals() => rejectRenewals = true;
     }
 
     private sealed class RecordingDistributedLock(
