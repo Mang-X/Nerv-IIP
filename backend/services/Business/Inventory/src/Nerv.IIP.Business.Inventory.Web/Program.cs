@@ -64,6 +64,8 @@ try
     builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
     builder.Services.AddScoped<ExpiredStockBlockingService>();
     builder.Services.AddScoped<ExpiredStockReservationService>();
+    builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
     builder.Services.AddSingleton<InventoryReservationMetrics>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
     builder.Services.AddHostedService<ExpiredStockReservationHostedService>();
