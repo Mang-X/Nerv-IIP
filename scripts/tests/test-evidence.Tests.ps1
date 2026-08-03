@@ -61,7 +61,8 @@ Assert-Violation (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $re
 $run = @{
     workflowRunId = '1001'
     runAttempt = 2
-    commitSha = '0123456789abcdef0123456789abcdef01234567'
+    headSha = '0123456789abcdef0123456789abcdef01234567'
+    testedSha = '89abcdef0123456789abcdef0123456789abcdef'
     lane = 'backend-shard-1'
 }
 $records = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
@@ -75,6 +76,9 @@ Assert-Equal 1250.0 ($records | Where-Object outcome -eq 'passed').durationMilli
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object outcome -eq 'skipped').skipReason 'Skip reason mismatch.'
 Assert-Equal 3000.0 $run.trxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
 Assert-Equal 3000.0 $run.trxRuns[0].elapsedMilliseconds 'Per-assembly TRX elapsed time must be retained.'
+Assert-Equal $run.headSha $records[0].headSha 'Branch-head provenance must be retained separately.'
+Assert-Equal $run.testedSha $records[0].testedSha 'Actually-tested checkout provenance must be retained separately.'
+Assert-True (-not ($records[0].PSObject.Properties.Name -contains 'commitSha')) 'Ambiguous commitSha must not remain in the retained record schema.'
 
 $counterMismatchFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) -RunMetadata $run | Out-Null }
@@ -85,6 +89,35 @@ $parameterized = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized
 Assert-Equal 2 @($parameterized.displayName | Sort-Object -Unique).Count 'Parameterized display names must remain distinct.'
 Assert-Equal 2 @($parameterized.testInstanceId | Sort-Object -Unique).Count 'Parameterized instances need stable distinct identities.'
 Assert-Equal 1 @($parameterized.definitionId | Sort-Object -Unique).Count 'Parameterized instances must share their method definition.'
+Assert-Equal '66666666-6666-6666-6666-666666666611' $parameterized[0].testInstanceId 'Persisted execution identity must survive case-sensitive parameter displays.'
+
+$displayPayload = Read-NervTrxResults -Path @((Join-Path $fixtures 'display-payload-results.trx')) -RunMetadata $run
+Assert-Equal 3 $displayPayload.Count 'Display-payload fixture count mismatch.'
+Assert-Equal 3 @($displayPayload.testInstanceId | Sort-Object -Unique).Count 'Persisted execution IDs must preserve parameterized instance identity.'
+Assert-Equal '77777777-7777-7777-7777-777777777701' $displayPayload[0].testInstanceId 'TRX executionId must be preferred over a derived identity.'
+Assert-Equal 1000 $displayPayload[0].durationTicks 'Duration ticks must retain TRX precision exactly.'
+Assert-Equal 0.1 $displayPayload[0].durationMilliseconds 'Duration milliseconds must be derived reversibly from ticks.'
+Assert-Equal 1 @($displayPayload.testName | Sort-Object -Unique).Count 'Display redaction must not alter exact policy-matching test identity.'
+Assert-True ($displayPayload[0].displayName.Contains('enveloped: True')) 'Safe display parameters must remain visible.'
+Assert-True ($displayPayload[2].displayName.Contains('mode: "POSTGRESQL"')) 'Safe case-sensitive display parameters must survive redaction.'
+Assert-Equal 3 @($displayPayload.displayName | Sort-Object -Unique).Count 'Body redaction digests must preserve instance distinguishability.'
+foreach ($record in $displayPayload) {
+    Assert-True ($record.displayName -match '(?i)(?:body|requestBody|responseBody):\s*"<redacted-body:[0-9a-f]{16}>"') 'Body-valued display parameters must use the non-reversible marker.'
+    foreach ($sentinel in @('org-secret-A','org-secret-B','inner-secret','still-secret','third-secret')) {
+        Assert-True (-not $record.displayName.Contains($sentinel)) "Sanitized display name leaked '$sentinel'."
+    }
+}
+Assert-Equal 4 (($displayPayload | Measure-Object redactionCount -Sum).Sum) 'Every body-valued display parameter must be counted as a privacy redaction.'
+$boundaryDisplay = ConvertTo-NervRetainedDisplayName 'sends(somebody: "safe-value", mode: True)'
+Assert-Equal 'sends(somebody: "safe-value", mode: True)' $boundaryDisplay.text 'Body redaction must not match a longer parameter name.'
+Assert-Equal 0 $boundaryDisplay.redactionCount 'Safe parameter names must not increment redaction count.'
+$nestedDisplay = ConvertTo-NervRetainedDisplayName 'sends(body: {"values":[1,{"text":","}]}, responseBODY: plain-secret, mode: True)'
+Assert-Equal 2 $nestedDisplay.redactionCount 'Nested and multiple unquoted body parameters must both be redacted.'
+Assert-True ($nestedDisplay.text.Contains('mode: True')) 'Multiple body redaction must preserve trailing safe parameters.'
+Assert-True (-not $nestedDisplay.text.Contains('plain-secret')) 'Unquoted response body value must not survive.'
+$sensitiveBodyA = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Alice\",\"password\":\"first\"}")'
+$sensitiveBodyB = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Bob\",\"password\":\"second\"}")'
+Assert-True ($sensitiveBodyA.text -cne $sensitiveBodyB.text) 'Body digests must preserve instance distinction even when generic text redaction would collapse the raw values.'
 
 $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
@@ -146,6 +179,7 @@ Assert-Equal 0 @($expiredViolations | Where-Object { $allowedCodes -notcontains 
 
 $artifactRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-artifacts-$([Guid]::NewGuid().ToString('N'))"
 $parameterArtifactRoot = "$artifactRoot-parameters"
+$displayPayloadArtifactRoot = "$artifactRoot-display-payload"
 $classifiedArtifactRoot = "$artifactRoot-classified"
 try {
     $sensitiveRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
@@ -178,6 +212,25 @@ try {
     $parameterRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
     Assert-Equal 2 @($parameterRoundTrip.displayName | Sort-Object -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
     Assert-Equal 1 @($parameterRoundTrip.definitionId | Sort-Object -Unique).Count 'Parameterized definition identity must survive round-trip.'
+    foreach ($expectedRecord in $parameterized) {
+        Assert-Equal 1 @($parameterRoundTrip | Where-Object testInstanceId -ceq $expectedRecord.testInstanceId).Count 'Parameterized persisted execution IDs must survive normalized TRX round-trip.'
+    }
+    $displaySummary = New-NervTestEvidenceSummary -Records $displayPayload -RunMetadata $run -Violations @() -Baseline $null -PriorAttemptOutcome $null
+    Write-NervTestEvidenceArtifacts -Records $displayPayload -Summary $displaySummary -SourceTrxPaths @((Join-Path $fixtures 'display-payload-results.trx')) -OutputDirectory $displayPayloadArtifactRoot
+    $displayRetainedText = [string]::Join("`n", @(Get-ChildItem $displayPayloadArtifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
+    foreach ($sentinel in @('org-secret-A','org-secret-B','inner-secret','still-secret','third-secret')) {
+        Assert-True (-not $displayRetainedText.Contains($sentinel)) "Retained display evidence leaked '$sentinel'."
+    }
+    $displayRoundTripRun = $run.Clone()
+    $displayRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $displayPayloadArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $displayRoundTripRun
+    foreach ($expectedRecord in $displayPayload) {
+        $actualRecord = @($displayRoundTrip | Where-Object testInstanceId -ceq $expectedRecord.testInstanceId)
+        Assert-Equal 1 $actualRecord.Count 'Normalized TRX must preserve persisted execution IDs exactly.'
+        Assert-Equal $expectedRecord.durationTicks $actualRecord[0].durationTicks 'Normalized TRX must preserve duration ticks exactly.'
+        Assert-Equal $expectedRecord.durationMilliseconds $actualRecord[0].durationMilliseconds 'Normalized TRX must preserve duration milliseconds exactly.'
+        Assert-Equal $expectedRecord.displayName $actualRecord[0].displayName 'Normalized TRX must preserve the redacted display name exactly.'
+        Assert-Equal $expectedRecord.redactionCount $actualRecord[0].redactionCount 'Normalized TRX must preserve the privacy-redaction count exactly.'
+    }
     Assert-True ($summary.baseline.enforcement -eq 'report-only') 'Baseline delta must remain report-only.'
     $summaryMarkdown = Get-Content (Join-Path $artifactRoot 'summary.md') -Raw
     foreach ($heading in @('## Assemblies', '## Slowest assemblies and tests', '## Skip reasons', 'Baseline source:', 'Privacy redactions:', 'Retained artifact:')) { Assert-True $summaryMarkdown.Contains($heading) "Markdown is missing '$heading'." }
@@ -197,6 +250,7 @@ try {
 finally {
     if (Test-Path $artifactRoot) { Remove-Item $artifactRoot -Recurse -Force }
     if (Test-Path $parameterArtifactRoot) { Remove-Item $parameterArtifactRoot -Recurse -Force }
+    if (Test-Path $displayPayloadArtifactRoot) { Remove-Item $displayPayloadArtifactRoot -Recurse -Force }
     if (Test-Path $classifiedArtifactRoot) { Remove-Item $classifiedArtifactRoot -Recurse -Force }
 }
 
@@ -211,6 +265,10 @@ $selectorMetadata = $metadata.Clone(); $selectorMetadata.runnerImage = 'ubuntu-l
 $selectorRejected = $false
 try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $selectorMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $selectorRejected = $true }
 Assert-True $selectorRejected 'Baseline provenance must reject runner selectors and wildcard SDK versions.'
+$pushMismatchMetadata = $metadata.Clone(); $pushMismatchMetadata.testedSha = '1123456789abcdef0123456789abcdef01234567'
+$pushMismatchRejected = $false
+try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $pushMismatchMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $pushMismatchRejected = $true }
+Assert-True $pushMismatchRejected 'Non-PR push provenance must reject different head and tested SHAs.'
 $shardedBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-1'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) },
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-2'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 20 }) }
@@ -221,9 +279,10 @@ Assert-True (-not ($classifiedSummary.baseline.assemblies[0].available)) 'Projec
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
     $baselineGenerator = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
-    $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; commitSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend'; jobName = 'Backend Tests'; artifactName = 'backend-evidence'; assemblies = @() }
+    $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend'; jobName = 'Backend Tests'; artifactName = 'backend-evidence'; assemblies = @() }
     foreach ($invalidCase in @(
-        @{ Name = 'mixed-sha'; Field = 'commitSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'mixed-head-sha'; Field = 'headSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'mixed-tested-sha'; Field = 'testedSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
         @{ Name = 'missing-image'; Field = 'runnerImage'; Value = '' },
         @{ Name = 'mixed-sdk'; Field = 'dotnetSdk'; Value = '10.0.303' },
         @{ Name = 'wrong-url'; Field = 'sourceUrl'; Value = 'https://example.invalid/actions/runs/101' }
@@ -243,10 +302,10 @@ try {
     Write-NervUtf8NoBom (Join-Path $validRoot 'a/summary.json') (($summaryTemplate | ConvertTo-Json -Depth 20) + "`n")
     $connectorSummary = ($summaryTemplate | ConvertTo-Json -Depth 20 | ConvertFrom-Json -AsHashtable); $connectorSummary.lane = 'connector-host'; $connectorSummary.jobName = 'Connector Host Tests'; $connectorSummary.artifactName = 'connector-evidence'
     Write-NervUtf8NoBom (Join-Path $validRoot 'b/summary.json') (($connectorSummary | ConvertTo-Json -Depth 20) + "`n")
-    $authorityTemplate = [ordered]@{ run = [ordered]@{ databaseId = '101'; event = 'push'; headBranch = 'main'; headSha = '0123456789abcdef0123456789abcdef01234567'; attempt = 1; conclusion = 'success'; url = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; workflowName = 'CI'; jobs = @([ordered]@{ databaseId = '201'; name = 'Backend Tests'; conclusion = 'success' },[ordered]@{ databaseId = '202'; name = 'Connector Host Tests'; conclusion = 'success' }) }; latestRuns = @([ordered]@{ databaseId = '101'; attempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; conclusion = 'success'; event = 'push'; headBranch = 'main' }); jobLogs = [ordered]@{ 'Backend Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed."; 'Connector Host Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed." } }
+    $authorityTemplate = [ordered]@{ run = [ordered]@{ databaseId = '101'; event = 'push'; headBranch = 'main'; headSha = '0123456789abcdef0123456789abcdef01234567'; attempt = 1; conclusion = 'success'; url = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; workflowName = 'CI'; jobs = @([ordered]@{ databaseId = '201'; name = 'Backend Tests'; conclusion = 'success' },[ordered]@{ databaseId = '202'; name = 'Connector Host Tests'; conclusion = 'success' }) }; latestRuns = @([ordered]@{ databaseId = '101'; attempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; conclusion = 'success'; event = 'push'; headBranch = 'main' }); jobLogs = [ordered]@{ 'Backend Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567"; 'Connector Host Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567" } }
     $sourceSummaries = @($summaryTemplate, $connectorSummary | ForEach-Object { [pscustomobject]$_ })
     Assert-NervEvidenceRootAuthority -SourceSummaries $sourceSummaries -Run ([pscustomobject]$authorityTemplate.run) -LatestRuns @([pscustomobject]$authorityTemplate.latestRuns[0]) -JobLogs $authorityTemplate.jobLogs | Out-Null
-    foreach ($authorityCase in @('wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
+    foreach ($authorityCase in @('wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
         $authority = ($authorityTemplate | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable)
         $caseSummaries = @($sourceSummaries | ForEach-Object { $_ | ConvertTo-Json -Depth 20 | ConvertFrom-Json })
         if ($authorityCase -eq 'wrong-workflow') { $authority.run.workflowName = 'Other' }
@@ -255,6 +314,7 @@ try {
         elseif ($authorityCase -eq 'runner-os-mismatch') { $caseSummaries | ForEach-Object { $_.runnerOs = 'Windows' } }
         elseif ($authorityCase -eq 'wrong-resolved-image') { $caseSummaries | ForEach-Object { $_.runnerImage = 'ubuntu24@20260720.247.3' } }
         elseif ($authorityCase -eq 'wrong-resolved-sdk') { $caseSummaries | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
+        elseif ($authorityCase -eq 'forged-tested-sha') { $caseSummaries | ForEach-Object { $_.testedSha = '1123456789abcdef0123456789abcdef01234567' } }
         elseif ($authorityCase -eq 'latest-attempt-drift') { $authority.latestRuns[0].attempt = 2 }
         elseif ($authorityCase -eq 'latest-sha-drift') { $authority.latestRuns[0].headSha = '1123456789abcdef0123456789abcdef01234567' }
         elseif ($authorityCase -eq 'latest-conclusion-drift') { $authority.latestRuns[0].conclusion = 'failure' }
@@ -277,7 +337,7 @@ try {
     Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
         '-OutputDirectory', $successOut, '-WorkflowRunId', 'fixture-success', '-RunAttempt', '1',
-        '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
+        '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
         '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-success',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
@@ -303,10 +363,10 @@ try {
         $adversarialStep = Join-Path $collectorRoot "$($adversarial.Name)-step.md"
         $adversarialManifest = Join-Path $collectorRoot "$($adversarial.Name)-output.txt"
         $adversarialFailed = $false
-        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-adversarial-$($adversarial.Name)" -Arguments @('-Lane',$adversarial.Lane,'-SelectedLanes',$adversarial.Selected,'-ResultsDirectory',$successRaw,'-OutputDirectory',$adversarialOut,'-WorkflowRunId',$adversarial.Run,'-RunAttempt','1','-CommitSha','Authorization=Bearer commit-secret','-RunnerOs','Linux','-Repository',$adversarial.Repository,'-JobName',$adversarial.Job,'-StepSummaryPath',$adversarialStep,'-EvidencePathOutputFile',$adversarialManifest) | Out-Null } catch { $adversarialFailed = $true }
+        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-adversarial-$($adversarial.Name)" -Arguments @('-Lane',$adversarial.Lane,'-SelectedLanes',$adversarial.Selected,'-ResultsDirectory',$successRaw,'-OutputDirectory',$adversarialOut,'-WorkflowRunId',$adversarial.Run,'-RunAttempt','1','-HeadSha','Authorization=Bearer head-secret','-TestedSha','Authorization=Bearer tested-secret','-RunnerOs','Linux','-Repository',$adversarial.Repository,'-JobName',$adversarial.Job,'-StepSummaryPath',$adversarialStep,'-EvidencePathOutputFile',$adversarialManifest) | Out-Null } catch { $adversarialFailed = $true }
         Assert-True $adversarialFailed 'Adversarial identity input must fail.'
         $adversarialRetained = [string]::Join("`n", @(Get-ChildItem $adversarialOut -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw })) + (Get-Content $adversarialStep -Raw) + (Get-Content $adversarialManifest -Raw)
-        foreach ($sentinel in @('lane-secret','run-secret','repo-secret','job-secret','violation-secret','commit-secret')) { Assert-True (-not $adversarialRetained.Contains($sentinel)) "Failure bundle leaked '$sentinel'." }
+        foreach ($sentinel in @('lane-secret','run-secret','repo-secret','job-secret','violation-secret','head-secret','tested-secret')) { Assert-True (-not $adversarialRetained.Contains($sentinel)) "Failure bundle leaked '$sentinel'." }
     }
 
     $conflictOut = Join-Path $collectorRoot 'writer-conflict'
@@ -315,7 +375,7 @@ try {
     $conflictManifest = Join-Path $collectorRoot 'writer-conflict-output.txt'
     $conflictStep = Join-Path $collectorRoot 'writer-conflict-step.md'
     $conflictFailed = $false
-    try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-writer-conflict' -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$successRaw,'-OutputDirectory',$conflictOut,'-WorkflowRunId','writer-conflict','-RunAttempt','1','-CommitSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$conflictStep,'-EvidencePathOutputFile',$conflictManifest) | Out-Null } catch { $conflictFailed = $true }
+    try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-writer-conflict' -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$successRaw,'-OutputDirectory',$conflictOut,'-WorkflowRunId','writer-conflict','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$conflictStep,'-EvidencePathOutputFile',$conflictManifest) | Out-Null } catch { $conflictFailed = $true }
     Assert-True $conflictFailed 'Writer conflict must preserve nonzero collector status.'
     Assert-Equal 'preserve-me' (Get-Content (Join-Path $conflictOut 'unrelated.txt') -Raw) 'Writer conflict must not overwrite unrelated data.'
     $conflictEvidencePath = ((Get-Content $conflictManifest -Raw).Trim() -replace '^evidence-path=', '')
@@ -332,7 +392,7 @@ try {
         $failureOut = Join-Path $collectorRoot "$($failureCase.Name)-out"
         $failureSummary = Join-Path $collectorRoot "$($failureCase.Name)-step.md"
         $caseFailed = $false
-        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-collector-$($failureCase.Name)" -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$failureCase.Results,'-OutputDirectory',$failureOut,'-WorkflowRunId','fixture-failure','-RunAttempt','1','-CommitSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$failureSummary) | Out-Null }
+        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-collector-$($failureCase.Name)" -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$failureCase.Results,'-OutputDirectory',$failureOut,'-WorkflowRunId','fixture-failure','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$failureSummary) | Out-Null }
         catch { $caseFailed = $true }
         Assert-True $caseFailed "$($failureCase.Name) collector input must exit nonzero."
         foreach ($required in @('tests.jsonl','summary.json','summary.md','diagnostics.log')) { Assert-True (Test-Path (Join-Path $failureOut $required)) "$($failureCase.Name) failure bundle missing '$required'." }
@@ -347,7 +407,7 @@ try {
         Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-unregistered' -Arguments @(
             '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $badRaw,
             '-OutputDirectory', (Join-Path $collectorRoot 'bad'), '-WorkflowRunId', 'fixture-bad', '-RunAttempt', '1',
-            '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
+            '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
         ) | Out-Null
     }
     catch { $badFailed = $true }
@@ -364,7 +424,7 @@ try {
         Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-zero' -Arguments @(
             '-Lane', 'postgres', '-SelectedLanes', 'postgres', '-ResultsDirectory', $postgresRaw,
             '-OutputDirectory', (Join-Path $collectorRoot 'postgres'), '-WorkflowRunId', 'fixture-postgres', '-RunAttempt', '1',
-            '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
+            '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
         ) | Out-Null
     }
     catch { $postgresFailed = $true }
@@ -378,12 +438,12 @@ try {
     Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-rerun' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $rerunRaw,
         '-OutputDirectory', $rerunOut, '-WorkflowRunId', 'fixture-rerun', '-RunAttempt', '2',
-        '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux', '-CurrentTestOutcome', 'success'
+        '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '89abcdef0123456789abcdef0123456789abcdef', '-RunnerOs', 'Linux', '-CurrentTestOutcome', 'success'
     ) | Out-Null
     Assert-True ((Get-Content (Join-Path $rerunOut 'summary.md') -Raw).Contains('- Attempt: rerun ')) 'A rerun without authenticated GitHub evidence must not certify recovery.'
     $priorRun = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }
     $priorJobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'failure' })
-    $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -CommitSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName 'Backend Tests'
+    $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName 'Backend Tests'
     Assert-True $priorAuthority.verified 'Pure prior-attempt validation must accept exact authenticated response data.'
     Assert-Equal 'failure' $priorAuthority.outcome 'Pure prior-attempt validation must return the authoritative failed outcome.'
     foreach ($invalidPrior in @(
@@ -394,7 +454,7 @@ try {
         @{ Name = 'wrong-prior-attempt'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 2; conclusion = 'failure' }); JobName = 'Backend Tests' },
         @{ Name = 'nonfailure'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'success' }); JobName = 'Backend Tests' }
     )) {
-        $invalidAuthority = Resolve-NervPriorAttemptAuthority -Run $invalidPrior.Run -Jobs $invalidPrior.Jobs -WorkflowRunId 'fixture-rerun' -CommitSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName $invalidPrior.JobName
+        $invalidAuthority = Resolve-NervPriorAttemptAuthority -Run $invalidPrior.Run -Jobs $invalidPrior.Jobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName $invalidPrior.JobName
         Assert-True (-not $invalidAuthority.verified) "Prior-attempt authority case '$($invalidPrior.Name)' must fail closed."
     }
     Assert-True (-not (Test-Path (Join-Path $successOut 'backend-results.trx'))) 'Collector must not copy raw result paths.'
@@ -408,6 +468,12 @@ Assert-True ($workflow.Contains('actions: read')) 'Rerun lookup needs read-only 
 Assert-True ($workflow.Contains('GH_TOKEN: ${{ github.token }}')) 'Rerun lookup must receive the read-only workflow token.'
 Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}')) 'Backend native test outcome must flow into rerun classification.'
 Assert-True ($workflow.Contains('dotnet-sdk=$(dotnet --version)')) 'Evidence provenance must resolve the actual SDK version.'
+Assert-True ($workflow.Contains('$testedSha = (git rev-parse HEAD).Trim()')) 'Evidence provenance must resolve the actual checked-out commit.'
+Assert-True ($workflow.Contains('Write-Host "tested-sha=$testedSha"')) 'The tested SHA must be independently recoverable from authoritative job logs.'
+Assert-True ($workflow.Contains('-HeadSha ${{ github.event.pull_request.head.sha || github.sha }}')) 'PR branch-head provenance must not use the synthetic merge SHA.'
+Assert-True ($workflow.Contains('-TestedSha ${{ steps.backend-evidence-environment.outputs.tested-sha }}')) 'Backend tested-checkout provenance must flow from git.'
+Assert-True ($workflow.Contains('-TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}')) 'Connector tested-checkout provenance must flow from git.'
+Assert-True (-not $workflow.Contains('-CommitSha')) 'Ambiguous commit SHA workflow input must be removed.'
 Assert-True (-not $workflow.Contains('TestOnly')) 'Production workflow must not use any test-only authority seam.'
 Assert-True ($workflow.Contains('outputs.evidence-path')) 'Workflow upload must use the collector-selected owned evidence path.'
 Assert-True (-not $workflow.Contains('continue-on-error')) 'MAN-661 forbids continue-on-error.'

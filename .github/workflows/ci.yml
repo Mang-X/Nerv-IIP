@@ -39,8 +39,11 @@ jobs:
         id: backend-evidence-environment
         shell: pwsh
         run: |
+          $testedSha = (git rev-parse HEAD).Trim()
           "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
       - name: Test backend solution
         id: backend-tests
@@ -64,7 +67,8 @@ jobs:
           -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
-          -CommitSha ${{ github.sha }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.backend-evidence-environment.outputs.tested-sha }}
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
           -JobName "Backend Tests"
@@ -154,8 +158,11 @@ jobs:
         id: connector-evidence-environment
         shell: pwsh
         run: |
+          $testedSha = (git rev-parse HEAD).Trim()
           "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
       - name: Test connector host solution
         id: connector-host-tests
@@ -179,7 +186,8 @@ jobs:
           -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
-          -CommitSha ${{ github.sha }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
           -JobName "Connector Host Tests"

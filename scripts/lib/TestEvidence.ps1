@@ -219,6 +219,77 @@ function Get-NervStableEvidenceGuid {
     ([Guid]::new($guidBytes)).ToString()
 }
 
+function ConvertTo-NervRetainedDisplayName {
+    param([AllowNull()] [string] $Text)
+
+    $source = if ($null -eq $Text) { '' } else { $Text }
+    if ([string]::IsNullOrWhiteSpace($source)) {
+        return [pscustomobject]@{ text = (Protect-NervTestEvidenceText $source); redactionCount = 0 }
+    }
+
+    $pattern = [regex]::new('(?i)(?<prefix>(?:^|[(,]\s*))(?<label>(?:body|requestBody|responseBody)\s*:\s*)')
+    $builder = [Text.StringBuilder]::new()
+    $position = 0
+    $redactionCount = 0
+    while ($position -lt $source.Length) {
+        $match = $pattern.Match($source, $position)
+        if (-not $match.Success) {
+            [void]$builder.Append($source.Substring($position))
+            break
+        }
+
+        [void]$builder.Append($source.Substring($position, $match.Index - $position))
+        [void]$builder.Append($match.Groups['prefix'].Value)
+        [void]$builder.Append($match.Groups['label'].Value)
+        $valueStart = $match.Index + $match.Length
+        $valueEnd = $valueStart
+        if ($valueStart -lt $source.Length -and ($source[$valueStart] -eq '"' -or $source[$valueStart] -eq "'")) {
+            $quote = $source[$valueStart]
+            $valueEnd++
+            while ($valueEnd -lt $source.Length) {
+                if ($source[$valueEnd] -eq $quote) {
+                    $slashes = 0
+                    for ($lookBehind = $valueEnd - 1; $lookBehind -ge $valueStart -and $source[$lookBehind] -eq '\'; $lookBehind--) { $slashes++ }
+                    if (($slashes % 2) -eq 0) { $valueEnd++; break }
+                }
+                $valueEnd++
+            }
+        }
+        else {
+            $depth = 0
+            $quote = [char]0
+            $escaped = $false
+            while ($valueEnd -lt $source.Length) {
+                $character = $source[$valueEnd]
+                if ($quote -ne [char]0) {
+                    if ($character -eq '\' -and -not $escaped) { $escaped = $true; $valueEnd++; continue }
+                    if ($character -eq $quote -and -not $escaped) { $quote = [char]0 }
+                    $escaped = $false
+                }
+                elseif ($character -eq '"' -or $character -eq "'") { $quote = $character }
+                elseif ($character -in @('{', '[', '(')) { $depth++ }
+                elseif ($character -in @('}', ']')) { if ($depth -gt 0) { $depth-- } }
+                elseif ($character -eq ')' -and $depth -eq 0) { break }
+                elseif ($character -eq ')' -and $depth -gt 0) { $depth-- }
+                elseif ($character -eq ',' -and $depth -eq 0) { break }
+                $valueEnd++
+            }
+        }
+
+        $rawValue = $source.Substring($valueStart, $valueEnd - $valueStart)
+        if ($rawValue -cmatch '^["'']<redacted-body:[0-9a-f]{16}>["'']$') {
+            [void]$builder.Append($rawValue)
+            $position = $valueEnd
+            continue
+        }
+        $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($rawValue))).ToLowerInvariant().Substring(0, 16)
+        [void]$builder.Append("`"<redacted-body:$digest>`"")
+        $redactionCount++
+        $position = $valueEnd
+    }
+    [pscustomobject]@{ text = (Protect-NervTestEvidenceText $builder.ToString()); redactionCount = $redactionCount }
+}
+
 function ConvertTo-NervRetainedFailureText {
     param([AllowNull()] [string] $Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
@@ -257,6 +328,15 @@ function Read-NervTrxResults {
         catch {
             $safePath = [IO.Path]::GetFullPath($trxPath)
             throw [IO.InvalidDataException]::new("Failed to parse TRX '$safePath'.")
+        }
+
+        $root = $document.DocumentElement
+        $persistedHeadSha = $root.GetAttribute('headSha')
+        $persistedTestedSha = $root.GetAttribute('testedSha')
+        if (-not [string]::IsNullOrWhiteSpace($persistedHeadSha) -or -not [string]::IsNullOrWhiteSpace($persistedTestedSha)) {
+            if ($persistedHeadSha -cne [string]$RunMetadata.headSha -or $persistedTestedSha -cne [string]$RunMetadata.testedSha) {
+                throw [IO.InvalidDataException]::new("Normalized TRX provenance does not match run metadata in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
         }
 
         $times = $document.SelectSingleNode("//*[local-name()='Times']")
@@ -330,7 +410,8 @@ function Read-NervTrxResults {
             if (-not [string]::IsNullOrWhiteSpace([string]$result.duration)) {
                 $duration = [TimeSpan]::Parse([string]$result.duration, [Globalization.CultureInfo]::InvariantCulture)
             }
-            $displayName = Protect-NervTestEvidenceText $result.GetAttribute('testName')
+            $retainedDisplay = ConvertTo-NervRetainedDisplayName $result.GetAttribute('testName')
+            $displayName = [string]$retainedDisplay.text
             if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = [string]$definition.testName }
             if ($displayName.Length -gt 512) { $displayName = $displayName.Substring(0, 512) }
             $ordinalKey = "$($definition.testName)|$displayName"
@@ -340,11 +421,17 @@ function Read-NervTrxResults {
                 $node = $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
                 if ($null -ne $node) { $node.InnerText.Trim() } else { $null }
             } else { $null }
+            $persistedExecutionId = [Guid]::Empty
+            $hasPersistedExecutionId = [Guid]::TryParse($result.GetAttribute('executionId'), [ref]$persistedExecutionId) -and $persistedExecutionId -ne [Guid]::Empty
+            $persistedRedactionCount = 0
+            $hasPersistedRedactionCount = -not [string]::IsNullOrWhiteSpace($persistedHeadSha) -and
+                [int]::TryParse($result.GetAttribute('redactionCount'), [ref]$persistedRedactionCount) -and $persistedRedactionCount -ge 0
             $records.Add([pscustomobject][ordered]@{
                 schemaVersion = 1
                 workflowRunId = [string]$RunMetadata.workflowRunId
                 runAttempt = [int]$RunMetadata.runAttempt
-                commitSha = [string]$RunMetadata.commitSha
+                headSha = [string]$RunMetadata.headSha
+                testedSha = [string]$RunMetadata.testedSha
                 lane = [string]$RunMetadata.lane
                 project = [IO.Path]::GetFileNameWithoutExtension([string]$definition.assembly)
                 assembly = [string]$definition.assembly
@@ -353,12 +440,13 @@ function Read-NervTrxResults {
                 testClassName = [string]$definition.className
                 testMethodName = [string]$definition.methodName
                 definitionId = Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)"
-                testInstanceId = Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)|$displayName|$ordinal"
+                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)|$displayName|$ordinal" }
+                durationTicks = [long]$duration.Ticks
                 durationMilliseconds = [double]$duration.TotalMilliseconds
                 outcome = [string]$outcomeMap[$rawOutcome]
                 skipReason = if ($rawOutcome -eq 'NotExecuted') { Get-NervTrxSkipReason -UnitTestResult $result } else { $null }
                 errorMessage = ConvertTo-NervRetainedFailureText $rawError
-                redactionCount = if ([string]::IsNullOrWhiteSpace($rawError)) { 0 } else { 1 }
+                redactionCount = if ($hasPersistedRedactionCount) { $persistedRedactionCount } else { [int]$retainedDisplay.redactionCount + $(if ([string]::IsNullOrWhiteSpace($rawError)) { 0 } else { 1 }) }
             })
         }
     }
@@ -514,7 +602,8 @@ function New-NervTestEvidenceSummary {
         schemaVersion = 1
         workflowRunId = [string]$RunMetadata.workflowRunId
         runAttempt = [int]$RunMetadata.runAttempt
-        commitSha = [string]$RunMetadata.commitSha
+        headSha = [string]$RunMetadata.headSha
+        testedSha = [string]$RunMetadata.testedSha
         lane = [string]$RunMetadata.lane
         repository = if ($RunMetadata.ContainsKey('repository')) { [string]$RunMetadata.repository } else { '' }
         event = if ($RunMetadata.ContainsKey('event')) { [string]$RunMetadata.event } else { '' }
@@ -598,7 +687,8 @@ function Write-NervTestEvidenceArtifacts {
                 schemaVersion = [int]$record.schemaVersion
                 workflowRunId = [string]$record.workflowRunId
                 runAttempt = [int]$record.runAttempt
-                commitSha = [string]$record.commitSha
+                headSha = [string]$record.headSha
+                testedSha = [string]$record.testedSha
                 lane = [string]$record.lane
                 project = [string]$record.project
                 assembly = [string]$record.assembly
@@ -608,6 +698,7 @@ function Write-NervTestEvidenceArtifacts {
                 testMethodName = [string]$record.testMethodName
                 definitionId = [string]$record.definitionId
                 testInstanceId = [string]$record.testInstanceId
+                durationTicks = [long]$record.durationTicks
                 durationMilliseconds = [double]$record.durationMilliseconds
                 outcome = [string]$record.outcome
                 skipReason = if ($record.outcome -eq 'skipped') { Get-NervRetainedSkipReason $record } else { $null }
@@ -624,7 +715,7 @@ function Write-NervTestEvidenceArtifacts {
         $markdown = @(
             "# Test evidence: $($Summary.lane)",
             '',
-            "- Run: $($Summary.workflowRunId), attempt $($Summary.runAttempt), commit $($Summary.commitSha)",
+            "- Run: $($Summary.workflowRunId), attempt $($Summary.runAttempt), head $($Summary.headSha), tested $($Summary.testedSha)",
             "- Counts: passed=$($Summary.passed), failed=$($Summary.failed), skipped=$($Summary.skipped), executed=$($Summary.executed), total=$($Summary.total)",
             "- Duration: summed tests=$($Summary.testDurationMilliseconds)ms, TRX elapsed=$($Summary.trxElapsedMilliseconds)ms",
             "- Attempt: $($Summary.attemptClassification) (prior: $($Summary.priorAttemptStatus))",
@@ -693,7 +784,7 @@ function Write-NervTestEvidenceArtifacts {
         Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') ((Protect-NervTestEvidenceText ([string]::Join("`n", $markdown))) + "`n")
         Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ''
 
-        $sha8 = ([string]$Summary.commitSha).Substring(0, [Math]::Min(8, ([string]$Summary.commitSha).Length))
+        $sha8 = ([string]$Summary.testedSha).Substring(0, [Math]::Min(8, ([string]$Summary.testedSha).Length))
         foreach ($group in @($Records | Group-Object lane, assembly | Sort-Object Name)) {
             $groupRecords = @($group.Group | Sort-Object testName, displayName, testInstanceId)
             $assemblyName = [regex]::Replace([string]$groupRecords[0].assembly, '[^A-Za-z0-9_.-]', '_')
@@ -701,10 +792,10 @@ function Write-NervTestEvidenceArtifacts {
             $xmlRows = foreach ($record in $groupRecords) {
                 $name = [Security.SecurityElement]::Escape([string]$record.displayName)
                 $outcome = switch ([string]$record.outcome) { 'passed' { 'Passed' } 'failed' { 'Failed' } default { 'NotExecuted' } }
-                $duration = [TimeSpan]::FromMilliseconds([double]$record.durationMilliseconds).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
+                $duration = [TimeSpan]::FromTicks([long]$record.durationTicks).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
                 $message = if ($record.outcome -eq 'skipped') { Get-NervRetainedSkipReason $record } elseif ($record.outcome -eq 'failed') { ConvertTo-NervRetainedFailureText ([string]$record.errorMessage) } else { $null }
                 $output = if ([string]::IsNullOrWhiteSpace($message)) { '' } else { "<Output><ErrorInfo><Message>$([Security.SecurityElement]::Escape($message))</Message></ErrorInfo></Output>" }
-                "<UnitTestResult executionId=`"$($record.testInstanceId)`" testId=`"$($record.definitionId)`" testName=`"$name`" duration=`"$duration`" outcome=`"$outcome`">$output</UnitTestResult>"
+                "<UnitTestResult executionId=`"$($record.testInstanceId)`" testId=`"$($record.definitionId)`" testName=`"$name`" duration=`"$duration`" outcome=`"$outcome`" redactionCount=`"$([int]$record.redactionCount)`">$output</UnitTestResult>"
             }
             $xmlDefinitions = foreach ($definitionGroup in @($groupRecords | Group-Object definitionId | Sort-Object Name)) {
                 $record = $definitionGroup.Group[0]
@@ -718,7 +809,7 @@ function Write-NervTestEvidenceArtifacts {
             $start = [DateTimeOffset]'2000-01-01T00:00:00Z'
             $finish = $start.AddMilliseconds([double]$assemblySummary.elapsedMilliseconds)
             $runId = Get-NervStableEvidenceGuid "$($Summary.workflowRunId)|$($Summary.runAttempt)|$($groupRecords[0].lane)|$($groupRecords[0].assembly)"
-            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
+            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" headSha=`"$($Summary.headSha)`" testedSha=`"$($Summary.testedSha)`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
             Write-NervUtf8NoBom (Join-Path $temporary "trx/$fileName") $safeXml
         }
         [IO.Directory]::Move($temporary, $OutputDirectory)
@@ -755,7 +846,8 @@ function Write-NervTestEvidenceFailureArtifacts {
     if ($safeDiagnostic.Length -gt 1024) { $safeDiagnostic = $safeDiagnostic.Substring(0, 1024) }
     $safeLane = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.lane) '^[a-z0-9]+(?:-[a-z0-9]+)*(?:-shard-[1-9][0-9]*)?$' 'invalid-lane' 64
     $safeRun = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.workflowRunId) '^[A-Za-z0-9._-]+$' 'invalid-run' 64
-    $safeCommit = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.commitSha) '^[0-9a-f]{40}$' 'invalid-commit' 40
+    $safeHeadSha = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.headSha) '^[0-9a-f]{40}$' 'invalid-head-sha' 40
+    $safeTestedSha = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.testedSha) '^[0-9a-f]{40}$' 'invalid-tested-sha' 40
     $safeRepository = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.repository) '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' 'invalid-repository' 128
     $safeJob = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.jobName) '^[A-Za-z0-9 ._/-]+$' 'invalid-job' 128
     $failure = [pscustomobject][ordered]@{
@@ -763,7 +855,8 @@ function Write-NervTestEvidenceFailureArtifacts {
         collectionStatus = 'failed'
         workflowRunId = $safeRun
         runAttempt = if ([int]$RunMetadata.runAttempt -ge 1 -and [int]$RunMetadata.runAttempt -le 1000) { [int]$RunMetadata.runAttempt } else { 0 }
-        commitSha = $safeCommit
+        headSha = $safeHeadSha
+        testedSha = $safeTestedSha
         lane = $safeLane
         repository = $safeRepository
         jobName = $safeJob
@@ -837,7 +930,13 @@ function Get-NervGitHubRunnerProvenance {
         elseif ($image.StartsWith('windows-', [StringComparison]::Ordinal)) { 'Windows' }
         elseif ($image.StartsWith('macos-', [StringComparison]::Ordinal)) { 'macOS' }
         else { throw "Unsupported Actions runner image '$image'." }
-    [pscustomobject]@{ runnerOs = $runnerOs; runnerImage = "$normalizedImage@$imageVersion"; dotnetSdk = $sdkMatch.Groups['sdk'].Value }
+    $testedShaMatch = [regex]::Match($Text, '(?im)^.*tested-sha=(?<sha>[0-9a-f]{40})\s*$')
+    [pscustomobject]@{
+        runnerOs = $runnerOs
+        runnerImage = "$normalizedImage@$imageVersion"
+        dotnetSdk = $sdkMatch.Groups['sdk'].Value
+        testedSha = if ($testedShaMatch.Success) { $testedShaMatch.Groups['sha'].Value } else { '' }
+    }
 }
 
 function Resolve-NervPriorAttemptAuthority {
@@ -845,7 +944,7 @@ function Resolve-NervPriorAttemptAuthority {
         [Parameter(Mandatory)] [object] $Run,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Jobs,
         [Parameter(Mandatory)] [string] $WorkflowRunId,
-        [Parameter(Mandatory)] [string] $CommitSha,
+        [Parameter(Mandatory)] [string] $HeadSha,
         [Parameter(Mandatory)] [int] $RunAttempt,
         [Parameter(Mandatory)] [string] $Lane,
         [Parameter(Mandatory)] [string] $JobName
@@ -855,7 +954,7 @@ function Resolve-NervPriorAttemptAuthority {
     if ($RunAttempt -le 1) { return $result }
     $expectedJobs = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
     if (-not $expectedJobs.ContainsKey($Lane) -or [string]$expectedJobs[$Lane] -cne $JobName -or
-        [string]$Run.id -cne $WorkflowRunId -or [string]$Run.head_sha -cne $CommitSha -or
+        [string]$Run.id -cne $WorkflowRunId -or [string]$Run.head_sha -cne $HeadSha -or
         [int]$Run.run_attempt -ne $RunAttempt) {
         return $result
     }
@@ -874,7 +973,7 @@ function Assert-NervEvidenceSourceSummaries {
 
     if ($SourceSummaries.Count -eq 0) { throw 'Evidence baseline requires at least one summary.' }
     $first = $SourceSummaries[0]
-    $commonFields = @('workflowRunId', 'runAttempt', 'commitSha', 'repository', 'event', 'headBranch', 'sourceUrl', 'runnerOs', 'runnerImage', 'dotnetSdk')
+    $commonFields = @('workflowRunId', 'runAttempt', 'headSha', 'testedSha', 'repository', 'event', 'headBranch', 'sourceUrl', 'runnerOs', 'runnerImage', 'dotnetSdk')
     foreach ($summary in $SourceSummaries) {
         foreach ($field in $commonFields) {
             if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary provenance field '$field' must be nonempty." }
@@ -887,7 +986,8 @@ function Assert-NervEvidenceSourceSummaries {
             [string]$summary.currentTestOutcome -cne 'success' -or [string]$summary.collectionStatus -cne 'succeeded' -or
             [int]$summary.failed -ne 0 -or [int]$summary.executed -le 0 -or @($summary.violations).Count -ne 0 -or
             [string]$summary.event -cne 'push' -or [string]$summary.headBranch -cne 'main' -or
-            [string]$summary.commitSha -notmatch '^[0-9a-f]{40}$' -or
+            [string]$summary.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$summary.testedSha -notmatch '^[0-9a-f]{40}$' -or
+            [string]$summary.testedSha -cne [string]$summary.headSha -or
             [string]$summary.sourceUrl -cne "https://github.com/$($summary.repository)/actions/runs/$($summary.workflowRunId)" -or
             [string]$summary.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
             [string]$summary.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or -not (Test-NervTestEvidenceLaneName ([string]$summary.lane))) {
@@ -908,13 +1008,13 @@ function Assert-NervEvidenceRootAuthority {
 
     $first = Assert-NervEvidenceSourceSummaries -SourceSummaries $SourceSummaries
     if ([string]$Run.event -cne 'push' -or [string]$Run.headBranch -cne 'main' -or [int]$Run.attempt -ne 1 -or
-        [string]$Run.conclusion -cne 'success' -or [string]$Run.headSha -cne [string]$first.commitSha -or
+        [string]$Run.conclusion -cne 'success' -or [string]$Run.headSha -cne [string]$first.headSha -or
         [string]$Run.url -cne [string]$first.sourceUrl -or [string]$Run.workflowName -cne 'CI' -or
         [string]$Run.databaseId -cne [string]$first.workflowRunId) {
         throw 'Evidence source is not an authoritative successful attempt-1 main CI run.'
     }
     if ($LatestRuns.Count -ne 1 -or [string]$LatestRuns[0].databaseId -cne [string]$first.workflowRunId -or
-        [int]$LatestRuns[0].attempt -ne 1 -or [string]$LatestRuns[0].headSha -cne [string]$first.commitSha -or
+        [int]$LatestRuns[0].attempt -ne 1 -or [string]$LatestRuns[0].headSha -cne [string]$first.headSha -or
         [string]$LatestRuns[0].conclusion -cne 'success' -or [string]$LatestRuns[0].event -cne 'push' -or
         [string]$LatestRuns[0].headBranch -cne 'main') {
         throw 'Evidence source is not the latest qualifying successful attempt-1 main CI run.'
@@ -936,7 +1036,8 @@ function Assert-NervEvidenceRootAuthority {
         $authority = Get-NervGitHubRunnerProvenance -Text (Protect-ScriptAutomationText ([string]$JobLogs[[string]$summary.jobName]))
         if ([string]$summary.runnerOs -cne [string]$authority.runnerOs -or
             [string]$summary.runnerImage -cne [string]$authority.runnerImage -or
-            [string]$summary.dotnetSdk -cne [string]$authority.dotnetSdk) {
+            [string]$summary.dotnetSdk -cne [string]$authority.dotnetSdk -or
+            [string]$summary.testedSha -cne [string]$authority.testedSha) {
             throw "Evidence runner provenance for lane '$($summary.lane)' does not match the authoritative Actions log."
         }
     }
@@ -950,6 +1051,10 @@ function New-NervTestEvidenceBaseline {
         [Parameter(Mandatory)] [DateTimeOffset] $GeneratedAtUtc
     )
 
+    if ([string]$SourceMetadata.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$SourceMetadata.testedSha -notmatch '^[0-9a-f]{40}$' -or
+        ([string]$SourceMetadata.event -ceq 'push' -and [string]$SourceMetadata.headSha -cne [string]$SourceMetadata.testedSha)) {
+        throw 'Baseline provenance requires valid headSha/testedSha values; push sources require equality.'
+    }
     if ([string]$SourceMetadata.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
         [string]$SourceMetadata.runnerImage -match '(?i)latest' -or [string]$SourceMetadata.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         throw 'Baseline provenance requires a resolved runner image/version and exact dotnet SDK.'
@@ -981,7 +1086,8 @@ function New-NervTestEvidenceBaseline {
             workflowRunId = [string]$SourceMetadata.workflowRunId
             runAttempt = [int]$SourceMetadata.runAttempt
             jobId = [string]$SourceMetadata.jobId
-            commitSha = [string]$SourceMetadata.commitSha
+            headSha = [string]$SourceMetadata.headSha
+            testedSha = [string]$SourceMetadata.testedSha
             sourceUrl = [string]$SourceMetadata.sourceUrl
             event = [string]$SourceMetadata.event
             headBranch = [string]$SourceMetadata.headBranch

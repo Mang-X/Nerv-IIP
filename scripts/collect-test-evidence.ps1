@@ -22,7 +22,8 @@ param(
     [string] $BaselinePath = (Join-Path $PSScriptRoot 'test-evidence-baseline.json'),
     [Parameter(Mandatory)] [string] $WorkflowRunId,
     [Parameter(Mandatory)] [int] $RunAttempt,
-    [Parameter(Mandatory)] [string] $CommitSha,
+    [Parameter(Mandatory)] [string] $HeadSha,
+    [Parameter(Mandatory)] [string] $TestedSha,
     [Parameter(Mandatory)] [ValidateSet('Linux', 'Windows', 'macOS')] [string] $RunnerOs,
     [string] $Repository,
     [string] $JobName,
@@ -46,7 +47,8 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $runMetadata = @{
     workflowRunId = $WorkflowRunId
     runAttempt = $RunAttempt
-    commitSha = $CommitSha
+    headSha = $HeadSha
+    testedSha = $TestedSha
     lane = $Lane
     repository = $Repository
     event = $Event
@@ -66,7 +68,10 @@ try {
     if (-not (Test-NervTestEvidenceLaneName $Lane)) { throw "Invalid evidence lane '$Lane'." }
     foreach ($selected in $SelectedLanes) { if (-not (Test-NervTestEvidenceLaneName $selected)) { throw "Invalid selected lane '$selected'." } }
     if ($RunAttempt -lt 1) { throw 'RunAttempt must be positive.' }
-    if ($CommitSha -notmatch '^[0-9a-f]{40}$') { throw 'CommitSha must be a lowercase 40-character SHA.' }
+    if ($HeadSha -notmatch '^[0-9a-f]{40}$') { throw 'HeadSha must be a lowercase 40-character SHA.' }
+    if ($TestedSha -notmatch '^[0-9a-f]{40}$') { throw 'TestedSha must be a lowercase 40-character SHA.' }
+    if (-not [string]::IsNullOrWhiteSpace($Event) -and $Event -notin @('push', 'pull_request')) { throw "Unsupported evidence event '$Event'." }
+    if ($Event -eq 'push' -and $HeadSha -cne $TestedSha) { throw 'Push evidence requires HeadSha and TestedSha to be identical.' }
     if (-not (Test-Path -LiteralPath $ResultsDirectory -PathType Container)) { throw "Results directory does not exist: '$ResultsDirectory'." }
     $policy = Import-NervTestEvidencePolicy -Path $PolicyPath
     $policyViolations = @(Test-NervTestEvidencePolicy -Policy $policy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
@@ -90,7 +95,7 @@ try {
                 $priorJobs = @(((Protect-ScriptAutomationText $lookup.Stdout) | ConvertFrom-Json).jobs)
             }
             if ($null -ne $priorRun) {
-                $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId $WorkflowRunId -CommitSha $CommitSha -RunAttempt $RunAttempt -Lane $Lane -JobName $JobName
+                $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId $WorkflowRunId -HeadSha $HeadSha -RunAttempt $RunAttempt -Lane $Lane -JobName $JobName
                 $resolvedPriorOutcome = $priorAuthority.outcome
                 $runMetadata.priorAttemptVerified = [bool]$priorAuthority.verified
             }

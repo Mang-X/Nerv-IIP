@@ -2,8 +2,8 @@
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <Times creation="2026-08-03T14:00:00Z" queuing="2026-08-03T14:00:00Z" start="2026-08-03T14:00:00Z" finish="2026-08-03T14:00:00.050Z" />
   <Results>
-    <UnitTestResult testId="66666666-6666-6666-6666-666666666601" testName="calculates(value: 1)" duration="00:00:00.0100000" outcome="Passed" />
-    <UnitTestResult testId="66666666-6666-6666-6666-666666666601" testName="calculates(value: 2)" duration="00:00:00.0200000" outcome="Passed" />
+    <UnitTestResult executionId="66666666-6666-6666-6666-666666666611" testId="66666666-6666-6666-6666-666666666601" testName="calculates(provider: &quot;POSTGRESQL&quot;, value: 1)" duration="00:00:00.0100000" outcome="Passed" />
+    <UnitTestResult executionId="66666666-6666-6666-6666-666666666612" testId="66666666-6666-6666-6666-666666666601" testName="calculates(provider: &quot;postgresql&quot;, value: 2)" duration="00:00:00.0200000" outcome="Passed" />
   </Results>
   <TestDefinitions><UnitTest id="66666666-6666-6666-6666-666666666601" name="calculates" storage="Parameterized.Tests.dll"><TestMethod className="Fixture.ParameterizedTests" name="calculates" /></UnitTest></TestDefinitions>
   <ResultSummary outcome="Completed"><Counters total="2" executed="2" passed="2" failed="0" notExecuted="0" /></ResultSummary>

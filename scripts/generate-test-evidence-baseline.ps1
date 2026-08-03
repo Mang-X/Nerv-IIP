@@ -41,7 +41,7 @@ if ($PSCmdlet.ParameterSetName -eq 'GitHubConsole') {
     $runnerProvenance = Get-NervGitHubRunnerProvenance -Text $safeLog
     $metadata = @{
         sourceKind = 'github-console'; repository = $Repository; workflowRunId = $GitHubRunId
-        runAttempt = [int]$run.attempt; jobId = $GitHubJobId; commitSha = [string]$run.headSha
+        runAttempt = [int]$run.attempt; jobId = $GitHubJobId; headSha = [string]$run.headSha; testedSha = [string]$run.headSha
         sourceUrl = [string]$run.url; event = [string]$run.event; headBranch = [string]$run.headBranch
         conclusion = [string]$run.conclusion; jobConclusion = [string]$job.conclusion
         runnerOs = $runnerProvenance.runnerOs; runnerImage = $runnerProvenance.runnerImage; dotnetSdk = $runnerProvenance.dotnetSdk; selectedLanes = @('backend'); lane = 'backend'
@@ -71,7 +71,7 @@ else {
     })
     $metadata = @{
         sourceKind = 'trx-evidence'; repository = [string]$first.repository; workflowRunId = [string]$first.workflowRunId; runAttempt = 1; jobId = ''
-        commitSha = [string]$first.commitSha; sourceUrl = [string]$first.sourceUrl; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
+        headSha = [string]$first.headSha; testedSha = [string]$first.testedSha; sourceUrl = [string]$first.sourceUrl; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
         runnerOs = [string]$first.runnerOs; runnerImage = [string]$first.runnerImage; dotnetSdk = [string]$first.dotnetSdk; selectedLanes = @($summaries.lane | Sort-Object -Unique)
         generatorCommand = 'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json'
     }

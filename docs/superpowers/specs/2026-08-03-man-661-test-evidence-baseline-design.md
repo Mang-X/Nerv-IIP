@@ -110,7 +110,7 @@ artifacts/test-evidence/<workflow-run-id>/attempt-<run-attempt>/<lane>/
 └── diagnostics.log
 ```
 
-The collector normalizes raw TRX names to include lane, assembly, abbreviated commit SHA, and attempt. It never relies on one user-supplied `LogFileName` shared by all projects in a solution.
+The collector normalizes raw TRX names to include lane, assembly, abbreviated tested SHA, and attempt. It never relies on one user-supplied `LogFileName` shared by all projects in a solution.
 
 ## Evidence Schema
 
@@ -123,11 +123,13 @@ The per-test record contains at least:
   "schemaVersion": 1,
   "workflowRunId": "30819675007",
   "runAttempt": 1,
-  "commitSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
+  "headSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
+  "testedSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
   "lane": "backend",
   "project": "Nerv.IIP.BusinessGateway.Web.Tests",
   "assembly": "Nerv.IIP.BusinessGateway.Web.Tests.dll",
   "testName": "Nerv.IIP.ExampleTests.example",
+  "durationTicks": 124000,
   "durationMilliseconds": 12.4,
   "outcome": "passed",
   "skipReason": null
@@ -135,6 +137,8 @@ The per-test record contains at least:
 ```
 
 Allowed normalized outcomes are `passed`, `failed`, and `skipped`. Unknown or malformed VSTest outcomes are parsing failures and cannot be silently counted as another outcome.
+
+The parser preserves a valid TRX `executionId` as `testInstanceId`; only absent or invalid IDs use a deterministic fallback. `durationTicks` is the reversible 100 ns duration authority used to write normalized TRX, while `durationMilliseconds` remains the reporting projection.
 
 The summary includes:
 
@@ -207,14 +211,14 @@ The collector writes as much safe summary information as possible before returni
 
 ## Rerun Correlation
 
-`workflowRunId` is the stable identity shared by GitHub Actions attempts. `runAttempt`, `commitSha`, and `lane` distinguish individual evidence records.
+`workflowRunId` is the stable identity shared by GitHub Actions attempts. `runAttempt`, `headSha`, `testedSha`, and `lane` distinguish individual evidence records. `headSha` is the event branch head; `testedSha` is the checkout proven by `git rev-parse HEAD`. They may differ on `pull_request` because GitHub tests a synthetic merge commit, and must be identical on `push`.
 
 For attempt `1`, classification is `initial`. For attempt greater than `1`, the workflow performs a read-only lookup of the same named job in the immediately preceding attempt and passes its conclusion to the collector. The collector reports:
 
 - `rerun` when the prior attempt did not fail or the current lane did not pass;
 - `recovered-after-rerun` when the prior same-run, same-commit, same-lane job failed and the current lane passed.
 
-This classification is report-only. Both attempts remain independently retained and joinable by `workflowRunId + commitSha + lane`; the initial failure is never removed or rewritten.
+This classification is report-only. Both attempts remain independently retained and joinable by `workflowRunId + headSha + testedSha + lane`; the initial failure is never removed or rewritten.
 
 If the previous-attempt lookup is unavailable, the collector records `prior-attempt-unavailable` and continues. It must not infer recovery from `runAttempt > 1` alone.
 
@@ -224,7 +228,7 @@ The workflow grants only `contents: read` and the additional `actions: read` per
 
 Raw TRX and captured console logs are temporary runner inputs and are never uploaded directly. The collector writes structurally normalized TRX copies and summaries into the retained directory.
 
-All retained free text passes through the existing `Protect-ScriptAutomationText` or streaming `Protect-ScriptAutomationLogFile` contract. XML text and attributes are redacted before normalized TRX is serialized. At minimum, redaction covers:
+All retained free text passes through the existing `Protect-ScriptAutomationText` or streaming `Protect-ScriptAutomationLogFile` contract. XML text and attributes are redacted before normalized TRX is serialized. Parameterized `body`, `requestBody`, and `responseBody` display-name values are removed case-insensitively with nested/escaped value parsing and replaced by non-reversible digest markers; method names and non-body parameters remain visible. At minimum, redaction covers:
 
 - passwords and connection-string password fields;
 - bearer tokens and generic token/secret values;
@@ -245,7 +249,7 @@ The baseline is report-only. It stores:
 
 - schema version;
 - generation tool version;
-- source workflow run ID, attempt, commit SHA, URL, runner OS/image, .NET SDK version, and selected lanes;
+- source workflow run ID, attempt, head SHA, tested SHA, URL, runner OS/image, .NET SDK version, and selected lanes;
 - per-lane and per-assembly counts and durations;
 - known critical path at generation time;
 - generation timestamp and owner;
