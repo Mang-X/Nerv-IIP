@@ -142,3 +142,89 @@ function Test-NervTestEvidencePolicy {
     }
     @($violations)
 }
+
+function Get-NervTrxSkipReason {
+    param([Parameter(Mandatory)] [Xml.XmlElement] $UnitTestResult)
+
+    $message = $UnitTestResult.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
+    if ($null -ne $message -and -not [string]::IsNullOrWhiteSpace($message.InnerText)) {
+        return $message.InnerText.Trim()
+    }
+    $stdout = $UnitTestResult.SelectSingleNode("./*[local-name()='Output']/*[local-name()='StdOut']")
+    if ($null -ne $stdout) {
+        foreach ($line in ($stdout.InnerText -split '\r?\n')) {
+            if (-not [string]::IsNullOrWhiteSpace($line) -and $line.Contains('SKIP', [StringComparison]::OrdinalIgnoreCase)) {
+                return $line.Trim()
+            }
+        }
+    }
+    return $null
+}
+
+function Read-NervTrxResults {
+    param(
+        [Parameter(Mandatory)] [string[]] $Path,
+        [Parameter(Mandatory)] [hashtable] $RunMetadata
+    )
+
+    if (-not (Test-NervTestEvidenceLaneName ([string]$RunMetadata.lane))) {
+        throw "Invalid evidence lane '$($RunMetadata.lane)'."
+    }
+    $outcomeMap = @{ Passed = 'passed'; Failed = 'failed'; NotExecuted = 'skipped' }
+    $records = [Collections.Generic.List[object]]::new()
+    foreach ($trxPath in @($Path | Sort-Object)) {
+        try {
+            $document = [Xml.XmlDocument]::new()
+            $document.PreserveWhitespace = $false
+            $document.Load($trxPath)
+        }
+        catch {
+            $safePath = [IO.Path]::GetFullPath($trxPath)
+            throw [IO.InvalidDataException]::new("Failed to parse TRX '$safePath'.")
+        }
+
+        $definitions = @{}
+        foreach ($definition in @($document.SelectNodes("//*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))) {
+            $method = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
+            $assembly = [IO.Path]::GetFileName([string]$definition.storage)
+            $testName = if ($null -ne $method -and -not [string]::IsNullOrWhiteSpace([string]$method.className)) {
+                "$($method.className).$($method.name)"
+            }
+            else { [string]$definition.name }
+            $definitions[[string]$definition.id] = [pscustomobject]@{ assembly = $assembly; testName = $testName }
+        }
+
+        foreach ($result in @($document.SelectNodes("//*[local-name()='Results']/*[local-name()='UnitTestResult']"))) {
+            $rawOutcome = [string]$result.outcome
+            if (-not $outcomeMap.ContainsKey($rawOutcome)) {
+                throw [IO.InvalidDataException]::new("Unsupported TRX outcome '$rawOutcome' in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
+            $definition = $definitions[[string]$result.testId]
+            if ($null -eq $definition) {
+                throw [IO.InvalidDataException]::new("TRX result references an unknown test definition in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
+            $duration = [TimeSpan]::Zero
+            if (-not [string]::IsNullOrWhiteSpace([string]$result.duration)) {
+                $duration = [TimeSpan]::Parse([string]$result.duration, [Globalization.CultureInfo]::InvariantCulture)
+            }
+            $records.Add([pscustomobject][ordered]@{
+                schemaVersion = 1
+                workflowRunId = [string]$RunMetadata.workflowRunId
+                runAttempt = [int]$RunMetadata.runAttempt
+                commitSha = [string]$RunMetadata.commitSha
+                lane = [string]$RunMetadata.lane
+                project = [IO.Path]::GetFileNameWithoutExtension([string]$definition.assembly)
+                assembly = [string]$definition.assembly
+                testName = [string]$definition.testName
+                durationMilliseconds = [double]$duration.TotalMilliseconds
+                outcome = [string]$outcomeMap[$rawOutcome]
+                skipReason = if ($rawOutcome -eq 'NotExecuted') { Get-NervTrxSkipReason -UnitTestResult $result } else { $null }
+                errorMessage = if ($rawOutcome -eq 'Failed') {
+                    $node = $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']/*[local-name()='Message']")
+                    if ($null -ne $node) { $node.InnerText.Trim() } else { $null }
+                } else { $null }
+            })
+        }
+    }
+    @($records)
+}

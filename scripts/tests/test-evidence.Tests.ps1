@@ -44,4 +44,36 @@ $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
 
+$run = @{
+    workflowRunId = '1001'
+    runAttempt = 2
+    commitSha = '0123456789abcdef0123456789abcdef01234567'
+    lane = 'backend-shard-1'
+}
+$records = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
+Assert-Equal 3 $records.Count 'TRX must yield one record per UnitTestResult.'
+Assert-Equal 1 @($records | Where-Object outcome -eq 'passed').Count 'Passed outcome mismatch.'
+Assert-Equal 1 @($records | Where-Object outcome -eq 'failed').Count 'Failed outcome mismatch.'
+Assert-Equal 1 @($records | Where-Object outcome -eq 'skipped').Count 'NotExecuted must normalize to skipped.'
+Assert-Equal 'backend-shard-1' $records[0].lane 'Shard lane must not alter schema.'
+Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $records[0].assembly 'Assembly must come from UnitTest storage.'
+Assert-Equal 1250.0 ($records | Where-Object outcome -eq 'passed').durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
+Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object outcome -eq 'skipped').skipReason 'Skip reason mismatch.'
+
+$combined = Read-NervTrxResults -Path @(
+    (Join-Path $fixtures 'backend-results.trx'),
+    (Join-Path $fixtures 'connector-results.trx')
+) -RunMetadata $run
+Assert-Equal 4 $combined.Count 'Multiple TRX files must aggregate.'
+Assert-Equal 2 @($combined.assembly | Sort-Object -Unique).Count 'Assemblies must remain distinct.'
+
+$malformedFailed = $false
+try { Read-NervTrxResults -Path @((Join-Path $fixtures 'malformed-results.trx')) -RunMetadata $run | Out-Null }
+catch {
+    $malformedFailed = $true
+    Assert-True ($_.Exception.Message.Contains('malformed-results.trx')) 'Malformed diagnostic must name the redacted path.'
+    Assert-True (-not $_.Exception.Message.Contains('must-not-appear')) 'Malformed diagnostic must not include raw XML.'
+}
+Assert-True $malformedFailed 'Malformed TRX must fail parsing.'
+
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."
