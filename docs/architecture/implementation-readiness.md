@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 后端测试确定性与隔离契约（MAN-662，2026-08-04）
+
+共享 `Nerv.IIP.Testing` 已提供注入式时间、`Eventually`、有界 timeout、脱敏诊断、网络失败分类与 scoped global-state restoration；FastEndpoints serializer/validation/discovery 变异通过 collection serialization 加一次性进程隔离，不宣称可 restore。新增 `Nerv.IIP.Testing.Xunit` 以 `NERV_IIP_TEST_ORDER_SEED` 和 SHA-256 稳定排序 case/collection，Ops、Maintenance、Inventory、IndustrialTelemetry 四个现有 Web test 程序集只接入 orderer，不改变业务测试职责或既有 collection serialization。
+
+受治理入口 `pwsh scripts/verify-backend-test-determinism.ps1` 以六个固定 seed、serial/parallel 交替 profile 和轮换项目顺序生成本地重复性证据；profile 来自 VSTest `xUnit.ParallelizeTestCollections` 与 `xUnit.MaxParallelThreads`，不重编译 profile。证据只落在 `artifacts/test-determinism/man-662/**` 的 local summary/runsettings；MAN-661 仍独占 CI lane timing、skip/rerun、TRX、flake trend 与 quarantine enforcement，当前定量 baseline 为 `awaiting MAN-661`。MAN-663 shared BusinessGateway host profile 与 MAN-664 IndustrialTelemetry structural split 保持 defer。完整规则见 `docs/architecture/backend-test-determinism.md`。
+
 ## PDA 当前工序与服务端门禁演示闭环（MAN-637 / #1174）
 
 Business PDA 工序执行页现在完整消费既有 BusinessGateway/MES 权威任务行：入口查询继续由当前 principal 与实时核验的 `scopeKind/scopeId` 过滤；没有 self assignment 时页面明确展示实际的班组、工作中心、车间或组织授权范围，不把范围队列称为“我的任务”。列表、URL、详情、动作写前回读和结果始终绑定同一 `workOrderId + operationTaskId`，route query、读范围、写范围、组织/环境或 principal identity 变化会推进页面代际并关闭旧详情；普通列表中从 pair A 改选 pair B 也会推进独立选择代际，A 的进行中首次动作或重试随后成功/失败时只能丢弃 A 的结果并刷新当前权威列表，不能关闭、清空或覆盖已打开的 B。完整 deep link 把实时 manage-action identity 纳入打开身份，并等待写作业范围就绪后才打开精确 pair，避免任务数据先到、范围后到时被 reset 后永久关闭。只有当前页面与选择 identity 的成功响应能写入结果。

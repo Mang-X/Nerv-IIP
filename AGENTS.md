@@ -100,6 +100,14 @@ Capacitor artifacts are affected.
 - Docker-dependent `verify-*.ps1` scripts require a running Docker daemon; if
   unavailable, report and skip — not a code failure.
 
+## Backend Test Determinism
+
+- Scheduler、lease、expiry 等时间语义必须注入 `TimeProvider`；真实 transport/process 才使用 wall clock。
+- 异步可见性断言使用有界 `Eventually` 并报告脱敏 condition、elapsed、attempts 与 last observation；禁止 fixed sleep-before-assert。
+- 网络测试显式区分 connection/request budget、caller cancellation 与业务 HTTP response；不得输出 headers/body/凭据。
+- FluentValidation、culture、`TZ`/env 等可变全局值使用 scoped capture/restore 并序列化 mutator；FastEndpoints 静态变异使用 collection serialization 加 sacrificial process isolation，绝不声称 restore。
+- Required/opt-in lanes、quarantine registry 与 enforcement 仅由 MAN-661 管理；普通测试变更不得自行建立 quarantine 规则。
+
 ## Core Principles
 
 1. Platform-before-business. Industry semantics (factory, line, equipment models)
