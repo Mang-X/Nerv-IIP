@@ -4,6 +4,7 @@
 #     - Reads VSTest TRX, policy, baseline, and optional prior GitHub Actions attempt metadata
 #   Writes:
 #     - Normalized redacted evidence under the exact OutputDirectory
+#     - A deterministic .failure[-N] sibling when the exact OutputDirectory already exists during failure publication
 #     - Optional Markdown appended to StepSummaryPath
 #   Cleanup:
 #     - Atomically publishes only completed retained evidence
@@ -26,12 +27,6 @@ param(
     [string] $Repository,
     [string] $JobName,
     [ValidateSet('success', 'failure', 'cancelled', 'skipped')] [string] $CurrentTestOutcome,
-    [ValidateSet('success', 'failure', 'cancelled', 'skipped')] [string] $PriorAttemptOutcome,
-    [string] $PriorAttemptWorkflowRunId,
-    [string] $PriorAttemptCommitSha,
-    [string] $PriorAttemptLane,
-    [switch] $TestOnlyUsePriorAttemptFixture,
-    [string] $PriorAttemptFixturePath,
     [string] $Event,
     [string] $HeadBranch,
     [string] $SourceUrl,
@@ -86,27 +81,18 @@ try {
     if ($RunAttempt -gt 1) {
         try {
             $priorAttempt = $RunAttempt - 1
-            $expectedJobs = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
             $priorRun = $null
             $priorJobs = @()
-            if ($TestOnlyUsePriorAttemptFixture) {
-                if ([string]::IsNullOrWhiteSpace($PriorAttemptFixturePath) -or -not (Test-Path -LiteralPath $PriorAttemptFixturePath -PathType Leaf)) { throw 'Test-only prior-attempt fixture path is missing.' }
-                $fixture = Get-Content -LiteralPath $PriorAttemptFixturePath -Raw | ConvertFrom-Json
-                if ([int]$fixture.fixtureVersion -ne 1) { throw 'Unsupported test-only prior-attempt fixture version.' }
-                $priorRun = $fixture.run
-                $priorJobs = @($fixture.jobs)
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace($Repository) -and -not [string]::IsNullOrWhiteSpace($JobName) -and -not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            if (-not [string]::IsNullOrWhiteSpace($Repository) -and -not [string]::IsNullOrWhiteSpace($JobName) -and -not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
                 $runLookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId") -WorkingDirectory $repoRoot -Name 'man-661-prior-run'
                 $priorRun = (Protect-ScriptAutomationText $runLookup.Stdout) | ConvertFrom-Json
                 $lookup = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('api', "repos/$Repository/actions/runs/$WorkflowRunId/attempts/$priorAttempt/jobs") -WorkingDirectory $repoRoot -Name 'man-661-prior-attempt'
                 $priorJobs = @(((Protect-ScriptAutomationText $lookup.Stdout) | ConvertFrom-Json).jobs)
             }
-            $jobs = @($priorJobs | Where-Object { [string]$_.name -ceq $JobName -and [int]$_.run_attempt -eq $priorAttempt -and [string]$_.conclusion -ceq 'failure' })
-            if ($expectedJobs.ContainsKey($Lane) -and [string]$expectedJobs[$Lane] -ceq $JobName -and
-                $null -ne $priorRun -and [string]$priorRun.id -ceq $WorkflowRunId -and [string]$priorRun.head_sha -ceq $CommitSha -and $jobs.Count -eq 1) {
-                $resolvedPriorOutcome = 'failure'
-                $runMetadata.priorAttemptVerified = $true
+            if ($null -ne $priorRun) {
+                $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId $WorkflowRunId -CommitSha $CommitSha -RunAttempt $RunAttempt -Lane $Lane -JobName $JobName
+                $resolvedPriorOutcome = $priorAuthority.outcome
+                $runMetadata.priorAttemptVerified = [bool]$priorAuthority.verified
             }
         }
         catch { Write-Diagnostic -Level 'WARN' -Message "Prior attempt lookup unavailable: $(Protect-ScriptAutomationText $_.Exception.Message)" }

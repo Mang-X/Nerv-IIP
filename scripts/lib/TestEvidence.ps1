@@ -833,7 +833,114 @@ function Get-NervGitHubRunnerProvenance {
         throw 'Actions log does not contain resolved runner image/version and exact dotnet SDK provenance.'
     }
     $normalizedImage = if ($image -match '^ubuntu-(?<major>[0-9]{2})\.04$') { "ubuntu$($Matches['major'])" } else { $image }
-    [pscustomobject]@{ runnerImage = "$normalizedImage@$imageVersion"; dotnetSdk = $sdkMatch.Groups['sdk'].Value }
+    $runnerOs = if ($image.StartsWith('ubuntu-', [StringComparison]::Ordinal)) { 'Linux' }
+        elseif ($image.StartsWith('windows-', [StringComparison]::Ordinal)) { 'Windows' }
+        elseif ($image.StartsWith('macos-', [StringComparison]::Ordinal)) { 'macOS' }
+        else { throw "Unsupported Actions runner image '$image'." }
+    [pscustomobject]@{ runnerOs = $runnerOs; runnerImage = "$normalizedImage@$imageVersion"; dotnetSdk = $sdkMatch.Groups['sdk'].Value }
+}
+
+function Resolve-NervPriorAttemptAuthority {
+    param(
+        [Parameter(Mandatory)] [object] $Run,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Jobs,
+        [Parameter(Mandatory)] [string] $WorkflowRunId,
+        [Parameter(Mandatory)] [string] $CommitSha,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $Lane,
+        [Parameter(Mandatory)] [string] $JobName
+    )
+
+    $result = [pscustomobject][ordered]@{ verified = $false; outcome = $null }
+    if ($RunAttempt -le 1) { return $result }
+    $expectedJobs = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
+    if (-not $expectedJobs.ContainsKey($Lane) -or [string]$expectedJobs[$Lane] -cne $JobName -or
+        [string]$Run.id -cne $WorkflowRunId -or [string]$Run.head_sha -cne $CommitSha -or
+        [int]$Run.run_attempt -ne $RunAttempt) {
+        return $result
+    }
+    $priorAttempt = $RunAttempt - 1
+    $failedJobs = @($Jobs | Where-Object {
+        [string]$_.name -ceq $JobName -and [int]$_.run_attempt -eq $priorAttempt -and [string]$_.conclusion -ceq 'failure'
+    })
+    if ($failedJobs.Count -ne 1) { return $result }
+    $result.verified = $true
+    $result.outcome = 'failure'
+    return $result
+}
+
+function Assert-NervEvidenceSourceSummaries {
+    param([Parameter(Mandatory)] [object[]] $SourceSummaries)
+
+    if ($SourceSummaries.Count -eq 0) { throw 'Evidence baseline requires at least one summary.' }
+    $first = $SourceSummaries[0]
+    $commonFields = @('workflowRunId', 'runAttempt', 'commitSha', 'repository', 'event', 'headBranch', 'sourceUrl', 'runnerOs', 'runnerImage', 'dotnetSdk')
+    foreach ($summary in $SourceSummaries) {
+        foreach ($field in $commonFields) {
+            if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary provenance field '$field' must be nonempty." }
+            if ([string]$summary.$field -cne [string]$first.$field) { throw "Evidence summaries have mixed provenance field '$field'." }
+        }
+        foreach ($field in @('lane', 'jobName', 'artifactName')) {
+            if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary metadata field '$field' must be nonempty." }
+        }
+        if ([int]$summary.runAttempt -ne 1 -or [string]$summary.attemptClassification -cne 'initial' -or
+            [string]$summary.currentTestOutcome -cne 'success' -or [string]$summary.collectionStatus -cne 'succeeded' -or
+            [int]$summary.failed -ne 0 -or [int]$summary.executed -le 0 -or @($summary.violations).Count -ne 0 -or
+            [string]$summary.event -cne 'push' -or [string]$summary.headBranch -cne 'main' -or
+            [string]$summary.commitSha -notmatch '^[0-9a-f]{40}$' -or
+            [string]$summary.sourceUrl -cne "https://github.com/$($summary.repository)/actions/runs/$($summary.workflowRunId)" -or
+            [string]$summary.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
+            [string]$summary.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or -not (Test-NervTestEvidenceLaneName ([string]$summary.lane))) {
+            throw 'Evidence baseline requires clean successful attempt-1 initial summaries from one main push.'
+        }
+    }
+    if (@($SourceSummaries.lane | Sort-Object -Unique).Count -ne $SourceSummaries.Count) { throw 'Evidence summaries must have unique lane metadata.' }
+    return $first
+}
+
+function Assert-NervEvidenceRootAuthority {
+    param(
+        [Parameter(Mandatory)] [object[]] $SourceSummaries,
+        [Parameter(Mandatory)] [object] $Run,
+        [Parameter(Mandatory)] [object[]] $LatestRuns,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $JobLogs
+    )
+
+    $first = Assert-NervEvidenceSourceSummaries -SourceSummaries $SourceSummaries
+    if ([string]$Run.event -cne 'push' -or [string]$Run.headBranch -cne 'main' -or [int]$Run.attempt -ne 1 -or
+        [string]$Run.conclusion -cne 'success' -or [string]$Run.headSha -cne [string]$first.commitSha -or
+        [string]$Run.url -cne [string]$first.sourceUrl -or [string]$Run.workflowName -cne 'CI' -or
+        [string]$Run.databaseId -cne [string]$first.workflowRunId) {
+        throw 'Evidence source is not an authoritative successful attempt-1 main CI run.'
+    }
+    if ($LatestRuns.Count -ne 1 -or [string]$LatestRuns[0].databaseId -cne [string]$first.workflowRunId -or
+        [int]$LatestRuns[0].attempt -ne 1 -or [string]$LatestRuns[0].headSha -cne [string]$first.commitSha -or
+        [string]$LatestRuns[0].conclusion -cne 'success' -or [string]$LatestRuns[0].event -cne 'push' -or
+        [string]$LatestRuns[0].headBranch -cne 'main') {
+        throw 'Evidence source is not the latest qualifying successful attempt-1 main CI run.'
+    }
+    $requiredJobs = @('Backend Tests', 'Connector Host Tests')
+    foreach ($requiredJob in $requiredJobs) {
+        if (@($Run.jobs | Where-Object { [string]$_.name -ceq $requiredJob -and [string]$_.conclusion -ceq 'success' }).Count -ne 1) {
+            throw "Required evidence job '$requiredJob' is missing, ambiguous, or unsuccessful."
+        }
+    }
+    $jobByLane = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
+    foreach ($summary in $SourceSummaries) {
+        if (-not $jobByLane.ContainsKey([string]$summary.lane) -or [string]$summary.jobName -cne [string]$jobByLane[[string]$summary.lane]) {
+            throw "Evidence lane '$($summary.lane)' has the wrong authoritative job name."
+        }
+        if (-not $JobLogs.Contains([string]$summary.jobName) -or [string]::IsNullOrWhiteSpace([string]$JobLogs[[string]$summary.jobName])) {
+            throw "Authoritative Actions log for job '$($summary.jobName)' is missing."
+        }
+        $authority = Get-NervGitHubRunnerProvenance -Text (Protect-ScriptAutomationText ([string]$JobLogs[[string]$summary.jobName]))
+        if ([string]$summary.runnerOs -cne [string]$authority.runnerOs -or
+            [string]$summary.runnerImage -cne [string]$authority.runnerImage -or
+            [string]$summary.dotnetSdk -cne [string]$authority.dotnetSdk) {
+            throw "Evidence runner provenance for lane '$($summary.lane)' does not match the authoritative Actions log."
+        }
+    }
+    return $first
 }
 
 function New-NervTestEvidenceBaseline {
