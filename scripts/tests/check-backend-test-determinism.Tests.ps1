@@ -4,8 +4,10 @@
 #     - Runs backend test-determinism checker fixture cases
 #   Writes:
 #     - Temporary baseline JSON files under the operating-system temp directory
+#     - artifacts/script-logs/backend-test-determinism-fixture-*/**
+#     - artifacts/script-tests/backend-test-determinism-*/**
 #   Cleanup:
-#     - Removes every temporary baseline file created by this test
+#     - Removes every temporary baseline, source fixture, and governed command log created by this test
 #   Requires:
 #     - PowerShell 7
 
@@ -13,10 +15,16 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+
 $checker = Join-Path $repoRoot 'scripts/check-backend-test-determinism.ps1'
 $fixtureRoot = Join-Path $repoRoot 'scripts/tests/fixtures/backend-test-determinism'
 $validBaselinePath = Join-Path $fixtureRoot 'valid-baseline.json'
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-backend-test-determinism-$([Guid]::NewGuid().ToString('N'))"
+$runId = [Guid]::NewGuid().ToString('N')
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-backend-test-determinism-$runId"
+$scriptLogName = "backend-test-determinism-fixture-$runId"
+$scriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName"
+$generatedFixtureRoot = Join-Path $repoRoot "artifacts/script-tests/backend-test-determinism-$runId"
 
 function Assert-True {
     param(
@@ -54,13 +62,83 @@ function Invoke-CheckerCase {
         [string] $BaselinePath
     )
 
-    $output = & pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $checker `
-        -SourceRoot $SourceRoot `
-        -BaselinePath $BaselinePath 2>&1
+    $exitCode = 0
+    $logDirectory = $null
+    try {
+        $result = Invoke-PwshScript `
+            -ScriptPath $checker `
+            -Arguments @('-SourceRoot', $SourceRoot, '-BaselinePath', $BaselinePath) `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 60 `
+            -Name $scriptLogName
+        $logDirectory = $result.LogDirectory
+    }
+    catch {
+        if ($_.Exception.Message -notmatch "exited with (?<exitCode>\d+)") {
+            throw
+        }
+
+        $exitCode = [int] $Matches['exitCode']
+        $latestLogDirectory = Get-ChildItem -LiteralPath $scriptLogRoot -Directory |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+        if ($null -eq $latestLogDirectory) {
+            throw "Governed checker process failed without a log directory: $($_.Exception.Message)"
+        }
+        $logDirectory = $latestLogDirectory.FullName
+    }
+
+    $stdout = Get-Content -LiteralPath (Join-Path $logDirectory 'stdout.log') -Raw
+    $stderr = Get-Content -LiteralPath (Join-Path $logDirectory 'stderr.log') -Raw
+    $output = ($stdout, $stderr) -join [Environment]::NewLine
 
     return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Output = ($output | Out-String)
+        ExitCode = $exitCode
+        Output = $output
+    }
+}
+
+function New-OccurrenceCase {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [int] $ActualCount,
+
+        [Parameter(Mandatory)]
+        [object] $ExpectedCount
+    )
+
+    $caseRoot = Join-Path $generatedFixtureRoot $Name
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'occurrences.cs'
+    $sourceLines = @('public static class OccurrenceFixture', '{')
+    for ($index = 0; $index -lt $ActualCount; $index++) {
+        $sourceLines += '    Task.Delay(1);'
+    }
+    $sourceLines += '}'
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    $relativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
+    $baselinePath = Join-Path $tempRoot "$Name.json"
+    Write-JsonFile -Path $baselinePath -Value ([ordered]@{
+        schema = 1
+        exceptions = @([ordered]@{
+            path = $relativePath
+            pattern = 'Task.Delay'
+            lineTextSha256 = '1106b2c99718c440becaeed61063d2b2dd38c61c1236e256560b49fdbcf5b2bf'
+            occurrenceCount = $ExpectedCount
+            ownerIssue = 'MAN-662'
+            reason = 'Fixture intentionally repeats one identical source line to verify occurrence accounting.'
+            exitCondition = 'Delete when occurrence accounting no longer uses this fixture.'
+            expiresOn = '2026-09-03'
+        })
+    })
+
+    return [pscustomobject]@{
+        SourcePath = $sourcePath
+        BaselinePath = $baselinePath
     }
 }
 
@@ -145,6 +223,15 @@ try {
         -BaselinePath $validBaselinePath `
         -ExpectedExitCode 0
 
+    $exactOccurrenceCase = New-OccurrenceCase -Name 'occurrence-exact' -ActualCount 2 -ExpectedCount 2
+    Assert-CheckerCase -Name 'matching occurrence count' -SourceRoot $exactOccurrenceCase.SourcePath -BaselinePath $exactOccurrenceCase.BaselinePath -ExpectedExitCode 0
+
+    $growthOccurrenceCase = New-OccurrenceCase -Name 'occurrence-growth' -ActualCount 3 -ExpectedCount 2
+    Assert-CheckerCase -Name 'occurrence growth' -SourceRoot $growthOccurrenceCase.SourcePath -BaselinePath $growthOccurrenceCase.BaselinePath -ExpectedExitCode 1 -ExpectedOutput @('occurrence count changed', 'expected 2', 'actual 3', ':5 [Task.Delay]')
+
+    $shrinkOccurrenceCase = New-OccurrenceCase -Name 'occurrence-shrink' -ActualCount 1 -ExpectedCount 2
+    Assert-CheckerCase -Name 'occurrence shrink' -SourceRoot $shrinkOccurrenceCase.SourcePath -BaselinePath $shrinkOccurrenceCase.BaselinePath -ExpectedExitCode 1 -ExpectedOutput @('occurrence count changed', 'expected 2', 'actual 1')
+
     $validBaseline = Get-Content -LiteralPath $validBaselinePath -Raw | ConvertFrom-Json
     $matchingSource = Join-Path $repoRoot $validBaseline.exceptions[0].path
 
@@ -153,6 +240,30 @@ try {
     $missingFieldPath = Join-Path $tempRoot 'missing-field.json'
     Write-JsonFile -Path $missingFieldPath -Value ([ordered]@{ schema = 1; exceptions = @($missingFieldRow) })
     Assert-CheckerCase -Name 'missing baseline metadata' -SourceRoot $matchingSource -BaselinePath $missingFieldPath -ExpectedExitCode 1 -ExpectedOutput @('missing required field')
+
+    $nonIntegerOccurrenceRow = $validBaseline.exceptions[0].PSObject.Copy()
+    $nonIntegerOccurrenceRow.occurrenceCount = '1'
+    $nonIntegerOccurrencePath = Join-Path $tempRoot 'non-integer-occurrence.json'
+    Write-JsonFile -Path $nonIntegerOccurrencePath -Value ([ordered]@{ schema = 1; exceptions = @($nonIntegerOccurrenceRow) })
+    Assert-CheckerCase -Name 'non-integer occurrence count' -SourceRoot $matchingSource -BaselinePath $nonIntegerOccurrencePath -ExpectedExitCode 1 -ExpectedOutput @('occurrenceCount must be a positive integer')
+
+    $zeroOccurrenceRow = $validBaseline.exceptions[0].PSObject.Copy()
+    $zeroOccurrenceRow.occurrenceCount = 0
+    $zeroOccurrencePath = Join-Path $tempRoot 'zero-occurrence.json'
+    Write-JsonFile -Path $zeroOccurrencePath -Value ([ordered]@{ schema = 1; exceptions = @($zeroOccurrenceRow) })
+    Assert-CheckerCase -Name 'zero occurrence count' -SourceRoot $matchingSource -BaselinePath $zeroOccurrencePath -ExpectedExitCode 1 -ExpectedOutput @('occurrenceCount must be a positive integer')
+
+    $numericReasonRow = $validBaseline.exceptions[0].PSObject.Copy()
+    $numericReasonRow.reason = 123
+    $numericReasonPath = Join-Path $tempRoot 'numeric-reason.json'
+    Write-JsonFile -Path $numericReasonPath -Value ([ordered]@{ schema = 1; exceptions = @($numericReasonRow) })
+    Assert-CheckerCase -Name 'numeric string metadata' -SourceRoot $matchingSource -BaselinePath $numericReasonPath -ExpectedExitCode 1 -ExpectedOutput @('reason must be a non-empty string')
+
+    $objectExitConditionRow = $validBaseline.exceptions[0].PSObject.Copy()
+    $objectExitConditionRow.exitCondition = [ordered]@{ text = 'not a string' }
+    $objectExitConditionPath = Join-Path $tempRoot 'object-exit-condition.json'
+    Write-JsonFile -Path $objectExitConditionPath -Value ([ordered]@{ schema = 1; exceptions = @($objectExitConditionRow) })
+    Assert-CheckerCase -Name 'object string metadata' -SourceRoot $matchingSource -BaselinePath $objectExitConditionPath -ExpectedExitCode 1 -ExpectedOutput @('exitCondition must be a non-empty string')
 
     $expiredRow = $validBaseline.exceptions[0].PSObject.Copy()
     $expiredRow.expiresOn = '2026-01-01'
@@ -195,5 +306,17 @@ finally {
         }
 
         Remove-Item -LiteralPath $resolvedTempRoot.Path -Recurse -Force
+    }
+
+    foreach ($generatedPath in @($scriptLogRoot, $generatedFixtureRoot)) {
+        $resolvedGeneratedPath = Resolve-Path -LiteralPath $generatedPath -ErrorAction SilentlyContinue
+        if ($resolvedGeneratedPath) {
+            $allowedArtifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts'))
+            if (-not $resolvedGeneratedPath.Path.StartsWith($allowedArtifactsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Refusing to remove generated test path outside artifacts: $($resolvedGeneratedPath.Path)"
+            }
+
+            Remove-Item -LiteralPath $resolvedGeneratedPath.Path -Recurse -Force
+        }
     }
 }

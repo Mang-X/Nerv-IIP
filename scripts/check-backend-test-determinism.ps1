@@ -27,7 +27,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $backendRoot = (Resolve-Path (Join-Path $repoRoot 'backend')).Path
 $solutionPath = Join-Path $backendRoot 'Nerv.IIP.sln'
 $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAddress', 'StaticSetter')
-$requiredBaselineFields = @('path', 'pattern', 'lineTextSha256', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
+$requiredBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
+$requiredStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
 
 function Resolve-RepoInputPath {
     param(
@@ -144,116 +145,239 @@ function Get-SolutionTestSourceFiles {
     return @($files | Sort-Object FullName -Unique)
 }
 
-function Test-IsIgnoredCommentLine {
+function Get-CSharpSanitizedText {
     param(
         [Parameter(Mandatory)]
-        [string] $TrimmedLine
+        [AllowEmptyString()]
+        [string] $Text,
+
+        [switch] $PreserveStringContent
     )
 
-    return $TrimmedLine.StartsWith('//') -or
-        $TrimmedLine.StartsWith('/*') -or
-        $TrimmedLine.StartsWith('*')
+    $characters = $Text.ToCharArray()
+    $length = $characters.Length
+    $index = 0
+
+    while ($index -lt $length) {
+        $character = $characters[$index]
+        $next = if ($index + 1 -lt $length) { $characters[$index + 1] } else { [char] 0 }
+
+        if ($character -eq '/' -and $next -eq '/') {
+            while ($index -lt $length -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                $characters[$index] = ' '
+                $index++
+            }
+            continue
+        }
+
+        if ($character -eq '/' -and $next -eq '*') {
+            $characters[$index] = ' '
+            $characters[$index + 1] = ' '
+            $index += 2
+            while ($index -lt $length) {
+                if ($index + 1 -lt $length -and $characters[$index] -eq '*' -and $characters[$index + 1] -eq '/') {
+                    $characters[$index] = ' '
+                    $characters[$index + 1] = ' '
+                    $index += 2
+                    break
+                }
+                if ($characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                    $characters[$index] = ' '
+                }
+                $index++
+            }
+            continue
+        }
+
+        if ($character -eq "'") {
+            $characters[$index] = ' '
+            $index++
+            while ($index -lt $length) {
+                $current = $characters[$index]
+                if ($current -ne "`r" -and $current -ne "`n") {
+                    $characters[$index] = ' '
+                }
+                if ($current -eq '\' -and $index + 1 -lt $length) {
+                    $index++
+                    if ($characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                        $characters[$index] = ' '
+                    }
+                }
+                elseif ($current -eq "'") {
+                    $index++
+                    break
+                }
+                $index++
+            }
+            continue
+        }
+
+        if ($character -eq '"') {
+            $quoteCount = 1
+            while ($index + $quoteCount -lt $length -and $characters[$index + $quoteCount] -eq '"') {
+                $quoteCount++
+            }
+            $isRawString = $quoteCount -ge 3
+            if (-not $isRawString) {
+                $quoteCount = 1
+            }
+            $isVerbatimString = ($index -gt 0 -and $characters[$index - 1] -eq '@') -or
+                ($index -gt 1 -and $characters[$index - 1] -eq '$' -and $characters[$index - 2] -eq '@')
+            $prefixIndex = $index - 1
+            if ($prefixIndex -ge 0 -and $characters[$prefixIndex] -eq '@') {
+                $prefixIndex--
+            }
+            $isInterpolatedString = $prefixIndex -ge 0 -and $characters[$prefixIndex] -eq '$'
+            $interpolationDepth = 0
+
+            for ($offset = 0; $offset -lt $quoteCount; $offset++) {
+                if (-not $PreserveStringContent) {
+                    $characters[$index + $offset] = ' '
+                }
+            }
+            $index += $quoteCount
+
+            while ($index -lt $length) {
+                $current = $characters[$index]
+                if ($isRawString) {
+                    $closingQuotes = 0
+                    while ($index + $closingQuotes -lt $length -and $characters[$index + $closingQuotes] -eq '"') {
+                        $closingQuotes++
+                    }
+                    if ($closingQuotes -ge $quoteCount) {
+                        for ($offset = 0; $offset -lt $quoteCount; $offset++) {
+                            if (-not $PreserveStringContent) {
+                                $characters[$index + $offset] = ' '
+                            }
+                        }
+                        $index += $quoteCount
+                        break
+                    }
+                }
+                elseif ($isInterpolatedString -and $interpolationDepth -eq 0 -and $current -eq '{' -and
+                    $index + 1 -lt $length -and $characters[$index + 1] -eq '{') {
+                    if (-not $PreserveStringContent) {
+                        $characters[$index] = ' '
+                        $characters[$index + 1] = ' '
+                    }
+                    $index += 2
+                    continue
+                }
+                elseif ($isInterpolatedString -and $current -eq '{') {
+                    $interpolationDepth++
+                }
+                elseif ($isInterpolatedString -and $interpolationDepth -gt 0 -and $current -eq '}') {
+                    $interpolationDepth--
+                }
+                elseif ($isInterpolatedString -and $interpolationDepth -gt 0 -and $current -eq '"') {
+                    $nestedVerbatimString = $index -gt 0 -and $characters[$index - 1] -eq '@'
+                    if (-not $PreserveStringContent) {
+                        $characters[$index] = ' '
+                    }
+                    $index++
+                    while ($index -lt $length) {
+                        $nestedCurrent = $characters[$index]
+                        if (-not $PreserveStringContent -and $nestedCurrent -ne "`r" -and $nestedCurrent -ne "`n") {
+                            $characters[$index] = ' '
+                        }
+                        if ($nestedVerbatimString -and $nestedCurrent -eq '"' -and
+                            $index + 1 -lt $length -and $characters[$index + 1] -eq '"') {
+                            $index++
+                            if (-not $PreserveStringContent) {
+                                $characters[$index] = ' '
+                            }
+                        }
+                        elseif (-not $nestedVerbatimString -and $nestedCurrent -eq '\' -and $index + 1 -lt $length) {
+                            $index++
+                            if (-not $PreserveStringContent -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                                $characters[$index] = ' '
+                            }
+                        }
+                        elseif ($nestedCurrent -eq '"') {
+                            $index++
+                            break
+                        }
+                        $index++
+                    }
+                    continue
+                }
+                elseif ($isVerbatimString -and $current -eq '"' -and $index + 1 -lt $length -and $characters[$index + 1] -eq '"') {
+                    if (-not $PreserveStringContent) {
+                        $characters[$index] = ' '
+                        $characters[$index + 1] = ' '
+                    }
+                    $index += 2
+                    continue
+                }
+                elseif ($current -eq '"' -and $interpolationDepth -eq 0) {
+                    if (-not $PreserveStringContent) {
+                        $characters[$index] = ' '
+                    }
+                    $index++
+                    break
+                }
+                elseif (-not $isVerbatimString -and $current -eq '\' -and $index + 1 -lt $length) {
+                    if (-not $PreserveStringContent) {
+                        $characters[$index] = ' '
+                    }
+                    $index++
+                    if (-not $PreserveStringContent -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                        $characters[$index] = ' '
+                    }
+                    $index++
+                    continue
+                }
+
+                if (-not $PreserveStringContent -and $current -ne "`r" -and $current -ne "`n") {
+                    $characters[$index] = ' '
+                }
+                $index++
+            }
+            continue
+        }
+
+        $index++
+    }
+
+    return -join $characters
 }
 
-function Test-ShortLeaseWindow {
+function Get-LineFindingAtOffset {
     param(
         [Parameter(Mandatory)]
-        [string] $Line,
+        [string] $Path,
 
         [Parameter(Mandatory)]
-        [string] $Lookahead
-    )
-
-    $milliseconds = [regex]::Match(
-        $Lookahead,
-        '(?i)\b\w*(?:Lease|Renew)\w*\b\s*(?:=|:|\()\s*TimeSpan\s*\.\s*FromMilliseconds\s*\(\s*(?<value>\d+(?:\.\d+)?)\s*\)'
-    )
-    if ($milliseconds.Success -and $milliseconds.Index -ge $Line.Length) {
-        $milliseconds = [System.Text.RegularExpressions.Match]::Empty
-    }
-    if ($milliseconds.Success -and [decimal] $milliseconds.Groups['value'].Value -lt 1000) {
-        return $true
-    }
-
-    $seconds = [regex]::Match(
-        $Lookahead,
-        '(?i)\b\w*(?:Lease|Renew)\w*\b\s*(?:=|:|\()\s*TimeSpan\s*\.\s*FromSeconds\s*\(\s*(?<value>\d+(?:\.\d+)?)\s*\)'
-    )
-    if ($seconds.Success -and $seconds.Index -ge $Line.Length) {
-        $seconds = [System.Text.RegularExpressions.Match]::Empty
-    }
-    if ($seconds.Success -and [decimal] $seconds.Groups['value'].Value -lt 1) {
-        return $true
-    }
-
-    $numericWindow = [regex]::Match(
-        $Line,
-        '(?i)\b(?:\w*Lease\w*|\w*Renew\w*)(?:Milliseconds|Ms|Seconds)\s*=\s*(?<value>\d+(?:\.\d+)?)'
-    )
-    if (-not $numericWindow.Success) {
-        return $false
-    }
-
-    $value = [decimal] $numericWindow.Groups['value'].Value
-    return ($numericWindow.Value -match '(?i)(Milliseconds|Ms)\s*=') -and $value -lt 1000 -or
-        ($numericWindow.Value -match '(?i)Seconds\s*=') -and $value -lt 1
-}
-
-function Test-LookaheadPatternStartsOnLine {
-    param(
-        [Parameter(Mandatory)]
-        [string] $Line,
+        [string] $Source,
 
         [Parameter(Mandatory)]
-        [string] $Lookahead,
+        [int[]] $LineStarts,
+
+        [Parameter(Mandatory)]
+        [int] $Offset,
 
         [Parameter(Mandatory)]
         [string] $Pattern
     )
 
-    $match = [regex]::Match($Lookahead, $Pattern)
-    return $match.Success -and $match.Index -lt $Line.Length
-}
-
-function Get-LinePatterns {
-    param(
-        [Parameter(Mandatory)]
-        [string] $Line,
-
-        [Parameter(Mandatory)]
-        [string] $Lookahead
-    )
-
-    $patterns = New-Object System.Collections.Generic.List[string]
-
-    if ($Line -match '(?<![\w.])(?:System\.Threading\.Tasks\.)?Task\s*\.\s*Delay\s*\(') {
-        $patterns.Add('Task.Delay')
+    $lineIndex = [Array]::BinarySearch($LineStarts, $Offset)
+    if ($lineIndex -lt 0) {
+        $lineIndex = -$lineIndex - 2
     }
-    if ($Line -match '(?<![\w.])(?:System\.Threading\.)?Thread\s*\.\s*Sleep\s*\(') {
-        $patterns.Add('Thread.Sleep')
+    $lineStart = $LineStarts[$lineIndex]
+    $lineEnd = $lineStart
+    while ($lineEnd -lt $Source.Length -and $Source[$lineEnd] -ne "`r" -and $Source[$lineEnd] -ne "`n") {
+        $lineEnd++
     }
-    if (Test-ShortLeaseWindow -Line $Line -Lookahead $Lookahead) {
-        $patterns.Add('ShortLease')
-    }
-    if (
-        $Line -match '(?i)127\.0\.0\.1\s*:\s*1(?!\d)' -or
-        $Line -match '(?i)\bPort\s*=\s*1(?=\s*[,;"'']|\s*$)'
-    ) {
-        $patterns.Add('UnreachableAddress')
-    }
-    if (
-        $Line -match '(?<![\w.])(?:System\.)?Environment\s*\.\s*SetEnvironmentVariable\s*\(' -or
-        ($Line -match '\bValidatorOptions\s*\.\s*Global\b' -and
-            (Test-LookaheadPatternStartsOnLine -Line $Line -Lookahead $Lookahead -Pattern '\bValidatorOptions\s*\.\s*Global\b(?:\s*\.\s*\w+)+\s*=')) -or
-        ($Line -match '\bCultureInfo\s*\.\s*(?:CurrentCulture|CurrentUICulture|DefaultThreadCurrentCulture|DefaultThreadCurrentUICulture)\b' -and
-            (Test-LookaheadPatternStartsOnLine -Line $Line -Lookahead $Lookahead -Pattern '\bCultureInfo\s*\.\s*(?:CurrentCulture|CurrentUICulture|DefaultThreadCurrentCulture|DefaultThreadCurrentUICulture)\b\s*=')) -or
-        ($Line -match '\bThread\s*\.\s*CurrentThread\s*\.\s*(?:CurrentCulture|CurrentUICulture)\b' -and
-            (Test-LookaheadPatternStartsOnLine -Line $Line -Lookahead $Lookahead -Pattern '\bThread\s*\.\s*CurrentThread\s*\.\s*(?:CurrentCulture|CurrentUICulture)\b\s*='))
-    ) {
-        $patterns.Add('StaticSetter')
-    }
+    $lineText = $Source.Substring($lineStart, $lineEnd - $lineStart).Trim()
 
-    return @($patterns | Sort-Object -Unique)
+    return [pscustomobject]@{
+        Path = $Path
+        Pattern = $Pattern
+        Line = $lineIndex + 1
+        LineText = $lineText
+        LineTextSha256 = Get-LineTextSha256 -LineText $lineText
+    }
 }
 
 function Get-SourceFindings {
@@ -270,23 +394,57 @@ function Get-SourceFindings {
         }
 
         $relativePath = Get-RepoRelativePath -Path $file.FullName
-        $lines = @(Get-Content -LiteralPath $file.FullName)
-        for ($index = 0; $index -lt $lines.Count; $index++) {
-            $trimmedLine = "$($lines[$index])".Trim()
-            if ([string]::IsNullOrWhiteSpace($trimmedLine) -or (Test-IsIgnoredCommentLine -TrimmedLine $trimmedLine)) {
-                continue
+        $source = [System.IO.File]::ReadAllText($file.FullName)
+        $sanitizedCode = Get-CSharpSanitizedText -Text $source
+        $commentSanitizedSource = Get-CSharpSanitizedText -Text $source -PreserveStringContent
+        $lineStarts = New-Object System.Collections.Generic.List[int]
+        $lineStarts.Add(0)
+        for ($index = 0; $index -lt $source.Length; $index++) {
+            if ($source[$index] -eq "`n") {
+                $lineStarts.Add($index + 1)
             }
+        }
 
-            $lookaheadEnd = [Math]::Min($index + 2, $lines.Count - 1)
-            $lookahead = (($lines[$index..$lookaheadEnd] | ForEach-Object { "$($_)".Trim() }) -join "`n")
-            foreach ($pattern in (Get-LinePatterns -Line $trimmedLine -Lookahead $lookahead)) {
-                $findings.Add([pscustomobject]@{
-                    Path = $relativePath
-                    Pattern = $pattern
-                    Line = $index + 1
-                    LineText = $trimmedLine
-                    LineTextSha256 = Get-LineTextSha256 -LineText $trimmedLine
-                })
+        $patternExpressions = @(
+            [pscustomobject]@{ Pattern = 'Task.Delay'; Expression = '(?<![\w.])(?:(?:global\s*::\s*)?System\s*\.\s*Threading\s*\.\s*Tasks\s*\.\s*)?Task\s*\.\s*Delay\s*\(' },
+            [pscustomobject]@{ Pattern = 'Thread.Sleep'; Expression = '(?<![\w.])(?:(?:global\s*::\s*)?System\s*\.\s*Threading\s*\.\s*)?Thread\s*\.\s*Sleep\s*\(' },
+            [pscustomobject]@{ Pattern = 'StaticSetter'; Expression = '(?<![\w.])(?:(?:global\s*::\s*)?System\s*\.\s*)?Environment\s*\.\s*SetEnvironmentVariable\s*\(' },
+            [pscustomobject]@{ Pattern = 'StaticSetter'; Expression = '\bValidatorOptions\s*\.\s*Global\b(?:\s*\.\s*[A-Za-z_]\w*)+\s*(?<![=!<>])=(?!=|>)' },
+            [pscustomobject]@{ Pattern = 'StaticSetter'; Expression = '\bCultureInfo\s*\.\s*(?:CurrentCulture|CurrentUICulture|DefaultThreadCurrentCulture|DefaultThreadCurrentUICulture)\b\s*(?<![=!<>])=(?!=|>)' },
+            [pscustomobject]@{ Pattern = 'StaticSetter'; Expression = '\bThread\s*\.\s*CurrentThread\s*\.\s*(?:CurrentCulture|CurrentUICulture)\b\s*(?<![=!<>])=(?!=|>)' }
+        )
+        foreach ($patternExpression in $patternExpressions) {
+            foreach ($match in [regex]::Matches($sanitizedCode, $patternExpression.Expression)) {
+                $findings.Add((Get-LineFindingAtOffset -Path $relativePath -Source $source -LineStarts $lineStarts.ToArray() -Offset $match.Index -Pattern $patternExpression.Pattern))
+            }
+        }
+
+        $numberExpression = '\d(?:_?\d)*(?:\.\d(?:_?\d)*)?'
+        $shortLeaseExpressions = @(
+            [pscustomobject]@{ Expression = "(?i)\b\w*(?:Lease|Renew)\w*\b\s*(?:=|:|\()\s*TimeSpan\s*\.\s*FromMilliseconds\s*\(\s*(?<value>$numberExpression)\s*\)"; Limit = [decimal] 1000 },
+            [pscustomobject]@{ Expression = "(?i)\b\w*(?:Lease|Renew)\w*\b\s*(?:=|:|\()\s*TimeSpan\s*\.\s*FromSeconds\s*\(\s*(?<value>$numberExpression)\s*\)"; Limit = [decimal] 1 },
+            [pscustomobject]@{ Expression = "(?i)\b(?:\w*Lease\w*|\w*Renew\w*)(?:Milliseconds|Ms)\s*=\s*(?<value>$numberExpression)"; Limit = [decimal] 1000 },
+            [pscustomobject]@{ Expression = "(?i)\b(?:\w*Lease\w*|\w*Renew\w*)Seconds\s*=\s*(?<value>$numberExpression)"; Limit = [decimal] 1 }
+        )
+        foreach ($shortLeaseExpression in $shortLeaseExpressions) {
+            foreach ($match in [regex]::Matches($sanitizedCode, $shortLeaseExpression.Expression)) {
+                $numericValue = [decimal]::Parse(
+                    $match.Groups['value'].Value.Replace('_', ''),
+                    [Globalization.CultureInfo]::InvariantCulture
+                )
+                if ($numericValue -lt $shortLeaseExpression.Limit) {
+                    $findings.Add((Get-LineFindingAtOffset -Path $relativePath -Source $source -LineStarts $lineStarts.ToArray() -Offset $match.Index -Pattern 'ShortLease'))
+                }
+            }
+        }
+
+        $unreachableExpressions = @(
+            '(?i)127\.0\.0\.1\s*:\s*1(?!\d)',
+            '(?i)\bPort\s*=\s*1(?=\s*[,;"'']|\s*$)'
+        )
+        foreach ($expression in $unreachableExpressions) {
+            foreach ($match in [regex]::Matches($commentSanitizedSource, $expression)) {
+                $findings.Add((Get-LineFindingAtOffset -Path $relativePath -Source $source -LineStarts $lineStarts.ToArray() -Offset $match.Index -Pattern 'UnreachableAddress'))
             }
         }
     }
@@ -348,21 +506,42 @@ function Read-Baseline {
         $exception = $exceptionsValue[$index]
         $missing = @(
             $requiredBaselineFields |
-                Where-Object { [string]::IsNullOrWhiteSpace("$(Get-PropertyValue -Object $exception -Name $_)") }
+                Where-Object { $null -eq $exception.PSObject.Properties[$_] }
         )
         if ($missing.Count -gt 0) {
             $Errors.Add("exception[$index] missing required field(s): $($missing -join ', ').")
             continue
         }
 
-        $path = "$(Get-PropertyValue -Object $exception -Name 'path')".Trim() -replace '\\', '/'
-        $pattern = "$(Get-PropertyValue -Object $exception -Name 'pattern')".Trim()
-        $hash = "$(Get-PropertyValue -Object $exception -Name 'lineTextSha256')".Trim()
-        $ownerIssue = "$(Get-PropertyValue -Object $exception -Name 'ownerIssue')".Trim()
-        $reason = "$(Get-PropertyValue -Object $exception -Name 'reason')".Trim()
-        $exitCondition = "$(Get-PropertyValue -Object $exception -Name 'exitCondition')".Trim()
-        $expiresOn = "$(Get-PropertyValue -Object $exception -Name 'expiresOn')".Trim()
         $rowValid = $true
+        $stringValues = @{}
+        foreach ($field in $requiredStringBaselineFields) {
+            $value = Get-PropertyValue -Object $exception -Name $field
+            if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
+                $Errors.Add("exception[$index] $field must be a non-empty string.")
+                $rowValid = $false
+                continue
+            }
+            $stringValues[$field] = $value.Trim()
+        }
+
+        $occurrenceCount = Get-PropertyValue -Object $exception -Name 'occurrenceCount'
+        if ($occurrenceCount -isnot [long] -or $occurrenceCount -le 0) {
+            $Errors.Add("exception[$index] occurrenceCount must be a positive integer.")
+            $rowValid = $false
+        }
+
+        if (-not $rowValid) {
+            continue
+        }
+
+        $path = $stringValues['path'] -replace '\\', '/'
+        $pattern = $stringValues['pattern']
+        $hash = $stringValues['lineTextSha256']
+        $ownerIssue = $stringValues['ownerIssue']
+        $reason = $stringValues['reason']
+        $exitCondition = $stringValues['exitCondition']
+        $expiresOn = $stringValues['expiresOn']
 
         if ([System.IO.Path]::IsPathRooted($path) -or $path -match '(^|/)\.\.(/|$)') {
             $Errors.Add("exception[$index] path must be repo-relative: '$path'.")
@@ -405,6 +584,7 @@ function Read-Baseline {
                 Path = $path
                 Pattern = $pattern
                 LineTextSha256 = $hash
+                OccurrenceCount = $occurrenceCount
                 OwnerIssue = $ownerIssue
                 Reason = $reason
                 ExitCondition = $exitCondition
@@ -443,10 +623,17 @@ try {
                     $_.LineTextSha256 -ceq $row.LineTextSha256
                 }
         )
-        if ($exactMatches.Count -gt 0) {
+        if ($exactMatches.Count -eq $row.OccurrenceCount) {
             foreach ($match in $exactMatches) {
                 $matchedFindingKeys["$($match.Path)|$($match.Pattern)|$($match.LineTextSha256)"] = $true
             }
+            continue
+        }
+
+        if ($exactMatches.Count -gt 0) {
+            $baselineErrors.Add(
+                "$($row.Path) [$($row.Pattern)] occurrence count changed: expected $($row.OccurrenceCount), actual $($exactMatches.Count)."
+            )
             continue
         }
 
