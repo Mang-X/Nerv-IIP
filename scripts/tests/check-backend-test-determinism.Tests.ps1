@@ -261,6 +261,27 @@ try {
         -ExpectedOutput @('Task.Delay')
 
     Assert-CheckerCase `
+        -Name 'ordinary interpolated expression remains executable code' `
+        -SourceRoot (Join-Path $fixtureRoot 'interpolated-string-expression.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('Task.Delay(655)')
+
+    Assert-CheckerCase `
+        -Name 'verbatim interpolated expression remains executable code' `
+        -SourceRoot (Join-Path $fixtureRoot 'interpolated-verbatim-expression.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('Task.Delay(656)')
+
+    Assert-CheckerCase `
+        -Name 'nested interpolated expression remains executable code' `
+        -SourceRoot (Join-Path $fixtureRoot 'nested-interpolated-string-expression.cs') `
+        -BaselinePath $emptyBaselinePath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('Task.Delay(657)')
+
+    Assert-CheckerCase `
         -Name 'empty raw string does not hide following delay' `
         -SourceRoot (Join-Path $fixtureRoot 'raw-empty-followed-by-delay.cs') `
         -BaselinePath $emptyBaselinePath `

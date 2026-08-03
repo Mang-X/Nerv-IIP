@@ -52,6 +52,36 @@
       "expiresOn": "2026-09-03"
     },
     {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-string-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "9615461769a399e867e3b4dc912d58e08a97197b15094411621c287126fbd06a",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside an ordinary interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the ordinary interpolation delay.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-verbatim-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "840874ee65024036b40ba6da76c093f155942b87e1dae8543896312aa461f7f1",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside a verbatim interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the verbatim interpolation delay.",
+      "expiresOn": "2026-09-03"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/nested-interpolated-string-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "33d197266827f43c2ad0dd0063217428555eaa43f2f7f9ffa3dd2aa6c53fa380",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside nested interpolations remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the nested interpolation delay.",
+      "expiresOn": "2026-09-03"
+    },
+    {
       "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
       "pattern": "ShortLease",
       "lineTextSha256": "84e30fc1fce62c19ffc9a9d8d99d2cd528f7577666463f775d27ff03a7011635",

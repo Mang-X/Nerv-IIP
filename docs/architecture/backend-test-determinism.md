@@ -61,7 +61,7 @@ MAN-663 的命名 BusinessGateway shared-host profiles 与安全并行化仍明�
 
 `Nerv.IIP.Testing.Xunit` 的 case/collection orderer 读取 `NERV_IIP_TEST_ORDER_SEED`；变量缺失时使用固定 `nerv-iip-default`。排序键为 `SHA-256(seed + fully-qualified-name)`，hash 相同再按 name 做 ordinal 排序。四个目标程序集只声明 orderer，不改变 collection serialization 或业务测试职责。
 
-`pwsh scripts/verify-backend-test-determinism.ps1` 创建新的 `artifacts/test-determinism/man-662/<invocation-id>/`，执行六轮、每轮四项目：seed 固定为 `man662-01` 至 `man662-06`，serial/parallel 交替，`MaxParallelThreads` 为 1/4，项目顺序逐轮旋转。profile 只由受支持的 VSTest `<xUnit>` runsettings 设置，不通过 compile-time attribute 切换；第一轮构建后后续轮次使用同一程序集。已存在 invocation 路径会被拒绝，失败记录不能被 rerun 覆盖。
+`pwsh scripts/verify-backend-test-determinism.ps1` 先以 `FileMode.CreateNew` 原子取得 invocation claim，再创建新的 `artifacts/test-determinism/man-662/<invocation-id>/`，执行六轮、每轮四项目：seed 固定为 `man662-01` 至 `man662-06`，serial/parallel 交替，`MaxParallelThreads` 为 1/4，项目顺序逐轮旋转。profile 只由受支持的 VSTest `<xUnit>` runsettings 设置，不通过 compile-time attribute 切换；第一轮构建后后续轮次使用同一程序集。同一显式 invocation ID 的并发失败者在执行项目前即被拒绝，既有或失败证据都不能被 rerun 覆盖。
 
 每个 `summary.json` 只含六个本地复现字段：`run`、`seed`、`profile`、`projectOrder`、`elapsedMs`、`exitCode`。MAN-662 不生成 TRX、`trxPaths`、per-test/lane timing、skip budget 或 rerun accounting。
 
@@ -69,7 +69,9 @@ MAN-663 的命名 BusinessGateway shared-host profiles 与安全并行化仍明�
 
 MAN-661 独占 required-lane/opt-in-lane policy、machine-readable quarantine registry 与 enforcement；MAN-662 不创建 quarantine registry 或规则。MAN-661 的定量 trend/flake evidence 是外部证据，不阻塞本变更实现、评审、合并或 code-completion。当前 baseline status 为 `awaiting MAN-661`；只能在 MAN-661 落地后用真实 artifact identifier 替换，不能填推测值。
 
-现有 `backend/test-determinism-baseline.json` 有 89 个登记债务行，owner 均为 MAN-662，统一到期日为 2026-09-03；checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。Task 4 首次 Inventory 全项目运行还观测到未改动 SourceLookup EF InMemory 排序一次失败（`ArgumentException: At least one object must implement IComparable`）；单测隔离与未改代码的全项目 rerun 随后通过，因此保留为 flake 边界而不在此修复。既有 bounded solution baseline 在 BusinessGateway 1023/1023 通过、运行 8m41s 后被中断，已完成程序集为零失败且至少 77 个 PostgreSQL 条件测试 skip，但没有最终 solution aggregate；不得把该边界写成 solution green。
+现有 `backend/test-determinism-baseline.json` 有 89 个登记债务行，owner 均为 MAN-662，统一到期日为 2026-09-03；checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
+
+Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
 
 ## MAN-650 迁移状态
 

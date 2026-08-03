@@ -71,4 +71,30 @@ public sealed class TestDiagnosticTests
     {
         Assert.Equal(expected, TestDiagnostic.Sanitize(input));
     }
+
+    [Theory]
+    [InlineData(
+        "password=correct horse battery staple",
+        "password=[REDACTED]")]
+    [InlineData(
+        "secret: first second third; status=visible",
+        "secret: [REDACTED]; status=visible")]
+    [InlineData(
+        "token=alpha beta gamma, status=visible",
+        "token=[REDACTED], status=visible")]
+    [InlineData(
+        "credential=key material with spaces\nstatus=visible",
+        "credential=[REDACTED]\nstatus=visible")]
+    public void Sanitize_RedactsUnquotedSensitiveValuesThroughFieldBoundary(
+        string input,
+        string expected)
+    {
+        var diagnostic = TestDiagnostic.Sanitize(input);
+
+        Assert.Equal(expected, diagnostic);
+        Assert.DoesNotContain("correct horse", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("first second", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("alpha beta", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("key material", diagnostic, StringComparison.Ordinal);
+    }
 }

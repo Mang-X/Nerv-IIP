@@ -24,6 +24,7 @@ $artifactRoot = Join-Path $tempRoot 'evidence'
 $capturePath = Join-Path $tempRoot 'dotnet-invocations.jsonl'
 $scriptLogName = "backend-test-determinism-verifier-test-$caseId"
 $scriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName"
+$raceScriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName-race"
 
 $projects = @(
     'backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj',
@@ -83,7 +84,33 @@ function New-StubbedHarness {
     $harnessScripts = Join-Path $harnessRoot 'scripts'
     $harnessLibrary = Join-Path $harnessScripts 'lib'
     [System.IO.Directory]::CreateDirectory($harnessLibrary) | Out-Null
-    Copy-Item -LiteralPath $verifier -Destination (Join-Path $harnessScripts 'verify-backend-test-determinism.ps1')
+    $harnessVerifier = Join-Path $harnessScripts 'verify-backend-test-determinism.ps1'
+    Copy-Item -LiteralPath $verifier -Destination $harnessVerifier
+
+    # Synchronize two test processes immediately before the production ownership
+    # claim so the same-ID race is deterministic without changing claim behavior.
+    $verifierContent = Get-Content -LiteralPath $harnessVerifier -Raw
+    $claimAnchor = '$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"'
+    $raceBarrier = @'
+if (-not [string]::IsNullOrWhiteSpace($env:NERV_MAN662_RACE_BARRIER)) {
+    if ([string]::IsNullOrWhiteSpace($env:NERV_MAN662_RACE_PARTICIPANT)) {
+        throw 'The verifier race participant ID is required when the barrier is enabled.'
+    }
+    $barrierMarker = "$($env:NERV_MAN662_RACE_BARRIER).$($env:NERV_MAN662_RACE_PARTICIPANT).ready"
+    [System.IO.Directory]::CreateDirectory($barrierMarker) | Out-Null
+    $barrierStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    while (@(Get-ChildItem -Path "$($env:NERV_MAN662_RACE_BARRIER).*.ready" -Directory).Count -lt 2) {
+        if ($barrierStopwatch.Elapsed -gt [TimeSpan]::FromSeconds(10)) {
+            throw 'Timed out waiting for the verifier race barrier.'
+        }
+        Start-Sleep -Milliseconds 10
+    }
+}
+$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"
+'@
+    Assert-True -Condition $verifierContent.Contains($claimAnchor) -Message 'Verifier ownership-claim anchor changed unexpectedly.'
+    $verifierContent = $verifierContent.Replace($claimAnchor, $raceBarrier.TrimEnd())
+    Write-Utf8NoBom -Path $harnessVerifier -Content $verifierContent
 
     $stubHelper = @'
 Set-StrictMode -Version Latest
@@ -263,10 +290,107 @@ function Assert-SixRoundContract {
     }
 }
 
+function Assert-VerifierPreservesCallerLocation {
+    $callerRoot = Join-Path $tempRoot 'caller-location'
+    $existingInvocation = Join-Path $artifactRoot 'cwd-existing'
+    [System.IO.Directory]::CreateDirectory($callerRoot) | Out-Null
+    [System.IO.Directory]::CreateDirectory($existingInvocation) | Out-Null
+
+    Push-Location $callerRoot
+    try {
+        $before = (Get-Location).Path
+        try {
+            & (Join-Path $harnessRoot 'scripts/verify-backend-test-determinism.ps1') `
+                -ArtifactRoot $artifactRoot `
+                -InvocationId 'cwd-existing'
+        }
+        catch {
+            Assert-True -Condition $_.Exception.Message.Contains('already exists') -Message "Expected existing-evidence rejection, got: $($_.Exception.Message)"
+        }
+
+        Assert-Equal -Expected $before -Actual (Get-Location).Path -Message 'Verifier must preserve the caller runspace location when it fails.'
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Assert-SameInvocationRaceHasSingleOwner {
+    $invocationId = 'same-id-race'
+    $barrierPath = Join-Path $tempRoot 'race-barrier.txt'
+    $captureA = Join-Path $tempRoot 'race-a.jsonl'
+    $captureB = Join-Path $tempRoot 'race-b.jsonl'
+    $processes = [System.Collections.Generic.List[object]]::new()
+    $commonArguments = @(
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        (Join-Path $harnessRoot 'scripts/verify-backend-test-determinism.ps1'),
+        '-ArtifactRoot',
+        $artifactRoot,
+        '-InvocationId',
+        $invocationId)
+
+    try {
+        $captures = @($captureA, $captureB)
+        for ($index = 0; $index -lt $captures.Count; $index++) {
+            $capture = $captures[$index]
+            $variables = @{
+                NERV_MAN662_CAPTURE_PATH = $capture
+                NERV_MAN662_FAIL_PROJECT = ''
+                NERV_MAN662_FAIL_SEED = ''
+                NERV_MAN662_RACE_BARRIER = $barrierPath
+                NERV_MAN662_RACE_PARTICIPANT = "participant-$index"
+            }
+            $process = Invoke-WithScopedEnvironment -Variables $variables -ScriptBlock {
+                Start-ManagedBackgroundProcess `
+                    -Command 'pwsh' `
+                    -Arguments $commonArguments `
+                    -WorkingDirectory $harnessRoot `
+                    -Name "$scriptLogName-race"
+            }
+            $processes.Add($process)
+        }
+
+        foreach ($process in $processes) {
+            Assert-True -Condition $process.Process.WaitForExit(60000) -Message "Verifier race process $($process.ProcessId) timed out."
+        }
+
+        $exitCodes = @($processes | ForEach-Object { $_.Process.ExitCode })
+        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -eq 0 }).Count -Message 'Exactly one verifier may own a same-ID invocation.'
+        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -ne 0 }).Count -Message 'The losing same-ID verifier must fail without running projects.'
+
+        $captureCounts = @(
+            foreach ($capture in @($captureA, $captureB)) {
+                if (Test-Path -LiteralPath $capture) {
+                    @(Get-Content -LiteralPath $capture | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+                }
+                else {
+                    0
+                }
+            }
+        )
+        Assert-Equal -Expected '0|24' -Actual (($captureCounts | Sort-Object) -join '|') -Message 'Only the invocation owner may execute the 24 project runs.'
+
+        $summaryPath = Join-Path (Join-Path $artifactRoot $invocationId) 'summary.json'
+        Assert-True -Condition (Test-Path -LiteralPath $summaryPath -PathType Leaf) -Message 'The winning verifier must retain its immutable summary.'
+        Assert-Equal -Expected 6 -Actual @(Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json).Count -Message 'The losing verifier must not corrupt the winning summary.'
+    }
+    finally {
+        foreach ($process in $processes) {
+            & $process.Stop 'Verifier race test cleanup'
+        }
+    }
+}
+
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
 
 try {
     New-StubbedHarness
+
+    Assert-SameInvocationRaceHasSingleOwner
+    Assert-VerifierPreservesCallerLocation
 
     $successful = Invoke-VerifierCase -InvocationId 'success'
     Assert-Equal -Expected 0 -Actual $successful.ExitCode -Message 'Successful six-round verifier run must exit zero.'
@@ -287,8 +411,10 @@ finally {
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }
-    if (Test-Path -LiteralPath $scriptLogRoot) {
-        Remove-Item -LiteralPath $scriptLogRoot -Recurse -Force
+    foreach ($logRoot in @($scriptLogRoot, $raceScriptLogRoot)) {
+        if (Test-Path -LiteralPath $logRoot) {
+            Remove-Item -LiteralPath $logRoot -Recurse -Force
+        }
     }
 }
 

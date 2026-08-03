@@ -368,7 +368,6 @@ function Get-CSharpSanitizedText {
                 $prefixIndex--
             }
             $isInterpolatedString = $prefixIndex -ge 0 -and $characters[$prefixIndex] -eq '$'
-            $interpolationDepth = 0
 
             for ($offset = 0; $offset -lt $quoteCount; $offset++) {
                 if (-not $PreserveStringContent) {
@@ -379,7 +378,7 @@ function Get-CSharpSanitizedText {
 
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ($isInterpolatedString -and $interpolationDepth -eq 0 -and $current -eq '{' -and
+                if ($isInterpolatedString -and $current -eq '{' -and
                     $index + 1 -lt $length -and $characters[$index + 1] -eq '{') {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
@@ -389,42 +388,70 @@ function Get-CSharpSanitizedText {
                     continue
                 }
                 elseif ($isInterpolatedString -and $current -eq '{') {
-                    $interpolationDepth++
-                }
-                elseif ($isInterpolatedString -and $interpolationDepth -gt 0 -and $current -eq '}') {
-                    $interpolationDepth--
-                }
-                elseif ($isInterpolatedString -and $interpolationDepth -gt 0 -and $current -eq '"') {
-                    $nestedVerbatimString = $index -gt 0 -and $characters[$index - 1] -eq '@'
-                    if (-not $PreserveStringContent) {
-                        $characters[$index] = ' '
-                    }
-                    $index++
-                    while ($index -lt $length) {
-                        $nestedCurrent = $characters[$index]
-                        if (-not $PreserveStringContent -and $nestedCurrent -ne "`r" -and $nestedCurrent -ne "`n") {
-                            $characters[$index] = ' '
-                        }
-                        if ($nestedVerbatimString -and $nestedCurrent -eq '"' -and
-                            $index + 1 -lt $length -and $characters[$index + 1] -eq '"') {
-                            $index++
-                            if (-not $PreserveStringContent) {
-                                $characters[$index] = ' '
-                            }
-                        }
-                        elseif (-not $nestedVerbatimString -and $nestedCurrent -eq '\' -and $index + 1 -lt $length) {
-                            $index++
-                            if (-not $PreserveStringContent -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
-                                $characters[$index] = ' '
-                            }
-                        }
-                        elseif ($nestedCurrent -eq '"') {
-                            $index++
+                    $expressionStart = $index + 1
+                    $expressionCloseOffset = -1
+                    $candidateSearchOffset = $expressionStart
+                    while ($candidateSearchOffset -lt $length) {
+                        $candidateClosingIndex = $Text.IndexOf('}', $candidateSearchOffset)
+                        if ($candidateClosingIndex -lt 0) {
                             break
                         }
-                        $index++
+
+                        $candidateLength = $candidateClosingIndex - $expressionStart + 1
+                        $candidateText = $Text.Substring($expressionStart, $candidateLength)
+                        $sanitizedCandidate = if ($PreserveStringContent) {
+                            Get-CSharpSanitizedText -Text $candidateText -PreserveStringContent
+                        }
+                        else {
+                            Get-CSharpSanitizedText -Text $candidateText
+                        }
+
+                        $nestedBraceDepth = 0
+                        for ($expressionCursor = 0; $expressionCursor -lt $sanitizedCandidate.Length; $expressionCursor++) {
+                            if ($sanitizedCandidate[$expressionCursor] -eq '{') {
+                                $nestedBraceDepth++
+                                continue
+                            }
+                            if ($sanitizedCandidate[$expressionCursor] -ne '}') {
+                                continue
+                            }
+                            if ($nestedBraceDepth -gt 0) {
+                                $nestedBraceDepth--
+                                continue
+                            }
+
+                            $expressionCloseOffset = $expressionCursor
+                            break
+                        }
+                        if ($expressionCloseOffset -ge 0) {
+                            break
+                        }
+                        $candidateSearchOffset = $candidateClosingIndex + 1
                     }
-                    continue
+
+                    if ($expressionCloseOffset -ge 0) {
+                        if (-not $PreserveStringContent) {
+                            $characters[$index] = ' '
+                        }
+
+                        $expressionText = $Text.Substring($expressionStart, $expressionCloseOffset)
+                        $sanitizedExpression = if ($PreserveStringContent) {
+                            Get-CSharpSanitizedText -Text $expressionText -PreserveStringContent
+                        }
+                        else {
+                            Get-CSharpSanitizedText -Text $expressionText
+                        }
+                        for ($offset = 0; $offset -lt $expressionCloseOffset; $offset++) {
+                            $characters[$expressionStart + $offset] = $sanitizedExpression[$offset]
+                        }
+
+                        $expressionClosingIndex = $expressionStart + $expressionCloseOffset
+                        if (-not $PreserveStringContent) {
+                            $characters[$expressionClosingIndex] = ' '
+                        }
+                        $index = $expressionClosingIndex + 1
+                        continue
+                    }
                 }
                 elseif ($isVerbatimString -and $current -eq '"' -and $index + 1 -lt $length -and $characters[$index + 1] -eq '"') {
                     if (-not $PreserveStringContent) {
@@ -434,7 +461,7 @@ function Get-CSharpSanitizedText {
                     $index += 2
                     continue
                 }
-                elseif ($current -eq '"' -and $interpolationDepth -eq 0) {
+                elseif ($current -eq '"') {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                     }

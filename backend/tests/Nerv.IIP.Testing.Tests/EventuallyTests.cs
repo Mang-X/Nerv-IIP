@@ -49,7 +49,7 @@ public sealed class EventuallyTests
         var timeProvider = new FakeTimeProvider();
         var attempts = 0;
         var wait = Eventually.WaitAsync(
-            $"inventory token={secret} is posted",
+            $"inventory token={secret}; state=is posted",
             _ => ValueTask.FromResult(++attempts),
             _ => false,
             observation => $"attempt={observation}; password={secret}",
@@ -67,7 +67,7 @@ public sealed class EventuallyTests
         }
 
         var exception = await Assert.ThrowsAsync<EventuallyTimeoutException>(() => wait);
-        Assert.Equal("inventory token=[REDACTED] is posted", exception.Condition);
+        Assert.Equal("inventory token=[REDACTED]; state=is posted", exception.Condition);
         Assert.Equal(4, exception.Attempts);
         Assert.Equal(TimeSpan.FromSeconds(20), exception.Elapsed);
         Assert.Equal("attempt=4; password=[REDACTED]", exception.LastObservation);

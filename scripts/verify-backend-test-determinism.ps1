@@ -28,7 +28,6 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
 
 if ($InvocationId -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
@@ -44,6 +43,30 @@ else {
 $invocationRoot = Join-Path $effectiveArtifactRoot $InvocationId
 if (Test-Path -LiteralPath $invocationRoot) {
     throw "Evidence invocation '$InvocationId' already exists at $invocationRoot. Use a new invocation ID; reruns never replace prior evidence."
+}
+[System.IO.Directory]::CreateDirectory($effectiveArtifactRoot) | Out-Null
+$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"
+$claimStream = $null
+try {
+    $claimStream = [System.IO.FileStream]::new(
+        $claimPath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::Read)
+    $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
+    $claimStream.Write($claimBytes, 0, $claimBytes.Length)
+    $claimStream.Flush($true)
+}
+catch [System.IO.IOException] {
+    if (Test-Path -LiteralPath $claimPath -PathType Leaf) {
+        throw "Evidence invocation '$InvocationId' is already claimed at $claimPath. Use a new invocation ID; reruns never replace prior evidence."
+    }
+    throw
+}
+finally {
+    if ($null -ne $claimStream) {
+        $claimStream.Dispose()
+    }
 }
 [System.IO.Directory]::CreateDirectory($invocationRoot) | Out-Null
 

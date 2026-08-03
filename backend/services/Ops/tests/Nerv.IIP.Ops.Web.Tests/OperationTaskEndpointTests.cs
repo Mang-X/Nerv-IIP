@@ -60,15 +60,13 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_task_can_be_created_dispatched_and_completed()
     {
-        var client = CreateInternalServiceClient(factory);
-        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", "connector-host-001");
-        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
-        client.DefaultRequestHeaders.Add("X-Organization-Id", "org-001");
-        client.DefaultRequestHeaders.Add("X-Environment-Id", "env-dev");
+        const string organizationId = "org-operation-lifecycle";
+        const string environmentId = "env-operation-lifecycle";
+        var client = CreateAuthorizedClient(organizationId, environmentId);
 
         var createRequest = new CreateOperationTaskRequest(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             "docker-container-local-demo-001",
             "lifecycle.restart",
             "idem-restart-001",
@@ -86,14 +84,12 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Contains(createdTask.AuditRecords, x => x.Action == "operation.requested");
 
         var pendingResponse = await client.GetAsync(
-            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+            $"/api/ops/v1/operation-tasks/pending?organizationId={organizationId}&environmentId={environmentId}&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
         var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingResponse);
         Assert.NotNull(pending);
-        var dispatch = Assert.Single(
-            pending.Items,
-            item => item.OperationTaskId == createdTask.OperationTaskId);
+        var dispatch = Assert.Single(pending.Items);
         Assert.Equal(createdTask.OperationTaskId, dispatch.OperationTaskId);
         Assert.Equal(createRequest.OrganizationId, dispatch.OrganizationId);
         Assert.Equal(createRequest.EnvironmentId, dispatch.EnvironmentId);

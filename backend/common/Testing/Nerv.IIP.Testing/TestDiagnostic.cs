@@ -47,7 +47,7 @@ public static partial class TestDiagnostic
     private static partial Regex RequestMaterialRegex();
 
     [GeneratedRegex(
-        @"(?<key>password|secret|token|credential|apikey|api_key)(?<separator>\s*[:=]\s*)(?<value>""[^""]*""|'[^']*'|[^\s,;]+)",
+        @"(?<key>password|secret|token|credential|apikey|api_key)(?<separator>\s*[:=]\s*)(?<value>""[^""]*""|'[^']*'|[^,;\r\n]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SensitiveKeyRegex();
 }

@@ -95,10 +95,8 @@ public sealed class CapTestHostTests
 
         await Task.Yield();
         timeProvider.Advance(TimeSpan.FromSeconds(20));
-        await Task.Yield();
 
-        Assert.True(wait.IsCompletedSuccessfully);
-        await wait;
+        await wait.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     private sealed class FakeBootstrapper(Func<CancellationToken, Task> bootstrap) :
