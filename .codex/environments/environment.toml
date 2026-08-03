@@ -4,9 +4,30 @@ name = "Nerv-IIP"
 
 [setup]
 script = '''
-cd "$CODEX_WORKTREE_PATH"
-npx skills experimental_install
-pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false
+set -eu
+
+worktree_root="$CODEX_WORKTREE_PATH"
+common_git_dir="$(git -C "$worktree_root" rev-parse --path-format=absolute --git-common-dir)"
+main_root="$(dirname "$common_git_dir")"
+
+if [ ! -d "$main_root/.agents/skills" ]; then
+  (
+    cd "$main_root"
+    npx skills experimental_install
+  )
+fi
+
+if [ "$worktree_root" != "$main_root" ]; then
+  mkdir -p "$worktree_root/.agents/skills"
+  cp -R "$main_root/.agents/skills/." "$worktree_root/.agents/skills/"
+fi
+
+(
+  cd "$worktree_root/frontend"
+  pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+)
+
+cd "$worktree_root"
 dotnet restore backend/Nerv.IIP.sln
 dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln
 '''
@@ -19,7 +40,7 @@ command = "npx skills experimental_install"
 [[actions]]
 name = "安装前端依赖"
 icon = "tool"
-command = "pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false"
+command = "cd frontend && pnpm install --frozen-lockfile --config.confirmModulesPurge=false"
 
 [[actions]]
 name = "后端测试"
