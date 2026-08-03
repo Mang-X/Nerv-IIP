@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -16,6 +18,14 @@ public sealed class OpsConnectorCredentialOptions
     public DateTimeOffset? ValidFromUtc { get; init; }
     public DateTimeOffset? ValidToUtc { get; init; }
     public bool Revoked { get; init; }
+}
+
+public sealed class OpsIamClientOptions
+{
+    public const string SectionName = "Ops:IamClient";
+
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromMilliseconds(250);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromMilliseconds(500);
 }
 
 public sealed record OpsConnectorCredentialValidationRequest(
@@ -134,15 +144,33 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning(
-                    "ConnectorCredentialValidationIamFailure StatusCode={StatusCode}",
-                    (int)response.StatusCode);
+                LogFailure("business-response", (int)response.StatusCode);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
             }
 
-            var principal = await response.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>(cancellationToken);
-            if (principal is null)
+            ConnectorPrincipalResponse? principal;
+            try
             {
+                principal = await response.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>(cancellationToken);
+            }
+            catch (JsonException)
+            {
+                LogFailure("invalid-response", (int)response.StatusCode);
+                return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
+            }
+            catch (NotSupportedException)
+            {
+                LogFailure("invalid-response", (int)response.StatusCode);
+                return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
+            }
+
+            if (principal is null
+                || string.IsNullOrWhiteSpace(principal.PrincipalType)
+                || string.IsNullOrWhiteSpace(principal.OrganizationId)
+                || string.IsNullOrWhiteSpace(principal.EnvironmentId)
+                || string.IsNullOrWhiteSpace(principal.ConnectorHostId))
+            {
+                LogFailure("invalid-response", (int)response.StatusCode);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
             }
 
@@ -152,20 +180,61 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
                 principal.EnvironmentId,
                 principal.ConnectorHostId);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (HttpRequestException ex)
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
+            LogFailure(ClassifyTransportFailure(ex), null);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
-        catch (TaskCanceledException ex)
+        catch (OperationCanceledException)
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
+            LogFailure("request-timeout", null);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
+    }
+
+    private void LogFailure(string failureKind, int? statusCode)
+    {
+        logger.LogWarning(
+            "ConnectorCredentialValidationIamFailure FailureKind={FailureKind} StatusCode={StatusCode}",
+            failureKind,
+            statusCode);
+    }
+
+    private static string ClassifyTransportFailure(HttpRequestException exception)
+    {
+        if (exception.HttpRequestError == HttpRequestError.NameResolutionError)
+        {
+            return "dns";
+        }
+
+        if (exception.HttpRequestError == HttpRequestError.ConnectionError
+            && FindSocketException(exception) is { SocketErrorCode: SocketError.ConnectionRefused })
+        {
+            return "connection-refused";
+        }
+
+        return "transport-error";
+    }
+
+    private static SocketException? FindSocketException(Exception exception)
+    {
+        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is SocketException socketException)
+            {
+                return socketException;
+            }
+        }
+
+        return null;
     }
 
     private sealed record ValidateConnectorCredentialRequest(string ConnectorHostId, string Secret);

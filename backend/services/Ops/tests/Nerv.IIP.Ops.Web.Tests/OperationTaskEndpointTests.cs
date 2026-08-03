@@ -14,6 +14,7 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
+using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.ServiceAuth;
 
@@ -353,27 +354,37 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Production_does_not_accept_development_fake_connector_credential()
     {
-        await using var productionFactory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:BaseUrl", "http://127.0.0.1:1");
-                builder.UseSetting("InternalService:BearerToken", "production-internal-token");
-                builder.UseSetting("Persistence:Provider", "PostgreSQL");
-                builder.UseSetting(
-                    "ConnectionStrings:OpsDb",
-                    "Host=127.0.0.1;Port=1;Database=ops_test;Username=ops_test");
-                builder.UseSetting("Messaging:Provider", "RabbitMQ");
-                builder.UseSetting("RabbitMQ:HostName", "127.0.0.1");
-                builder.UseSetting("RabbitMQ:Port", "1");
-            });
-        var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
-        AddConnectorHeaders(client, "local-connector-secret");
+        var options = new FixedOptionsMonitor<OpsConnectorCredentialOptions>(new()
+        {
+            Secret = "local-connector-secret"
+        });
+        var configuredValidator = new ConfiguredOpsConnectorCredentialValidator(options);
+        using var handler = new ScriptedHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://iam.test")
+        };
+        var iamValidator = new IamOpsConnectorCredentialValidator(
+            httpClient,
+            new RecordingLogger<IamOpsConnectorCredentialValidator>());
+        var validator = new OpsConnectorCredentialValidator(
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            options,
+            configuredValidator,
+            iamValidator);
 
-        var response = await client.GetAsync(
-            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+        var result = await validator.ValidateAsync(
+            new OpsConnectorCredentialValidationRequest(
+                "connector-host-001",
+                "local-connector-secret",
+                "org-001",
+                "env-dev",
+                "ops.operation-tasks.execute"),
+            CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-rejected", result.Reason);
     }
 
     [Fact]
