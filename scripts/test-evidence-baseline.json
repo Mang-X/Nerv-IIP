@@ -1,0 +1,605 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "MAN-661-v1",
+  "granularity": "project",
+  "owner": "Nerv-IIP Platform CI/Test Governance",
+  "generatedAtUtc": "2026-08-03T16:18:39.8225310Z",
+  "source": {
+    "kind": "github-console",
+    "repository": "Mang-X/Nerv-IIP",
+    "workflowRunId": "30819675007",
+    "runAttempt": 1,
+    "jobId": "91706113150",
+    "commitSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
+    "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/30819675007",
+    "event": "push",
+    "headBranch": "main",
+    "conclusion": "success",
+    "jobConclusion": "success",
+    "runnerOs": "Linux",
+    "runnerImage": "ubuntu-latest",
+    "dotnetSdk": "10.0.x",
+    "selectedLanes": [
+      "backend"
+    ],
+    "generatorCommand": "pwsh scripts/generate-test-evidence-baseline.ps1 -Repository Mang-X/Nerv-IIP -GitHubRunId 30819675007 -GitHubJobId 91706113150 -OutputPath scripts/test-evidence-baseline.json"
+  },
+  "assemblies": [
+    {
+      "assembly": "Nerv.IIP.AppHub.Domain.Tests.dll",
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 35,
+      "total": 35,
+      "durationMilliseconds": 95.0
+    },
+    {
+      "assembly": "Nerv.IIP.AppHub.Web.Tests.dll",
+      "passed": 64,
+      "failed": 0,
+      "skipped": 1,
+      "executed": 64,
+      "total": 65,
+      "durationMilliseconds": 3000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Acceptance.Tests.dll",
+      "passed": 74,
+      "failed": 0,
+      "skipped": 3,
+      "executed": 74,
+      "total": 77,
+      "durationMilliseconds": 3000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Approval.Domain.Tests.dll",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 30,
+      "total": 30,
+      "durationMilliseconds": 301.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Approval.Web.Tests.dll",
+      "passed": 83,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 83,
+      "total": 83,
+      "durationMilliseconds": 3000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.BarcodeLabel.Domain.Tests.dll",
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 38,
+      "total": 38,
+      "durationMilliseconds": 148.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.BarcodeLabel.Web.Tests.dll",
+      "passed": 56,
+      "failed": 0,
+      "skipped": 2,
+      "executed": 56,
+      "total": 58,
+      "durationMilliseconds": 2000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.DemandPlanning.Domain.Tests.dll",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 18,
+      "total": 18,
+      "durationMilliseconds": 132.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.DemandPlanning.Web.Tests.dll",
+      "passed": 142,
+      "failed": 0,
+      "skipped": 5,
+      "executed": 142,
+      "total": 147,
+      "durationMilliseconds": 5000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Erp.Domain.Tests.dll",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 51,
+      "total": 51,
+      "durationMilliseconds": 296.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Erp.Web.Tests.dll",
+      "passed": 245,
+      "failed": 0,
+      "skipped": 7,
+      "executed": 245,
+      "total": 252,
+      "durationMilliseconds": 7000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.FullChain.Tests.dll",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 5,
+      "executed": 10,
+      "total": 15,
+      "durationMilliseconds": 28000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.dll",
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 86,
+      "total": 86,
+      "durationMilliseconds": 259.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.dll",
+      "passed": 240,
+      "failed": 0,
+      "skipped": 8,
+      "executed": 240,
+      "total": 248,
+      "durationMilliseconds": 84000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Inventory.Domain.Tests.dll",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 26,
+      "total": 26,
+      "durationMilliseconds": 134.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Inventory.Web.Tests.dll",
+      "passed": 231,
+      "failed": 0,
+      "skipped": 2,
+      "executed": 231,
+      "total": 233,
+      "durationMilliseconds": 51000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Maintenance.Domain.Tests.dll",
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 34,
+      "total": 34,
+      "durationMilliseconds": 459.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Maintenance.Web.Tests.dll",
+      "passed": 243,
+      "failed": 0,
+      "skipped": 2,
+      "executed": 243,
+      "total": 245,
+      "durationMilliseconds": 8000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.MasterData.Domain.Tests.dll",
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 39,
+      "total": 39,
+      "durationMilliseconds": 172.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.MasterData.Web.Tests.dll",
+      "passed": 206,
+      "failed": 0,
+      "skipped": 6,
+      "executed": 206,
+      "total": 212,
+      "durationMilliseconds": 11000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Mes.Domain.Tests.dll",
+      "passed": 46,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 46,
+      "total": 46,
+      "durationMilliseconds": 232.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Mes.Web.Tests.dll",
+      "passed": 550,
+      "failed": 0,
+      "skipped": 13,
+      "executed": 550,
+      "total": 563,
+      "durationMilliseconds": 21000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Performance.Tests.dll",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 4,
+      "executed": 12,
+      "total": 16,
+      "durationMilliseconds": 207.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.ProductEngineering.Domain.Tests.dll",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 16,
+      "total": 16,
+      "durationMilliseconds": 209.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.ProductEngineering.Web.Tests.dll",
+      "passed": 172,
+      "failed": 0,
+      "skipped": 1,
+      "executed": 172,
+      "total": 173,
+      "durationMilliseconds": 5000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Quality.Domain.Tests.dll",
+      "passed": 80,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 80,
+      "total": 80,
+      "durationMilliseconds": 251.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Quality.Web.Tests.dll",
+      "passed": 239,
+      "failed": 0,
+      "skipped": 9,
+      "executed": 239,
+      "total": 248,
+      "durationMilliseconds": 13000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Scheduling.Domain.Tests.dll",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 36,
+      "total": 36,
+      "durationMilliseconds": 154.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Scheduling.Web.Tests.dll",
+      "passed": 328,
+      "failed": 0,
+      "skipped": 6,
+      "executed": 328,
+      "total": 334,
+      "durationMilliseconds": 4000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Wms.Domain.Tests.dll",
+      "passed": 60,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 60,
+      "total": 60,
+      "durationMilliseconds": 194.0
+    },
+    {
+      "assembly": "Nerv.IIP.Business.Wms.Web.Tests.dll",
+      "passed": 295,
+      "failed": 0,
+      "skipped": 10,
+      "executed": 295,
+      "total": 305,
+      "durationMilliseconds": 75000.0
+    },
+    {
+      "assembly": "Nerv.IIP.BusinessGateway.Web.Tests.dll",
+      "passed": 1023,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 1023,
+      "total": 1023,
+      "durationMilliseconds": 822000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Coding.Tests.dll",
+      "passed": 59,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 59,
+      "total": 59,
+      "durationMilliseconds": 167.0
+    },
+    {
+      "assembly": "Nerv.IIP.ContractBoundary.Tests.dll",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 4,
+      "total": 4,
+      "durationMilliseconds": 49.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.AppHubQueries.Tests.dll",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 2,
+      "total": 2,
+      "durationMilliseconds": 164.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.ConnectorProtocol.Tests.dll",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 1,
+      "total": 1,
+      "durationMilliseconds": 149.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.EquipmentRuntime.Tests.dll",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 10,
+      "total": 10,
+      "durationMilliseconds": 260.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.FileStorage.Tests.dll",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 6,
+      "total": 6,
+      "durationMilliseconds": 114.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.IntegrationEvents.Tests.dll",
+      "passed": 209,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 209,
+      "total": 209,
+      "durationMilliseconds": 88.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.MasterData.Tests.dll",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 2,
+      "total": 2,
+      "durationMilliseconds": 66.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.Notification.Tests.dll",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 1,
+      "total": 1,
+      "durationMilliseconds": 79.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.Ops.Tests.dll",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 18,
+      "total": 18,
+      "durationMilliseconds": 248.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.ProductEngineering.Tests.dll",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 3,
+      "total": 3,
+      "durationMilliseconds": 81.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.Quality.Tests.dll",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 2,
+      "total": 2,
+      "durationMilliseconds": 231.0
+    },
+    {
+      "assembly": "Nerv.IIP.Contracts.Scheduling.Tests.dll",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 3,
+      "total": 3,
+      "durationMilliseconds": 461.0
+    },
+    {
+      "assembly": "Nerv.IIP.FacadeCoverage.Tests.dll",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 9,
+      "total": 9,
+      "durationMilliseconds": 205.0
+    },
+    {
+      "assembly": "Nerv.IIP.FastEndpoints.Architecture.Tests.dll",
+      "passed": 84,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 84,
+      "total": 84,
+      "durationMilliseconds": 564.0
+    },
+    {
+      "assembly": "Nerv.IIP.FileStorage.Web.Tests.dll",
+      "passed": 64,
+      "failed": 0,
+      "skipped": 1,
+      "executed": 64,
+      "total": 65,
+      "durationMilliseconds": 8000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Iam.Web.Tests.dll",
+      "passed": 116,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 116,
+      "total": 116,
+      "durationMilliseconds": 15000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Localization.Tests.dll",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 1,
+      "total": 1,
+      "durationMilliseconds": 307.0
+    },
+    {
+      "assembly": "Nerv.IIP.Messaging.CAP.Tests.dll",
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 29,
+      "total": 29,
+      "durationMilliseconds": 2000.0
+    },
+    {
+      "assembly": "Nerv.IIP.MigrationGovernance.Tests.dll",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 1,
+      "total": 1,
+      "durationMilliseconds": 2000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Notification.Domain.Tests.dll",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 19,
+      "total": 19,
+      "durationMilliseconds": 201.0
+    },
+    {
+      "assembly": "Nerv.IIP.Notification.Web.Tests.dll",
+      "passed": 95,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 95,
+      "total": 95,
+      "durationMilliseconds": 9000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Observability.Tests.dll",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 15,
+      "total": 15,
+      "durationMilliseconds": 449.0
+    },
+    {
+      "assembly": "Nerv.IIP.Ops.Domain.Tests.dll",
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 28,
+      "total": 28,
+      "durationMilliseconds": 290.0
+    },
+    {
+      "assembly": "Nerv.IIP.Ops.Web.Tests.dll",
+      "passed": 55,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 55,
+      "total": 55,
+      "durationMilliseconds": 14000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Persistence.Tests.dll",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 16,
+      "total": 16,
+      "durationMilliseconds": 82.0
+    },
+    {
+      "assembly": "Nerv.IIP.PlatformGateway.Web.Tests.dll",
+      "passed": 96,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 96,
+      "total": 96,
+      "durationMilliseconds": 11000.0
+    },
+    {
+      "assembly": "Nerv.IIP.Sdk.Core.Tests.dll",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 7,
+      "total": 7,
+      "durationMilliseconds": 112.0
+    },
+    {
+      "assembly": "Nerv.IIP.Sdk.Notification.Tests.dll",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 4,
+      "total": 4,
+      "durationMilliseconds": 217.0
+    },
+    {
+      "assembly": "Nerv.IIP.Sdk.Observability.Tests.dll",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 3,
+      "total": 3,
+      "durationMilliseconds": 41.0
+    },
+    {
+      "assembly": "Nerv.IIP.ServiceAuth.Tests.dll",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 14,
+      "total": 14,
+      "durationMilliseconds": 95.0
+    },
+    {
+      "assembly": "Nerv.IIP.Testing.PostgreSql.Tests.dll",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 2,
+      "executed": 13,
+      "total": 15,
+      "durationMilliseconds": 426.0
+    }
+  ]
+}

@@ -459,3 +459,83 @@ function Write-NervTestEvidenceArtifacts {
         throw
     }
 }
+
+function ConvertFrom-NervDotNetConsoleSummary {
+    param(
+        [Parameter(Mandatory)] [string] $Text,
+        [Parameter(Mandatory)] [object] $RunMetadata
+    )
+
+    $pattern = '(?im)^.*?(?:Passed|Failed)!\s*-\s*Failed:\s*(?<failed>\d+),\s*Passed:\s*(?<passed>\d+),\s*Skipped:\s*(?<skipped>\d+),\s*Total:\s*(?<total>\d+),\s*Duration:\s*(?:(?<minutes>\d+)\s*m\s*)?(?<value>\d+(?:\.\d+)?)\s*(?<unit>ms|s)\s*-\s*(?<assembly>[^\s]+\.dll)\s*\('
+    $matches = [regex]::Matches($Text, $pattern)
+    if ($matches.Count -eq 0) { throw 'No unambiguous dotnet test project summaries were found.' }
+    $assemblies = foreach ($match in $matches) {
+        $minutes = if ($match.Groups['minutes'].Success) { [double]$match.Groups['minutes'].Value } else { 0.0 }
+        $tailMilliseconds = if ($match.Groups['unit'].Value -ceq 'ms') { [double]$match.Groups['value'].Value } else { [double]$match.Groups['value'].Value * 1000.0 }
+        [pscustomobject][ordered]@{
+            assembly = $match.Groups['assembly'].Value
+            passed = [int]$match.Groups['passed'].Value
+            failed = [int]$match.Groups['failed'].Value
+            skipped = [int]$match.Groups['skipped'].Value
+            executed = [int]$match.Groups['passed'].Value + [int]$match.Groups['failed'].Value
+            total = [int]$match.Groups['total'].Value
+            durationMilliseconds = [double]($minutes * 60000.0 + $tailMilliseconds)
+        }
+    }
+    $duplicates = @($assemblies | Group-Object assembly | Where-Object Count -gt 1)
+    if ($duplicates.Count -gt 0) { throw "Ambiguous console summaries for assembly '$($duplicates[0].Name)'." }
+    [pscustomobject][ordered]@{
+        schemaVersion = 1
+        granularity = 'project'
+        lane = 'backend'
+        assemblies = @($assemblies | Sort-Object assembly)
+    }
+}
+
+function New-NervTestEvidenceBaseline {
+    param(
+        [Parameter(Mandatory)] [object[]] $Summaries,
+        [Parameter(Mandatory)] [object] $SourceMetadata,
+        [Parameter(Mandatory)] [DateTimeOffset] $GeneratedAtUtc
+    )
+
+    $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object assembly | Sort-Object Name | ForEach-Object {
+        $items = @($_.Group)
+        [pscustomobject][ordered]@{
+            assembly = $_.Name
+            passed = [int](($items | Measure-Object passed -Sum).Sum)
+            failed = [int](($items | Measure-Object failed -Sum).Sum)
+            skipped = [int](($items | Measure-Object skipped -Sum).Sum)
+            executed = [int](($items | Measure-Object executed -Sum).Sum)
+            total = [int](($items | Measure-Object total -Sum).Sum)
+            durationMilliseconds = [double](($items | Measure-Object durationMilliseconds -Sum).Sum)
+        }
+    })
+    $granularities = @($Summaries.granularity | Sort-Object -Unique)
+    [pscustomobject][ordered]@{
+        schemaVersion = 1
+        toolVersion = 'MAN-661-v1'
+        granularity = if ($granularities.Count -eq 1) { $granularities[0] } else { 'mixed' }
+        owner = 'Nerv-IIP Platform CI/Test Governance'
+        generatedAtUtc = $GeneratedAtUtc.UtcDateTime.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        source = [pscustomobject][ordered]@{
+            kind = if ($SourceMetadata.ContainsKey('sourceKind')) { [string]$SourceMetadata.sourceKind } else { 'github-console' }
+            repository = if ($SourceMetadata.ContainsKey('repository')) { [string]$SourceMetadata.repository } else { 'Mang-X/Nerv-IIP' }
+            workflowRunId = [string]$SourceMetadata.workflowRunId
+            runAttempt = [int]$SourceMetadata.runAttempt
+            jobId = [string]$SourceMetadata.jobId
+            commitSha = [string]$SourceMetadata.commitSha
+            sourceUrl = [string]$SourceMetadata.sourceUrl
+            event = [string]$SourceMetadata.event
+            headBranch = [string]$SourceMetadata.headBranch
+            conclusion = [string]$SourceMetadata.conclusion
+            jobConclusion = [string]$SourceMetadata.jobConclusion
+            runnerOs = [string]$SourceMetadata.runnerOs
+            runnerImage = [string]$SourceMetadata.runnerImage
+            dotnetSdk = [string]$SourceMetadata.dotnetSdk
+            selectedLanes = @($SourceMetadata.selectedLanes)
+            generatorCommand = [string]$SourceMetadata.generatorCommand
+        }
+        assemblies = $assemblies
+    }
+}
