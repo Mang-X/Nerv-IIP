@@ -17,6 +17,38 @@ jobs:
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - backend-test-shard-governance
+      - backend-tests-business-gateway
+      - backend-tests-platform
+      - backend-tests-business-core-a
+      - backend-tests-business-core-b
+    steps:
+      - name: Require all backend fast shards
+        run: |
+          test "${{ needs.backend-test-shard-governance.result }}" = "success"
+          test "${{ needs.backend-tests-business-gateway.result }}" = "success"
+          test "${{ needs.backend-tests-platform.result }}" = "success"
+          test "${{ needs.backend-tests-business-core-a.result }}" = "success"
+          test "${{ needs.backend-tests-business-core-b.result }}" = "success"
+
+  backend-test-shard-governance:
+    name: Backend Test Shard Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate backend test shard classification
+        shell: pwsh
+        run: |
+          ./scripts/verify-backend-test-shards.ps1
+          ./scripts/tests/backend-test-shards.Tests.ps1
+
+  backend-tests-business-gateway:
+    name: Backend Tests - BusinessGateway
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,8 +66,125 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test backend solution
-        run: dotnet test backend/Nerv.IIP.sln --configuration Release
+      - name: Test BusinessGateway shard
+        run: |
+          mkdir -p TestResults/backend-tests-business-gateway
+          set -o pipefail
+          dotnet test backend/ci/backend-tests-business-gateway.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-gateway.trx" --results-directory TestResults/backend-tests-business-gateway 2>&1 | tee TestResults/backend-tests-business-gateway/backend-tests-business-gateway.log
+
+      - name: Upload BusinessGateway shard diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-business-gateway-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend-tests-business-gateway
+          if-no-files-found: warn
+          retention-days: 7
+
+  backend-tests-platform:
+    name: Backend Tests - Platform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Test platform shard
+        run: |
+          mkdir -p TestResults/backend-tests-platform
+          set -o pipefail
+          dotnet test backend/ci/backend-tests-platform.slnf --configuration Release --logger "trx;LogFileName=backend-tests-platform.trx" --results-directory TestResults/backend-tests-platform 2>&1 | tee TestResults/backend-tests-platform/backend-tests-platform.log
+
+      - name: Upload platform shard diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-platform-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend-tests-platform
+          if-no-files-found: warn
+          retention-days: 7
+
+  backend-tests-business-core-a:
+    name: Backend Tests - Business Core A
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Test business core A shard
+        run: |
+          mkdir -p TestResults/backend-tests-business-core-a
+          set -o pipefail
+          dotnet test backend/ci/backend-tests-business-core-a.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-core-a.trx" --results-directory TestResults/backend-tests-business-core-a 2>&1 | tee TestResults/backend-tests-business-core-a/backend-tests-business-core-a.log
+
+      - name: Upload business core A shard diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-business-core-a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend-tests-business-core-a
+          if-no-files-found: warn
+          retention-days: 7
+
+  backend-tests-business-core-b:
+    name: Backend Tests - Business Core B
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Test business core B shard
+        run: |
+          mkdir -p TestResults/backend-tests-business-core-b
+          set -o pipefail
+          dotnet test backend/ci/backend-tests-business-core-b.slnf --configuration Release --logger "trx;LogFileName=backend-tests-business-core-b.trx" --results-directory TestResults/backend-tests-business-core-b 2>&1 | tee TestResults/backend-tests-business-core-b/backend-tests-business-core-b.log
+
+      - name: Upload business core B shard diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-business-core-b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: TestResults/backend-tests-business-core-b
+          if-no-files-found: warn
+          retention-days: 7
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
