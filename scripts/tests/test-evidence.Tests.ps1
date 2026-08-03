@@ -131,4 +131,66 @@ $baselineA = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadat
 $baselineB = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal ($baselineA | ConvertTo-Json -Depth 100) ($baselineB | ConvertTo-Json -Depth 100) 'Baseline generation must be deterministic.'
 
+$collectorRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-collector-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $collector = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
+    $successOut = Join-Path $collectorRoot 'success'
+    $successRaw = Join-Path $collectorRoot 'success-raw'
+    [IO.Directory]::CreateDirectory($successRaw) | Out-Null
+    Copy-Item (Join-Path $fixtures 'connector-results.trx') $successRaw
+    Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
+        '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
+        '-OutputDirectory', $successOut, '-WorkflowRunId', 'fixture-success', '-RunAttempt', '1',
+        '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+        '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+    ) | Out-Null
+    foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) { Assert-True (Test-Path (Join-Path $successOut $required)) "Collector missing '$required'." }
+
+    $badRaw = Join-Path $collectorRoot 'bad-raw'
+    [IO.Directory]::CreateDirectory($badRaw) | Out-Null
+    Copy-Item (Join-Path $fixtures 'unregistered-skip.trx') $badRaw
+    $badFailed = $false
+    try {
+        Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-unregistered' -Arguments @(
+            '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $badRaw,
+            '-OutputDirectory', (Join-Path $collectorRoot 'bad'), '-WorkflowRunId', 'fixture-bad', '-RunAttempt', '1',
+            '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
+        ) | Out-Null
+    }
+    catch { $badFailed = $true }
+    Assert-True $badFailed 'Unregistered runtime skip must exit nonzero.'
+    Assert-True (Test-Path (Join-Path $collectorRoot 'bad/summary.json')) 'Violation collection must retain its summary.'
+
+    $postgresRaw = Join-Path $collectorRoot 'postgres-raw'
+    [IO.Directory]::CreateDirectory($postgresRaw) | Out-Null
+    Copy-Item (Join-Path $fixtures 'postgres-all-skipped.trx') $postgresRaw
+    $postgresFailed = $false
+    try {
+        Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-zero' -Arguments @(
+            '-Lane', 'postgres', '-SelectedLanes', 'postgres', '-ResultsDirectory', $postgresRaw,
+            '-OutputDirectory', (Join-Path $collectorRoot 'postgres'), '-WorkflowRunId', 'fixture-postgres', '-RunAttempt', '1',
+            '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
+        ) | Out-Null
+    }
+    catch { $postgresFailed = $true }
+    Assert-True $postgresFailed 'All-skipped real dependency lane must exit nonzero.'
+    Assert-True ((Get-Content (Join-Path $collectorRoot 'postgres/summary.json') -Raw).Contains('zero-execution')) 'Zero-execution summary is missing.'
+
+    $rerunRaw = Join-Path $collectorRoot 'rerun-raw'
+    [IO.Directory]::CreateDirectory($rerunRaw) | Out-Null
+    Copy-Item (Join-Path $fixtures 'connector-results.trx') $rerunRaw
+    $rerunOut = Join-Path $collectorRoot 'rerun'
+    Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-rerun' -Arguments @(
+        '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $rerunRaw,
+        '-OutputDirectory', $rerunOut, '-WorkflowRunId', 'fixture-rerun', '-RunAttempt', '2',
+        '-CommitSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux', '-PriorAttemptOutcome', 'failure'
+    ) | Out-Null
+    Assert-True ((Get-Content (Join-Path $rerunOut 'summary.md') -Raw).Contains('recovered-after-rerun')) 'Recovered rerun must be report-only and successful.'
+    Assert-True (-not (Test-Path (Join-Path $successOut 'backend-results.trx'))) 'Collector must not copy raw result paths.'
+}
+finally {
+    if (Test-Path $collectorRoot) { Remove-Item $collectorRoot -Recurse -Force }
+}
+
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."

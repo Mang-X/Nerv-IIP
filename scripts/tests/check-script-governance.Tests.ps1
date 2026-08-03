@@ -117,6 +117,8 @@ Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
 
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
 
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-script-governance-$([System.Guid]::NewGuid().ToString('N'))"
 try {

@@ -861,7 +861,7 @@
       "sourceId": "performance-baseline",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.ErpPerformanceBaselineTests\\.Erp_sales_order_list_high_read_baseline_outputs_elapsed_rows_scenario_and_profile$",
-      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'erp' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'erp' performance baseline\\.)$",
+      "reasonPattern": "^(?:Set NERV_IIP_PERF_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'erp' is disabled by NERV_IIP_PERF_SCENARIO=.+\\.|Set NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY to run the 'erp' performance baseline\\.)$",
       "allowedLanes": [
         "backend"
       ],
@@ -876,7 +876,7 @@
       "sourceId": "performance-baseline",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.InventoryPerformanceBaselineTests\\.Inventory_high_write_baseline_outputs_elapsed_rows_scenario_and_profile$",
-      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'inventory' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'inventory' performance baseline\\.)$",
+      "reasonPattern": "^(?:Set NERV_IIP_PERF_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'inventory' is disabled by NERV_IIP_PERF_SCENARIO=.+\\.|Set NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY to run the 'inventory' performance baseline\\.)$",
       "allowedLanes": [
         "backend"
       ],
@@ -891,7 +891,7 @@
       "sourceId": "performance-baseline",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.MesPerformanceBaselineTests\\.Mes_work_order_high_read_baseline_outputs_elapsed_rows_scenario_and_profile$",
-      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'mes' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'mes' performance baseline\\.)$",
+      "reasonPattern": "^(?:Set NERV_IIP_PERF_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'mes' is disabled by NERV_IIP_PERF_SCENARIO=.+\\.|Set NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY to run the 'mes' performance baseline\\.)$",
       "allowedLanes": [
         "backend"
       ],
@@ -906,7 +906,7 @@
       "sourceId": "performance-baseline",
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Performance\\.Tests\\.SchedulingScaleBenchmarkTests\\.SchedulingScale_APS_Lite_100_500_1000_outputs_repeatable_PostgreSQL_evidence$",
-      "reasonPattern": "^(?:Set NERV_IIP_TEST_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'scheduling' is disabled by NERV_IIP_PERFORMANCE_SCENARIO=.+\\.|Set NERV_IIP_SCHEDULING_BENCHMARK_EVIDENCE_DIR to run the 'scheduling' performance baseline\\.)$",
+      "reasonPattern": "^(?:Set NERV_IIP_PERF_POSTGRES to run PostgreSQL performance baseline tests\\.|Scenario 'scheduling' is disabled by NERV_IIP_PERF_SCENARIO=.+\\.|Set NERV_IIP_APS_SCALE_EVIDENCE_DIRECTORY to run the 'scheduling' performance baseline\\.)$",
       "allowedLanes": [
         "backend"
       ],
