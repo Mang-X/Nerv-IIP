@@ -4,9 +4,10 @@
 #     - Creates and removes one temporary unclassified backend test project
 #   Writes:
 #     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
-#     - temporary workflow files and helper logs under artifacts/script-logs/**
+#     - OS temporary directory: one workflow fixture and one timeout-results directory (temporarily)
+#     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes the temporary test project in finally
+#     - Removes the temporary test project, workflow fixture, and timeout-results directory in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -24,6 +25,8 @@ $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.Temporary
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
+$diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
+$selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
 
 function Assert-Contract {
     param(
@@ -62,7 +65,53 @@ $excludedSelectors = @(
 Assert-Contract ($excludedSelectors.Count -eq 49) 'Every currently excluded real PostgreSQL test selector must be explicitly classified.'
 Assert-Contract ($excludedSelectors -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed') 'The PostgreSQL test database real selector must remain method-scoped.'
 Assert-Contract (-not ($excludedSelectors -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')) 'A mixed fast test class must not be excluded wholesale.'
-Assert-Contract ((Get-Content -LiteralPath $runnerPath -Raw).Contains('contains a classified project with zero matched tests')) 'The fast shard runner must fail closed when a classified project has no matched tests.'
+$platformShard = @($fastShards | Where-Object { $_.id -eq 'platform' })[0]
+$platformExcludedClasses = @($platformShard.excludedTestClasses)
+$platformExcludedTestsProperty = $platformShard.PSObject.Properties['excludedTests']
+$platformExcludedTests = if ($null -eq $platformExcludedTestsProperty) { @() } else { @($platformExcludedTestsProperty.Value) }
+Assert-Contract ($platformExcludedTests -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed') 'The PostgreSQL test database real selector must be in excludedTests, not the class selector list.'
+Assert-Contract ($platformExcludedTests -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics') 'Every narrowed PostgreSQL database selector must be method-scoped.'
+Assert-Contract (-not ($platformExcludedClasses -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed')) 'A method selector must not be treated as a class selector.'
+Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics must use a separately testable helper, not a production command bypass.'
+Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
+. $diagnosticsPath
+. $selectorAssertionsPath
+
+$runnerBypassText = ''
+try {
+    Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $runnerPath, '-ShardId', 'platform', '-ResultsDirectory', $timeoutResultsDirectory, '-TrxFilePrefix', 'bypass-contract', '-TestCommand', 'Write-Output pass') -WorkingDirectory $repoRoot -Name 'backend-test-shard-command-parameter-contract' | Out-Null
+    throw 'The production fast-shard runner must reject a command replacement parameter.'
+}
+catch {
+    $runnerBypassText = $_.Exception.Message
+}
+Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that matches parameter name 'TestCommand'")) 'The production fast-shard runner must reject a command replacement parameter before test execution.'
+
+$staleSelectorText = ''
+try {
+    Assert-BackendTestShardSelectorDiscovery -Selector 'Nerv.IIP.Tests.StaleSelector' -MethodSelector $true -DiscoveredTests @()
+}
+catch {
+    $staleSelectorText = $_.Exception.Message
+}
+Assert-Contract ($staleSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.StaleSelector' discovery must match exactly one test")) 'A stale real PostgreSQL selector must fail discovery before execution.'
+
+$classSelector = 'Nerv.IIP.Tests.ClassSelector'
+$classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveredTests @("$classSelector.CaseOne", "$classSelector.CaseTwo"))
+Assert-Contract ($classDiscovery.Count -eq 2) 'A class-scoped real PostgreSQL selector must retain every discovered test.'
+Assert-BackendTestShardSelectorExecution -Selector $classSelector -DiscoveredTests $classDiscovery -TrxResults @(
+    [pscustomobject]@{ testName = "$classSelector.CaseOne"; outcome = 'Passed' },
+    [pscustomobject]@{ testName = "$classSelector.CaseTwo"; outcome = 'Passed' }
+)
+
+$notExecutedSelectorText = ''
+try {
+    Assert-BackendTestShardSelectorExecution -Selector 'Nerv.IIP.Tests.DiscoveredSelector' -DiscoveredTests @('Nerv.IIP.Tests.DiscoveredSelector.Case') -TrxResults @()
+}
+catch {
+    $notExecutedSelectorText = $_.Exception.Message
+}
+Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed")) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
 
 $classifiedProjects = @($fastShards.projects) + @($heavyLanes.projects)
 Assert-Contract (($classifiedProjects | Sort-Object -Unique).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
@@ -131,16 +180,41 @@ try {
     }
     Assert-Contract ($noOpValidationText.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
 
-    $timeoutText = ''
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'test "${{ needs.backend-tests-platform.result }}" = "success" || true') -NoNewline
+    $maskedFailureValidationText = ''
     try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $runnerPath, '-ShardId', 'platform', '-ResultsDirectory', $timeoutResultsDirectory, '-TrxFilePrefix', 'timeout-contract', '-TimeoutSeconds', '1', '-TestCommand', '[Console]::Out.WriteLine("partial-diagnostic"); [Console]::Out.Flush(); Start-Sleep -Seconds 3') -WorkingDirectory $repoRoot -TimeoutSeconds 20 -Name 'backend-test-shard-timeout-contract' | Out-Null
-        throw 'The bounded shard timeout contract must time out.'
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-masked-aggregate-contract' | Out-Null
+        throw 'An aggregate assertion masked with || true must fail structured shard governance.'
     }
     catch {
-        $timeoutText = $_.Exception.Message
+        $maskedFailureValidationText = $_.Exception.Message
     }
-    Assert-Contract (-not [string]::IsNullOrWhiteSpace($timeoutText)) 'The bounded shard timeout contract must fail.'
+    Assert-Contract ($maskedFailureValidationText.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
+
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)(-TrxFilePrefix backend-tests-platform)', '$1 -TestCommand "Write-Output pass"') -NoNewline
+    $bypassValidationText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-command-bypass-contract' | Out-Null
+        throw 'A fast shard command replacement parameter must fail structured shard governance.'
+    }
+    catch {
+        $bypassValidationText = $_.Exception.Message
+    }
+    Assert-Contract ($bypassValidationText.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.")) 'Structured workflow validation must reject a command replacement parameter.'
+
+    $timeoutText = ''
+    $timedOut = $false
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-Command', '[Console]::Out.WriteLine("partial-diagnostic"); [Console]::Out.Flush(); Start-Sleep -Seconds 3') -WorkingDirectory $repoRoot -TimeoutSeconds 1 -Name 'backend-test-shard-timeout-contract' | Out-Null
+    }
+    catch {
+        $timedOut = $true
+        $timeoutText = $_.Exception.Message
+        Save-BackendTestShardTimeoutDiagnostics -ErrorRecord $_ -ResultsDirectory $timeoutResultsDirectory -TrxFilePrefix 'timeout-contract'
+    }
+    Assert-Contract ($timedOut -and -not [string]::IsNullOrWhiteSpace($timeoutText)) 'The bounded timeout diagnostic helper contract must time out.'
     Assert-Contract (Test-Path -LiteralPath (Join-Path $timeoutResultsDirectory 'timeout-contract.timeout.stdout.log')) 'The bounded shard timeout contract must preserve diagnostics in the exact results directory.'
+    Assert-Contract ((Get-Content -LiteralPath (Join-Path $timeoutResultsDirectory 'timeout-contract.timeout.stdout.log') -Raw).Contains('partial-diagnostic')) 'The bounded timeout diagnostic helper contract must preserve buffered stdout content.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryProjectDirectory) {

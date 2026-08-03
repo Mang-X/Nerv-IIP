@@ -284,6 +284,9 @@ else {
                 if ($runText -notmatch [regex]::Escape("scripts/run-backend-test-shard.ps1 -ShardId $($shard.id)")) {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must run the governed shard runner for '$($shard.id)'."
                 }
+                if ($runText -match '(?m)(?:^|\s)-TestCommand(?:\s|$)') {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not supply a command replacement parameter."
+                }
 
                 $resultsDirectory = "TestResults/$jobId"
                 if ($runText -notmatch [regex]::Escape("-ResultsDirectory $resultsDirectory")) {
@@ -320,11 +323,21 @@ else {
                 }
 
                 $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
+                $aggregateCommands = @(
+                    $aggregateRun -split "`r?`n" |
+                        ForEach-Object { $_.Trim() } |
+                        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                )
+                $requiredAssertions = @()
                 foreach ($requiredJob in $expectedNeeds) {
                     $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
-                    if ($aggregateRun -notmatch [regex]::Escape($requiredAssertion)) {
+                    $requiredAssertions += $requiredAssertion
+                    if ($aggregateCommands -notcontains $requiredAssertion) {
                         Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must fail when '$requiredJob' is not success."
                     }
+                }
+                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or ((@($aggregateCommands | Sort-Object) -join '|') -ne (@($requiredAssertions | Sort-Object) -join '|'))) {
+                    Add-ValidationError -Errors $errors -Message 'Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.'
                 }
             }
         }

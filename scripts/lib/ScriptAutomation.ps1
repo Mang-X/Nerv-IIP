@@ -655,12 +655,13 @@ function Invoke-NativeCommandOutput {
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
+            $timeoutLogDirectory = New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
             $drain = Complete-ScriptAutomationRedirectedStreamDrain `
                 -Process $process `
                 -StdoutTask $stdoutTask `
                 -StderrTask $stderrTask `
                 -Name $Name `
-                -LogDirectory $LogDirectory `
+                -LogDirectory $timeoutLogDirectory `
                 -StdoutCapture $stdoutCapture `
                 -StderrCapture $stderrCapture
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain

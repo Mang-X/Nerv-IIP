@@ -52,7 +52,9 @@
       ],
       "excludedTestClasses": [
         "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
-        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests"
+      ],
+      "excludedTests": [
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed",
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics"
       ],

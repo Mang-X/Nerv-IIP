@@ -27,8 +27,6 @@ param(
     [ValidateRange(1, 1800)]
     [int] $TimeoutSeconds = 1800,
 
-    [string] $TestCommand,
-
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
 )
 
@@ -36,6 +34,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'lib/BackendTestShardDiagnostics.ps1')
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
@@ -68,21 +67,10 @@ if ($filterClauses.Count -gt 0) {
 }
 
 try {
-    $result = if ([string]::IsNullOrWhiteSpace($TestCommand)) {
-        Invoke-DotNetOutput -Name "backend-test-shard-$ShardId" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments $testArguments
-    }
-    else {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-Command', $TestCommand) -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Name "backend-test-shard-$ShardId-timeout-contract"
-    }
+    $result = Invoke-DotNetOutput -Name "backend-test-shard-$ShardId" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments $testArguments
 }
 catch {
-    $timeoutStdout = $_.Exception.Data['Stdout']
-    $timeoutStderr = $_.Exception.Data['Stderr']
-    New-Item -ItemType Directory -Force -Path $ResultsDirectory | Out-Null
-    if ($null -eq $timeoutStdout) { $timeoutStdout = $_.Exception.Message }
-    if ($null -eq $timeoutStderr) { $timeoutStderr = '' }
-    Set-Content -LiteralPath (Join-Path $ResultsDirectory "$TrxFilePrefix.timeout.stdout.log") -Value ([string] $timeoutStdout) -Encoding utf8NoBOM
-    Set-Content -LiteralPath (Join-Path $ResultsDirectory "$TrxFilePrefix.timeout.stderr.log") -Value ([string] $timeoutStderr) -Encoding utf8NoBOM
+    Save-BackendTestShardTimeoutDiagnostics -ErrorRecord $_ -ResultsDirectory $ResultsDirectory -TrxFilePrefix $TrxFilePrefix
     throw
 }
 Write-Output $result.Stdout

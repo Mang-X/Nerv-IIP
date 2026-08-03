@@ -23,6 +23,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'lib/BackendTestShardSelectors.ps1')
 
 function Get-OptionalObjectArrayProperty {
     param([Parameter(Mandatory)] [object] $Object, [Parameter(Mandatory)] [string] $PropertyName)
@@ -65,7 +66,6 @@ if ($classes.Count -eq 0) {
 }
 
 foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -eq 'real-postgres' })) {
-    $classSelectors = @(Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses' | ForEach-Object { [string] $_ })
     $methodSelectors = @(Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests' | ForEach-Object { [string] $_ })
     $shardTests = @(
         (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses') +
@@ -82,11 +82,9 @@ foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -
         $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
         )
-        $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith($selector, [StringComparison]::Ordinal) })
+        $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() })
         $isMethodSelector = $methodSelectors -contains $selector
-        if ($discovered.Count -eq 0 -or ($isMethodSelector -and $discovered.Count -ne 1)) {
-            throw "Real PostgreSQL selector '$selector' discovery must match $($(if ($isMethodSelector) { 'exactly one test' } else { 'at least one test' })); matched $($discovered.Count)."
-        }
+        $discovered = Assert-BackendTestShardSelectorDiscovery -Selector $selector -MethodSelector $isMethodSelector -DiscoveredTests $discovered
 
         $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
         $selectorDirectory = Join-Path $resultsRoot $selectorSlug
@@ -100,10 +98,8 @@ foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -
             throw "Real PostgreSQL selector '$selector' executed without TRX evidence."
         }
         [xml] $trxXml = Get-Content -LiteralPath $trx.FullName -Raw
-        $results = @($trxXml.TestRun.Results.UnitTestResult | Where-Object { [string] $_.testName -like "$selector*" })
-        if ($results.Count -lt $discovered.Count -or @($results | Where-Object { [string] $_.outcome -ne 'Passed' }).Count -gt 0) {
-            throw "Real PostgreSQL selector '$selector' must execute every discovered test as Passed; discovered=$($discovered.Count), trx=$($results.Count)."
-        }
+        $results = @($trxXml.TestRun.Results.UnitTestResult)
+        Assert-BackendTestShardSelectorExecution -Selector $selector -DiscoveredTests $discovered -TrxResults $results
     }
 }
 
