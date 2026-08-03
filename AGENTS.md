@@ -64,6 +64,7 @@ dotnet tool run dotnet-ef migrations add <Name> `
 
 ### Frontend (Node.js >=22.18.0, pnpm 11.13.1)
 ```powershell
+pnpm -C frontend check         # format + lint
 pnpm -C frontend typecheck     # fastest single check
 pnpm -C frontend test           # vitest
 pnpm -C frontend build          # production build
