@@ -13,7 +13,12 @@ describe('file preview kind helpers', () => {
     expect(getFilePreviewKind('photo', 'image/png')).toBe('image')
     expect(getFilePreviewKind('download', 'application/pdf; charset=utf-8')).toBe('pdf')
     expect(getFilePreviewKind('work-instruction.docx', '')).toBe('office-docx')
-    expect(getFilePreviewKind('mrp', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('office-xlsx')
+    expect(
+      getFilePreviewKind(
+        'mrp',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ),
+    ).toBe('office-xlsx')
     expect(getFilePreviewKind('review.pptx', '')).toBe('office-pptx')
   })
 

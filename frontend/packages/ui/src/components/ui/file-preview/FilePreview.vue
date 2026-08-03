@@ -42,7 +42,10 @@ const subtitle = computed(() => {
   const pieces = [kindMeta.value.label, formattedSize.value].filter(Boolean)
   return pieces.join(' · ')
 })
-const contentKey = computed(() => `${previewKind.value}:${props.src ?? 'empty'}:${props.loading}:${props.error ?? ''}:${internalError.value}`)
+const contentKey = computed(
+  () =>
+    `${previewKind.value}:${props.src ?? 'empty'}:${props.loading}:${props.error ?? ''}:${internalError.value}`,
+)
 
 function openSource(src = props.src) {
   if (src) {
@@ -83,7 +86,12 @@ function onChildReady(kind = previewKind.value) {
   <MotionConfig reduced-motion="user">
     <section
       data-slot="file-preview"
-      :class="cn('overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-xs', props.class)"
+      :class="
+        cn(
+          'overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-xs',
+          props.class,
+        )
+      "
       :style="heightStyle"
     >
       <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
@@ -93,8 +101,19 @@ function onChildReady(kind = previewKind.value) {
           class="flex min-h-12 items-center justify-between gap-3 border-b border-border/70 bg-card px-3"
         >
           <div class="flex min-w-0 items-center gap-2.5">
-            <div :class="cn('flex size-8 shrink-0 items-center justify-center rounded-md border', kindMeta.iconContainerClass)">
-              <component :is="kindMeta.icon" :class="cn('size-4', kindMeta.iconClass)" aria-hidden="true" />
+            <div
+              :class="
+                cn(
+                  'flex size-8 shrink-0 items-center justify-center rounded-md border',
+                  kindMeta.iconContainerClass,
+                )
+              "
+            >
+              <component
+                :is="kindMeta.icon"
+                :class="cn('size-4', kindMeta.iconClass)"
+                aria-hidden="true"
+              />
             </div>
             <div class="min-w-0">
               <div class="truncate text-[13px] font-medium leading-[18px]">{{ fileName }}</div>
@@ -122,7 +141,10 @@ function onChildReady(kind = previewKind.value) {
               :exit="{ opacity: 0, y: 2, scale: 0.995 }"
               :transition="filePreviewMotion.fastInvoke"
             >
-              <div v-if="loading" class="grid h-full min-h-64 grid-rows-[1fr_auto] gap-4 bg-muted/20 p-4">
+              <div
+                v-if="loading"
+                class="grid h-full min-h-64 grid-rows-[1fr_auto] gap-4 bg-muted/20 p-4"
+              >
                 <Skeleton class="h-full min-h-48 rounded-md" />
                 <Skeleton class="h-8 w-40 rounded-md" />
               </div>
@@ -135,15 +157,13 @@ function onChildReady(kind = previewKind.value) {
                 <AlertCircleIcon class="size-6 text-destructive" aria-hidden="true" />
                 <div class="max-w-sm">
                   <div class="text-sm font-semibold leading-5">预览失败</div>
-                  <div class="mt-1 text-sm leading-5 text-muted-foreground">{{ displayedError }}</div>
+                  <div class="mt-1 text-sm leading-5 text-muted-foreground">
+                    {{ displayedError }}
+                  </div>
                 </div>
               </div>
 
-              <UnsupportedPreview
-                v-else-if="!src"
-                :file-name="fileName"
-                reason="empty"
-              />
+              <UnsupportedPreview v-else-if="!src" :file-name="fileName" reason="empty" />
 
               <UnsupportedPreview
                 v-else-if="previewKind === 'unsupported'"
@@ -167,7 +187,11 @@ function onChildReady(kind = previewKind.value) {
                 @error="onChildError"
               />
               <OfficePreview
-                v-else-if="previewKind === 'office-docx' || previewKind === 'office-xlsx' || previewKind === 'office-pptx'"
+                v-else-if="
+                  previewKind === 'office-docx' ||
+                  previewKind === 'office-xlsx' ||
+                  previewKind === 'office-pptx'
+                "
                 :src="src"
                 :kind="previewKind"
                 @ready="onChildReady(previewKind)"

@@ -21,7 +21,11 @@ const emit = defineEmits<{
 }>()
 
 const documentId = computed(() => `file-preview-pdf:${props.src}`)
-const { engine, isLoading, error: engineError } = usePdfiumEngine({
+const {
+  engine,
+  isLoading,
+  error: engineError,
+} = usePdfiumEngine({
   fontFallback: null,
 })
 const plugins = computed(() => [
