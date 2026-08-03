@@ -66,6 +66,7 @@ export default defineConfig({
       'apps/business-console/typed-router.d.ts',
       'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/src/generated/**',
+      'packages/scheduling/vendor/dhtmlx/**',
     ],
   },
   run: {
