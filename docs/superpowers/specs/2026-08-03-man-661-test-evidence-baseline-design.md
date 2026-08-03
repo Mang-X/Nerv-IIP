@@ -6,6 +6,8 @@ MAN-661 adopts a repository-owned PowerShell evidence pipeline. The design was a
 
 The pipeline owns TRX collection, normalization, machine-readable summaries, skip governance, zero-execution detection, rerun correlation, redaction, and baseline comparison. It does not introduce a third-party test reporter or a second CI result authority.
 
+Implementation alignment (2026-08-04): the initial generated baseline retained the approved candidate, run `30819675007`, Backend Tests job `91706113150`, and commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d`. The delivered operator contract is `docs/architecture/test-evidence-governance.md`; no hard-gate or schema-v1 boundary changed during implementation.
+
 MAN-661 builds the complete collection pipeline. MAN-669 consumes it when backend tests are sharded; MAN-669 may add lane names such as `backend-shard-1`, but it must not create another collector or change the evidence schema.
 
 ## Context

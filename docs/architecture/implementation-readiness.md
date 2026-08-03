@@ -2,6 +2,14 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## MAN-661 CI/Test Evidence Governance（2026-08-04）
+
+Backend 与 Connector Host CI 现以自然 `dotnet test` 失败语义产出 TRX，并在 always-run collector 中生成脱敏 `tests.jsonl`、`summary.json`、`summary.md`、`diagnostics.log` 与重构 TRX；raw TRX/stdout/stderr 不上传。schema v1 保留 lane/shard 维度，当前精确登记 40 个源码 `Skip =` 赋值，只把 `unregistered-skip`、`illegal-quarantine`、已选 real-dependency lane 的 `zero-execution` 作为证据硬门禁；timing/trend/baseline delta/skip total/`recovered-after-rerun` 均 report-only。owner 与操作口径见 `docs/architecture/test-evidence-governance.md`。
+
+初始 project-granularity baseline 由唯一生成脚本从 main push run `30819675007`、Backend Tests job `91706113150`、commit `9dafb512c992b240222c8d9b5ada43e4bfc8ac3d` 生成。MAN-662 仍负责共享 timing/static-state 工具，MAN-663 负责 BusinessGateway host profile 与安全并行，MAN-669 只扩 lane/sharding，MAN-668 负责 impact-aware required summary，MAN-688 负责后续长期治理。MAN-663 与 MAN-669 后必须刷新 baseline；MAN-661 合并后还需用 main 的 normalized artifacts 完成 test-granularity refresh。
+
+本地 fixture 通过、backend/Connector Host 全量 solution test 实际执行、PR CI 与 artifact 可见、PR merge、合并后 baseline refresh 是五种独立状态，不得互相替代或推断。
+
 ## PDA 当前工序与服务端门禁演示闭环（MAN-637 / #1174）
 
 Business PDA 工序执行页现在完整消费既有 BusinessGateway/MES 权威任务行：入口查询继续由当前 principal 与实时核验的 `scopeKind/scopeId` 过滤；没有 self assignment 时页面明确展示实际的班组、工作中心、车间或组织授权范围，不把范围队列称为“我的任务”。列表、URL、详情、动作写前回读和结果始终绑定同一 `workOrderId + operationTaskId`，route query、读范围、写范围、组织/环境或 principal identity 变化会推进页面代际并关闭旧详情；普通列表中从 pair A 改选 pair B 也会推进独立选择代际，A 的进行中首次动作或重试随后成功/失败时只能丢弃 A 的结果并刷新当前权威列表，不能关闭、清空或覆盖已打开的 B。完整 deep link 把实时 manage-action identity 纳入打开身份，并等待写作业范围就绪后才打开精确 pair，避免任务数据先到、范围后到时被 reset 后永久关闭。只有当前页面与选择 identity 的成功响应能写入结果。

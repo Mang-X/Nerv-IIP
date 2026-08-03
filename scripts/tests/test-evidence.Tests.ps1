@@ -217,4 +217,18 @@ foreach ($laneContract in @(
     Assert-True ($retainedBlock.Contains('if: always()')) 'Collector and upload must both be always().'
 }
 
+$governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
+Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
+$governanceDoc = Get-Content $governanceDocPath -Raw
+foreach ($requiredText in @(
+    'optional', 'environment-gated', 'quarantined',
+    'unregistered-skip', 'illegal-quarantine', 'zero-execution',
+    'backend-shard-1', 'MAN-669', 'recovered-after-rerun', 'report-only',
+    'continue-on-error', 'Nerv-IIP Platform CI/Test Governance', 'MAN-663',
+    'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
+    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d'
+)) {
+    Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
+}
+
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."
