@@ -94,10 +94,6 @@ Capacitor artifacts are affected.
 
 ## Known Baseline Caveats
 
-- `pnpm -C frontend check` / `fmt` are blocked by pre-existing out-of-scope
-  formatting issues. Every file you touch must still pass individually
-  (`pnpm -C frontend exec vp fmt --check <file>`); report whether any failure is
-  pre-existing or introduced.
 - GitHub CI runs `typecheck` + `build` for frontend (not the full gate) — run the
   full gate locally per the Change Decision Table.
 - Docker-dependent `verify-*.ps1` scripts require a running Docker daemon; if
