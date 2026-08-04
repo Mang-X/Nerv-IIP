@@ -14,7 +14,9 @@
 param(
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json'),
 
-    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml')
+    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
+
+    [string] $PolicyPath = (Join-Path $PSScriptRoot 'test-evidence-policy.json')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -210,6 +212,35 @@ foreach ($shard in $fastShards) {
             continue
         }
         $excludedClassOwners[$testName] = $shard.id
+    }
+}
+
+if (-not (Test-Path -LiteralPath $PolicyPath -PathType Leaf)) {
+    Add-ValidationError -Errors $errors -Message "MAN-661 test evidence policy does not exist: $PolicyPath."
+}
+else {
+    $policy = Get-Content -LiteralPath (Resolve-Path $PolicyPath).Path -Raw | ConvertFrom-Json
+    $realDependencyIdentities = @(
+        foreach ($rule in @($policy.rules)) {
+            if ([string] $rule.classification -cne 'environment-gated') { continue }
+            $requiredLane = [string] $rule.requiredLane
+            if ([string]::IsNullOrWhiteSpace($requiredLane)) { continue }
+            $laneMatches = @($policy.lanes | Where-Object { $requiredLane -cmatch [string] $_.namePattern })
+            if ($laneMatches.Count -ne 1 -or -not [bool] $laneMatches[0].realDependency) { continue }
+            foreach ($identity in @($rule.testIdentities)) { [string] $identity }
+        }
+    )
+
+    # A fast shard may only filter away work that MAN-661 has registered as an environment-gated
+    # real-dependency skip. Without this the exclusion list is a private escape hatch: any test
+    # could be removed from the default gate without the evidence policy ever knowing.
+    foreach ($excludedSelector in @($excludedClassOwners.Keys | Sort-Object)) {
+        $covering = @($realDependencyIdentities | Where-Object {
+                $_ -ceq $excludedSelector -or $_.StartsWith("$excludedSelector.", [StringComparison]::Ordinal)
+            })
+        if ($covering.Count -eq 0) {
+            Add-ValidationError -Errors $errors -Message "Fast shard exclusion '$excludedSelector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip."
+        }
     }
 }
 

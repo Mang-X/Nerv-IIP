@@ -4,10 +4,10 @@
 #     - Creates and removes one temporary unclassified backend test project
 #   Writes:
 #     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
-#     - OS temporary directory: one workflow fixture and one timeout-results directory (temporarily)
+#     - OS temporary directory: one workflow fixture, one timeout-results directory, one shard TRX fixture directory, and one evidence policy fixture (temporarily)
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes the temporary test project, workflow fixture, and timeout-results directory in finally
+#     - Removes the temporary test project, workflow fixture, timeout-results directory, TRX fixture directory, and policy fixture in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -24,6 +24,8 @@ $temporaryProjectDirectory = Join-Path $repoRoot 'backend/tests/Nerv.IIP.Tempora
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
+$executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
+$temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
@@ -112,6 +114,41 @@ catch {
     $notExecutedSelectorText = $_.Exception.Message
 }
 Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed")) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
+
+$runnerSource = Get-Content -LiteralPath $runnerPath -Raw
+Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter')) 'The zero-execution guard must not depend on localized dotnet console text.'
+Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution')) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
+
+New-Item -ItemType Directory -Path $executionTrxDirectory -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $executionTrxDirectory 'shard.trx') -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000001" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest id="00000000-0000-0000-0000-000000000002" name="Case" storage="/w/bin/Release/net10.0/Nerv.IIP.Coding.Tests.dll"><TestMethod className="Nerv.IIP.Coding.Tests.CodingTests" name="Case" /></UnitTest>
+  </TestDefinitions>
+</TestRun>
+'@
+$executedAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $executionTrxDirectory)
+Assert-Contract ((@($executedAssemblies) -join '|') -ceq 'Nerv.IIP.Coding.Tests.dll') 'Executed shard assemblies must be read from namespaced TRX storage attributes.'
+Assert-BackendTestShardProjectExecution -ShardId 'contract' -ClassifiedProjects @('backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj') -ExecutedAssemblies $executedAssemblies
+
+$zeroExecutionText = ''
+try {
+    Assert-BackendTestShardProjectExecution -ShardId 'contract' -ClassifiedProjects @('backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj', 'backend/tests/Nerv.IIP.Silent.Tests/Nerv.IIP.Silent.Tests.csproj') -ExecutedAssemblies $executedAssemblies
+}
+catch {
+    $zeroExecutionText = $_.Exception.Message
+}
+Assert-Contract ($zeroExecutionText.Contains('produced no executed test result for classified projects: Nerv.IIP.Silent.Tests')) 'A classified project whose tests were all filtered away must fail closed regardless of console language.'
+
+$driftText = ''
+try {
+    Assert-BackendTestShardProjectExecution -ShardId 'contract' -ClassifiedProjects @('backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj') -ExecutedAssemblies @($executedAssemblies + 'Nerv.IIP.Drifted.Tests.dll')
+}
+catch {
+    $driftText = $_.Exception.Message
+}
+Assert-Contract ($driftText.Contains('executed assemblies it does not classify: Nerv.IIP.Drifted.Tests')) 'A shard running an assembly it does not classify must fail closed.'
 
 $classifiedProjects = @($fastShards.projects) + @($heavyLanes.projects)
 Assert-Contract (($classifiedProjects | Sort-Object -Unique).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
@@ -272,6 +309,25 @@ try {
         Assert-Contract ($evidenceValidationText.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
     }
 
+    $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    foreach ($rule in @($policy.rules)) {
+        if ([string] $rule.requiredLane -ceq 'postgres') {
+            $rule.testIdentities = @()
+            $rule.expectedRuntimeTestCount = 0
+            break
+        }
+    }
+    Set-Content -LiteralPath $temporaryPolicyPath -Value ($policy | ConvertTo-Json -Depth 100) -NoNewline
+    $policyCoverageText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-PolicyPath', $temporaryPolicyPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-policy-coverage-contract' | Out-Null
+        throw 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
+    }
+    catch {
+        $policyCoverageText = $_.Exception.Message
+    }
+    Assert-Contract ($policyCoverageText.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
+
     $timeoutText = ''
     $timedOut = $false
     $timeoutDiagnostics = ''
@@ -294,6 +350,8 @@ finally {
     }
     Remove-Item -LiteralPath $temporaryWorkflowPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host 'Backend test shard manifest contract tests passed.'

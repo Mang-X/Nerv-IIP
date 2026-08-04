@@ -35,6 +35,7 @@ $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 . (Join-Path $PSScriptRoot 'lib/BackendTestShardDiagnostics.ps1')
+. (Join-Path $PSScriptRoot 'lib/BackendTestShardSelectors.ps1')
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
@@ -77,6 +78,11 @@ Write-Output $result.Stdout
 if (-not [string]::IsNullOrWhiteSpace($result.Stderr)) {
     Write-Warning $result.Stderr
 }
-if ($result.Stdout -match 'No test matches the given testcase filter') {
-    throw "Fast shard '$ShardId' contains a classified project with zero matched tests; classify its excluded tests more narrowly or move the project to an explicit heavy lane."
-}
+
+# The TRX the MAN-661 collector consumes is the authority for what actually executed. dotnet CLI
+# console text is localized, so scanning it for a zero-match phrase fails open on any non-English
+# runner — exactly the silent pass this shard boundary exists to prevent.
+Assert-BackendTestShardProjectExecution `
+    -ShardId $ShardId `
+    -ClassifiedProjects @($shard[0].projects | ForEach-Object { [string] $_ }) `
+    -ExecutedAssemblies (Get-BackendTestShardExecutedAssemblies -ResultsDirectory $ResultsDirectory)
