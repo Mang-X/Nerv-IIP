@@ -327,7 +327,7 @@ else {
 
                 $lane = [string] $shard.evidenceLane
                 $shardJobName = [string] $shard.jobName
-                if ([string] $job.name -ne $shardJobName) {
+                if ((Get-WorkflowStringValue -Object $job -PropertyName 'name') -ne $shardJobName) {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job."
                 }
 
@@ -353,7 +353,7 @@ else {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must declare exactly one 'shard-tests' step whose native exit code is authoritative."
                 }
                 else {
-                    $testStepRun = [string] $testSteps[0].run
+                    $testStepRun = Get-WorkflowStringValue -Object $testSteps[0] -PropertyName 'run'
                     if ($testStepRun -match '\|') {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' test step must not wrap the shard runner in a shell pipeline."
                     }
@@ -371,8 +371,8 @@ else {
                 }
                 else {
                     $collectStep = $collectSteps[0]
-                    $collectRun = [string] $collectStep.run
-                    if ([string] $collectStep.if -ne 'always()') {
+                    $collectRun = Get-WorkflowStringValue -Object $collectStep -PropertyName 'run'
+                    if ((Get-WorkflowStringValue -Object $collectStep -PropertyName 'if') -ne 'always()') {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must run with if: always()."
                     }
                     if ($null -ne $collectStep.PSObject.Properties['continue-on-error']) {
@@ -403,7 +403,7 @@ else {
                         $uses = $_.PSObject.Properties['uses']
                         $null -ne $uses -and [string] $uses.Value -eq 'actions/upload-artifact@v4'
                     })
-                if ($uploads.Count -ne 1 -or [string] $uploads[0].if -ne 'always()') {
+                if ($uploads.Count -ne 1 -or (Get-WorkflowStringValue -Object $uploads[0] -PropertyName 'if') -ne 'always()') {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must always upload exactly one redacted evidence artifact."
                 }
                 else {
