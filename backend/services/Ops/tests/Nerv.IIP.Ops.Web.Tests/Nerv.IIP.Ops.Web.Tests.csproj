@@ -27,8 +27,11 @@
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\Nerv.IIP.Testing.Xunit.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Ops.Infrastructure\Nerv.IIP.Ops.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Ops.Web\Nerv.IIP.Ops.Web.csproj" />
   </ItemGroup>
+
+  <Import Project="..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\SeededTestOrdering.targets" />
 
 </Project>

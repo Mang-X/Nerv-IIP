@@ -5,7 +5,8 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 public sealed class ExpiredStockReservationHostedService(
     IServiceScopeFactory scopeFactory,
     IOptions<StockReservationExpirationOptions> options,
-    ILogger<ExpiredStockReservationHostedService> logger) : BackgroundService
+    ILogger<ExpiredStockReservationHostedService> logger,
+    TimeProvider timeProvider) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -18,7 +19,7 @@ public sealed class ExpiredStockReservationHostedService(
         var interval = options.Value.ScanInterval > TimeSpan.Zero
             ? options.Value.ScanInterval
             : TimeSpan.FromMinutes(1);
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             await RunOnceAsync(stoppingToken);
@@ -33,7 +34,9 @@ public sealed class ExpiredStockReservationHostedService(
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var expirationService = scope.ServiceProvider.GetRequiredService<ExpiredStockReservationService>();
             var metrics = scope.ServiceProvider.GetRequiredService<InventoryReservationMetrics>();
-            var expiredCount = await expirationService.ExpireOpenReservationsAsync(DateTime.UtcNow, cancellationToken);
+            var expiredCount = await expirationService.ExpireOpenReservationsAsync(
+                timeProvider.GetUtcNow().UtcDateTime,
+                cancellationToken);
             await metrics.RefreshHangingReservationsAsync(dbContext, cancellationToken);
             metrics.RecordExpiration(expiredCount);
             if (expiredCount > 0)

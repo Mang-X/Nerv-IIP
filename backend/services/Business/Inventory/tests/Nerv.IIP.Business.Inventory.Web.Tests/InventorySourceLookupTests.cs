@@ -32,6 +32,9 @@ public sealed class InventorySourceLookupTests
         unrelatedLedger.ApplyMovement(unrelated);
 
         dbContext.StockMovements.AddRange(first, retry, restriction, unrelated);
+        var postedAtUtc = new DateTime(2026, 8, 3, 12, 0, 0, DateTimeKind.Utc);
+        dbContext.Entry(first).Property(x => x.PostedAtUtc).CurrentValue = postedAtUtc;
+        dbContext.Entry(retry).Property(x => x.PostedAtUtc).CurrentValue = postedAtUtc.AddSeconds(1);
         dbContext.StockLedgers.AddRange(postedLedger, restrictedLedger, unrelatedLedger);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

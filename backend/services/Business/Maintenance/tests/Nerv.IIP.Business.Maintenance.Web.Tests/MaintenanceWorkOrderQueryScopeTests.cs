@@ -76,6 +76,9 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
         var storedByBusinessCode = MaintenanceWorkOrder.OpenManual(
             "org-001", "env-dev", businessCode, "high", "reporter", assignedTechnicianUserId: "tech-001");
         db.MaintenanceWorkOrders.AddRange(storedByPublicId, storedByBusinessCode);
+        var openedAtUtc = new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
+        db.Entry(storedByPublicId).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
+        db.Entry(storedByBusinessCode).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc.AddMinutes(1);
         await db.SaveChangesAsync();
 
         var result = await new ListMaintenanceWorkOrdersQueryHandler(db).Handle(
@@ -90,7 +93,7 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
-        Assert.Contains(item.DeviceAssetId, new[] { publicId, businessCode });
+        Assert.Equal(businessCode, item.DeviceAssetId);
     }
 
     [Fact]

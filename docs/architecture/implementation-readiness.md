@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 后端测试确定性与隔离契约（MAN-662，2026-08-04）
+
+共享 `Nerv.IIP.Testing` 已提供注入式时间、`Eventually`、有界 timeout、脱敏诊断、网络失败分类与 scoped global-state restoration；FastEndpoints serializer/validation/discovery 变异通过 collection serialization 加一次性进程隔离，不宣称可 restore。新增 `Nerv.IIP.Testing.Xunit` 以 `NERV_IIP_TEST_ORDER_SEED` 和 SHA-256 稳定排序 case/collection，Ops、Maintenance、Inventory、IndustrialTelemetry 四个现有 Web test 程序集只接入 orderer，不改变业务测试职责或既有 collection serialization。
+
+受治理入口 `pwsh scripts/verify-backend-test-determinism.ps1` 以六个固定 seed、serial/parallel 交替 profile 和轮换项目顺序生成本地重复性证据；profile 来自 VSTest `xUnit.ParallelizeTestCollections` 与 `xUnit.MaxParallelThreads`，不重编译 profile。验证器除退出码外还跨轮比对每个项目的 total/passed/skipped/failed，静默跳过测试的一轮即判失败。证据只落在 `artifacts/test-determinism/man-662/**` 的 local summary/runsettings；该目录按仓库既有约定 gitignore，可复核的结论以本文与 `summary.json` 的 exit/结果序列为准。MAN-661 仍独占 CI lane timing、skip/rerun、TRX、flake trend 与 quarantine enforcement，当前定量 baseline 为 `awaiting MAN-661`。`backend/test-determinism-baseline.json` 的 87 行已承认债务分派给三个独立跟进 issue（`#1470` / `#1471` / `#1472`），到期日错开在 2026-08-25 / 09-05 / 09-12，MAN-662 关闭后仍有责任人。MAN-663 shared BusinessGateway host profile 与 MAN-664 IndustrialTelemetry structural split 保持 defer。完整规则见 `docs/architecture/backend-test-determinism.md`。
+
 ## MAN-661 CI/Test Evidence Governance（2026-08-04）
 
 Backend 与 Connector Host CI 现以自然 `dotnet test` 失败语义产出 TRX，并在 always-run collector 中生成脱敏 `tests.jsonl`、`summary.json`、`summary.md`、`diagnostics.log` 与重构 TRX；raw TRX/stdout/stderr 不上传。collector 失败时只写 allowlist/bounded identity；目标已存在则发布到确定性 sibling，并用 step output 把实际路径交给 upload，绝不覆盖已有目录。schema v1 保留 lane/shard 维度，summary 同时输出 `selectedLanes` 与按逻辑 base 聚合的 `selectedLaneResults`。当前精确登记 40 个源码 `Skip =` 赋值，只把 `unregistered-skip`、`illegal-quarantine`、已选 real-dependency lane 的 `zero-execution` 作为证据硬门禁；single-lane collector 可接受当前 physical shard 或 logical base selector，按 base 消除 sibling 假误报，但不声称一个 invocation 分别验收了所有 sibling。timing/trend/baseline delta/skip total/`recovered-after-rerun` 均 report-only，后者只接受 GitHub Actions 对同 run/SHA/current attempt、前一 attempt、lane 对应 allowlist job 的认证失败事实。生产 collector 不暴露调用方自报或 test-only authority 替换参数；`scripts/tests/test-evidence.Tests.ps1` 已直接接入 Script Governance CI 与 compat-fast，以真实退出码证明纯函数和 collector 行为。

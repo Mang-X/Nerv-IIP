@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using MediatR;
+using Nerv.IIP.Testing;
 using Prometheus;
 using System.Text;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -145,6 +149,8 @@ public sealed class InventoryReservationExpirationTests
     [Fact]
     public async Task Hanging_reservation_metric_excludes_unexpired_open_reservations()
     {
+        var timeProvider = CreateReservationClock();
+        var registry = Metrics.NewCustomRegistry();
         await using var dbContext = CreateContext();
         var ledger = CreateLedger();
         var expiringReservation = StockReservation.Reserve(
@@ -154,7 +160,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-001",
             "reservation-metric-expired",
             1m,
-            DateTime.UtcNow.AddMilliseconds(100));
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
         var validReservation = StockReservation.Reserve(
             ledger,
             "wms",
@@ -162,21 +168,155 @@ public sealed class InventoryReservationExpirationTests
             "LINE-001",
             "reservation-metric-valid",
             1m,
-            DateTime.UtcNow.AddHours(1));
+            timeProvider.GetUtcNow().UtcDateTime.AddHours(1));
         ledger.Reserve(expiringReservation);
         ledger.Reserve(validReservation);
         dbContext.StockLedgers.Add(ledger);
         dbContext.StockReservations.AddRange(expiringReservation, validReservation);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
 
-        var metrics = new InventoryReservationMetrics();
+        var metrics = new InventoryReservationMetrics(timeProvider, registry);
         await metrics.RefreshHangingReservationsAsync(dbContext, CancellationToken.None);
-        using var stream = new MemoryStream();
-        await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream, CancellationToken.None);
-        var sample = Encoding.UTF8.GetString(stream.ToArray());
+        var sample = await ExportMetricsAsync(registry);
 
         Assert.Contains("nerv_iip_inventory_hanging_stock_reservations 1", sample, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reservation_metrics_do_not_share_collectors_or_samples_between_registries()
+    {
+        var timeProvider = CreateReservationClock();
+        var firstRegistry = Metrics.NewCustomRegistry();
+        var secondRegistry = Metrics.NewCustomRegistry();
+        var firstMetrics = new InventoryReservationMetrics(timeProvider, firstRegistry);
+        var secondMetrics = new InventoryReservationMetrics(timeProvider, secondRegistry);
+        await using var firstContext = CreateContext();
+        await using var secondContext = CreateContext();
+        var firstLedger = CreateLedger();
+        var secondLedger = CreateLedger();
+        var firstReservation = StockReservation.Reserve(
+            firstLedger,
+            "wms",
+            "OUT-METRIC-REGISTRY-001",
+            "LINE-001",
+            "reservation-metric-registry-001",
+            1m,
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
+        var secondReservationOne = StockReservation.Reserve(
+            secondLedger,
+            "wms",
+            "OUT-METRIC-REGISTRY-002",
+            "LINE-001",
+            "reservation-metric-registry-002",
+            1m,
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
+        var secondReservationTwo = StockReservation.Reserve(
+            secondLedger,
+            "wms",
+            "OUT-METRIC-REGISTRY-002",
+            "LINE-002",
+            "reservation-metric-registry-003",
+            1m,
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
+        firstLedger.Reserve(firstReservation);
+        secondLedger.Reserve(secondReservationOne);
+        secondLedger.Reserve(secondReservationTwo);
+        firstContext.StockLedgers.Add(firstLedger);
+        firstContext.StockReservations.Add(firstReservation);
+        secondContext.StockLedgers.Add(secondLedger);
+        secondContext.StockReservations.AddRange(secondReservationOne, secondReservationTwo);
+        await firstContext.SaveChangesAsync(CancellationToken.None);
+        await secondContext.SaveChangesAsync(CancellationToken.None);
+        // A reservation cannot be created already expired; advance the shared fake clock past the
+        // expiry instead of back-dating it.
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        await firstMetrics.RefreshHangingReservationsAsync(firstContext, CancellationToken.None);
+        await secondMetrics.RefreshHangingReservationsAsync(secondContext, CancellationToken.None);
+        var firstSamples = GetMetricSamples(await ExportMetricsAsync(firstRegistry), "nerv_iip_inventory_hanging_stock_reservations");
+        var secondSamples = GetMetricSamples(await ExportMetricsAsync(secondRegistry), "nerv_iip_inventory_hanging_stock_reservations");
+
+        Assert.Equal("nerv_iip_inventory_hanging_stock_reservations 1", Assert.Single(firstSamples));
+        Assert.Equal("nerv_iip_inventory_hanging_stock_reservations 2", Assert.Single(secondSamples));
+    }
+
+    [Fact]
+    public async Task Expiration_worker_runs_a_second_pass_after_the_configured_scan_interval()
+    {
+        var timeProvider = CreateReservationClock();
+        var options = Options.Create(new StockReservationExpirationOptions
+        {
+            Enabled = true,
+            ScanInterval = TimeSpan.FromMinutes(1),
+        });
+        await using var dbContext = CreateContext();
+        var ledger = CreateLedger();
+        var firstPassReservation = StockReservation.Reserve(
+            ledger,
+            "wms",
+            "OUT-EXP-WORKER-001",
+            "LINE-001",
+            "reservation-expiry-worker-first-pass",
+            1m,
+            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(30));
+        var secondPassReservation = StockReservation.Reserve(
+            ledger,
+            "wms",
+            "OUT-EXP-WORKER-002",
+            "LINE-002",
+            "reservation-expiry-worker-second-pass",
+            1m,
+            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(90));
+        ledger.Reserve(firstPassReservation);
+        ledger.Reserve(secondPassReservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.AddRange(firstPassReservation, secondPassReservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var registry = Metrics.NewCustomRegistry();
+        await using var services = new ServiceCollection()
+            .AddSingleton(dbContext)
+            .AddSingleton<IOptions<StockReservationExpirationOptions>>(options)
+            .AddScoped<ExpiredStockReservationService>()
+            .AddSingleton(new InventoryReservationMetrics(timeProvider, registry))
+            .BuildServiceProvider();
+        var worker = new ExpiredStockReservationHostedService(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            options,
+            NullLogger<ExpiredStockReservationHostedService>.Instance,
+            timeProvider);
+
+        // Both reservations are created in the future because the aggregate forbids a past expiry;
+        // the first one becomes due only after this explicit advance.
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await Eventually.WaitAsync(
+                "Inventory expiration worker completes its first pass",
+                async _ => await ExportMetricsAsync(registry),
+                exposition => exposition.Contains(
+                    "nerv_iip_inventory_stock_reservations_expired_total 1",
+                    StringComparison.Ordinal),
+                exposition => exposition,
+                new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+            Assert.Equal(1m, secondPassReservation.OpenQuantity);
+            timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+            await Eventually.WaitAsync(
+                "Inventory expiration worker completes its second pass",
+                _ => ValueTask.FromResult(secondPassReservation.OpenQuantity),
+                openQuantity => openQuantity == 0m,
+                openQuantity => $"openQuantity={openQuantity}",
+                new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
+
+            Assert.Equal("expired", secondPassReservation.Status);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -212,6 +352,14 @@ public sealed class InventoryReservationExpirationTests
         Assert.Equal("LINE-002", integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal(3m, integrationEvent.Payload.ReleasedQuantity);
     }
+
+    /// <summary>
+    /// StockReservation.Reserve validates "expiration must be in the future" against the process wall
+    /// clock, so the fake clock must be anchored to real now — a fixed calendar date would make these
+    /// tests pass on the day they were written and throw every day after. Every assertion below is
+    /// relative to this anchor and advances the fake clock explicitly, so nothing waits on real time.
+    /// </summary>
+    private static FakeTimeProvider CreateReservationClock() => new(DateTimeOffset.UtcNow);
 
     private static StockLedger CreateLedger()
     {
@@ -256,6 +404,18 @@ public sealed class InventoryReservationExpirationTests
             .Options;
         return new ApplicationDbContext(options, mediator ?? new ReservationExpiryNoopMediator());
     }
+
+    private static async Task<string> ExportMetricsAsync(CollectorRegistry registry)
+    {
+        using var stream = new MemoryStream();
+        await registry.CollectAndExportAsTextAsync(stream, CancellationToken.None);
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string[] GetMetricSamples(string exposition, string metricName) =>
+        exposition.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith($"{metricName} ", StringComparison.Ordinal))
+            .ToArray();
 
     private sealed class ReservationExpiryNoopMediator : IMediator
     {

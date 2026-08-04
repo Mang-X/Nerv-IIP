@@ -28,6 +28,9 @@
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\Nerv.IIP.Testing.Xunit.csproj" />
   </ItemGroup>
+
+  <Import Project="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\SeededTestOrdering.targets" />
 
 </Project>

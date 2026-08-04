@@ -1,9 +1,8 @@
 namespace Nerv.IIP.Ops.Web.Tests;
 
-// FastEndpoints 8.1.0 stores Config, including Serializer.Options, in static
-// process-wide state. Concurrent test-host startup can mutate and copy the shared
-// converter list at the same time. Remove this collection only when FastEndpoints
-// supports per-host configuration or host startup no longer touches shared state.
+// FastEndpoints 8.1.0 Config children are static readonly/getter-only process state,
+// so same-process test-host starts stay serialized. Deliberate incompatible mutation
+// runs only in the sacrificial Nerv.IIP.FastEndpoints.ProcessIsolation.Tests project.
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class WebApplicationFactoryCollection
 {

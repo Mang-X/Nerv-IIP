@@ -141,12 +141,18 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | `verify-coding-rule-engine.ps1` | `verify` | 已迁移 | 使用 helper 执行 Coding engine focused tests、后端 solution build 和 frontend typecheck；不导出 OpenAPI 或写 generated api-client。 |
 | `verify-connector-health-disconnect.ps1` | `verify` | 已受治理/真实环境 3/3 | 通过 fullstack session lifecycle 与受控 loopback Modbus simulator 验证 Host 仍有新 heartbeat 时的现场 `lost`、`disconnectedSinceUtc`、同端口恢复和 current manifest 的 never-sampled binding；逐轮 evidence 写入 `artifacts/script-logs/connector-health-disconnect/<timestamp>/evidence.json`，固定 10 秒 deadline。当前代码头的最近成功证据 `20260718T062424954Z/evidence.json` 为 3/3（端到端 3181/1213/1267 ms；现场检测 401/82/767 ms；检测后 Gateway 可见 2783/1132/501 ms；最大 3181 ms）；AppHost/DCP 启动前失败的尝试仅保留 diagnostics，不计入拔线轮次。 |
 | `verify-leader-demo-telemetry-simulator.ps1` | `verify` | 已受治理/前台真实栈 | 对当前精确 leader-demo session 以默认 2 秒周期发布 `normal -> degrading -> alarm -> recovered` 的振动、温度和设备状态，只使用公开 BusinessGateway；可选 24 小时形状历史回填先做迟到事实实测，重复 run 以稳定 source sequence 验证幂等。证据写入 `artifacts/leader-demo/<sessionId>/`，不创建后台进程。 |
+| `check-backend-test-determinism.ps1` | `check` | 已受治理 | MAN-662 后端测试确定性静态门禁；扫描 solution 内全部测试源，按 `backend/test-determinism-baseline.json` 逐行核对已登记债务（`Task.Delay` / `StaticSetter` / `UnreachableAddress`），未登记发现即失败，已登记行到期即失败。只读扫描，不启动服务、不写 `artifacts/`；CI 在 Script Governance job 中执行一次，不重复接入后端测试 job。 |
+| `verify-backend-test-determinism.ps1` | `verify` | 已受治理 | 对四个目标测试程序集执行六轮 × 四项目：seed `man662-01`..`man662-06`、serial/parallel 交替、`MaxParallelThreads` 1/4、项目顺序逐轮旋转。以 `New-ExclusiveInvocationClaim` 原子取得 invocation 所有权，既有证据永不被 rerun 覆盖；除退出码外还跨轮比对每个项目的 total/passed/skipped/failed，静默跳过即判失败。证据写入 `artifacts/test-determinism/man-662/<invocation-id>/summary.json`（六个本地复现字段 + 逐项目结果），不产出 TRX、lane timing 或 flake trend——那些属 MAN-661。本机执行，不进 CI。 |
+| `tests/check-backend-test-determinism.Tests.ps1` | `check` | 已受治理 | 用 `scripts/tests/fixtures/backend-test-determinism/**` 夹具回归扫描器本身：普通/逐字/raw/嵌套插值字符串中的可执行表达式都必须参与扫描，脱敏值不得尾部泄漏。CI Script Governance job 执行。 |
+| `tests/verify-backend-test-determinism.Tests.ps1` | `check` | 已受治理 | 用一次性 stubbed harness（复用真实 helper，只替换进程启动面）验证六轮契约、caller cwd 保护、invocation claim 的双进程原子性、已被占用 ID 时零项目执行，以及"退出码全零但测试结果漂移"必须失败。不调用真实 `dotnet test`。CI Script Governance job 执行。 |
 | `bootstrap-online.ps1` | `release-install` | 已迁移 | 有网空白机器入口；使用 helper 执行 winget、Aspire install script、dotnet restore、pnpm install、AppHost build 和可选 dev 启动；只初始化本地 Development user-secrets，不承担离线包制作或客户现场服务注册。 |
 | `install/migrate-file-storage.ps1` | `release-install` | 已受治理 | 只从当前进程的 `NERV_IIP_FILE_STORAGE_DB` 读取目标连接，默认校验目标库精确匹配 `nerv_iip_filestorage`（受控自定义名称必须显式传 `-ExpectedDatabase`），输出脱敏 release/service/profile/target/migration/correlation/log 状态并应用 FileStorage EF migrations；不负责备份、删库或 seed，PoC/production 调用前必须完成 database release runbook preflight。 |
 | `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
 | `verify-second-slice-ops.ps1` | `verify` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免直接命令/进程调用；迁移时需收敛 Gateway/Ops/Connector Host 进程树、日志和端口清理。 |
 
 当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption；新增脚本不得复用该例外口径。
+
+后端测试确定性两个脚本共用 `artifacts/test-determinism/man-662/**`：`check` 侧只读、`verify` 侧只追加新的 invocation 目录。`backend/test-determinism-baseline.json` 的每一行必须指向一个**在本变更之外仍然存在**的责任 issue（`MAN-\d+` 或 `#\d+`），并带独立到期日；用当前 PR 自己的票做 owner 等于合并当天就没有责任人，属于门禁失效。
 
 ## 新脚本准入
 

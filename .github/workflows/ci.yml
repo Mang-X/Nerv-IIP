@@ -286,9 +286,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run script governance check
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      - name: Test backend determinism checker
+        shell: pwsh
+        run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
+
+      - name: Test backend determinism verifier
+        shell: pwsh
+        run: ./scripts/tests/verify-backend-test-determinism.Tests.ps1
+
+      - name: Run backend determinism checker
+        shell: pwsh
+        run: ./scripts/check-backend-test-determinism.ps1
 
       - name: Run test evidence contract tests
         shell: pwsh

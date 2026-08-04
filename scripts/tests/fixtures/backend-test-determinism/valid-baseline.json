@@ -1,0 +1,185 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "e3107d19e76fa0935148f43a39e2084244a2918f6154204913552805fc0040f5",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described timing exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer contains the delay finding.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "caf904e7791e39a771904fab5478d7db7e6ad421b5476d486e2d32727e74f77b",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described cross-line timing exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer contains the cross-line delay finding.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
+      "pattern": "Thread.Sleep",
+      "lineTextSha256": "ef9d25b29e7c414686a22cfc192be5477f47c0b2cb4ebdf3f8f6b91a83d3a8b2",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described blocking-delay exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer contains the blocking delay.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/raw-empty-followed-by-delay.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "caf904e7791e39a771904fab5478d7db7e6ad421b5476d486e2d32727e74f77b",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves an empty raw string cannot hide a following cross-line delay.",
+      "exitCondition": "Delete when the fixture no longer contains the delay after an empty raw string.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-raw-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "46e27c0eab3cbc3967832b0c5d498b2b7bb960b5cfdfa0c1fa5ddd2842500b6c",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside a raw interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the raw interpolation delay.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-string-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "9615461769a399e867e3b4dc912d58e08a97197b15094411621c287126fbd06a",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside an ordinary interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the ordinary interpolation delay.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-verbatim-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "840874ee65024036b40ba6da76c093f155942b87e1dae8543896312aa461f7f1",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside a verbatim interpolation remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the verbatim interpolation delay.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/nested-interpolated-string-expression.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "33d197266827f43c2ad0dd0063217428555eaa43f2f7f9ffa3dd2aa6c53fa380",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves executable code inside nested interpolations remains scannable.",
+      "exitCondition": "Delete when the fixture no longer contains the nested interpolation delay.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
+      "pattern": "ShortLease",
+      "lineTextSha256": "84e30fc1fce62c19ffc9a9d8d99d2cd528f7577666463f775d27ff03a7011635",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described short lease exception can be admitted.",
+      "exitCondition": "Delete when the fixture lease duration is no longer sub-second.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
+      "pattern": "ShortLease",
+      "lineTextSha256": "65f205135634c55e4dfc155a8ba783823503e064d5628579da02ada6fbade0d4",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described short renewal exception can be admitted.",
+      "exitCondition": "Delete when the fixture renewal interval is no longer sub-second.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
+      "pattern": "ShortLease",
+      "lineTextSha256": "0a43f7277c1e2cedefff03a671b13701b1f7ef9ffe4c3205b25e35c614800123",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves numeric separators do not hide a short lease exception.",
+      "exitCondition": "Delete when the fixture no longer contains the separated-numeric lease duration.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
+      "pattern": "UnreachableAddress",
+      "lineTextSha256": "84f9afbdd72d09c1a78d3180997169036f8f45ddea314e4feee895dbb4110a46",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described loopback port-one exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer uses the unreachable endpoint sentinel.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
+      "pattern": "UnreachableAddress",
+      "lineTextSha256": "9f035df1d54112894b9be76392c438444287d2522a44866e8343ff13e1d5b4f2",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described connection-string port-one exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer uses the port-one sentinel.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "5b75f92781885d3be5682f1452c98ffb34532c1bd48d63c3434656a6fcb5e994",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described environment mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates process environment state.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "020416f85d5351eb4b3bc925983657f42db4b92fe4912298cdab6dc392796c3c",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described global validator mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates global validator options.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "aa0b5bff72e6a59228de91a445666c00d79acf34eb2e311facd37b4f3dd507aa",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described current-culture mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates current culture.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "ece4507f861b18e40557170190ef94ec7415ec0db79a6791d21fb78777f9811d",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described default-culture mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates default thread culture.",
+      "expiresOn": "2999-12-31"
+    },
+    {
+      "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "d82d3c3e93fdd03d5fe6a1aa791586e72d76bac4eae528476a766b633e4bfaad",
+      "occurrenceCount": 1,
+      "ownerIssue": "MAN-662",
+      "reason": "Fixture proves a fully described nested global validator mutation exception can be admitted.",
+      "exitCondition": "Delete when the fixture no longer mutates nested global validator options.",
+      "expiresOn": "2999-12-31"
+    }
+  ]
+}
