@@ -25,17 +25,6 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 . (Join-Path $PSScriptRoot 'lib/BackendTestShardSelectors.ps1')
 
-function Get-OptionalObjectArrayProperty {
-    param([Parameter(Mandatory)] [object] $Object, [Parameter(Mandatory)] [string] $PropertyName)
-
-    $property = $Object.PSObject.Properties[$PropertyName]
-    if ($null -eq $property) {
-        return @()
-    }
-
-    return @($property.Value)
-}
-
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
@@ -50,35 +39,22 @@ foreach ($variable in @('NERV_IIP_TEST_POSTGRES', 'NERV_IIP_TEST_REDIS')) {
     }
 }
 
-$classes = @(
-    $manifest.fastShards |
-        Where-Object { $_.excludedTestLane -eq 'real-postgres' } |
-        ForEach-Object {
-            (Get-OptionalObjectArrayProperty -Object $_ -PropertyName 'excludedTestClasses') +
-                (Get-OptionalObjectArrayProperty -Object $_ -PropertyName 'excludedTests')
-        } |
-        Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
-        ForEach-Object { [string] $_ } |
-        Sort-Object -Unique
-)
-if ($classes.Count -eq 0) {
-    throw 'The real-postgres heavy lane has no excluded test classes to execute.'
+$ownedShards = @($manifest.fastShards | Where-Object { @($_.excludedTestLanes) -contains 'real-postgres' })
+$ownedSelectorCount = @($ownedShards | ForEach-Object { Get-BackendTestShardExcludedSelectors -Shard $_ } | Sort-Object -Unique).Count
+if ($ownedSelectorCount -eq 0) {
+    throw 'The real-postgres heavy lane has no excluded test selectors to execute.'
 }
 
-foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -eq 'real-postgres' })) {
-    $methodSelectors = @(Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests' | ForEach-Object { [string] $_ })
-    $shardTests = @(
-        (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses') +
-            (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests') |
-            Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
-            ForEach-Object { [string] $_ } |
-            Sort-Object -Unique
-    )
-    if ($shardTests.Count -eq 0) {
+$verifiedSelectorCount = 0
+foreach ($shard in $ownedShards) {
+    $methodSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $shard -Kind 'method')
+    $shardSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $shard)
+    if ($shardSelectors.Count -eq 0) {
         continue
     }
 
-    foreach ($selector in $shardTests) {
+    foreach ($selector in $shardSelectors) {
+        $verifiedSelectorCount++
         $discovery = Invoke-DotNetOutput -Name "backend-real-postgres-discovery-$($shard.id)" -WorkingDirectory $repositoryRoot -TimeoutSeconds 1800 -Arguments @(
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--list-tests', '--filter', "FullyQualifiedName~$selector"
         )
@@ -103,4 +79,4 @@ foreach ($shard in @($manifest.fastShards | Where-Object { $_.excludedTestLane -
     }
 }
 
-Write-Host "Verified $($classes.Count) real PostgreSQL test selectors through discovery and TRX evidence."
+Write-Host "Verified $verifiedSelectorCount of $ownedSelectorCount real PostgreSQL test selectors through discovery and TRX evidence."

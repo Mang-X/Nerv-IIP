@@ -1,3 +1,39 @@
+function Get-BackendTestShardOptionalArray {
+    param(
+        [Parameter(Mandatory)] [object] $Object,
+        [Parameter(Mandatory)] [string] $PropertyName
+    )
+
+    $property = $Object.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return @()
+    }
+
+    return @($property.Value)
+}
+
+function Get-BackendTestShardExcludedSelectors {
+    param(
+        [Parameter(Mandatory)] [object] $Shard,
+        [ValidateSet('all', 'class', 'method')] [string] $Kind = 'all'
+    )
+
+    $selectors = @()
+    if ($Kind -in @('all', 'class')) {
+        $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTestClasses')
+    }
+    if ($Kind -in @('all', 'method')) {
+        $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTests')
+    }
+
+    return @(
+        $selectors |
+            Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
+            ForEach-Object { [string] $_ } |
+            Sort-Object -Unique
+    )
+}
+
 function Get-BackendTestShardExecutedAssemblies {
     param([Parameter(Mandatory)] [string] $ResultsDirectory)
 
@@ -69,15 +105,10 @@ function Assert-BackendTestShardSelectorExecution {
     )
 
     $expectedTests = @($DiscoveredTests | Where-Object { $_.StartsWith($Selector, [StringComparison]::Ordinal) })
-    $matchedResults = @(
-        $TrxResults | Where-Object {
-            $testName = if ($_ -is [string]) { $_ } else { [string] $_.testName }
-            $testName.StartsWith($Selector, [StringComparison]::Ordinal)
-        }
-    )
-    $executedNames = @($matchedResults | ForEach-Object { if ($_ -is [string]) { $_ } else { [string] $_.testName } })
+    $matchedResults = @($TrxResults | Where-Object { ([string] $_.testName).StartsWith($Selector, [StringComparison]::Ordinal) })
+    $executedNames = @($matchedResults | ForEach-Object { [string] $_.testName })
     $missingTests = @($expectedTests | Where-Object { $executedNames -notcontains $_ })
-    $failedResults = @($matchedResults | Where-Object { $_ -isnot [string] -and [string] $_.outcome -ne 'Passed' })
+    $failedResults = @($matchedResults | Where-Object { [string] $_.outcome -ne 'Passed' })
     if ($missingTests.Count -gt 0 -or $failedResults.Count -gt 0) {
         throw "Real PostgreSQL selector '$Selector' must execute every discovered test as Passed; discovered=$($expectedTests.Count), trx=$($matchedResults.Count), missing=$($missingTests.Count)."
     }

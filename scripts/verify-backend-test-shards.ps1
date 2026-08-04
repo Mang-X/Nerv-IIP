@@ -22,6 +22,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'lib/BackendTestShardSelectors.ps1')
 
 function Get-RepoRelativePath {
     param(
@@ -30,15 +31,6 @@ function Get-RepoRelativePath {
     )
 
     return ([System.IO.Path]::GetRelativePath($RepositoryRoot, $Path) -replace '\\', '/')
-}
-
-function Add-ValidationError {
-    param(
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $Errors,
-        [Parameter(Mandatory)] [string] $Message
-    )
-
-    $Errors.Add($Message)
 }
 
 function ConvertFrom-CiWorkflowYaml {
@@ -104,72 +96,58 @@ function Get-WorkflowStringValue {
     return [string] $property.Value
 }
 
-function Get-OptionalObjectArrayProperty {
-    param(
-        [Parameter(Mandatory)] [object] $Object,
-        [Parameter(Mandatory)] [string] $PropertyName
-    )
-
-    $property = $Object.PSObject.Properties[$PropertyName]
-    if ($null -eq $property) {
-        return @()
-    }
-
-    return @($property.Value)
-}
-
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
 $errors = [System.Collections.Generic.List[string]]::new()
 
 if ($manifest.schemaVersion -ne 1) {
-    Add-ValidationError -Errors $errors -Message 'backend test shard manifest schemaVersion must be 1.'
+    $errors.Add('backend test shard manifest schemaVersion must be 1.')
 }
 
 $fastShards = @($manifest.fastShards)
 $heavyLanes = @($manifest.heavyLanes)
 if ($fastShards.Count -ne 4) {
-    Add-ValidationError -Errors $errors -Message 'backend test shard manifest must define exactly four fast shards for phase 1.'
+    $errors.Add('backend test shard manifest must define exactly four fast shards for phase 1.')
 }
 
 $classificationEntries = @()
 foreach ($shard in $fastShards) {
     if ([string]::IsNullOrWhiteSpace($shard.id)) {
-        Add-ValidationError -Errors $errors -Message 'Fast shard is missing id.'
+        $errors.Add('Fast shard is missing id.')
         continue
     }
 
     if ([string]::IsNullOrWhiteSpace($shard.solutionFilter)) {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' is missing solutionFilter."
+        $errors.Add("Fast shard '$($shard.id)' is missing solutionFilter.")
     }
 
     foreach ($project in @($shard.projects)) {
         $classificationEntries += [pscustomobject]@{ Lane = $shard.id; Project = [string] $project; Fast = $true }
     }
 
-    if ([string]::IsNullOrWhiteSpace([string] $shard.excludedTestLane)) {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare the heavy lane that owns its excluded real tests."
+    if ($null -eq $shard.PSObject.Properties['excludedTestLanes']) {
+        $errors.Add("Fast shard '$($shard.id)' must declare excludedTestLanes, even when empty.")
     }
 
     if ([string] $shard.evidenceLane -notmatch '^backend-shard-[1-9][0-9]*$') {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare a schema-v1 backend shard evidence lane, not '$($shard.evidenceLane)'."
+        $errors.Add("Fast shard '$($shard.id)' must declare a schema-v1 backend shard evidence lane, not '$($shard.evidenceLane)'.")
     }
 
     if ([string] $shard.jobName -notmatch '^Backend Tests - \S.*$') {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare the CI job name that owns its evidence lane."
+        $errors.Add("Fast shard '$($shard.id)' must declare the CI job name that owns its evidence lane.")
     }
 }
 
 foreach ($duplicateEvidenceLane in @($fastShards.evidenceLane) | Group-Object | Where-Object Count -gt 1) {
-    Add-ValidationError -Errors $errors -Message "Duplicate fast shard evidence lane: $($duplicateEvidenceLane.Name)."
+    $errors.Add("Duplicate fast shard evidence lane: $($duplicateEvidenceLane.Name).")
 }
 foreach ($duplicateJobName in @($fastShards.jobName) | Group-Object | Where-Object Count -gt 1) {
-    Add-ValidationError -Errors $errors -Message "Duplicate fast shard job name: $($duplicateJobName.Name)."
+    $errors.Add("Duplicate fast shard job name: $($duplicateJobName.Name).")
 }
 foreach ($lane in $heavyLanes) {
     if ([string]::IsNullOrWhiteSpace($lane.id)) {
-        Add-ValidationError -Errors $errors -Message 'Heavy lane is missing id.'
+        $errors.Add('Heavy lane is missing id.')
         continue
     }
 
@@ -178,37 +156,33 @@ foreach ($lane in $heavyLanes) {
     }
 
     if ([string]::IsNullOrWhiteSpace([string] $lane.ownerScript)) {
-        Add-ValidationError -Errors $errors -Message "Heavy lane '$($lane.id)' must declare an executable ownerScript."
+        $errors.Add("Heavy lane '$($lane.id)' must declare an executable ownerScript.")
     }
     elseif (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot ([string] $lane.ownerScript)) -PathType Leaf)) {
-        Add-ValidationError -Errors $errors -Message "Heavy lane '$($lane.id)' ownerScript does not exist: $($lane.ownerScript)."
+        $errors.Add("Heavy lane '$($lane.id)' ownerScript does not exist: $($lane.ownerScript).")
     }
 }
 
 $allLaneIds = @($fastShards.id) + @($heavyLanes.id)
 foreach ($duplicateLaneId in $allLaneIds | Group-Object | Where-Object Count -gt 1) {
-    Add-ValidationError -Errors $errors -Message "Duplicate shard or lane id: $($duplicateLaneId.Name)."
+    $errors.Add("Duplicate shard or lane id: $($duplicateLaneId.Name).")
 }
 
 $excludedClassOwners = @{}
 foreach ($shard in $fastShards) {
-    $excludedLane = [string] $shard.excludedTestLane
-    if ($allLaneIds -notcontains $excludedLane -or $fastShards.id -contains $excludedLane) {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'."
+    foreach ($excludedLane in @($shard.excludedTestLanes | ForEach-Object { [string] $_ })) {
+        if (@($heavyLanes.id) -notcontains $excludedLane) {
+            $errors.Add("Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'.")
+        }
     }
 
-    foreach ($testName in @(
-            (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTestClasses') +
-                (Get-OptionalObjectArrayProperty -Object $shard -PropertyName 'excludedTests') |
-                Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
-                ForEach-Object { [string] $_ }
-        )) {
+    foreach ($testName in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
         if ($testName -notmatch '^[A-Za-z_][A-Za-z0-9_.]+$') {
-            Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' has an invalid excluded test selector: $testName."
+            $errors.Add("Fast shard '$($shard.id)' has an invalid excluded test selector: $testName.")
             continue
         }
         if ($excludedClassOwners.ContainsKey($testName)) {
-            Add-ValidationError -Errors $errors -Message "Excluded real test selector is assigned more than once: $testName ($($excludedClassOwners[$testName]), $($shard.id))."
+            $errors.Add("Excluded real test selector is assigned more than once: $testName ($($excludedClassOwners[$testName]), $($shard.id)).")
             continue
         }
         $excludedClassOwners[$testName] = $shard.id
@@ -216,30 +190,99 @@ foreach ($shard in $fastShards) {
 }
 
 if (-not (Test-Path -LiteralPath $PolicyPath -PathType Leaf)) {
-    Add-ValidationError -Errors $errors -Message "MAN-661 test evidence policy does not exist: $PolicyPath."
+    $errors.Add("MAN-661 test evidence policy does not exist: $PolicyPath.")
 }
 else {
     $policy = Get-Content -LiteralPath (Resolve-Path $PolicyPath).Path -Raw | ConvertFrom-Json
-    $realDependencyIdentities = @(
-        foreach ($rule in @($policy.rules)) {
-            if ([string] $rule.classification -cne 'environment-gated') { continue }
-            $requiredLane = [string] $rule.requiredLane
-            if ([string]::IsNullOrWhiteSpace($requiredLane)) { continue }
-            $laneMatches = @($policy.lanes | Where-Object { $requiredLane -cmatch [string] $_.namePattern })
-            if ($laneMatches.Count -ne 1 -or -not [bool] $laneMatches[0].realDependency) { continue }
-            foreach ($identity in @($rule.testIdentities)) { [string] $identity }
-        }
-    )
+    $policySourcePaths = @{}
+    foreach ($source in @($policy.sources)) {
+        $policySourcePaths[[string] $source.id] = [string] $source.sourcePath
+    }
 
-    # A fast shard may only filter away work that MAN-661 has registered as an environment-gated
-    # real-dependency skip. Without this the exclusion list is a private escape hatch: any test
-    # could be removed from the default gate without the evidence policy ever knowing.
-    foreach ($excludedSelector in @($excludedClassOwners.Keys | Sort-Object)) {
-        $covering = @($realDependencyIdentities | Where-Object {
-                $_ -ceq $excludedSelector -or $_.StartsWith("$excludedSelector.", [StringComparison]::Ordinal)
-            })
-        if ($covering.Count -eq 0) {
-            Add-ValidationError -Errors $errors -Message "Fast shard exclusion '$excludedSelector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip."
+    $realDependencyLaneByIdentity = @{}
+    $sourceIdByIdentity = @{}
+    foreach ($rule in @($policy.rules)) {
+        if ([string] $rule.classification -cne 'environment-gated') { continue }
+        $requiredLane = [string] $rule.requiredLane
+        if ([string]::IsNullOrWhiteSpace($requiredLane)) { continue }
+        $laneMatches = @($policy.lanes | Where-Object { $requiredLane -cmatch [string] $_.namePattern })
+        if ($laneMatches.Count -ne 1 -or -not [bool] $laneMatches[0].realDependency) { continue }
+        foreach ($identity in @($rule.testIdentities)) {
+            $realDependencyLaneByIdentity[[string] $identity] = $requiredLane
+            $sourceIdByIdentity[[string] $identity] = [string] $rule.sourceId
+        }
+    }
+
+    $heavyLaneByPolicyLane = @{}
+    foreach ($lane in $heavyLanes) {
+        $policyLane = [string] $lane.policyLane
+        if ([string]::IsNullOrWhiteSpace($policyLane)) {
+            $errors.Add("Heavy lane '$($lane.id)' must declare the MAN-661 policy lane it owns.")
+            continue
+        }
+        $heavyLaneByPolicyLane[$policyLane] = [string] $lane.id
+    }
+
+    foreach ($shard in $fastShards) {
+        $ownerLanes = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
+            # A fast shard may only filter away work that MAN-661 has registered as an
+            # environment-gated real-dependency skip. Without this the exclusion list is a private
+            # escape hatch for dropping anything from the default gate.
+            $covering = @(
+                $realDependencyLaneByIdentity.Keys | Where-Object {
+                    $_ -ceq $selector -or $_.StartsWith("$selector.", [StringComparison]::Ordinal)
+                }
+            )
+            if ($covering.Count -eq 0) {
+                $errors.Add("Fast shard exclusion '$selector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip.")
+                continue
+            }
+            foreach ($identity in $covering) {
+                $policyLane = [string] $realDependencyLaneByIdentity[$identity]
+                if (-not $heavyLaneByPolicyLane.ContainsKey($policyLane)) {
+                    $errors.Add("MAN-661 policy lane '$policyLane' required by '$selector' has no owning heavy lane in the shard manifest.")
+                    continue
+                }
+                [void] $ownerLanes.Add([string] $heavyLaneByPolicyLane[$policyLane])
+            }
+        }
+
+        # The declared owner lanes must equal the lanes MAN-661 actually requires, so a shard cannot
+        # attribute a full-chain or performance exclusion to the real-postgres owner script.
+        $declaredLanes = @($shard.excludedTestLanes | ForEach-Object { [string] $_ } | Sort-Object -Unique)
+        $derivedLanes = @($ownerLanes | Sort-Object)
+        if ((@($declaredLanes) -join '|') -cne (@($derivedLanes) -join '|')) {
+            $errors.Add("Fast shard '$($shard.id)' must declare excludedTestLanes [$(@($derivedLanes) -join ', ')] to match the MAN-661 requiredLane of its exclusions; it declares [$(@($declaredLanes) -join ', ')].")
+        }
+
+        # A method selector stays a substring filter, so a sibling method whose name merely extends
+        # it would be silently excluded too. Class selectors are anchored with a trailing dot in the
+        # runner and cannot collide this way.
+        foreach ($methodSelector in @(Get-BackendTestShardExcludedSelectors -Shard $shard -Kind 'method')) {
+            $sourceIds = @(
+                $sourceIdByIdentity.Keys |
+                    Where-Object { $_ -ceq $methodSelector -or $_.StartsWith("$methodSelector.", [StringComparison]::Ordinal) } |
+                    ForEach-Object { [string] $sourceIdByIdentity[$_] } |
+                    Sort-Object -Unique
+            )
+            if ($sourceIds.Count -eq 0) {
+                $errors.Add("Method selector '$methodSelector' has no MAN-661 source registration to scan for prefix collisions.")
+                continue
+            }
+            $methodName = $methodSelector.Substring($methodSelector.LastIndexOf('.') + 1)
+            foreach ($sourceId in $sourceIds) {
+                $sourcePath = Join-Path $repositoryRoot ([string] $policySourcePaths[$sourceId])
+                if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                    $errors.Add("MAN-661 source '$sourceId' for '$methodSelector' does not exist: $($policySourcePaths[$sourceId]).")
+                    continue
+                }
+                $sourceText = Get-Content -LiteralPath $sourcePath -Raw
+                $collisions = @([regex]::Matches($sourceText, "\b$([regex]::Escape($methodName))[A-Za-z0-9_]+\s*[(<]") | ForEach-Object { $_.Value })
+                if ($collisions.Count -gt 0) {
+                    $errors.Add("Method selector '$methodSelector' would also substring-exclude a sibling member in $($policySourcePaths[$sourceId]): $(@($collisions) -join ', ').")
+                }
+            }
         }
     }
 }
@@ -248,18 +291,18 @@ $projectOwners = @{}
 foreach ($entry in $classificationEntries) {
     $project = $entry.Project -replace '\\', '/'
     if ([string]::IsNullOrWhiteSpace($project)) {
-        Add-ValidationError -Errors $errors -Message "Shard or lane '$($entry.Lane)' contains an empty project path."
+        $errors.Add("Shard or lane '$($entry.Lane)' contains an empty project path.")
         continue
     }
 
     if ($projectOwners.ContainsKey($project)) {
-        Add-ValidationError -Errors $errors -Message "Backend test project is classified more than once: $project ($($projectOwners[$project]), $($entry.Lane))."
+        $errors.Add("Backend test project is classified more than once: $project ($($projectOwners[$project]), $($entry.Lane)).")
         continue
     }
 
     $projectOwners[$project] = $entry.Lane
     if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot $project) -PathType Leaf)) {
-        Add-ValidationError -Errors $errors -Message "Classified backend test project does not exist: $project."
+        $errors.Add("Classified backend test project does not exist: $project.")
     }
 }
 
@@ -273,17 +316,17 @@ $discoveredProjects = @(
 
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
 if ($unclassifiedProjects.Count -gt 0) {
-    Add-ValidationError -Errors $errors -Message "Unclassified backend test projects: $($unclassifiedProjects -join ', ')."
+    $errors.Add("Unclassified backend test projects: $($unclassifiedProjects -join ', ').")
 }
 
 $unknownClassifications = @($projectOwners.Keys | Where-Object { $discoveredProjects -notcontains $_ })
 if ($unknownClassifications.Count -gt 0) {
-    Add-ValidationError -Errors $errors -Message "Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ')."
+    $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
 
 $solutionPath = Join-Path $repositoryRoot ([string] $manifest.solution)
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
-    Add-ValidationError -Errors $errors -Message "Configured backend solution does not exist: $($manifest.solution)."
+    $errors.Add("Configured backend solution does not exist: $($manifest.solution).")
 }
 else {
     $solutionProjects = @(
@@ -297,7 +340,7 @@ else {
     )
     $projectsMissingFromSolution = @($discoveredProjects | Where-Object { $solutionProjects -notcontains $_ })
     if ($projectsMissingFromSolution.Count -gt 0) {
-        Add-ValidationError -Errors $errors -Message "Backend test projects must also be in backend/Nerv.IIP.sln: $($projectsMissingFromSolution -join ', ')."
+        $errors.Add("Backend test projects must also be in backend/Nerv.IIP.sln: $($projectsMissingFromSolution -join ', ').")
     }
 }
 
@@ -308,7 +351,7 @@ foreach ($shard in $fastShards) {
 
     $filterPath = Join-Path $repositoryRoot ([string] $shard.solutionFilter)
     if (-not (Test-Path -LiteralPath $filterPath -PathType Leaf)) {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' solution filter does not exist: $($shard.solutionFilter)."
+        $errors.Add("Fast shard '$($shard.id)' solution filter does not exist: $($shard.solutionFilter).")
         continue
     }
 
@@ -327,24 +370,24 @@ foreach ($shard in $fastShards) {
         $missingFromFilter = @($manifestProjects | Where-Object { $filterProjects -notcontains $_ })
         $unexpectedInFilter = @($filterProjects | Where-Object { $manifestProjects -notcontains $_ })
         if ($missingFromFilter.Count -gt 0 -or $unexpectedInFilter.Count -gt 0) {
-            Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' solution filter must match manifest projects exactly. Missing: $($missingFromFilter -join ', '); unexpected: $($unexpectedInFilter -join ', ')."
+            $errors.Add("Fast shard '$($shard.id)' solution filter must match manifest projects exactly. Missing: $($missingFromFilter -join ', '); unexpected: $($unexpectedInFilter -join ', ').")
         }
     }
     catch {
-        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' solution filter is invalid JSON: $($_.Exception.Message)"
+        $errors.Add("Fast shard '$($shard.id)' solution filter is invalid JSON: $($_.Exception.Message)")
     }
 }
 
 $resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
 if ($null -eq $resolvedWorkflowPath) {
-    Add-ValidationError -Errors $errors -Message "Configured CI workflow does not exist: $WorkflowPath."
+    $errors.Add("Configured CI workflow does not exist: $WorkflowPath.")
 }
 else {
     try {
         $workflow = ConvertFrom-CiWorkflowYaml -Path $resolvedWorkflowPath.Path -WorkingDirectory $repositoryRoot
         $jobs = $workflow.jobs
         if ($null -eq $jobs) {
-            Add-ValidationError -Errors $errors -Message 'CI workflow must contain a jobs mapping.'
+            $errors.Add('CI workflow must contain a jobs mapping.')
         }
         else {
             $fastJobIds = @($fastShards | ForEach-Object { "backend-tests-$($_.id)" })
@@ -352,62 +395,62 @@ else {
                 $jobId = "backend-tests-$($shard.id)"
                 $job = $jobs.PSObject.Properties[$jobId].Value
                 if ($null -eq $job) {
-                    Add-ValidationError -Errors $errors -Message "CI workflow is missing fast shard job '$jobId'."
+                    $errors.Add("CI workflow is missing fast shard job '$jobId'.")
                     continue
                 }
 
                 $lane = [string] $shard.evidenceLane
                 $shardJobName = [string] $shard.jobName
                 if ((Get-WorkflowStringValue -Object $job -PropertyName 'name') -ne $shardJobName) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job."
+                    $errors.Add("Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job.")
                 }
 
                 $runText = (Get-WorkflowStepValues -Steps @($job.steps) -PropertyName 'run') -join "`n"
                 if ($runText -notmatch [regex]::Escape("scripts/run-backend-test-shard.ps1 -ShardId $($shard.id)")) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must run the governed shard runner for '$($shard.id)'."
+                    $errors.Add("Fast shard job '$jobId' must run the governed shard runner for '$($shard.id)'.")
                 }
                 if ($runText -match '(?m)(?:^|\s)-TestCommand(?:\s|$)') {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not supply a command replacement parameter."
+                    $errors.Add("Fast shard job '$jobId' must not supply a command replacement parameter.")
                 }
 
                 $rawResultsDirectory = "artifacts/test-evidence-raw/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
                 $evidenceDirectory = "artifacts/test-evidence/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
                 if ($runText -notmatch [regex]::Escape("-ResultsDirectory $rawResultsDirectory")) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must write raw TRX only to the job-local evidence input '$rawResultsDirectory'."
+                    $errors.Add("Fast shard job '$jobId' must write raw TRX only to the job-local evidence input '$rawResultsDirectory'.")
                 }
                 if ($runText -notmatch [regex]::Escape("-TrxFilePrefix $jobId")) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must use its unique TRX file prefix '$jobId'."
+                    $errors.Add("Fast shard job '$jobId' must use its unique TRX file prefix '$jobId'.")
                 }
 
                 $testSteps = @(Get-WorkflowStepsById -Steps @($job.steps) -StepId 'shard-tests')
                 if ($testSteps.Count -ne 1) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must declare exactly one 'shard-tests' step whose native exit code is authoritative."
+                    $errors.Add("Fast shard job '$jobId' must declare exactly one 'shard-tests' step whose native exit code is authoritative.")
                 }
                 else {
                     $testStepRun = Get-WorkflowStringValue -Object $testSteps[0] -PropertyName 'run'
                     if ($testStepRun -match '\|') {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' test step must not wrap the shard runner in a shell pipeline."
+                        $errors.Add("Fast shard job '$jobId' test step must not wrap the shard runner in a shell pipeline.")
                     }
                     if ($null -ne $testSteps[0].PSObject.Properties['continue-on-error']) {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' test step must not set 'continue-on-error'."
+                        $errors.Add("Fast shard job '$jobId' test step must not set 'continue-on-error'.")
                     }
                 }
                 if ($null -ne $job.PSObject.Properties['continue-on-error']) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not set 'continue-on-error'."
+                    $errors.Add("Fast shard job '$jobId' must not set 'continue-on-error'.")
                 }
 
                 $collectSteps = @(Get-WorkflowStepsById -Steps @($job.steps) -StepId 'collect-shard-evidence')
                 if ($collectSteps.Count -ne 1) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must collect MAN-661 evidence in exactly one 'collect-shard-evidence' step."
+                    $errors.Add("Fast shard job '$jobId' must collect MAN-661 evidence in exactly one 'collect-shard-evidence' step.")
                 }
                 else {
                     $collectStep = $collectSteps[0]
                     $collectRun = Get-WorkflowStringValue -Object $collectStep -PropertyName 'run'
                     if ((Get-WorkflowStringValue -Object $collectStep -PropertyName 'if') -ne 'always()') {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must run with if: always()."
+                        $errors.Add("Fast shard job '$jobId' evidence collection must run with if: always().")
                     }
                     if ($null -ne $collectStep.PSObject.Properties['continue-on-error']) {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must not set 'continue-on-error'."
+                        $errors.Add("Fast shard job '$jobId' evidence collection must not set 'continue-on-error'.")
                     }
                     foreach ($requiredArgument in @(
                             'scripts/collect-test-evidence.ps1',
@@ -420,12 +463,12 @@ else {
                             '-RetentionDays 14'
                         )) {
                         if ($collectRun -notmatch [regex]::Escape($requiredArgument)) {
-                            Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must pass '$requiredArgument'."
+                            $errors.Add("Fast shard job '$jobId' evidence collection must pass '$requiredArgument'.")
                         }
                     }
                     foreach ($siblingLane in @($fastShards | Where-Object { [string] $_.id -ne [string] $shard.id } | ForEach-Object { [string] $_.evidenceLane })) {
                         if ($collectRun -match [regex]::Escape($siblingLane)) {
-                            Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not claim the sibling evidence lane '$siblingLane'."
+                            $errors.Add("Fast shard job '$jobId' must not claim the sibling evidence lane '$siblingLane'.")
                         }
                     }
                 }
@@ -435,46 +478,46 @@ else {
                         $null -ne $uses -and [string] $uses.Value -eq 'actions/upload-artifact@v4'
                     })
                 if ($uploads.Count -ne 1 -or (Get-WorkflowStringValue -Object $uploads[0] -PropertyName 'if') -ne 'always()') {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must always upload exactly one redacted evidence artifact."
+                    $errors.Add("Fast shard job '$jobId' must always upload exactly one redacted evidence artifact.")
                 }
                 else {
                     $uploadWith = $uploads[0].with
                     if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'path') -ne '${{ steps.collect-shard-evidence.outputs.evidence-path }}') {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must upload only the collector-published redacted evidence path."
+                        $errors.Add("Fast shard job '$jobId' must upload only the collector-published redacted evidence path.")
                     }
                     if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'name') -ne "test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}") {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must use its unique lane-scoped artifact name."
+                        $errors.Add("Fast shard job '$jobId' evidence artifact must use its unique lane-scoped artifact name.")
                     }
                     if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'if-no-files-found') -ne 'error' -or
                         (Get-WorkflowStringValue -Object $uploadWith -PropertyName 'retention-days') -ne '14') {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must fail closed on missing files and retain for 14 days."
+                        $errors.Add("Fast shard job '$jobId' evidence artifact must fail closed on missing files and retain for 14 days.")
                     }
                 }
                 foreach ($upload in $uploads) {
                     if ((Get-WorkflowStringValue -Object $upload.with -PropertyName 'path') -match 'test-evidence-raw') {
-                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must never upload the job-local raw TRX directory."
+                        $errors.Add("Fast shard job '$jobId' must never upload the job-local raw TRX directory.")
                     }
                 }
             }
 
             $aggregate = $jobs.PSObject.Properties['backend-tests'].Value
             if ($null -eq $aggregate) {
-                Add-ValidationError -Errors $errors -Message "CI workflow is missing the stable 'backend-tests' aggregate job."
+                $errors.Add("CI workflow is missing the stable 'backend-tests' aggregate job.")
             }
             else {
                 $expectedNeeds = @('backend-test-shard-governance') + $fastJobIds
                 $actualNeeds = @($aggregate.needs | ForEach-Object { [string] $_ })
                 if ((@($actualNeeds | Sort-Object) -join '|') -ne (@($expectedNeeds | Sort-Object) -join '|')) {
-                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must need exactly the governance and four fast shard jobs."
+                    $errors.Add("Backend Tests aggregate must need exactly the governance and four fast shard jobs.")
                 }
                 if ([string] $aggregate.name -ne 'Backend Tests' -or [string] $aggregate.if -ne 'always()') {
-                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must retain name 'Backend Tests' and if: always()."
+                    $errors.Add("Backend Tests aggregate must retain name 'Backend Tests' and if: always().")
                 }
                 $aggregateHasContinueOnError = $null -ne $aggregate.PSObject.Properties['continue-on-error'] -or @(
                     @($aggregate.steps) | Where-Object { $null -ne $_.PSObject.Properties['continue-on-error'] }
                 ).Count -gt 0
                 if ($aggregateHasContinueOnError) {
-                    Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must not set 'continue-on-error' on the job or any step."
+                    $errors.Add("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")
                 }
 
                 $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
@@ -488,17 +531,17 @@ else {
                     $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
                     $requiredAssertions += $requiredAssertion
                     if ($aggregateCommands -notcontains $requiredAssertion) {
-                        Add-ValidationError -Errors $errors -Message "Backend Tests aggregate must fail when '$requiredJob' is not success."
+                        $errors.Add("Backend Tests aggregate must fail when '$requiredJob' is not success.")
                     }
                 }
                 if ($aggregateCommands.Count -ne $requiredAssertions.Count -or ((@($aggregateCommands | Sort-Object) -join '|') -ne (@($requiredAssertions | Sort-Object) -join '|'))) {
-                    Add-ValidationError -Errors $errors -Message 'Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.'
+                    $errors.Add('Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.')
                 }
             }
         }
     }
     catch {
-        Add-ValidationError -Errors $errors -Message "CI workflow must be valid structured YAML: $($_.Exception.Message)"
+        $errors.Add("CI workflow must be valid structured YAML: $($_.Exception.Message)")
     }
 }
 

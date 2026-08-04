@@ -67,7 +67,7 @@ function Get-GovernanceScripts {
                     -not (
                         $relative -eq 'scripts/check-script-governance.ps1' -or
                         $relative -like 'scripts/lib/*' -or
-                        $relative -like 'scripts/tests/fixtures/*'
+                        $relative -like 'scripts/tests/*'
                     )
                 } |
                 ForEach-Object { $scripts.Add($_.FullName) }

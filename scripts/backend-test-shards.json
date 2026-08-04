@@ -11,7 +11,7 @@
         "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj"
       ],
       "excludedTestClasses": [],
-      "excludedTestLane": "real-postgres"
+      "excludedTestLanes": []
     },
     {
       "id": "platform",
@@ -64,7 +64,9 @@
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed",
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics"
       ],
-      "excludedTestLane": "real-postgres"
+      "excludedTestLanes": [
+        "real-postgres"
+      ]
     },
     {
       "id": "business-core-a",
@@ -119,7 +121,10 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
       ],
-      "excludedTestLane": "real-postgres"
+      "excludedTestLanes": [
+        "full-chain",
+        "real-postgres"
+      ]
     },
     {
       "id": "business-core-b",
@@ -160,18 +165,22 @@
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
       ],
-      "excludedTestLane": "real-postgres"
+      "excludedTestLanes": [
+        "real-postgres"
+      ]
     }
   ],
   "heavyLanes": [
     {
       "id": "real-postgres",
+      "policyLane": "postgres",
       "owner": "opt-in real PostgreSQL verification",
       "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
       "projects": []
     },
     {
       "id": "full-chain",
+      "policyLane": "full-chain",
       "owner": "full-stack scenario runner",
       "ownerScript": "scripts/verify-business-full-chain-acceptance.ps1",
       "projects": [
@@ -180,6 +189,7 @@
     },
     {
       "id": "performance",
+      "policyLane": "performance",
       "owner": "performance baseline verification",
       "ownerScript": "scripts/verify-business-performance-baseline.ps1",
       "projects": [

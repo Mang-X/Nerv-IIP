@@ -4,10 +4,11 @@
 #     - Creates and removes one temporary unclassified backend test project
 #   Writes:
 #     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
-#     - OS temporary directory: one workflow fixture, one timeout-results directory, one shard TRX fixture directory, and one evidence policy fixture (temporarily)
+#     - OS temporary directory: workflow, manifest, policy and shard TRX fixtures (temporarily)
+#     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes the temporary test project, workflow fixture, timeout-results directory, TRX fixture directory, and policy fixture in finally
+#     - Removes every temporary project, workflow, manifest, policy, TRX and collision fixture in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -26,6 +27,11 @@ $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
+$temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
+# The validator resolves policy sourcePath against the repository root, so the collision fixture
+# must live inside the repo. artifacts/ is gitignored.
+$temporaryCollisionRelativePath = "artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
+$temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativePath
 $runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
@@ -118,6 +124,7 @@ Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Ne
 $runnerSource = Get-Content -LiteralPath $runnerPath -Raw
 Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter')) 'The zero-execution guard must not depend on localized dotnet console text.'
 Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution')) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
+Assert-Contract ($runnerSource.Contains('"FullyQualifiedName!~$_."')) 'Class selectors must be anchored with a trailing dot so a sibling class sharing the prefix is not silently excluded.'
 
 New-Item -ItemType Directory -Path $executionTrxDirectory -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $executionTrxDirectory 'shard.trx') -NoNewline -Value @'
@@ -328,6 +335,43 @@ try {
     }
     Assert-Contract ($policyCoverageText.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
 
+    $laneManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    foreach ($laneShard in @($laneManifest.fastShards)) {
+        if ([string] $laneShard.id -ceq 'business-core-a') { $laneShard.excludedTestLanes = @('real-postgres') }
+    }
+    Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
+    $laneAttributionText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-lane-attribution-contract' | Out-Null
+        throw 'A shard that under-declares its excluded test lanes must fail shard governance.'
+    }
+    catch {
+        $laneAttributionText = $_.Exception.Message
+    }
+    Assert-Contract ($laneAttributionText.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
+
+    $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
+    $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.') + 1)
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null
+    Set-Content -LiteralPath $temporaryCollisionSourcePath -NoNewline -Value "public sealed class Fixture { public void $collisionMethod() { } public void ${collisionMethod}Extra() { } }"
+    $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $collisionSourceIds = @($collisionPolicy.rules | Where-Object { @($_.testIdentities) -ccontains $collisionSelector } | ForEach-Object { [string] $_.sourceId })
+    foreach ($collisionSource in @($collisionPolicy.sources)) {
+        if ($collisionSourceIds -contains [string] $collisionSource.id) {
+            $collisionSource.sourcePath = $temporaryCollisionRelativePath
+        }
+    }
+    Set-Content -LiteralPath $temporaryPolicyPath -Value ($collisionPolicy | ConvertTo-Json -Depth 100) -NoNewline
+    $collisionText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-PolicyPath', $temporaryPolicyPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-selector-collision-contract' | Out-Null
+        throw 'A method selector that substring-excludes a sibling member must fail shard governance.'
+    }
+    catch {
+        $collisionText = $_.Exception.Message
+    }
+    Assert-Contract ($collisionText.Contains('would also substring-exclude a sibling member')) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
+
     $timeoutText = ''
     $timedOut = $false
     $timeoutDiagnostics = ''
@@ -352,6 +396,8 @@ finally {
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host 'Backend test shard manifest contract tests passed.'

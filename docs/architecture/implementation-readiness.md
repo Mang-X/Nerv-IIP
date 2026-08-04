@@ -28,7 +28,9 @@ MAN-661 证据面按 shard 落到 `backend-shard-1`..`backend-shard-4` 四条 sc
 
 实测各取两个样本（hosted runner、热 NuGet 缓存）：main 单 `Backend Tests` job 为 19.6 min（run `30877872687`）与 23.7 min（run `30890682487`）；分片后关键路径为 13.3 min（run `30893437736`）与 15.5 min（run `30897270646`），其余三片落在 2.9–5.5 min 且墙钟主要来自各自 restore/build。**收益真实但不应引用成单一百分比**：按不同配对在 −21% 到 −44% 之间，两侧各仅两个样本。抖动来自 BusinessGateway 程序集本身——同样 1023 个用例两次分别耗时 12 m 1 s 与 14 m 2 s。MAN-669 验收要求冷/热缓存各多次基线，两次热运行**不构成**满足，本阶段不声称达成。5–6 min 目标同样不达成：在 MAN-663 拆掉该串行程序集之前不可能达到，它既是下限也是抖动主源；阶段 2 的 build-once 只能攻击每片 1–3 min 的重复构建，攻击不到这个下限。
 
-两条 fail-closed 边界按"661 已存在"的前提重写：排除清单必须在 `test-evidence-policy.json` 中有 environment-gated 真实依赖登记（当前 49 条全部落在 `postgres`/`full-chain` 规则上），且每片跑完要用自己的 TRX 证明每个已分类项目都真的执行过、没有执行未分类程序集。原实现靠匹配 dotnet 控制台英文短语判零匹配，而该输出是本地化的（本机即输出中文），在非英文 runner 上会静默放行——正是这条边界要拦的情况。
+三条 fail-closed 边界按"661 已存在"的前提重写：(1) 排除清单必须在 `test-evidence-policy.json` 中有 environment-gated 真实依赖登记（当前 49 条全部落在 `postgres`/`full-chain` 规则上），且 `excludedTestLanes` 必须等于这些登记 `requiredLane` 经 `heavyLanes[].policyLane` 派生的结果——此前四片一律声明 `real-postgres`，其中 business-core-a 实际含一条 `full-chain` 归属，属误报；(2) 每片跑完用自己的 TRX 证明每个已分类项目都真的执行过、且没有执行未分类程序集，原实现靠匹配 dotnet 控制台英文短语判零匹配，而该输出是本地化的（本机即输出中文），在非英文 runner 上会静默放行——正是这条边界要拦的情况；(3) 类选择器以尾点锚定 `!~`，避免子串匹配连带排除共享前缀的兄弟类，方法选择器保持子串匹配（参数化用例需要），由治理扫描其 MAN-661 源文件拒绝前缀撞名。
+
+脚本治理范围保持 MAN-669 边界：`scripts/tests/**` 未纳入 `check-script-governance.ps1` 目录扫描。把它纳入需要 baseline 先支持 owner issue 与到期日（与 `backend/test-determinism-baseline.json` 同等纪律），否则等于一次性 grandfather 十余条无责任人债务，属独立跟进项。
 
 已知未完成项：committed baseline 仍是 `lane: backend` 的 legacy console import，MAN-669 改变 lane 拓扑后必须用合并后首个合格 main run 的 normalized artifacts 走 `-EvidenceRoot` 刷新，在此之前所有 shard 的耗时对比继续 report-only unavailable；legacy console import 路径因聚合 job 不再产出测试输出而不可用。四个 shard 各自 restore/build，build-once/`--no-build` 与缓存测量属后续 PR；BusinessGateway 内部并行属 MAN-663。
 

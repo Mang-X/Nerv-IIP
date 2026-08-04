@@ -14,8 +14,9 @@
 
 [CmdletBinding()]
 param(
+    # The manifest is the single source of shard identity; it fails closed below when the id is
+    # unknown, so a duplicated ValidateSet would only add a second place to edit per new shard.
     [Parameter(Mandatory)]
-    [ValidateSet('business-gateway', 'platform', 'business-core-a', 'business-core-b')]
     [string] $ShardId,
 
     [Parameter(Mandatory)]
@@ -44,17 +45,16 @@ if ($shard.Count -ne 1) {
     throw "Backend test shard '$ShardId' must be defined exactly once in $ManifestPath."
 }
 
-$excludedClassesProperty = $shard[0].PSObject.Properties['excludedTestClasses']
-$excludedTestsProperty = $shard[0].PSObject.Properties['excludedTests']
-$excludedClasses = if ($null -eq $excludedClassesProperty) { @() } else { @($excludedClassesProperty.Value) }
-$excludedMethods = if ($null -eq $excludedTestsProperty) { @() } else { @($excludedTestsProperty.Value) }
-$excludedTests = @(
-    $excludedClasses + $excludedMethods |
-        Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
-        ForEach-Object { [string] $_ } |
-        Sort-Object -Unique
+$excludedClasses = @(Get-BackendTestShardExcludedSelectors -Shard $shard[0] -Kind 'class')
+$excludedMethods = @(Get-BackendTestShardExcludedSelectors -Shard $shard[0] -Kind 'method')
+# A class selector is anchored with a trailing dot so it cannot also swallow a sibling class that
+# merely shares its prefix (`XTests` must not exclude `XTestsExtra`). Method selectors stay
+# substring matches so parameterized cases keep matching, and shard governance rejects any method
+# selector that is a prefix of another registered identity.
+$filterClauses = @(
+    @($excludedClasses | ForEach-Object { "FullyQualifiedName!~$_." }) +
+        @($excludedMethods | ForEach-Object { "FullyQualifiedName!~$_" })
 )
-$filterClauses = @($excludedTests | ForEach-Object { "FullyQualifiedName!~$_" })
 $testArguments = @(
     'test',
     [string] $shard[0].solutionFilter,
