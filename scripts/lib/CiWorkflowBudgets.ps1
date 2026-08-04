@@ -219,8 +219,14 @@ function Test-NervCiWorkflowConditionRunsAfterFailure {
     # Undecidable from this line alone. A block-scalar header (`>`, `|`, `>-`, …) or a YAML alias
     # continues the value on lines the structural reader does not attribute to the step, and an
     # empty condition is not a shape this reader understands. Classify as evidence-publishing.
+    #
+    # The header pattern is deliberately wider than the YAML grammar. YAML allows the indentation
+    # indicator and the chomping indicator in *either* order (`>2-` and `>-2` are both legal), and
+    # an earlier pattern that fixed the order to chomping-then-digits stopped recognizing `>2-` —
+    # which silently sent a continued condition to the weaker tier. Over-matching here only ever
+    # classifies more strictly, so the loose pattern is the fail-closed choice.
     if ([string]::IsNullOrWhiteSpace($expression)) { return $true }
-    if ($expression -match '^[>|][+-]?[0-9]*$') { return $true }
+    if ($expression -match '^[>|][0-9]*[+-]?[0-9]*$') { return $true }
     if ($expression.StartsWith('*') -or $expression.StartsWith('&')) { return $true }
 
     # GitHub status-check functions. `always()` and `!cancelled()` run after a failure by design,
@@ -259,7 +265,28 @@ function Remove-NervCiWorkflowInlineComment {
     $inDoubleQuote = $false
     for ($index = 0; $index -lt $Text.Length; $index++) {
         $character = $Text[$index]
-        if ($character -eq "'" -and -not $inDoubleQuote) { $inSingleQuote = -not $inSingleQuote; continue }
+
+        # A `\"` inside a double-quoted run is a literal quote, not the end of the run. Treating it
+        # as the end reopened the rest of the value to comment stripping, so `"a \" # b" && always()`
+        # lost its `always()` and the step was demoted to the weaker tier. Cutting less is the
+        # fail-closed direction here, so the escape is consumed whole.
+        if ($inDoubleQuote -and $character -eq '\' -and $index + 1 -lt $Text.Length) {
+            $index++
+            continue
+        }
+
+        if ($character -eq "'" -and -not $inDoubleQuote) {
+            # YAML's single-quote escape is a doubled quote; consuming the pair keeps the run open
+            # explicitly instead of relying on two toggles happening to cancel out.
+            if ($inSingleQuote -and $index + 1 -lt $Text.Length -and $Text[$index + 1] -eq "'") {
+                $index++
+                continue
+            }
+
+            $inSingleQuote = -not $inSingleQuote
+            continue
+        }
+
         if ($character -eq '"' -and -not $inSingleQuote) { $inDoubleQuote = -not $inDoubleQuote; continue }
         if ($character -ne '#' -or $inSingleQuote -or $inDoubleQuote) { continue }
         if ($index -eq 0 -or [char]::IsWhiteSpace($Text[$index - 1])) {

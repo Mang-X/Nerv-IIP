@@ -723,7 +723,14 @@ jobs:
         @{ Name = 'unrecognized-function'; Condition = 'someFutureStatusFunction()'; Evidence = $true },
         @{ Name = 'success-gated'; Condition = "github.event_name == 'push'"; Evidence = $false },
         @{ Name = 'explicit-success'; Condition = "success() && contains(github.ref, 'main')"; Evidence = $false },
-        @{ Name = 'comment-mentioning-always'; Condition = "github.event_name == 'push' # not always()"; Evidence = $false }
+        @{ Name = 'comment-mentioning-always'; Condition = "github.event_name == 'push' # not always()"; Evidence = $false },
+        # A `#` that belongs to the *value* must not be cut. YAML only starts a plain-scalar comment
+        # at a whitespace-preceded `#`, so both spellings below are one legal condition whose
+        # `always()` sits after the `#`. Cutting at the first `#` regardless (the naive
+        # `-replace '#.*'`) leaves `contains(github.event.head_commit.message,` — status-neutral,
+        # therefore tier B, therefore this gate's one rule switched off.
+        @{ Name = 'single-quoted-hash'; Condition = "contains(github.event.head_commit.message, '# not a comment') && always()"; Evidence = $true },
+        @{ Name = 'double-quoted-hash'; Condition = 'contains(github.event.head_commit.message, "# not a comment") && always()'; Evidence = $true }
     )
 
     foreach ($conditionCase in $conditionCases) {
@@ -751,8 +758,14 @@ jobs:
 
     # An `if:` whose value continues on later lines cannot be classified from the step mapping the
     # structural reader sees, so it must land in the stricter tier rather than be assumed benign.
-    $blockConditionPath = Join-Path $ciFixtureRoot 'condition-block-scalar.yml'
-    Set-Content -Path $blockConditionPath -Encoding utf8 -Value @'
+    # Every legal block-scalar header spelling has to be recognized: YAML permits the indentation
+    # indicator and the chomping indicator in either order, and a header pattern that accepted only
+    # chomping-then-digits let `>2-` through as an ordinary scalar and demoted the step to tier B.
+    $blockHeaderIndex = 0
+    foreach ($blockHeader in @('>', '|', '>-', '|+', '>2-', '|1+', '>-2')) {
+        $blockHeaderIndex++
+        $blockConditionPath = Join-Path $ciFixtureRoot "condition-block-scalar-$blockHeaderIndex.yml"
+        Set-Content -Path $blockConditionPath -Encoding utf8 -Value @"
 jobs:
   sample:
     timeout-minutes: 10
@@ -762,12 +775,31 @@ jobs:
         timeout-minutes: 8
         run: ./run.ps1
       - name: Upload evidence
-        if: >-
+        if: $blockHeader
           always()
         timeout-minutes: 5
         uses: actions/upload-artifact@v4
-'@
-    Assert-Violation (Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $blockConditionPath)) 'evidence-job-budget-not-above-step-sum'
+"@
+        $blockJobs = Get-NervCiWorkflowBudgets -Path $blockConditionPath
+        Assert-True (@($blockJobs[0].Steps | Where-Object AlwaysRuns).Count -gt 0) "Block-scalar header '$blockHeader' must classify its continued condition into the stricter tier."
+        Assert-Violation (Test-NervCiWorkflowBudgets -Jobs $blockJobs) 'evidence-job-budget-not-above-step-sum'
+    }
+
+    # Inline-comment stripping is the step between the raw `if:` text and tier classification, and
+    # its whole reason to exist is that a `#` can belong to the value. Asserted directly because the
+    # tier fixtures above cannot distinguish "kept the value" from "cut the value and happened to
+    # land on the same tier": replacing this function with `-replace '#.*'` must turn these red.
+    Assert-Equal "contains(github.event.head_commit.message, '# not a comment') && always()" (Remove-NervCiWorkflowInlineComment -Text "contains(github.event.head_commit.message, '# not a comment') && always()") 'A single-quoted `#` is part of the value, not a comment.'
+    Assert-Equal 'contains(github.event.head_commit.message, "# not a comment") && always()' (Remove-NervCiWorkflowInlineComment -Text 'contains(github.event.head_commit.message, "# not a comment") && always()') 'A double-quoted `#` is part of the value, not a comment.'
+    Assert-Equal "contains(github.event.head_commit.message, 'release # 1') && always()" (Remove-NervCiWorkflowInlineComment -Text "contains(github.event.head_commit.message, 'release # 1') && always()") 'A whitespace-preceded `#` inside a quoted run is still part of the value.'
+    Assert-Equal 'github.ref == 1#2 && always()' (Remove-NervCiWorkflowInlineComment -Text 'github.ref == 1#2 && always()') 'A `#` glued to the previous character never starts a YAML comment.'
+    Assert-Equal '"a \" # b" && always()' (Remove-NervCiWorkflowInlineComment -Text '"a \" # b" && always()') 'An escaped quote must not end the double-quoted run and reopen the rest to comment stripping.'
+    Assert-Equal "'it''s # here' && always()" (Remove-NervCiWorkflowInlineComment -Text "'it''s # here' && always()") 'A doubled single quote is an escape, not the end of the single-quoted run.'
+    # …and the stripping itself must still happen, or the function would trivially pass the above by
+    # returning its input unchanged.
+    Assert-Equal 'always()' (Remove-NervCiWorkflowInlineComment -Text 'always() # 真注释') 'A genuine trailing comment must still be removed.'
+    Assert-Equal "github.event_name == 'push'" (Remove-NervCiWorkflowInlineComment -Text "github.event_name == 'push' # not always()") 'A trailing comment after a closed quoted run must still be removed.'
+    Assert-Equal '' (Remove-NervCiWorkflowInlineComment -Text '# whole line is a comment') 'A leading `#` comments out the entire value.'
 
     # Job-level sequences (`needs:`, `strategy.matrix` shorthand) indent their items exactly like
     # step entries. Counting them as steps made the reader throw `step parse mismatch` on any

@@ -49,8 +49,10 @@ jobs:
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   backend-tests:
     name: Backend Tests
-    # Tier A (evidence steps). Observed max 24.6m / avg 17.1m over the last 10 CI runs — this job
-    # crossed the 24m mark on this very branch, so the numbers below are re-measured, not inherited.
+    # Tier A (evidence steps). Over the last 10 CI runs only 6 actually executed the test step (the
+    # other 4 ended in ~2s without running it, and averaging those in understates the job): observed
+    # max 24.6m / avg 16.7m across those 6 real runs. This job crossed the 24m mark on this very
+    # branch, so the numbers below are re-measured, not inherited.
     # The single longest step was `Test backend solution` at 23.8m against its own 40m budget
     # (1.7x), and the implicit setup/post steps cost under 10s. Step budgets sum to 69m, leaving 6m
     # of margin. Growth to watch: if `Test backend solution` passes ~30m, raise both budgets rather
@@ -282,7 +284,7 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
-    # Tier B (no step runs after a failure). Observed max 4.9m / avg 4.3m; the 20m job budget is the
+    # Tier B (no step runs after a failure). Observed max 4.9m / avg 4.4m; the 20m job budget is the
     # fail-fast bound. Step budgets sum to 58m and are per-step upper bounds only.
     timeout-minutes: 20
     runs-on: ubuntu-latest
