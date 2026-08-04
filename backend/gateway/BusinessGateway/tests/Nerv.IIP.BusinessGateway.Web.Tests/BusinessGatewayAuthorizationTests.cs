@@ -31,7 +31,7 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_gateway_authentication_requires_configured_jwt_settings()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        await using var factory = BusinessGatewayTestHost.CreateUnconfiguredFactory(builder =>
         {
             builder.UseEnvironment("Testing");
             BusinessGatewayTestServiceBaseUrls.Configure(builder);
@@ -1417,24 +1417,15 @@ public sealed class BusinessGatewayAuthorizationTests
         lockedAssignments = Array.Empty<object>(),
     };
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null,
         Action<IWebHostBuilder>? configureBuilder = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            configureBuilder?.Invoke(builder);
-            BusinessGatewayTestServiceBaseUrls.Configure(builder);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                configureServices?.Invoke(services);
-            });
-        });
+        BusinessGatewayTestHost.Lease(
+            auth,
+            configureServices,
+            BusinessGatewayTestHostProfile.ServiceBaseUrls,
+            configureBuilder);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

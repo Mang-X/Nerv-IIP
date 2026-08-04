@@ -4914,7 +4914,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(mes.LastAssignDispatchRequest);
     }
 
-    private static WebApplicationFactory<Program> CreateDispatchAssignFactory(
+    private static BusinessGatewayTestHostLease CreateDispatchAssignFactory(
         RecordingMesClient mes,
         out RecordingMasterDataClient masterData)
     {
@@ -9080,21 +9080,10 @@ public sealed class BusinessGatewayProxyTests
                     OrganizationWide: true),
             ]);
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                configureServices?.Invoke(services);
-            });
-        });
+        BusinessGatewayTestHost.Lease(auth, configureServices);
 
     private static HttpResponseMessage EquipmentHealthJsonResponse(
         string organizationId = "org-001",

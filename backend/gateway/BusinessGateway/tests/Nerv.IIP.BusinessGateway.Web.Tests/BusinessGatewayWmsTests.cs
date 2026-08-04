@@ -2254,19 +2254,13 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(["complete-inbound"], wms.Calls);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            BusinessGatewayTestServiceBaseUrls.Configure(builder);
-            builder.ConfigureServices(services =>
+        BusinessGatewayTestHost.Lease(
+            auth,
+            services =>
             {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
                 services.RemoveAll<IBusinessMasterDataClient>();
                 services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
                 {
@@ -2274,8 +2268,8 @@ public sealed class BusinessGatewayWmsTests
                     Resources = WmsSiteDirectory(),
                 });
                 configureServices?.Invoke(services);
-            });
-        });
+            },
+            BusinessGatewayTestHostProfile.ServiceBaseUrls);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 

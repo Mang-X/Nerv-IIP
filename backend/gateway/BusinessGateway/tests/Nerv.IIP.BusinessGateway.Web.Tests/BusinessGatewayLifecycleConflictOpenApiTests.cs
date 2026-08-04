@@ -9,14 +9,7 @@ public sealed class BusinessGatewayLifecycleConflictOpenApiTests
     [Fact]
     public async Task Lifecycle_action_contracts_declare_only_real_conflict_responses()
     {
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-        });
-        using var client = factory.CreateClient();
-        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
         var paths = document.RootElement.GetProperty("paths");
 
         foreach (var route in ConflictRoutes)

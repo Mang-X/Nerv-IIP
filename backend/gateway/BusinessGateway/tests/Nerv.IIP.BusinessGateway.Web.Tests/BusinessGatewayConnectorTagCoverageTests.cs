@@ -117,24 +117,16 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
         Assert.Contains(result.Errors, error => PropertyMatches(error.PropertyName, nameof(BusinessConsoleConnectorTagCoverageRequest.EnvironmentId)));
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         RecordingIndustrialTelemetryClient telemetry) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        BusinessGatewayTestHost.Lease(auth, services =>
         {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                services.RemoveAll<IBusinessIndustrialTelemetryClient>();
-                services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
-                services.RemoveAll<IInternalServiceTokenProvider>();
-                services.AddSingleton<IInternalServiceTokenProvider>(
-                    new TestInternalServiceTokenProvider("internal-telemetry-token"));
-            });
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-telemetry-token"));
         });
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;

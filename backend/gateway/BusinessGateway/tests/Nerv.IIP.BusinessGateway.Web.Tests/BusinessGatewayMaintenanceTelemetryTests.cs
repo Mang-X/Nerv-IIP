@@ -2956,7 +2956,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             idempotencyKey = "maintenance-alarm-create-test",
         });
 
-    private static WebApplicationFactory<Program> CreateAlarmRepairFactory(
+    private static BusinessGatewayTestHostLease CreateAlarmRepairFactory(
         RecordingMaintenanceFacadeClient maintenance,
         RecordingIndustrialTelemetryClient telemetry,
         RecordingMasterDataClient masterData) =>
@@ -2972,21 +2972,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                configureServices?.Invoke(services);
-            });
-        });
+        BusinessGatewayTestHost.Lease(auth, configureServices);
 
     private sealed class RecordingAppHubClient : IBusinessAppHubClient
     {

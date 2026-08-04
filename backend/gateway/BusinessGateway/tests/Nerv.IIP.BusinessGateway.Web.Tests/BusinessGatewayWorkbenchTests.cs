@@ -274,22 +274,13 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(status, item.GetProperty("status").GetString());
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         IBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            BusinessGatewayTestServiceBaseUrls.Configure(builder);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                configureServices?.Invoke(services);
-            });
-        });
+        BusinessGatewayTestHost.Lease(
+            auth,
+            configureServices,
+            BusinessGatewayTestHostProfile.ServiceBaseUrls);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 

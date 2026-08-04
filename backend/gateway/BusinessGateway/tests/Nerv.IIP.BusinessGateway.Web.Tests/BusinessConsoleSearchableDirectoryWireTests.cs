@@ -641,21 +641,14 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         }
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         IBusinessGatewayAuthorizationClient auth,
         JsonHandler inventoryHandler,
         IBusinessMasterDataClient? masterData = null,
         IBusinessQualityClient? quality = null,
         IBusinessMaintenanceClient? maintenance = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
+        BusinessGatewayTestHost.Lease(auth, services =>
             {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton(auth);
                 services.RemoveAll<IBusinessInventoryClient>();
                 services.AddSingleton<IBusinessInventoryClient>(new HttpBusinessInventoryClient(
                     new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory.local") },
@@ -679,7 +672,6 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
             });
-        });
 
     private static AuthorizationScopeGrant Grant(
         string scopeKind,

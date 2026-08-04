@@ -221,24 +221,16 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
             ["team", "work-center"],
             ["position-master-not-modeled"]);
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease CreateFactory(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessMasterDataClient masterData) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        BusinessGatewayTestHost.Lease(auth, services =>
         {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton(auth);
-                services.RemoveAll<IBusinessMasterDataClient>();
-                services.AddSingleton(masterData);
-                services.RemoveAll<IInternalServiceTokenProvider>();
-                services.AddSingleton<IInternalServiceTokenProvider>(
-                    new TestInternalServiceTokenProvider("internal-context-token"));
-            });
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-context-token"));
         });
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
