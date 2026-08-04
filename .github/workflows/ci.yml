@@ -7,6 +7,7 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -34,8 +35,62 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Resolve test evidence environment
+        id: backend-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
       - name: Test backend solution
-        run: dotnet test backend/Nerv.IIP.sln --configuration Release
+        id: backend-tests
+        run: >-
+          dotnet test backend/Nerv.IIP.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+
+      - name: Collect backend test evidence
+        id: collect-backend-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend
+          -SelectedLanes backend
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.backend-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests"
+          -CurrentTestOutcome ${{ steps.backend-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.backend-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.backend-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload backend test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-backend-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
@@ -100,8 +155,62 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Resolve test evidence environment
+        id: connector-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
       - name: Test connector host solution
-        run: dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --configuration Release
+        id: connector-host-tests
+        run: >-
+          dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+
+      - name: Collect connector host test evidence
+        id: collect-connector-host-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane connector-host
+          -SelectedLanes connector-host
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Connector Host Tests"
+          -CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.connector-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.connector-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload connector host test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-connector-host-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   frontend:
     name: Frontend Typecheck and Build
@@ -197,3 +306,7 @@ jobs:
       - name: Run backend determinism checker
         shell: pwsh
         run: ./scripts/check-backend-test-determinism.ps1
+
+      - name: Run test evidence contract tests
+        shell: pwsh
+        run: ./scripts/tests/test-evidence.Tests.ps1
