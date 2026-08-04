@@ -16,6 +16,7 @@ using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
@@ -368,6 +369,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 builder.UseSetting("RabbitMQ:Port", "1");
             });
         var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
+        await CapTestHost.WaitForCapBootstrapAsync(productionFactory.Services);
         AddConnectorHeaders(client, "local-connector-secret");
 
         var response = await client.GetAsync(
