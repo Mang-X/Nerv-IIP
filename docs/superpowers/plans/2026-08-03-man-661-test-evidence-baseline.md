@@ -478,7 +478,8 @@ git commit -m "feat(ci): enforce skip and zero-execution gates"
 **Interfaces:**
 - Produces: `Protect-NervTestEvidenceText -Text <string>` extending the shared redactor with CI evidence privacy fields.
 - Produces: `New-NervTestEvidenceSummary -Records -RunMetadata -Violations -Baseline -PriorAttemptOutcome -TopCount`.
-- Produces: `Write-NervTestEvidenceArtifacts -Records -Summary -SourceTrxPaths -OutputDirectory`.
+- Produces: `Write-NervTestEvidenceArtifacts -Records -Summary -OutputDirectory`.
+- Raw source TRX paths are discovered and read only by `collect-test-evidence.ps1`; the artifact writer receives parsed records and never accepts or copies raw source paths.
 - Artifact filenames: `tests.jsonl`, `summary.json`, `summary.md`, `diagnostics.log`, and `trx/<lane>-<assembly>-<sha8>-attempt-<n>.trx`.
 
 - [ ] **Step 1: Extend redaction tests before redaction code**
