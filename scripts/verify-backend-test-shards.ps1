@@ -88,6 +88,20 @@ function Get-WorkflowStepsById {
     )
 }
 
+function Get-WorkflowStringValue {
+    param(
+        [Parameter(Mandatory)] [object] $Object,
+        [Parameter(Mandatory)] [string] $PropertyName
+    )
+
+    $property = $Object.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return ''
+    }
+
+    return [string] $property.Value
+}
+
 function Get-OptionalObjectArrayProperty {
     param(
         [Parameter(Mandatory)] [object] $Object,
@@ -394,18 +408,19 @@ else {
                 }
                 else {
                     $uploadWith = $uploads[0].with
-                    if ([string] $uploadWith.path -ne '${{ steps.collect-shard-evidence.outputs.evidence-path }}') {
+                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'path') -ne '${{ steps.collect-shard-evidence.outputs.evidence-path }}') {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must upload only the collector-published redacted evidence path."
                     }
-                    if ([string] $uploadWith.name -ne "test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}") {
+                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'name') -ne "test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}") {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must use its unique lane-scoped artifact name."
                     }
-                    if ([string] $uploadWith.'if-no-files-found' -ne 'error' -or [string] $uploadWith.'retention-days' -ne '14') {
+                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'if-no-files-found') -ne 'error' -or
+                        (Get-WorkflowStringValue -Object $uploadWith -PropertyName 'retention-days') -ne '14') {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must fail closed on missing files and retain for 14 days."
                     }
                 }
                 foreach ($upload in $uploads) {
-                    if ([string] $upload.with.path -match 'test-evidence-raw') {
+                    if ((Get-WorkflowStringValue -Object $upload.with -PropertyName 'path') -match 'test-evidence-raw') {
                         Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must never upload the job-local raw TRX directory."
                     }
                 }
