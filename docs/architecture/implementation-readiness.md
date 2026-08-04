@@ -26,7 +26,7 @@ MAN-661 证据面按 shard 落到 `backend-shard-1`..`backend-shard-4` 四条 sc
 
 分片权重按 MAN-669 范围第 1 条用 MAN-661 的项目级耗时核过，而不是按目录数量平均分。以 baseline run `30819675007` 的 `elapsedMilliseconds` 计，四片测试耗时为 BusinessGateway **13.7 min**（1 个项目）、Platform 1.2 min（36 个）、Business Core A 3.0 min（18 个）、Business Core B 1.9 min（9 个），fast 合计 19.8 min。**单个 BusinessGateway 程序集占全部测试耗时的 69%**，因此关键路径下限由它锁死，与分片数无关；其余三片的墙钟主要是各自的 restore/build 而非测试。
 
-实测（PR head `ea21dbeb`，run `30893437736`）：`Backend Tests` 单 job 在 main 上为 19.6–23.7 min，分片后关键路径为 BusinessGateway shard 13.1 min（其中测试执行 12 m 1 s、restore/build 约 0.7 min），其余三片 2.9 / 5.5 / 4.7 min，聚合 job 0.1 min，整体约 **13.3 min，较 main 最近一次的 23.7 min 下降约 44%**。MAN-669 验收标准里的 5–6 min 目标在 MAN-663 拆掉 BusinessGateway 串行程序集之前不可能达到，本阶段不声称达成；阶段 2 的 build-once 只能攻击每片 1–3 min 的重复构建，攻击不到这个下限。
+实测各取两个样本（hosted runner、热 NuGet 缓存）：main 单 `Backend Tests` job 为 19.6 min（run `30877872687`）与 23.7 min（run `30890682487`）；分片后关键路径为 13.3 min（run `30893437736`）与 15.5 min（run `30897270646`），其余三片落在 2.9–5.5 min 且墙钟主要来自各自 restore/build。**收益真实但不应引用成单一百分比**：按不同配对在 −21% 到 −44% 之间，两侧各仅两个样本。抖动来自 BusinessGateway 程序集本身——同样 1023 个用例两次分别耗时 12 m 1 s 与 14 m 2 s。MAN-669 验收要求冷/热缓存各多次基线，两次热运行**不构成**满足，本阶段不声称达成。5–6 min 目标同样不达成：在 MAN-663 拆掉该串行程序集之前不可能达到，它既是下限也是抖动主源；阶段 2 的 build-once 只能攻击每片 1–3 min 的重复构建，攻击不到这个下限。
 
 两条 fail-closed 边界按"661 已存在"的前提重写：排除清单必须在 `test-evidence-policy.json` 中有 environment-gated 真实依赖登记（当前 49 条全部落在 `postgres`/`full-chain` 规则上），且每片跑完要用自己的 TRX 证明每个已分类项目都真的执行过、没有执行未分类程序集。原实现靠匹配 dotnet 控制台英文短语判零匹配，而该输出是本地化的（本机即输出中文），在非英文 runner 上会静默放行——正是这条边界要拦的情况。
 
