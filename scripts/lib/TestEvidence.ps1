@@ -18,10 +18,10 @@ function New-NervTestEvidenceViolation {
 
 function Get-NervTestEvidenceLaneJobs {
     # The allowlisted lane-to-job binding. One physical job owns one lane, so a job can never
-    # certify a sibling shard. `backend` remains the unsharded single-job binding; MAN-669 wires
-    # the four fast shard lanes to their own jobs while `Backend Tests` becomes the aggregate.
+    # certify a sibling shard. The unsharded `backend` lane is deliberately absent: since MAN-669
+    # no job produces it, and `Backend Tests` is now a test-free aggregate that must never be able
+    # to certify a lane. `backend` remains a valid logical base lane for `-SelectedLanes`.
     return [ordered]@{
-        backend = 'Backend Tests'
         'backend-shard-1' = 'Backend Tests - BusinessGateway'
         'backend-shard-2' = 'Backend Tests - Platform'
         'backend-shard-3' = 'Backend Tests - Business Core A'
