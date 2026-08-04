@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\TestUtilities\BoundedObservation.cs" Link="TestUtilities\BoundedObservation.cs" />
     <Compile Include="..\TestUtilities\ControllableTimeProvider.cs" Link="TestUtilities\ControllableTimeProvider.cs" />
   </ItemGroup>
 

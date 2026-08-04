@@ -3,6 +3,13 @@ namespace Nerv.IIP.ConnectorHost.TestUtilities;
 public sealed class ControllableTimeProvider : TimeProvider
 {
     private readonly object _gate = new();
+
+    // Neither collection is pruned. `_createdTimers` must not be: it is the "has this signature
+    // ever been registered" set that `WaitForTimerEverCreatedAsync` reports, and forgetting an
+    // entry would turn an already-satisfied barrier back into a wait that nothing completes.
+    // `_timers` keeps disposed timers too, which only costs an `IsDue` call per `Advance`; a
+    // provider is created per test and dies with it, so the list is bounded by one test's timer
+    // count (tens) rather than by run length.
     private readonly List<ControllableTimer> _timers = [];
     private readonly HashSet<(TimeSpan DueTime, TimeSpan Period)> _createdTimers = [];
     private readonly Dictionary<(TimeSpan DueTime, TimeSpan Period), TaskCompletionSource> _timerCreationWaiters = [];
@@ -38,7 +45,15 @@ public sealed class ControllableTimeProvider : TimeProvider
         return timer;
     }
 
-    public Task WaitForTimerCreatedAsync(TimeSpan dueTime, TimeSpan period)
+    /// <summary>
+    /// Completes once a timer with this exact <paramref name="dueTime"/>/<paramref name="period"/>
+    /// signature has <em>ever</em> been created on this provider — already-completed if one exists
+    /// already. <see cref="_createdTimers"/> is never pruned, so this deliberately cannot express
+    /// "wait for the next creation": a second registration with the same signature is satisfied
+    /// immediately by the first. Callers use it as a one-shot barrier before the first
+    /// <see cref="Advance"/> for a given loop, which is the only thing it can honestly certify.
+    /// </summary>
+    public Task WaitForTimerEverCreatedAsync(TimeSpan dueTime, TimeSpan period)
     {
         lock (_gate)
         {
@@ -88,8 +103,8 @@ public sealed class ControllableTimeProvider : TimeProvider
         // Lock order is `_gate` -> `_timerGate`, never the reverse: `Advance` calls `IsDue` while
         // holding the provider gate, so nothing may reach back into the provider (`GetUtcNow`,
         // `CreateTimer`, ...) while holding `_timerGate`. `IsDue`/`Fire` take the observed "now"
-        // as a parameter, `Change` samples it before entering the gate, and `Dispose` needs no
-        // clock at all — so the cycle does not exist.
+        // as a parameter, `Change` acquires the two gates in that same order, and `Dispose` needs
+        // no clock at all — so the cycle does not exist.
         private readonly object _timerGate = new();
         private DateTimeOffset? _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
         private TimeSpan _period = period;
@@ -136,19 +151,27 @@ public sealed class ControllableTimeProvider : TimeProvider
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
-            // Sampled before `_timerGate` is taken: reaching into the provider from inside the
-            // timer gate would invert the `_gate` -> `_timerGate` order that `Advance` relies on.
-            var utcNow = owner.GetUtcNow();
-            lock (_timerGate)
+            // Both gates, in the canonical `_gate` -> `_timerGate` order that `Advance` also uses,
+            // so reading "now" and re-arming against it is one non-interleavable window. Sampling
+            // the clock outside `_gate` would avoid the deadlock but open a stale-clock window
+            // instead: a concurrent `Advance` between the sample and the write re-arms the timer
+            // against an already-superseded "now", which is the same lost-tick shape as MAN-799.
+            lock (owner._gate)
             {
-                if (_disposed)
+                lock (_timerGate)
                 {
-                    return false;
-                }
+                    if (_disposed)
+                    {
+                        return false;
+                    }
 
-                _period = period;
-                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : utcNow + dueTime;
-                return true;
+                    _period = period;
+
+                    // Read directly under `owner._gate` rather than through `GetUtcNow()`; the
+                    // value is the same, this just makes the "already holding the gate" fact local.
+                    _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner._utcNow + dueTime;
+                    return true;
+                }
             }
         }
 

@@ -21,20 +21,29 @@ Credential URL user info, bearer authorization, quoted or unquoted password/toke
 
 ## CI timeout budgets
 
-Evidence collection is only reachable if the job survives long enough to reach it. A job-level `timeout-minutes` cancels the **whole** job, `if: always()` steps included, so a job that hits its own budget publishes no evidence at all — the MAN-799 `Connector Host Tests` hang burned 28 minutes and produced nothing. The governing invariant in `.github/workflows/ci.yml` is therefore, for every job:
+Evidence collection is only reachable if the job survives long enough to reach it. A job-level `timeout-minutes` cancels the **whole** job, `if: always()` steps included, so a job that hits its own budget publishes no evidence at all — the MAN-799 `Connector Host Tests` hang burned 28 minutes and produced nothing.
 
-> **every step has a `timeout-minutes`, and the sum of a job's step budgets is strictly less than that job's `timeout-minutes`.**
+Two rules apply to every job in `.github/workflows/ci.yml`, and a third applies only where evidence exists:
 
-This is what makes the job budget unreachable in practice: some step must exceed its own budget first, and a step timeout fails only that step, so the job continues into `Collect …` / `Upload …` and the redacted bundle is still published. Both halves are load-bearing. A single unbudgeted step (checkout, SDK setup, cache restore, the evidence steps themselves) reopens the path where the job budget fires first and takes the artifacts with it.
+1. **Every job declares `timeout-minutes`.** A job without one inherits GitHub's 360-minute default and can burn a full runner hour-block on a deadlock.
+2. **Every explicit step declares `timeout-minutes`** — checkout, SDK/pnpm setup, cache restore, and the evidence collection/upload steps included. `if: always()` does not exempt a step from having a budget.
+3. **A job that publishes evidence keeps the sum of its step budgets strictly below its job budget.** This is what makes its job budget unreachable in practice: some step must exceed its own budget first, and a step timeout fails only that step, so the job continues into `Collect …` / `Upload …` and the redacted bundle is still published. A single unbudgeted step reopens the path where the job budget fires first and takes the artifacts with it.
 
-Consequences for anyone editing the workflow:
+Rule 3 is deliberately scoped. `backend-tests`, `erp-sales-order-demand-acceptance`, and `connector-host-tests` have `if: always()` collection/upload steps and therefore something to lose, so their job budgets are inflated well past any real runtime to clear the step sum. `frontend`, `openapi-client-drift`, and `script-governance` have no `if: always()` step at all: nothing is preserved by outliving their own budget, so inflating them past the step sum would only convert a fast red into a slow red. Their job budgets are instead sized from observed runtime and only have to stay strictly above their largest single step budget, so step budgets remain reachable as the fail-fast bound. Step budgets are kept in both tiers.
 
-- Step budgets are sized from observed runtimes (~2x the recent maximum). Job budgets are **not** tuned values — they are backstops against a runner-level stall, derived from the step sum, and are expected to be far larger than any real run.
-- Adding or reordering a step means adding its budget **and** raising the job budget to keep the sum strictly below it.
-- Evidence collection and upload steps are budgeted like any other step; `if: always()` does not exempt them.
-- A new job starts with the same rule — a job without `timeout-minutes` inherits GitHub's 360-minute default and can burn a full runner hour-block on a deadlock.
+### What the step budgets are, and what the margin covers
 
-`python3` with PyYAML is enough to check the invariant: parse the workflow, and for every job assert that no step lacks `timeout-minutes` and that the step sum is less than the job budget.
+Step budgets are generous round upper bounds rather than a uniform multiple of anything: long steps (`dotnet test`, `pnpm build`, the verify scripts) are roughly 2x their observed maximum over the recent run history, while short fixed-cost steps such as checkout, `setup-dotnet`/`setup-node`/`pnpm/action-setup`, and cache restore get a 3–8 minute floor no healthy run comes near. Reading "~2x observed" onto a 10-second checkout would be wrong.
+
+Rule 2 covers the **explicit** steps in `steps:` — the only ones that can carry `timeout-minutes` at all. GitHub also runs steps that are not in `steps:` and cannot be budgeted: `Set up job` before the first step, and the implicit post steps of composite actions (`actions/cache`'s post-save, `setup-node`'s post-cache). The job budget starts before `Set up job` and keeps running through the post steps, so a job's remaining margin — job budget minus step sum — has to absorb them. Current margins are 6m (`backend-tests`), 9m (`erp-sales-order-demand-acceptance`) and 9m (`connector-host-tests`) against implicit overhead observed in the tens of seconds.
+
+The evidence conclusion survives this gap: implicit post steps are scheduled **after** the last explicit step, so they run after `Upload … test evidence` has already published the artifact. They can consume job budget; they cannot cost evidence. What they can do is push a job into its job budget even though every step stayed inside its own — which is why the margin, not just the strict inequality, is part of the design.
+
+### Enforcement
+
+This is not a comment-only convention. `scripts/lib/CiWorkflowBudgets.ps1` reads the workflow structurally and `scripts/tests/test-evidence.Tests.ps1` fails on `missing-job-timeout`, `missing-step-timeout`, `evidence-job-budget-not-above-step-sum`, or `job-budget-not-above-largest-step`; the Script Governance CI job runs that suite directly, so a violation propagates a real nonzero exit. The reader cross-checks its parsed step count against the raw file and throws on a mismatch, so a workflow it cannot parse fails closed instead of reporting zero violations. The same suite carries negative fixtures for each violation code, so "zero violations on `ci.yml`" is a result and not a vacuous pass.
+
+Consequences for anyone editing the workflow: adding or reordering a step in a tier-A job means adding its budget **and** raising the job budget to keep the sum strictly below it; adding an `if: always()` step to a tier-B job promotes that job to tier A and its budget has to be raised accordingly.
 
 ## Schema v1
 

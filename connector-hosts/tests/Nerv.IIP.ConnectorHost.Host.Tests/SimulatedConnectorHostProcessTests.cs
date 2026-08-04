@@ -4,9 +4,16 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Host.Tests;
 
+/// <summary>
+/// Member of the assembly's non-parallel collection. That is a hard requirement, not a preference:
+/// this class's <c>Timeout</c> is what <see cref="Dispose"/> relies on to be reached at all, and
+/// xUnit v2 only honours <c>Timeout</c> for tests that do not run in parallel.
+/// </summary>
+[Collection(HostTimeoutCollection.Name)]
 public sealed class SimulatedConnectorHostProcessTests : IDisposable
 {
     private static readonly string[] CanonicalConnectorIds =
@@ -50,7 +57,8 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
 
         using var host = StartHost(executable, platform.BaseAddress);
         _hostProcess = host;
-        var stopOutcome = HostStopOutcome.Graceful;
+        HostStopOutcome stopOutcome;
+        string output;
         try
         {
             await platform.WaitForEvidenceAsync(TimeSpan.FromSeconds(15));
@@ -86,21 +94,38 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
             Assert.True(platform.GoodCorrelatedResult);
             Assert.Empty(platform.Errors);
         }
-        finally
+        catch (Exception evidenceFailure)
         {
-            stopOutcome = await host.StopAsync();
-            Interlocked.Exchange(ref _hostProcess, null);
+            // The drain below is unreachable once an assertion throws, which is exactly when the
+            // Host output is worth having. Stop and drain here and attach it to the failure, so
+            // "expected two heartbeats" is reported together with what the Host actually logged.
+            var (failureOutcome, failureOutput) = await StopAndDrainAsync(host);
+            throw new Xunit.Sdk.XunitException(
+                $"{evidenceFailure.GetType().Name}: {evidenceFailure.Message}{Environment.NewLine}"
+                + $"Host stop outcome: {failureOutcome}. Host output: {failureOutput}");
         }
 
-        // Drained once, before the assertions, so both failure messages carry the real Host output
-        // instead of re-paying a bounded drain inside every interpolated assertion message.
-        var output = await host.DrainOutputAsync();
+        // Drained once, before the assertions below, so both failure messages carry the real Host
+        // output instead of re-paying a bounded drain inside every interpolated assertion message.
+        (stopOutcome, output) = await StopAndDrainAsync(host);
         Assert.True(
             stopOutcome == HostStopOutcome.Graceful,
             $"Host did not stop after SIGTERM and required a forced kill. Host output: {output}");
         Assert.True(
             host.HasExited,
             $"Host process did not exit within the cleanup deadline. Host output: {output}");
+    }
+
+    /// <summary>
+    /// Stops the Host and drains its redirected pipes, releasing the last-resort cleanup handle in
+    /// between. Both the success path and the assertion-failure path go through here so the Host
+    /// output is available on either one; every wait inside is bounded.
+    /// </summary>
+    private async Task<(HostStopOutcome Outcome, string Output)> StopAndDrainAsync(HostProcess host)
+    {
+        var outcome = await host.StopAsync();
+        Interlocked.Exchange(ref _hostProcess, null);
+        return (outcome, await host.DrainOutputAsync());
     }
 
     private static string ResolveHostExecutablePath() =>
@@ -387,23 +412,22 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
             return Task.FromResult(new LoopbackPlatform(listener, baseAddress));
         }
 
-        public async Task WaitForEvidenceAsync(TimeSpan timeout)
-        {
-            using var deadline = new CancellationTokenSource(timeout);
-            while (!HasAllEvidence())
-            {
-                if (deadline.IsCancellationRequested)
-                {
-                    throw new Xunit.Sdk.XunitException(
-                        $"Timed out waiting for process evidence. registrations={Format(CanonicalRegistrations)}, "
-                        + $"heartbeats={Format(Heartbeats)}, health={Format(CollectionHealthSnapshots)}, "
-                        + $"sources={Format(TelemetrySources)}, claimed={ControlClaimed}, "
-                        + $"goodResult={GoodCorrelatedResult}, errors={string.Join(" | ", Errors)}");
-                }
-
-                await Task.Delay(50, deadline.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-            }
-        }
+        /// <summary>
+        /// Bounded poll — there is no completion signal to await, because the evidence arrives as
+        /// HTTP requests from an out-of-process Host. Failure reports the same four facts as the
+        /// signal-based waits: condition, elapsed, attempts, and last observation.
+        /// </summary>
+        public Task WaitForEvidenceAsync(TimeSpan timeout) =>
+            BoundedObservation.PollAsync(
+                HasAllEvidence,
+                "the built Host process to report complete registration/heartbeat/health/telemetry/"
+                    + "manifest/control evidence",
+                () => $"registrations={Format(CanonicalRegistrations)}, "
+                    + $"heartbeats={Format(Heartbeats)}, health={Format(CollectionHealthSnapshots)}, "
+                    + $"sources={Format(TelemetrySources)}, manifests={Format(ManifestTagCounts)}, "
+                    + $"claimed={ControlClaimed}, goodResult={GoodCorrelatedResult}, "
+                    + $"errors={string.Join(" | ", Errors)}",
+                timeout);
 
         public async ValueTask DisposeAsync()
         {

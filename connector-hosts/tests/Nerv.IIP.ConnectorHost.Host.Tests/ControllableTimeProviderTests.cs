@@ -39,7 +39,7 @@ public sealed class ControllableTimeProviderTests
     {
         var clock = new ControllableTimeProvider();
         var fired = 0;
-        var registration = clock.WaitForTimerCreatedAsync(Tick, Tick);
+        var registration = clock.WaitForTimerEverCreatedAsync(Tick, Tick);
         Assert.False(registration.IsCompleted);
 
         using var timer = clock.CreateTimer(_ => Interlocked.Increment(ref fired), null, Tick, Tick);
@@ -55,7 +55,7 @@ public sealed class ControllableTimeProviderTests
         var clock = new ControllableTimeProvider();
         using var timer = clock.CreateTimer(static _ => { }, null, Tick, Tick);
 
-        Assert.True(clock.WaitForTimerCreatedAsync(Tick, Tick).IsCompletedSuccessfully);
-        Assert.False(clock.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(2), Tick).IsCompleted);
+        Assert.True(clock.WaitForTimerEverCreatedAsync(Tick, Tick).IsCompletedSuccessfully);
+        Assert.False(clock.WaitForTimerEverCreatedAsync(TimeSpan.FromSeconds(2), Tick).IsCompleted);
     }
 }

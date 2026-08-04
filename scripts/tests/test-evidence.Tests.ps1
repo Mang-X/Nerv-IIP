@@ -14,6 +14,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
+. (Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1')
 
 $repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
 $initialRepoCommandLogs = @(
@@ -607,6 +608,114 @@ foreach ($laneContract in @(
     $retainedBlock = $workflow.Substring($collectIndex, [Math]::Min($workflow.Length - $collectIndex, $uploadIndex - $collectIndex + 250))
     Assert-True ($retainedBlock.Contains('if: always()')) 'Collector and upload must both be always().'
 }
+
+# --- MAN-799 CI timeout-budget invariants -----------------------------------------------------
+# Evidence collection is only reachable if the job survives long enough to run its `if: always()`
+# steps. These assertions are the enforcement the governance document promises; without them the
+# invariant survives only as a comment and the next added step silently breaks it.
+$workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$ciJobs = Get-NervCiWorkflowBudgets -Path $workflowPath
+$ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
+Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
+
+$evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
+Assert-True ($evidenceJobs.Count -ge 3) "Expected at least three evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+foreach ($expectedEvidenceJob in @('backend-tests', 'connector-host-tests', 'erp-sales-order-demand-acceptance')) {
+    Assert-True (@($evidenceJobs | Where-Object Name -eq $expectedEvidenceJob).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
+}
+
+# The reader must actually be able to see a missing budget / an exceeded budget, otherwise "zero
+# violations" above proves nothing. Each negative fixture is the real workflow shape with one
+# deliberate defect.
+$ciFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "man-799-ci-budgets-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $null = New-Item -ItemType Directory -Path $ciFixtureRoot -Force
+    $ciFixtures = @(
+        @{
+            Name = 'missing-job-timeout'
+            Yaml = @'
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+'@
+        },
+        @{
+            Name = 'missing-step-timeout'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+'@
+        },
+        @{
+            Name = 'evidence-job-budget-not-above-step-sum'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        timeout-minutes: 8
+        run: ./run.ps1
+      - name: Upload evidence
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+'@
+        },
+        @{
+            Name = 'job-budget-not-above-largest-step'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        timeout-minutes: 10
+        run: ./build.ps1
+'@
+        }
+    )
+
+    foreach ($ciFixture in $ciFixtures) {
+        $fixturePath = Join-Path $ciFixtureRoot "$($ciFixture.Name).yml"
+        Set-Content -Path $fixturePath -Value $ciFixture.Yaml -Encoding utf8
+        $fixtureViolations = Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $fixturePath)
+        Assert-Violation $fixtureViolations $ciFixture.Name
+    }
+
+    # A tier-B job (no `if: always()` step) is deliberately allowed to keep a job budget below its
+    # step sum: there is no evidence to lose, so the budget tracks observed runtime instead.
+    $tierBPath = Join-Path $ciFixtureRoot 'tier-b-tight-budget.yml'
+    Set-Content -Path $tierBPath -Encoding utf8 -Value @'
+jobs:
+  sample:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        timeout-minutes: 12
+        run: ./install.ps1
+      - name: Build
+        timeout-minutes: 15
+        run: ./build.ps1
+'@
+    Assert-Equal 0 (Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $tierBPath)).Count 'A job without evidence steps must not be forced above its step sum.'
+}
+finally {
+    if (Test-Path $ciFixtureRoot) { Remove-Item $ciFixtureRoot -Recurse -Force }
+}
+Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleaned up.'
 
 $governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
 Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
