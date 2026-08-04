@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -51,6 +52,14 @@ internal static class BusinessGatewayTestHostGate
     private static readonly SemaphoreSlim Permits = new(Capacity, Capacity);
     private static readonly Lock BuildMutex = new();
 
+    /// <summary>
+    /// Upper bound on how long <see cref="Build{T}"/> waits for every request permit. Requests that
+    /// are merely queued behind other requests drain in milliseconds, so this is slack for the
+    /// pipeline tail rather than a timing assumption; exceeding it means a request is stuck, and
+    /// failing loudly with diagnostics beats deadlocking the whole assembly silently.
+    /// </summary>
+    private static readonly TimeSpan BuildBudget = TimeSpan.FromSeconds(60);
+
     /// <summary>Gateway requests currently inside the server pipeline; diagnostics only.</summary>
     private static int _requestsInFlight;
 
@@ -66,10 +75,7 @@ internal static class BusinessGatewayTestHostGate
 
         lock (BuildMutex)
         {
-            for (var i = 0; i < Capacity; i++)
-            {
-                Permits.Wait();
-            }
+            AcquireAllPermits();
 
             try
             {
@@ -79,6 +85,43 @@ internal static class BusinessGatewayTestHostGate
             {
                 Permits.Release(Capacity);
             }
+        }
+    }
+
+    /// <summary>
+    /// Takes all <see cref="Capacity"/> permits within <see cref="BuildBudget"/>, releasing whatever
+    /// it already took if the budget runs out. The failure carries the condition, elapsed time,
+    /// attempt count and the last observation (permits taken, requests still in flight) so a stuck
+    /// request is diagnosable instead of hanging the assembly.
+    /// </summary>
+    private static void AcquireAllPermits()
+    {
+        var started = Stopwatch.GetTimestamp();
+        var acquired = 0;
+        var attempts = 0;
+
+        while (acquired < Capacity)
+        {
+            var remaining = BuildBudget - Stopwatch.GetElapsedTime(started);
+            attempts++;
+
+            if (remaining > TimeSpan.Zero && Permits.Wait(remaining))
+            {
+                acquired++;
+                continue;
+            }
+
+            if (acquired > 0)
+            {
+                Permits.Release(acquired);
+            }
+
+            throw new TimeoutException(
+                $"Gateway test host build could not reach the condition 'no gateway request in flight' "
+                + $"({Capacity} permits held) after {Stopwatch.GetElapsedTime(started).TotalSeconds:F1}s "
+                + $"across {attempts} wait attempt(s). Last observation: {acquired} of {Capacity} permit(s) "
+                + $"acquired, {RequestsInFlight} request(s) still inside the server pipeline. A gateway "
+                + "request is stuck; the acquired permits were released so other requests can proceed.");
         }
     }
 
