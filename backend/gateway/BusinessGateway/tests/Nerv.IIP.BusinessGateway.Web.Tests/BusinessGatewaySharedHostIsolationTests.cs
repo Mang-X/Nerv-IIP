@@ -250,10 +250,18 @@ public sealed class BusinessGatewaySharedHostIsolationTests
         // construction mutate FastEndpoints' static serializer configuration underneath a live
         // request. The permit is therefore held server side, and this build must not start yet.
         var build = Task.Run(() => BusinessGatewayTestHostGate.Build(() => 0));
-        var settled = await Task.WhenAny(build, Task.Delay(BuildMustStayBlockedFor));
+        var completedTooEarly = true;
+        try
+        {
+            await build.WaitAsync(BuildMustStayBlockedFor);
+        }
+        catch (TimeoutException)
+        {
+            completedTooEarly = false;
+        }
 
-        Assert.True(
-            ReferenceEquals(settled, build) is false,
+        Assert.False(
+            completedTooEarly,
             "Host construction completed while the gateway was still writing a response body "
             + $"(gate reported {BusinessGatewayTestHostGate.RequestsInFlight} request(s) in flight).");
 

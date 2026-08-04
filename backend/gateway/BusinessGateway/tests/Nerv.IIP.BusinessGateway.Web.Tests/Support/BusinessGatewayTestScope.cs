@@ -18,6 +18,12 @@ internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object>
 
     private int _requestsInFlight;
 
+    /// <summary>
+    /// Completed by the request that takes the in-flight count back to zero. Created on demand by
+    /// the first <see cref="DrainAsync"/>, so a scope nobody drains costs nothing.
+    /// </summary>
+    private TaskCompletionSource? _drained;
+
     public string Id { get; } = Guid.CreateVersion7().ToString("n");
 
     public IReadOnlyDictionary<Type, object> Overrides { get; } = overrides;
@@ -42,21 +48,39 @@ internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object>
             return;
         }
 
-        var started = Stopwatch.GetTimestamp();
-        var attempts = 0;
-        while (Volatile.Read(ref _requestsInFlight) > 0)
-        {
-            attempts++;
-            var elapsed = Stopwatch.GetElapsedTime(started);
-            if (elapsed > DrainBudget)
-            {
-                throw new InvalidOperationException(
-                    $"Gateway test scope '{Id}' still had {Volatile.Read(ref _requestsInFlight)} request(s) in "
-                    + $"flight after {elapsed.TotalSeconds:F1}s and {attempts} attempts. The owning test released "
-                    + "its lease without awaiting its own responses.");
-            }
+        Interlocked.CompareExchange(
+            ref _drained,
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            null);
+        var drained = Volatile.Read(ref _drained)!;
 
-            await Task.Delay(TimeSpan.FromMilliseconds(1));
+        // The last request may have left between the check above and publishing the source, in
+        // which case nobody is left to complete it.
+        if (Volatile.Read(ref _requestsInFlight) == 0)
+        {
+            drained.TrySetResult();
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await drained.Task.WaitAsync(DrainBudget);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new InvalidOperationException(
+                $"Gateway test scope '{Id}' still had {Volatile.Read(ref _requestsInFlight)} request(s) in flight "
+                + $"after {Stopwatch.GetElapsedTime(started).TotalSeconds:F1}s. The owning test released its lease "
+                + "without awaiting its own responses.",
+                exception);
+        }
+    }
+
+    private void Leave()
+    {
+        if (Interlocked.Decrement(ref _requestsInFlight) == 0)
+        {
+            Volatile.Read(ref _drained)?.TrySetResult();
         }
     }
 
@@ -68,7 +92,7 @@ internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object>
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
-                Interlocked.Decrement(ref scope._requestsInFlight);
+                scope.Leave();
             }
         }
     }
