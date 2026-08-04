@@ -22,6 +22,8 @@ public sealed class ControllableTimeProvider : TimeProvider
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
+        // Constructed before `_gate` is taken: the field initializer reads `GetUtcNow()`, which
+        // would otherwise be a re-entrant acquisition of the provider gate.
         var timer = new ControllableTimer(this, callback, state, dueTime, period);
         TaskCompletionSource? creationWaiter = null;
         lock (_gate)
@@ -82,6 +84,12 @@ public sealed class ControllableTimeProvider : TimeProvider
         // the clock (a monitor that moves time forward while it runs). Two `Advance` calls can
         // therefore reach the same timer concurrently, so the due-time transition has to be
         // atomic — otherwise a torn read of `_dueAtUtc` can double-fire or skip a tick.
+        //
+        // Lock order is `_gate` -> `_timerGate`, never the reverse: `Advance` calls `IsDue` while
+        // holding the provider gate, so nothing may reach back into the provider (`GetUtcNow`,
+        // `CreateTimer`, ...) while holding `_timerGate`. `IsDue`/`Fire` take the observed "now"
+        // as a parameter, `Change` samples it before entering the gate, and `Dispose` needs no
+        // clock at all — so the cycle does not exist.
         private readonly object _timerGate = new();
         private DateTimeOffset? _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
         private TimeSpan _period = period;
@@ -128,6 +136,9 @@ public sealed class ControllableTimeProvider : TimeProvider
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
+            // Sampled before `_timerGate` is taken: reaching into the provider from inside the
+            // timer gate would invert the `_gate` -> `_timerGate` order that `Advance` relies on.
+            var utcNow = owner.GetUtcNow();
             lock (_timerGate)
             {
                 if (_disposed)
@@ -136,7 +147,7 @@ public sealed class ControllableTimeProvider : TimeProvider
                 }
 
                 _period = period;
-                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
+                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : utcNow + dueTime;
                 return true;
             }
         }

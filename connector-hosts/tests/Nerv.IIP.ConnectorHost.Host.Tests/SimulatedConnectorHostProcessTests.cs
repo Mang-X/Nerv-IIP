@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 
 namespace Nerv.IIP.ConnectorHost.Host.Tests;
@@ -14,6 +15,7 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
     private static readonly TimeSpan SignalDeliveryBudget = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan GracefulStopBudget = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForcedStopBudget = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan OutputDrainBudget = TimeSpan.FromSeconds(5);
 
     private HostProcess? _hostProcess;
 
@@ -48,7 +50,7 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
 
         using var host = StartHost(executable, platform.BaseAddress);
         _hostProcess = host;
-        var usedForcedCleanup = false;
+        var stopOutcome = HostStopOutcome.Graceful;
         try
         {
             await platform.WaitForEvidenceAsync(TimeSpan.FromSeconds(15));
@@ -86,16 +88,19 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
         }
         finally
         {
-            usedForcedCleanup = await host.StopGracefullyAsync();
+            stopOutcome = await host.StopAsync();
             Interlocked.Exchange(ref _hostProcess, null);
         }
 
-        Assert.False(
-            usedForcedCleanup,
-            $"Host did not stop after SIGTERM and required a forced kill. Host output: {host.DrainOutput()}");
+        // Drained once, before the assertions, so both failure messages carry the real Host output
+        // instead of re-paying a bounded drain inside every interpolated assertion message.
+        var output = await host.DrainOutputAsync();
+        Assert.True(
+            stopOutcome == HostStopOutcome.Graceful,
+            $"Host did not stop after SIGTERM and required a forced kill. Host output: {output}");
         Assert.True(
             host.HasExited,
-            $"Host process did not exit within the cleanup deadline. Host output: {host.DrainOutput()}");
+            $"Host process did not exit within the cleanup deadline. Host output: {output}");
     }
 
     private static string ResolveHostExecutablePath() =>
@@ -146,29 +151,55 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
         return new HostProcess(process);
     }
 
+    private enum HostStopOutcome
+    {
+        /// <summary>The Host exited on its own after SIGTERM.</summary>
+        Graceful,
+
+        /// <summary>The Host outlived the graceful budget and its process tree was killed.</summary>
+        ForcedKill
+    }
+
     /// <summary>
     /// Owns the built Host child process and its redirected pipes, and guarantees both are
     /// reclaimed on every exit path: normal completion, assertion failure, and an abandoned
     /// (timed-out) test where only <see cref="IDisposable.Dispose"/> still runs.
     /// </summary>
-    private sealed class HostProcess(Process process) : IDisposable
+    private sealed class HostProcess : IDisposable
     {
-        private readonly Task<string> _stdout = process.StandardOutput.ReadToEndAsync();
-        private readonly Task<string> _stderr = process.StandardError.ReadToEndAsync();
-        private bool _disposed;
+        private readonly Process _process;
+        private readonly StringBuilder _stdoutBuffer = new();
+        private readonly StringBuilder _stderrBuffer = new();
+        private readonly Task _stdout;
+        private readonly Task _stderr;
+        private int _disposed;
 
-        public bool HasExited => process.HasExited;
+        public HostProcess(Process process)
+        {
+            _process = process;
+
+            // The pumps never fault: a broken/disposed pipe is folded into the buffer as a marker.
+            // That is what makes the reader tasks deterministically observed even when `Dispose`
+            // closes the process handle while a read is still pending — an unobserved
+            // `ObjectDisposedException` from a reader would otherwise surface later, on the
+            // finalizer thread, as an unrelated test failure.
+            _stdout = PumpAsync(process.StandardOutput, _stdoutBuffer);
+            _stderr = PumpAsync(process.StandardError, _stderrBuffer);
+        }
+
+        public bool HasExited => _process.HasExited;
 
         /// <summary>
-        /// Sends SIGTERM and reports whether a forced kill was needed. Every wait is bounded, so
+        /// Sends SIGTERM and reports how the Host actually went down. Every wait is bounded, so
         /// this cannot park the test; the SIGTERM helper process is bounded too, because it is a
         /// child of the test host and would otherwise be one more unbounded await.
         /// </summary>
-        public async Task<bool> StopGracefullyAsync()
+        public async Task<HostStopOutcome> StopAsync()
         {
+            var process = _process;
             if (process.HasExited)
             {
-                return false;
+                return HostStopOutcome.Graceful;
             }
 
             using var signal = Process.Start(new ProcessStartInfo("/bin/kill")
@@ -191,7 +222,7 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
             try
             {
                 await process.WaitForExitAsync().WaitAsync(GracefulStopBudget);
-                return false;
+                return HostStopOutcome.Graceful;
             }
             catch (TimeoutException)
             {
@@ -208,41 +239,58 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
                     // Reported by the caller's HasExited assertion rather than hidden here.
                 }
 
-                return true;
+                return HostStopOutcome.ForcedKill;
             }
         }
 
-        public string DrainOutput()
+        /// <summary>
+        /// Bounded drain of the redirected pipes. The pumps only complete at EOF, so waiting on
+        /// them unbounded would reintroduce exactly the hang this class exists to prevent; instead
+        /// the wait is capped and whatever has already been buffered is reported either way.
+        /// </summary>
+        public async Task<string> DrainOutputAsync()
         {
-            var stdout = ReadCompleted(_stdout);
-            var stderr = ReadCompleted(_stderr);
-            return $"stdout=<{stdout}> stderr=<{stderr}>";
+            var atEof = true;
+            try
+            {
+                await Task.WhenAll(_stdout, _stderr).WaitAsync(OutputDrainBudget);
+            }
+            catch (TimeoutException)
+            {
+                atEof = false;
+            }
+
+            var suffix = atEof
+                ? string.Empty
+                : $" (partial: pipes still open after {OutputDrainBudget.TotalSeconds:0.###}s)";
+            return $"stdout=<{Snapshot(_stdoutBuffer)}> stderr=<{Snapshot(_stderrBuffer)}>{suffix}";
         }
 
         public void Dispose()
         {
-            // Both the test's `using` and the test class's last-resort cleanup can land here.
-            if (_disposed)
+            // Both the test's `using` and the test class's last-resort cleanup can land here, and
+            // xUnit's `Timeout` can make them concurrent — so the early-out has to be atomic.
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {
                 return;
             }
 
-            _disposed = true;
             try
             {
-                if (!process.HasExited)
+                if (!_process.HasExited)
                 {
-                    TryKillTree(process);
-                    process.WaitForExit((int)ForcedStopBudget.TotalMilliseconds);
+                    TryKillTree(_process);
+                    _process.WaitForExit((int)ForcedStopBudget.TotalMilliseconds);
                 }
             }
             catch (InvalidOperationException)
             {
-                // The process was already reaped; nothing left to reclaim.
+                // The process was already reaped or the handle already released (an
+                // ObjectDisposedException from a racing Dispose lands here too); nothing to reclaim.
             }
             finally
             {
-                process.Dispose();
+                _process.Dispose();
             }
         }
 
@@ -257,14 +305,51 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
             }
             catch (InvalidOperationException)
             {
+                // Also covers ObjectDisposedException (it derives from InvalidOperationException),
+                // which is what a concurrent Dispose racing this call throws.
             }
             catch (NotSupportedException)
             {
             }
         }
 
-        private static string ReadCompleted(Task<string> reader) =>
-            reader.IsCompletedSuccessfully ? reader.Result.Trim() : "(not drained)";
+        private static async Task PumpAsync(StreamReader reader, StringBuilder buffer)
+        {
+            var chunk = new char[4096];
+            try
+            {
+                while (true)
+                {
+                    var read = await reader.ReadAsync(chunk).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        return;
+                    }
+
+                    lock (buffer)
+                    {
+                        buffer.Append(chunk, 0, read);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Killing the tree or disposing the process tears the pipe down under the reader.
+                // Recording it keeps the pump task successfully completed — and therefore observed.
+                lock (buffer)
+                {
+                    buffer.Append($"<reader ended: {ex.GetType().Name}>");
+                }
+            }
+        }
+
+        private static string Snapshot(StringBuilder buffer)
+        {
+            lock (buffer)
+            {
+                return buffer.ToString().Trim();
+            }
+        }
     }
 
     private sealed class LoopbackPlatform : IAsyncDisposable

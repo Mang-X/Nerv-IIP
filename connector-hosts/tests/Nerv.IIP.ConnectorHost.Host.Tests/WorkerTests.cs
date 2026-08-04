@@ -20,10 +20,20 @@ public sealed class WorkerTests
     private static readonly TimeSpan StopBudget = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// Per-test upper bound. Deliberately far above the 5s observation/stop budgets so a genuine
+    /// assertion failure always wins the race and reports its condition; this only exists so a
+    /// regression that parks a loop fails the test instead of hanging the whole test host (the
+    /// MAN-799 failure mode). The collection disables parallelization, which xUnit requires for
+    /// <c>Timeout</c> to be honoured.
+    /// </summary>
+    private const int TestTimeoutMilliseconds = 120_000;
+
+    /// <summary>
     /// Bounded wait for an asynchronously produced observation. Every await in this class goes
-    /// through here (or an explicit <c>WaitAsync</c>) so a lost fake-clock tick surfaces as a
-    /// reported failure instead of parking the test — and therefore the whole test host —
-    /// forever.
+    /// through here so a lost fake-clock tick surfaces as a reported failure instead of parking
+    /// the test — and therefore the whole test host — forever. The observation is an
+    /// edge-triggered completion signal rather than a poll, so a single bounded await is the
+    /// whole attempt budget; that is reported explicitly instead of being left implicit.
     /// </summary>
     private static async Task ObserveAsync(
         Task observation,
@@ -41,11 +51,12 @@ public sealed class WorkerTests
         {
             throw new Xunit.Sdk.XunitException(
                 $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
-                + $"(budget {effectiveBudget.TotalSeconds:0.###}s); last observation: {lastObservation()}");
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
+                + $"await on a completion signal); last observation: {lastObservation()}");
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Connection_monitor_reporting_and_ops_run_while_collection_is_blocked()
     {
         var clock = new ControllableTimeProvider();
@@ -59,20 +70,34 @@ public sealed class WorkerTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await Task.WhenAll(collection.Started.Task, protocol.FirstCycle.Task, ops.Polled.Task)
-                .WaitAsync(TimeSpan.FromSeconds(5));
-            await clock.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(4))
-                .WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                Task.WhenAll(collection.Started.Task, protocol.FirstCycle.Task, ops.Polled.Task),
+                "first collection cycle start, first reporting cycle and first ops poll",
+                () => $"collectionCalls={collection.Calls}, reportingCycles={protocol.ReportingCycles}, "
+                    + $"opsCalls={ops.Calls}");
+            await ObserveAsync(
+                clock.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(4)),
+                "connection-monitor periodic timer registration (due=4s, period=4s)",
+                () => $"monitorCalls={monitor.Calls}, now={clock.GetUtcNow():O}");
             Assert.Equal(0, monitor.Calls);
 
             var tracker = new ConnectorConnectionStateTracker("connector-a", clock, signal.Signal);
             tracker.MarkLost("transport", "socket-closed");
-            await protocol.SecondCycle.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                protocol.SecondCycle.Task,
+                "second reporting cycle after the signalled connection loss",
+                () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
             Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:00Z"), clock.GetUtcNow());
 
             clock.Advance(TimeSpan.FromSeconds(4));
-            await monitor.Checked.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await protocol.ThirdCycle.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                monitor.Checked.Task,
+                "first connection check",
+                () => $"monitorCalls={monitor.Calls}, now={clock.GetUtcNow():O}");
+            await ObserveAsync(
+                protocol.ThirdCycle.Task,
+                "third reporting cycle",
+                () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
 
             Assert.True(monitor.Calls >= 1);
             Assert.True(protocol.ReportingCycles >= 3);
@@ -80,16 +105,19 @@ public sealed class WorkerTests
             Assert.False(collection.Completed);
 
             collection.Release();
-            await collection.Finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                collection.Finished.Task,
+                "released collection cycle completion",
+                () => $"collectionCalls={collection.Calls}, completed={collection.Completed}");
         }
         finally
         {
             collection.Release();
-            await worker.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Slow_connection_monitor_keeps_the_next_start_on_the_fixed_four_second_tick()
     {
         var clock = new ControllableTimeProvider();
@@ -143,7 +171,7 @@ public sealed class WorkerTests
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Blocked_manifest_upload_does_not_delay_heartbeat_reporting()
     {
         var clock = new ControllableTimeProvider();
@@ -161,7 +189,10 @@ public sealed class WorkerTests
                 () => $"reportingCycles={protocol.ReportingCycles}, manifestCompleted={manifestClient.Completed}");
             signal.Signal("connector-a");
 
-            await protocol.SecondCycle.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            await ObserveAsync(
+                protocol.SecondCycle.Task,
+                "second reporting cycle while the manifest upload is still blocked",
+                () => $"reportingCycles={protocol.ReportingCycles}, manifestCompleted={manifestClient.Completed}");
             Assert.False(manifestClient.Completed);
         }
         finally
@@ -171,11 +202,20 @@ public sealed class WorkerTests
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Manifest_retry_loop_uses_exact_exponential_due_times_instead_of_heartbeat_quantization()
     {
         var clock = new ControllableTimeProvider();
         var manifestClient = new TimedFailingManifestClient(clock, expectedAttempts: 8);
+
+        // The retry wait is armed *after* the failing attempt completes. Advancing the fake clock
+        // before that arming would create the retry timer at the already-advanced "now" — the same
+        // lost-tick race that hung this assembly in MAN-799. `Task.Delay(..., timeProvider, ...)`
+        // is created synchronously inside the signal's `WaitAsync`, before its first await, so the
+        // wrapper observing that call is an exact barrier for "the retry timer now exists".
+        var manifestSignal = new ArmingRecordingManifestSignal(
+            new ConnectorManifestSignal(),
+            expectedWaits: 9);
         var worker = CreateWorker(
             clock,
             new ConnectorReportSignal(),
@@ -183,31 +223,36 @@ public sealed class WorkerTests
             new RecordingOpsClient(),
             [],
             [],
-            manifestClient);
+            manifestClient,
+            manifestSignal);
 
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await manifestClient.Attempt(0).WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            await ObserveAsync(
+                manifestClient.Attempt(0),
+                "first manifest upload attempt",
+                () => $"attempts={manifestClient.AttemptTimesUtc.Count}, now={clock.GetUtcNow():O}");
+            await ObserveAsync(
+                manifestSignal.WaitArmed(0),
+                "first retry wait armed (retry timer registered on the fake clock)",
+                () => $"waitsArmed={manifestSignal.ArmedWaits}, attempts={manifestClient.AttemptTimesUtc.Count}");
+
             var retryDelays = new[] { 1, 2, 4, 8, 16, 30, 30 };
             for (var index = 0; index < retryDelays.Length; index++)
             {
                 clock.Advance(TimeSpan.FromSeconds(retryDelays[index]) - TimeSpan.FromTicks(1));
                 Assert.False(manifestClient.Attempt(index + 1).IsCompleted);
                 clock.Advance(TimeSpan.FromTicks(1));
-                try
-                {
-                    await manifestClient.Attempt(index + 1).WaitAsync(TimeSpan.FromSeconds(5));
-                }
-                catch (TimeoutException exception)
-                {
-                    throw new InvalidOperationException(
-                        $"Attempt {index + 1} was not observed at {clock.GetUtcNow():O}; observed {manifestClient.AttemptTimesUtc.Count} attempts.",
-                        exception);
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(50));
+                await ObserveAsync(
+                    manifestClient.Attempt(index + 1),
+                    $"manifest upload attempt {index + 1}",
+                    () => $"attempts={manifestClient.AttemptTimesUtc.Count}, now={clock.GetUtcNow():O}");
+                await ObserveAsync(
+                    manifestSignal.WaitArmed(index + 1),
+                    $"retry wait {index + 1} armed (next retry timer registered on the fake clock)",
+                    () => $"waitsArmed={manifestSignal.ArmedWaits}, attempts={manifestClient.AttemptTimesUtc.Count}, "
+                        + $"now={clock.GetUtcNow():O}");
             }
 
             Assert.Equal(
@@ -222,7 +267,7 @@ public sealed class WorkerTests
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Explicit_rebirth_request_republishes_matching_root_but_activation_signal_does_not()
     {
         var clock = new ControllableTimeProvider();
@@ -243,14 +288,23 @@ public sealed class WorkerTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await manifestClient.Attempt(0).WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                manifestClient.Attempt(0),
+                "first manifest upload attempt",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
 
             manifestSignal.Signal("connector-a");
-            await connector.Discovery(1).WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                connector.Discovery(1),
+                "second connector discovery after the activation signal",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
             Assert.Single(manifestClient.Requests);
 
             ((IConnectorManifestRebirthRequest)manifestSignal).RequestRebirth("connector-a");
-            await manifestClient.Attempt(1).WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                manifestClient.Attempt(1),
+                "republished manifest upload after the explicit rebirth request",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
 
             Assert.Equal(manifestClient.Requests[0].ManifestRevision, manifestClient.Requests[1].ManifestRevision);
             Assert.Equal(
@@ -263,7 +317,7 @@ public sealed class WorkerTests
         }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Bulk_activation_signals_for_one_connector_trigger_only_one_additional_manifest_scan()
     {
         var clock = new ControllableTimeProvider();
@@ -284,16 +338,28 @@ public sealed class WorkerTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await manifestClient.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                manifestClient.Started.Task,
+                "first manifest upload start",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
             for (var index = 0; index < 500; index++)
             {
                 manifestSignal.Signal("connector-a");
             }
 
             manifestClient.Release();
-            await manifestClient.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await connector.Discovery(1).WaitAsync(TimeSpan.FromSeconds(5));
-            await manifestSignal.SecondWaitEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await ObserveAsync(
+                manifestClient.Completed.Task,
+                "released manifest upload completion",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
+            await ObserveAsync(
+                connector.Discovery(1),
+                "second connector discovery collapsing the 500 activation signals",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
+            await ObserveAsync(
+                manifestSignal.SecondWaitEntered.Task,
+                "second manifest signal wait entered",
+                () => $"requests={manifestClient.Requests.Count}, discoveries={connector.DiscoveryCount}");
 
             Assert.False(manifestSignal.SecondWaitTask.IsCompleted);
             Assert.Equal(2, connector.DiscoveryCount);
@@ -421,6 +487,43 @@ public sealed class WorkerTests
                         [new ConnectorTagManifestEntrySnapshot("device-a", "temperature", true, "ns=2;s=T", "pending", DateTimeOffset.Parse("2026-07-17T00:00:00Z"))]))
             ];
             return Task.FromResult(targets);
+        }
+    }
+
+    /// <summary>
+    /// Publishes one observation per manifest wait, raised only after the inner
+    /// <see cref="IConnectorManifestSignal.WaitAsync"/> call has returned. That call registers its
+    /// <c>Task.Delay</c> timer on the injected <see cref="TimeProvider"/> synchronously, before
+    /// its first await, so the observation is a deterministic "the retry timer is armed" barrier —
+    /// the replacement for a fixed sleep before advancing the fake clock.
+    /// </summary>
+    private sealed class ArmingRecordingManifestSignal(IConnectorManifestSignal inner, int expectedWaits)
+        : IConnectorManifestSignal
+    {
+        private readonly TaskCompletionSource[] _armed = Enumerable.Range(0, expectedWaits)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+        private int _waitCount;
+
+        public int ArmedWaits => Volatile.Read(ref _waitCount);
+
+        public Task WaitArmed(int index) => _armed[index].Task;
+
+        public void Signal(string connectorId) => inner.Signal(connectorId);
+
+        public async Task<ConnectorManifestSignalEvent?> WaitAsync(
+            TimeSpan timeout,
+            TimeProvider timeProvider,
+            CancellationToken cancellationToken)
+        {
+            var underlyingTask = inner.WaitAsync(timeout, timeProvider, cancellationToken);
+            var index = Interlocked.Increment(ref _waitCount) - 1;
+            if (index < _armed.Length)
+            {
+                _armed[index].TrySetResult();
+            }
+
+            return await underlyingTask;
         }
     }
 

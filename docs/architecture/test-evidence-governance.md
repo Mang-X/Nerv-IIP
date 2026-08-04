@@ -19,6 +19,23 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 
 Credential URL user info, bearer authorization, quoted or unquoted password/token/secret/client_secret values, PEM blocks, and named `customerName`, `phone`, `email`, and `address` fields are replaced before retention. Parameterized display-name values named `body`, `requestBody`, or `responseBody` are matched case-insensitively and replaced with a non-reversible 16-hex digest marker; nested/escaped values and multiple body parameters are bounded structurally, while method identity and non-body parameters remain available for skip-policy matching and instance distinction. Raw failed-test messages and unregistered skip reasons are omitted by construction; approved skip reasons are bounded to 512 characters. A collector failure publishes a retained bundle with `collectionStatus: failed`, an `evidence-collection-failed` summary, allowlisted and bounded run identity/diagnostics, and a nonzero exit. If the requested output directory already contains files, the failure bundle uses the first free deterministic sibling (`.failure`, `.failure-2`, ...) and reports that exact path through the collector step output; upload consumes that output and never overwrites the pre-existing directory. Retention is 14 days. GitHub permissions are only `actions: read` and `contents: read`.
 
+## CI timeout budgets
+
+Evidence collection is only reachable if the job survives long enough to reach it. A job-level `timeout-minutes` cancels the **whole** job, `if: always()` steps included, so a job that hits its own budget publishes no evidence at all — the MAN-799 `Connector Host Tests` hang burned 28 minutes and produced nothing. The governing invariant in `.github/workflows/ci.yml` is therefore, for every job:
+
+> **every step has a `timeout-minutes`, and the sum of a job's step budgets is strictly less than that job's `timeout-minutes`.**
+
+This is what makes the job budget unreachable in practice: some step must exceed its own budget first, and a step timeout fails only that step, so the job continues into `Collect …` / `Upload …` and the redacted bundle is still published. Both halves are load-bearing. A single unbudgeted step (checkout, SDK setup, cache restore, the evidence steps themselves) reopens the path where the job budget fires first and takes the artifacts with it.
+
+Consequences for anyone editing the workflow:
+
+- Step budgets are sized from observed runtimes (~2x the recent maximum). Job budgets are **not** tuned values — they are backstops against a runner-level stall, derived from the step sum, and are expected to be far larger than any real run.
+- Adding or reordering a step means adding its budget **and** raising the job budget to keep the sum strictly below it.
+- Evidence collection and upload steps are budgeted like any other step; `if: always()` does not exempt them.
+- A new job starts with the same rule — a job without `timeout-minutes` inherits GitHub's 360-minute default and can burn a full runner hour-block on a deadlock.
+
+`python3` with PyYAML is enough to check the invariant: parse the workflow, and for every job assert that no step lacks `timeout-minutes` and that the step sum is less than the job budget.
+
 ## Schema v1
 
 | Area | Required fields |
