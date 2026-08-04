@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -302,63 +303,57 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
     [Fact]
     public async Task Completion_fingerprint_is_culture_invariant_unicode_safe_and_spare_part_order_independent()
     {
-        var previousCulture = CultureInfo.CurrentCulture;
-        var previousUiCulture = CultureInfo.CurrentUICulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
-            await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-            var workOrder = MaintenanceWorkOrder.OpenManual(
-                "org-001",
-                "env-dev",
-                "DEV-CNC-01",
-                "high",
-                "emp010");
-            db.MaintenanceWorkOrders.Add(workOrder);
-            db.DowntimeReasons.Add(DowntimeReason.Create(
-                "org-001",
-                "env-dev",
-                "equipment-failure",
-                "Equipment failure",
-                "breakdown",
-                "equipment-failure"));
-            await db.SaveChangesAsync();
-            var handler = new CompleteMaintenanceWorkOrderCommandHandler(db);
-            var first = new CompleteMaintenanceWorkOrderCommand(
-                workOrder.Id,
-                " 已修复|Δ ",
-                "equipment-failure",
-                10,
+        // The scope serialises every culture mutator in the assembly and restores the exact prior
+        // values (including "was never set") on dispose, so this test cannot leak fr-FR onwards.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "high",
+            "emp010");
+        db.MaintenanceWorkOrders.Add(workOrder);
+        db.DowntimeReasons.Add(DowntimeReason.Create(
+            "org-001",
+            "env-dev",
+            "equipment-failure",
+            "Equipment failure",
+            "breakdown",
+            "equipment-failure"));
+        await db.SaveChangesAsync();
+        var handler = new CompleteMaintenanceWorkOrderCommandHandler(db);
+        var first = new CompleteMaintenanceWorkOrderCommand(
+            workOrder.Id,
+            " 已修复|Δ ",
+            "equipment-failure",
+            10,
+            [
+                new MaintenanceSparePartInput("sku|二", 1.25m, "kg"),
+                new MaintenanceSparePartInput("sku|一", 2.5m, "pcs"),
+            ],
+            IdempotencyKey: "maintenance-canonical-001");
+
+        var result = await handler.Handle(first, CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var replay = await new CompleteMaintenanceWorkOrderCommandHandler(db).Handle(
+            first with
+            {
+                Result = "已修复|Δ",
+                DowntimeReasonCode = " EQUIPMENT-FAILURE ",
+                SpareParts =
                 [
-                    new MaintenanceSparePartInput("sku|二", 1.25m, "kg"),
-                    new MaintenanceSparePartInput("sku|一", 2.5m, "pcs"),
+                    new MaintenanceSparePartInput(" SKU|一 ", 2.50m, " PCS "),
+                    new MaintenanceSparePartInput(" SKU|二 ", 1.250m, " KG "),
                 ],
-                IdempotencyKey: "maintenance-canonical-001");
+            },
+            CancellationToken.None);
 
-            var result = await handler.Handle(first, CancellationToken.None);
-            await db.SaveChangesAsync();
-            db.ChangeTracker.Clear();
-            var replay = await new CompleteMaintenanceWorkOrderCommandHandler(db).Handle(
-                first with
-                {
-                    Result = "已修复|Δ",
-                    DowntimeReasonCode = " EQUIPMENT-FAILURE ",
-                    SpareParts =
-                    [
-                        new MaintenanceSparePartInput(" SKU|一 ", 2.50m, " PCS "),
-                        new MaintenanceSparePartInput(" SKU|二 ", 1.250m, " KG "),
-                    ],
-                },
-                CancellationToken.None);
-
-            Assert.Equal(result, replay);
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = previousCulture;
-            CultureInfo.CurrentUICulture = previousUiCulture;
-        }
+        Assert.Equal(result, replay);
     }
 
     [Fact]

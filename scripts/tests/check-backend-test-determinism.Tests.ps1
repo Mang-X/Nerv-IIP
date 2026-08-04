@@ -132,7 +132,7 @@ function New-OccurrenceCase {
             ownerIssue = 'MAN-662'
             reason = 'Fixture intentionally repeats one identical source line to verify occurrence accounting.'
             exitCondition = 'Delete when occurrence accounting no longer uses this fixture.'
-            expiresOn = '2026-09-03'
+            expiresOn = '2999-12-31'
         })
     })
 
@@ -404,6 +404,25 @@ try {
     $objectExitConditionPath = Join-Path $tempRoot 'object-exit-condition.json'
     Write-JsonFile -Path $objectExitConditionPath -Value ([ordered]@{ schema = 1; exceptions = @($objectExitConditionRow) })
     Assert-CheckerCase -Name 'object string metadata' -SourceRoot $matchingSource -BaselinePath $objectExitConditionPath -ExpectedExitCode 1 -ExpectedOutput @('exitCondition must be a non-empty string')
+
+    # A follow-up GitHub issue is as valid an owner as a Linear key; the repo baseline uses the former
+    # so debts outlive the change that registered them.
+    $githubOwnerRows = @(
+        $validBaseline.exceptions | ForEach-Object {
+            $row = $_.PSObject.Copy()
+            $row.ownerIssue = '#1470'
+            $row
+        }
+    )
+    $githubOwnerPath = Join-Path $tempRoot 'github-owner.json'
+    Write-JsonFile -Path $githubOwnerPath -Value ([ordered]@{ schema = 1; exceptions = $githubOwnerRows })
+    Assert-CheckerCase -Name 'github issue owner' -SourceRoot $fixtureRoot -BaselinePath $githubOwnerPath -ExpectedExitCode 0 -ExpectedOutput @('check passed')
+
+    $badOwnerRow = $validBaseline.exceptions[0].PSObject.Copy()
+    $badOwnerRow.ownerIssue = 'someone@example.com'
+    $badOwnerPath = Join-Path $tempRoot 'bad-owner.json'
+    Write-JsonFile -Path $badOwnerPath -Value ([ordered]@{ schema = 1; exceptions = @($badOwnerRow) })
+    Assert-CheckerCase -Name 'unowned baseline row' -SourceRoot $matchingSource -BaselinePath $badOwnerPath -ExpectedExitCode 1 -ExpectedOutput @('ownerIssue must be')
 
     $expiredRow = $validBaseline.exceptions[0].PSObject.Copy()
     $expiredRow.expiresOn = '2026-01-01'

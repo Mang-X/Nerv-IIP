@@ -1344,6 +1344,49 @@ function Invoke-WithScopedEnvironment {
     }
 }
 
+function New-ExclusiveInvocationClaim {
+    <#
+    .SYNOPSIS
+        Atomically claims a single-owner invocation ID.
+    .DESCRIPTION
+        Uses FileMode.CreateNew so that exactly one caller can own a claim path. Concurrent callers
+        racing on the same ID lose deterministically at the file system level rather than through a
+        check-then-write window, so existing evidence can never be replaced by a rerun.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClaimPath,
+
+        [Parameter(Mandatory)]
+        [string] $InvocationId
+    )
+
+    $claimStream = $null
+    try {
+        $claimStream = [System.IO.FileStream]::new(
+            $ClaimPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::Read)
+        $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
+        $claimStream.Write($claimBytes, 0, $claimBytes.Length)
+        $claimStream.Flush($true)
+    }
+    catch [System.IO.IOException] {
+        if (Test-Path -LiteralPath $ClaimPath -PathType Leaf) {
+            throw "Evidence invocation '$InvocationId' is already claimed at $ClaimPath. Use a new invocation ID; reruns never replace prior evidence."
+        }
+        throw
+    }
+    finally {
+        if ($null -ne $claimStream) {
+            $claimStream.Dispose()
+        }
+    }
+
+    return $ClaimPath
+}
+
 function Assert-FacadeTypesGenExport {
     <#
     .SYNOPSIS

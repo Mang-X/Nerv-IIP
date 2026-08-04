@@ -53,7 +53,7 @@ public static class TestTimeout
         }
     }
 
-    public static async ValueTask RunAsync(
+    public static ValueTask RunAsync(
         string operation,
         Func<CancellationToken, ValueTask> action,
         TimeSpan timeout,
@@ -61,33 +61,21 @@ public static class TestTimeout
         TimeProvider? timeProvider = null,
         IReadOnlyCollection<string?>? sensitiveValues = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         ArgumentNullException.ThrowIfNull(action);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
-        var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
-        var startedAt = effectiveTimeProvider.GetTimestamp();
-        using var timeoutSource = new CancellationTokenSource(timeout, effectiveTimeProvider);
-        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+        return Discard(RunAsync<object?>(
+            operation,
+            async token =>
+            {
+                await action(token).ConfigureAwait(false);
+                return null;
+            },
+            timeout,
             cancellationToken,
-            timeoutSource.Token);
+            timeProvider,
+            sensitiveValues));
 
-        try
-        {
-            await action(linkedSource.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            throw;
-        }
-        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
-        {
-            throw CreateException(
-                operation,
-                effectiveTimeProvider.GetElapsedTime(startedAt),
-                sensitiveValues);
-        }
+        static async ValueTask Discard(ValueTask<object?> pending) => await pending.ConfigureAwait(false);
     }
 
     private static TestTimeoutException CreateException(

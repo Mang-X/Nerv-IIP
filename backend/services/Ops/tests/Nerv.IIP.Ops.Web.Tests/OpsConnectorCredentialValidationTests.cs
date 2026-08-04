@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,7 +61,7 @@ public sealed class OpsConnectorCredentialValidationTests
         NetworkFailureKind expectedKind,
         string expectedLogKind)
     {
-        var observation = NetworkFailureClassifier.FromException(failure);
+        var observation = NetworkFailureClassifier.FromException(failure, CancellationToken.None);
         using var handler = new ScriptedHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(failure));
         using var client = CreateClient(handler);
         var logger = new RecordingLogger<IamOpsConnectorCredentialValidator>();
@@ -73,7 +75,8 @@ public sealed class OpsConnectorCredentialValidationTests
         var entry = Assert.Single(logger.Entries);
         Assert.Equal(expectedLogKind, entry.Properties["FailureKind"]);
         Assert.Null(entry.Properties["StatusCode"]);
-        AssertSafeLog(entry, "request-secret", "transport-secret");
+        Assert.Same(failure, entry.Exception);
+        AssertSafeLog(entry, "request-secret");
     }
 
     [Fact]
@@ -97,10 +100,13 @@ public sealed class OpsConnectorCredentialValidationTests
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"Elapsed: {stopwatch.Elapsed}");
         Assert.Equal(
             NetworkFailureKind.RequestTimeout,
-            NetworkFailureClassifier.FromException(new OperationCanceledException("client timeout")).Kind);
+            NetworkFailureClassifier.FromException(
+                new OperationCanceledException("client timeout"),
+                CancellationToken.None).Kind);
         var entry = Assert.Single(logger.Entries);
         Assert.Equal("request-timeout", entry.Properties["FailureKind"]);
         Assert.Null(entry.Properties["StatusCode"]);
+        Assert.IsAssignableFrom<OperationCanceledException>(entry.Exception);
         AssertSafeLog(entry, "request-secret");
     }
 
@@ -162,7 +168,34 @@ public sealed class OpsConnectorCredentialValidationTests
         var entry = Assert.Single(logger.Entries);
         Assert.Equal("invalid-response", entry.Properties["FailureKind"]);
         Assert.Equal("200", entry.Properties["StatusCode"]);
+        Assert.IsAssignableFrom<JsonException>(entry.Exception);
         AssertSafeLog(entry, "request-secret", "not-json");
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"principalType":"","organizationId":"org-001","environmentId":"env-dev","connectorHostId":"connector-host-001"}""")]
+    [InlineData("""{"principalType":"connector-host","organizationId":"org-001","environmentId":"env-dev","connectorHostId":"   "}""")]
+    public async Task Success_without_a_complete_principal_fails_closed(string body)
+    {
+        using var handler = new ScriptedHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            }));
+        using var client = CreateClient(handler);
+        var logger = new RecordingLogger<IamOpsConnectorCredentialValidator>();
+        var validator = new IamOpsConnectorCredentialValidator(client, logger);
+
+        var result = await validator.ValidateAsync(CreateRequest("request-secret"), CancellationToken.None);
+
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-invalid-response", result.Reason);
+        Assert.Null(result.PrincipalType);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal("invalid-response", entry.Properties["FailureKind"]);
+        Assert.Equal("200", entry.Properties["StatusCode"]);
+        AssertSafeLog(entry, "request-secret");
     }
 
     [Fact]
@@ -190,14 +223,14 @@ public sealed class OpsConnectorCredentialValidationTests
         {
             new HttpRequestException(
                 HttpRequestError.NameResolutionError,
-                "transport-secret"),
+                "transport-detail"),
             NetworkFailureKind.Dns,
             "dns"
         },
         {
             new HttpRequestException(
                 HttpRequestError.ConnectionError,
-                "transport-secret",
+                "transport-detail",
                 new SocketException((int)SocketError.ConnectionRefused)),
             NetworkFailureKind.ConnectionRefused,
             "connection-refused"
@@ -279,11 +312,14 @@ internal sealed class RecordingLogger<T> : ILogger<T>
         var properties = (state as IEnumerable<KeyValuePair<string, object?>> ?? [])
             .Where(x => x.Key != "{OriginalFormat}")
             .ToDictionary(x => x.Key, x => x.Value?.ToString());
-        entries.Add(new LogEntry(formatter(state, exception), properties));
+        entries.Add(new LogEntry(formatter(state, exception), properties, exception));
     }
 }
 
-internal sealed record LogEntry(string Message, IReadOnlyDictionary<string, string?> Properties);
+internal sealed record LogEntry(
+    string Message,
+    IReadOnlyDictionary<string, string?> Properties,
+    Exception? Exception);
 
 internal sealed class PrimaryHandlerCaptureFilter : IHttpMessageHandlerBuilderFilter
 {

@@ -32,4 +32,6 @@
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\Nerv.IIP.Testing.Xunit.csproj" />
   </ItemGroup>
 
+  <Import Project="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.Xunit\SeededTestOrdering.targets" />
+
 </Project>

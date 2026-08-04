@@ -87,62 +87,41 @@ function New-StubbedHarness {
     $harnessVerifier = Join-Path $harnessScripts 'verify-backend-test-determinism.ps1'
     Copy-Item -LiteralPath $verifier -Destination $harnessVerifier
 
-    # Synchronize two test processes immediately before the production ownership
-    # claim so the same-ID race is deterministic without changing claim behavior.
-    $verifierContent = Get-Content -LiteralPath $harnessVerifier -Raw
-    $claimAnchor = '$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"'
-    $raceBarrier = @'
-if (-not [string]::IsNullOrWhiteSpace($env:NERV_MAN662_RACE_BARRIER)) {
-    if ([string]::IsNullOrWhiteSpace($env:NERV_MAN662_RACE_PARTICIPANT)) {
-        throw 'The verifier race participant ID is required when the barrier is enabled.'
-    }
-    $barrierMarker = "$($env:NERV_MAN662_RACE_BARRIER).$($env:NERV_MAN662_RACE_PARTICIPANT).ready"
-    [System.IO.Directory]::CreateDirectory($barrierMarker) | Out-Null
-    $barrierStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    while (@(Get-ChildItem -Path "$($env:NERV_MAN662_RACE_BARRIER).*.ready" -Directory).Count -lt 2) {
-        if ($barrierStopwatch.Elapsed -gt [TimeSpan]::FromSeconds(10)) {
-            throw 'Timed out waiting for the verifier race barrier.'
-        }
-        Start-Sleep -Milliseconds 10
-    }
-}
-$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"
-'@
-    Assert-True -Condition $verifierContent.Contains($claimAnchor) -Message 'Verifier ownership-claim anchor changed unexpectedly.'
-    $verifierContent = $verifierContent.Replace($claimAnchor, $raceBarrier.TrimEnd())
-    Write-Utf8NoBom -Path $harnessVerifier -Content $verifierContent
-
-    $stubHelper = @'
+    # The stub keeps the real governed helpers (including the atomic invocation claim) and only
+    # replaces the process-launching surface, so nothing here can drift from production behaviour.
+    $stubHelper = @"
 Set-StrictMode -Version Latest
 
+. '$((Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1'))'
+
 function Write-Diagnostic {
-    param([string] $Message, [string] $Level = 'INFO')
+    param([string] `$Message, [string] `$Level = 'INFO')
 }
 
 function Invoke-WithScopedEnvironment {
-    param([hashtable] $Variables, [scriptblock] $ScriptBlock)
+    param([hashtable] `$Variables, [scriptblock] `$ScriptBlock)
 
-    $originals = @{}
-    foreach ($key in $Variables.Keys) {
-        $originals[$key] = [pscustomobject]@{
-            HadValue = Test-Path "Env:$key"
-            Value = [Environment]::GetEnvironmentVariable($key, 'Process')
+    `$originals = @{}
+    foreach (`$key in `$Variables.Keys) {
+        `$originals[`$key] = [pscustomobject]@{
+            HadValue = Test-Path "Env:`$key"
+            Value = [Environment]::GetEnvironmentVariable(`$key, 'Process')
         }
     }
 
     try {
-        foreach ($key in $Variables.Keys) {
-            Set-Item "Env:$key" $Variables[$key]
+        foreach (`$key in `$Variables.Keys) {
+            Set-Item "Env:`$key" `$Variables[`$key]
         }
-        & $ScriptBlock
+        & `$ScriptBlock
     }
     finally {
-        foreach ($key in $originals.Keys) {
-            if ($originals[$key].HadValue) {
-                Set-Item "Env:$key" $originals[$key].Value
+        foreach (`$key in `$originals.Keys) {
+            if (`$originals[`$key].HadValue) {
+                Set-Item "Env:`$key" `$originals[`$key].Value
             }
             else {
-                Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+                Remove-Item "Env:`$key" -ErrorAction SilentlyContinue
             }
         }
     }
@@ -150,38 +129,52 @@ function Invoke-WithScopedEnvironment {
 
 function Invoke-DotNet {
     param(
-        [string[]] $Arguments,
-        [string] $WorkingDirectory,
-        [int] $TimeoutSeconds = 600,
-        [string] $Name = 'dotnet',
-        [int[]] $SensitiveArgumentIndexes = @()
+        [string[]] `$Arguments,
+        [string] `$WorkingDirectory,
+        [int] `$TimeoutSeconds = 600,
+        [string] `$Name = 'dotnet',
+        [int[]] `$SensitiveArgumentIndexes = @()
     )
 
-    $record = [ordered]@{
-        arguments = @($Arguments)
+    `$record = [ordered]@{
+        arguments = @(`$Arguments)
         seed = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_ORDER_SEED', 'Process')
-        name = $Name
-        timeoutSeconds = $TimeoutSeconds
+        name = `$Name
+        timeoutSeconds = `$TimeoutSeconds
     }
-    $line = $record | ConvertTo-Json -Depth 5 -Compress
+    `$line = `$record | ConvertTo-Json -Depth 5 -Compress
     [System.IO.File]::AppendAllText(
-        $env:NERV_MAN662_CAPTURE_PATH,
-        "$line$([Environment]::NewLine)",
-        [System.Text.UTF8Encoding]::new($false))
+        `$env:NERV_MAN662_CAPTURE_PATH,
+        "`$line`$([Environment]::NewLine)",
+        [System.Text.UTF8Encoding]::new(`$false))
 
-    if ($Arguments.Count -ge 2 -and
-        $Arguments[0] -ceq 'test' -and
-        $Arguments[1] -ceq $env:NERV_MAN662_FAIL_PROJECT -and
-        $record.seed -ceq $env:NERV_MAN662_FAIL_SEED) {
+    if (`$Arguments.Count -ge 2 -and
+        `$Arguments[0] -ceq 'test' -and
+        `$Arguments[1] -ceq `$env:NERV_MAN662_FAIL_PROJECT -and
+        `$record.seed -ceq `$env:NERV_MAN662_FAIL_SEED) {
         throw "Command 'dotnet' exited with 23 after 00:00:00.001. Logs: stub"
     }
+
+    `$stdoutRoot = Join-Path ([System.IO.Path]::GetDirectoryName(`$env:NERV_MAN662_CAPTURE_PATH)) ('stdout-' + [Guid]::NewGuid().ToString('N'))
+    [System.IO.Directory]::CreateDirectory(`$stdoutRoot) | Out-Null
+    `$stdoutPath = Join-Path `$stdoutRoot 'stdout.log'
+    `$summary = if (`$Arguments.Count -ge 2 -and
+        `$Arguments[1] -ceq `$env:NERV_MAN662_DRIFT_PROJECT -and
+        `$record.seed -ceq `$env:NERV_MAN662_DRIFT_SEED) {
+        'Passed!  - Failed:     0, Passed:     7, Skipped:     3, Total:    10'
+    }
+    else {
+        'Passed!  - Failed:     0, Passed:    10, Skipped:     0, Total:    10'
+    }
+    [System.IO.File]::WriteAllText(`$stdoutPath, `$summary, [System.Text.UTF8Encoding]::new(`$false))
 
     return [pscustomobject]@{
         ExitCode = 0
         Duration = [TimeSpan]::FromMilliseconds(1)
+        StdoutPath = `$stdoutPath
     }
 }
-'@
+"@
     Write-Utf8NoBom -Path (Join-Path $harnessLibrary 'ScriptAutomation.ps1') -Content $stubHelper
 }
 
@@ -192,7 +185,11 @@ function Invoke-VerifierCase {
 
         [string] $FailProject,
 
-        [string] $FailSeed
+        [string] $FailSeed,
+
+        [string] $DriftProject,
+
+        [string] $DriftSeed
     )
 
     if (Test-Path -LiteralPath $capturePath) {
@@ -203,6 +200,8 @@ function Invoke-VerifierCase {
         NERV_MAN662_CAPTURE_PATH = $capturePath
         NERV_MAN662_FAIL_PROJECT = $FailProject
         NERV_MAN662_FAIL_SEED = $FailSeed
+        NERV_MAN662_DRIFT_PROJECT = $DriftProject
+        NERV_MAN662_DRIFT_SEED = $DriftSeed
     }
     $exitCode = 0
     try {
@@ -248,7 +247,7 @@ function Assert-SixRoundContract {
     Assert-Equal -Expected 24 -Actual $Case.Records.Count -Message 'Verifier must invoke four target projects in each of six rounds.'
     Assert-Equal -Expected 6 -Actual $Case.Summary.Count -Message 'Summary must contain exactly six rows.'
 
-    $expectedFields = @('elapsedMs', 'exitCode', 'profile', 'projectOrder', 'run', 'seed')
+    $expectedFields = @('elapsedMs', 'exitCode', 'profile', 'projectOrder', 'projectResults', 'run', 'seed')
     for ($index = 0; $index -lt 6; $index++) {
         $roundNumber = $index + 1
         $seed = 'man662-{0:d2}' -f $roundNumber
@@ -315,73 +314,108 @@ function Assert-VerifierPreservesCallerLocation {
     }
 }
 
-function Assert-SameInvocationRaceHasSingleOwner {
-    $invocationId = 'same-id-race'
-    $barrierPath = Join-Path $tempRoot 'race-barrier.txt'
-    $captureA = Join-Path $tempRoot 'race-a.jsonl'
-    $captureB = Join-Path $tempRoot 'race-b.jsonl'
-    $processes = [System.Collections.Generic.List[object]]::new()
-    $commonArguments = @(
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        (Join-Path $harnessRoot 'scripts/verify-backend-test-determinism.ps1'),
-        '-ArtifactRoot',
-        $artifactRoot,
-        '-InvocationId',
-        $invocationId)
+function Assert-ClaimIsAtomicUnderConcurrency {
+    # Races the governed claim primitive itself in two real processes. The barrier lives in this
+    # test-owned script, so the verifier source is never rewritten to make the race deterministic.
+    $claimPath = Join-Path $tempRoot 'atomic.claim'
+    $barrierRoot = Join-Path $tempRoot 'claim-barrier'
+    [System.IO.Directory]::CreateDirectory($barrierRoot) | Out-Null
+    $racerPath = Join-Path $tempRoot 'claim-racer.ps1'
+    $racerBody = @'
+param([string] $LibraryPath, [string] $ClaimPath, [string] $BarrierRoot, [string] $Participant)
 
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+. $LibraryPath
+
+[System.IO.Directory]::CreateDirectory((Join-Path $BarrierRoot $Participant)) | Out-Null
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+while (@(Get-ChildItem -LiteralPath $BarrierRoot -Directory).Count -lt 2) {
+    if ($stopwatch.Elapsed -gt [TimeSpan]::FromSeconds(10)) {
+        throw 'Timed out waiting for the claim race barrier.'
+    }
+    Start-Sleep -Milliseconds 10
+}
+
+New-ExclusiveInvocationClaim -ClaimPath $ClaimPath -InvocationId 'atomic' | Out-Null
+'@
+    Write-Utf8NoBom -Path $racerPath -Content $racerBody
+
+    $library = Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1'
+    $processes = [System.Collections.Generic.List[object]]::new()
     try {
-        $captures = @($captureA, $captureB)
-        for ($index = 0; $index -lt $captures.Count; $index++) {
-            $capture = $captures[$index]
-            $variables = @{
-                NERV_MAN662_CAPTURE_PATH = $capture
-                NERV_MAN662_FAIL_PROJECT = ''
-                NERV_MAN662_FAIL_SEED = ''
-                NERV_MAN662_RACE_BARRIER = $barrierPath
-                NERV_MAN662_RACE_PARTICIPANT = "participant-$index"
-            }
-            $process = Invoke-WithScopedEnvironment -Variables $variables -ScriptBlock {
-                Start-ManagedBackgroundProcess `
-                    -Command 'pwsh' `
-                    -Arguments $commonArguments `
-                    -WorkingDirectory $harnessRoot `
-                    -Name "$scriptLogName-race"
-            }
-            $processes.Add($process)
+        foreach ($participant in @('participant-0', 'participant-1')) {
+            $processes.Add((Start-ManagedBackgroundProcess `
+                -Command 'pwsh' `
+                -Arguments @(
+                    '-NoProfile',
+                    '-ExecutionPolicy',
+                    'Bypass',
+                    '-File',
+                    $racerPath,
+                    $library,
+                    $claimPath,
+                    $barrierRoot,
+                    $participant) `
+                -WorkingDirectory $repoRoot `
+                -Name "$scriptLogName-race"))
         }
 
         foreach ($process in $processes) {
-            Assert-True -Condition $process.Process.WaitForExit(60000) -Message "Verifier race process $($process.ProcessId) timed out."
+            Assert-True -Condition $process.Process.WaitForExit(60000) -Message "Claim race process $($process.ProcessId) timed out."
         }
 
         $exitCodes = @($processes | ForEach-Object { $_.Process.ExitCode })
-        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -eq 0 }).Count -Message 'Exactly one verifier may own a same-ID invocation.'
-        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -ne 0 }).Count -Message 'The losing same-ID verifier must fail without running projects.'
-
-        $captureCounts = @(
-            foreach ($capture in @($captureA, $captureB)) {
-                if (Test-Path -LiteralPath $capture) {
-                    @(Get-Content -LiteralPath $capture | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
-                }
-                else {
-                    0
-                }
-            }
-        )
-        Assert-Equal -Expected '0|24' -Actual (($captureCounts | Sort-Object) -join '|') -Message 'Only the invocation owner may execute the 24 project runs.'
-
-        $summaryPath = Join-Path (Join-Path $artifactRoot $invocationId) 'summary.json'
-        Assert-True -Condition (Test-Path -LiteralPath $summaryPath -PathType Leaf) -Message 'The winning verifier must retain its immutable summary.'
-        Assert-Equal -Expected 6 -Actual @(Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json).Count -Message 'The losing verifier must not corrupt the winning summary.'
+        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -eq 0 }).Count -Message 'Exactly one process may win an invocation claim.'
+        Assert-Equal -Expected 1 -Actual @($exitCodes | Where-Object { $_ -ne 0 }).Count -Message 'The losing process must fail to claim the same invocation ID.'
+        Assert-True -Condition (Test-Path -LiteralPath $claimPath -PathType Leaf) -Message 'The winning process must leave the claim file behind.'
     }
     finally {
         foreach ($process in $processes) {
-            & $process.Stop 'Verifier race test cleanup'
+            & $process.Stop 'Claim race test cleanup'
         }
     }
+}
+
+function Assert-ClaimedInvocationRunsNoProjects {
+    # The loser of a same-ID race sees exactly this state: the claim already exists. The verifier must
+    # refuse before it runs a single project, so prior evidence can never be overwritten by a rerun.
+    $invocationId = 'already-claimed'
+    $capture = Join-Path $tempRoot 'already-claimed.jsonl'
+    [System.IO.Directory]::CreateDirectory($artifactRoot) | Out-Null
+    Write-Utf8NoBom -Path (Join-Path $artifactRoot ".$invocationId.claim") -Content "$invocationId`n"
+
+    $exitCode = 0
+    $variables = @{
+        NERV_MAN662_CAPTURE_PATH = $capture
+        NERV_MAN662_FAIL_PROJECT = ''
+        NERV_MAN662_FAIL_SEED = ''
+    }
+    try {
+        Invoke-WithScopedEnvironment -Variables $variables -ScriptBlock {
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $harnessRoot 'scripts/verify-backend-test-determinism.ps1') `
+                -Arguments @('-ArtifactRoot', $artifactRoot, '-InvocationId', $invocationId) `
+                -WorkingDirectory $harnessRoot `
+                -TimeoutSeconds 60 `
+                -Name $scriptLogName | Out-Null
+        }
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'exited with (?<exitCode>\d+)') {
+            throw
+        }
+        $exitCode = [int] $Matches['exitCode']
+    }
+
+    Assert-True -Condition ($exitCode -ne 0) -Message 'A verifier run against an already-claimed invocation must fail.'
+    $records = @(
+        if (Test-Path -LiteralPath $capture -PathType Leaf) {
+            Get-Content -LiteralPath $capture | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        }
+    )
+    Assert-Equal -Expected 0 -Actual $records.Count -Message 'A verifier that lost the claim must not run any project.'
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $artifactRoot $invocationId))) -Message 'A verifier that lost the claim must not create an evidence directory.'
 }
 
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
@@ -389,7 +423,8 @@ function Assert-SameInvocationRaceHasSingleOwner {
 try {
     New-StubbedHarness
 
-    Assert-SameInvocationRaceHasSingleOwner
+    Assert-ClaimIsAtomicUnderConcurrency
+    Assert-ClaimedInvocationRunsNoProjects
     Assert-VerifierPreservesCallerLocation
 
     $successful = Invoke-VerifierCase -InvocationId 'success'
@@ -406,6 +441,15 @@ try {
     Assert-Equal -Expected 23 -Actual ([int] $failed.Summary[2].exitCode) -Message 'The failing project exit code must fail its round.'
     Assert-True -Condition (Test-Path -LiteralPath $successful.SummaryPath -PathType Leaf) -Message 'A later verifier execution must not replace prior evidence.'
     Assert-True -Condition ($successful.SummaryPath -cne $failed.SummaryPath) -Message 'Reruns must be recorded under a new invocation path.'
+
+    # Equal exit codes are not equal results: a round that silently skipped tests must still fail.
+    $drifted = Invoke-VerifierCase `
+        -InvocationId 'result-drift' `
+        -DriftProject $projects[1] `
+        -DriftSeed 'man662-04'
+    Assert-True -Condition ($drifted.ExitCode -ne 0) -Message 'A round whose test results drift must fail even when every exit code is zero.'
+    Assert-True -Condition (@($drifted.Summary | Where-Object { [int] $_.exitCode -ne 0 }).Count -eq 0) -Message 'The drift case must be detected through results, not exit codes.'
+    Assert-Equal -Expected 24 -Actual $drifted.Records.Count -Message 'The drift case must still run all 24 project invocations.'
 }
 finally {
     if (Test-Path -LiteralPath $tempRoot) {

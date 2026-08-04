@@ -1,3 +1,5 @@
+// Shared by every test assembly that opts into seeded ordering. Linked in through
+// SeededTestOrdering.targets so the four target assemblies keep one copy, not four.
 using Xunit;
 
 [assembly: TestCaseOrderer(

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,7 +98,7 @@ public sealed class ApprovalOverdueSchedulerTests
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.Commands.Count > 0 || scheduler.ExecuteTask?.IsCompleted == true);
-        await Task.Delay(100);
+        await AssertStaysAtAsync(() => sender.Commands.Count, 1);
 
         Assert.Equal([new CheckOverdueApprovalStepsCommand("org-001", "env-dev")], sender.Commands);
         await scheduler.StopAsync(CancellationToken.None);
@@ -159,6 +160,26 @@ public sealed class ApprovalOverdueSchedulerTests
         Assert.Equal(new CheckOverdueApprovalStepsCommand("org-001", "env-dev"), sender.LastCommand);
         Assert.False(scheduler.ExecuteTask?.IsFaulted ?? false);
         await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Bounded stability check for a negative assertion: the scheduler deduplicates before it sends, so
+    /// a duplicate would be dispatched immediately after the first one. The observation is polled and
+    /// fails on the first extra command instead of sleeping once and hoping the window was long enough.
+    /// </summary>
+    private static async Task AssertStaysAtAsync(Func<int> observe, int expected)
+    {
+        var deadline = Stopwatch.StartNew();
+        var attempts = 0;
+        while (deadline.Elapsed < TimeSpan.FromMilliseconds(200))
+        {
+            attempts++;
+            var observed = observe();
+            Assert.True(
+                observed == expected,
+                $"Expected the observation to stay at {expected}; observed {observed} after {attempts} attempts and {deadline.Elapsed}.");
+            await Task.Delay(10);
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate)

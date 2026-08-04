@@ -149,7 +149,7 @@ public sealed class InventoryReservationExpirationTests
     [Fact]
     public async Task Hanging_reservation_metric_excludes_unexpired_open_reservations()
     {
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero));
+        var timeProvider = CreateReservationClock();
         var registry = Metrics.NewCustomRegistry();
         await using var dbContext = CreateContext();
         var ledger = CreateLedger();
@@ -186,7 +186,7 @@ public sealed class InventoryReservationExpirationTests
     [Fact]
     public async Task Reservation_metrics_do_not_share_collectors_or_samples_between_registries()
     {
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero));
+        var timeProvider = CreateReservationClock();
         var firstRegistry = Metrics.NewCustomRegistry();
         var secondRegistry = Metrics.NewCustomRegistry();
         var firstMetrics = new InventoryReservationMetrics(timeProvider, firstRegistry);
@@ -202,7 +202,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-001",
             "reservation-metric-registry-001",
             1m,
-            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
         var secondReservationOne = StockReservation.Reserve(
             secondLedger,
             "wms",
@@ -210,7 +210,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-001",
             "reservation-metric-registry-002",
             1m,
-            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
         var secondReservationTwo = StockReservation.Reserve(
             secondLedger,
             "wms",
@@ -218,7 +218,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-002",
             "reservation-metric-registry-003",
             1m,
-            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1));
         firstLedger.Reserve(firstReservation);
         secondLedger.Reserve(secondReservationOne);
         secondLedger.Reserve(secondReservationTwo);
@@ -228,6 +228,9 @@ public sealed class InventoryReservationExpirationTests
         secondContext.StockReservations.AddRange(secondReservationOne, secondReservationTwo);
         await firstContext.SaveChangesAsync(CancellationToken.None);
         await secondContext.SaveChangesAsync(CancellationToken.None);
+        // A reservation cannot be created already expired; advance the shared fake clock past the
+        // expiry instead of back-dating it.
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
 
         await firstMetrics.RefreshHangingReservationsAsync(firstContext, CancellationToken.None);
         await secondMetrics.RefreshHangingReservationsAsync(secondContext, CancellationToken.None);
@@ -241,7 +244,7 @@ public sealed class InventoryReservationExpirationTests
     [Fact]
     public async Task Expiration_worker_runs_a_second_pass_after_the_configured_scan_interval()
     {
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero));
+        var timeProvider = CreateReservationClock();
         var options = Options.Create(new StockReservationExpirationOptions
         {
             Enabled = true,
@@ -256,7 +259,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-001",
             "reservation-expiry-worker-first-pass",
             1m,
-            timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(30));
         var secondPassReservation = StockReservation.Reserve(
             ledger,
             "wms",
@@ -264,7 +267,7 @@ public sealed class InventoryReservationExpirationTests
             "LINE-002",
             "reservation-expiry-worker-second-pass",
             1m,
-            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(30));
+            timeProvider.GetUtcNow().UtcDateTime.AddSeconds(90));
         ledger.Reserve(firstPassReservation);
         ledger.Reserve(secondPassReservation);
         dbContext.StockLedgers.Add(ledger);
@@ -282,6 +285,10 @@ public sealed class InventoryReservationExpirationTests
             options,
             NullLogger<ExpiredStockReservationHostedService>.Instance,
             timeProvider);
+
+        // Both reservations are created in the future because the aggregate forbids a past expiry;
+        // the first one becomes due only after this explicit advance.
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
 
         await worker.StartAsync(CancellationToken.None);
         try
@@ -345,6 +352,14 @@ public sealed class InventoryReservationExpirationTests
         Assert.Equal("LINE-002", integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal(3m, integrationEvent.Payload.ReleasedQuantity);
     }
+
+    /// <summary>
+    /// StockReservation.Reserve validates "expiration must be in the future" against the process wall
+    /// clock, so the fake clock must be anchored to real now — a fixed calendar date would make these
+    /// tests pass on the day they were written and throw every day after. Every assertion below is
+    /// relative to this anchor and advances the fake clock explicitly, so nothing waits on real time.
+    /// </summary>
+    private static FakeTimeProvider CreateReservationClock() => new(DateTimeOffset.UtcNow);
 
     private static StockLedger CreateLedger()
     {

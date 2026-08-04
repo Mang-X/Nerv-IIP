@@ -45,29 +45,9 @@ if (Test-Path -LiteralPath $invocationRoot) {
     throw "Evidence invocation '$InvocationId' already exists at $invocationRoot. Use a new invocation ID; reruns never replace prior evidence."
 }
 [System.IO.Directory]::CreateDirectory($effectiveArtifactRoot) | Out-Null
-$claimPath = Join-Path $effectiveArtifactRoot ".$InvocationId.claim"
-$claimStream = $null
-try {
-    $claimStream = [System.IO.FileStream]::new(
-        $claimPath,
-        [System.IO.FileMode]::CreateNew,
-        [System.IO.FileAccess]::Write,
-        [System.IO.FileShare]::Read)
-    $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
-    $claimStream.Write($claimBytes, 0, $claimBytes.Length)
-    $claimStream.Flush($true)
-}
-catch [System.IO.IOException] {
-    if (Test-Path -LiteralPath $claimPath -PathType Leaf) {
-        throw "Evidence invocation '$InvocationId' is already claimed at $claimPath. Use a new invocation ID; reruns never replace prior evidence."
-    }
-    throw
-}
-finally {
-    if ($null -ne $claimStream) {
-        $claimStream.Dispose()
-    }
-}
+$claimPath = New-ExclusiveInvocationClaim `
+    -ClaimPath (Join-Path $effectiveArtifactRoot ".$InvocationId.claim") `
+    -InvocationId $InvocationId
 [System.IO.Directory]::CreateDirectory($invocationRoot) | Out-Null
 
 $projects = @(
@@ -98,6 +78,43 @@ function Write-RunSettings {
     [System.IO.File]::WriteAllText($Path, "$content$([Environment]::NewLine)", [System.Text.UTF8Encoding]::new($false))
 }
 
+function Get-TestCounts {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $StdoutPath
+    )
+
+    # The rounds run with DOTNET_CLI_UI_LANGUAGE=en so this summary line is locale-stable.
+    if (-not (Test-Path -LiteralPath $StdoutPath -PathType Leaf)) {
+        return $null
+    }
+
+    $counts = $null
+    foreach ($line in [System.IO.File]::ReadLines($StdoutPath)) {
+        if ($line -match 'Failed:\s*(?<failed>\d+),\s*Passed:\s*(?<passed>\d+),\s*Skipped:\s*(?<skipped>\d+),\s*Total:\s*(?<total>\d+)') {
+            $counts = [ordered]@{
+                failed = [int] $Matches['failed']
+                passed = [int] $Matches['passed']
+                skipped = [int] $Matches['skipped']
+                total = [int] $Matches['total']
+            }
+        }
+    }
+
+    return $counts
+}
+
+function Format-TestCounts {
+    param($Counts)
+
+    if ($null -eq $Counts) {
+        return 'unparsed'
+    }
+
+    return "total=$($Counts.total) passed=$($Counts.passed) skipped=$($Counts.skipped) failed=$($Counts.failed)"
+}
+
 function Get-ProjectExitCode {
     param(
         [Parameter(Mandatory)]
@@ -117,8 +134,8 @@ $hasFailures = $false
 for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
     $run = $roundIndex + 1
     $seed = 'man662-{0:d2}' -f $run
-    $profile = if ($run % 2 -eq 1) { 'serial' } else { 'parallel' }
-    $maxParallelThreads = if ($profile -ceq 'serial') { 1 } else { 4 }
+    $parallelProfile = if ($run % 2 -eq 1) { 'serial' } else { 'parallel' }
+    $maxParallelThreads = if ($parallelProfile -ceq 'serial') { 1 } else { 4 }
     $projectOrder = @(
         for ($offset = 0; $offset -lt $projects.Count; $offset++) {
             $projects[($roundIndex + $offset) % $projects.Count]
@@ -127,13 +144,13 @@ for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
 
     $roundRoot = Join-Path $invocationRoot ('run-{0:d2}' -f $run)
     [System.IO.Directory]::CreateDirectory($roundRoot) | Out-Null
-    $runSettingsPath = Join-Path $roundRoot "$profile.runsettings"
+    $runSettingsPath = Join-Path $roundRoot "$parallelProfile.runsettings"
     Write-RunSettings -Path $runSettingsPath -MaxParallelThreads $maxParallelThreads
 
-    Write-Diagnostic "Starting backend determinism run=$run seed=$seed profile=$profile maxParallelThreads=$maxParallelThreads."
+    Write-Diagnostic "Starting backend determinism run=$run seed=$seed profile=$parallelProfile maxParallelThreads=$maxParallelThreads."
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $projectExitCodes = @(
-        Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_TEST_ORDER_SEED = $seed } -ScriptBlock {
+    $projectResults = @(
+        Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_TEST_ORDER_SEED = $seed; DOTNET_CLI_UI_LANGUAGE = 'en' } -ScriptBlock {
             foreach ($project in $projectOrder) {
                 $arguments = @(
                     'test',
@@ -148,21 +165,30 @@ for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
                 }
 
                 try {
-                    Invoke-DotNet `
+                    $invocation = Invoke-DotNet `
                         -Arguments $arguments `
                         -WorkingDirectory $root `
                         -TimeoutSeconds $ProjectTimeoutSeconds `
-                        -Name "backend-test-determinism-$InvocationId-run-$run-$([System.IO.Path]::GetFileNameWithoutExtension($project))" | Out-Null
-                    0
+                        -Name "backend-test-determinism-$InvocationId-run-$run-$([System.IO.Path]::GetFileNameWithoutExtension($project))"
+                    [ordered]@{
+                        project = $project
+                        exitCode = 0
+                        counts = Get-TestCounts -StdoutPath $invocation.StdoutPath
+                    }
                 }
                 catch {
                     $exitCode = Get-ProjectExitCode -ErrorRecord $_
-                    Write-Diagnostic -Level 'ERROR' -Message "Backend determinism project failed: run=$run seed=$seed profile=$profile project=$project exitCode=$exitCode."
-                    $exitCode
+                    Write-Diagnostic -Level 'ERROR' -Message "Backend determinism project failed: run=$run seed=$seed profile=$parallelProfile project=$project exitCode=$exitCode."
+                    [ordered]@{
+                        project = $project
+                        exitCode = $exitCode
+                        counts = $null
+                    }
                 }
             }
         }
     )
+    $projectExitCodes = @($projectResults | ForEach-Object { $_.exitCode })
     $stopwatch.Stop()
 
     $roundFailure = @($projectExitCodes | Where-Object { [int] $_ -ne 0 } | Select-Object -First 1)
@@ -174,11 +200,50 @@ for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
     $summaryRows.Add([ordered]@{
         run = $run
         seed = $seed
-        profile = $profile
+        profile = $parallelProfile
         projectOrder = @($projectOrder)
         elapsedMs = [long] $stopwatch.ElapsedMilliseconds
         exitCode = $roundExitCode
+        projectResults = @($projectResults)
     })
+}
+
+# Exit code equality alone would call a round that silently skipped tests "consistent". Every project
+# must report the same total/passed/skipped/failed counts in every round it completed.
+$countMismatches = [System.Collections.Generic.List[string]]::new()
+foreach ($project in $projects) {
+    $observed = @(
+        foreach ($row in $summaryRows) {
+            $match = @($row.projectResults | Where-Object { $_.project -ceq $project })
+            if ($match.Count -eq 1 -and $match[0].exitCode -eq 0) {
+                [pscustomobject]@{ Run = $row.run; Counts = $match[0].counts }
+            }
+        }
+    )
+    if ($observed.Count -lt 2) {
+        continue
+    }
+
+    $baseline = $observed[0]
+    if ($null -eq $baseline.Counts) {
+        $countMismatches.Add("$project run=$($baseline.Run) produced no parsable test summary.")
+        continue
+    }
+
+    foreach ($entry in $observed | Select-Object -Skip 1) {
+        if ($null -eq $entry.Counts) {
+            $countMismatches.Add("$project run=$($entry.Run) produced no parsable test summary.")
+            continue
+        }
+
+        if ($entry.Counts.total -ne $baseline.Counts.total -or
+            $entry.Counts.passed -ne $baseline.Counts.passed -or
+            $entry.Counts.skipped -ne $baseline.Counts.skipped -or
+            $entry.Counts.failed -ne $baseline.Counts.failed) {
+            $countMismatches.Add(
+                "$project run=$($entry.Run) reported $(Format-TestCounts $entry.Counts) but run=$($baseline.Run) reported $(Format-TestCounts $baseline.Counts).")
+        }
+    }
 }
 
 $summaryPath = Join-Path $invocationRoot 'summary.json'
@@ -190,4 +255,8 @@ if ($hasFailures) {
     throw "One or more backend test determinism rounds failed. Summary: $summaryPath"
 }
 
-Write-Host 'Backend test determinism repeatability verified for six seeded rounds.'
+if ($countMismatches.Count -gt 0) {
+    throw "Backend test determinism rounds disagreed on test results:$([Environment]::NewLine)$($countMismatches -join [Environment]::NewLine)$([Environment]::NewLine)Summary: $summaryPath"
+}
+
+Write-Host 'Backend test determinism repeatability verified for six seeded rounds with identical per-project test results.'

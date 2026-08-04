@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
 
 namespace Nerv.IIP.Testing;
 
@@ -18,7 +19,14 @@ public sealed record NetworkFailureObservation(
 
 public static class NetworkFailureClassifier
 {
-    public static NetworkFailureObservation FromException(Exception exception)
+    /// <param name="callerCancellationToken">
+    /// The token the caller passed into the failed operation. When it is already cancelled the
+    /// cancellation belongs to the caller, so the original exception is rethrown unchanged instead of
+    /// being rewritten into a helper-owned request timeout.
+    /// </param>
+    public static NetworkFailureObservation FromException(
+        Exception exception,
+        CancellationToken callerCancellationToken)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
@@ -40,6 +48,11 @@ public static class NetworkFailureClassifier
 
         if (exception is OperationCanceledException)
         {
+            if (callerCancellationToken.IsCancellationRequested)
+            {
+                ExceptionDispatchInfo.Capture(exception).Throw();
+            }
+
             return new(NetworkFailureKind.RequestTimeout, null, "Request timed out.");
         }
 
@@ -63,8 +76,14 @@ public static class NetworkFailureClassifier
             ? string.Empty
             : $" {TestDiagnostic.Sanitize(response.ReasonPhrase)}";
 
+        // 408 and 504 are timeout results the peer reported, not business rejections; keeping them
+        // under BusinessError would blur the DNS / refused / timeout / business split.
+        var kind = response.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.GatewayTimeout
+            ? NetworkFailureKind.RequestTimeout
+            : NetworkFailureKind.BusinessError;
+
         return new(
-            NetworkFailureKind.BusinessError,
+            kind,
             response.StatusCode,
             $"HTTP {(int)response.StatusCode}{reasonPhrase}");
     }

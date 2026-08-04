@@ -12,7 +12,7 @@ public sealed class NetworkFailureClassifierTests
             HttpRequestError.NameResolutionError,
             "Name or service not known");
 
-        var observation = NetworkFailureClassifier.FromException(exception);
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
 
         Assert.Equal(NetworkFailureKind.Dns, observation.Kind);
         Assert.Null(observation.StatusCode);
@@ -27,7 +27,7 @@ public sealed class NetworkFailureClassifierTests
             "Connection failed",
             new SocketException((int)SocketError.ConnectionRefused));
 
-        var observation = NetworkFailureClassifier.FromException(exception);
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
 
         Assert.Equal(NetworkFailureKind.ConnectionRefused, observation.Kind);
         Assert.Null(observation.StatusCode);
@@ -38,11 +38,37 @@ public sealed class NetworkFailureClassifierTests
     [MemberData(nameof(TimeoutExceptions))]
     public void FromException_ClassifiesHelperOwnedCancellationAsRequestTimeout(Exception exception)
     {
-        var observation = NetworkFailureClassifier.FromException(exception);
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
 
         Assert.Equal(NetworkFailureKind.RequestTimeout, observation.Kind);
         Assert.Null(observation.StatusCode);
         Assert.Equal("Request timed out.", observation.Diagnostic);
+    }
+
+    [Fact]
+    public void FromException_RethrowsCallerCancellationInsteadOfRewritingItAsTimeout()
+    {
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+        var exception = new OperationCanceledException("caller cancelled", callerCancellation.Token);
+
+        var rethrown = Assert.ThrowsAny<OperationCanceledException>(() =>
+            NetworkFailureClassifier.FromException(exception, callerCancellation.Token));
+
+        Assert.Same(exception, rethrown);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public void FromResponse_KeepsPeerReportedTimeoutsOutOfBusinessErrors(HttpStatusCode statusCode)
+    {
+        using var response = new HttpResponseMessage(statusCode);
+
+        var observation = NetworkFailureClassifier.FromResponse(response);
+
+        Assert.Equal(NetworkFailureKind.RequestTimeout, observation.Kind);
+        Assert.Equal(statusCode, observation.StatusCode);
     }
 
     [Fact]

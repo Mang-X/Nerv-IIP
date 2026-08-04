@@ -707,8 +707,10 @@ function Read-Baseline {
             $Errors.Add("exception[$index] lineTextSha256 must be a lowercase SHA-256 hash.")
             $rowValid = $false
         }
-        if ($ownerIssue -notmatch '^MAN-\d+$') {
-            $Errors.Add("exception[$index] ownerIssue must be a MAN issue key.")
+        # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The owner
+        # must outlive the change that registered the debt, so a row may not point at its own issue.
+        if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
+            $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
             $rowValid = $false
         }
 

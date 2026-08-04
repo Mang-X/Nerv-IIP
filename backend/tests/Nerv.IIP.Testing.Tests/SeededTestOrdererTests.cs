@@ -4,7 +4,7 @@ namespace Nerv.IIP.Testing.Tests;
 
 public sealed class SeededTestOrdererTests
 {
-    private static readonly string[] FullyQualifiedNames =
+    private static readonly string[] DisplayNames =
     [
         "Nerv.IIP.Tests.AlphaTests.First",
         "Nerv.IIP.Tests.AlphaTests.Second",
@@ -17,28 +17,28 @@ public sealed class SeededTestOrdererTests
     ];
 
     [Fact]
-    public void OrderFullyQualifiedNames_ReturnsTheSameOrderForTheSameSeed()
+    public void OrderDisplayNames_ReturnsTheSameOrderForTheSameSeed()
     {
-        var first = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames, "man662-01");
-        var second = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames.Reverse(), "man662-01");
+        var first = SeededTestOrdering.OrderDisplayNames(DisplayNames, "man662-01");
+        var second = SeededTestOrdering.OrderDisplayNames(DisplayNames.Reverse(), "man662-01");
 
         Assert.Equal(first, second);
     }
 
     [Fact]
-    public void OrderFullyQualifiedNames_ReturnsDifferentOrdersForTheTwoFixedSeeds()
+    public void OrderDisplayNames_ReturnsDifferentOrdersForTheTwoFixedSeeds()
     {
-        var first = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames, "man662-01");
-        var second = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames, "man662-02");
+        var first = SeededTestOrdering.OrderDisplayNames(DisplayNames, "man662-01");
+        var second = SeededTestOrdering.OrderDisplayNames(DisplayNames, "man662-02");
 
         Assert.NotEqual(first, second);
     }
 
     [Fact]
-    public void OrderFullyQualifiedNames_UsesTheFixedDefaultWhenTheSeedIsMissing()
+    public void OrderDisplayNames_UsesTheFixedDefaultWhenTheSeedIsMissing()
     {
-        var missing = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames, null);
-        var explicitDefault = SeededTestOrdering.OrderFullyQualifiedNames(FullyQualifiedNames, "nerv-iip-default");
+        var missing = SeededTestOrdering.OrderDisplayNames(DisplayNames, null);
+        var explicitDefault = SeededTestOrdering.OrderDisplayNames(DisplayNames, "nerv-iip-default");
 
         Assert.Equal(explicitDefault, missing);
     }

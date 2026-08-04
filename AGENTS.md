@@ -106,6 +106,8 @@ Capacitor artifacts are affected.
 - 异步可见性断言使用有界 `Eventually` 并报告脱敏 condition、elapsed、attempts 与 last observation；禁止 fixed sleep-before-assert。
 - 网络测试显式区分 connection/request budget、caller cancellation 与业务 HTTP response；不得输出 headers/body/凭据。
 - FluentValidation、culture、`TZ`/env 等可变全局值使用 scoped capture/restore 并序列化 mutator；FastEndpoints 静态变异使用 collection serialization 加 sacrificial process isolation，绝不声称 restore。
+- 网络失败分类必须显式接收 caller 的 `CancellationToken`：caller 取消原样传播，只有 helper 自己的超时才算 `RequestTimeout`；对端上报的 408/504 也是 timeout，不并入业务错误。生产默认超时按真实依赖的正常抖动取秒级，毫秒级预算只由测试通过配置覆盖。
+- `backend/test-determinism-baseline.json` 的每一行是已承认的债务而不是豁免：owner 必须是一个**在登记它的变更之外仍然存在**的 issue（`MAN-\d+` 或 `#\d+`），到期日按类别错开，`reason` 按行而非按文件书写。用当前 PR 自己的票做 owner 属于门禁失效。
 - Required/opt-in lanes、quarantine registry 与 enforcement 仅由 MAN-661 管理；普通测试变更不得自行建立 quarantine 规则。
 
 ## Core Principles

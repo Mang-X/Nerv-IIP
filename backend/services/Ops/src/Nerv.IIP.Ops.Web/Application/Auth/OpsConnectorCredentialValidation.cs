@@ -24,8 +24,10 @@ public sealed class OpsIamClientOptions
 {
     public const string SectionName = "Ops:IamClient";
 
-    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromMilliseconds(250);
-    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromMilliseconds(500);
+    // Production defaults tolerate ordinary IAM latency and jitter; the budgets stay explicit and
+    // separable so tests can override them to milliseconds through the Ops:IamClient section.
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 public sealed record OpsConnectorCredentialValidationRequest(
@@ -153,14 +155,14 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
             {
                 principal = await response.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>(cancellationToken);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                LogFailure("invalid-response", (int)response.StatusCode);
+                LogFailure("invalid-response", (int)response.StatusCode, ex);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
             }
-            catch (NotSupportedException)
+            catch (NotSupportedException ex)
             {
-                LogFailure("invalid-response", (int)response.StatusCode);
+                LogFailure("invalid-response", (int)response.StatusCode, ex);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
             }
 
@@ -188,21 +190,24 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            LogFailure(ClassifyTransportFailure(ex), null);
+            LogFailure(ClassifyTransportFailure(ex), null, ex);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            LogFailure("request-timeout", null);
+            LogFailure("request-timeout", null, ex);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
     }
 
-    private void LogFailure(string failureKind, int? statusCode)
+    // The structured message and its properties stay free of credentials, request bodies and response
+    // bodies; the originating exception is still passed through so production keeps its stack trace.
+    private void LogFailure(string failureKind, int? statusCode, Exception? exception = null)
     {
         logger.LogWarning(
+            exception,
             "ConnectorCredentialValidationIamFailure FailureKind={FailureKind} StatusCode={StatusCode}",
             failureKind,
             statusCode);
