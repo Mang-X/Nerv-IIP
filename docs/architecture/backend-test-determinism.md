@@ -58,7 +58,7 @@ await TestTimeout.RunAsync(
 | --- | --- | --- |
 | FluentValidation global resolvers、current/default culture、`TZ` 与显式环境变量 | scoped capture/restore；所有 mutator 串行进入 `GlobalTestStateScope` | 精确区分原本不存在、空字符串和有值；`DisposeAsync` 必须恢复并释放 scope |
 | 同一服务内的 host startup 与共享 host fixture | xUnit collection serialization | 同一 service 的启动/停止不得跨 collection 并发；该约束不等于整个 solution 串行 |
-| BusinessGateway host startup（`Nerv.IIP.BusinessGateway.Web.Tests`） | `BusinessGatewayTestHostGate` 多读单写 permit：构建独占，请求共享 | 见下方 MAN-663 一节。构建期间无请求在飞，请求期间无构建发生；程序集不再关闭并行 |
+| BusinessGateway host startup（`Nerv.IIP.BusinessGateway.Web.Tests`） | `BusinessGatewayTestHostGate` 多读单写 permit：构建独占，请求共享；permit 由**服务端**中间件持有 | 见下方 MAN-663 一节。构建期间无请求在飞，请求期间无构建发生；程序集不再关闭并行 |
 | BusinessGateway 逐测试下游 fake 与 downstream health | 逐请求 scope header 路由到租约实例，租约释放即注销 | 无「写入再重置」步骤；旧 header 显式报错，不静默回落 |
 | FastEndpoints serializer、validation 和 discovery mutation | collection serialization **加** sacrificial process isolation | 变异只发生在一次性测试进程；进程结束即丢弃。FastEndpoints 进程静态状态不可恢复，绝不描述为 restore |
 | JSON 全局序列化选项 | 与上一行同源：`Config.Serializer.Options` 即 FastEndpoints 进程静态状态 | 不单独提供 restore 路径；普通程序集只断言"未观测到该变异" |
@@ -79,8 +79,21 @@ attribute 必须存在，因此保护的是 workaround 本身，而不是它替�
 **为什么原来必须串行。** 唯一的进程级危险来自宿主构建：`Program.cs` 的
 `app.UseFastEndpoints(c => c.Serializer.Options.Converters.Add(...))` 写 FastEndpoints 进程静态状态。
 `BusinessGatewayTestHostGate` 精确处理这一点——多读单写信号量，宿主构建独占全部 permit，网关请求各占一个
-permit（客户端 `DelegatingHandler` 持有）。因此「构建时无请求在飞、请求时无构建发生」，请求之间仍完全并行。
-这是真实互斥，**不宣称 FastEndpoints 静态状态可恢复**。
+permit。因此「构建时无请求在飞、请求时无构建发生」，请求之间仍完全并行。这是真实互斥，
+**不宣称 FastEndpoints 静态状态可恢复**。这是根 `AGENTS.md`「Backend Test Determinism」允许的第三种手段
+（互斥门），与 collection serialization、sacrificial process isolation 并列，同样不声称 restore。
+
+**permit 必须由服务端持有。** permit 曾由客户端 `DelegatingHandler` 环绕 `base.SendAsync` 持有，这是**不成立**的：
+TestServer 的 `ClientHandler` 在响应头 flush 时即返回，服务端仍在写 body；而 `HttpClient` 的
+`ResponseContentRead` 缓冲发生在 handler 链**之外**。于是存在「permit 已还、服务端仍在跑」的窗口，正是这道门要
+排除的竞态。现由 `RequestPermitStartupFilter` 注册的最外层中间件持有 permit，覆盖整条服务端管线。回归测试
+`Host_construction_waits_for_a_response_body_that_is_still_being_written` 在旧的客户端实现下**会失败**（实测：
+`Host construction completed while the gateway was still writing a response body`），因此这条不是散文。
+副产物是 permit 只可能被服务端管线持有、永远不会被测试线程持有，构建取全部 permit 因此不可能被发起它的线程阻塞。
+
+**租约释放前先 drain。** 租约注销与「仍在飞的请求解析自己的 fake」必须互斥，而不是「大概率不重叠」：
+每条请求在中间件里登记到自己的 scope，`ReleaseScopeAsync` 先等到该 scope 在飞数归零（有界预算，超时报告
+in-flight 数、elapsed 与 attempts）再从注册表移除。
 
 **profile 表。**
 
@@ -100,16 +113,60 @@ permit（客户端 `DelegatingHandler` 持有）。因此「构建时无请求�
 | IAM 授权缓存 | 位于 `HttpBusinessGatewayAuthorizationClient` 内，而所有测试都替换该客户端，故共享宿主上不存在该缓存面 |
 | rate limiter（按 principal 分区，全部测试同一 principal） | 共享 profile 抬高 permit；限流本身由 `BusinessGatewayRateLimitTests` 在 dedicated 宿主上以自有预算覆盖（本次**新增**覆盖，此前为零） |
 | NSwag 文档生成 | 并发生成会产生半填充 schema 字典；文档按 profile 生成一次后缓存复用，断言仍针对真实生成结果 |
-| 无法逐请求表达的配置（builder 设置、非实例注册、名单外类型） | 由 `BusinessGatewayTestHost.Lease` 自动回退到 dedicated 宿主，正确性不依赖共享是否适用 |
+| 无法逐请求表达的配置（builder 设置、非实例注册、名单外类型、**只移除不重注册**） | 由 `BusinessGatewayTestHost.Lease` 自动回退到 dedicated 宿主，正确性不依赖共享是否适用 |
+
+**「只移除不重注册」为什么要专门检测。** 租约把测试的 `configureServices` 块回放到一个探针 collection 上以收割
+实例。若探针是空的，`RemoveAll<T>()` 不留任何痕迹，于是「移除某注册但不放回」的块会被误判为可共享，而共享宿主
+仍保留真实注册——测试跑在与 dedicated 宿主不同的接线上，且没有任何提示。因此探针以共享宿主自己的注册清单
+（开放泛型除外，它们无法用工厂 descriptor 注册且从不被网关测试替换）预置哨兵 descriptor：回放后缺失的哨兵即为
+移除意图，只有该类型同时被补上逐请求实例才算可共享，否则回退 dedicated 宿主。
+`A_configuration_block_that_only_removes_a_registration_falls_back_to_a_dedicated_host` 断言这一点。
 
 **反向证明。** `BusinessGatewaySharedHostIsolationTests` 是行为断言而非 attribute 断言。三次故意注入泄漏均被
 捕获：把 health state 改回单例 → 1 失败；把逐请求 scope 解析改成「最近一个租约」的共享槽 → 3 失败；让 builder
-设置不再强制 dedicated 宿主 → 1 失败。
+设置不再强制 dedicated 宿主 → 1 失败。第四次：把 permit 改回客户端 `DelegatingHandler` 持有 → 1 失败。
+宿主复用断言使用引用同一性（两个 profile 各一个宿主、25 轮租约同宿主），不使用全局宿主计数——该计数只由两个
+`Lazy<T>` profile 工厂自增，结构上不可能大于 2，断言它的上界等于自证。
 
-**测试分层。** 1034 个用例中约 150 个属于纯合同/元数据或直接应用行为（`*ClientTests`、`*ValidationTests`、
-`WmsTrustedRequestContextTests`、`BusinessGatewayIdempotencySafetyTests` 等），本来就不启宿主，本次未改动其
-路径。其余用例断言的是认证、授权、中间件、序列化与真实路由，即**必须**经过 HTTP 宿主，因此改造方向是让它们
-共用宿主，而不是把它们降级成反射断言。
+### 测试分层清单（哪些必须启 HTTP 宿主）
+
+| 分类 | 需要 HTTP 宿主 | 类 | 处置 |
+| --- | --- | --- | --- |
+| (a) 纯合同/元数据 | 否 | `BusinessConsoleSearchableDirectoryPolicyTests`、`BusinessGatewayWmsTrustedCompletionContractTests`、`MaintenanceLifecycleWireRoundTripTests` | 本来就是轻量路径，本次未改动 |
+| (b) 直接应用行为 | 否 | `BusinessGatewayAuthorizationClientTests`、`BusinessMesAcceptedReceiptClientTests`、`BusinessMesMaterialIssueClientTests`、`BusinessMesQualityHoldClientTests`、`BusinessConsoleWorkerDirectoryValidationTests`、`PublicIdempotencyRequestValidationTests`、`SchedulingWorkbenchValidationTests`、`WmsTrustedRequestContextTests`、`BusinessGatewayIdempotencySafetyTests`、`BusinessGatewayPrincipalWorkContextResolverTests` | 本来就是轻量路径，本次未改动 |
+| (c) 必须启宿主，已迁到共享 profile 租约 | **是** | `BusinessGatewayProxyTests`、`BusinessGatewayAuthorizationTests`、`BusinessGatewayMaintenanceTelemetryTests`、`BusinessGatewayWmsTests`、`BusinessGatewayWorkbenchTests`、`BusinessGatewaySearchTests`、`BusinessConsoleSearchableDirectoryWireTests`、`BusinessGatewayPrincipalWorkContextEndpointTests`、`BusinessGatewayConnectorTagCoverageTests`、`BusinessGatewayOpenApiTests`、`BusinessGatewayNotificationOpenApiTests`、`BusinessGatewayLifecycleConflictOpenApiTests` | 共享宿主 + 逐租约 scope |
+| (d) 必须启宿主，且需要独立启动 profile | **是**（dedicated） | `BusinessGatewayProductionSecurityTests`、`BusinessGatewayHttpClientResilienceTests`、`BusinessGatewayRateLimitTests`，以及 `BusinessGatewayAuthorizationTests` 中断言缺失 JWT 配置的用例 | 保留 dedicated 宿主，构建仍走同一 gate |
+| (e) 隔离机制自身 | **是** | `BusinessGatewaySharedHostIsolationTests` | 本次新增 |
+
+(a)(b) 两类约 150 例本来就不启宿主。(c) 类断言的是认证、授权、中间件、序列化与真实路由，**必须**经过 HTTP 宿主，
+因此改造方向是让它们共用宿主，而不是把它们降级成反射断言（那会丢覆盖）。
+
+### 未做的优化及其理由（spec §7 评估结论）
+
+spec §7 要求**评估**把 697 个细粒度重复的路由/权限用例合并成数据驱动 contract matrix。**结论：评估后不做。**
+该合并的收益前提是「每个用例各付一次宿主构建成本」，而共享宿主后单个用例的边际成本已降到毫秒级（整程序集
+1036 例合计 wall 约 10 s），收益基本消失；代价则是确定的——`[Theory]` 行的失败定位粒度显著劣于独立命名用例，
+而这些用例覆盖的正是权限与 401/403 语义。若将来该程序集重新变成瓶颈，应重新评估而不是把本结论当成永久决定。
+
+### 耗时验收证据
+
+验收标准是 **GitHub hosted runner 热缓存 ≤ 2 min**，因此以 hosted runner 数据为准（本机 macOS 数据只作参考）。
+两侧同为 `ubuntu24@20260720.247.2` / SDK `10.0.302`，取自 MAN-661 evidence artifact 的 per-assembly
+`elapsedMilliseconds`（TRX 执行窗口，不含 restore/build）：
+
+| | 用例数 | hosted runner 该程序集 TRX elapsed | 来源 |
+| --- | --- | --- | --- |
+| 改造前 | 1023 | **869.4 s（14 m 29 s）** | main push run `30890682487`，tested SHA `90715433b` |
+| 改造后 | 1036 | **≈ 23 s** | PR run `30895038371`，tested SHA `848b0f9a`（该 run 为本 PR 修复前版本，1034 例 / 23.085 s） |
+
+本机 macOS `--no-build` wall 为 8.7–11.3 s，作为 5 seed × 5 并发档矩阵的稳定性证据保留，但**不**用于 ≤2 min 验收。
+
+spec §8 要求「使用 MAN-661 的每用例基线对比」。该 baseline 当前状态为
+`unavailableReason: incompatible-granularity-or-duration-metric`（committed baseline 是 project-wall-clock，
+运行摘要是 test-granularity trx-elapsed，不可比），因此本次改用同一 evidence artifact 的 **per-assembly TRX
+elapsed** 做 before/after 对比。局限如实记录：这是程序集粒度而非每用例粒度，两个 run 的 runner 硬件不完全同机，
+且不含 restore/build 时间；结论「量级下降」稳健，但不应被当作每用例 baseline 已经建立。合并后由 MAN-661 的
+normalized artifact refresh 建立可比 baseline 后，本节数字应被那次 refresh 取代。
 
 ## Seeded order 与本地六轮验证
 

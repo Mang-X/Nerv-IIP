@@ -22,14 +22,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var appHub = new RecordingAppHubClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessAppHubClient>();
             services.AddSingleton<IBusinessAppHubClient>(appHub);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/connectors/opc-main/collection-health?organizationId=org-001&environmentId=env-dev");
@@ -60,14 +60,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var appHub = new RecordingAppHubClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessAppHubClient>();
             services.AddSingleton<IBusinessAppHubClient>(appHub);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/connectors/collection-health?organizationId=org-001&environmentId=env-dev");
@@ -192,7 +192,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -203,7 +203,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var maintenanceResponse = await client.GetAsync(
@@ -244,7 +244,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => DeviceDetail(request, allowedDeviceId, "DEV-A"),
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -253,7 +253,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -282,7 +282,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ],
             ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -291,7 +291,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -325,7 +325,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 ? throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "device-reference-ambiguous")
                 : DeviceDetail(request, allowedDeviceId, deniedDeviceId),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -334,7 +334,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -361,7 +361,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ],
             ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -370,7 +370,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -439,7 +439,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ],
             ResourceDetailFactory = request => DeviceDetail(request, allowedDeviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -448,7 +448,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -472,14 +472,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "wo-sentinel", persistableSentinel, "high", "Open", null, null, DateTimeOffset.UtcNow),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -529,7 +529,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -538,7 +538,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -586,7 +586,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -595,7 +595,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -615,7 +615,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -624,7 +624,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -662,7 +662,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ],
             ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -671,7 +671,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -722,7 +722,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 return DeviceDetail(request, device.DeviceId, device.Code);
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -731,7 +731,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -766,7 +766,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     HttpStatusCode.BadGateway,
                     "device-reference-ambiguous"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -775,7 +775,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -827,7 +827,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 });
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -836,7 +836,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -895,7 +895,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             },
             ResourceDetailFactory = request => DeviceDetail(request, invalidCanonicalId!, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -904,7 +904,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         var scopeQuery = scopeScenario switch
         {
@@ -945,7 +945,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -954,7 +954,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -985,7 +985,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -994,7 +994,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1019,7 +1019,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-A"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1028,7 +1028,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1078,7 +1078,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw new InvalidOperationException($"Unsupported scenario '{scenario}'."),
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1087,7 +1087,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1104,7 +1104,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
         var masterData = new RecordingMasterDataClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1113,7 +1113,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=5&take=10");
@@ -1155,7 +1155,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 _ => throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.NotFound, "device-reference-not-found"),
             },
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1164,7 +1164,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1197,7 +1197,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope(
                     "self", "user-admin", "Current worker", "worker-user", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1206,7 +1206,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var allowed = await client.GetAsync(
@@ -1250,7 +1250,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope(
                     "self", "user-admin", "Current worker", "worker-user", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1259,7 +1259,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1300,7 +1300,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope(
                     "team", "team-a", "Team A", "team", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1309,7 +1309,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1340,7 +1340,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", []),
                 new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1349,7 +1349,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var self = await client.GetAsync(
@@ -1389,7 +1389,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", []),
                 new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1398,7 +1398,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1425,7 +1425,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessMasterDataWorkContextCandidateScope("self", "user-admin", "Current worker", "worker-user", []),
                 new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1434,7 +1434,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1469,7 +1469,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             PrincipalWorkContext = PrincipalWorkContext(
                 new BusinessMasterDataWorkContextCandidateScope("team", "team-a", "Team A", "team", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1478,7 +1478,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var detail = await client.GetAsync(
@@ -1533,7 +1533,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessConsoleTeamMemberItem("team-a", "tech-a", false, new DateOnly(2026, 1, 1), null, true, "v1"),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1542,7 +1542,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var invalid = await client.PostAsJsonAsync(
@@ -1600,7 +1600,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "tech-leave", "EMP-LEAVE", "Tech Leave", null, null, null, "on-leave", null, true, [], [], "v1"),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1609,7 +1609,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -1652,7 +1652,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 new BusinessConsoleResourceItem("team", "team-a", "Team A", true, "v1"),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1661,7 +1661,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -1702,7 +1702,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
                 "team", "team-disabled", "Disabled Team", false, "v1", "org-001", "env-dev"),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1711,7 +1711,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -1791,7 +1791,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "team-a", "tech-a", false, effectiveFrom, effectiveTo, active, "v1"),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1803,7 +1803,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(DateTimeOffset.Parse(
                 "2026-08-01T12:00:00Z", CultureInfo.InvariantCulture)));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -1859,7 +1859,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "team-a", "tech-leave", false, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 1), true, "v1"),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1871,7 +1871,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(DateTimeOffset.Parse(
                 "2026-08-01T12:00:00Z", CultureInfo.InvariantCulture)));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -1916,7 +1916,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             PrincipalWorkContext = PrincipalWorkContext(
                 new BusinessMasterDataWorkContextCandidateScope("self", "user-admin", "Current worker", "worker-user", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1925,7 +1925,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1968,7 +1968,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 ],
                 WorkOrderDetailAllowedActions = ["accept", "cancel"],
             };
-            await using var factory = CreateFactory(auth, services =>
+            await using var lease = LeaseHost(auth, services =>
             {
                 services.RemoveAll<IBusinessMaintenanceClient>();
                 services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -1977,7 +1977,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
             });
-            var client = factory.CreateClient();
+            var client = lease.CreateClient();
             client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
             var response = await client.GetAsync(
@@ -2009,7 +2009,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             ],
         };
         var masterData = new RecordingMasterDataClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -2018,7 +2018,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
@@ -2038,7 +2038,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             DetailFailure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
@@ -2047,7 +2047,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
@@ -2074,7 +2074,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             DetailFailure = transportFailure,
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
@@ -2083,7 +2083,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
@@ -2151,7 +2151,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             PrincipalWorkContext = PrincipalWorkContext(
                 new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -2160,7 +2160,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders/wo-maint-001?organizationId=org-001&environmentId=env-dev");
@@ -2178,14 +2178,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var plansResponse = await client.GetAsync("/api/business-console/v1/maintenance/plans?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01");
@@ -2227,7 +2227,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             ResourceDetailFactory = request => DeviceDetail(request, DeviceId(1)),
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -2238,7 +2238,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var createResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
@@ -2291,7 +2291,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             ResourceDetailFactory = request => DeviceDetail(request, deviceId, "DEV-PRESS-01"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -2302,7 +2302,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await PostAlarmRepairAsync(
@@ -2334,8 +2334,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 ? DeviceDetail(request, DeviceId(1))
                 : DeviceDetail(request, DeviceId(2)),
         };
-        await using var factory = CreateAlarmRepairFactory(maintenance, telemetry, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseAlarmRepairHost(maintenance, telemetry, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B");
@@ -2363,8 +2363,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient { AlarmListResponse = alarmResponse };
         var masterData = new RecordingMasterDataClient();
-        await using var factory = CreateAlarmRepairFactory(maintenance, telemetry, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseAlarmRepairHost(maintenance, telemetry, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await PostAlarmRepairAsync(client, "DEV-A");
@@ -2383,14 +2383,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 HttpStatusCode.Conflict,
                 "lifecycle-conflict"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -2413,14 +2413,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var planResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/plans", new
@@ -2469,14 +2469,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var handler = new RecordingMaintenanceUpdateHandler();
         using var downstreamHttpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
         var maintenance = new HttpBusinessMaintenanceClient(downstreamHttpClient);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var runtimeOnlyResponse = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-runtime", new
@@ -2521,8 +2521,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     public async Task Maintenance_plan_update_facade_rejects_a_request_without_any_trigger()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
@@ -2541,14 +2541,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var generateResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/plans/generate-due", new
@@ -2588,14 +2588,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var inspectionsResponse = await client.GetAsync("/api/business-console/v1/maintenance/inspections?organizationId=org-001&environmentId=env-dev&skip=2&take=3");
@@ -2627,14 +2627,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var trendResponse = await client.GetAsync("/api/business-console/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
@@ -2671,14 +2671,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var telemetry = new RecordingTelemetryFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/devices/DEV-PRESS-01/history?organizationId=org-001&environmentId=env-dev&fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T12:00:00Z");
@@ -2696,14 +2696,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var telemetry = new RecordingTelemetryFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T12:00:00Z");
@@ -2725,14 +2725,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var telemetry = new RecordingTelemetryFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var tagsResponse = await client.GetAsync("/api/business-console/v1/telemetry/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01");
@@ -2751,14 +2751,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var telemetry = new RecordingTelemetryFacadeClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var ackResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", new
@@ -2810,14 +2810,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 HttpStatusCode.Conflict,
                 "lifecycle-conflict"),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -2837,14 +2837,14 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     public async Task Telemetry_and_equipment_alarm_lists_forward_paging_and_filters()
     {
         var telemetry = new RecordingTelemetryFacadeClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessIndustrialTelemetryClient>();
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var tagsResponse = await client.GetAsync("/api/business-console/v1/telemetry/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&skip=5&take=10");
@@ -2956,11 +2956,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             idempotencyKey = "maintenance-alarm-create-test",
         });
 
-    private static BusinessGatewayTestHostLease CreateAlarmRepairFactory(
+    private static BusinessGatewayTestHostLease LeaseAlarmRepairHost(
         RecordingMaintenanceFacadeClient maintenance,
         RecordingIndustrialTelemetryClient telemetry,
         RecordingMasterDataClient masterData) =>
-        CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
@@ -2972,7 +2972,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
 
-    private static BusinessGatewayTestHostLease CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
         BusinessGatewayTestHost.Lease(auth, configureServices);

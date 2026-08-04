@@ -17,9 +17,9 @@ public sealed class BusinessGatewaySearchTests
     public async Task Business_console_search_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
+        await using var lease = LeaseHost(auth);
 
-        var response = await factory.CreateClient().GetAsync("/api/business-console/v1/search?q=SKU-001");
+        var response = await lease.CreateClient().GetAsync("/api/business-console/v1/search?q=SKU-001");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(0, auth.CallCount);
@@ -53,7 +53,7 @@ public sealed class BusinessGatewaySearchTests
                     []),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
@@ -66,7 +66,7 @@ public sealed class BusinessGatewaySearchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/search?q=271&types=masterDataSku,mesWorkOrder,inventoryLot,equipmentAlarm");
@@ -118,7 +118,7 @@ public sealed class BusinessGatewaySearchTests
                 new("WO-271-003", "SKU-271", null, 30, 3, DateTimeOffset.Parse("2026-06-05T08:00:00Z"), "planned", []),
             ],
         };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
@@ -127,7 +127,7 @@ public sealed class BusinessGatewaySearchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/search?q=271&types=masterDataSku,mesWorkOrder&take=3");
@@ -150,8 +150,8 @@ public sealed class BusinessGatewaySearchTests
         bool includeEnvironmentId)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new(
             "Bearer",
             BusinessGatewayTestTokens.ValidAccessToken(
@@ -179,8 +179,8 @@ public sealed class BusinessGatewaySearchTests
         string expectedInvalidField)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -200,7 +200,7 @@ public sealed class BusinessGatewaySearchTests
         Assert.Equal(status, item.GetProperty("status").GetString());
     }
 
-    private static BusinessGatewayTestHostLease CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         IBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
         BusinessGatewayTestHost.Lease(

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
-using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,24 +11,6 @@ using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
-
-/// <summary>
-/// The named host profiles this assembly runs gateway HTTP tests against.
-/// </summary>
-internal enum BusinessGatewayTestHostProfile
-{
-    /// <summary>
-    /// JWT validation configured, downstream base URLs left at their Development defaults.
-    /// </summary>
-    Default,
-
-    /// <summary>
-    /// JWT validation configured plus every downstream base URL pinned to a <c>*.local</c> host, so
-    /// a facade that forgets to use its injected client fails as an unreachable downstream instead
-    /// of silently hitting a developer's localhost port.
-    /// </summary>
-    ServiceBaseUrls,
-}
 
 /// <summary>
 /// Shared, reusable <see cref="WebApplicationFactory{TEntryPoint}"/> hosts for the BusinessGateway
@@ -51,9 +32,10 @@ internal enum BusinessGatewayTestHostProfile
 /// </para>
 /// <para>
 /// A test whose configuration cannot be expressed as per-request instances (custom
-/// <see cref="IWebHostBuilder"/> settings, non-instance registrations, or overrides of types outside
-/// <see cref="OverridableServiceTypes"/>) transparently falls back to a dedicated host, so
-/// correctness never depends on the sharing being applicable.
+/// <see cref="IWebHostBuilder"/> settings, non-instance registrations, overrides of types outside
+/// <see cref="OverridableServiceTypes"/>, or the <em>removal</em> of a registration it does not put
+/// back) transparently falls back to a dedicated host, so correctness never depends on the sharing
+/// being applicable.
 /// </para>
 /// </remarks>
 internal static class BusinessGatewayTestHost
@@ -80,18 +62,23 @@ internal static class BusinessGatewayTestHost
 
     private static readonly ConcurrentDictionary<BusinessGatewayTestHostProfile, string> OpenApiDocuments = new();
 
+    private static readonly ConcurrentDictionary<BusinessGatewayTestHostProfile, FrozenSet<Type>> SharedHostServiceTypes =
+        new();
+
     private static readonly SemaphoreSlim OpenApiGenerationGate = new(1, 1);
+
+    /// <summary>
+    /// Marker registration used to seed the harvest probe. Reference identity of this delegate is
+    /// what tells a surviving seed apart from something the test itself registered.
+    /// </summary>
+    private static readonly Func<IServiceProvider, object> HarvestProbeSeed =
+        _ => throw new InvalidOperationException("The harvest probe collection is never built.");
 
     private static readonly Lazy<WebApplicationFactory<Program>> DefaultProfileFactory =
         new(() => BuildSharedFactory(BusinessGatewayTestHostProfile.Default), LazyThreadSafetyMode.ExecutionAndPublication);
 
     private static readonly Lazy<WebApplicationFactory<Program>> ServiceBaseUrlProfileFactory =
         new(() => BuildSharedFactory(BusinessGatewayTestHostProfile.ServiceBaseUrls), LazyThreadSafetyMode.ExecutionAndPublication);
-
-    /// <summary>Number of hosts actually constructed; asserted by the isolation tests.</summary>
-    private static int _builtHostCount;
-
-    internal static int BuiltHostCount => Volatile.Read(ref _builtHostCount);
 
     /// <summary>
     /// Leases a slot on the shared host for <paramref name="profile"/>.
@@ -115,16 +102,22 @@ internal static class BusinessGatewayTestHost
     {
         ArgumentNullException.ThrowIfNull(authorizationClient);
 
-        var overrides = new Dictionary<Type, object>
+        if (configureBuilder is null)
         {
-            [typeof(IBusinessGatewayAuthorizationClient)] = authorizationClient,
-        };
+            // Forces the shared host to exist, which is also what publishes the registration
+            // snapshot the harvest probe compares against.
+            var shared = SharedFactory(profile);
+            var overrides = new Dictionary<Type, object>
+            {
+                [typeof(IBusinessGatewayAuthorizationClient)] = authorizationClient,
+            };
 
-        if (configureBuilder is null && TryHarvestOverrides(configureServices, overrides))
-        {
-            var scope = new BusinessGatewayTestScope(overrides);
-            Scopes[scope.Id] = scope;
-            return new BusinessGatewayTestHostLease(SharedFactory(profile), scope, ownsFactory: false);
+            if (TryHarvestOverrides(profile, configureServices, overrides))
+            {
+                var scope = new BusinessGatewayTestScope(overrides);
+                Scopes[scope.Id] = scope;
+                return new BusinessGatewayTestHostLease(shared, scope, ownsFactory: false);
+            }
         }
 
         return new BusinessGatewayTestHostLease(
@@ -165,17 +158,18 @@ internal static class BusinessGatewayTestHost
         new BusinessGatewayGatedWebApplicationFactory().WithWebHostBuilder(configureBuilder);
 
     /// <summary>
-    /// Creates an <see cref="HttpClient"/> that holds a request permit for the duration of every
-    /// exchange, so no host can be built while it is talking to the gateway.
+    /// Creates an <see cref="HttpClient"/> onto a gated host, optionally stamped with a lease scope.
     /// </summary>
+    /// <remarks>
+    /// The request permit is taken server side (see <see cref="BusinessGatewayTestHostGate"/>), so
+    /// nothing has to be wrapped around the client handler here.
+    /// </remarks>
     internal static HttpClient CreateGatedClient(
         WebApplicationFactory<Program> factory,
         string? scopeId = null,
         Uri? baseAddress = null)
     {
-        var client = factory.CreateDefaultClient(
-            baseAddress ?? new Uri("http://localhost"),
-            new BusinessGatewayTestHostGate.RequestPermitHandler());
+        var client = factory.CreateDefaultClient(baseAddress ?? new Uri("http://localhost"));
         if (scopeId is not null)
         {
             BusinessGatewayTestHostGate.ApplyScopeHeader(client.DefaultRequestHeaders, scopeId);
@@ -228,9 +222,46 @@ internal static class BusinessGatewayTestHost
         }
     }
 
-    internal static void ReleaseScope(string scopeId) => Scopes.TryRemove(scopeId, out _);
+    /// <summary>
+    /// Serialises a raw, deliberately uncached <c>/swagger/v1/swagger.json</c> request against the
+    /// same gate <see cref="GetOpenApiDocumentAsync"/> uses. Any test that regenerates the document
+    /// instead of reading the cache has to take this, or it reintroduces the concurrent NSwag
+    /// generation that the cache exists to remove.
+    /// </summary>
+    internal static async ValueTask<IAsyncDisposable> EnterOpenApiGenerationAsync()
+    {
+        await OpenApiGenerationGate.WaitAsync();
+        return new OpenApiGenerationRegistration();
+    }
+
+    /// <summary>
+    /// Unregisters a lease's scope once no request is still using it. Draining first is what makes
+    /// "the lease is gone" and "a request may still resolve its fakes" mutually exclusive rather
+    /// than merely unlikely.
+    /// </summary>
+    internal static async ValueTask ReleaseScopeAsync(string scopeId)
+    {
+        if (!Scopes.TryGetValue(scopeId, out var scope))
+        {
+            return;
+        }
+
+        await scope.DrainAsync();
+        Scopes.TryRemove(scopeId, out _);
+    }
 
     internal static bool IsScopeRegistered(string scopeId) => Scopes.ContainsKey(scopeId);
+
+    /// <summary>
+    /// Marks the request as using its lease's scope for the duration of the server pipeline; see
+    /// <see cref="ReleaseScopeAsync"/>. Returns a no-op handle for unleased requests and for a
+    /// header that no longer resolves (which <see cref="ResolveScope"/> reports as an error).
+    /// </summary>
+    internal static IDisposable TrackRequest(HttpContext context) =>
+        context.Request.Headers.TryGetValue(ScopeHeader, out var header)
+        && Scopes.TryGetValue(header.ToString(), out var scope)
+            ? scope.Enter()
+            : NullRegistration.Instance;
 
     private static WebApplicationFactory<Program> SharedFactory(BusinessGatewayTestHostProfile profile) =>
         profile switch
@@ -241,11 +272,18 @@ internal static class BusinessGatewayTestHost
         };
 
     /// <summary>
-    /// Replays the test's service-configuration block against a throwaway collection and harvests
-    /// the singleton instances it registered. Returns <see langword="false"/> as soon as it sees a
-    /// registration that cannot be expressed as a per-request instance.
+    /// Replays the test's service-configuration block against a probe collection seeded with the
+    /// shared host's own registrations, and harvests the singleton instances it registered.
     /// </summary>
+    /// <remarks>
+    /// The seeding matters: on an empty collection a bare <c>RemoveAll&lt;T&gt;()</c> leaves no trace
+    /// at all, so a block that removes a registration without putting one back would be harvested as
+    /// "shareable" while the shared host quietly keeps the real registration. Seeding makes that
+    /// removal observable as a missing seed, and any removal the lease cannot reproduce per request
+    /// falls back to a dedicated host.
+    /// </remarks>
     private static bool TryHarvestOverrides(
+        BusinessGatewayTestHostProfile profile,
         Action<IServiceCollection>? configureServices,
         Dictionary<Type, object> overrides)
     {
@@ -254,10 +292,24 @@ internal static class BusinessGatewayTestHost
             return true;
         }
 
+        var seeds = SharedHostServiceTypes[profile];
         var probe = new ServiceCollection();
+        foreach (var seed in seeds)
+        {
+            probe.Add(new ServiceDescriptor(seed, HarvestProbeSeed, ServiceLifetime.Transient));
+        }
+
         configureServices(probe);
+
+        var surviving = new HashSet<Type>();
         foreach (var descriptor in probe)
         {
+            if (ReferenceEquals(descriptor.ImplementationFactory, HarvestProbeSeed))
+            {
+                surviving.Add(descriptor.ServiceType);
+                continue;
+            }
+
             if (descriptor.ImplementationInstance is not { } instance
                 || !OverridableServiceTypes.Contains(descriptor.ServiceType))
             {
@@ -267,7 +319,9 @@ internal static class BusinessGatewayTestHost
             overrides[descriptor.ServiceType] = instance;
         }
 
-        return true;
+        // A seed the block removed is only reproducible per request if the block also supplied a
+        // per-request instance for it.
+        return seeds.All(seed => surviving.Contains(seed) || overrides.ContainsKey(seed));
     }
 
     private static WebApplicationFactory<Program> BuildSharedFactory(BusinessGatewayTestHostProfile profile)
@@ -276,15 +330,28 @@ internal static class BusinessGatewayTestHost
         {
             ApplyProfile(builder, profile);
             builder.UseSetting("Security:RateLimit:PermitLimit", SharedHostRateLimitPermits);
-            builder.ConfigureServices(RouteOverridableServicesToScope);
+            builder.ConfigureServices(services =>
+            {
+                RouteOverridableServicesToScope(services);
+                SharedHostServiceTypes[profile] = SnapshotHarvestSeeds(services);
+            });
         });
 
         // WebApplicationFactory builds lazily. Force it here so the (gated) construction happens
         // once, up front, instead of inside whichever test happens to send the first request.
         _ = factory.Services;
-        Interlocked.Increment(ref _builtHostCount);
         return factory;
     }
+
+    /// <summary>
+    /// The service types a harvest probe is seeded with. Open generics are excluded because they
+    /// cannot be registered with a factory descriptor and are never swapped by a gateway test.
+    /// </summary>
+    private static FrozenSet<Type> SnapshotHarvestSeeds(IServiceCollection services) =>
+        services
+            .Select(descriptor => descriptor.ServiceType)
+            .Where(type => !type.IsGenericTypeDefinition)
+            .ToFrozenSet();
 
     private static void ApplyProfile(IWebHostBuilder builder, BusinessGatewayTestHostProfile profile)
     {
@@ -347,17 +414,26 @@ internal static class BusinessGatewayTestHost
         }
 
         var gate = new Lock();
+        // Volatile: the fast path reads this field without taking the lock, and a non-volatile read
+        // is not ordered against the writes made while constructing the instance on weaker memory
+        // models (arm64).
         object? singleton = null;
         return serviceProvider =>
         {
-            if (singleton is not null)
+            if (Volatile.Read(ref singleton) is { } published)
             {
-                return singleton;
+                return published;
             }
 
             lock (gate)
             {
-                return singleton ??= create(serviceProvider);
+                if (singleton is not { } existing)
+                {
+                    existing = create(serviceProvider);
+                    Volatile.Write(ref singleton, existing);
+                }
+
+                return existing;
             }
         };
     }
@@ -366,13 +442,15 @@ internal static class BusinessGatewayTestHost
     /// <see cref="BusinessGatewayDownstreamHealthState"/> is a process-lifetime singleton that
     /// records downstream degradation and is read back by <c>/health</c> and the workbench summary.
     /// On a shared host it is the one genuinely cross-test mutable object, so it is scoped per lease
-    /// exactly like the downstream clients.
+    /// exactly like the downstream clients — and a request with no lease at all gets a fresh
+    /// instance rather than a process-wide one, so an anonymous contract request can never observe
+    /// degradation recorded by whichever anonymous request happened to run before it.
     /// </summary>
     private static void RouteDownstreamHealthStateToScope(IServiceCollection services)
     {
         services.RemoveAll<BusinessGatewayDownstreamHealthState>();
-        var unscoped = new BusinessGatewayDownstreamHealthState();
-        services.AddScoped(serviceProvider => ResolveScope(serviceProvider)?.HealthState ?? unscoped);
+        services.AddScoped(serviceProvider =>
+            ResolveScope(serviceProvider)?.HealthState ?? new BusinessGatewayDownstreamHealthState());
     }
 
     private static BusinessGatewayTestScope? ResolveScope(IServiceProvider serviceProvider)
@@ -410,60 +488,36 @@ internal static class BusinessGatewayTestHost
             .ToFrozenSet();
     }
 
+    private sealed class OpenApiGenerationRegistration : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            OpenApiGenerationGate.Release();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class NullRegistration : IDisposable
+    {
+        internal static readonly NullRegistration Instance = new();
+
+        public void Dispose()
+        {
+        }
+    }
+
     /// <summary>
     /// A <see cref="WebApplicationFactory{TEntryPoint}"/> whose lazy host construction is serialized
-    /// against in-flight gateway requests.
+    /// against in-flight gateway requests, and whose pipeline is wrapped by the permit middleware.
     /// </summary>
     private sealed class BusinessGatewayGatedWebApplicationFactory : WebApplicationFactory<Program>
     {
+        protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+            builder.ConfigureServices(services => services.Insert(
+                0,
+                ServiceDescriptor.Transient<IStartupFilter, BusinessGatewayTestHostGate.RequestPermitStartupFilter>()));
+
         protected override IHost CreateHost(IHostBuilder builder) =>
             BusinessGatewayTestHostGate.Build(() => base.CreateHost(builder));
-    }
-}
-
-/// <summary>
-/// One test's isolated slot on a shared host: the downstream fakes it registered plus its own
-/// downstream-health recorder.
-/// </summary>
-internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object> overrides)
-{
-    public string Id { get; } = Guid.CreateVersion7().ToString("n");
-
-    public IReadOnlyDictionary<Type, object> Overrides { get; } = overrides;
-
-    public BusinessGatewayDownstreamHealthState HealthState { get; } = new();
-}
-
-/// <summary>
-/// Test-facing handle over either a shared-host scope or a dedicated host. Drop-in replacement for
-/// the <see cref="WebApplicationFactory{TEntryPoint}"/> the tests used to create directly.
-/// </summary>
-internal sealed class BusinessGatewayTestHostLease(
-    WebApplicationFactory<Program> factory,
-    BusinessGatewayTestScope? scope,
-    bool ownsFactory) : IAsyncDisposable, IDisposable
-{
-    /// <summary><see langword="true"/> when this lease runs on a shared host.</summary>
-    public bool IsShared => scope is not null;
-
-    public string? ScopeId => scope?.Id;
-
-    public IServiceProvider Services => factory.Services;
-
-    public HttpClient CreateClient() => BusinessGatewayTestHost.CreateGatedClient(factory, scope?.Id);
-
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
-
-    public async ValueTask DisposeAsync()
-    {
-        if (scope is not null)
-        {
-            BusinessGatewayTestHost.ReleaseScope(scope.Id);
-        }
-
-        if (ownsFactory)
-        {
-            await factory.DisposeAsync();
-        }
     }
 }

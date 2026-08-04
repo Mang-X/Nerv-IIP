@@ -26,8 +26,8 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
             ],
             roles: [new AuthorizationRole("role-worker", "一线操作工")]);
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
-        await using var factory = CreateFactory(auth, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -68,8 +68,8 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
                 new AuthorizationRole("role-valid", "有效角色"),
             ]);
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
-        await using var factory = CreateFactory(auth, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -91,8 +91,8 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
-        await using var factory = CreateFactory(auth, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -112,8 +112,8 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
                 new AuthorizationScopeGrant("role", "role-worker", "team", "TEAM-A", [PermissionCode]),
             ]);
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
-        await using var factory = CreateFactory(auth, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -137,8 +137,8 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
                     OrganizationWide: true),
             ]);
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
-        await using var factory = CreateFactory(auth, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -221,7 +221,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
             ["team", "work-center"],
             ["position-master-not-modeled"]);
 
-    private static BusinessGatewayTestHostLease CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         IBusinessGatewayAuthorizationClient auth,
         IBusinessMasterDataClient masterData) =>
         BusinessGatewayTestHost.Lease(auth, services =>

@@ -19,9 +19,9 @@ public sealed class BusinessGatewayWorkbenchTests
     public async Task Workbench_summary_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
+        await using var lease = LeaseHost(auth);
 
-        var response = await factory.CreateClient().GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
+        var response = await lease.CreateClient().GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(0, auth.CallCount);
@@ -39,7 +39,7 @@ public sealed class BusinessGatewayWorkbenchTests
         var inventory = new RecordingInventoryClient();
         var telemetry = new RecordingIndustrialTelemetryClient();
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
@@ -56,7 +56,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=5");
@@ -93,7 +93,7 @@ public sealed class BusinessGatewayWorkbenchTests
             BusinessGatewayPermissions.NotificationTasksRead);
         var approval = new RecordingApprovalClient();
         var notification = new RecordingNotificationClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
@@ -102,7 +102,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
@@ -121,7 +121,7 @@ public sealed class BusinessGatewayWorkbenchTests
             BusinessGatewayPermissions.MesWorkOrdersRead);
         var quality = new RecordingQualityClient { NcrTotal = 137 };
         var mes = new RecordingMesClient { WorkOrdersTotal = 246 };
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(quality);
@@ -130,7 +130,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=75");
@@ -150,14 +150,14 @@ public sealed class BusinessGatewayWorkbenchTests
     {
         var auth = new NullPrincipalNotificationAuthorizationClient();
         var notification = new RecordingNotificationClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessNotificationClient>();
             services.AddSingleton<IBusinessNotificationClient>(notification);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
@@ -176,14 +176,14 @@ public sealed class BusinessGatewayWorkbenchTests
     public async Task Workbench_summary_reports_tasks_permission_when_only_notification_tasks_source_fails()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.NotificationTasksRead);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessNotificationClient>();
             services.AddSingleton<IBusinessNotificationClient>(new ThrowingNotificationClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
@@ -205,7 +205,7 @@ public sealed class BusinessGatewayWorkbenchTests
             BusinessGatewayPermissions.NotificationTasksRead,
             BusinessGatewayPermissions.MesWorkOrdersRead);
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessNotificationClient>();
             services.AddSingleton<IBusinessNotificationClient>(new ThrowingNotificationClient());
@@ -214,7 +214,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
@@ -237,7 +237,7 @@ public sealed class BusinessGatewayWorkbenchTests
         var auth = new ThrowingApprovalAuthorizationClient();
         var approval = new RecordingApprovalClient();
         var mes = new RecordingMesClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
@@ -246,7 +246,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
@@ -274,7 +274,7 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(status, item.GetProperty("status").GetString());
     }
 
-    private static BusinessGatewayTestHostLease CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         IBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
         BusinessGatewayTestHost.Lease(

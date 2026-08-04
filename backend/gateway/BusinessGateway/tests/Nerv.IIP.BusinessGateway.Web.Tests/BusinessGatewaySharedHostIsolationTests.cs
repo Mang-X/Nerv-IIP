@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.ServiceAuth;
 using Xunit;
 
@@ -24,6 +25,12 @@ public sealed class BusinessGatewaySharedHostIsolationTests
 {
     private const string SkusRoute =
         "/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev";
+
+    /// <summary>How long a host build must stay blocked while a response body is still in flight.</summary>
+    private static readonly TimeSpan BuildMustStayBlockedFor = TimeSpan.FromSeconds(1);
+
+    /// <summary>Slack for the same build to finish once the body has been drained.</summary>
+    private static readonly TimeSpan BuildMustCompleteWithin = TimeSpan.FromSeconds(30);
 
     [Fact]
     public void Assembly_does_not_disable_test_parallelization()
@@ -175,32 +182,109 @@ public sealed class BusinessGatewaySharedHostIsolationTests
 
         Assert.Equal("Healthy", health);
         Assert.Equal(0, neighbour.ListResourcesCallCount);
+
+        // The "Healthy" above must be a property of this request, not of nothing having degraded a
+        // process-wide fallback earlier in the run: an unleased request gets its own recorder, so
+        // no ordering between anonymous requests can decide the outcome.
+        using var firstScope = lease.Services.CreateScope();
+        using var secondScope = lease.Services.CreateScope();
+        Assert.NotSame(
+            firstScope.ServiceProvider.GetRequiredService<BusinessGatewayDownstreamHealthState>(),
+            secondScope.ServiceProvider.GetRequiredService<BusinessGatewayDownstreamHealthState>());
     }
 
     [Fact]
-    public async Task Repeated_leases_on_one_profile_never_build_another_host()
+    public async Task Repeated_leases_never_build_another_host_for_either_profile()
     {
-        await using var warmup = BusinessGatewayTestHost.Lease(FakeBusinessGatewayAuthorizationClient.Allowed());
-        using var warmupClient = Authenticated(warmup.CreateClient());
+        await using var defaultWarmup = BusinessGatewayTestHost.Lease(FakeBusinessGatewayAuthorizationClient.Allowed());
+        await using var pinnedWarmup = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            profile: BusinessGatewayTestHostProfile.ServiceBaseUrls);
+        using var warmupClient = Authenticated(defaultWarmup.CreateClient());
         await warmupClient.GetStringAsync("/health");
-        var host = warmup.Services;
+        var defaultHost = defaultWarmup.Services;
+        var pinnedHost = pinnedWarmup.Services;
+
+        // One host per profile, and the two profiles really are two hosts — anything else means
+        // leases stopped sharing and every test is paying host-construction cost again.
+        Assert.NotSame(defaultHost, pinnedHost);
 
         for (var i = 0; i < 25; i++)
         {
             await using var lease = BusinessGatewayTestHost.Lease(
                 FakeBusinessGatewayAuthorizationClient.Allowed(),
                 services => AddMasterData(services, new RecordingMasterDataClient(), $"internal-{i}"));
+            await using var pinnedLease = BusinessGatewayTestHost.Lease(
+                FakeBusinessGatewayAuthorizationClient.Allowed(),
+                services => AddMasterData(services, new RecordingMasterDataClient(), $"internal-pinned-{i}"),
+                BusinessGatewayTestHostProfile.ServiceBaseUrls);
             using var client = Authenticated(lease.CreateClient());
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SkusRoute)).StatusCode);
 
-            // Reference identity, not a global counter: the sibling profile may legitimately be
-            // built by another test in parallel, and that must not read as a regression here.
-            Assert.Same(host, lease.Services);
+            // Reference identity, not a global counter: a counter that can only be incremented by
+            // the two `Lazy<T>` profile factories cannot exceed two, so asserting that bound would
+            // prove nothing.
+            Assert.Same(defaultHost, lease.Services);
+            Assert.Same(pinnedHost, pinnedLease.Services);
         }
+    }
 
-        // Two profiles for the whole assembly is the ceiling; anything more means leases stopped
-        // sharing and every test is paying host-construction cost again.
-        Assert.InRange(BusinessGatewayTestHost.BuiltHostCount, 1, 2);
+    [Fact]
+    public async Task Host_construction_waits_for_a_response_body_that_is_still_being_written()
+    {
+        // The OpenAPI document is the one anonymous response large enough to still be streaming
+        // after its headers are flushed. Generating it uncached has to take the same gate the
+        // document cache uses, or this test reintroduces the concurrent NSwag generation the cache
+        // exists to remove.
+        await using var generation = await BusinessGatewayTestHost.EnterOpenApiGenerationAsync();
+        using var client = BusinessGatewayTestHost.CreateSharedContractClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/swagger/v1/swagger.json");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The response headers are flushed, but the document is far larger than TestServer's
+        // response pipe threshold, so the gateway pipeline is still writing. Releasing the gate
+        // permit here — which is what a client-side DelegatingHandler around `base.SendAsync` does,
+        // because HttpClient buffers the content outside the handler chain — would let host
+        // construction mutate FastEndpoints' static serializer configuration underneath a live
+        // request. The permit is therefore held server side, and this build must not start yet.
+        var build = Task.Run(() => BusinessGatewayTestHostGate.Build(() => 0));
+        var settled = await Task.WhenAny(build, Task.Delay(BuildMustStayBlockedFor));
+
+        Assert.True(
+            ReferenceEquals(settled, build) is false,
+            "Host construction completed while the gateway was still writing a response body "
+            + $"(gate reported {BusinessGatewayTestHostGate.RequestsInFlight} request(s) in flight).");
+
+        var document = await response.Content.ReadAsStringAsync();
+
+        // Guards the premise: a document that fits in the pipe buffer would complete server side
+        // before this test ever looks, and the assertion above would pass vacuously.
+        Assert.True(
+            document.Length > 64 * 1024,
+            $"The OpenAPI document is only {document.Length} bytes, which no longer exceeds TestServer's "
+            + "response pipe threshold; this test would no longer observe the window it guards.");
+
+        await build.WaitAsync(BuildMustCompleteWithin);
+    }
+
+    [Fact]
+    public void A_configuration_block_that_only_removes_a_registration_falls_back_to_a_dedicated_host()
+    {
+        // Removing without re-registering cannot be expressed per request: the shared host would
+        // keep the real registration and the test would silently run against different wiring than
+        // a dedicated host gives it. An empty probe collection makes `RemoveAll` a no-op, so this
+        // is only caught because the probe is seeded with the shared host's own registrations.
+        using var removedOnly = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            services => services.RemoveAll<IBusinessMasterDataClient>());
+        using var removedAndReplaced = BusinessGatewayTestHost.Lease(
+            FakeBusinessGatewayAuthorizationClient.Allowed(),
+            services => AddMasterData(services, new RecordingMasterDataClient(), "internal-replaced"));
+
+        Assert.False(removedOnly.IsShared);
+        Assert.True(removedAndReplaced.IsShared);
     }
 
     [Fact]

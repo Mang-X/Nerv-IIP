@@ -1,4 +1,7 @@
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -21,10 +24,20 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 /// restorable — nothing here restores it.
 /// </para>
 /// <para>
-/// The gate is a writer-preferring-free multi-reader/single-writer semaphore: a request takes one
-/// permit, a host build takes every permit. Host construction never happens while a permit is held
-/// (leases are created outside request execution), so the build can acquire permits one by one
-/// without deadlocking; concurrent builders are serialized by <see cref="BuildMutex"/> first.
+/// The permit is held <em>server side</em>, by <see cref="RequestPermitStartupFilter"/>'s outermost
+/// middleware, for exactly the span of the server pipeline. Holding it client side (in a
+/// <see cref="DelegatingHandler"/> around <c>base.SendAsync</c>) would not be sound: TestServer's
+/// <c>ClientHandler</c> returns as soon as the response headers are flushed while the server keeps
+/// writing the body, and <see cref="HttpClient"/>'s <c>ResponseContentRead</c> buffering happens
+/// outside the handler chain. That leaves a window where the permit is back but server code is
+/// still running — precisely the race this gate exists to exclude. See
+/// <c>BusinessGatewaySharedHostIsolationTests.Host_construction_waits_for_a_response_body_that_is_still_being_written</c>,
+/// which fails against the client-side variant.
+/// </para>
+/// <para>
+/// A permit is therefore only ever held by the server pipeline, never by a test thread, so a host
+/// build (which takes every permit) can never be blocked by the thread that requested it. Concurrent
+/// builders are serialized by <see cref="BuildMutex"/> first.
 /// </para>
 /// </remarks>
 internal static class BusinessGatewayTestHostGate
@@ -37,6 +50,11 @@ internal static class BusinessGatewayTestHostGate
 
     private static readonly SemaphoreSlim Permits = new(Capacity, Capacity);
     private static readonly Lock BuildMutex = new();
+
+    /// <summary>Gateway requests currently inside the server pipeline; diagnostics only.</summary>
+    private static int _requestsInFlight;
+
+    internal static int RequestsInFlight => Volatile.Read(ref _requestsInFlight);
 
     /// <summary>
     /// Runs <paramref name="build"/> with every request permit held, i.e. with no gateway request
@@ -65,23 +83,37 @@ internal static class BusinessGatewayTestHostGate
     }
 
     /// <summary>
-    /// Client-side handler that holds one request permit for the duration of the exchange.
+    /// Wraps the whole server pipeline of every host this assembly builds, so the permit covers all
+    /// server-side work of a request — including writing the response body — and not merely the part
+    /// that finishes before the response headers are flushed.
     /// </summary>
-    internal sealed class RequestPermitHandler : DelegatingHandler
+    internal sealed class RequestPermitStartupFilter : IStartupFilter
     {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(HoldPermitAsync);
+                next(app);
+            };
+    }
+
+    private static async Task HoldPermitAsync(HttpContext context, RequestDelegate next)
+    {
+        // Deliberately not cancellable: a request that is aborted mid-flight still has to take the
+        // permit before any gateway code runs, otherwise the exclusion has a hole.
+        await Permits.WaitAsync();
+        Interlocked.Increment(ref _requestsInFlight);
+        try
         {
-            await Permits.WaitAsync(cancellationToken);
-            try
+            using (BusinessGatewayTestHost.TrackRequest(context))
             {
-                return await base.SendAsync(request, cancellationToken);
+                await next(context);
             }
-            finally
-            {
-                Permits.Release();
-            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _requestsInFlight);
+            Permits.Release();
         }
     }
 

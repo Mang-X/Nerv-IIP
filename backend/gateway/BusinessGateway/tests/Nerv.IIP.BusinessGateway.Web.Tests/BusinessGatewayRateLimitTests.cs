@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,7 +57,9 @@ public sealed class BusinessGatewayRateLimitTests
             BusinessGatewayTestHostProfile.ServiceBaseUrls,
             builder =>
             {
-                builder.UseSetting("Security:RateLimit:PermitLimit", permitLimit.ToString());
+                builder.UseSetting(
+                    "Security:RateLimit:PermitLimit",
+                    permitLimit.ToString(CultureInfo.InvariantCulture));
                 builder.UseSetting("Security:RateLimit:WindowSeconds", "600");
             },
             services =>

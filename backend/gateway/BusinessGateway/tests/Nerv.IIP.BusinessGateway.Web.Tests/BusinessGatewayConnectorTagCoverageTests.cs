@@ -42,8 +42,8 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
                         null),
                 ]),
         };
-        await using var factory = CreateFactory(auth, telemetry);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, telemetry);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -88,8 +88,8 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
                 0,
                 []),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), telemetry);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), telemetry);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -117,7 +117,7 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
         Assert.Contains(result.Errors, error => PropertyMatches(error.PropertyName, nameof(BusinessConsoleConnectorTagCoverageRequest.EnvironmentId)));
     }
 
-    private static BusinessGatewayTestHostLease CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
         RecordingIndustrialTelemetryClient telemetry) =>
         BusinessGatewayTestHost.Lease(auth, services =>
