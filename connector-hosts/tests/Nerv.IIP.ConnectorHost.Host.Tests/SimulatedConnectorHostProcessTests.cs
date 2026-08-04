@@ -6,10 +6,28 @@ using System.Text.Json;
 
 namespace Nerv.IIP.ConnectorHost.Host.Tests;
 
-public sealed class SimulatedConnectorHostProcessTests
+public sealed class SimulatedConnectorHostProcessTests : IDisposable
 {
     private static readonly string[] CanonicalConnectorIds =
         ["CONN-OPCUA-01", "CONN-MQTT-01", "CONN-MODBUS-01"];
+
+    private static readonly TimeSpan SignalDeliveryBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan GracefulStopBudget = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ForcedStopBudget = TimeSpan.FromSeconds(5);
+
+    private HostProcess? _hostProcess;
+
+    /// <summary>
+    /// Last-resort reclamation. xUnit's per-test <c>Timeout</c> abandons the test task, so the
+    /// <c>finally</c> block inside the test is not guaranteed to run; the test-class instance is
+    /// still disposed. Anything the test leaked is force-killed here, tree included, so the test
+    /// host can always exit and <c>dotnet test</c> can always return.
+    /// </summary>
+    public void Dispose()
+    {
+        var hostProcess = Interlocked.Exchange(ref _hostProcess, null);
+        hostProcess?.Dispose();
+    }
 
     [Fact]
     public void Built_host_executable_resolves_for_the_current_platform()
@@ -28,7 +46,8 @@ public sealed class SimulatedConnectorHostProcessTests
         var executable = ResolveHostExecutablePath();
         Assert.True(File.Exists(executable), $"Built Host executable not found at '{executable}'.");
 
-        using var process = StartHost(executable, platform.BaseAddress);
+        using var host = StartHost(executable, platform.BaseAddress);
+        _hostProcess = host;
         var usedForcedCleanup = false;
         try
         {
@@ -67,15 +86,16 @@ public sealed class SimulatedConnectorHostProcessTests
         }
         finally
         {
-            usedForcedCleanup = await StopExactProcessAsync(process);
+            usedForcedCleanup = await host.StopGracefullyAsync();
+            Interlocked.Exchange(ref _hostProcess, null);
         }
 
         Assert.False(
             usedForcedCleanup,
-            "Host did not stop after SIGTERM and required exact-child kill.");
+            $"Host did not stop after SIGTERM and required a forced kill. Host output: {host.DrainOutput()}");
         Assert.True(
-            process.HasExited,
-            "Host process did not exit within the cleanup deadline.");
+            host.HasExited,
+            $"Host process did not exit within the cleanup deadline. Host output: {host.DrainOutput()}");
     }
 
     private static string ResolveHostExecutablePath() =>
@@ -85,12 +105,19 @@ public sealed class SimulatedConnectorHostProcessTests
                 ? "Nerv.IIP.ConnectorHost.Host.exe"
                 : "Nerv.IIP.ConnectorHost.Host");
 
-    private static Process StartHost(string executable, Uri platformBaseAddress)
+    private static HostProcess StartHost(string executable, Uri platformBaseAddress)
     {
         var start = new ProcessStartInfo(executable)
         {
             WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = false
+            UseShellExecute = false,
+
+            // The child must not inherit the test host's console handles. An inherited stdout /
+            // stderr keeps the test host's own output pipe open for as long as the child (or any
+            // descendant of it) lives, which makes the test runner wait for EOF that never
+            // arrives. Redirecting also stops a full pipe from stalling the Host mid-run.
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
         start.Environment["DOTNET_ENVIRONMENT"] = "Development";
         start.Environment["Platform__AppHubBaseUrl"] = platformBaseAddress.ToString();
@@ -114,38 +141,130 @@ public sealed class SimulatedConnectorHostProcessTests
         start.Environment["Simulated__Phases__Degrading"] = "00:00:01";
         start.Environment["Simulated__Phases__Alarm"] = "00:00:01";
         start.Environment["Simulated__Phases__Recovered"] = "00:00:01";
-        return Process.Start(start)
+        var process = Process.Start(start)
             ?? throw new InvalidOperationException("Failed to start built Connector Host process.");
+        return new HostProcess(process);
     }
 
-    private static async Task<bool> StopExactProcessAsync(Process process)
+    /// <summary>
+    /// Owns the built Host child process and its redirected pipes, and guarantees both are
+    /// reclaimed on every exit path: normal completion, assertion failure, and an abandoned
+    /// (timed-out) test where only <see cref="IDisposable.Dispose"/> still runs.
+    /// </summary>
+    private sealed class HostProcess(Process process) : IDisposable
     {
-        if (process.HasExited)
+        private readonly Task<string> _stdout = process.StandardOutput.ReadToEndAsync();
+        private readonly Task<string> _stderr = process.StandardError.ReadToEndAsync();
+        private bool _disposed;
+
+        public bool HasExited => process.HasExited;
+
+        /// <summary>
+        /// Sends SIGTERM and reports whether a forced kill was needed. Every wait is bounded, so
+        /// this cannot park the test; the SIGTERM helper process is bounded too, because it is a
+        /// child of the test host and would otherwise be one more unbounded await.
+        /// </summary>
+        public async Task<bool> StopGracefullyAsync()
         {
-            return false;
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            using var signal = Process.Start(new ProcessStartInfo("/bin/kill")
+            {
+                UseShellExecute = false,
+                ArgumentList = { "-TERM", process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+            });
+            if (signal is not null)
+            {
+                try
+                {
+                    await signal.WaitForExitAsync().WaitAsync(SignalDeliveryBudget);
+                }
+                catch (TimeoutException)
+                {
+                    TryKillTree(signal);
+                }
+            }
+
+            try
+            {
+                await process.WaitForExitAsync().WaitAsync(GracefulStopBudget);
+                return false;
+            }
+            catch (TimeoutException)
+            {
+                // entireProcessTree: anything the Host spawned (for example the docker CLI) also
+                // holds the redirected pipes, so killing only the direct child would leave the
+                // reader tasks — and the test host — waiting for an EOF that never comes.
+                TryKillTree(process);
+                try
+                {
+                    await process.WaitForExitAsync().WaitAsync(ForcedStopBudget);
+                }
+                catch (TimeoutException)
+                {
+                    // Reported by the caller's HasExited assertion rather than hidden here.
+                }
+
+                return true;
+            }
         }
 
-        using var signal = Process.Start(new ProcessStartInfo("/bin/kill")
+        public string DrainOutput()
         {
-            UseShellExecute = false,
-            ArgumentList = { "-TERM", process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-        });
-        if (signal is not null)
-        {
-            await signal.WaitForExitAsync();
+            var stdout = ReadCompleted(_stdout);
+            var stderr = ReadCompleted(_stderr);
+            return $"stdout=<{stdout}> stderr=<{stderr}>";
         }
 
-        try
+        public void Dispose()
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            return false;
+            // Both the test's `using` and the test class's last-resort cleanup can land here.
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            try
+            {
+                if (!process.HasExited)
+                {
+                    TryKillTree(process);
+                    process.WaitForExit((int)ForcedStopBudget.TotalMilliseconds);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // The process was already reaped; nothing left to reclaim.
+            }
+            finally
+            {
+                process.Dispose();
+            }
         }
-        catch (TimeoutException)
+
+        private static void TryKillTree(Process target)
         {
-            process.Kill(entireProcessTree: false);
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            return true;
+            try
+            {
+                if (!target.HasExited)
+                {
+                    target.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (NotSupportedException)
+            {
+            }
         }
+
+        private static string ReadCompleted(Task<string> reader) =>
+            reader.IsCompletedSuccessfully ? reader.Result.Trim() : "(not drained)";
     }
 
     private sealed class LoopbackPlatform : IAsyncDisposable
@@ -207,7 +326,12 @@ public sealed class SimulatedConnectorHostProcessTests
             _listener.Stop();
             try
             {
-                await _serveTask;
+                // Bounded: the accept loop is the last thing standing between a failed test and a
+                // test host that never exits.
+                await _serveTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException)
+            {
             }
             catch (Exception) when (_shutdown.IsCancellationRequested)
             {

@@ -16,6 +16,35 @@ public sealed class WorkerSchedulingCollection;
 [Collection("Worker scheduling")]
 public sealed class WorkerTests
 {
+    private static readonly TimeSpan ObservationBudget = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StopBudget = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Bounded wait for an asynchronously produced observation. Every await in this class goes
+    /// through here (or an explicit <c>WaitAsync</c>) so a lost fake-clock tick surfaces as a
+    /// reported failure instead of parking the test — and therefore the whole test host —
+    /// forever.
+    /// </summary>
+    private static async Task ObserveAsync(
+        Task observation,
+        string condition,
+        Func<string> lastObservation,
+        TimeSpan? budget = null)
+    {
+        var effectiveBudget = budget ?? ObservationBudget;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            await observation.WaitAsync(effectiveBudget);
+        }
+        catch (TimeoutException)
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s); last observation: {lastObservation()}");
+        }
+    }
+
     [Fact]
     public async Task Connection_monitor_reporting_and_ops_run_while_collection_is_blocked()
     {
@@ -72,12 +101,33 @@ public sealed class WorkerTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await Task.WhenAll(protocol.FirstCycle.Task, ops.Polled.Task);
+            await ObserveAsync(
+                Task.WhenAll(protocol.FirstCycle.Task, ops.Polled.Task),
+                "first reporting cycle and first ops poll",
+                () => $"reportingCycles={protocol.ReportingCycles}, opsCalls={ops.Calls}");
+
+            // The connection-monitor loop is started while `Task.WhenAll` enumerates the worker's
+            // loop list, which happens *after* the eagerly evaluated reporting/ops loops have
+            // already released `FirstCycle`/`Polled`. Advancing the clock before the periodic
+            // timer is registered silently drops the 4s tick — the timer is then created at the
+            // already-advanced "now" and nothing ever fires it again. Wait for the registration.
+            await ObserveAsync(
+                clock.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(4)),
+                "connection-monitor periodic timer registration (due=4s, period=4s)",
+                () => $"monitorCalls={monitor.Calls}, now={clock.GetUtcNow():O}");
 
             clock.Advance(TimeSpan.FromSeconds(4));
-            await monitor.FirstCheckStarted.Task;
+            await ObserveAsync(
+                monitor.FirstCheckStarted.Task,
+                "first connection check start",
+                () => $"monitorCalls={monitor.Calls}, now={clock.GetUtcNow():O}");
             Assert.Equal(1, monitor.Calls);
+
             monitor.CompleteFirstCheck();
+            await ObserveAsync(
+                monitor.SecondCheckStarted.Task,
+                "second connection check start",
+                () => $"monitorCalls={monitor.Calls}, startedAt={string.Join(",", monitor.StartedAtUtc)}");
 
             Assert.Equal(2, monitor.Calls);
             Assert.Equal(
@@ -89,7 +139,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None);
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
@@ -105,7 +155,10 @@ public sealed class WorkerTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await Task.WhenAll(protocol.FirstCycle.Task, manifestClient.Started.Task);
+            await ObserveAsync(
+                Task.WhenAll(protocol.FirstCycle.Task, manifestClient.Started.Task),
+                "first reporting cycle and first manifest upload start",
+                () => $"reportingCycles={protocol.ReportingCycles}, manifestCompleted={manifestClient.Completed}");
             signal.Signal("connector-a");
 
             await protocol.SecondCycle.Task.WaitAsync(TimeSpan.FromSeconds(1));
@@ -114,7 +167,7 @@ public sealed class WorkerTests
         finally
         {
             manifestClient.Release();
-            await worker.StopAsync(CancellationToken.None);
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
@@ -165,7 +218,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None);
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
@@ -206,7 +259,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None);
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
@@ -248,7 +301,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None);
+            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
         }
     }
 
@@ -442,6 +495,7 @@ public sealed class WorkerTests
         public int Calls { get; private set; }
         public List<DateTimeOffset> StartedAtUtc { get; } = [];
         public TaskCompletionSource FirstCheckStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondCheckStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task RunConnectionCheckAsync(CancellationToken cancellationToken)
         {
@@ -449,6 +503,9 @@ public sealed class WorkerTests
             StartedAtUtc.Add(clock.GetUtcNow());
             if (Calls != 1)
             {
+                // Publishing the observation lets the caller assert on a completed second check
+                // instead of assuming the resumed loop already ran on its thread.
+                SecondCheckStarted.TrySetResult();
                 return;
             }
 

@@ -78,50 +78,76 @@ public sealed class ControllableTimeProvider : TimeProvider
         TimeSpan dueTime,
         TimeSpan period) : ITimer
     {
+        // `Advance` fires callbacks outside the provider lock, and a callback may itself advance
+        // the clock (a monitor that moves time forward while it runs). Two `Advance` calls can
+        // therefore reach the same timer concurrently, so the due-time transition has to be
+        // atomic — otherwise a torn read of `_dueAtUtc` can double-fire or skip a tick.
+        private readonly object _timerGate = new();
         private DateTimeOffset? _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
         private TimeSpan _period = period;
         private bool _disposed;
 
-        public bool IsDue(DateTimeOffset utcNow) => !_disposed && _dueAtUtc <= utcNow;
+        public bool IsDue(DateTimeOffset utcNow)
+        {
+            lock (_timerGate)
+            {
+                return !_disposed && _dueAtUtc is { } dueAtUtc && dueAtUtc <= utcNow;
+            }
+        }
 
         public void Fire(DateTimeOffset utcNow)
         {
-            if (_disposed || _dueAtUtc > utcNow)
+            lock (_timerGate)
             {
-                return;
-            }
-
-            if (_period == Timeout.InfiniteTimeSpan)
-            {
-                _dueAtUtc = null;
-            }
-            else
-            {
-                var nextDueAtUtc = _dueAtUtc!.Value + _period;
-                while (nextDueAtUtc <= utcNow)
+                if (_disposed || _dueAtUtc is not { } dueAtUtc || dueAtUtc > utcNow)
                 {
-                    nextDueAtUtc += _period;
+                    return;
                 }
 
-                _dueAtUtc = nextDueAtUtc;
+                if (_period == Timeout.InfiniteTimeSpan)
+                {
+                    _dueAtUtc = null;
+                }
+                else
+                {
+                    var nextDueAtUtc = dueAtUtc + _period;
+                    while (nextDueAtUtc <= utcNow)
+                    {
+                        nextDueAtUtc += _period;
+                    }
+
+                    _dueAtUtc = nextDueAtUtc;
+                }
             }
 
+            // Invoked outside the gate: the callback may re-enter the provider (and this timer)
+            // from the resumed loop, and holding the gate across it would serialise unrelated
+            // timers behind arbitrary user code.
             callback(state);
         }
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
-            if (_disposed)
+            lock (_timerGate)
             {
-                return false;
-            }
+                if (_disposed)
+                {
+                    return false;
+                }
 
-            _period = period;
-            _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
-            return true;
+                _period = period;
+                _dueAtUtc = dueTime == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + dueTime;
+                return true;
+            }
         }
 
-        public void Dispose() => _disposed = true;
+        public void Dispose()
+        {
+            lock (_timerGate)
+            {
+                _disposed = true;
+            }
+        }
 
         public ValueTask DisposeAsync()
         {

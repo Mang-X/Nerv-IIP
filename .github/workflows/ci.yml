@@ -15,8 +15,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Timeout policy (MAN-799): every job carries an outer `timeout-minutes` so a hang can never
+  # burn the 360-minute GitHub default. The steps that actually hang (test/verify runs) carry a
+  # *smaller* step-level budget, because a job-level timeout cancels the whole job — including
+  # `if: always()` steps — and would take the MAN-661 test-evidence artifacts down with it. With a
+  # step-level budget the step fails, the job keeps going, and the evidence is still collected and
+  # uploaded. Budgets are ~2x (step) / ~2.5x (job) the observed maximum over the last 9 runs.
   backend-tests:
     name: Backend Tests
+    # Observed max 23.9m / avg 17.9m.
+    timeout-minutes: 55
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -47,6 +55,8 @@ jobs:
 
       - name: Test backend solution
         id: backend-tests
+        # Smaller than the job budget so the evidence steps below still run on a hang.
+        timeout-minutes: 40
         run: >-
           dotnet test backend/Nerv.IIP.sln
           --configuration Release
@@ -94,6 +104,8 @@ jobs:
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
+    # Observed max 4.2m / avg 3.9m; extra headroom for Docker image pulls.
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
@@ -116,12 +128,15 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Prepare PostgreSQL and Redis images
+        timeout-minutes: 10
         run: |
           docker pull postgres:18
           docker pull redis:8
 
       - name: Verify ERP sales-order demand bridge
         shell: pwsh
+        # Smaller than the job budget so the diagnostics upload below still runs on a hang.
+        timeout-minutes: 15
         run: ./scripts/verify-erp-sales-order-demand-planning.ps1
 
       - name: Upload ERP sales-order demand diagnostics
@@ -137,6 +152,8 @@ jobs:
 
   connector-host-tests:
     name: Connector Host Tests
+    # Observed max 1.9m / avg 1.6m. This is the job that hung for 28m in MAN-799.
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -167,6 +184,8 @@ jobs:
 
       - name: Test connector host solution
         id: connector-host-tests
+        # Smaller than the job budget so the evidence steps below still run on a hang.
+        timeout-minutes: 12
         run: >-
           dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
           --configuration Release
@@ -214,6 +233,8 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
+    # Observed max 5.0m / avg 4.4m.
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -232,19 +253,25 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        timeout-minutes: 12
         run: pnpm -C frontend install --frozen-lockfile
 
       - name: Check frontend format and lint
+        timeout-minutes: 10
         run: pnpm -C frontend check
 
       - name: Typecheck frontend
+        timeout-minutes: 10
         run: pnpm -C frontend typecheck
 
       - name: Build frontend
+        timeout-minutes: 15
         run: pnpm -C frontend build
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
+    # Observed max 2.2m / avg 1.9m.
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -277,10 +304,13 @@ jobs:
 
       - name: Verify OpenAPI/api-client drift
         shell: pwsh
+        timeout-minutes: 15
         run: ./scripts/verify-openapi-client-drift.ps1
 
   script-governance:
     name: Script Governance
+    # Observed max 1.8m / avg 0.7m.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
