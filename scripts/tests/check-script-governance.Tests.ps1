@@ -18,6 +18,17 @@ $helper = Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1'
 
 . $helper
 
+$privacyFixture = @'
+https://user:password@example.invalid/path
+Authorization: Bearer fixture-bearer-value
+client_secret=fixture-client-secret
+{"customerName":"Fixture Customer","phone":"13800000000","email":"fixture@example.invalid","address":"Fixture Address"}
+'@
+$privacyRedacted = Protect-ScriptAutomationText $privacyFixture
+foreach ($sentinel in @('user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'Fixture Address')) {
+    if ($privacyRedacted.Contains($sentinel)) { throw "Shared redactor leaked sentinel '$sentinel'." }
+}
+
 function Invoke-GovernanceCase {
     param(
         [Parameter(Mandatory)]
@@ -106,6 +117,8 @@ Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
 
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
 
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-script-governance-$([System.Guid]::NewGuid().ToString('N'))"
 try {

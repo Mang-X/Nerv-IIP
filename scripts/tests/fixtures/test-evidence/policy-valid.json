@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "lanes": [
+    {
+      "namePattern": "^backend(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": false
+    },
+    {
+      "namePattern": "^connector-host(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": false
+    },
+    {
+      "namePattern": "^postgres(?:-shard-[1-9][0-9]*)?$",
+      "realDependency": true
+    }
+  ],
+  "sources": [],
+  "rules": [
+    {
+      "id": "optional-connector",
+      "sourceId": "fixture-source",
+      "classification": "optional",
+      "testPattern": "^Fixture\\.Optional$",
+      "reasonPattern": "^Opt in.$",
+      "allowedLanes": [
+        "connector-host"
+      ],
+      "requiredLane": null,
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Fixture.Optional"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "postgres-gated",
+      "sourceId": "fixture-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Fixture\\.Postgres$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the fixture\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Fixture.Postgres"
+      ],
+      "expectedRuntimeTestCount": 1
+    }
+  ]
+}
