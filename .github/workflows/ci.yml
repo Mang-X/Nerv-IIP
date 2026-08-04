@@ -32,21 +32,29 @@ jobs:
   #      never cost evidence. Adding a step here means adding its budget *and* raising the job
   #      budget.
   #
-  #   B) Jobs with no `if: always()` step — frontend, openapi-client-drift, script-governance:
-  #      nothing is lost when the job budget fires, so the budget is *not* inflated to clear the
-  #      step sum. It is sized from observed runtime and only has to stay above the largest single
-  #      step budget so step budgets stay reachable as the fail-fast bound.
+  #   B) Jobs with no step that can run after a failure — frontend, openapi-client-drift,
+  #      script-governance: nothing is lost when the job budget fires, so the budget is *not*
+  #      inflated to clear the step sum. Here the **job** budget is the fail-fast bound, sized from
+  #      observed runtime. Step budgets are per-step upper bounds only: with several steps in one
+  #      job the later ones are not individually reachable (`frontend` sums to 58m inside a 20m
+  #      job, so its 15m build budget can never fire on its own), and that is accepted rather than
+  #      claimed otherwise. The only thing enforced is the case that is dead under every schedule —
+  #      a step budget at or above the whole job budget.
   #
   # Step budgets are generous round upper bounds, not a uniform multiple: long steps are ~2x their
-  # observed maximum over the last 9 runs, while short fixed-cost steps (checkout, SDK/pnpm setup,
+  # observed maximum over the last 10 runs, while short fixed-cost steps (checkout, SDK/pnpm setup,
   # cache restore) get a 3–8 minute floor that no healthy run comes near.
   #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   backend-tests:
     name: Backend Tests
-    # Tier A (evidence steps). Observed max 23.9m / avg 17.9m. Step budgets sum to 69m,
-    # leaving 6m of margin for the implicit setup/post steps.
+    # Tier A (evidence steps). Observed max 24.6m / avg 17.1m over the last 10 CI runs — this job
+    # crossed the 24m mark on this very branch, so the numbers below are re-measured, not inherited.
+    # The single longest step was `Test backend solution` at 23.8m against its own 40m budget
+    # (1.7x), and the implicit setup/post steps cost under 10s. Step budgets sum to 69m, leaving 6m
+    # of margin. Growth to watch: if `Test backend solution` passes ~30m, raise both budgets rather
+    # than only the step one, or the strict inequality stops protecting the evidence steps.
     timeout-minutes: 75
     runs-on: ubuntu-latest
     steps:
@@ -274,7 +282,8 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
-    # Tier B (no evidence steps). Observed max 5.0m / avg 4.4m; largest step budget 15m.
+    # Tier B (no step runs after a failure). Observed max 4.9m / avg 4.3m; the 20m job budget is the
+    # fail-fast bound. Step budgets sum to 58m and are per-step upper bounds only.
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -314,7 +323,8 @@ jobs:
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
-    # Tier B (no evidence steps). Observed max 2.2m / avg 1.9m; largest step budget 15m.
+    # Tier B (no step runs after a failure). Observed max 2.0m / avg 1.8m; the 20m job budget is the
+    # fail-fast bound. Step budgets sum to 39m and are per-step upper bounds only.
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -358,7 +368,10 @@ jobs:
 
   script-governance:
     name: Script Governance
-    # Tier B (no evidence steps). Observed max 1.8m / avg 0.7m; largest step budget 5m.
+    # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
+    # include the evidence contract-test step; the 0.7m average this comment used to quote predates
+    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 33m and are per-step
+    # upper bounds only.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:

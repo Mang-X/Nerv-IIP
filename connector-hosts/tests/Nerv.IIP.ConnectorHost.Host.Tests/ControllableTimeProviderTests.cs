@@ -8,9 +8,19 @@ namespace Nerv.IIP.ConnectorHost.Host.Tests;
 /// never sees that advance: it is created at the already-advanced "now" and nothing fires it
 /// again. Tests that advance the clock on behalf of a background loop must therefore wait for the
 /// loop's timer registration first — these tests are the executable statement of that rule.
+///
+/// <para>These are fake-clock scheduling tests, so they take the membership
+/// <see cref="HostTimeoutCollection"/> declares to be non-optional for that category rather than
+/// contradicting it. The one test here that can await carries the collection's <c>Timeout</c>,
+/// which the collection is what makes effective; xUnit rejects <c>Timeout</c> on a synchronous
+/// test, so the two purely synchronous ones cannot carry it and do not need it — nothing in them
+/// can block.</para>
 /// </summary>
+[Collection(HostTimeoutCollection.Name)]
 public sealed class ControllableTimeProviderTests
 {
+    private const int TestTimeoutMilliseconds = HostTimeoutCollection.TestTimeoutMilliseconds;
+
     private static readonly TimeSpan Tick = TimeSpan.FromSeconds(4);
 
     [Fact]
@@ -34,7 +44,7 @@ public sealed class ControllableTimeProviderTests
         Assert.Equal(1, Volatile.Read(ref fired));
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Waiting_for_the_registration_keeps_the_advance_on_the_timer()
     {
         var clock = new ControllableTimeProvider();

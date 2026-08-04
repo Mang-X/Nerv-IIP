@@ -13,6 +13,7 @@ namespace Nerv.IIP.ConnectorHost.Host.Tests;
 [Collection(HostTimeoutCollection.Name)]
 public sealed class WorkerTests
 {
+    private static readonly TimeSpan StartBudget = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StopBudget = TimeSpan.FromSeconds(5);
 
     /// <summary>
@@ -25,9 +26,15 @@ public sealed class WorkerTests
     private const int TestTimeoutMilliseconds = HostTimeoutCollection.TestTimeoutMilliseconds;
 
     /// <summary>
-    /// Every await in this class goes through the shared bounded observation helper, so a lost
-    /// fake-clock tick surfaces as a reported failure instead of parking the test — and therefore
-    /// the whole test host — forever.
+    /// Every await a test method in this class performs goes through the shared bounded observation
+    /// helper — the worker host's own <see cref="Worker.StartAsync"/> and <see cref="Worker.StopAsync"/>
+    /// included, via <see cref="StartWorkerAsync"/> / <see cref="StopWorkerAsync"/> — so a lost
+    /// fake-clock tick surfaces as a reported failure instead of parking the test, and therefore the
+    /// whole test host, forever.
+    ///
+    /// <para>The awaits inside the nested test doubles below are the deliberate exception: they are
+    /// the blocking behaviour under test, and each one is bounded by the worker's own cancellation
+    /// token, which <see cref="StopWorkerAsync"/> trips.</para>
     /// </summary>
     private static Task ObserveAsync(
         Task observation,
@@ -35,6 +42,29 @@ public sealed class WorkerTests
         Func<string> lastObservation,
         TimeSpan? budget = null) =>
         BoundedObservation.ObserveAsync(observation, condition, lastObservation, budget);
+
+    /// <summary>
+    /// Starts the worker under a bound. <c>StartAsync</c> runs <c>ExecuteAsync</c> up to its first
+    /// await, so it goes through the same loop-start path that MAN-799 parked; leaving it unbounded
+    /// would keep one hang shape able to take the test host down.
+    /// </summary>
+    private static Task StartWorkerAsync(Worker worker, ControllableTimeProvider clock) =>
+        ObserveAsync(
+            worker.StartAsync(CancellationToken.None),
+            "worker host start (StartAsync returning after the loops are launched)",
+            () => $"now={clock.GetUtcNow():O}",
+            StartBudget);
+
+    /// <summary>
+    /// Stops the worker under a bound, reporting the condition and last observation on timeout
+    /// rather than the bare <see cref="TimeoutException"/> a naked <c>WaitAsync</c> would throw.
+    /// </summary>
+    private static Task StopWorkerAsync(Worker worker, ControllableTimeProvider clock) =>
+        ObserveAsync(
+            worker.StopAsync(CancellationToken.None),
+            "worker host stop (StopAsync draining every loop after cancellation)",
+            () => $"now={clock.GetUtcNow():O}",
+            StopBudget);
 
     [Fact(Timeout = TestTimeoutMilliseconds)]
     public async Task Connection_monitor_reporting_and_ops_run_while_collection_is_blocked()
@@ -47,7 +77,7 @@ public sealed class WorkerTests
         var ops = new RecordingOpsClient();
         var worker = CreateWorker(clock, signal, protocol, ops, [collection], [monitor]);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -93,7 +123,7 @@ public sealed class WorkerTests
         finally
         {
             collection.Release();
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 
@@ -106,7 +136,7 @@ public sealed class WorkerTests
         var ops = new RecordingOpsClient();
         var worker = CreateWorker(clock, new ConnectorReportSignal(), protocol, ops, [], [monitor]);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -147,7 +177,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 
@@ -160,7 +190,7 @@ public sealed class WorkerTests
         var manifestClient = new BlockingManifestClient();
         var worker = CreateWorker(clock, signal, protocol, new RecordingOpsClient(), [], [], manifestClient);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -178,7 +208,7 @@ public sealed class WorkerTests
         finally
         {
             manifestClient.Release();
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 
@@ -211,7 +241,7 @@ public sealed class WorkerTests
             manifestClient,
             manifestSignal);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -250,7 +280,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 
@@ -272,7 +302,7 @@ public sealed class WorkerTests
             manifestSignal,
             connector);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -300,7 +330,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 
@@ -324,7 +354,7 @@ public sealed class WorkerTests
             manifestSignal,
             connector);
 
-        await worker.StartAsync(CancellationToken.None);
+        await StartWorkerAsync(worker, clock);
         try
         {
             await ObserveAsync(
@@ -357,7 +387,7 @@ public sealed class WorkerTests
         }
         finally
         {
-            await worker.StopAsync(CancellationToken.None).WaitAsync(StopBudget);
+            await StopWorkerAsync(worker, clock);
         }
     }
 

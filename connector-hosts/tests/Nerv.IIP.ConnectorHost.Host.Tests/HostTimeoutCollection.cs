@@ -10,6 +10,11 @@ namespace Nerv.IIP.ConnectorHost.Host.Tests;
 /// Membership is therefore not optional for: fake-clock scheduling tests, tests that own a child
 /// process or a listening socket, and anything else that awaits a background loop. Pure in-process
 /// unit tests (for example the sampling-policy parser) stay outside and keep running in parallel.
+///
+/// Membership is per class, not per test: xUnit rejects <c>Timeout</c> on a synchronous test, so a
+/// member class may hold synchronous tests that carry no <c>Timeout</c> — they have no await to
+/// park on. What membership guarantees is that every <c>Timeout</c> declared inside this collection
+/// is real.
 /// </summary>
 [CollectionDefinition(HostTimeoutCollection.Name, DisableParallelization = true)]
 public sealed class HostTimeoutCollection
