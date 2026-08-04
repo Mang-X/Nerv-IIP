@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
@@ -11,6 +12,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
@@ -76,19 +78,71 @@ public sealed class IndustrialTelemetryHistorianTests
                 ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
             })
             .Build();
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero));
         var scheduler = new TelemetryHistorianScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
             NullLogger<TelemetryHistorianScheduler>.Instance,
-            new FixedTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero)));
+            fakeTime);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(async () =>
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782720000000",
+            "raw-old");
+
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Historian_scheduler_runs_again_after_fake_time_advances_to_second_tick()
+    {
+        var databaseName = nameof(Historian_scheduler_runs_again_after_fake_time_advances_to_second_tick);
+        await using var setupContext = CreateDbContext(databaseName);
+        setupContext.TelemetryTags.Add(TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "temperature", "number", "celsius", "sample-60s;raw=1d;hourly=30d;daily=365d"));
+        setupContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-06-29T08:00:00Z", "2026-06-29T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "raw-first-expired-marker"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 20m, 20m, 20m, 20m, 20m, "raw-first"));
+        await setupContext.SaveChangesAsync();
+
+        await using var services = new ServiceCollection()
+            .AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName))
+            .AddSingleton<IMediator, NoopMediator>()
+            .AddScoped<TelemetryHistorianService>()
+            .BuildServiceProvider();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:Historian:Enabled"] = "true",
+                ["IndustrialTelemetry:Historian:Interval"] = "01:00:00",
+                ["IndustrialTelemetry:Historian:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
+            })
+            .Build();
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero));
+        var scheduler = new TelemetryHistorianScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<TelemetryHistorianScheduler>.Instance,
+            fakeTime);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782892800000",
+            "raw-first-expired-marker");
+
+        await using (var secondTickContext = CreateDbContext(databaseName))
         {
-            await using var assertionContext = CreateDbContext(databaseName);
-            return await assertionContext.TelemetryRollups.AnyAsync(x => x.SourceSequence == "historian:hourly:DEV-CNC-01:temperature:1782720000000")
-                && !await assertionContext.TelemetryRawSamples.AnyAsync(x => x.SourceSequence == "raw-old");
-        });
+            secondTickContext.TelemetryRawSamples.Add(Raw("DEV-CNC-01", "temperature", "2026-06-30T08:00:00Z", "2026-06-30T08:01:00Z", 1, 30m, 30m, 30m, 30m, 30m, "raw-second-old"));
+            await secondTickContext.SaveChangesAsync();
+        }
+
+        fakeTime.Advance(TimeSpan.FromHours(1));
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782806400000",
+            "raw-second-old");
 
         await scheduler.StopAsync(CancellationToken.None);
     }
@@ -526,23 +580,27 @@ public sealed class IndustrialTelemetryHistorianTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static async Task WaitUntilAsync(Func<Task<bool>> predicate)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!await predicate())
-        {
-            timeout.Token.ThrowIfCancellationRequested();
-            await Task.Delay(10, timeout.Token);
-        }
-    }
-
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow()
-        {
-            return utcNow;
-        }
-    }
+    private static ValueTask<(bool RollupExists, bool RawOldExists)> WaitForHistorianStateAsync(
+        string databaseName,
+        string rollupSourceSequence,
+        string rawOldSourceSequence) =>
+        Eventually.WaitAsync(
+            "historian creates the expected hourly rollup and removes the expired raw sample",
+            async cancellationToken =>
+            {
+                await using var assertionContext = CreateDbContext(databaseName);
+                var rollupExists = await assertionContext.TelemetryRollups
+                    .AnyAsync(x => x.SourceSequence == rollupSourceSequence, cancellationToken);
+                var rawOldExists = await assertionContext.TelemetryRawSamples
+                    .AnyAsync(x => x.SourceSequence == rawOldSourceSequence, cancellationToken);
+                return (rollupExists, rawOldExists);
+            },
+            observation => observation.rollupExists && !observation.rawOldExists,
+            observation => $"rollupExists={observation.rollupExists}; rawOldExists={observation.rawOldExists}",
+            new EventuallyOptions(
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10),
+                []));
 
     private sealed class NoopMediator : IMediator
     {

@@ -72,6 +72,22 @@ function Get-WorkflowStepValues {
     )
 }
 
+function Get-WorkflowStepsById {
+    param(
+        [AllowNull()] [object[]] $Steps,
+        [Parameter(Mandatory)] [string] $StepId
+    )
+
+    return @(
+        foreach ($step in @($Steps)) {
+            $property = $step.PSObject.Properties['id']
+            if ($null -ne $property -and [string] $property.Value -eq $StepId) {
+                $step
+            }
+        }
+    )
+}
+
 function Get-OptionalObjectArrayProperty {
     param(
         [Parameter(Mandatory)] [object] $Object,
@@ -119,6 +135,21 @@ foreach ($shard in $fastShards) {
     if ([string]::IsNullOrWhiteSpace([string] $shard.excludedTestLane)) {
         Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare the heavy lane that owns its excluded real tests."
     }
+
+    if ([string] $shard.evidenceLane -notmatch '^backend-shard-[1-9][0-9]*$') {
+        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare a schema-v1 backend shard evidence lane, not '$($shard.evidenceLane)'."
+    }
+
+    if ([string] $shard.jobName -notmatch '^Backend Tests - \S.*$') {
+        Add-ValidationError -Errors $errors -Message "Fast shard '$($shard.id)' must declare the CI job name that owns its evidence lane."
+    }
+}
+
+foreach ($duplicateEvidenceLane in @($fastShards.evidenceLane) | Group-Object | Where-Object Count -gt 1) {
+    Add-ValidationError -Errors $errors -Message "Duplicate fast shard evidence lane: $($duplicateEvidenceLane.Name)."
+}
+foreach ($duplicateJobName in @($fastShards.jobName) | Group-Object | Where-Object Count -gt 1) {
+    Add-ValidationError -Errors $errors -Message "Duplicate fast shard job name: $($duplicateJobName.Name)."
 }
 foreach ($lane in $heavyLanes) {
     if ([string]::IsNullOrWhiteSpace($lane.id)) {
@@ -280,6 +311,12 @@ else {
                     continue
                 }
 
+                $lane = [string] $shard.evidenceLane
+                $shardJobName = [string] $shard.jobName
+                if ([string] $job.name -ne $shardJobName) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job."
+                }
+
                 $runText = (Get-WorkflowStepValues -Steps @($job.steps) -PropertyName 'run') -join "`n"
                 if ($runText -notmatch [regex]::Escape("scripts/run-backend-test-shard.ps1 -ShardId $($shard.id)")) {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must run the governed shard runner for '$($shard.id)'."
@@ -288,12 +325,64 @@ else {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not supply a command replacement parameter."
                 }
 
-                $resultsDirectory = "TestResults/$jobId"
-                if ($runText -notmatch [regex]::Escape("-ResultsDirectory $resultsDirectory")) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must write its declared results directory '$resultsDirectory'."
+                $rawResultsDirectory = "artifacts/test-evidence-raw/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
+                $evidenceDirectory = "artifacts/test-evidence/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
+                if ($runText -notmatch [regex]::Escape("-ResultsDirectory $rawResultsDirectory")) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must write raw TRX only to the job-local evidence input '$rawResultsDirectory'."
                 }
                 if ($runText -notmatch [regex]::Escape("-TrxFilePrefix $jobId")) {
                     Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must use its unique TRX file prefix '$jobId'."
+                }
+
+                $testSteps = @(Get-WorkflowStepsById -Steps @($job.steps) -StepId 'shard-tests')
+                if ($testSteps.Count -ne 1) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must declare exactly one 'shard-tests' step whose native exit code is authoritative."
+                }
+                else {
+                    $testStepRun = [string] $testSteps[0].run
+                    if ($testStepRun -match '\|') {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' test step must not wrap the shard runner in a shell pipeline."
+                    }
+                    if ($null -ne $testSteps[0].PSObject.Properties['continue-on-error']) {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' test step must not set 'continue-on-error'."
+                    }
+                }
+                if ($null -ne $job.PSObject.Properties['continue-on-error']) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not set 'continue-on-error'."
+                }
+
+                $collectSteps = @(Get-WorkflowStepsById -Steps @($job.steps) -StepId 'collect-shard-evidence')
+                if ($collectSteps.Count -ne 1) {
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must collect MAN-661 evidence in exactly one 'collect-shard-evidence' step."
+                }
+                else {
+                    $collectStep = $collectSteps[0]
+                    $collectRun = [string] $collectStep.run
+                    if ([string] $collectStep.if -ne 'always()') {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must run with if: always()."
+                    }
+                    if ($null -ne $collectStep.PSObject.Properties['continue-on-error']) {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must not set 'continue-on-error'."
+                    }
+                    foreach ($requiredArgument in @(
+                            'scripts/collect-test-evidence.ps1',
+                            "-Lane $lane",
+                            "-SelectedLanes $lane",
+                            "-ResultsDirectory $rawResultsDirectory",
+                            "-OutputDirectory $evidenceDirectory",
+                            "-JobName `"$shardJobName`"",
+                            '-CurrentTestOutcome ${{ steps.shard-tests.outcome }}',
+                            '-RetentionDays 14'
+                        )) {
+                        if ($collectRun -notmatch [regex]::Escape($requiredArgument)) {
+                            Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence collection must pass '$requiredArgument'."
+                        }
+                    }
+                    foreach ($siblingLane in @($fastShards | Where-Object { [string] $_.id -ne [string] $shard.id } | ForEach-Object { [string] $_.evidenceLane })) {
+                        if ($collectRun -match [regex]::Escape($siblingLane)) {
+                            Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must not claim the sibling evidence lane '$siblingLane'."
+                        }
+                    }
                 }
 
                 $uploads = @($job.steps | Where-Object {
@@ -301,10 +390,24 @@ else {
                         $null -ne $uses -and [string] $uses.Value -eq 'actions/upload-artifact@v4'
                     })
                 if ($uploads.Count -ne 1 -or [string] $uploads[0].if -ne 'always()') {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must always upload exactly one diagnostic artifact."
+                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must always upload exactly one redacted evidence artifact."
                 }
-                elseif ([string] $uploads[0].with.path -ne $resultsDirectory) {
-                    Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' diagnostic artifact must upload '$resultsDirectory'."
+                else {
+                    $uploadWith = $uploads[0].with
+                    if ([string] $uploadWith.path -ne '${{ steps.collect-shard-evidence.outputs.evidence-path }}') {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must upload only the collector-published redacted evidence path."
+                    }
+                    if ([string] $uploadWith.name -ne "test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}") {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must use its unique lane-scoped artifact name."
+                    }
+                    if ([string] $uploadWith.'if-no-files-found' -ne 'error' -or [string] $uploadWith.'retention-days' -ne '14') {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' evidence artifact must fail closed on missing files and retain for 14 days."
+                    }
+                }
+                foreach ($upload in $uploads) {
+                    if ([string] $upload.with.path -match 'test-evidence-raw') {
+                        Add-ValidationError -Errors $errors -Message "Fast shard job '$jobId' must never upload the job-local raw TRX directory."
+                    }
                 }
             }
 

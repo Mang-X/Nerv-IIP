@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "lanes": [
+    {
+      "namePattern": "^backend$",
+      "realDependency": false
+    }
+  ],
+  "sources": [],
+  "rules": [
+    {
+      "id": "bad-quarantine",
+      "sourceId": "fixture-source",
+      "classification": "quarantined",
+      "testPattern": "^Fixture\\.Quarantined$",
+      "reasonPattern": "^Known failure\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": null,
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": "2026-09-01",
+      "exitCondition": "Fix the defect.",
+      "testIdentities": [
+        "Fixture.Quarantined"
+      ],
+      "expectedRuntimeTestCount": 1
+    }
+  ]
+}

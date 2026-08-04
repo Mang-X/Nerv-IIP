@@ -42,26 +42,18 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
     [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {
-        var environment = PreserveEnvironment(
-            "Persistence__Provider",
-            "Persistence__AutoMigrate",
-            "ConnectionStrings__OpsDb");
-
-        try
+        using var guardedFactory = factory.WithWebHostBuilder(builder =>
         {
-            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", " true ");
-            Environment.SetEnvironmentVariable("ConnectionStrings__OpsDb", "Host=localhost;Database=nerv_iip_ops_guard;Username=nerv;Password=nerv");
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Persistence:Provider", "PostgreSQL");
+            builder.UseSetting("Persistence:AutoMigrate", " true ");
+            builder.UseSetting(
+                "ConnectionStrings:OpsDb",
+                "Host=localhost;Database=nerv_iip_ops_guard;Username=nerv;Password=nerv");
+        });
 
-            using var guardedFactory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
-
-            var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
-            Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
-        }
-        finally
-        {
-            RestoreEnvironment(environment);
-        }
+        var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
+        Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -100,19 +92,6 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(attemptId.Id, "attempt-"));
         Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(auditRecordId.Id, "audit-"));
         Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(templateId.Id, "opt-"));
-    }
-
-    private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
-    {
-        return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-    }
-
-    private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)
-    {
-        foreach (var (name, value) in environment)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
     }
 
 }

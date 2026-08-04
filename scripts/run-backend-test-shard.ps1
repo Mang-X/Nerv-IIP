@@ -4,8 +4,8 @@
 #     - Restores and runs one classified backend fast test shard
 #   Writes:
 #     - bin/ and obj/ build outputs under the classified test projects
-#     - the supplied TRX results directory
-#     - timeout stdout/stderr diagnostics in the supplied results directory
+#     - the supplied job-local raw TRX results directory, which is never uploaded
+#     - redacted buffered stdout/stderr diagnostics to the caller's log stream only
 #   Cleanup:
 #     - None
 #   Requires:
@@ -70,7 +70,7 @@ try {
     $result = Invoke-DotNetOutput -Name "backend-test-shard-$ShardId" -WorkingDirectory $repositoryRoot -TimeoutSeconds $TimeoutSeconds -Arguments $testArguments
 }
 catch {
-    Save-BackendTestShardTimeoutDiagnostics -ErrorRecord $_ -ResultsDirectory $ResultsDirectory -TrxFilePrefix $TrxFilePrefix
+    Write-Host (Get-BackendTestShardFailureDiagnostics -ErrorRecord $_ -TrxFilePrefix $TrxFilePrefix)
     throw
 }
 Write-Output $result.Stdout

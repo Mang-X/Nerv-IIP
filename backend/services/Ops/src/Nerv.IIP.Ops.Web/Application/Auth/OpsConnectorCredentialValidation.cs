@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -16,6 +18,16 @@ public sealed class OpsConnectorCredentialOptions
     public DateTimeOffset? ValidFromUtc { get; init; }
     public DateTimeOffset? ValidToUtc { get; init; }
     public bool Revoked { get; init; }
+}
+
+public sealed class OpsIamClientOptions
+{
+    public const string SectionName = "Ops:IamClient";
+
+    // Production defaults tolerate ordinary IAM latency and jitter; the budgets stay explicit and
+    // separable so tests can override them to milliseconds through the Ops:IamClient section.
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 public sealed record OpsConnectorCredentialValidationRequest(
@@ -134,15 +146,33 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning(
-                    "ConnectorCredentialValidationIamFailure StatusCode={StatusCode}",
-                    (int)response.StatusCode);
+                LogFailure("business-response", (int)response.StatusCode);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
             }
 
-            var principal = await response.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>(cancellationToken);
-            if (principal is null)
+            ConnectorPrincipalResponse? principal;
+            try
             {
+                principal = await response.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>(cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                LogFailure("invalid-response", (int)response.StatusCode, ex);
+                return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
+            }
+            catch (NotSupportedException ex)
+            {
+                LogFailure("invalid-response", (int)response.StatusCode, ex);
+                return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
+            }
+
+            if (principal is null
+                || string.IsNullOrWhiteSpace(principal.PrincipalType)
+                || string.IsNullOrWhiteSpace(principal.OrganizationId)
+                || string.IsNullOrWhiteSpace(principal.EnvironmentId)
+                || string.IsNullOrWhiteSpace(principal.ConnectorHostId))
+            {
+                LogFailure("invalid-response", (int)response.StatusCode);
                 return OpsConnectorCredentialValidationResult.Rejected("iam-invalid-response");
             }
 
@@ -152,20 +182,64 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
                 principal.EnvironmentId,
                 principal.ConnectorHostId);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (HttpRequestException ex)
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
+            LogFailure(ClassifyTransportFailure(ex), null, ex);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
-        catch (TaskCanceledException ex)
+        catch (OperationCanceledException ex)
         {
             // Fail closed: IAM unavailable means reject rather than allow. A future local credential
             // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
-            logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
+            LogFailure("request-timeout", null, ex);
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
+    }
+
+    // The structured message and its properties stay free of credentials, request bodies and response
+    // bodies; the originating exception is still passed through so production keeps its stack trace.
+    private void LogFailure(string failureKind, int? statusCode, Exception? exception = null)
+    {
+        logger.LogWarning(
+            exception,
+            "ConnectorCredentialValidationIamFailure FailureKind={FailureKind} StatusCode={StatusCode}",
+            failureKind,
+            statusCode);
+    }
+
+    private static string ClassifyTransportFailure(HttpRequestException exception)
+    {
+        if (exception.HttpRequestError == HttpRequestError.NameResolutionError)
+        {
+            return "dns";
+        }
+
+        if (exception.HttpRequestError == HttpRequestError.ConnectionError
+            && FindSocketException(exception) is { SocketErrorCode: SocketError.ConnectionRefused })
+        {
+            return "connection-refused";
+        }
+
+        return "transport-error";
+    }
+
+    private static SocketException? FindSocketException(Exception exception)
+    {
+        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is SocketException socketException)
+            {
+                return socketException;
+            }
+        }
+
+        return null;
     }
 
     private sealed record ValidateConnectorCredentialRequest(string ConnectorHostId, string Secret);

@@ -111,7 +111,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 
 跨平台兼容门禁分三步推进：
 
-1. `compat-fast`：在 macOS 或 Linux 环境运行 `pwsh scripts/check-script-governance.ps1`、`pwsh scripts/tests/check-script-governance.Tests.ps1` 和 `git diff --check`。
+1. `compat-fast`：在 macOS 或 Linux 环境运行 `pwsh scripts/check-script-governance.ps1`、`pwsh scripts/tests/check-script-governance.Tests.ps1`、`pwsh scripts/tests/test-evidence.Tests.ps1` 和 `git diff --check`。
 2. `compat-core-verify`：在 macOS 或 Linux 环境安装 PowerShell 7、.NET 10 SDK、Docker Compose v2 后，运行已经迁移到 helper 的核心验证脚本；首批目标是 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`。
 3. `compat-release-install`：Linux 私有化安装不直接复用本地 `verify` 脚本。后续 `scripts/install/linux/**` Bash/systemd 入口必须满足同一套分类、副作用、日志、超时、清理和敏感信息脱敏契约。
 
@@ -125,6 +125,10 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 
 | 脚本 | 分类 | 当前治理状态 | 迁移要求 |
 | --- | --- | --- | --- |
+| `collect-test-evidence.ps1` | `check` + `generate` | 已受治理 | 读取 job-local raw TRX，执行 skip/zero-execution 门禁，并只写声明过的脱敏 evidence tree、Step Summary 与确定性 failure sibling；artifact writer 只消费已解析 records/summary，不接收或复制 raw TRX path；CI Script Governance 直接执行其语义契约测试。 |
+| `generate-test-evidence-baseline.ps1` | `generate` | 已受治理 | baseline 唯一写入口；只接受 EvidenceRoot authority 或只读 GitHub Actions console provenance，禁止手改 committed baseline。 |
+| `scripts/lib/TestEvidence.ps1` | `check` library | 已受治理 | 提供 TRX 解析、policy、摘要/脱敏 artifact、provenance 与 baseline 纯函数；quarantine metadata 的 policy/runtime 两调用点复用同一纯校验，runner normalization 读取显式 regex result，不依赖 PowerShell 自动 `$Matches`；调用方必须先加载 `ScriptAutomation.ps1`。 |
+| `scripts/tests/test-evidence.Tests.ps1` | `check` | 已受治理/CI 接线 | fixture 证明三项硬门禁、双 SHA、baseline authority、selected-lane/shard 语义、脱敏与 normalized roundtrip，并锁定无 raw-path writer 参数、Ubuntu major normalization、quarantine 到期边界与两调用点错误契约；由 Script Governance job 和 `compat-fast` 执行并保留真实退出码。 |
 | `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |
 | `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
 | `verify-fourth-slice-real-infra.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、PostgreSQL reset、AppHub/Ops profile tests 和嵌套第三阶段脚本；baseline exemption 已移除。 |
@@ -137,12 +141,22 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | `verify-coding-rule-engine.ps1` | `verify` | 已迁移 | 使用 helper 执行 Coding engine focused tests、后端 solution build 和 frontend typecheck；不导出 OpenAPI 或写 generated api-client。 |
 | `verify-connector-health-disconnect.ps1` | `verify` | 已受治理/真实环境 3/3 | 通过 fullstack session lifecycle 与受控 loopback Modbus simulator 验证 Host 仍有新 heartbeat 时的现场 `lost`、`disconnectedSinceUtc`、同端口恢复和 current manifest 的 never-sampled binding；逐轮 evidence 写入 `artifacts/script-logs/connector-health-disconnect/<timestamp>/evidence.json`，固定 10 秒 deadline。当前代码头的最近成功证据 `20260718T062424954Z/evidence.json` 为 3/3（端到端 3181/1213/1267 ms；现场检测 401/82/767 ms；检测后 Gateway 可见 2783/1132/501 ms；最大 3181 ms）；AppHost/DCP 启动前失败的尝试仅保留 diagnostics，不计入拔线轮次。 |
 | `verify-leader-demo-telemetry-simulator.ps1` | `verify` | 已受治理/前台真实栈 | 对当前精确 leader-demo session 以默认 2 秒周期发布 `normal -> degrading -> alarm -> recovered` 的振动、温度和设备状态，只使用公开 BusinessGateway；可选 24 小时形状历史回填先做迟到事实实测，重复 run 以稳定 source sequence 验证幂等。证据写入 `artifacts/leader-demo/<sessionId>/`，不创建后台进程。 |
+| `check-backend-test-determinism.ps1` | `check` | 已受治理 | MAN-662 后端测试确定性静态门禁；扫描 solution 内全部测试源，按 `backend/test-determinism-baseline.json` 逐行核对已登记债务（`Task.Delay` / `StaticSetter` / `UnreachableAddress`），未登记发现即失败，已登记行到期即失败。只读扫描，不启动服务、不写 `artifacts/`；CI 在 Script Governance job 中执行一次，不重复接入后端测试 job。 |
+| `verify-backend-test-determinism.ps1` | `verify` | 已受治理 | 对四个目标测试程序集执行六轮 × 四项目：seed `man662-01`..`man662-06`、serial/parallel 交替、`MaxParallelThreads` 1/4、项目顺序逐轮旋转。以 `New-ExclusiveInvocationClaim` 原子取得 invocation 所有权，既有证据永不被 rerun 覆盖；除退出码外还跨轮比对每个项目的 total/passed/skipped/failed，静默跳过即判失败。证据写入 `artifacts/test-determinism/man-662/<invocation-id>/summary.json`（六个本地复现字段 + 逐项目结果），不产出 TRX、lane timing 或 flake trend——那些属 MAN-661。本机执行，不进 CI。 |
+| `tests/check-backend-test-determinism.Tests.ps1` | `check` | 已受治理 | 用 `scripts/tests/fixtures/backend-test-determinism/**` 夹具回归扫描器本身：普通/逐字/raw/嵌套插值字符串中的可执行表达式都必须参与扫描，脱敏值不得尾部泄漏。CI Script Governance job 执行。 |
+| `tests/verify-backend-test-determinism.Tests.ps1` | `check` | 已受治理 | 用一次性 stubbed harness（复用真实 helper，只替换进程启动面）验证六轮契约、caller cwd 保护、invocation claim 的双进程原子性、已被占用 ID 时零项目执行，以及"退出码全零但测试结果漂移"必须失败。不调用真实 `dotnet test`。CI Script Governance job 执行。 |
+| `verify-backend-test-shards.ps1` | `check` | 已受治理 | MAN-669 后端快速分片治理；校验 `scripts/backend-test-shards.json` 把每个后端测试项目恰好分类一次、solution filter 与清单逐项一致、排除选择器唯一归属 heavy lane，并用结构化 YAML 解析核对 `ci.yml`：四个 shard job 的名称/`evidenceLane`/原始 TRX 目录/TRX 前缀、MAN-661 证据采集参数（`-Lane`/`-SelectedLanes`/`-JobName`/`-CurrentTestOutcome`/`-RetentionDays 14`）、唯一且脱敏的 evidence artifact，以及 `Backend Tests` 聚合只包含四条独立成功断言。只读，不执行测试。 |
+| `run-backend-test-shard.ps1` | `verify` | 已受治理 | 执行单个已分类的后端快速 shard（`--logger trx;LogFilePrefix=<jobId>` 写入 job 本地原始结果目录），按清单 `excludedTestClasses`/`excludedTests` 精确排除真实 PostgreSQL 选择器，零匹配即失败关闭。失败/超时时把缓冲的 stdout/stderr **脱敏后写入调用方日志流**，不落盘、不上传原始产物——保留面由 MAN-661 采集器负责。 |
+| `verify-backend-real-postgres-tests.ps1` | `verify` | 已受治理/真实 PostgreSQL | opt-in 的 `real-postgres` heavy lane owner；对清单登记的每个排除选择器逐条 discovery（必须精确匹配）并要求 TRX 中全部 Passed，不允许把 skip 当成通过。非默认 hosted lane。 |
+| `tests/backend-test-shards.Tests.ps1` | `check` | 已受治理 | 用临时未分类项目与一组 `ci.yml` 变异（缺失聚合依赖、no-op/`\|\| true` 断言、`continue-on-error`、命令替换参数、上传原始目录、冒用兄弟 lane、管道包裹 runner、把采集降级成 `success()`）回归分片治理本身，并验证脱敏后的缓冲诊断不落盘。CI 在 Backend Test Shard Governance job 中执行。 |
 | `bootstrap-online.ps1` | `release-install` | 已迁移 | 有网空白机器入口；使用 helper 执行 winget、Aspire install script、dotnet restore、pnpm install、AppHost build 和可选 dev 启动；只初始化本地 Development user-secrets，不承担离线包制作或客户现场服务注册。 |
 | `install/migrate-file-storage.ps1` | `release-install` | 已受治理 | 只从当前进程的 `NERV_IIP_FILE_STORAGE_DB` 读取目标连接，默认校验目标库精确匹配 `nerv_iip_filestorage`（受控自定义名称必须显式传 `-ExpectedDatabase`），输出脱敏 release/service/profile/target/migration/correlation/log 状态并应用 FileStorage EF migrations；不负责备份、删库或 seed，PoC/production 调用前必须完成 database release runbook preflight。 |
 | `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
 | `verify-second-slice-ops.ps1` | `verify` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免直接命令/进程调用；迁移时需收敛 Gateway/Ops/Connector Host 进程树、日志和端口清理。 |
 
-当前 baseline 除 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption 外，还记录 `scripts/tests/**` 中的测试 harness/fixture 债务：这些脚本故意以动态调用、直接进程或缺失声明来验证治理规则本身。每项豁免均限制为精确 path + rule，新增测试脚本不得复用；迁移计划是在对应 harness 改为 ScriptAutomation 后逐项删除。`scripts/tests/backend-test-shards.Tests.ps1` 已纳入完整扫描且没有豁免。
+当前 baseline 除 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption 外，还记录 `scripts/tests/**` 中的测试 harness/fixture 债务：这些脚本故意以动态调用、直接进程或缺失声明来验证治理规则本身。每项豁免均限制为精确 path + rule，新增测试脚本不得复用；迁移计划是在对应 harness 改为 ScriptAutomation 后逐项删除。其中 `scripts/tests/verify-backend-test-determinism.Tests.ps1` 因 stubbed harness 需要动态调用被登记 `DynamicInvocation` 一项。`scripts/tests/backend-test-shards.Tests.ps1` 与 `scripts/tests/test-evidence.Tests.ps1` 已纳入完整扫描且没有豁免。
+
+后端测试确定性两个脚本共用 `artifacts/test-determinism/man-662/**`：`check` 侧只读、`verify` 侧只追加新的 invocation 目录。`backend/test-determinism-baseline.json` 的每一行必须指向一个**在本变更之外仍然存在**的责任 issue（`MAN-\d+` 或 `#\d+`），并带独立到期日；用当前 PR 自己的票做 owner 等于合并当天就没有责任人，属于门禁失效。
 
 ## 新脚本准入
 

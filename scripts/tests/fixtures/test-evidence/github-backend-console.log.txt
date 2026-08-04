@@ -1,0 +1,8 @@
+Backend Tests UNKNOWN STEP Image: ubuntu-24.04
+Backend Tests UNKNOWN STEP Version: 20260720.247.2
+Backend Tests UNKNOWN STEP dotnet-install: .NET Core SDK with version '10.0.302' is already installed.
+Passed!  - Failed:     0, Passed:   500, Skipped:     8, Total:   508, Duration: 13 m 42 s - Nerv.IIP.BusinessGateway.Web.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:    88, Skipped:     1, Total:    89, Duration: 18 s - Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   140, Skipped:     5, Total:   145, Duration: 1 m 4 s - Nerv.IIP.Business.Wms.Web.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:    90, Skipped:     2, Total:    92, Duration: 32 s - Nerv.IIP.Business.Inventory.Web.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:    12, Skipped:     5, Total:    17, Duration: 4 s - Nerv.IIP.Business.FullChain.Tests.dll (net10.0)

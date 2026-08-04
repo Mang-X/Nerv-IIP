@@ -66,7 +66,8 @@ function Get-GovernanceScripts {
                     $relative = Get-RepoRelativePath -CandidatePath $_.FullName
                     -not (
                         $relative -eq 'scripts/check-script-governance.ps1' -or
-                        $relative -like 'scripts/lib/*'
+                        $relative -like 'scripts/lib/*' -or
+                        $relative -like 'scripts/tests/fixtures/*'
                     )
                 } |
                 ForEach-Object { $scripts.Add($_.FullName) }

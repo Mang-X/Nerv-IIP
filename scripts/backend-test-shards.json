@@ -4,6 +4,8 @@
   "fastShards": [
     {
       "id": "business-gateway",
+      "evidenceLane": "backend-shard-1",
+      "jobName": "Backend Tests - BusinessGateway",
       "solutionFilter": "backend/ci/backend-tests-business-gateway.slnf",
       "projects": [
         "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj"
@@ -13,6 +15,8 @@
     },
     {
       "id": "platform",
+      "evidenceLane": "backend-shard-2",
+      "jobName": "Backend Tests - Platform",
       "solutionFilter": "backend/ci/backend-tests-platform.slnf",
       "projects": [
         "backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj",
@@ -39,6 +43,7 @@
         "backend/tests/Nerv.IIP.Contracts.Scheduling.Tests/Nerv.IIP.Contracts.Scheduling.Tests.csproj",
         "backend/tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj",
         "backend/tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj",
+        "backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj",
         "backend/tests/Nerv.IIP.Localization.Tests/Nerv.IIP.Localization.Tests.csproj",
         "backend/tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Tests.csproj",
         "backend/tests/Nerv.IIP.MigrationGovernance.Tests/Nerv.IIP.MigrationGovernance.Tests.csproj",
@@ -48,7 +53,8 @@
         "backend/tests/Nerv.IIP.Sdk.Notification.Tests/Nerv.IIP.Sdk.Notification.Tests.csproj",
         "backend/tests/Nerv.IIP.Sdk.Observability.Tests/Nerv.IIP.Sdk.Observability.Tests.csproj",
         "backend/tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
-        "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj"
+        "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
+        "backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj"
       ],
       "excludedTestClasses": [
         "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
@@ -62,6 +68,8 @@
     },
     {
       "id": "business-core-a",
+      "evidenceLane": "backend-shard-3",
+      "jobName": "Backend Tests - Business Core A",
       "solutionFilter": "backend/ci/backend-tests-business-core-a.slnf",
       "projects": [
         "backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Domain.Tests/Nerv.IIP.Business.Approval.Domain.Tests.csproj",
@@ -115,6 +123,8 @@
     },
     {
       "id": "business-core-b",
+      "evidenceLane": "backend-shard-4",
+      "jobName": "Backend Tests - Business Core B",
       "solutionFilter": "backend/ci/backend-tests-business-core-b.slnf",
       "projects": [
         "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.csproj",

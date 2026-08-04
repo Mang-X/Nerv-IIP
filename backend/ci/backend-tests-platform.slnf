@@ -26,6 +26,7 @@
       "tests/Nerv.IIP.Contracts.Scheduling.Tests/Nerv.IIP.Contracts.Scheduling.Tests.csproj",
       "tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj",
       "tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj",
+      "tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj",
       "tests/Nerv.IIP.Localization.Tests/Nerv.IIP.Localization.Tests.csproj",
       "tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Tests.csproj",
       "tests/Nerv.IIP.MigrationGovernance.Tests/Nerv.IIP.MigrationGovernance.Tests.csproj",
@@ -35,7 +36,8 @@
       "tests/Nerv.IIP.Sdk.Notification.Tests/Nerv.IIP.Sdk.Notification.Tests.csproj",
       "tests/Nerv.IIP.Sdk.Observability.Tests/Nerv.IIP.Sdk.Observability.Tests.csproj",
       "tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
-      "tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj"
+      "tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
+      "tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj"
     ]
   }
 }

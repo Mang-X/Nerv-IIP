@@ -8,7 +8,9 @@
 
   <ItemGroup>
     <PackageReference Include="DotNetCore.CAP" />
+    <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
 </Project>

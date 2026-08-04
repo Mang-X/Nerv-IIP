@@ -31,6 +31,7 @@ using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Dto;
@@ -1335,14 +1336,23 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .ConfigureServices(services =>
             {
                 services.AddSingleton(TimeProvider.System);
-                services.AddHostedService<AlarmEscalationScheduler>();
+                services.AddSingleton<AlarmEscalationScheduler>();
+                services.AddSingleton<IHostedService>(serviceProvider =>
+                    serviceProvider.GetRequiredService<AlarmEscalationScheduler>());
             })
             .Build();
 
         await host.StartAsync(CancellationToken.None);
 
+        var scheduler = host.Services.GetRequiredService<AlarmEscalationScheduler>();
+        var executeTask = scheduler.ExecuteTask;
+        Assert.NotNull(executeTask);
+        await TestTimeout.RunAsync(
+            "alarm escalation scheduler completes invalid enabled configuration",
+            cancellationToken => new ValueTask(executeTask.WaitAsync(cancellationToken)),
+            TimeSpan.FromSeconds(1));
+
         var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-        await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
         Assert.False(lifetime.ApplicationStopping.IsCancellationRequested);
 
         await host.StopAsync(CancellationToken.None);

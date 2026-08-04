@@ -114,6 +114,15 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
+        '<redacted-pem>')
+    $redacted = [regex]::Replace($redacted, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?i)(["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
+        '$1<redacted>$2')
     $patterns = @(
         '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+',
         '(?i)(password\s*=\s*)[^;\s]+',
@@ -121,6 +130,7 @@ function Protect-ScriptAutomationText {
         '(?i)(token\s*[:=]\s*)[^\s''";]+',
         '(?i)(secret\s*[:=]\s*)[^\s''";]+',
         '(?i)(client_secret\s*[:=]\s*)[^\s''";]+',
+        '(?i)((?:customerName|phone|email|address)\s*=\s*)[^;\s,}]+',
         '(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+',
         '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+'
     )
@@ -1346,6 +1356,49 @@ function Invoke-WithScopedEnvironment {
             }
         }
     }
+}
+
+function New-ExclusiveInvocationClaim {
+    <#
+    .SYNOPSIS
+        Atomically claims a single-owner invocation ID.
+    .DESCRIPTION
+        Uses FileMode.CreateNew so that exactly one caller can own a claim path. Concurrent callers
+        racing on the same ID lose deterministically at the file system level rather than through a
+        check-then-write window, so existing evidence can never be replaced by a rerun.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClaimPath,
+
+        [Parameter(Mandatory)]
+        [string] $InvocationId
+    )
+
+    $claimStream = $null
+    try {
+        $claimStream = [System.IO.FileStream]::new(
+            $ClaimPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::Read)
+        $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
+        $claimStream.Write($claimBytes, 0, $claimBytes.Length)
+        $claimStream.Flush($true)
+    }
+    catch [System.IO.IOException] {
+        if (Test-Path -LiteralPath $ClaimPath -PathType Leaf) {
+            throw "Evidence invocation '$InvocationId' is already claimed at $ClaimPath. Use a new invocation ID; reruns never replace prior evidence."
+        }
+        throw
+    }
+    finally {
+        if ($null -ne $claimStream) {
+            $claimStream.Dispose()
+        }
+    }
+
+    return $ClaimPath
 }
 
 function Assert-FacadeTypesGenExport {

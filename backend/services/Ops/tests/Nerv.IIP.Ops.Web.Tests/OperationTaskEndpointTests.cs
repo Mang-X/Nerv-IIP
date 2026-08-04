@@ -14,6 +14,7 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
+using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.ServiceAuth;
 
@@ -59,15 +60,13 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_task_can_be_created_dispatched_and_completed()
     {
-        var client = CreateInternalServiceClient(factory);
-        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", "connector-host-001");
-        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
-        client.DefaultRequestHeaders.Add("X-Organization-Id", "org-001");
-        client.DefaultRequestHeaders.Add("X-Environment-Id", "env-dev");
+        const string organizationId = "org-operation-lifecycle";
+        const string environmentId = "env-operation-lifecycle";
+        var client = CreateAuthorizedClient(organizationId, environmentId);
 
         var createRequest = new CreateOperationTaskRequest(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             "docker-container-local-demo-001",
             "lifecycle.restart",
             "idem-restart-001",
@@ -85,14 +84,23 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Contains(createdTask.AuditRecords, x => x.Action == "operation.requested");
 
         var pendingResponse = await client.GetAsync(
-            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+            $"/api/ops/v1/operation-tasks/pending?organizationId={organizationId}&environmentId={environmentId}&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
         var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingResponse);
         Assert.NotNull(pending);
         var dispatch = Assert.Single(pending.Items);
         Assert.Equal(createdTask.OperationTaskId, dispatch.OperationTaskId);
+        Assert.Equal(createRequest.OrganizationId, dispatch.OrganizationId);
+        Assert.Equal(createRequest.EnvironmentId, dispatch.EnvironmentId);
         Assert.Equal("connector-host-001", dispatch.ConnectorHostId);
+        Assert.Equal(createRequest.InstanceKey, dispatch.InstanceKey);
+        Assert.Equal(createRequest.OperationCode, dispatch.OperationCode);
+        Assert.Equal(createRequest.CorrelationId, dispatch.CorrelationId);
+        Assert.Empty(dispatch.Parameters);
+        Assert.Equal(1, dispatch.AttemptNo);
+        Assert.Equal(300, dispatch.LeaseDurationSeconds);
+        Assert.Equal(3, dispatch.MaxAttempts);
 
         var dispatchedResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
 
@@ -353,27 +361,37 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Production_does_not_accept_development_fake_connector_credential()
     {
-        await using var productionFactory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:BaseUrl", "http://127.0.0.1:1");
-                builder.UseSetting("InternalService:BearerToken", "production-internal-token");
-                builder.UseSetting("Persistence:Provider", "PostgreSQL");
-                builder.UseSetting(
-                    "ConnectionStrings:OpsDb",
-                    "Host=127.0.0.1;Port=1;Database=ops_test;Username=ops_test");
-                builder.UseSetting("Messaging:Provider", "RabbitMQ");
-                builder.UseSetting("RabbitMQ:HostName", "127.0.0.1");
-                builder.UseSetting("RabbitMQ:Port", "1");
-            });
-        var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
-        AddConnectorHeaders(client, "local-connector-secret");
+        var options = new FixedOptionsMonitor<OpsConnectorCredentialOptions>(new()
+        {
+            Secret = "local-connector-secret"
+        });
+        var configuredValidator = new ConfiguredOpsConnectorCredentialValidator(options);
+        using var handler = new ScriptedHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://iam.test")
+        };
+        var iamValidator = new IamOpsConnectorCredentialValidator(
+            httpClient,
+            new RecordingLogger<IamOpsConnectorCredentialValidator>());
+        var validator = new OpsConnectorCredentialValidator(
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            options,
+            configuredValidator,
+            iamValidator);
 
-        var response = await client.GetAsync(
-            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+        var result = await validator.ValidateAsync(
+            new OpsConnectorCredentialValidationRequest(
+                "connector-host-001",
+                "local-connector-secret",
+                "org-001",
+                "env-dev",
+                "ops.operation-tasks.execute"),
+            CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-rejected", result.Reason);
     }
 
     [Fact]

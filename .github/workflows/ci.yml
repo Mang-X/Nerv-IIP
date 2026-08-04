@@ -7,6 +7,7 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -71,20 +72,63 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test BusinessGateway shard
+      - name: Resolve test evidence environment
+        id: shard-evidence-environment
+        shell: pwsh
         run: |
-          mkdir -p TestResults/backend-tests-business-gateway
-          set -o pipefail
-          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-gateway -ResultsDirectory TestResults/backend-tests-business-gateway -TrxFilePrefix backend-tests-business-gateway 2>&1 | tee TestResults/backend-tests-business-gateway/backend-tests-business-gateway.log
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-      - name: Upload BusinessGateway shard diagnostics
+      - name: Test BusinessGateway shard
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-gateway
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -TrxFilePrefix backend-tests-business-gateway
+
+      - name: Collect BusinessGateway shard evidence
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-1
+          -SelectedLanes backend-shard-1
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - BusinessGateway"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload BusinessGateway shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-tests-business-gateway-${{ github.run_id }}-${{ github.run_attempt }}
-          path: TestResults/backend-tests-business-gateway
-          if-no-files-found: warn
-          retention-days: 7
+          name: test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   backend-tests-platform:
     name: Backend Tests - Platform
@@ -106,20 +150,63 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test platform shard
+      - name: Resolve test evidence environment
+        id: shard-evidence-environment
+        shell: pwsh
         run: |
-          mkdir -p TestResults/backend-tests-platform
-          set -o pipefail
-          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId platform -ResultsDirectory TestResults/backend-tests-platform -TrxFilePrefix backend-tests-platform 2>&1 | tee TestResults/backend-tests-platform/backend-tests-platform.log
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-      - name: Upload platform shard diagnostics
+      - name: Test platform shard
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId platform
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -TrxFilePrefix backend-tests-platform
+
+      - name: Collect platform shard evidence
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-2
+          -SelectedLanes backend-shard-2
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Platform"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload platform shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-tests-platform-${{ github.run_id }}-${{ github.run_attempt }}
-          path: TestResults/backend-tests-platform
-          if-no-files-found: warn
-          retention-days: 7
+          name: test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   backend-tests-business-core-a:
     name: Backend Tests - Business Core A
@@ -141,20 +228,63 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test business core A shard
+      - name: Resolve test evidence environment
+        id: shard-evidence-environment
+        shell: pwsh
         run: |
-          mkdir -p TestResults/backend-tests-business-core-a
-          set -o pipefail
-          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-core-a -ResultsDirectory TestResults/backend-tests-business-core-a -TrxFilePrefix backend-tests-business-core-a 2>&1 | tee TestResults/backend-tests-business-core-a/backend-tests-business-core-a.log
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-      - name: Upload business core A shard diagnostics
+      - name: Test business core A shard
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-a
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -TrxFilePrefix backend-tests-business-core-a
+
+      - name: Collect business core A shard evidence
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-3
+          -SelectedLanes backend-shard-3
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core A"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core A shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-tests-business-core-a-${{ github.run_id }}-${{ github.run_attempt }}
-          path: TestResults/backend-tests-business-core-a
-          if-no-files-found: warn
-          retention-days: 7
+          name: test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   backend-tests-business-core-b:
     name: Backend Tests - Business Core B
@@ -176,20 +306,63 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test business core B shard
+      - name: Resolve test evidence environment
+        id: shard-evidence-environment
+        shell: pwsh
         run: |
-          mkdir -p TestResults/backend-tests-business-core-b
-          set -o pipefail
-          pwsh -NoProfile -File scripts/run-backend-test-shard.ps1 -ShardId business-core-b -ResultsDirectory TestResults/backend-tests-business-core-b -TrxFilePrefix backend-tests-business-core-b 2>&1 | tee TestResults/backend-tests-business-core-b/backend-tests-business-core-b.log
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-      - name: Upload business core B shard diagnostics
+      - name: Test business core B shard
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-b
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -TrxFilePrefix backend-tests-business-core-b
+
+      - name: Collect business core B shard evidence
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-4
+          -SelectedLanes backend-shard-4
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core B"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core B shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-tests-business-core-b-${{ github.run_id }}-${{ github.run_attempt }}
-          path: TestResults/backend-tests-business-core-b
-          if-no-files-found: warn
-          retention-days: 7
+          name: test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
@@ -254,8 +427,62 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Resolve test evidence environment
+        id: connector-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
       - name: Test connector host solution
-        run: dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --configuration Release
+        id: connector-host-tests
+        run: >-
+          dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+
+      - name: Collect connector host test evidence
+        id: collect-connector-host-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane connector-host
+          -SelectedLanes connector-host
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Connector Host Tests"
+          -CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.connector-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.connector-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload connector host test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-connector-host-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
 
   frontend:
     name: Frontend Typecheck and Build
@@ -331,6 +558,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run script governance check
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      - name: Test backend determinism checker
+        shell: pwsh
+        run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
+
+      - name: Test backend determinism verifier
+        shell: pwsh
+        run: ./scripts/tests/verify-backend-test-determinism.Tests.ps1
+
+      - name: Run backend determinism checker
+        shell: pwsh
+        run: ./scripts/check-backend-test-determinism.ps1
+
+      - name: Run test evidence contract tests
+        shell: pwsh
+        run: ./scripts/tests/test-evidence.Tests.ps1

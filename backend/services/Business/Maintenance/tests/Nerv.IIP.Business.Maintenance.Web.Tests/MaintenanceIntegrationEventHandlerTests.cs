@@ -163,7 +163,9 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var generateLock = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(generateCommand, CancellationToken.None);
         var sharedLockKey = applyLock.LockKey ?? throw new InvalidOperationException("Device-state command lock key is required.");
         Assert.Equal(sharedLockKey, generateLock.LockKey);
-        var distributedLock = new RedisMaintenanceDistributedLock(new InMemoryRedisCommandLockStore(), TimeProvider.System);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            new InMemoryRedisCommandLockStore(TimeProvider.System),
+            TimeProvider.System);
         var applyHasLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowApplyCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var generationAttempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

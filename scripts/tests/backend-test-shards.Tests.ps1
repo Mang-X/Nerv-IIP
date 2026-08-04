@@ -115,7 +115,17 @@ Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Ne
 
 $classifiedProjects = @($fastShards.projects) + @($heavyLanes.projects)
 Assert-Contract (($classifiedProjects | Sort-Object -Unique).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
-Assert-Contract ($classifiedProjects.Count -eq 64) 'The checked-in backend test inventory must contain 64 classified projects.'
+Assert-Contract ($classifiedProjects.Count -eq 66) 'The checked-in backend test inventory must contain 66 classified projects.'
+Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj') 'MAN-662 shared test-infrastructure facts must run in the default fast gate.'
+Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj') 'MAN-662 FastEndpoints process-isolation facts must run in the default fast gate.'
+Assert-Contract (((@($fastShards.evidenceLane) | Sort-Object) -join '|') -ceq 'backend-shard-1|backend-shard-2|backend-shard-3|backend-shard-4') 'Every fast shard must own one MAN-661 schema-v1 backend shard lane.'
+Assert-Contract ((@($fastShards.jobName) | Sort-Object -Unique).Count -eq $fastShards.Count) 'Every fast shard evidence lane must be owned by exactly one CI job name.'
+. (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
+$laneJobs = Get-NervTestEvidenceLaneJobs
+foreach ($shard in $fastShards) {
+    Assert-Contract ($laneJobs.Contains([string] $shard.evidenceLane)) "Fast shard evidence lane '$($shard.evidenceLane)' must be allowlisted for MAN-661 rerun and baseline authority."
+    Assert-Contract ([string] $laneJobs[[string] $shard.evidenceLane] -ceq [string] $shard.jobName) "Fast shard evidence lane '$($shard.evidenceLane)' must be bound to its own CI job name."
+}
 
 foreach ($shard in $fastShards) {
     $filterPath = Join-Path $repoRoot $shard.solutionFilter
@@ -224,19 +234,59 @@ try {
     }
     Assert-Contract ($bypassValidationText.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.")) 'Structured workflow validation must reject a command replacement parameter.'
 
+    foreach ($evidenceMutation in @(
+            @{
+                Name = 'raw-artifact-upload'
+                Pattern = '(?m)^(\s+)path: \$\{\{ steps\.collect-shard-evidence\.outputs\.evidence-path \}\}'
+                Replacement = '$1path: artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1'
+                Expected = 'must upload only the collector-published redacted evidence path'
+            },
+            @{
+                Name = 'sibling-lane-claim'
+                Pattern = '-SelectedLanes backend-shard-1'
+                Replacement = '-SelectedLanes backend-shard-2'
+                Expected = "must not claim the sibling evidence lane 'backend-shard-2'"
+            },
+            @{
+                Name = 'piped-shard-runner'
+                Pattern = '(?m)^(\s+)-TrxFilePrefix backend-tests-platform$'
+                Replacement = '$1-TrxFilePrefix backend-tests-platform | tee shard.log'
+                Expected = 'must not wrap the shard runner in a shell pipeline'
+            },
+            @{
+                Name = 'best-effort-collection'
+                Pattern = '(?m)^(\s+)id: collect-shard-evidence\r?\n(\s+)if: always\(\)'
+                Replacement = '$1id: collect-shard-evidence' + [Environment]::NewLine + '$2if: success()'
+                Expected = 'evidence collection must run with if: always()'
+            }
+        )) {
+        Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace $evidenceMutation.Pattern, $evidenceMutation.Replacement) -NoNewline
+        $evidenceValidationText = ''
+        try {
+            Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name "backend-test-shard-evidence-$($evidenceMutation.Name)-contract" | Out-Null
+            throw "Evidence mutation '$($evidenceMutation.Name)' must fail structured shard governance."
+        }
+        catch {
+            $evidenceValidationText = $_.Exception.Message
+        }
+        Assert-Contract ($evidenceValidationText.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
+    }
+
     $timeoutText = ''
     $timedOut = $false
+    $timeoutDiagnostics = ''
     try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-Command', '[Console]::Out.WriteLine("partial-diagnostic"); [Console]::Out.Flush(); Start-Sleep -Seconds 3') -WorkingDirectory $repoRoot -TimeoutSeconds 1 -Name 'backend-test-shard-timeout-contract' | Out-Null
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-Command', '[Console]::Out.WriteLine("partial-diagnostic Password=super-secret"); [Console]::Out.Flush(); Start-Sleep -Seconds 3') -WorkingDirectory $repoRoot -TimeoutSeconds 1 -Name 'backend-test-shard-timeout-contract' | Out-Null
     }
     catch {
         $timedOut = $true
         $timeoutText = $_.Exception.Message
-        Save-BackendTestShardTimeoutDiagnostics -ErrorRecord $_ -ResultsDirectory $timeoutResultsDirectory -TrxFilePrefix 'timeout-contract'
+        $timeoutDiagnostics = Get-BackendTestShardFailureDiagnostics -ErrorRecord $_ -TrxFilePrefix 'timeout-contract'
     }
     Assert-Contract ($timedOut -and -not [string]::IsNullOrWhiteSpace($timeoutText)) 'The bounded timeout diagnostic helper contract must time out.'
-    Assert-Contract (Test-Path -LiteralPath (Join-Path $timeoutResultsDirectory 'timeout-contract.timeout.stdout.log')) 'The bounded shard timeout contract must preserve diagnostics in the exact results directory.'
-    Assert-Contract ((Get-Content -LiteralPath (Join-Path $timeoutResultsDirectory 'timeout-contract.timeout.stdout.log') -Raw).Contains('partial-diagnostic')) 'The bounded timeout diagnostic helper contract must preserve buffered stdout content.'
+    Assert-Contract ($timeoutDiagnostics.Contains('partial-diagnostic')) 'The bounded timeout diagnostic helper contract must preserve buffered stdout content.'
+    Assert-Contract (-not $timeoutDiagnostics.Contains('super-secret')) 'Buffered shard diagnostics must be redacted before they reach any retained log.'
+    Assert-Contract (-not (Test-Path -LiteralPath $timeoutResultsDirectory)) 'Buffered shard diagnostics must stay in the job log instead of an uploaded results directory.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryProjectDirectory) {
