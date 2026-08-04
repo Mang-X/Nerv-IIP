@@ -62,6 +62,7 @@ function Invoke-TestPwshScript {
 Assert-True (-not $collectorSource.Contains('TestOnly')) 'Production collector must expose no test-only authority replacement parameter.'
 Assert-True (-not $baselineGeneratorSource.Contains('TestOnly')) 'Production baseline generator must expose no test-only authority replacement parameter.'
 Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling')) 'Collector governance Writes must declare its owned failure sibling output.'
+Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
 
 Assert-True (Test-NervTestEvidenceLaneName 'backend') 'backend must be valid.'
 Assert-True (Test-NervTestEvidenceLaneName 'backend-shard-1') 'backend-shard-1 must use schema v1.'
@@ -73,6 +74,18 @@ Assert-Equal 1 $policy.schemaVersion 'Policy schema version must be one.'
 $illegal = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-illegal-quarantine.json')
 $violations = Test-NervTestEvidencePolicy -Policy $illegal -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
 Assert-Violation $violations 'illegal-quarantine'
+Assert-Equal 'Quarantine requires issue, valid unexpired ISO date, and exit condition.' ($violations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Policy validation must retain its illegal-quarantine detail.'
+
+$quarantineBoundaryRule = [pscustomobject]@{
+    responsibilityIssue = 'MAN-TEST'
+    expiresOn = '2026-08-04'
+    exitCondition = 'Remove quarantine after the tracked defect is fixed.'
+}
+Assert-True (Test-NervQuarantineRuleMetadata -Rule $quarantineBoundaryRule -AsOfUtc ([DateTimeOffset]'2026-08-04T23:59:59Z')) 'Quarantine expiry must remain valid through its ISO expiry date.'
+Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineBoundaryRule -AsOfUtc ([DateTimeOffset]'2026-08-05T00:00:00Z'))) 'Quarantine expiry must become invalid on the following UTC date.'
+$quarantineWithoutIssue = $quarantineBoundaryRule.PSObject.Copy()
+$quarantineWithoutIssue.responsibilityIssue = ''
+Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue -AsOfUtc ([DateTimeOffset]'2026-08-04T00:00:00Z'))) 'Quarantine metadata must require a responsibility issue.'
 
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 Assert-Equal 40 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
@@ -219,6 +232,13 @@ Assert-Violation $shardViolations 'zero-execution'
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
 Assert-Violation $expiredViolations 'illegal-quarantine'
+$runtimeExpiredViolations = Get-NervTestEvidenceViolations -Records @() -Policy $expired -SelectedLanes @('backend') -RunnerOs 'Linux'
+Assert-Violation $runtimeExpiredViolations 'illegal-quarantine'
+Assert-Equal 'Quarantine metadata is missing, invalid, or expired.' ($runtimeExpiredViolations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Runtime validation must retain its illegal-quarantine detail.'
+$runtimeBoundaryPolicy = ($expired | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$runtimeBoundaryPolicy.rules[0].expiresOn = [DateTimeOffset]::UtcNow.AddDays(1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$runtimeBoundaryViolations = Get-NervTestEvidenceViolations -Records @() -Policy $runtimeBoundaryPolicy -SelectedLanes @('backend') -RunnerOs 'Linux'
+Assert-Equal 0 @($runtimeBoundaryViolations | Where-Object code -eq 'illegal-quarantine').Count 'Runtime validation must accept complete unexpired quarantine metadata.'
 $allowedCodes = @('unregistered-skip', 'illegal-quarantine', 'zero-execution')
 Assert-Equal 0 @($expiredViolations | Where-Object { $allowedCodes -notcontains $_.code }).Count 'Evidence layer emitted an unapproved hard-gate code.'
 
@@ -229,10 +249,13 @@ $classifiedArtifactRoot = "$artifactRoot-classified"
 try {
     $sensitiveRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
     $summary = New-NervTestEvidenceSummary -Records $sensitiveRecords -RunMetadata $run -Violations @() -Baseline (Get-Content (Join-Path $fixtures 'baseline-report-only.json') -Raw | ConvertFrom-Json) -PriorAttemptOutcome 'failure' -TopCount 5
-    Write-NervTestEvidenceArtifacts -Records $sensitiveRecords -Summary $summary -SourceTrxPaths @((Join-Path $fixtures 'sensitive-results.trx')) -OutputDirectory $artifactRoot
+    Write-NervTestEvidenceArtifacts -Records $sensitiveRecords -Summary $summary -OutputDirectory $artifactRoot
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) {
         Assert-True (Test-Path (Join-Path $artifactRoot $required)) "Missing retained artifact '$required'."
     }
+    $retainedRootFiles = @(Get-ChildItem $artifactRoot -File | ForEach-Object Name | Sort-Object)
+    Assert-Equal 'diagnostics.log,summary.json,summary.md,tests.jsonl' ($retainedRootFiles -join ',') 'Artifact root allowlist must remain unchanged.'
+    Assert-True (-not (Test-Path (Join-Path $artifactRoot 'sensitive-results.trx'))) 'Raw source TRX must not be copied into retained evidence.'
     $normalizedTrx = @(Get-ChildItem (Join-Path $artifactRoot 'trx') -Filter '*.trx')
     Assert-True ($normalizedTrx.Count -gt 0) 'Normalized TRX artifact is missing.'
     $retainedText = [string]::Join("`n", @(Get-ChildItem $artifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
@@ -252,7 +275,7 @@ try {
     Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records @() -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A zero-execution rerun must never be called recovered.'
     $unverifiedPriorRun = $recoveryRun.Clone(); $unverifiedPriorRun.priorAttemptVerified = $false
     Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $unverifiedPriorRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'Unverified prior-attempt provenance must never be called recovered.'
-    Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -SourceTrxPaths @((Join-Path $fixtures 'parameterized-results.trx')) -OutputDirectory $parameterArtifactRoot
+    Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -OutputDirectory $parameterArtifactRoot
     $parameterRoundTripRun = $recoveryRun.Clone()
     $parameterRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
     Assert-Equal 2 @($parameterRoundTrip.displayName | Sort-Object -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
@@ -261,7 +284,7 @@ try {
         Assert-Equal 1 @($parameterRoundTrip | Where-Object testInstanceId -ceq $expectedRecord.testInstanceId).Count 'Parameterized persisted execution IDs must survive normalized TRX round-trip.'
     }
     $displaySummary = New-NervTestEvidenceSummary -Records $displayPayload -RunMetadata $run -Violations @() -Baseline $null -PriorAttemptOutcome $null
-    Write-NervTestEvidenceArtifacts -Records $displayPayload -Summary $displaySummary -SourceTrxPaths @((Join-Path $fixtures 'display-payload-results.trx')) -OutputDirectory $displayPayloadArtifactRoot
+    Write-NervTestEvidenceArtifacts -Records $displayPayload -Summary $displaySummary -OutputDirectory $displayPayloadArtifactRoot
     $displayRetainedText = [string]::Join("`n", @(Get-ChildItem $displayPayloadArtifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
     foreach ($sentinel in @('org-secret-A','org-secret-B','inner-secret','still-secret','third-secret')) {
         Assert-True (-not $displayRetainedText.Contains($sentinel)) "Retained display evidence leaked '$sentinel'."
@@ -279,7 +302,7 @@ try {
     Assert-True ($summary.baseline.enforcement -eq 'report-only') 'Baseline delta must remain report-only.'
     $summaryMarkdown = Get-Content (Join-Path $artifactRoot 'summary.md') -Raw
     foreach ($heading in @('## Assemblies', '## Slowest assemblies and tests', '## Skip reasons', 'Baseline source:', 'Privacy redactions:', 'Retained artifact:')) { Assert-True $summaryMarkdown.Contains($heading) "Markdown is missing '$heading'." }
-    Write-NervTestEvidenceArtifacts -Records $records -Summary $classifiedSummary -SourceTrxPaths @((Join-Path $fixtures 'backend-results.trx')) -OutputDirectory $classifiedArtifactRoot
+    Write-NervTestEvidenceArtifacts -Records $records -Summary $classifiedSummary -OutputDirectory $classifiedArtifactRoot
     $classifiedJson = Get-Content (Join-Path $classifiedArtifactRoot 'summary.json') -Raw | ConvertFrom-Json
     Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' $classifiedJson.skipReasons[0].reason 'Retained JSON skip reason mismatch.'
     Assert-Equal 1 $classifiedJson.skipReasons[0].count 'Retained JSON skip reason count mismatch.'
@@ -301,12 +324,15 @@ finally {
 
 $metadata = Get-Content (Join-Path $fixtures 'github-run-metadata.json') -Raw | ConvertFrom-Json -AsHashtable
 $runnerLogBase = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-sdk=10.0.302"
+Assert-Equal 'ubuntu24' (ConvertTo-NervResolvedRunnerImage -Image 'ubuntu-24.04') 'Ubuntu runner normalization must retain the resolved major without relying on the automatic Matches variable.'
+Assert-Equal 'windows-2025' (ConvertTo-NervResolvedRunnerImage -Image 'windows-2025') 'Non-Ubuntu runner images must remain unchanged.'
 $missingTestedShaFailed = $false
 try { Get-NervGitHubRunnerProvenance -Text $runnerLogBase | Out-Null } catch { $missingTestedShaFailed = $true }
 Assert-True $missingTestedShaFailed 'Runner provenance without independent tested-SHA authority must fail closed.'
 $historicalCheckoutLog = "$runnerLogBase`n[command]/usr/bin/git log -1 --format=%H`n9dafb512c992b240222c8d9b5ada43e4bfc8ac3d"
 $historicalCheckout = Get-NervGitHubRunnerProvenance -Text $historicalCheckoutLog
 Assert-Equal '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' $historicalCheckout.testedSha 'Historical checkout log authority must resolve the tested SHA.'
+Assert-Equal 'ubuntu24@20260720.247.2' $historicalCheckout.runnerImage 'Runner provenance must retain normalized Ubuntu major plus resolved image version.'
 $ambiguousCheckoutFailed = $false
 try { Get-NervGitHubRunnerProvenance -Text "$historicalCheckoutLog`ntested-sha=1123456789abcdef0123456789abcdef01234567" | Out-Null } catch { $ambiguousCheckoutFailed = $true }
 Assert-True $ambiguousCheckoutFailed 'Conflicting checkout authorities must fail closed.'

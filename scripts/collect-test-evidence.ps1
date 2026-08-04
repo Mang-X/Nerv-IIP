@@ -105,7 +105,7 @@ try {
     }
     $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome -TopCount 10
     $summary | Add-Member -NotePropertyName collectionStatus -NotePropertyValue 'succeeded' -Force
-    Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -SourceTrxPaths $trxPaths -OutputDirectory $OutputDirectory
+    Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -OutputDirectory $OutputDirectory
     Write-NervEvidenceOutputPath -Path $OutputDirectory -ManifestPath $EvidencePathOutputFile
     if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $OutputDirectory 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }
     Write-Host "Test evidence: lane=$Lane passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) executed=$($summary.executed) attempt=$($summary.attemptClassification) timing=report-only"

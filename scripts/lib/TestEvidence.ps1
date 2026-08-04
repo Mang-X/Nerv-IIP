@@ -33,6 +33,25 @@ function Import-NervTestEvidencePolicy {
     return $policy
 }
 
+function Test-NervQuarantineRuleMetadata {
+    param(
+        [Parameter(Mandatory)] [object] $Rule,
+        [Parameter(Mandatory)] [DateTimeOffset] $AsOfUtc
+    )
+
+    $expiry = [DateTimeOffset]::MinValue
+    $validDate = [DateTimeOffset]::TryParseExact(
+        [string]$Rule.expiresOn,
+        'yyyy-MM-dd',
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::AssumeUniversal,
+        [ref]$expiry)
+    return -not [string]::IsNullOrWhiteSpace([string]$Rule.responsibilityIssue) -and
+        -not [string]::IsNullOrWhiteSpace([string]$Rule.exitCondition) -and
+        $validDate -and
+        $expiry.Date -ge $AsOfUtc.UtcDateTime.Date
+}
+
 function Get-NervSourceSkipAssignments {
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
@@ -151,16 +170,7 @@ function Test-NervTestEvidencePolicy {
             }
         }
         if ([string]$rule.classification -eq 'quarantined') {
-            $date = [DateTimeOffset]::MinValue
-            $validDate = [DateTimeOffset]::TryParseExact(
-                [string]$rule.expiresOn,
-                'yyyy-MM-dd',
-                [Globalization.CultureInfo]::InvariantCulture,
-                [Globalization.DateTimeStyles]::AssumeUniversal,
-                [ref]$date)
-            if ([string]::IsNullOrWhiteSpace([string]$rule.responsibilityIssue) -or
-                [string]::IsNullOrWhiteSpace([string]$rule.exitCondition) -or
-                -not $validDate -or $date.Date -lt $AsOfUtc.UtcDateTime.Date) {
+            if (-not (Test-NervQuarantineRuleMetadata -Rule $rule -AsOfUtc $AsOfUtc)) {
                 $violations.Add((New-NervTestEvidenceViolation 'illegal-quarantine' ([string]$rule.id) 'Quarantine requires issue, valid unexpired ISO date, and exit condition.'))
             }
         }
@@ -168,12 +178,12 @@ function Test-NervTestEvidencePolicy {
 
     $live = @(Get-NervSourceSkipAssignments -RepoRoot $RepoRoot)
     foreach ($assignment in $live) {
-        $matches = @($Policy.sources | Where-Object {
+        $matchedSources = @($Policy.sources | Where-Object {
             [string]$_.sourcePath -ceq [string]$assignment.sourcePath -and
             [int]$_.sourceOrdinal -eq [int]$assignment.sourceOrdinal -and
             [string]$assignment.sourceText -cmatch [string]$_.sourceReasonPattern
         })
-        if ($matches.Count -ne 1) {
+        if ($matchedSources.Count -ne 1) {
             $id = "$($assignment.sourcePath):$($assignment.sourceOrdinal)"
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' $id 'Source Skip assignment is missing, duplicated, or reason-mismatched.'))
         }
@@ -182,11 +192,11 @@ function Test-NervTestEvidencePolicy {
         if (@($Policy.rules | Where-Object { [string]$_.sourceId -ceq [string]$source.id }).Count -eq 0) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$source.id) 'Registered source is not referenced by any runtime rule.'))
         }
-        $matches = @($live | Where-Object {
+        $matchedAssignments = @($live | Where-Object {
             [string]$_.sourcePath -ceq [string]$source.sourcePath -and
             [int]$_.sourceOrdinal -eq [int]$source.sourceOrdinal
         })
-        if ($matches.Count -ne 1) {
+        if ($matchedAssignments.Count -ne 1) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$source.id) 'Registered source does not map to exactly one live Skip assignment.'))
         }
     }
@@ -486,30 +496,24 @@ function Get-NervTestEvidenceViolations {
     $violations = [Collections.Generic.List[object]]::new()
     $safeRecords = if ($null -eq $Records) { @() } else { @($Records) }
     foreach ($rule in @($Policy.rules | Where-Object classification -eq 'quarantined')) {
-        $expiry = [DateTimeOffset]::MinValue
-        $validDate = [DateTimeOffset]::TryParseExact(
-            [string]$rule.expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$expiry)
-        if ([string]::IsNullOrWhiteSpace([string]$rule.responsibilityIssue) -or
-            [string]::IsNullOrWhiteSpace([string]$rule.exitCondition) -or
-            -not $validDate -or $expiry.Date -lt [DateTimeOffset]::UtcNow.UtcDateTime.Date) {
+        if (-not (Test-NervQuarantineRuleMetadata -Rule $rule -AsOfUtc ([DateTimeOffset]::UtcNow))) {
             $violations.Add((New-NervTestEvidenceViolation 'illegal-quarantine' ([string]$rule.id) 'Quarantine metadata is missing, invalid, or expired.'))
         }
     }
 
     foreach ($record in @($safeRecords | Where-Object outcome -eq 'skipped')) {
-        $matches = @($Policy.rules | Where-Object {
+        $matchedRules = @($Policy.rules | Where-Object {
             @($_.testIdentities) -ccontains [string]$record.testName -and
             [string]$record.testName -cmatch [string]$_.testPattern -and
             [string]$record.skipReason -cmatch [string]$_.reasonPattern -and
             (Test-NervRuleApplies -Rule $_ -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
         })
-        if ($matches.Count -ne 1) {
-            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$record.testName) "Runtime skip matched $($matches.Count) applicable rules."))
+        if ($matchedRules.Count -ne 1) {
+            $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$record.testName) "Runtime skip matched $($matchedRules.Count) applicable rules."))
         }
         else {
-            $record | Add-Member -NotePropertyName skipClassification -NotePropertyValue ([string]$matches[0].classification) -Force
-            $record | Add-Member -NotePropertyName skipPolicyId -NotePropertyValue ([string]$matches[0].id) -Force
+            $record | Add-Member -NotePropertyName skipClassification -NotePropertyValue ([string]$matchedRules[0].classification) -Force
+            $record | Add-Member -NotePropertyName skipPolicyId -NotePropertyValue ([string]$matchedRules[0].id) -Force
         }
     }
 
@@ -722,7 +726,6 @@ function Write-NervTestEvidenceArtifacts {
     param(
         [Parameter(Mandatory)] [object[]] $Records,
         [Parameter(Mandatory)] [object] $Summary,
-        [Parameter(Mandatory)] [string[]] $SourceTrxPaths,
         [Parameter(Mandatory)] [string] $OutputDirectory
     )
 
@@ -947,19 +950,19 @@ function ConvertFrom-NervDotNetConsoleSummary {
     )
 
     $pattern = '(?im)^.*?(?:Passed|Failed)!\s*-\s*Failed:\s*(?<failed>\d+),\s*Passed:\s*(?<passed>\d+),\s*Skipped:\s*(?<skipped>\d+),\s*Total:\s*(?<total>\d+),\s*Duration:\s*(?:(?<minutes>\d+)\s*m\s*)?(?<value>\d+(?:\.\d+)?)\s*(?<unit>ms|s)\s*-\s*(?<assembly>[^\s]+\.dll)\s*\('
-    $matches = [regex]::Matches($Text, $pattern)
-    if ($matches.Count -eq 0) { throw 'No unambiguous dotnet test project summaries were found.' }
-    $assemblies = foreach ($match in $matches) {
-        $minutes = if ($match.Groups['minutes'].Success) { [double]$match.Groups['minutes'].Value } else { 0.0 }
-        $tailMilliseconds = if ($match.Groups['unit'].Value -ceq 'ms') { [double]$match.Groups['value'].Value } else { [double]$match.Groups['value'].Value * 1000.0 }
+    $summaryMatches = [regex]::Matches($Text, $pattern)
+    if ($summaryMatches.Count -eq 0) { throw 'No unambiguous dotnet test project summaries were found.' }
+    $assemblies = foreach ($summaryMatch in $summaryMatches) {
+        $minutes = if ($summaryMatch.Groups['minutes'].Success) { [double]$summaryMatch.Groups['minutes'].Value } else { 0.0 }
+        $tailMilliseconds = if ($summaryMatch.Groups['unit'].Value -ceq 'ms') { [double]$summaryMatch.Groups['value'].Value } else { [double]$summaryMatch.Groups['value'].Value * 1000.0 }
         [pscustomobject][ordered]@{
             lane = if ($RunMetadata.ContainsKey('lane')) { [string]$RunMetadata.lane } else { 'backend' }
-            assembly = $match.Groups['assembly'].Value
-            passed = [int]$match.Groups['passed'].Value
-            failed = [int]$match.Groups['failed'].Value
-            skipped = [int]$match.Groups['skipped'].Value
-            executed = [int]$match.Groups['passed'].Value + [int]$match.Groups['failed'].Value
-            total = [int]$match.Groups['total'].Value
+            assembly = $summaryMatch.Groups['assembly'].Value
+            passed = [int]$summaryMatch.Groups['passed'].Value
+            failed = [int]$summaryMatch.Groups['failed'].Value
+            skipped = [int]$summaryMatch.Groups['skipped'].Value
+            executed = [int]$summaryMatch.Groups['passed'].Value + [int]$summaryMatch.Groups['failed'].Value
+            total = [int]$summaryMatch.Groups['total'].Value
             elapsedMilliseconds = [double]($minutes * 60000.0 + $tailMilliseconds)
         }
     }
@@ -972,6 +975,14 @@ function ConvertFrom-NervDotNetConsoleSummary {
         lane = 'backend'
         assemblies = @($assemblies | Sort-Object assembly)
     }
+}
+
+function ConvertTo-NervResolvedRunnerImage {
+    param([Parameter(Mandatory)] [string] $Image)
+
+    $regexMatch = [regex]::Match($Image, '^ubuntu-(?<major>[0-9]{2})\.04$')
+    if ($regexMatch.Success) { return "ubuntu$($regexMatch.Groups['major'].Value)" }
+    return $Image
 }
 
 function Get-NervGitHubRunnerProvenance {
@@ -993,7 +1004,7 @@ function Get-NervGitHubRunnerProvenance {
     if ([string]::IsNullOrWhiteSpace($image) -or [string]::IsNullOrWhiteSpace($imageVersion) -or -not $sdkMatch.Success) {
         throw 'Actions log does not contain resolved runner image/version and exact dotnet SDK provenance.'
     }
-    $normalizedImage = if ($image -match '^ubuntu-(?<major>[0-9]{2})\.04$') { "ubuntu$($Matches['major'])" } else { $image }
+    $normalizedImage = ConvertTo-NervResolvedRunnerImage -Image $image
     $runnerOs = if ($image.StartsWith('ubuntu-', [StringComparison]::Ordinal)) { 'Linux' }
         elseif ($image.StartsWith('windows-', [StringComparison]::Ordinal)) { 'Windows' }
         elseif ($image.StartsWith('macos-', [StringComparison]::Ordinal)) { 'macOS' }
