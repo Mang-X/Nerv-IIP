@@ -15,6 +15,14 @@ $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
 
+$repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
+$initialRepoCommandLogs = @(
+    if (Test-Path $repoScriptLogRoot) {
+        Get-ChildItem $repoScriptLogRoot -Directory -Filter 'man-661-*' |
+            ForEach-Object { Get-ChildItem $_.FullName -Directory | ForEach-Object FullName }
+    }
+)
+
 $collectorSource = Get-Content (Join-Path $repoRoot 'scripts/collect-test-evidence.ps1') -Raw
 $baselineGeneratorSource = Get-Content (Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1') -Raw
 
@@ -28,6 +36,27 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
 
 function Assert-Violation([object[]] $Violations, [string] $Code) {
     Assert-True (@($Violations | Where-Object code -eq $Code).Count -gt 0) "Expected violation '$Code'."
+}
+
+function Invoke-TestPwshScript {
+    param(
+        [Parameter(Mandatory)] [string] $ScriptPath,
+        [Parameter(Mandatory)] [string] $LogRoot,
+        [string[]] $Arguments = @(),
+        [string] $WorkingDirectory = (Get-Location).Path,
+        [int] $TimeoutSeconds = 600,
+        [string] $Name = 'pwsh-script'
+    )
+
+    $safeName = [regex]::Replace($Name, '[^A-Za-z0-9_.-]+', '-').Trim('-')
+    $logDirectory = Join-Path $LogRoot "command-logs/$safeName-$([Guid]::NewGuid().ToString('N'))"
+    Invoke-NativeCommandWithTimeout `
+        -Command 'pwsh' `
+        -Arguments (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath) + $Arguments) `
+        -WorkingDirectory $WorkingDirectory `
+        -TimeoutSeconds $TimeoutSeconds `
+        -Name $Name `
+        -LogDirectory $logDirectory
 }
 
 Assert-True (-not $collectorSource.Contains('TestOnly')) 'Production collector must expose no test-only authority replacement parameter.'
@@ -331,7 +360,7 @@ try {
         $changed = ($summaryTemplate | ConvertTo-Json -Depth 20 | ConvertFrom-Json -AsHashtable); $changed[$invalidCase.Field] = $invalidCase.Value; $changed.lane = 'connector-host'; $changed.jobName = 'Connector Host Tests'; $changed.artifactName = 'connector-evidence'
         Write-NervUtf8NoBom (Join-Path $caseRoot 'b/summary.json') (($changed | ConvertTo-Json -Depth 20) + "`n")
         $caseFailed = $false
-        try { Invoke-PwshScript -ScriptPath $baselineGenerator -WorkingDirectory $repoRoot -Name "man-661-baseline-$($invalidCase.Name)" -Arguments @('-EvidenceRoot',$caseRoot,'-OutputPath',(Join-Path $caseRoot 'baseline.json')) | Out-Null } catch { $caseFailed = $true }
+        try { Invoke-TestPwshScript -ScriptPath $baselineGenerator -LogRoot $invalidBaselineRoot -WorkingDirectory $repoRoot -Name "man-661-baseline-$($invalidCase.Name)" -Arguments @('-EvidenceRoot',$caseRoot,'-OutputPath',(Join-Path $caseRoot 'baseline.json')) | Out-Null } catch { $caseFailed = $true }
         Assert-True $caseFailed "Baseline provenance case '$($invalidCase.Name)' must fail."
     }
 
@@ -372,7 +401,7 @@ try {
     $successRaw = Join-Path $collectorRoot 'success-raw'
     [IO.Directory]::CreateDirectory($successRaw) | Out-Null
     Copy-Item (Join-Path $fixtures 'connector-results.trx') $successRaw
-    Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
+    Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
         '-OutputDirectory', $successOut, '-WorkflowRunId', 'fixture-success', '-RunAttempt', '1',
         '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
@@ -410,7 +439,7 @@ try {
         $adversarialStep = Join-Path $collectorRoot "$($adversarial.Name)-step.md"
         $adversarialManifest = Join-Path $collectorRoot "$($adversarial.Name)-output.txt"
         $adversarialFailed = $false
-        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-adversarial-$($adversarial.Name)" -Arguments @('-Lane',$adversarial.Lane,'-SelectedLanes',$adversarial.Selected,'-ResultsDirectory',$successRaw,'-OutputDirectory',$adversarialOut,'-WorkflowRunId',$adversarial.Run,'-RunAttempt','1','-HeadSha','Authorization=Bearer head-secret','-TestedSha','Authorization=Bearer tested-secret','-RunnerOs','Linux','-Repository',$adversarial.Repository,'-JobName',$adversarial.Job,'-StepSummaryPath',$adversarialStep,'-EvidencePathOutputFile',$adversarialManifest) | Out-Null } catch { $adversarialFailed = $true }
+        try { Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name "man-661-adversarial-$($adversarial.Name)" -Arguments @('-Lane',$adversarial.Lane,'-SelectedLanes',$adversarial.Selected,'-ResultsDirectory',$successRaw,'-OutputDirectory',$adversarialOut,'-WorkflowRunId',$adversarial.Run,'-RunAttempt','1','-HeadSha','Authorization=Bearer head-secret','-TestedSha','Authorization=Bearer tested-secret','-RunnerOs','Linux','-Repository',$adversarial.Repository,'-JobName',$adversarial.Job,'-StepSummaryPath',$adversarialStep,'-EvidencePathOutputFile',$adversarialManifest) | Out-Null } catch { $adversarialFailed = $true }
         Assert-True $adversarialFailed 'Adversarial identity input must fail.'
         $adversarialRetained = [string]::Join("`n", @(Get-ChildItem $adversarialOut -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw })) + (Get-Content $adversarialStep -Raw) + (Get-Content $adversarialManifest -Raw)
         foreach ($sentinel in @('lane-secret','run-secret','repo-secret','job-secret','violation-secret','head-secret','tested-secret')) { Assert-True (-not $adversarialRetained.Contains($sentinel)) "Failure bundle leaked '$sentinel'." }
@@ -422,7 +451,7 @@ try {
     $conflictManifest = Join-Path $collectorRoot 'writer-conflict-output.txt'
     $conflictStep = Join-Path $collectorRoot 'writer-conflict-step.md'
     $conflictFailed = $false
-    try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-writer-conflict' -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$successRaw,'-OutputDirectory',$conflictOut,'-WorkflowRunId','writer-conflict','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$conflictStep,'-EvidencePathOutputFile',$conflictManifest) | Out-Null } catch { $conflictFailed = $true }
+    try { Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-writer-conflict' -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$successRaw,'-OutputDirectory',$conflictOut,'-WorkflowRunId','writer-conflict','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$conflictStep,'-EvidencePathOutputFile',$conflictManifest) | Out-Null } catch { $conflictFailed = $true }
     Assert-True $conflictFailed 'Writer conflict must preserve nonzero collector status.'
     Assert-Equal 'preserve-me' (Get-Content (Join-Path $conflictOut 'unrelated.txt') -Raw) 'Writer conflict must not overwrite unrelated data.'
     $conflictEvidencePath = ((Get-Content $conflictManifest -Raw).Trim() -replace '^evidence-path=', '')
@@ -439,7 +468,7 @@ try {
         $failureOut = Join-Path $collectorRoot "$($failureCase.Name)-out"
         $failureSummary = Join-Path $collectorRoot "$($failureCase.Name)-step.md"
         $caseFailed = $false
-        try { Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name "man-661-collector-$($failureCase.Name)" -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$failureCase.Results,'-OutputDirectory',$failureOut,'-WorkflowRunId','fixture-failure','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$failureSummary) | Out-Null }
+        try { Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name "man-661-collector-$($failureCase.Name)" -Arguments @('-Lane','backend','-SelectedLanes','backend','-ResultsDirectory',$failureCase.Results,'-OutputDirectory',$failureOut,'-WorkflowRunId','fixture-failure','-RunAttempt','1','-HeadSha','0123456789abcdef0123456789abcdef01234567','-TestedSha','0123456789abcdef0123456789abcdef01234567','-RunnerOs','Linux','-StepSummaryPath',$failureSummary) | Out-Null }
         catch { $caseFailed = $true }
         Assert-True $caseFailed "$($failureCase.Name) collector input must exit nonzero."
         foreach ($required in @('tests.jsonl','summary.json','summary.md','diagnostics.log')) { Assert-True (Test-Path (Join-Path $failureOut $required)) "$($failureCase.Name) failure bundle missing '$required'." }
@@ -451,7 +480,7 @@ try {
     Copy-Item (Join-Path $fixtures 'unregistered-skip.trx') $badRaw
     $badFailed = $false
     try {
-        Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-unregistered' -Arguments @(
+        Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-unregistered' -Arguments @(
             '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $badRaw,
             '-OutputDirectory', (Join-Path $collectorRoot 'bad'), '-WorkflowRunId', 'fixture-bad', '-RunAttempt', '1',
             '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
@@ -468,7 +497,7 @@ try {
     Copy-Item (Join-Path $fixtures 'postgres-all-skipped.trx') $postgresRaw
     $postgresFailed = $false
     try {
-        Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-zero' -Arguments @(
+        Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-zero' -Arguments @(
             '-Lane', 'postgres', '-SelectedLanes', 'postgres', '-ResultsDirectory', $postgresRaw,
             '-OutputDirectory', (Join-Path $collectorRoot 'postgres'), '-WorkflowRunId', 'fixture-postgres', '-RunAttempt', '1',
             '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux'
@@ -482,7 +511,7 @@ try {
     [IO.Directory]::CreateDirectory($rerunRaw) | Out-Null
     Copy-Item (Join-Path $fixtures 'connector-results.trx') $rerunRaw
     $rerunOut = Join-Path $collectorRoot 'rerun-self-supplied'
-    Invoke-PwshScript -ScriptPath $collector -WorkingDirectory $repoRoot -Name 'man-661-collector-rerun' -Arguments @(
+    Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-rerun' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $rerunRaw,
         '-OutputDirectory', $rerunOut, '-WorkflowRunId', 'fixture-rerun', '-RunAttempt', '2',
         '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '89abcdef0123456789abcdef0123456789abcdef', '-RunnerOs', 'Linux', '-CurrentTestOutcome', 'success'
@@ -572,5 +601,16 @@ $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/scrip
 foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
+
+$newRepoCommandLogs = @(
+    if (Test-Path $repoScriptLogRoot) {
+        Get-ChildItem $repoScriptLogRoot -Directory -Filter 'man-661-*' |
+            ForEach-Object { Get-ChildItem $_.FullName -Directory | ForEach-Object FullName } |
+            Where-Object { $initialRepoCommandLogs -cnotcontains $_ }
+    }
+)
+Assert-Equal 0 $newRepoCommandLogs.Count 'Focused evidence suite must keep owned command logs under its temporary fixture roots.'
+Assert-True (-not (Test-Path $invalidBaselineRoot)) 'Focused evidence suite must clean its baseline fixture and command-log root in finally.'
+Assert-True (-not (Test-Path $collectorRoot)) 'Focused evidence suite must clean its collector fixture and command-log root in finally.'
 
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."
