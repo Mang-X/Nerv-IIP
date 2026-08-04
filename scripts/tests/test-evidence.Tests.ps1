@@ -123,7 +123,16 @@ $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
 Assert-Equal 'environment-gated' ($records | Where-Object outcome -eq 'skipped').skipClassification 'Matched skip classification must be retained for aggregation.'
 Assert-Equal 'postgres-gated' ($records | Where-Object outcome -eq 'skipped').skipPolicyId 'Matched skip policy entry must be retained for aggregation.'
-$classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $run -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+$summaryRun = $run.Clone()
+$summaryRun.selectedLanes = @('backend')
+$classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 1 @($classifiedSummary.selectedLanes).Count 'Summary must retain the selected lane selectors.'
+Assert-Equal 'backend' $classifiedSummary.selectedLanes[0] 'Summary selected lane selector mismatch.'
+Assert-Equal 1 @($classifiedSummary.selectedLaneResults).Count 'Summary must emit one logical selected-lane result.'
+Assert-Equal 'backend' $classifiedSummary.selectedLaneResults[0].baseLane 'Selected-lane result must identify the logical base lane.'
+Assert-Equal 'backend-shard-1' $classifiedSummary.selectedLaneResults[0].observedLanes[0] 'Selected-lane result must identify the observed physical lane.'
+Assert-Equal 2 $classifiedSummary.selectedLaneResults[0].executed 'Selected-lane result executed count mismatch.'
+Assert-Equal 'pass' $classifiedSummary.selectedLaneResults[0].gateResult 'Selected-lane result gate status mismatch.'
 Assert-Equal 1 @($classifiedSummary.skipReasons).Count 'Summary must retain one exact nonempty skip-reason group.'
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' $classifiedSummary.skipReasons[0].reason 'Summary skip reason value mismatch.'
 Assert-Equal 1 $classifiedSummary.skipReasons[0].count 'Summary skip reason count mismatch.'
@@ -167,6 +176,13 @@ Assert-Violation $violations 'zero-execution'
 
 $backendEmptyViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend-shard-1') -RunnerOs 'Linux'
 Assert-True (-not (@($backendEmptyViolations | ForEach-Object code) -contains 'zero-execution')) 'Ordinary backend shard zero execution is outside the MAN-661 real-dependency gate.'
+$currentShard = @([pscustomobject]@{ lane = 'postgres-shard-1'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
+$baseSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
+Assert-True (-not (@($baseSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A logical base-lane selection must recognize execution from its current physical shard.'
+$siblingSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1', 'postgres-shard-2') -RunnerOs 'Linux'
+Assert-True (-not (@($siblingSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A single-lane collector must not report an unobserved selected sibling as zero execution.'
+$emptyShardViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
+Assert-Violation $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $shardViolations = Get-NervTestEvidenceViolations -Records $otherShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
 Assert-Violation $shardViolations 'zero-execution'
@@ -292,7 +308,11 @@ $shardedBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-2'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 20 }) }
 ) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal 2 @($shardedBaseline.assemblies).Count 'Baseline identity must be lane plus assembly, not assembly alone.'
-Assert-True (-not ($classifiedSummary.baseline.assemblies[0].available)) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
+$committedProjectBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+$incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline $committedProjectBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
+Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.unavailableReason 'Incompatible baseline must expose a structured unavailable reason.'
+Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.assemblies[0].unavailableReason 'Each unavailable assembly comparison must expose its reason.'
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -363,15 +383,24 @@ try {
         '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
     ) | Out-Null
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) { Assert-True (Test-Path (Join-Path $successOut $required)) "Collector missing '$required'." }
+    $successSummary = Get-Content (Join-Path $successOut 'summary.json') -Raw | ConvertFrom-Json
+    Assert-Equal 'backend' $successSummary.selectedLanes[0] 'Collector summary must retain the selected lane selector.'
+    Assert-Equal 'backend' $successSummary.selectedLaneResults[0].baseLane 'Collector summary must emit the selected logical lane result.'
+    Assert-Equal 1 $successSummary.selectedLaneResults[0].executed 'Collector selected-lane result executed count mismatch.'
+    Assert-Equal 'incompatible-granularity-or-duration-metric' $successSummary.baseline.unavailableReason 'Committed project baseline must remain explicitly unavailable for TRX comparison.'
     $successMarkdown = Get-Content (Join-Path $successOut 'summary.md') -Raw
     foreach ($exact in @(
+        '## Selected lane results',
+        '| backend | backend | backend | 1 | 0 | 0 | 1 | 1 | pass |',
         '| Lane | Assembly | Passed | Failed | Skipped | Executed | Total | Test duration (ms) | TRX elapsed (ms) |',
         '| backend | Nerv.IIP.Connector.Sample.Tests.dll | 1 | 0 | 0 | 1 | 1 | 10 | 20 |',
         'Retained artifact: fixture-artifact, retention=14 days, location=artifact://fixture-artifact/',
         'Baseline source: https://github.com/Mang-X/Nerv-IIP/actions/runs/30819675007',
-        'Privacy redactions: 0', 'Assembly backend/Nerv.IIP.Connector.Sample.Tests.dll: 20ms elapsed',
+        'Privacy redactions: 0', 'Baseline comparison: unavailable (incompatible-granularity-or-duration-metric)', 'Assembly backend/Nerv.IIP.Connector.Sample.Tests.dll: 20ms elapsed',
         'Test Fixture.ConnectorTests.connector: 10ms', '## Skip reasons', '- None.'
     )) { Assert-True $successMarkdown.Contains($exact) "Job Summary is missing exact value '$exact'." }
+    Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%')) 'Unavailable baseline comparison must not render empty metric placeholders.'
+    Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)')) 'Each incompatible assembly comparison must render its unavailable reason.'
 
     foreach ($adversarial in @(
         @{ Name = 'identity'; Lane = 'Authorization=Bearer lane-secret'; Selected = 'backend'; Run = 'Authorization=Bearer run-secret'; Repository = 'Authorization=Bearer repo-secret'; Job = 'Authorization=Bearer job-secret' },
@@ -482,6 +511,14 @@ finally {
 }
 
 $workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
+$compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
+$reviewWiringGaps = [Collections.Generic.List[string]]::new()
+if (-not $collectorSource.Contains('#   Category: check, generate')) { $reviewWiringGaps.Add('collector composite category') }
+if (-not $workflow.Contains('- name: Run test evidence contract tests') -or -not $workflow.Contains('run: ./scripts/tests/test-evidence.Tests.ps1')) { $reviewWiringGaps.Add('Script Governance CI runner') }
+if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1')) { $reviewWiringGaps.Add('compat-fast runner') }
+if ($workflow.Contains('-HeadBranch ${{ github.head_ref || github.ref_name }}')) { $reviewWiringGaps.Add('direct HeadBranch expression interpolation') }
+if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}') -or -not $workflow.Contains('-HeadBranch $env:HEAD_BRANCH')) { $reviewWiringGaps.Add('HeadBranch environment transport') }
+Assert-Equal 0 $reviewWiringGaps.Count "Review wiring gaps remain: $([string]::Join(', ', $reviewWiringGaps))"
 Assert-True ($workflow.Contains('actions: read')) 'Rerun lookup needs read-only Actions permission.'
 Assert-True ($workflow.Contains('GH_TOKEN: ${{ github.token }}')) 'Rerun lookup must receive the read-only workflow token.'
 Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}')) 'Backend native test outcome must flow into rerun classification.'
@@ -524,10 +561,16 @@ foreach ($requiredText in @(
     'unregistered-skip', 'illegal-quarantine', 'zero-execution',
     'backend-shard-1', 'MAN-669', 'recovered-after-rerun', 'report-only',
     'continue-on-error', 'Nerv-IIP Platform CI/Test Governance', 'MAN-663',
+    'selectedLaneResults', 'incompatible-granularity-or-duration-metric', 'single-lane collector',
+    '2000-01-01T00:00:00Z', 'Actions job log',
     'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
     'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d'
 )) {
     Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
+}
+$scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
+foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
+    Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
 
 Write-Host "PASS: MAN-661 policy schema; registered source assignments=$($liveAssignments.Count)."

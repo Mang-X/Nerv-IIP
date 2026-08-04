@@ -59,6 +59,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: >-
           ./scripts/collect-test-evidence.ps1
           -Lane backend
@@ -74,7 +75,7 @@ jobs:
           -JobName "Backend Tests"
           -CurrentTestOutcome ${{ steps.backend-tests.outcome }}
           -Event ${{ github.event_name }}
-          -HeadBranch ${{ github.head_ref || github.ref_name }}
+          -HeadBranch $env:HEAD_BRANCH
           -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           -RunnerImage ${{ steps.backend-evidence-environment.outputs.runner-image }}
           -DotnetSdk ${{ steps.backend-evidence-environment.outputs.dotnet-sdk }}
@@ -178,6 +179,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: >-
           ./scripts/collect-test-evidence.ps1
           -Lane connector-host
@@ -193,7 +195,7 @@ jobs:
           -JobName "Connector Host Tests"
           -CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}
           -Event ${{ github.event_name }}
-          -HeadBranch ${{ github.head_ref || github.ref_name }}
+          -HeadBranch $env:HEAD_BRANCH
           -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           -RunnerImage ${{ steps.connector-evidence-environment.outputs.runner-image }}
           -DotnetSdk ${{ steps.connector-evidence-environment.outputs.dotnet-sdk }}
@@ -287,3 +289,7 @@ jobs:
       - name: Run script governance check
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      - name: Run test evidence contract tests
+        shell: pwsh
+        run: ./scripts/tests/test-evidence.Tests.ps1

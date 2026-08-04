@@ -513,20 +513,34 @@ function Get-NervTestEvidenceViolations {
         }
     }
 
-    foreach ($selectedLane in $SelectedLanes) {
+    $selectedLaneContracts = [Collections.Generic.List[object]]::new()
+    foreach ($selectedLane in @($SelectedLanes | Sort-Object -Unique)) {
         $laneMatches = @($Policy.lanes | Where-Object { $selectedLane -cmatch [string]$_.namePattern })
         if ($laneMatches.Count -ne 1) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' $selectedLane "Selected lane matched $($laneMatches.Count) lane contracts."))
             continue
         }
-        if ([bool]$laneMatches[0].realDependency) {
-            $executed = @($safeRecords | Where-Object {
-                $_.outcome -in @('passed', 'failed') -and
-                [string]$_.lane -ceq $selectedLane
-            }).Count
-            if ($executed -eq 0) {
-                $violations.Add((New-NervTestEvidenceViolation 'zero-execution' $selectedLane 'Selected real-dependency lane executed no passed or failed tests.'))
+        $selectedLaneContracts.Add([pscustomobject]@{
+            selectedLane = $selectedLane
+            baseLane = ($selectedLane -replace '-shard-[1-9][0-9]*$', '')
+            realDependency = [bool]$laneMatches[0].realDependency
+        })
+    }
+    foreach ($laneGroup in @($selectedLaneContracts | Group-Object baseLane)) {
+        if (-not [bool]$laneGroup.Group[0].realDependency) { continue }
+        $selectors = @($laneGroup.Group.selectedLane)
+        $baseLane = [string]$laneGroup.Name
+        $executed = @($safeRecords | Where-Object {
+            if ($_.outcome -notin @('passed', 'failed')) { return $false }
+            $recordLane = [string]$_.lane
+            if ($selectors.Count -eq 1 -and [string]$selectors[0] -cne $baseLane) {
+                return $recordLane -ceq [string]$selectors[0]
             }
+            return ($recordLane -replace '-shard-[1-9][0-9]*$', '') -ceq $baseLane
+        }).Count
+        if ($executed -eq 0) {
+            $violationId = if ($selectors.Count -eq 1) { [string]$selectors[0] } else { $baseLane }
+            $violations.Add((New-NervTestEvidenceViolation 'zero-execution' $violationId 'Selected real-dependency lane executed no passed or failed tests.'))
         }
     }
     @($violations)
@@ -553,6 +567,25 @@ function New-NervTestEvidenceSummary {
     $passed = @($safeRecords | Where-Object outcome -eq 'passed').Count
     $failed = @($safeRecords | Where-Object outcome -eq 'failed').Count
     $skipped = @($safeRecords | Where-Object outcome -eq 'skipped').Count
+    [string[]] $selectedLanes = if ($RunMetadata.ContainsKey('selectedLanes')) { @($RunMetadata.selectedLanes | Sort-Object -Unique) } else { @([string]$RunMetadata.lane) }
+    $selectedLaneResults = @($selectedLanes | Group-Object { $_ -replace '-shard-[1-9][0-9]*$', '' } | Sort-Object Name | ForEach-Object {
+        $baseLane = [string]$_.Name
+        [string[]] $selectors = @($_.Group | Sort-Object -Unique)
+        $laneRecords = @($safeRecords | Where-Object { ([string]$_.lane -replace '-shard-[1-9][0-9]*$', '') -ceq $baseLane })
+        $zeroExecution = @($safeViolations | Where-Object { $_.code -ceq 'zero-execution' -and ([string]$_.id -ceq $baseLane -or $selectors -ccontains [string]$_.id) }).Count -gt 0
+        $invalidSelection = @($safeViolations | Where-Object { $_.code -ceq 'unregistered-skip' -and $selectors -ccontains [string]$_.id }).Count -gt 0
+        [pscustomobject][ordered]@{
+            baseLane = $baseLane
+            selectors = $selectors
+            observedLanes = [string[]]@($laneRecords | ForEach-Object { [string]$_.lane } | Sort-Object -Unique)
+            passed = @($laneRecords | Where-Object outcome -eq 'passed').Count
+            failed = @($laneRecords | Where-Object outcome -eq 'failed').Count
+            skipped = @($laneRecords | Where-Object outcome -eq 'skipped').Count
+            executed = @($laneRecords | Where-Object { $_.outcome -in @('passed', 'failed') }).Count
+            total = $laneRecords.Count
+            gateResult = if ($zeroExecution) { 'zero-execution' } elseif ($invalidSelection) { 'invalid-selection' } else { 'pass' }
+        }
+    })
     $trxRuns = if ($RunMetadata.ContainsKey('trxRuns')) { @($RunMetadata.trxRuns) } else { @() }
     $assemblies = @($safeRecords | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)
@@ -572,21 +605,35 @@ function New-NervTestEvidenceSummary {
         }
     })
     $baselineAssemblies = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'assemblies') { @($Baseline.assemblies) } else { @() }
+    $baselineUnavailableReason = if ($null -eq $Baseline) {
+        'baseline-not-provided'
+    }
+    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'granularity') -or -not ($Baseline.PSObject.Properties.Name -contains 'durationMetric')) {
+        'baseline-metadata-incomplete'
+    }
+    elseif ([string]$Baseline.granularity -cne 'test' -or [string]$Baseline.durationMetric -cne 'trx-elapsed') {
+        'incompatible-granularity-or-duration-metric'
+    }
+    else { $null }
     $deltas = @($assemblies | ForEach-Object {
         $current = $_
-        $compatible = $null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'granularity' -and $Baseline.PSObject.Properties.Name -contains 'durationMetric' -and [string]$Baseline.granularity -ceq 'test' -and [string]$Baseline.durationMetric -ceq 'trx-elapsed'
+        $compatible = $null -eq $baselineUnavailableReason
         [object[]]$previous = if ($compatible) { @($baselineAssemblies | Where-Object { [string]$_.lane -ceq $current.lane -and [string]$_.assembly -ceq $current.assembly } | Select-Object -First 1) } else { @() }
         $baselineDuration = if (@($previous).Count -eq 1) { [double]@($previous)[0].elapsedMilliseconds } else { $null }
+        $unavailableReason = if ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } elseif (@($previous).Count -ne 1) { 'lane-assembly-not-in-baseline' } elseif ($baselineDuration -le 0) { 'baseline-duration-not-positive' } else { $null }
         [pscustomobject][ordered]@{
             lane = $current.lane
             assembly = $current.assembly
             metric = 'trx-elapsed'
-            available = @($previous).Count -eq 1
+            available = $null -eq $unavailableReason
+            unavailableReason = $unavailableReason
             baselineDurationMilliseconds = $baselineDuration
             currentDurationMilliseconds = [double]$current.elapsedMilliseconds
-            deltaPercent = if ($null -ne $baselineDuration -and $baselineDuration -gt 0) { [Math]::Round((([double]$current.elapsedMilliseconds - $baselineDuration) / $baselineDuration) * 100, 2) } else { $null }
+            deltaPercent = if ($null -eq $unavailableReason) { [Math]::Round((([double]$current.elapsedMilliseconds - $baselineDuration) / $baselineDuration) * 100, 2) } else { $null }
         }
     })
+    $baselineAvailable = @($deltas | Where-Object available).Count -gt 0
+    $summaryBaselineUnavailableReason = if ($baselineAvailable) { $null } elseif ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } else { 'no-compatible-lane-assembly' }
     $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }
@@ -605,6 +652,8 @@ function New-NervTestEvidenceSummary {
         headSha = [string]$RunMetadata.headSha
         testedSha = [string]$RunMetadata.testedSha
         lane = [string]$RunMetadata.lane
+        selectedLanes = $selectedLanes
+        selectedLaneResults = $selectedLaneResults
         repository = if ($RunMetadata.ContainsKey('repository')) { [string]$RunMetadata.repository } else { '' }
         event = if ($RunMetadata.ContainsKey('event')) { [string]$RunMetadata.event } else { '' }
         headBranch = if ($RunMetadata.ContainsKey('headBranch')) { [string]$RunMetadata.headBranch } else { '' }
@@ -636,6 +685,8 @@ function New-NervTestEvidenceSummary {
         redactionCount = $(if ($safeRecords.Count -gt 0) { [int](($safeRecords | Measure-Object redactionCount -Sum).Sum) } else { 0 }) + @($safeRecords | Where-Object { $_.outcome -eq 'skipped' -and (-not ($_.PSObject.Properties.Name -contains 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$_.skipPolicyId)) }).Count
         baseline = [pscustomobject][ordered]@{
             enforcement = 'report-only'
+            available = $baselineAvailable
+            unavailableReason = $summaryBaselineUnavailableReason
             source = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'source') { $Baseline.source } else { $null }
             assemblies = $deltas
         }
@@ -716,14 +767,26 @@ function Write-NervTestEvidenceArtifacts {
             "# Test evidence: $($Summary.lane)",
             '',
             "- Run: $($Summary.workflowRunId), attempt $($Summary.runAttempt), head $($Summary.headSha), tested $($Summary.testedSha)",
+            "- Selected lanes: $([string]::Join(', ', @($Summary.selectedLanes)))",
             "- Counts: passed=$($Summary.passed), failed=$($Summary.failed), skipped=$($Summary.skipped), executed=$($Summary.executed), total=$($Summary.total)",
             "- Duration: summed tests=$($Summary.testDurationMilliseconds)ms, TRX elapsed=$($Summary.trxElapsedMilliseconds)ms",
             "- Attempt: $($Summary.attemptClassification) (prior: $($Summary.priorAttemptStatus))",
             "- Provenance: job=$($Summary.jobName), outcome=$($Summary.currentTestOutcome), runner=$($Summary.runnerOs)/$($Summary.runnerImage), dotnet=$($Summary.dotnetSdk)",
             "- Baseline source: $baselineSource",
+            $(if ([bool]$Summary.baseline.available) { '- Baseline comparison: available' } else { "- Baseline comparison: unavailable ($($Summary.baseline.unavailableReason))" }),
             "- Privacy redactions: $($Summary.redactionCount)",
             '- Timing and baseline deltas: report-only',
             "- Retained artifact: $($Summary.artifactName), retention=$($Summary.retentionDays) days, location=$($Summary.retentionLocation); tests.jsonl, summary.json, summary.md, diagnostics.log, normalized trx/",
+            '',
+            '## Selected lane results',
+            '',
+            '| Logical lane | Selectors | Observed lanes | Passed | Failed | Skipped | Executed | Total | Gate result |',
+            '|---|---|---|---:|---:|---:|---:|---:|---|'
+        )
+        foreach ($laneResult in @($Summary.selectedLaneResults)) {
+            $markdown += "| $($laneResult.baseLane) | $([string]::Join(', ', @($laneResult.selectors))) | $([string]::Join(', ', @($laneResult.observedLanes))) | $($laneResult.passed) | $($laneResult.failed) | $($laneResult.skipped) | $($laneResult.executed) | $($laneResult.total) | $($laneResult.gateResult) |"
+        }
+        $markdown += @(
             '',
             '## Assemblies',
             '',
@@ -779,7 +842,12 @@ function Write-NervTestEvidenceArtifacts {
             ''
         )
         foreach ($delta in @($Summary.baseline.assemblies)) {
-            $markdown += "- $($delta.assembly): current=$($delta.currentDurationMilliseconds)ms, baseline=$($delta.baselineDurationMilliseconds)ms, delta=$($delta.deltaPercent)%"
+            if ([bool]$delta.available) {
+                $markdown += "- $($delta.assembly): current=$($delta.currentDurationMilliseconds)ms, baseline=$($delta.baselineDurationMilliseconds)ms, delta=$($delta.deltaPercent)%"
+            }
+            else {
+                $markdown += "- $($delta.assembly): current=$($delta.currentDurationMilliseconds)ms, unavailable ($($delta.unavailableReason))"
+            }
         }
         Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') ((Protect-NervTestEvidenceText ([string]::Join("`n", $markdown))) + "`n")
         Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ''

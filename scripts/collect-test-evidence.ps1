@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: check, generate
 #   SideEffects:
 #     - Reads VSTest TRX, policy, baseline, and optional prior GitHub Actions attempt metadata
 #   Writes:
@@ -50,6 +50,7 @@ $runMetadata = @{
     headSha = $HeadSha
     testedSha = $TestedSha
     lane = $Lane
+    selectedLanes = @($SelectedLanes)
     repository = $Repository
     event = $Event
     headBranch = $HeadBranch
