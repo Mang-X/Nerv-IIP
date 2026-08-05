@@ -129,8 +129,6 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
                 new TestInternalServiceTokenProvider("internal-telemetry-token"));
         });
 
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
-
     private static bool PropertyMatches(string actual, string expected) =>
         string.Equals(
             actual.Replace(" ", string.Empty, StringComparison.Ordinal),

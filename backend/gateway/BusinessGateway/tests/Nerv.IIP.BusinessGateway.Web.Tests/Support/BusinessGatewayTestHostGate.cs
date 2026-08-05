@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -158,15 +157,5 @@ internal static class BusinessGatewayTestHostGate
             Interlocked.Decrement(ref _requestsInFlight);
             Permits.Release();
         }
-    }
-
-    /// <summary>
-    /// Applies the scope header used by <see cref="BusinessGatewayTestHost"/> to route downstream
-    /// fakes to the owning lease.
-    /// </summary>
-    internal static void ApplyScopeHeader(HttpHeaders headers, string scopeId)
-    {
-        headers.Remove(BusinessGatewayTestHost.ScopeHeader);
-        headers.Add(BusinessGatewayTestHost.ScopeHeader, scopeId);
     }
 }

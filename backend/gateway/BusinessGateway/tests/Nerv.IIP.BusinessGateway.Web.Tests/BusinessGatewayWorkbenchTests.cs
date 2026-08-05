@@ -282,8 +282,6 @@ public sealed class BusinessGatewayWorkbenchTests
             configureServices,
             BusinessGatewayTestHostProfile.ServiceBaseUrls);
 
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
-
     private sealed class NullPrincipalNotificationAuthorizationClient : IBusinessGatewayAuthorizationClient
     {
         public Task<BusinessGatewayAuthorizationResult> CheckAsync(
