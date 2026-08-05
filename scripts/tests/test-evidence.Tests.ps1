@@ -14,6 +14,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
+. (Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1')
 
 $repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
 $initialRepoCommandLogs = @(
@@ -34,8 +35,13 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
-function Assert-Violation([object[]] $Violations, [string] $Code) {
-    Assert-True (@($Violations | Where-Object code -eq $Code).Count -gt 0) "Expected violation '$Code'."
+# Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
+# under test is bleeding into its neighbours, and a containment assertion cannot see that.
+function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
+    $actual = @($Violations | ForEach-Object code | Sort-Object -Unique) -join ','
+    $expected = @($Codes | Sort-Object -Unique) -join ','
+    $callerLine = (Get-PSCallStack)[1].ScriptLineNumber
+    Assert-True ($actual -ceq $expected) "Violation code set mismatch at line $callerLine. Expected=[$expected] Actual=[$actual]"
 }
 
 function Invoke-TestPwshScript {
@@ -73,7 +79,9 @@ Assert-Equal 1 $policy.schemaVersion 'Policy schema version must be one.'
 
 $illegal = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-illegal-quarantine.json')
 $violations = Test-NervTestEvidencePolicy -Policy $illegal -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
-Assert-Violation $violations 'illegal-quarantine'
+# The fixture's rule is both illegally quarantined and not closed over a real source skip, so both
+# codes are expected; the set is asserted exactly so a third code could never slip in unnoticed.
+Assert-ViolationSet $violations @('illegal-quarantine', 'unregistered-skip')
 Assert-Equal 'Quarantine requires issue, valid unexpired ISO date, and exit condition.' ($violations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Policy validation must retain its illegal-quarantine detail.'
 
 $quarantineBoundaryRule = [pscustomobject]@{
@@ -95,10 +103,10 @@ $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $rep
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenClosure.rules[0].sourceId = 'missing-source'
-Assert-Violation (Test-NervTestEvidencePolicy -Policy $brokenClosure -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
+Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenClosure -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 $brokenCount = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenCount.rules[0].expectedRuntimeTestCount++
-Assert-Violation (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
+Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 
 $run = @{
     workflowRunId = '1001'
@@ -199,22 +207,26 @@ Assert-True $malformedFailed 'Malformed TRX must fail parsing.'
 
 $unregisteredRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'unregistered-skip.trx')) -RunMetadata $run
 $violations = Get-NervTestEvidenceViolations -Records $unregisteredRecords -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
-Assert-Violation $violations 'unregistered-skip'
+Assert-ViolationSet $violations 'unregistered-skip'
 $futureSharedFact = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = 'Fixture.Postgres.New_ninth_method'; skipReason = 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' })
-Assert-Violation (Get-NervTestEvidenceViolations -Records $futureSharedFact -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $futureSharedFact -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
 
 $postgresSelected = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('postgres') -RunnerOs 'Linux'
-Assert-Violation $postgresSelected 'unregistered-skip'
+# Backend records under a postgres selection: the skip is unregistered for that selection *and* the
+# selected real-dependency lane executed nothing. Both are expected, and nothing else is.
+Assert-ViolationSet $postgresSelected @('unregistered-skip', 'zero-execution')
 
 $postgresRun = $run.Clone()
 $postgresRun.lane = 'postgres'
 $allSkipped = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-all-skipped.trx')) -RunMetadata $postgresRun
 $violations = Get-NervTestEvidenceViolations -Records $allSkipped -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
-Assert-Violation $violations 'zero-execution'
+# Every postgres test skipped: the lane executed nothing *and* the fixture skip reason is not in the
+# committed live policy. Both are expected here; only the empty-result fixture below is single-code.
+Assert-ViolationSet $violations @('unregistered-skip', 'zero-execution')
 
 $empty = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-zero-results.trx')) -RunMetadata $postgresRun
 $violations = Get-NervTestEvidenceViolations -Records $empty -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
-Assert-Violation $violations 'zero-execution'
+Assert-ViolationSet $violations 'zero-execution'
 
 $backendEmptyViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend-shard-1') -RunnerOs 'Linux'
 Assert-True (-not (@($backendEmptyViolations | ForEach-Object code) -contains 'zero-execution')) 'Ordinary backend shard zero execution is outside the MAN-661 real-dependency gate.'
@@ -224,16 +236,18 @@ Assert-True (-not (@($baseSelectedShardViolations | ForEach-Object code) -contai
 $siblingSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1', 'postgres-shard-2') -RunnerOs 'Linux'
 Assert-True (-not (@($siblingSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A single-lane collector must not report an unobserved selected sibling as zero execution.'
 $emptyShardViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
-Assert-Violation $emptyShardViolations 'zero-execution'
+Assert-ViolationSet $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $shardViolations = Get-NervTestEvidenceViolations -Records $otherShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
-Assert-Violation $shardViolations 'zero-execution'
+Assert-ViolationSet $shardViolations 'zero-execution'
 
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
-Assert-Violation $expiredViolations 'illegal-quarantine'
+# Same shape as the illegal-quarantine fixture: the expired rule is also not closed over a source
+# skip, so both codes are expected and pinned exactly.
+Assert-ViolationSet $expiredViolations @('illegal-quarantine', 'unregistered-skip')
 $runtimeExpiredViolations = Get-NervTestEvidenceViolations -Records @() -Policy $expired -SelectedLanes @('backend') -RunnerOs 'Linux'
-Assert-Violation $runtimeExpiredViolations 'illegal-quarantine'
+Assert-ViolationSet $runtimeExpiredViolations 'illegal-quarantine'
 Assert-Equal 'Quarantine metadata is missing, invalid, or expired.' ($runtimeExpiredViolations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Runtime validation must retain its illegal-quarantine detail.'
 $runtimeBoundaryPolicy = ($expired | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $runtimeBoundaryPolicy.rules[0].expiresOn = [DateTimeOffset]::UtcNow.AddDays(1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
@@ -607,6 +621,268 @@ foreach ($laneContract in @(
     $retainedBlock = $workflow.Substring($collectIndex, [Math]::Min($workflow.Length - $collectIndex, $uploadIndex - $collectIndex + 250))
     Assert-True ($retainedBlock.Contains('if: always()')) 'Collector and upload must both be always().'
 }
+
+# --- MAN-799 CI timeout-budget invariants -----------------------------------------------------
+# Evidence collection is only reachable if the job survives long enough to run its `if: always()`
+# steps. These assertions are the enforcement the governance document promises; without them the
+# invariant survives only as a comment and the next added step silently breaks it.
+$workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$ciJobs = Get-NervCiWorkflowBudgets -Path $workflowPath
+$ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
+Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
+
+$evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
+Assert-True ($evidenceJobs.Count -ge 3) "Expected at least three evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+foreach ($expectedEvidenceJob in @('backend-tests', 'connector-host-tests', 'erp-sales-order-demand-acceptance')) {
+    Assert-True (@($evidenceJobs | Where-Object Name -eq $expectedEvidenceJob).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
+}
+
+# The reader must actually be able to see a missing budget / an exceeded budget, otherwise "zero
+# violations" above proves nothing. Each negative fixture is the real workflow shape with one
+# deliberate defect.
+$ciFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "man-799-ci-budgets-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $null = New-Item -ItemType Directory -Path $ciFixtureRoot -Force
+    $ciFixtures = @(
+        @{
+            Name = 'missing-job-timeout'
+            Yaml = @'
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+'@
+        },
+        @{
+            Name = 'missing-step-timeout'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+'@
+        },
+        @{
+            Name = 'evidence-job-budget-not-above-step-sum'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        timeout-minutes: 8
+        run: ./run.ps1
+      - name: Upload evidence
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+'@
+        },
+        @{
+            Name = 'job-budget-not-above-largest-step'
+            Yaml = @'
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        timeout-minutes: 10
+        run: ./build.ps1
+'@
+        }
+    )
+
+    foreach ($ciFixture in $ciFixtures) {
+        $fixturePath = Join-Path $ciFixtureRoot "$($ciFixture.Name).yml"
+        Set-Content -Path $fixturePath -Value $ciFixture.Yaml -Encoding utf8
+        $fixtureViolations = Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $fixturePath)
+        Assert-ViolationSet $fixtureViolations $ciFixture.Name
+    }
+
+    # Tier classification must fail *closed*. Matching only the literal `always()` demoted every
+    # other legal spelling to tier B and silently switched off `evidence-job-budget-not-above-step-sum`
+    # — the one rule this gate exists for. Each spelling below is the same 10m job with 13m of step
+    # budget, so a job that is correctly recognized as evidence-publishing must report exactly that
+    # violation and a genuinely success-gated `if:` must report none.
+    $conditionCases = @(
+        @{ Name = 'literal-always'; Condition = 'always()'; Evidence = $true },
+        @{ Name = 'wrapped-always'; Condition = '${{ always() }}'; Evidence = $true },
+        @{ Name = 'compound-always'; Condition = "always() && github.event_name == 'push'"; Evidence = $true },
+        @{ Name = 'commented-always'; Condition = 'always() # keep the evidence on failure'; Evidence = $true },
+        @{ Name = 'not-cancelled'; Condition = '!cancelled()'; Evidence = $true },
+        @{ Name = 'wrapped-not-cancelled'; Condition = '${{ !cancelled() }}'; Evidence = $true },
+        @{ Name = 'failure-only'; Condition = 'failure()'; Evidence = $true },
+        @{ Name = 'unrecognized-function'; Condition = 'someFutureStatusFunction()'; Evidence = $true },
+        @{ Name = 'success-gated'; Condition = "github.event_name == 'push'"; Evidence = $false },
+        @{ Name = 'explicit-success'; Condition = "success() && contains(github.ref, 'main')"; Evidence = $false },
+        @{ Name = 'comment-mentioning-always'; Condition = "github.event_name == 'push' # not always()"; Evidence = $false },
+        # A `#` that belongs to the *value* must not be cut. YAML only starts a plain-scalar comment
+        # at a whitespace-preceded `#`, so both spellings below are one legal condition whose
+        # `always()` sits after the `#`. Cutting at the first `#` regardless (the naive
+        # `-replace '#.*'`) leaves `contains(github.event.head_commit.message,` — status-neutral,
+        # therefore tier B, therefore this gate's one rule switched off.
+        @{ Name = 'single-quoted-hash'; Condition = "contains(github.event.head_commit.message, '# not a comment') && always()"; Evidence = $true },
+        @{ Name = 'double-quoted-hash'; Condition = 'contains(github.event.head_commit.message, "# not a comment") && always()'; Evidence = $true }
+    )
+
+    foreach ($conditionCase in $conditionCases) {
+        $conditionPath = Join-Path $ciFixtureRoot "condition-$($conditionCase.Name).yml"
+        Set-Content -Path $conditionPath -Encoding utf8 -Value @"
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        timeout-minutes: 8
+        run: ./run.ps1
+      - name: Upload evidence
+        if: $($conditionCase.Condition)
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+"@
+        $conditionJobs = Get-NervCiWorkflowBudgets -Path $conditionPath
+        $detected = @($conditionJobs[0].Steps | Where-Object AlwaysRuns).Count -gt 0
+        Assert-Equal $conditionCase.Evidence $detected "Condition '$($conditionCase.Condition)' was classified into the wrong tier."
+        Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $conditionJobs) $(
+            if ($conditionCase.Evidence) { @('evidence-job-budget-not-above-step-sum') } else { @() })
+    }
+
+    # An `if:` whose value continues on later lines cannot be classified from the step mapping the
+    # structural reader sees, so it must land in the stricter tier rather than be assumed benign.
+    # Every legal block-scalar header spelling has to be recognized: YAML permits the indentation
+    # indicator and the chomping indicator in either order, and a header pattern that accepted only
+    # chomping-then-digits let `>2-` through as an ordinary scalar and demoted the step to tier B.
+    $blockHeaderIndex = 0
+    foreach ($blockHeader in @('>', '|', '>-', '|+', '>2-', '|1+', '>-2')) {
+        $blockHeaderIndex++
+        $blockConditionPath = Join-Path $ciFixtureRoot "condition-block-scalar-$blockHeaderIndex.yml"
+        Set-Content -Path $blockConditionPath -Encoding utf8 -Value @"
+jobs:
+  sample:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        timeout-minutes: 8
+        run: ./run.ps1
+      - name: Upload evidence
+        if: $blockHeader
+          always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+"@
+        $blockJobs = Get-NervCiWorkflowBudgets -Path $blockConditionPath
+        Assert-True (@($blockJobs[0].Steps | Where-Object AlwaysRuns).Count -gt 0) "Block-scalar header '$blockHeader' must classify its continued condition into the stricter tier."
+        Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $blockJobs) 'evidence-job-budget-not-above-step-sum'
+    }
+
+    # Inline-comment stripping is the step between the raw `if:` text and tier classification, and
+    # its whole reason to exist is that a `#` can belong to the value. Asserted directly because the
+    # tier fixtures above cannot distinguish "kept the value" from "cut the value and happened to
+    # land on the same tier": replacing this function with `-replace '#.*'` must turn these red.
+    Assert-Equal "contains(github.event.head_commit.message, '# not a comment') && always()" (Remove-NervCiWorkflowInlineComment -Text "contains(github.event.head_commit.message, '# not a comment') && always()") 'A single-quoted `#` is part of the value, not a comment.'
+    Assert-Equal 'contains(github.event.head_commit.message, "# not a comment") && always()' (Remove-NervCiWorkflowInlineComment -Text 'contains(github.event.head_commit.message, "# not a comment") && always()') 'A double-quoted `#` is part of the value, not a comment.'
+    Assert-Equal "contains(github.event.head_commit.message, 'release # 1') && always()" (Remove-NervCiWorkflowInlineComment -Text "contains(github.event.head_commit.message, 'release # 1') && always()") 'A whitespace-preceded `#` inside a quoted run is still part of the value.'
+    Assert-Equal 'github.ref == 1#2 && always()' (Remove-NervCiWorkflowInlineComment -Text 'github.ref == 1#2 && always()') 'A `#` glued to the previous character never starts a YAML comment.'
+    Assert-Equal '"a \" # b" && always()' (Remove-NervCiWorkflowInlineComment -Text '"a \" # b" && always()') 'An escaped quote must not end the double-quoted run and reopen the rest to comment stripping.'
+    Assert-Equal "'it''s # here' && always()" (Remove-NervCiWorkflowInlineComment -Text "'it''s # here' && always()") 'A doubled single quote is an escape, not the end of the single-quoted run.'
+    # …and the stripping itself must still happen, or the function would trivially pass the above by
+    # returning its input unchanged.
+    Assert-Equal 'always()' (Remove-NervCiWorkflowInlineComment -Text 'always() # 真注释') 'A genuine trailing comment must still be removed.'
+    Assert-Equal "github.event_name == 'push'" (Remove-NervCiWorkflowInlineComment -Text "github.event_name == 'push' # not always()") 'A trailing comment after a closed quoted run must still be removed.'
+    Assert-Equal '' (Remove-NervCiWorkflowInlineComment -Text '# whole line is a comment') 'A leading `#` comments out the entire value.'
+
+    # Job-level sequences (`needs:`, `strategy.matrix` shorthand) indent their items exactly like
+    # step entries. Counting them as steps made the reader throw `step parse mismatch` on any
+    # workflow that used them — a hard red naming a parse error instead of the real finding.
+    $sequencePath = Join-Path $ciFixtureRoot 'job-level-sequences.yml'
+    Set-Content -Path $sequencePath -Encoding utf8 -Value @'
+jobs:
+  build:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        timeout-minutes: 5
+        run: ./build.ps1
+  publish:
+    timeout-minutes: 10
+    needs:
+      - build
+    strategy:
+      matrix:
+        shard:
+          - 1
+          - 2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        timeout-minutes: 5
+        run: ./publish.ps1
+'@
+    $sequenceJobs = Get-NervCiWorkflowBudgets -Path $sequencePath
+    Assert-Equal 2 @($sequenceJobs).Count 'Both jobs must be read.'
+    Assert-Equal 2 (($sequenceJobs | ForEach-Object { $_.Steps.Count } | Measure-Object -Sum).Sum) 'Job-level sequence items must not be counted as steps.'
+    Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $sequenceJobs) @()
+
+    # A job header the reader cannot open must fail closed rather than be skipped: skipping it
+    # merges that job's `steps:` and `timeout-minutes` into the previous job and certifies a budget
+    # pairing that does not exist.
+    $unreadableJobPath = Join-Path $ciFixtureRoot 'unreadable-job-header.yml'
+    Set-Content -Path $unreadableJobPath -Encoding utf8 -Value @'
+jobs:
+  build:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        timeout-minutes: 5
+        run: ./build.ps1
+  "quoted job name":
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        timeout-minutes: 5
+        run: ./publish.ps1
+'@
+    $misparseDetected = $false
+    try { Get-NervCiWorkflowBudgets -Path $unreadableJobPath | Out-Null }
+    catch { $misparseDetected = $_.Exception.Message.Contains('unreadable job header') }
+    Assert-True $misparseDetected 'A job header the reader cannot open must fail closed.'
+
+    # A tier-B job (no step that can run after a failure) is deliberately allowed to keep a job
+    # budget below its step sum: there is no evidence to lose, so the budget tracks observed runtime
+    # instead and is itself the fail-fast bound.
+    $tierBPath = Join-Path $ciFixtureRoot 'tier-b-tight-budget.yml'
+    Set-Content -Path $tierBPath -Encoding utf8 -Value @'
+jobs:
+  sample:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        timeout-minutes: 12
+        run: ./install.ps1
+      - name: Build
+        timeout-minutes: 15
+        run: ./build.ps1
+'@
+    Assert-Equal 0 (Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $tierBPath)).Count 'A job without evidence steps must not be forced above its step sum.'
+}
+finally {
+    if (Test-Path $ciFixtureRoot) { Remove-Item $ciFixtureRoot -Recurse -Force }
+}
+Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleaned up.'
 
 $governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
 Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
