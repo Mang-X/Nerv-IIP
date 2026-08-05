@@ -504,14 +504,14 @@ public sealed class BusinessGatewayWmsTests
         var auth = OrganizationScopeAuth(
             BusinessGatewayPermissions.WmsReceiptsManage,
             BusinessGatewayPermissions.InventoryCountsManage);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var inbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev", new
@@ -635,12 +635,12 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsManage);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -693,7 +693,7 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.InventoryCountsManage);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -701,7 +701,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -757,14 +757,14 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsShipmentsManage);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var outbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev", new
@@ -838,14 +838,14 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsAutomationManage);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
@@ -919,7 +919,7 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsShipmentsRead,
                     BusinessGatewayPermissions.WmsCountsRead,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -927,7 +927,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         const string forged =
@@ -995,12 +995,12 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsReceiptsManage,
                 ],
                 OrganizationWide: true));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1050,12 +1050,12 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-NOT-IN-DIRECTORY",
                 [BusinessGatewayPermissions.WmsReceiptsRead]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1079,12 +1079,12 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-A",
                 [BusinessGatewayPermissions.WmsShipmentsRead]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1108,7 +1108,7 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-A",
                 [BusinessGatewayPermissions.WmsReceiptsRead]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -1127,7 +1127,7 @@ public sealed class BusinessGatewayWmsTests
                 ],
             });
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1159,7 +1159,7 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsShipmentsManage,
                     BusinessGatewayPermissions.InventoryCountsManage,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -1167,7 +1167,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         var scenarios = new[]
@@ -1266,12 +1266,12 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-A",
                 [BusinessGatewayPermissions.WmsReceiptsManage]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1309,12 +1309,12 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsReceiptsManage,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1342,7 +1342,7 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var inventory = new RecordingInventoryClient();
-        await using var factory = CreateFactory(OrganizationScopeAuth(
+        await using var lease = LeaseHost(OrganizationScopeAuth(
             BusinessGatewayPermissions.WmsReceiptsRead,
             BusinessGatewayPermissions.InventoryLedgerRead), services =>
         {
@@ -1353,7 +1353,7 @@ public sealed class BusinessGatewayWmsTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&skip=10&take=20&status=Open&keyword=IN&inboundOrderId=0199aa00-0000-7000-8000-000000000001");
@@ -1393,7 +1393,7 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var inventory = new RecordingInventoryClient();
-        await using var factory = CreateFactory(
+        await using var lease = LeaseHost(
             OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead),
             services =>
         {
@@ -1404,7 +1404,7 @@ public sealed class BusinessGatewayWmsTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev");
@@ -1424,7 +1424,7 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var inventory = new RecordingInventoryClient();
-        await using var factory = CreateFactory(
+        await using var lease = LeaseHost(
             OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead),
             services =>
             {
@@ -1435,7 +1435,7 @@ public sealed class BusinessGatewayWmsTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
             });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
@@ -1500,14 +1500,14 @@ public sealed class BusinessGatewayWmsTests
             [.. grants]);
         var wms = new RecordingWmsClient();
         var inventory = new RecordingInventoryClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IBusinessInventoryClient>();
             services.AddSingleton<IBusinessInventoryClient>(inventory);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1537,7 +1537,7 @@ public sealed class BusinessGatewayWmsTests
                 ? BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "inventory-unavailable")
                 : new HttpRequestException("connection refused"),
         };
-        await using var factory = CreateFactory(OrganizationScopeAuth(
+        await using var lease = LeaseHost(OrganizationScopeAuth(
             BusinessGatewayPermissions.WmsReceiptsRead,
             BusinessGatewayPermissions.InventoryLedgerRead), services =>
         {
@@ -1548,7 +1548,7 @@ public sealed class BusinessGatewayWmsTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
@@ -1565,7 +1565,7 @@ public sealed class BusinessGatewayWmsTests
     public async Task Outbound_orders_use_shipments_permission_and_internal_service_token()
     {
         var wms = new RecordingWmsClient();
-        await using var factory = CreateFactory(
+        await using var lease = LeaseHost(
             OrganizationScopeAuth(BusinessGatewayPermissions.WmsShipmentsRead),
             services =>
         {
@@ -1574,7 +1574,7 @@ public sealed class BusinessGatewayWmsTests
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&locationCode=BIN-OUT-01&lotNo=LOT-OUT-01&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002");
@@ -1608,14 +1608,14 @@ public sealed class BusinessGatewayWmsTests
     public async Task Outbound_order_list_rejects_invalid_scope_paging_filters_and_exact_id()
     {
         var wms = new RecordingWmsClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         var invalidRequests = new[]
         {
@@ -1647,14 +1647,14 @@ public sealed class BusinessGatewayWmsTests
             BusinessGatewayPermissions.WmsReceiptsRead,
             BusinessGatewayPermissions.WmsShipmentsRead,
             BusinessGatewayPermissions.WmsCountsRead);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var putaway = await client.GetAsync("/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&locationCode=RECV-01&lotNo=LOT-001&skip=10&take=20&status=Open&keyword=PUT");
@@ -1763,12 +1763,12 @@ public sealed class BusinessGatewayWmsTests
                 "site",
                 "SITE-A",
                 [BusinessGatewayPermissions.WmsCountsRead]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -1800,14 +1800,14 @@ public sealed class BusinessGatewayWmsTests
     public async Task Wcs_tasks_use_automation_permission_and_filters()
     {
         var wms = new RecordingWmsClient();
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/business-console/v1/wms/wcs-tasks?organizationId=org-001&environmentId=env-dev&externalTaskId=EXT-001&warehouseTaskId=warehouse-task-001&skip=30&take=15&status=Failed&failed=true&keyword=EXT");
@@ -1826,14 +1826,14 @@ public sealed class BusinessGatewayWmsTests
     {
         var wms = new RecordingWmsClient();
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var gates = await client.GetAsync("/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool&scopeId=POOL-RECEIVING&actorPrincipalId=forged&authorizedSiteCodes=FORGED&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE");
@@ -1894,14 +1894,14 @@ public sealed class BusinessGatewayWmsTests
             ForbiddenReceivingQualityGateOrderNo = "IN-OUTSIDE",
         };
         var auth = OrganizationScopeAuth(BusinessGatewayPermissions.WmsReceiptsRead);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -1937,14 +1937,14 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsShipmentsRead,
                     BusinessGatewayPermissions.WmsCountsRead,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         const string forged = "&actorPrincipalId=forged&authorizedSiteCodes=forged&assignedOperatorUserIds=forged&assignedPoolCodes=forged";
 
@@ -2007,7 +2007,7 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsReceiptsRead,
                     BusinessGatewayPermissions.WmsShipmentsRead,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
@@ -2015,7 +2015,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         const string forged =
@@ -2111,12 +2111,12 @@ public sealed class BusinessGatewayWmsTests
             _ => "/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev",
         };
         var wms = new RecordingWmsClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(requestUri);
@@ -2143,14 +2143,14 @@ public sealed class BusinessGatewayWmsTests
                     BusinessGatewayPermissions.WmsReceiptsManage,
                     BusinessGatewayPermissions.WmsShipmentsManage,
                 ]));
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var putawayStart = await PostTaskActionAsync(client, "putaway", "putaway-001", "start", "work-pool", "POOL-A");
@@ -2227,14 +2227,14 @@ public sealed class BusinessGatewayWmsTests
                     "SITE-001",
                     [BusinessGatewayPermissions.WmsReceiptsManage]),
             ]);
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessWmsClient>();
             services.AddSingleton<IBusinessWmsClient>(wms);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
@@ -2254,19 +2254,13 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(["complete-inbound"], wms.Calls);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            BusinessGatewayTestServiceBaseUrls.Configure(builder);
-            builder.ConfigureServices(services =>
+        BusinessGatewayTestHost.Lease(
+            auth,
+            services =>
             {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
                 services.RemoveAll<IBusinessMasterDataClient>();
                 services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
                 {
@@ -2274,8 +2268,8 @@ public sealed class BusinessGatewayWmsTests
                     Resources = WmsSiteDirectory(),
                 });
                 configureServices?.Invoke(services);
-            });
-        });
+            },
+            BusinessGatewayTestHostProfile.ServiceBaseUrls);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 

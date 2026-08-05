@@ -43,11 +43,17 @@ jobs:
   #      the whole job budget.
   #
   # Shard test-step budgets are ~2x the observed maximum over the runs measured for MAN-669
-  # (BusinessGateway 16.0m → 35m, business-core-a 6.2m → 15m, business-core-b 4.8m → 12m,
-  # platform 3.7m → 10m), while short fixed-cost steps (checkout, SDK setup, cache restore,
-  # evidence collect/upload) get a 3–8 minute floor that no healthy run comes near. The
-  # BusinessGateway floor is owned by MAN-663; if that assembly is split, re-measure rather than
-  # inheriting 35m.
+  # (business-core-a 6.2m → 15m, business-core-b 4.8m → 12m, platform 3.7m → 10m), while short
+  # fixed-cost steps (checkout, SDK setup, cache restore, evidence collect/upload) get a 3–8 minute
+  # floor that no healthy run comes near.
+  #
+  # BusinessGateway is the exception and is re-measured rather than kept at its MAN-669 value. Its
+  # 16.0m/14.3m observation was the cost of a serialized `WebApplicationFactory`-per-test assembly;
+  # MAN-663 removed that, and the step now measures 1.0m (see the job below). A step budget sized
+  # from a runtime that no longer exists is not a fail-fast bound, so it is re-derived here: the
+  # step is no longer test-dominated — restore + build now dominate it — and it therefore takes the
+  # same 3–8 minute fixed-cost floor as the other restore/build-shaped steps rather than a multiple
+  # of a 22-second test window. Re-measure again if that assembly's shape changes.
   #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
@@ -100,13 +106,21 @@ jobs:
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
-    # Tier A (evidence steps). Observed max 16.0m / 14.3m over the two measured runs — this shard
-    # is the critical-path floor and its own main source of run-to-run noise until MAN-663 splits
-    # the assembly. The 35m test budget is ~2.2x the observed max; step budgets sum to 64m,
-    # leaving 6m of margin for the implicit setup/post steps. If the test step passes ~28m, raise
-    # both budgets rather than only the step one, or the strict inequality stops protecting the
-    # evidence steps.
-    timeout-minutes: 70
+    # Tier A (evidence steps). Re-measured after MAN-663 made this assembly safely parallel: the
+    # test step is 1.0m / 1.1m and the whole job 1.6m over two measured runs (30983575535,
+    # 30988510793; hot NuGet cache), against 14.7m / 15.2m on the last pre-MAN-663 main run
+    # (30978158138). The step is now restore/build-dominated
+    # — the 1036 tests themselves are ~22s — so it takes the 8m fixed-cost floor, not a multiple of
+    # the test window. Step budgets sum to 37m, leaving 6m of margin for the implicit setup/post
+    # steps.
+    #
+    # The job budget cannot usefully go below that sum: tier A requires job > sum, and the six
+    # non-test steps already carry a mandatory 29m of shared-convention budget. So 8m — the budget
+    # that actually fires on a hung run — is the real fail-fast bound here; 43m is the structural
+    # floor the invariant leaves behind, not a claim about this job's runtime. If the test step ever
+    # approaches 8m, raise both budgets rather than only the step one, or the strict inequality
+    # stops protecting the evidence steps.
+    timeout-minutes: 43
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -140,7 +154,7 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Test BusinessGateway shard
-        timeout-minutes: 35
+        timeout-minutes: 8
         id: shard-tests
         shell: pwsh
         run: >-

@@ -33,12 +33,9 @@ public sealed class BusinessGatewayHttpClientResilienceTests
     public async Task Business_service_clients_do_not_retry_server_errors()
     {
         var calls = new DownstreamCallCounter();
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
+        await using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
+            configureBuilder: builder =>
             {
-                builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-                builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-                builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
                 builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
                 builder.UseSetting("Quality:BaseUrl", "http://quality.local");

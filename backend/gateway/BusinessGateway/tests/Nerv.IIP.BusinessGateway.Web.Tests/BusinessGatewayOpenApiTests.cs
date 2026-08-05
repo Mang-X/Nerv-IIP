@@ -15,15 +15,7 @@ public sealed class BusinessGatewayOpenApiTests
     [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-        });
-        var client = factory.CreateClient();
-
-        var json = await client.GetStringAsync("/swagger/v1/swagger.json");
+        var json = await BusinessGatewayTestHost.GetOpenApiDocumentAsync();
         using var document = JsonDocument.Parse(json);
         var paths = document.RootElement.GetProperty("paths");
         AssertOperationIdsAreUnique(document);

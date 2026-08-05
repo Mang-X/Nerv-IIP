@@ -68,7 +68,10 @@ public sealed class CapTestHostTests
             services,
             timeProvider: timeProvider).AsTask();
 
-        await Task.Yield();
+        await ObserveAsync(
+            bootstrapper.BootstrapTimersRegistered,
+            "the bootstrap delay to register its fake-clock timer",
+            () => $"fake now={timeProvider.GetUtcNow():O}");
         timeProvider.Advance(TimeSpan.FromSeconds(30));
 
         var exception = await Assert.ThrowsAsync<TestTimeoutException>(() => wait);
@@ -93,21 +96,67 @@ public sealed class CapTestHostTests
             new StubServiceProvider(bootstrapper),
             timeProvider: timeProvider).AsTask();
 
-        await Task.Yield();
+        await ObserveAsync(
+            bootstrapper.BootstrapTimersRegistered,
+            "the bootstrap delay to register its fake-clock timer",
+            () => $"fake now={timeProvider.GetUtcNow():O}");
         timeProvider.Advance(TimeSpan.FromSeconds(20));
 
-        await wait.WaitAsync(TimeSpan.FromSeconds(5));
+        await ObserveAsync(
+            wait,
+            "the CAP bootstrap wait to observe the advanced fake clock",
+            () => $"fake now={timeProvider.GetUtcNow():O}, bootstrap started={bootstrapper.IsStarted}");
+    }
+
+    /// <summary>
+    /// Bounded wait on an edge-triggered signal. Reports the redacted condition, elapsed time,
+    /// attempt count and last observation, so a lost fake-clock tick fails with a diagnosis instead
+    /// of parking the test host (the MAN-799 failure mode).
+    /// </summary>
+    private static async Task ObserveAsync(
+        Task observation,
+        string condition,
+        Func<string> lastObservation)
+    {
+        var budget = TimeSpan.FromSeconds(5);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            await observation.WaitAsync(budget);
+        }
+        catch (TimeoutException)
+        {
+            throw new global::Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {budget.TotalSeconds:0.###}s, attempts 1/1 — single bounded await on a "
+                + $"completion signal); last observation: {lastObservation()}");
+        }
     }
 
     private sealed class FakeBootstrapper(Func<CancellationToken, Task> bootstrap) :
         BackgroundService,
         IBootstrapper
     {
+        private readonly TaskCompletionSource _bootstrapTimersRegistered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public bool IsStarted { get; private set; }
+
+        /// <summary>
+        /// Completes once <c>bootstrap</c> has returned its pending task — i.e. once any fake-clock
+        /// timer it creates is registered. <see cref="BackgroundService.StartAsync"/> does not
+        /// guarantee that the <see cref="ExecuteAsync"/> body has run by the time it returns, so a
+        /// test that advances the fake clock before this signal can register the timer *after* the
+        /// advance: the timer is then due one interval further out, nothing advances the clock
+        /// again, and the tick is lost permanently.
+        /// </summary>
+        public Task BootstrapTimersRegistered => _bootstrapTimersRegistered.Task;
 
         public async Task BootstrapAsync(CancellationToken cancellationToken)
         {
-            await bootstrap(cancellationToken);
+            var pending = bootstrap(cancellationToken);
+            _bootstrapTimersRegistered.TrySetResult();
+            await pending;
             IsStarted = true;
         }
 

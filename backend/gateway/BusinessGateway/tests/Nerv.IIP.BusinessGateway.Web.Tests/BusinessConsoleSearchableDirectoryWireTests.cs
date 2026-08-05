@@ -23,8 +23,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
         ]);
         var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\",\"reasonCode\":null}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -45,8 +45,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
         ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-B");
@@ -64,8 +64,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
         ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -94,8 +94,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         }
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -119,8 +119,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 [BusinessGatewayPermissions.InventoryLedgerRead]),
         ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -161,8 +161,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             extraGrant,
         ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -181,8 +181,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
         ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -199,8 +199,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MasterDataResourcesRead);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var forbidden = await client.GetAsync(
@@ -218,8 +218,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -235,8 +235,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -255,8 +255,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
         ]);
         var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -276,8 +276,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
         ]);
         var downstream = new JsonHandler($"{{\"items\":[],\"total\":0,\"skip\":{expectedSkip},\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}}");
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -321,8 +321,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
         ]);
         var downstream = new JsonHandler(downstreamPayload);
-        await using var factory = CreateFactory(auth, downstream);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -357,8 +357,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                     StationCode: "ST-001"),
             ],
         };
-        await using var factory = CreateFactory(auth, downstream, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, downstream, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -467,12 +467,12 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var quality = directoryType == "defect-code"
             ? new HttpBusinessQualityClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://quality.local") })
             : null;
-        await using var factory = CreateFactory(
+        await using var lease = LeaseHost(
             auth,
             inventoryHandler,
             masterData,
             quality);
-        var client = factory.CreateClient();
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -502,8 +502,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var masterData = new HttpBusinessMasterDataClient(
             new HttpClient(targetHandler) { BaseAddress = new Uri("http://master-data.local") });
         var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, inventoryHandler, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, inventoryHandler, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -533,8 +533,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var masterData = new HttpBusinessMasterDataClient(
             new HttpClient(targetHandler) { BaseAddress = new Uri("http://master-data.local") });
         var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
-        await using var factory = CreateFactory(auth, inventoryHandler, masterData);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth, inventoryHandler, masterData);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync(
@@ -574,13 +574,13 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             var maintenance = directoryType == "downtime-reason"
                 ? new HttpBusinessMaintenanceClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://maintenance.local") })
                 : null;
-            await using var factory = CreateFactory(
+            await using var lease = LeaseHost(
                 auth,
                 inventoryHandler,
                 masterData,
                 quality,
                 maintenance);
-            var client = factory.CreateClient();
+            var client = lease.CreateClient();
             client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
             var response = await client.GetAsync(
@@ -641,21 +641,14 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         }
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         IBusinessGatewayAuthorizationClient auth,
         JsonHandler inventoryHandler,
         IBusinessMasterDataClient? masterData = null,
         IBusinessQualityClient? quality = null,
         IBusinessMaintenanceClient? maintenance = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
+        BusinessGatewayTestHost.Lease(auth, services =>
             {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton(auth);
                 services.RemoveAll<IBusinessInventoryClient>();
                 services.AddSingleton<IBusinessInventoryClient>(new HttpBusinessInventoryClient(
                     new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory.local") },
@@ -679,7 +672,6 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
             });
-        });
 
     private static AuthorizationScopeGrant Grant(
         string scopeKind,
