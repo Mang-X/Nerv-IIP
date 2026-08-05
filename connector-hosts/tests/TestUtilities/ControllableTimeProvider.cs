@@ -73,6 +73,23 @@ public sealed class ControllableTimeProvider : TimeProvider
         }
     }
 
+    /// <summary>
+    /// Whether a timer with this exact <paramref name="dueTime"/>/<paramref name="period"/>
+    /// signature has ever been created — the read-only counterpart to
+    /// <see cref="WaitForTimerEverCreatedAsync"/>, for use in a bounded wait's last-observation
+    /// report. Unlike calling the barrier and inspecting its task, this registers no waiter, and it
+    /// separates the two ways a barrier can fail to complete: the timer was never created, or the
+    /// provider already recorded the registration (which would be a barrier defect, not a missing
+    /// timer).
+    /// </summary>
+    public bool HasTimerEverBeenCreated(TimeSpan dueTime, TimeSpan period)
+    {
+        lock (_gate)
+        {
+            return _createdTimers.Contains((dueTime, period));
+        }
+    }
+
     public void Advance(TimeSpan amount)
     {
         ControllableTimer[] due;

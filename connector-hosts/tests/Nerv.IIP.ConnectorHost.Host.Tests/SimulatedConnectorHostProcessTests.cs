@@ -441,6 +441,12 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
             }
             catch (TimeoutException)
             {
+                // Deliberately swallowed, and only here: this is teardown, not an assertion. By this
+                // point the test's verdict is already decided — a stuck accept loop is never the
+                // evidence a test is waiting on, because that evidence is reported by
+                // `WaitForEvidenceAsync`, which is bounded and names its own condition. Rethrowing
+                // would replace a real, already-reported failure with a teardown timeout; the bound
+                // itself is what matters, since it stops the loop from parking the test host.
             }
             catch (Exception) when (_shutdown.IsCancellationRequested)
             {

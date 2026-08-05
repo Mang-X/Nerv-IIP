@@ -37,7 +37,7 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
 
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
-function Assert-Violation([object[]] $Violations, [string[]] $Codes) {
+function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
     $actual = @($Violations | ForEach-Object code | Sort-Object -Unique) -join ','
     $expected = @($Codes | Sort-Object -Unique) -join ','
     $callerLine = (Get-PSCallStack)[1].ScriptLineNumber
@@ -81,7 +81,7 @@ $illegal = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-ille
 $violations = Test-NervTestEvidencePolicy -Policy $illegal -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
 # The fixture's rule is both illegally quarantined and not closed over a real source skip, so both
 # codes are expected; the set is asserted exactly so a third code could never slip in unnoticed.
-Assert-Violation $violations @('illegal-quarantine', 'unregistered-skip')
+Assert-ViolationSet $violations @('illegal-quarantine', 'unregistered-skip')
 Assert-Equal 'Quarantine requires issue, valid unexpired ISO date, and exit condition.' ($violations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Policy validation must retain its illegal-quarantine detail.'
 
 $quarantineBoundaryRule = [pscustomobject]@{
@@ -103,10 +103,10 @@ $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $rep
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenClosure.rules[0].sourceId = 'missing-source'
-Assert-Violation (Test-NervTestEvidencePolicy -Policy $brokenClosure -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
+Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenClosure -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 $brokenCount = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenCount.rules[0].expectedRuntimeTestCount++
-Assert-Violation (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
+Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 
 $run = @{
     workflowRunId = '1001'
@@ -207,14 +207,14 @@ Assert-True $malformedFailed 'Malformed TRX must fail parsing.'
 
 $unregisteredRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'unregistered-skip.trx')) -RunMetadata $run
 $violations = Get-NervTestEvidenceViolations -Records $unregisteredRecords -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
-Assert-Violation $violations 'unregistered-skip'
+Assert-ViolationSet $violations 'unregistered-skip'
 $futureSharedFact = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = 'Fixture.Postgres.New_ninth_method'; skipReason = 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' })
-Assert-Violation (Get-NervTestEvidenceViolations -Records $futureSharedFact -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $futureSharedFact -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
 
 $postgresSelected = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('postgres') -RunnerOs 'Linux'
 # Backend records under a postgres selection: the skip is unregistered for that selection *and* the
 # selected real-dependency lane executed nothing. Both are expected, and nothing else is.
-Assert-Violation $postgresSelected @('unregistered-skip', 'zero-execution')
+Assert-ViolationSet $postgresSelected @('unregistered-skip', 'zero-execution')
 
 $postgresRun = $run.Clone()
 $postgresRun.lane = 'postgres'
@@ -222,11 +222,11 @@ $allSkipped = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-all-ski
 $violations = Get-NervTestEvidenceViolations -Records $allSkipped -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
 # Every postgres test skipped: the lane executed nothing *and* the fixture skip reason is not in the
 # committed live policy. Both are expected here; only the empty-result fixture below is single-code.
-Assert-Violation $violations @('unregistered-skip', 'zero-execution')
+Assert-ViolationSet $violations @('unregistered-skip', 'zero-execution')
 
 $empty = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-zero-results.trx')) -RunMetadata $postgresRun
 $violations = Get-NervTestEvidenceViolations -Records $empty -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
-Assert-Violation $violations 'zero-execution'
+Assert-ViolationSet $violations 'zero-execution'
 
 $backendEmptyViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend-shard-1') -RunnerOs 'Linux'
 Assert-True (-not (@($backendEmptyViolations | ForEach-Object code) -contains 'zero-execution')) 'Ordinary backend shard zero execution is outside the MAN-661 real-dependency gate.'
@@ -236,18 +236,18 @@ Assert-True (-not (@($baseSelectedShardViolations | ForEach-Object code) -contai
 $siblingSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1', 'postgres-shard-2') -RunnerOs 'Linux'
 Assert-True (-not (@($siblingSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A single-lane collector must not report an unobserved selected sibling as zero execution.'
 $emptyShardViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
-Assert-Violation $emptyShardViolations 'zero-execution'
+Assert-ViolationSet $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $shardViolations = Get-NervTestEvidenceViolations -Records $otherShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
-Assert-Violation $shardViolations 'zero-execution'
+Assert-ViolationSet $shardViolations 'zero-execution'
 
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
 # Same shape as the illegal-quarantine fixture: the expired rule is also not closed over a source
 # skip, so both codes are expected and pinned exactly.
-Assert-Violation $expiredViolations @('illegal-quarantine', 'unregistered-skip')
+Assert-ViolationSet $expiredViolations @('illegal-quarantine', 'unregistered-skip')
 $runtimeExpiredViolations = Get-NervTestEvidenceViolations -Records @() -Policy $expired -SelectedLanes @('backend') -RunnerOs 'Linux'
-Assert-Violation $runtimeExpiredViolations 'illegal-quarantine'
+Assert-ViolationSet $runtimeExpiredViolations 'illegal-quarantine'
 Assert-Equal 'Quarantine metadata is missing, invalid, or expired.' ($runtimeExpiredViolations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Runtime validation must retain its illegal-quarantine detail.'
 $runtimeBoundaryPolicy = ($expired | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $runtimeBoundaryPolicy.rules[0].expiresOn = [DateTimeOffset]::UtcNow.AddDays(1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
@@ -704,7 +704,7 @@ jobs:
         $fixturePath = Join-Path $ciFixtureRoot "$($ciFixture.Name).yml"
         Set-Content -Path $fixturePath -Value $ciFixture.Yaml -Encoding utf8
         $fixtureViolations = Test-NervCiWorkflowBudgets -Jobs (Get-NervCiWorkflowBudgets -Path $fixturePath)
-        Assert-Violation $fixtureViolations $ciFixture.Name
+        Assert-ViolationSet $fixtureViolations $ciFixture.Name
     }
 
     # Tier classification must fail *closed*. Matching only the literal `always()` demoted every
@@ -752,7 +752,7 @@ jobs:
         $conditionJobs = Get-NervCiWorkflowBudgets -Path $conditionPath
         $detected = @($conditionJobs[0].Steps | Where-Object AlwaysRuns).Count -gt 0
         Assert-Equal $conditionCase.Evidence $detected "Condition '$($conditionCase.Condition)' was classified into the wrong tier."
-        Assert-Violation (Test-NervCiWorkflowBudgets -Jobs $conditionJobs) $(
+        Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $conditionJobs) $(
             if ($conditionCase.Evidence) { @('evidence-job-budget-not-above-step-sum') } else { @() })
     }
 
@@ -782,7 +782,7 @@ jobs:
 "@
         $blockJobs = Get-NervCiWorkflowBudgets -Path $blockConditionPath
         Assert-True (@($blockJobs[0].Steps | Where-Object AlwaysRuns).Count -gt 0) "Block-scalar header '$blockHeader' must classify its continued condition into the stricter tier."
-        Assert-Violation (Test-NervCiWorkflowBudgets -Jobs $blockJobs) 'evidence-job-budget-not-above-step-sum'
+        Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $blockJobs) 'evidence-job-budget-not-above-step-sum'
     }
 
     # Inline-comment stripping is the step between the raw `if:` text and tier classification, and
@@ -832,7 +832,7 @@ jobs:
     $sequenceJobs = Get-NervCiWorkflowBudgets -Path $sequencePath
     Assert-Equal 2 @($sequenceJobs).Count 'Both jobs must be read.'
     Assert-Equal 2 (($sequenceJobs | ForEach-Object { $_.Steps.Count } | Measure-Object -Sum).Sum) 'Job-level sequence items must not be counted as steps.'
-    Assert-Violation (Test-NervCiWorkflowBudgets -Jobs $sequenceJobs) @()
+    Assert-ViolationSet (Test-NervCiWorkflowBudgets -Jobs $sequenceJobs) @()
 
     # A job header the reader cannot open must fail closed rather than be skipped: skipping it
     # merges that job's `steps:` and `timeout-minutes` into the previous job and certifies a budget

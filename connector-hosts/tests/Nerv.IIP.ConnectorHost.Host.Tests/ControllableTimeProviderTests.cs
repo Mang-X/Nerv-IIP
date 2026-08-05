@@ -53,7 +53,11 @@ public sealed class ControllableTimeProviderTests
         Assert.False(registration.IsCompleted);
 
         using var timer = clock.CreateTimer(_ => Interlocked.Increment(ref fired), null, Tick, Tick);
-        await registration.WaitAsync(TimeSpan.FromSeconds(5));
+        await BoundedObservation.ObserveAsync(
+            registration,
+            "the registration barrier for the (due=4s, period=4s) timer signature",
+            () => $"now={clock.GetUtcNow():O}, signatureRegistered="
+                + $"{clock.HasTimerEverBeenCreated(Tick, Tick)}, fired={Volatile.Read(ref fired)}");
 
         clock.Advance(Tick);
         Assert.Equal(1, Volatile.Read(ref fired));
