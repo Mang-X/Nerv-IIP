@@ -107,8 +107,9 @@ jobs:
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
     # Tier A (evidence steps). Re-measured after MAN-663 made this assembly safely parallel: the
-    # test step is 1.0m and the whole job 1.6m (run 30983575535, hot NuGet cache), against 14.7m /
-    # 15.2m on the last pre-MAN-663 main run (30978158138). The step is now restore/build-dominated
+    # test step is 1.0m / 1.1m and the whole job 1.6m over two measured runs (30983575535,
+    # 30988510793; hot NuGet cache), against 14.7m / 15.2m on the last pre-MAN-663 main run
+    # (30978158138). The step is now restore/build-dominated
     # — the 1036 tests themselves are ~22s — so it takes the 8m fixed-cost floor, not a multiple of
     # the test window. Step budgets sum to 37m, leaving 6m of margin for the implicit setup/post
     # steps.
