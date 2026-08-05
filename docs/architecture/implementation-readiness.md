@@ -44,6 +44,10 @@ MAN-661 证据面按 shard 落到 `backend-shard-1`..`backend-shard-4` 四条 sc
 
 脚本治理范围保持 MAN-669 边界：`scripts/tests/**` 未纳入 `check-script-governance.ps1` 目录扫描。把它纳入需要 baseline 先支持 owner issue 与到期日（与 `backend/test-determinism-baseline.json` 同等纪律），否则等于一次性 grandfather 十余条无责任人债务，属独立跟进项。
 
+**MAN-663 合入后本节数字已过期（2026-08-05）。** 上面「BusinessGateway 占全部测试耗时 69%」「关键路径 13.3–15.5 min」「5–6 min 目标在 MAN-663 之前不可能达到」都是 MAN-663 之前的观测。MAN-663 落地后该 shard 的 job 墙钟为 **1.6 min**（`Test BusinessGateway shard` 步骤 1.0 min，其中测试本身约 22 s，其余是 restore/build；PR run `30983575535`、热 NuGet 缓存），对照 MAN-663 之前最后一次 main run `30978158138` 的 15.2 min job / 14.7 min step。关键路径下限因此不再由该程序集锁死。
+
+由此产生的直接后果是**四片划分已失衡**：`scripts/backend-test-shards.json` 的 `business-gateway` shard 只含 1 个项目、约 22 s 测试时间，restore/build 占其墙钟的绝对多数，而 platform/business-core-a/business-core-b 三片仍各承担 3.5–5.1 min。重新配平项目划分属 **MAN-669** 的范围（分片拓扑归它管），本 PR 不动划分，只按新观测重算该 shard 的 CI timeout 预算（`Test BusinessGateway shard` 35 min → 8 min，job 70 min → 43 min，保持 tier A 的 sum < job 与 6 min margin 不变量）。MAN-669 阶段 2 的 build-once 现在是该 shard 剩余墙钟的主要攻击面。
+
 已知未完成项：committed baseline 仍是 `lane: backend` 的 legacy console import，MAN-669 改变 lane 拓扑后必须用合并后首个合格 main run 的 normalized artifacts 走 `-EvidenceRoot` 刷新，在此之前所有 shard 的耗时对比继续 report-only unavailable；legacy console import 路径因聚合 job 不再产出测试输出而不可用。四个 shard 各自 restore/build，build-once/`--no-build` 与缓存测量属后续 PR；BusinessGateway 内部并行属 MAN-663。
 
 ## PDA 当前工序与服务端门禁演示闭环（MAN-637 / #1174）
