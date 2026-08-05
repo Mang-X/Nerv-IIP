@@ -16,6 +16,20 @@ function New-NervTestEvidenceViolation {
     [pscustomobject]@{ code = $Code; id = $Id; message = $Message }
 }
 
+function Get-NervTestEvidenceLaneJobs {
+    # The allowlisted lane-to-job binding. One physical job owns one lane, so a job can never
+    # certify a sibling shard. The unsharded `backend` lane is deliberately absent: since MAN-669
+    # no job produces it, and `Backend Tests` is now a test-free aggregate that must never be able
+    # to certify a lane. `backend` remains a valid logical base lane for `-SelectedLanes`.
+    return [ordered]@{
+        'backend-shard-1' = 'Backend Tests - BusinessGateway'
+        'backend-shard-2' = 'Backend Tests - Platform'
+        'backend-shard-3' = 'Backend Tests - Business Core A'
+        'backend-shard-4' = 'Backend Tests - Business Core B'
+        'connector-host' = 'Connector Host Tests'
+    }
+}
+
 function Test-NervTestEvidenceLaneName {
     param([Parameter(Mandatory)] [string] $Lane)
     if ($Lane.Contains('-shard-', [StringComparison]::Ordinal)) {
@@ -1060,8 +1074,8 @@ function Resolve-NervPriorAttemptAuthority {
 
     $result = [pscustomobject][ordered]@{ verified = $false; outcome = $null }
     if ($RunAttempt -le 1) { return $result }
-    $expectedJobs = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
-    if (-not $expectedJobs.ContainsKey($Lane) -or [string]$expectedJobs[$Lane] -cne $JobName -or
+    $expectedJobs = Get-NervTestEvidenceLaneJobs
+    if (-not $expectedJobs.Contains($Lane) -or [string]$expectedJobs[$Lane] -cne $JobName -or
         [string]$Run.id -cne $WorkflowRunId -or [string]$Run.head_sha -cne $HeadSha -or
         [int]$Run.run_attempt -ne $RunAttempt) {
         return $result
@@ -1127,15 +1141,21 @@ function Assert-NervEvidenceRootAuthority {
         [string]$LatestRuns[0].headBranch -cne 'main') {
         throw 'Evidence source is not the latest qualifying successful attempt-1 main CI run.'
     }
-    $requiredJobs = @('Backend Tests', 'Connector Host Tests')
+    $jobByLane = Get-NervTestEvidenceLaneJobs
+    $actualLanes = @($SourceSummaries.lane | Sort-Object -Unique)
+    $shardFamily = @($jobByLane.Keys | Where-Object { [string]$_ -cmatch '^backend-shard-[1-9][0-9]*$' } | Sort-Object)
+    $observedShardLanes = @($actualLanes | Where-Object { [string]$_ -cmatch '^backend-shard-[1-9][0-9]*$' } | Sort-Object)
+    if (@($observedShardLanes).Count -gt 0 -and (@($observedShardLanes) -join '|') -cne (@($shardFamily) -join '|')) {
+        throw 'Evidence baseline requires one summary for every backend fast shard lane.'
+    }
+    $requiredJobs = @(@('Backend Tests', 'Connector Host Tests') + @($SourceSummaries.jobName) | Sort-Object -Unique)
     foreach ($requiredJob in $requiredJobs) {
         if (@($Run.jobs | Where-Object { [string]$_.name -ceq $requiredJob -and [string]$_.conclusion -ceq 'success' }).Count -ne 1) {
             throw "Required evidence job '$requiredJob' is missing, ambiguous, or unsuccessful."
         }
     }
-    $jobByLane = @{ backend = 'Backend Tests'; 'connector-host' = 'Connector Host Tests' }
     foreach ($summary in $SourceSummaries) {
-        if (-not $jobByLane.ContainsKey([string]$summary.lane) -or [string]$summary.jobName -cne [string]$jobByLane[[string]$summary.lane]) {
+        if (-not $jobByLane.Contains([string]$summary.lane) -or [string]$summary.jobName -cne [string]$jobByLane[[string]$summary.lane]) {
             throw "Evidence lane '$($summary.lane)' has the wrong authoritative job name."
         }
         if (-not $JobLogs.Contains([string]$summary.jobName) -or [string]::IsNullOrWhiteSpace([string]$JobLogs[[string]$summary.jobName])) {

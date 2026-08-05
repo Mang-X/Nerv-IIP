@@ -386,7 +386,24 @@ Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaseline
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
     $baselineGenerator = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
-    $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend'; jobName = 'Backend Tests'; artifactName = 'backend-evidence'; assemblies = @() }
+    $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend-shard-1'; jobName = 'Backend Tests - BusinessGateway'; artifactName = 'backend-shard-1-evidence'; assemblies = @() }
+    # A baseline refresh consumes every CI-wired lane, so the fixture set is the full allowlist.
+    $evidenceLaneJobs = Get-NervTestEvidenceLaneJobs
+    function New-NervEvidenceSummarySet {
+        param([hashtable] $Overrides = @{}, [string] $OverrideLane = 'connector-host')
+        return @(
+            foreach ($laneName in $evidenceLaneJobs.Keys) {
+                $summary = ($summaryTemplate | ConvertTo-Json -Depth 20 | ConvertFrom-Json -AsHashtable)
+                $summary.lane = $laneName
+                $summary.jobName = [string] $evidenceLaneJobs[$laneName]
+                $summary.artifactName = "$laneName-evidence"
+                if ($laneName -ceq $OverrideLane) {
+                    foreach ($key in $Overrides.Keys) { $summary[$key] = $Overrides[$key] }
+                }
+                , $summary
+            }
+        )
+    }
     foreach ($invalidCase in @(
         @{ Name = 'mixed-head-sha'; Field = 'headSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
         @{ Name = 'mixed-tested-sha'; Field = 'testedSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
@@ -395,27 +412,43 @@ try {
         @{ Name = 'wrong-url'; Field = 'sourceUrl'; Value = 'https://example.invalid/actions/runs/101' }
     )) {
         $caseRoot = Join-Path $invalidBaselineRoot $invalidCase.Name
-        [IO.Directory]::CreateDirectory((Join-Path $caseRoot 'a')) | Out-Null; [IO.Directory]::CreateDirectory((Join-Path $caseRoot 'b')) | Out-Null
-        Write-NervUtf8NoBom (Join-Path $caseRoot 'a/summary.json') (($summaryTemplate | ConvertTo-Json -Depth 20) + "`n")
-        $changed = ($summaryTemplate | ConvertTo-Json -Depth 20 | ConvertFrom-Json -AsHashtable); $changed[$invalidCase.Field] = $invalidCase.Value; $changed.lane = 'connector-host'; $changed.jobName = 'Connector Host Tests'; $changed.artifactName = 'connector-evidence'
-        Write-NervUtf8NoBom (Join-Path $caseRoot 'b/summary.json') (($changed | ConvertTo-Json -Depth 20) + "`n")
+        $caseIndex = 0
+        foreach ($caseSummary in (New-NervEvidenceSummarySet -Overrides @{ $invalidCase.Field = $invalidCase.Value })) {
+            $caseIndex++
+            [IO.Directory]::CreateDirectory((Join-Path $caseRoot "lane-$caseIndex")) | Out-Null
+            Write-NervUtf8NoBom (Join-Path $caseRoot "lane-$caseIndex/summary.json") (($caseSummary | ConvertTo-Json -Depth 20) + "`n")
+        }
         $caseFailed = $false
         try { Invoke-TestPwshScript -ScriptPath $baselineGenerator -LogRoot $invalidBaselineRoot -WorkingDirectory $repoRoot -Name "man-661-baseline-$($invalidCase.Name)" -Arguments @('-EvidenceRoot',$caseRoot,'-OutputPath',(Join-Path $caseRoot 'baseline.json')) | Out-Null } catch { $caseFailed = $true }
         Assert-True $caseFailed "Baseline provenance case '$($invalidCase.Name)' must fail."
     }
 
     $validRoot = Join-Path $invalidBaselineRoot 'valid-authority'
-    [IO.Directory]::CreateDirectory((Join-Path $validRoot 'a')) | Out-Null; [IO.Directory]::CreateDirectory((Join-Path $validRoot 'b')) | Out-Null
-    Write-NervUtf8NoBom (Join-Path $validRoot 'a/summary.json') (($summaryTemplate | ConvertTo-Json -Depth 20) + "`n")
-    $connectorSummary = ($summaryTemplate | ConvertTo-Json -Depth 20 | ConvertFrom-Json -AsHashtable); $connectorSummary.lane = 'connector-host'; $connectorSummary.jobName = 'Connector Host Tests'; $connectorSummary.artifactName = 'connector-evidence'
-    Write-NervUtf8NoBom (Join-Path $validRoot 'b/summary.json') (($connectorSummary | ConvertTo-Json -Depth 20) + "`n")
-    $authorityTemplate = [ordered]@{ run = [ordered]@{ databaseId = '101'; event = 'push'; headBranch = 'main'; headSha = '0123456789abcdef0123456789abcdef01234567'; attempt = 1; conclusion = 'success'; url = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; workflowName = 'CI'; jobs = @([ordered]@{ databaseId = '201'; name = 'Backend Tests'; conclusion = 'success' },[ordered]@{ databaseId = '202'; name = 'Connector Host Tests'; conclusion = 'success' }) }; latestRuns = @([ordered]@{ databaseId = '101'; attempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; conclusion = 'success'; event = 'push'; headBranch = 'main' }); jobLogs = [ordered]@{ 'Backend Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567"; 'Connector Host Tests' = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567" } }
-    $sourceSummaries = @($summaryTemplate, $connectorSummary | ForEach-Object { [pscustomobject]$_ })
+    $validIndex = 0
+    foreach ($validSummary in (New-NervEvidenceSummarySet)) {
+        $validIndex++
+        [IO.Directory]::CreateDirectory((Join-Path $validRoot "lane-$validIndex")) | Out-Null
+        Write-NervUtf8NoBom (Join-Path $validRoot "lane-$validIndex/summary.json") (($validSummary | ConvertTo-Json -Depth 20) + "`n")
+    }
+    $authoritativeJobLog = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567"
+    $authorityJobs = [Collections.Generic.List[object]]::new()
+    $authorityJobLogs = [ordered]@{}
+    # The test-free shard aggregate must still be a successful job, but owns no lane and no log.
+    $authorityJobs.Add([ordered]@{ databaseId = '200'; name = 'Backend Tests'; conclusion = 'success' })
+    $authorityJobId = 200
+    foreach ($laneName in $evidenceLaneJobs.Keys) {
+        $authorityJobId++
+        $authorityJobs.Add([ordered]@{ databaseId = "$authorityJobId"; name = [string] $evidenceLaneJobs[$laneName]; conclusion = 'success' })
+        $authorityJobLogs[[string] $evidenceLaneJobs[$laneName]] = $authoritativeJobLog
+    }
+    $authorityTemplate = [ordered]@{ run = [ordered]@{ databaseId = '101'; event = 'push'; headBranch = 'main'; headSha = '0123456789abcdef0123456789abcdef01234567'; attempt = 1; conclusion = 'success'; url = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; workflowName = 'CI'; jobs = @($authorityJobs) }; latestRuns = @([ordered]@{ databaseId = '101'; attempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; conclusion = 'success'; event = 'push'; headBranch = 'main' }); jobLogs = $authorityJobLogs }
+    $sourceSummaries = @(New-NervEvidenceSummarySet | ForEach-Object { [pscustomobject]$_ })
     Assert-NervEvidenceRootAuthority -SourceSummaries $sourceSummaries -Run ([pscustomobject]$authorityTemplate.run) -LatestRuns @([pscustomobject]$authorityTemplate.latestRuns[0]) -JobLogs $authorityTemplate.jobLogs | Out-Null
-    foreach ($authorityCase in @('wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
+    foreach ($authorityCase in @('partial-shard-family','wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
         $authority = ($authorityTemplate | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable)
         $caseSummaries = @($sourceSummaries | ForEach-Object { $_ | ConvertTo-Json -Depth 20 | ConvertFrom-Json })
-        if ($authorityCase -eq 'wrong-workflow') { $authority.run.workflowName = 'Other' }
+        if ($authorityCase -eq 'partial-shard-family') { $caseSummaries = @($caseSummaries | Where-Object { [string]$_.lane -cne 'backend-shard-3' }) }
+        elseif ($authorityCase -eq 'wrong-workflow') { $authority.run.workflowName = 'Other' }
         elseif ($authorityCase -eq 'wrong-job') { $authority.run.jobs[0].name = 'Wrong Backend Job' }
         elseif ($authorityCase -eq 'not-latest') { $authority.latestRuns[0].databaseId = '999' }
         elseif ($authorityCase -eq 'runner-os-mismatch') { $caseSummaries | ForEach-Object { $_.runnerOs = 'Windows' } }
@@ -558,19 +591,21 @@ try {
     ) | Out-Null
     Assert-True ((Get-Content (Join-Path $rerunOut 'summary.md') -Raw).Contains('- Attempt: rerun ')) 'A rerun without authenticated GitHub evidence must not certify recovery.'
     $priorRun = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }
-    $priorJobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'failure' })
-    $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName 'Backend Tests'
+    $priorJobs = @([pscustomobject]@{ name = 'Backend Tests - Platform'; run_attempt = 1; conclusion = 'failure' })
+    $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend-shard-2 -JobName 'Backend Tests - Platform'
     Assert-True $priorAuthority.verified 'Pure prior-attempt validation must accept exact authenticated response data.'
     Assert-Equal 'failure' $priorAuthority.outcome 'Pure prior-attempt validation must return the authoritative failed outcome.'
     foreach ($invalidPrior in @(
-        @{ Name = 'wrong-run'; Run = [pscustomobject]@{ id = 'other'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests' },
-        @{ Name = 'wrong-sha'; Run = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '1123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests' },
-        @{ Name = 'wrong-current-attempt'; Run = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 3 }; Jobs = $priorJobs; JobName = 'Backend Tests' },
+        @{ Name = 'wrong-run'; Run = [pscustomobject]@{ id = 'other'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests - Platform' },
+        @{ Name = 'wrong-sha'; Run = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '1123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests - Platform' },
+        @{ Name = 'wrong-current-attempt'; Run = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 3 }; Jobs = $priorJobs; JobName = 'Backend Tests - Platform' },
         @{ Name = 'wrong-job'; Run = $priorRun; Jobs = $priorJobs; JobName = 'Other Job' },
-        @{ Name = 'wrong-prior-attempt'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 2; conclusion = 'failure' }); JobName = 'Backend Tests' },
-        @{ Name = 'nonfailure'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'success' }); JobName = 'Backend Tests' }
+        @{ Name = 'wrong-prior-attempt'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests - Platform'; run_attempt = 2; conclusion = 'failure' }); JobName = 'Backend Tests - Platform' },
+        @{ Name = 'nonfailure'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests - Platform'; run_attempt = 1; conclusion = 'success' }); JobName = 'Backend Tests - Platform' },
+        @{ Name = 'aggregate-cannot-certify-a-lane'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'failure' }); JobName = 'Backend Tests' }
     )) {
-        $invalidAuthority = Resolve-NervPriorAttemptAuthority -Run $invalidPrior.Run -Jobs $invalidPrior.Jobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend -JobName $invalidPrior.JobName
+        $invalidLane = if ($invalidPrior.Name -ceq 'aggregate-cannot-certify-a-lane') { 'backend' } else { 'backend-shard-2' }
+        $invalidAuthority = Resolve-NervPriorAttemptAuthority -Run $invalidPrior.Run -Jobs $invalidPrior.Jobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane $invalidLane -JobName $invalidPrior.JobName
         Assert-True (-not $invalidAuthority.verified) "Prior-attempt authority case '$($invalidPrior.Name)' must fail closed."
     }
     Assert-True (-not (Test-Path (Join-Path $successOut 'backend-results.trx'))) 'Collector must not copy raw result paths.'
@@ -590,25 +625,41 @@ if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name
 Assert-Equal 0 $reviewWiringGaps.Count "Review wiring gaps remain: $([string]::Join(', ', $reviewWiringGaps))"
 Assert-True ($workflow.Contains('actions: read')) 'Rerun lookup needs read-only Actions permission.'
 Assert-True ($workflow.Contains('GH_TOKEN: ${{ github.token }}')) 'Rerun lookup must receive the read-only workflow token.'
-Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}')) 'Backend native test outcome must flow into rerun classification.'
+Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.shard-tests.outcome }}')) 'Backend shard native test outcome must flow into rerun classification.'
+Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}')) 'Connector native test outcome must flow into rerun classification.'
+Assert-True (-not $workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}')) 'The shard aggregate runs no tests and must not certify an outcome.'
 Assert-True ($workflow.Contains('dotnet-sdk=$(dotnet --version)')) 'Evidence provenance must resolve the actual SDK version.'
 Assert-True ($workflow.Contains('$testedSha = (git rev-parse HEAD).Trim()')) 'Evidence provenance must resolve the actual checked-out commit.'
 Assert-True ($workflow.Contains('Write-Host "tested-sha=$testedSha"')) 'The tested SHA must be independently recoverable from authoritative job logs.'
 Assert-True ($workflow.Contains('-HeadSha ${{ github.event.pull_request.head.sha || github.sha }}')) 'PR branch-head provenance must not use the synthetic merge SHA.'
-Assert-True ($workflow.Contains('-TestedSha ${{ steps.backend-evidence-environment.outputs.tested-sha }}')) 'Backend tested-checkout provenance must flow from git.'
+Assert-True ($workflow.Contains('-TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}')) 'Backend shard tested-checkout provenance must flow from git.'
 Assert-True ($workflow.Contains('-TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}')) 'Connector tested-checkout provenance must flow from git.'
 Assert-True (-not $workflow.Contains('-CommitSha')) 'Ambiguous commit SHA workflow input must be removed.'
 Assert-True (-not $workflow.Contains('TestOnly')) 'Production workflow must not use any test-only authority seam.'
 Assert-True ($workflow.Contains('outputs.evidence-path')) 'Workflow upload must use the collector-selected owned evidence path.'
 Assert-True (-not $workflow.Contains('continue-on-error')) 'MAN-661 forbids continue-on-error.'
-Assert-True ($workflow.Contains('--logger trx')) 'Backend and Connector Host must emit TRX.'
+Assert-True ($workflow.Contains('--logger trx')) 'Connector Host must emit TRX.'
+Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"")) 'Backend shards must emit uniquely prefixed TRX.'
 Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1')) 'CI must use the governed collector.'
 Assert-True ($workflow.Contains('if: always()')) 'Collection/upload must run after failures.'
-Assert-True ($workflow.Contains('test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}')) 'Backend artifact identity mismatch.'
+foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3', 'backend-shard-4')) {
+    Assert-True ($workflow.Contains("test-evidence-$shardLane-`${{ github.run_id }}-`${{ github.run_attempt }}")) "Backend shard artifact identity mismatch for '$shardLane'."
+    Assert-True ($workflow.Contains("-Lane $shardLane")) "Backend shard lane '$shardLane' must be collected."
+    Assert-True ($workflow.Contains("-SelectedLanes $shardLane")) "Backend shard lane '$shardLane' must select only itself."
+}
+Assert-True (-not $workflow.Contains('-Lane backend ')) 'The unsharded backend lane must no longer be collected once shards own it.'
+$laneJobAllowlist = Get-NervTestEvidenceLaneJobs
+Assert-Equal 5 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover exactly the four backend shards and connector-host.'
+Assert-True (-not $laneJobAllowlist.Contains('backend')) 'No job may certify the unsharded backend lane once the shards own it.'
+Assert-True (-not (@($laneJobAllowlist.Values) -ccontains 'Backend Tests')) 'The test-free shard aggregate must own no evidence lane.'
 Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}')) 'Connector artifact identity mismatch.'
 Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw')) 'Raw TRX must not be uploaded.'
+Assert-True (-not $workflow.Contains('path: TestResults')) 'Backend shards must not upload unredacted result directories.'
 foreach ($laneContract in @(
-    @{ Test = '- name: Test backend solution'; Collect = '- name: Collect backend test evidence'; Upload = '- name: Upload backend test evidence' },
+    @{ Test = '- name: Test BusinessGateway shard'; Collect = '- name: Collect BusinessGateway shard evidence'; Upload = '- name: Upload BusinessGateway shard evidence' },
+    @{ Test = '- name: Test platform shard'; Collect = '- name: Collect platform shard evidence'; Upload = '- name: Upload platform shard evidence' },
+    @{ Test = '- name: Test business core A shard'; Collect = '- name: Collect business core A shard evidence'; Upload = '- name: Upload business core A shard evidence' },
+    @{ Test = '- name: Test business core B shard'; Collect = '- name: Collect business core B shard evidence'; Upload = '- name: Upload business core B shard evidence' },
     @{ Test = '- name: Test connector host solution'; Collect = '- name: Collect connector host test evidence'; Upload = '- name: Upload connector host test evidence' }
 )) {
     $testIndex = $workflow.IndexOf($laneContract.Test, [StringComparison]::Ordinal)
@@ -632,8 +683,18 @@ $ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
 Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
 
 $evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
-Assert-True ($evidenceJobs.Count -ge 3) "Expected at least three evidence-publishing CI jobs; found $($evidenceJobs.Count)."
-foreach ($expectedEvidenceJob in @('backend-tests', 'connector-host-tests', 'erp-sales-order-demand-acceptance')) {
+Assert-True ($evidenceJobs.Count -ge 6) "Expected at least six evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+# MAN-669 moved the backend evidence face off the single `backend-tests` job onto the four fast
+# shards; `backend-tests` is now the test-free aggregate and publishes nothing. Naming the shards
+# individually is deliberate — a count-only assertion would stay green if a shard silently stopped
+# collecting, which is exactly the regression this list exists to catch.
+foreach ($expectedEvidenceJob in @(
+        'backend-tests-business-gateway',
+        'backend-tests-platform',
+        'backend-tests-business-core-a',
+        'backend-tests-business-core-b',
+        'connector-host-tests',
+        'erp-sales-order-demand-acceptance')) {
     Assert-True (@($evidenceJobs | Where-Object Name -eq $expectedEvidenceJob).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
 }
 
