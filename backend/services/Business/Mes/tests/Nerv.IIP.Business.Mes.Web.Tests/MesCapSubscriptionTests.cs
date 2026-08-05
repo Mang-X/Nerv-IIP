@@ -178,9 +178,19 @@ public sealed class MesCapSubscriptionTests
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var window = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(x => x.DeviceAssetId == "ASSET-CNC-01");
-            var result = await dbContext.ScheduleResults.SingleOrDefaultAsync();
+            var inbox = await dbContext.ProcessedIntegrationEvents
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x =>
+                    x.ConsumerName == AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName &&
+                    x.EventId == "evt-mes-cap-asset-unavailable");
+            var window = await dbContext.WorkCenterUnavailabilities
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DeviceAssetId == "ASSET-CNC-01");
+            var result = await dbContext.ScheduleResults
+                .AsNoTracking()
+                .SingleOrDefaultAsync();
 
+            Assert.NotNull(inbox);
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
