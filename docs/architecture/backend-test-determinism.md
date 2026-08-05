@@ -173,12 +173,18 @@ spec §7 要求**评估**把 697 个细粒度重复的路由/权限用例合并�
 `backend-shard-1`（job `Backend Tests - BusinessGateway`）。per-assembly TRX elapsed 只取决于该程序集自己的执行窗口，
 不受 lane 拓扑影响，因此上表的 before/after 对比在分片后依然成立；变的只是后续 refresh 要从哪条 lane 取数。
 
-spec §8 要求「使用 MAN-661 的每用例基线对比」。该 baseline 当前状态为
+spec §8 要求「使用 MAN-661 的每用例基线对比」。MAN-663 落地当时该 baseline 为
 `unavailableReason: incompatible-granularity-or-duration-metric`（committed baseline 是 project-wall-clock，
-运行摘要是 test-granularity trx-elapsed，不可比），因此本次改用同一 evidence artifact 的 **per-assembly TRX
+运行摘要是 test-granularity trx-elapsed，不可比），因此上表改用同一 evidence artifact 的 **per-assembly TRX
 elapsed** 做 before/after 对比。局限如实记录：这是程序集粒度而非每用例粒度，两个 run 的 runner 硬件不完全同机，
-且不含 restore/build 时间；结论「量级下降」稳健，但不应被当作每用例 baseline 已经建立。合并后由 MAN-661 的
-normalized artifact refresh 建立可比 baseline 后，本节数字应被那次 refresh 取代。
+且不含 restore/build 时间；结论「量级下降」稳健，但不应被当作每用例 baseline 已经建立。2026-08-05 已用合并后
+首个合格 main push run `30999368607` 的 normalized artifacts 完成 refresh：committed baseline 现为
+`granularity: test` / `durationMetric: trx-elapsed`，`backend-shard-1` 的
+`nerv.iip.businessgateway.web.tests.dll` 记为 **22 996.0 ms / 1036 例**，耗时对比恢复为 `available` 的
+report-only delta。上表保留为 MAN-663 当时的取证过程，权威数字以 committed baseline 为准。另注：
+implementation-readiness 里「822 000 ms → 22 996 ms（约 −97.2%）」是**跨口径**百分比（分母取自旧
+project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**同口径**佐证正是上表两行——
+869.4 s / 1023 例 → 22.0 s / 1036 例，同为 hosted runner 的 per-assembly TRX elapsed。
 
 ## Seeded order 与本地六轮验证
 

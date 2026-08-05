@@ -377,11 +377,36 @@ $shardedBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-2'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 20 }) }
 ) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal 2 @($shardedBaseline.assemblies).Count 'Baseline identity must be lane plus assembly, not assembly alone.'
-$committedProjectBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
-$incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline $committedProjectBaseline -PriorAttemptOutcome $null -TopCount 5
+$incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline ($baselineA | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
 Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.unavailableReason 'Incompatible baseline must expose a structured unavailable reason.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.assemblies[0].unavailableReason 'Each unavailable assembly comparison must expose its reason.'
+$compatibleRun = @{ workflowRunId = '1001'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; lane = 'backend-shard-1'; selectedLanes = @('backend-shard-1') }
+$compatibleRecords = @(Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $compatibleRun)
+$compatibleBaseline = New-NervTestEvidenceBaseline -Summaries @(
+    [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$compatibleRecords[0].lane; assembly = [string]$compatibleRecords[0].assembly; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 6000.0 }) }
+) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-05T11:06:53Z')
+Assert-Equal 'test' $compatibleBaseline.granularity 'A TRX-sourced baseline must stay test-granularity.'
+Assert-Equal 'trx-elapsed' $compatibleBaseline.durationMetric 'A test-granularity baseline must expose the trx-elapsed metric.'
+$compatibleBaselineSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
+Assert-True ([bool]$compatibleBaselineSummary.baseline.available) 'A test-granularity trx-elapsed baseline must produce an available comparison.'
+Assert-Equal $null $compatibleBaselineSummary.baseline.unavailableReason 'An available baseline comparison must not carry an unavailable reason.'
+Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 'Available comparison must report the exact signed delta percent.'
+
+# The committed baseline is the artifact MAN-661 governs; it must stay comparable with the TRX evidence CI actually produces.
+$committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+Assert-Equal 'test' $committedBaseline.granularity 'Committed baseline must be test-granularity.'
+Assert-Equal 'trx-elapsed' $committedBaseline.durationMetric 'Committed baseline must use the trx-elapsed duration metric.'
+Assert-Equal 'trx-evidence' $committedBaseline.source.kind 'Committed baseline must be generated from TRX evidence, not console wall clock.'
+Assert-Equal 'push' $committedBaseline.source.event 'Committed baseline must come from a push run.'
+Assert-Equal 'main' $committedBaseline.source.headBranch 'Committed baseline must come from main.'
+Assert-Equal 'success' $committedBaseline.source.conclusion 'Committed baseline must come from a successful run.'
+$committedBaselineLanes = @($committedBaseline.assemblies.lane | Sort-Object -Unique)
+foreach ($requiredLane in @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object)) {
+    Assert-True ($committedBaselineLanes -ccontains $requiredLane) "Committed baseline is missing authenticated lane '$requiredLane'."
+}
+Assert-True (@($committedBaseline.assemblies).Count -gt 0) 'Committed baseline must carry at least one assembly row.'
+Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [double]$_.elapsedMilliseconds -le 0 }).Count 'Committed baseline must not contain non-positive assembly durations.'
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -474,6 +499,10 @@ try {
     $successRaw = Join-Path $collectorRoot 'success-raw'
     [IO.Directory]::CreateDirectory($successRaw) | Out-Null
     Copy-Item (Join-Path $fixtures 'connector-results.trx') $successRaw
+    # Rendering of an unavailable comparison is asserted against an explicit project-granularity baseline,
+    # not against the committed baseline, whose granularity and rows move with every MAN-661 refresh.
+    $projectBaselinePath = Join-Path $collectorRoot 'project-granularity-baseline.json'
+    Write-NervUtf8NoBom -Path $projectBaselinePath -Text (($baselineA | ConvertTo-Json -Depth 100) + "`n")
     Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
         '-OutputDirectory', $successOut, '-WorkflowRunId', 'fixture-success', '-RunAttempt', '1',
@@ -482,14 +511,14 @@ try {
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-success',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
         '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
-        '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+        '-BaselinePath', $projectBaselinePath
     ) | Out-Null
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) { Assert-True (Test-Path (Join-Path $successOut $required)) "Collector missing '$required'." }
     $successSummary = Get-Content (Join-Path $successOut 'summary.json') -Raw | ConvertFrom-Json
     Assert-Equal 'backend' $successSummary.selectedLanes[0] 'Collector summary must retain the selected lane selector.'
     Assert-Equal 'backend' $successSummary.selectedLaneResults[0].baseLane 'Collector summary must emit the selected logical lane result.'
     Assert-Equal 1 $successSummary.selectedLaneResults[0].executed 'Collector selected-lane result executed count mismatch.'
-    Assert-Equal 'incompatible-granularity-or-duration-metric' $successSummary.baseline.unavailableReason 'Committed project baseline must remain explicitly unavailable for TRX comparison.'
+    Assert-Equal 'incompatible-granularity-or-duration-metric' $successSummary.baseline.unavailableReason 'A project wall-clock baseline must remain explicitly unavailable for TRX comparison.'
     $successMarkdown = Get-Content (Join-Path $successOut 'summary.md') -Raw
     foreach ($exact in @(
         '## Selected lane results',
@@ -503,6 +532,44 @@ try {
     )) { Assert-True $successMarkdown.Contains($exact) "Job Summary is missing exact value '$exact'." }
     Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%')) 'Unavailable baseline comparison must not render empty metric placeholders.'
     Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)')) 'Each incompatible assembly comparison must render its unavailable reason.'
+
+    # Field-level assertions on the committed baseline cannot show the one property a MAN-661 refresh
+    # exists to preserve: that the collector can actually consume the committed file. So run the real
+    # collector end to end with `-BaselinePath` pointing at the committed artifact, using synthesized
+    # TRX evidence for a lane/assembly the committed baseline itself claims to cover.
+    $committedRow = @($committedBaseline.assemblies | Sort-Object lane, assembly | Select-Object -First 1)[0]
+    $committedLane = [string]$committedRow.lane
+    $committedAssembly = [string]$committedRow.assembly
+    $committedRaw = Join-Path $collectorRoot 'committed-baseline-raw'
+    $committedOut = Join-Path $collectorRoot 'committed-baseline'
+    [IO.Directory]::CreateDirectory($committedRaw) | Out-Null
+    Write-NervUtf8NoBom -Path (Join-Path $committedRaw 'committed-baseline-results.trx') -Text @"
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="33333333-3333-3333-3333-333333333333" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-05T11:00:00Z" queuing="2026-08-05T11:00:00Z" start="2026-08-05T11:00:00Z" finish="2026-08-05T11:00:00.020Z" />
+  <Results><UnitTestResult testId="33333333-3333-3333-3333-333333333301" testName="committedBaselineComparable" duration="00:00:00.0100000" outcome="Passed" /></Results>
+  <TestDefinitions><UnitTest id="33333333-3333-3333-3333-333333333301" name="committedBaselineComparable" storage="$([Security.SecurityElement]::Escape($committedAssembly))"><TestMethod className="Fixture.CommittedBaselineTests" name="committedBaselineComparable" /></UnitTest></TestDefinitions>
+  <ResultSummary outcome="Completed"><Counters total="1" executed="1" passed="1" failed="0" notExecuted="0" /></ResultSummary>
+</TestRun>
+"@
+    Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-committed-baseline' -Arguments @(
+        '-Lane', $committedLane, '-SelectedLanes', $committedLane, '-ResultsDirectory', $committedRaw,
+        '-OutputDirectory', $committedOut, '-WorkflowRunId', 'fixture-committed-baseline', '-RunAttempt', '1',
+        '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
+        '-Repository', 'Mang-X/Nerv-IIP', '-JobName', [string](Get-NervTestEvidenceLaneJobs)[$committedLane], '-CurrentTestOutcome', 'success',
+        '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-committed-baseline',
+        '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+        '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+    ) | Out-Null
+    $committedSummary = Get-Content (Join-Path $committedOut 'summary.json') -Raw | ConvertFrom-Json
+    Assert-True ([bool]$committedSummary.baseline.available) "Committed baseline must be consumable by the collector for lane '$committedLane'."
+    Assert-Equal $null $committedSummary.baseline.unavailableReason 'Collector comparison against the committed baseline must not report an unavailable reason.'
+    $committedDelta = @($committedSummary.baseline.assemblies | Where-Object { [string]$_.assembly -ceq $committedAssembly })
+    Assert-Equal 1 $committedDelta.Count "Collector must emit exactly one comparison row for '$committedAssembly'."
+    Assert-True ([bool]$committedDelta[0].available) 'The comparison row backed by the committed baseline must be available.'
+    Assert-Equal ([double]$committedRow.elapsedMilliseconds) ([double]$committedDelta[0].baselineDurationMilliseconds) 'Collector must compare against the committed baseline duration verbatim.'
+    Assert-True ((Get-Content (Join-Path $committedOut 'summary.md') -Raw).Contains('Baseline comparison: available')) 'Job Summary must render the committed baseline comparison as available.'
 
     foreach ($adversarial in @(
         @{ Name = 'identity'; Lane = 'Authorization=Bearer lane-secret'; Selected = 'backend'; Run = 'Authorization=Bearer run-secret'; Repository = 'Authorization=Bearer repo-secret'; Job = 'Authorization=Bearer job-secret' },
