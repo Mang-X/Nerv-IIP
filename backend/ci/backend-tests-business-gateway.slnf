@@ -1,0 +1,8 @@
+{
+  "solution": {
+    "path": "../Nerv.IIP.sln",
+    "projects": [
+      "gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj"
+    ]
+  }
+}

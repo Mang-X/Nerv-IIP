@@ -15,19 +15,112 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Timeout policy (MAN-799, re-derived for the MAN-669 shard topology). Every job declares
+  # `timeout-minutes` and every explicit step declares one. Beyond that there are two tiers, because
+  # "protect the evidence" only applies where there is evidence to protect:
+  #
+  #   A) Jobs with `if: always()` evidence steps — the four backend shards, plus
+  #      erp-sales-order-demand-acceptance and connector-host-tests:
+  #          sum(step timeout-minutes) < job timeout-minutes.
+  #      A job-level timeout cancels the *whole* job, `if: always()` steps included, and would take
+  #      the MAN-661 test-evidence artifacts down with it; a step-level timeout fails only that
+  #      step, so the job continues into `Collect …` / `Upload …`. The strict inequality is what
+  #      guarantees some step budget fires first. It holds only if *every* explicit step has a
+  #      budget, evidence collection/upload included. The remaining margin (job − sum) must also
+  #      absorb GitHub's implicit `Set up job` and post steps, which are not in `steps:` and cannot
+  #      carry `timeout-minutes`; the post steps run *after* Upload, so they can cost budget but
+  #      never cost evidence. Adding a step here means adding its budget *and* raising the job
+  #      budget. Every shard job below keeps a 6-minute margin for exactly that.
+  #
+  #   B) Jobs with no step that can run after a failure — the `Backend Tests` aggregate,
+  #      backend-test-shard-governance, frontend, openapi-client-drift, script-governance: nothing
+  #      is lost when the job budget fires, so the budget is *not* inflated to clear the step sum.
+  #      Here the **job** budget is the fail-fast bound, sized from observed runtime. Step budgets
+  #      are per-step upper bounds only: with several steps in one job the later ones are not
+  #      individually reachable (`frontend` sums to 58m inside a 20m job, so its 15m build budget
+  #      can never fire on its own), and that is accepted rather than claimed otherwise. The only
+  #      thing enforced is the case that is dead under every schedule — a step budget at or above
+  #      the whole job budget.
+  #
+  # Shard test-step budgets are ~2x the observed maximum over the runs measured for MAN-669
+  # (BusinessGateway 16.0m → 35m, business-core-a 6.2m → 15m, business-core-b 4.8m → 12m,
+  # platform 3.7m → 10m), while short fixed-cost steps (checkout, SDK setup, cache restore,
+  # evidence collect/upload) get a 3–8 minute floor that no healthy run comes near. The
+  # BusinessGateway floor is owned by MAN-663; if that assembly is split, re-measure rather than
+  # inheriting 35m.
+  #
+  # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
+  # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   backend-tests:
     name: Backend Tests
+    # Tier B. Pure aggregate: five `test` comparisons over needs results, ~2s observed.
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - backend-test-shard-governance
+      - backend-tests-business-gateway
+      - backend-tests-platform
+      - backend-tests-business-core-a
+      - backend-tests-business-core-b
+    steps:
+      - name: Require all backend fast shards
+        timeout-minutes: 3
+        run: |
+          test "${{ needs.backend-test-shard-governance.result }}" = "success"
+          test "${{ needs.backend-tests-business-gateway.result }}" = "success"
+          test "${{ needs.backend-tests-platform.result }}" = "success"
+          test "${{ needs.backend-tests-business-core-a.result }}" = "success"
+          test "${{ needs.backend-tests-business-core-b.result }}" = "success"
+
+  backend-test-shard-governance:
+    name: Backend Test Shard Governance
+    # Tier B (no step runs after a failure). Read-only manifest + structured `ci.yml` validation,
+    # observed max 0.8m. The 15m job budget is the fail-fast bound; step budgets sum to 18m and
+    # are per-step upper bounds only.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby for structured workflow validation
+        timeout-minutes: 5
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+
+      - name: Validate backend test shard classification
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          ./scripts/verify-backend-test-shards.ps1
+          ./scripts/tests/backend-test-shards.Tests.ps1
+
+  backend-tests-business-gateway:
+    name: Backend Tests - BusinessGateway
+    # Tier A (evidence steps). Observed max 16.0m / 14.3m over the two measured runs — this shard
+    # is the critical-path floor and its own main source of run-to-run noise until MAN-663 splits
+    # the assembly. The 35m test budget is ~2.2x the observed max; step budgets sum to 64m,
+    # leaving 6m of margin for the implicit setup/post steps. If the test step passes ~28m, raise
+    # both budgets rather than only the step one, or the strict inequality stops protecting the
+    # evidence steps.
+    timeout-minutes: 70
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -36,7 +129,8 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
-        id: backend-evidence-environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
         shell: pwsh
         run: |
           $testedSha = (git rev-parse HEAD).Trim()
@@ -45,16 +139,19 @@ jobs:
           "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
           Write-Host "tested-sha=$testedSha"
 
-      - name: Test backend solution
-        id: backend-tests
+      - name: Test BusinessGateway shard
+        timeout-minutes: 35
+        id: shard-tests
+        shell: pwsh
         run: >-
-          dotnet test backend/Nerv.IIP.sln
-          --configuration Release
-          --logger trx
-          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-gateway
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -TrxFilePrefix backend-tests-business-gateway
 
-      - name: Collect backend test evidence
-        id: collect-backend-evidence
+      - name: Collect BusinessGateway shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
         if: always()
         shell: pwsh
         env:
@@ -62,52 +159,323 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: >-
           ./scripts/collect-test-evidence.ps1
-          -Lane backend
-          -SelectedLanes backend
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend
+          -Lane backend-shard-1
+          -SelectedLanes backend-shard-1
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
-          -TestedSha ${{ steps.backend-evidence-environment.outputs.tested-sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
-          -JobName "Backend Tests"
-          -CurrentTestOutcome ${{ steps.backend-tests.outcome }}
+          -JobName "Backend Tests - BusinessGateway"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
           -Event ${{ github.event_name }}
           -HeadBranch $env:HEAD_BRANCH
           -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          -RunnerImage ${{ steps.backend-evidence-environment.outputs.runner-image }}
-          -DotnetSdk ${{ steps.backend-evidence-environment.outputs.dotnet-sdk }}
-          -ArtifactName test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
           -RetentionDays 14
           -StepSummaryPath $env:GITHUB_STEP_SUMMARY
 
-      - name: Upload backend test evidence
+      - name: Upload BusinessGateway shard evidence
+        timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-evidence-backend-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.collect-backend-evidence.outputs.evidence-path }}
+          name: test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-platform:
+    name: Backend Tests - Platform
+    # Tier A (evidence steps). Observed max 3.7m. Step budgets sum to 39m, leaving 6m of margin
+    # for the implicit setup/post steps.
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test platform shard
+        timeout-minutes: 10
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId platform
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -TrxFilePrefix backend-tests-platform
+
+      - name: Collect platform shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-2
+          -SelectedLanes backend-shard-2
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Platform"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload platform shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-business-core-a:
+    name: Backend Tests - Business Core A
+    # Tier A (evidence steps). Observed max 6.2m. Step budgets sum to 44m, leaving 6m of margin
+    # for the implicit setup/post steps.
+    timeout-minutes: 50
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test business core A shard
+        timeout-minutes: 15
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-a
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -TrxFilePrefix backend-tests-business-core-a
+
+      - name: Collect business core A shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-3
+          -SelectedLanes backend-shard-3
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core A"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core A shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-business-core-b:
+    name: Backend Tests - Business Core B
+    # Tier A (evidence steps). Observed max 4.8m. Step budgets sum to 41m, leaving 6m of margin
+    # for the implicit setup/post steps.
+    timeout-minutes: 47
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test business core B shard
+        timeout-minutes: 12
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-b
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -TrxFilePrefix backend-tests-business-core-b
+
+      - name: Collect business core B shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-4
+          -SelectedLanes backend-shard-4
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core B"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core B shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
           retention-days: 14
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
+    # Tier A (evidence steps). Observed max 4.2m / avg 3.9m; extra headroom for Docker image
+    # pulls. Step budgets sum to 46m, leaving 9m of margin for the implicit setup/post steps.
+    timeout-minutes: 55
     runs-on: ubuntu-latest
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -116,15 +484,18 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Prepare PostgreSQL and Redis images
+        timeout-minutes: 10
         run: |
           docker pull postgres:18
           docker pull redis:8
 
       - name: Verify ERP sales-order demand bridge
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/verify-erp-sales-order-demand-planning.ps1
 
       - name: Upload ERP sales-order demand diagnostics
+        timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -137,17 +508,23 @@ jobs:
 
   connector-host-tests:
     name: Connector Host Tests
+    # Tier A (evidence steps). Observed max 1.9m / avg 1.6m. This is the job that hung for 28m
+    # in MAN-799. Step budgets sum to 41m, leaving 9m of margin for the implicit setup/post steps.
+    timeout-minutes: 50
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -156,6 +533,7 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
+        timeout-minutes: 3
         id: connector-evidence-environment
         shell: pwsh
         run: |
@@ -166,6 +544,7 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Test connector host solution
+        timeout-minutes: 12
         id: connector-host-tests
         run: >-
           dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
@@ -174,6 +553,7 @@ jobs:
           --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
 
       - name: Collect connector host test evidence
+        timeout-minutes: 5
         id: collect-connector-host-evidence
         if: always()
         shell: pwsh
@@ -204,6 +584,7 @@ jobs:
           -StepSummaryPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload connector host test evidence
+        timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -214,17 +595,23 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
+    # Tier B (no step runs after a failure). Observed max 4.9m / avg 4.4m; the 20m job budget is the
+    # fail-fast bound. Step budgets sum to 58m and are per-step upper bounds only.
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
+        timeout-minutes: 5
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -232,30 +619,40 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        timeout-minutes: 12
         run: pnpm -C frontend install --frozen-lockfile
 
       - name: Check frontend format and lint
+        timeout-minutes: 10
         run: pnpm -C frontend check
 
       - name: Typecheck frontend
+        timeout-minutes: 10
         run: pnpm -C frontend typecheck
 
       - name: Build frontend
+        timeout-minutes: 15
         run: pnpm -C frontend build
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
+    # Tier B (no step runs after a failure). Observed max 2.0m / avg 1.8m; the 20m job budget is the
+    # fail-fast bound. Step budgets sum to 39m and are per-step upper bounds only.
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -264,11 +661,13 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Setup pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
+        timeout-minutes: 5
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -276,37 +675,50 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Verify OpenAPI/api-client drift
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/verify-openapi-client-drift.ps1
 
   script-governance:
     name: Script Governance
+    # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
+    # include the evidence contract-test step; the 0.7m average this comment used to quote predates
+    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 33m and are per-step
+    # upper bounds only.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Run script governance check
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
 
       - name: Test backend determinism checker
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
 
       - name: Test backend determinism verifier
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/verify-backend-test-determinism.Tests.ps1
 
       - name: Run backend determinism checker
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/check-backend-test-determinism.ps1
 
       - name: Run test evidence contract tests
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/test-evidence.Tests.ps1

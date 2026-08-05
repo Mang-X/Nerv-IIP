@@ -34,6 +34,14 @@ await TestTimeout.RunAsync(
     sensitiveValues: [credential]);
 ```
 
+**推进假时钟前必须先确认计时器已注册。** `FakeTimeProvider.Advance` 只会触发**当时已注册**的计时器；若被测代码在 `Advance`
+之后才创建 `Task.Delay`/`ITimer`，该计时器以已推进的 now 为基准重新定期，而此后没有任何东西再推进时钟——tick 永久丢失，
+等待方永远不返回。`await Task.Yield()` **不是**这种同步屏障：它只让出一次调度，不保证目标代码已跑到注册那一行。
+`BackgroundService.StartAsync` 返回时并不保证 `ExecuteAsync` 的方法体已执行，因此「`StartAsync` 之后计时器一定已注册」
+是不成立的假设。正确做法是让被测替身在创建 pending 任务**之后**显式发出边沿信号，测试有界地等待该信号再 `Advance`
+（`CapTestHostTests.FakeBootstrapper.BootstrapTimersRegistered`）。同一失败模式在 Connector Host 侧由 MAN-799 的
+`WaitForTimerCreatedAsync` 屏障处理；两套 helper 分处两个 solution，按仓库边界规则不得互相引用，结构重复是有意的。
+
 超时诊断必须保留 `condition` 或 `operation`、尝试次数、elapsed 和最后一次业务观测；显式 sensitive values 以及 password、secret、token、credential、API key、connection string、headers 和 request body 必须经 `TestDiagnostic.Sanitize` 清除。不得把完整请求头、请求体、连接串或响应体放进 describe、异常或测试输出。
 
 ## 网络结果与预算
@@ -160,6 +168,10 @@ spec §7 要求**评估**把 697 个细粒度重复的路由/权限用例合并�
 | 改造后 | 1036 | **22.0 s（22 034.6 ms）** | PR run `30899938177`，tested SHA `1c374177` |
 
 本机 macOS `--no-build` wall 为 8.7–11.3 s，作为 5 seed × 5 并发档矩阵的稳定性证据保留，但**不**用于 ≤2 min 验收。
+
+上表两个 run 都发生在 MAN-669 分片**之前**，两侧 evidence lane 均为当时的 `backend`。合并 MAN-669 后该程序集的证据落在
+`backend-shard-1`（job `Backend Tests - BusinessGateway`）。per-assembly TRX elapsed 只取决于该程序集自己的执行窗口，
+不受 lane 拓扑影响，因此上表的 before/after 对比在分片后依然成立；变的只是后续 refresh 要从哪条 lane 取数。
 
 spec §8 要求「使用 MAN-661 的每用例基线对比」。该 baseline 当前状态为
 `unavailableReason: incompatible-granularity-or-duration-metric`（committed baseline 是 project-wall-clock，
