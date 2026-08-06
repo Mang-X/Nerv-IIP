@@ -20,7 +20,7 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 ///
 /// 当初逃过 CI 的原因：服务侧该读面零测试，而网关测试用的是 fake 实现 —— 这条 LINQ 从未对任何
 /// 关系型 provider 执行过。所以这里的第一组测试刻意做成**不需要数据库**：EF 的查询翻译发生在建立连接
-/// **之前**，因此指向一个必然被拒的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
+/// **之前**，因此指向一个预期被拒的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
 /// 真正门禁住这类 provider 翻译回归。
 ///
 /// 注意不要改用 SQLite 兜这个底：SQLite 不支持 <c>DateTimeOffset</c> 的 ORDER BY，会给出与生产
@@ -28,7 +28,9 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 ///
 /// 「连不上库」这一步不能靠某个 IP 恰好超时：连接目标由
 /// <see cref="NetworkFailureFixture.ReserveRefusedLoopbackEndpoint"/> 提供 —— 一个刚绑定又立刻释放的
-/// 本地端口，任何机器上都必然回 <see cref="NetworkFailureKind.ConnectionRefused"/>。
+/// 本地端口，不经 DNS 解析器也不经防火墙策略，因此结果不随机器配置而变。这**不是**绝对保证：该端口
+/// 在返回后回到 ephemeral 池，仍存在被同机其他进程抢占的窗口（详见该方法的 XML doc 与 #1477）。
+/// 下面的分类断言正是这一前提的守卫 —— 前提一旦被破坏，是断言失败而不是静默改变语义。
 /// </summary>
 public sealed class QualityCalibrationRecordQueryTests
 {
@@ -43,7 +45,7 @@ public sealed class QualityCalibrationRecordQueryTests
     private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// 指向一个必然被拒的本地端口：翻译成功后才会走到连接失败。
+    /// 指向一个预期被拒的本地端口：翻译成功后才会走到连接失败。
     ///
     /// 刻意是**实例**字段而不是 <c>static</c>：xUnit 为每个测试新建一次实例，因此端口按用例预留，
     /// 而不是由整个测试类长期持有 —— 后者会把「端口已释放、可被同机其他进程占用」的暴露窗口拉长到
