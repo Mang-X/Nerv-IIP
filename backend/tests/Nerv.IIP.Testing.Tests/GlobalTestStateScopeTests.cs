@@ -56,6 +56,51 @@ public sealed class GlobalTestStateScopeTests
     }
 
     [Fact]
+    public async Task SetEnvironmentVariable_RestoresAVariableThatWasNotNamedAtCapture()
+    {
+        const string environmentVariable = "NERV_IIP_GLOBAL_STATE_SCOPE_LATE_TEST";
+        Assert.Null(Environment.GetEnvironmentVariable(environmentVariable));
+
+        var scope = await GlobalTestStateScope.CaptureAsync();
+        scope.SetEnvironmentVariable(environmentVariable, "mutated");
+
+        Assert.Equal("mutated", Environment.GetEnvironmentVariable(environmentVariable));
+
+        await scope.DisposeAsync();
+
+        Assert.Null(Environment.GetEnvironmentVariable(environmentVariable));
+    }
+
+    [Fact]
+    public async Task UseCulture_SetsBothCurrentAndUiCultureAndDisposeRestoresThem()
+    {
+        var originalCurrentCulture = CultureInfo.CurrentCulture;
+        var originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+
+        var scope = await GlobalTestStateScope.CaptureAsync();
+        scope.UseCulture("fr-FR");
+
+        Assert.Equal("fr-FR", CultureInfo.CurrentCulture.Name);
+        Assert.Equal("fr-FR", CultureInfo.CurrentUICulture.Name);
+
+        await scope.DisposeAsync();
+
+        Assert.Same(originalCurrentCulture, CultureInfo.CurrentCulture);
+        Assert.Same(originalCurrentUiCulture, CultureInfo.CurrentUICulture);
+    }
+
+    [Fact]
+    public async Task Mutators_RejectUseAfterDisposeRatherThanLeakingUnrestorableState()
+    {
+        var scope = await GlobalTestStateScope.CaptureAsync();
+        await scope.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => scope.UseCulture("fr-FR"));
+        Assert.Throws<ObjectDisposedException>(
+            () => scope.SetEnvironmentVariable("NERV_IIP_GLOBAL_STATE_SCOPE_DISPOSED_TEST", "value"));
+    }
+
+    [Fact]
     public async Task CaptureAsync_SerializesConcurrentScopesUntilTheFirstScopeDisposes()
     {
         var first = await GlobalTestStateScope.CaptureAsync();
