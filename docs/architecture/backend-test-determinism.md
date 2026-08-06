@@ -252,9 +252,11 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    FastEndpoints serializer/validation/discovery 类的静态变异**本批不存在**（实测这 47 行全是 culture 与
    环境变量），因此没有动用 collection serialization / 一次性进程隔离；那两条手段的适用面不变。
 
-2. **隔离机制自身的位点重新分类为常设例外（22 行）。** 分两处：`GlobalTestStateScopeTests.cs` 的 12 行是
-   自测，变异就是被测行为；`GlobalTestStateScope.cs` 的 10 行是这条机制的实现本身，也就是仓库指定的静态写入
-   落点，没有别处可搬。二者都不会随任何后续重构消失，给它们一个到期日是编造 deadline 而不是设 deadline。
+2. **隔离机制自身的位点重新分类为常设例外（22 行 / 23 个 finding）。** 分三处：`GlobalTestStateScopeTests.cs`
+   的 12 行是自测，变异就是被测行为；`GlobalTestStateScope.cs` 的 9 行（含一行文本出现两次、占 10 个
+   occurrence）是这条机制的实现本身，也就是仓库指定的静态写入落点，没有别处可搬；`BoundedObservationWindow.cs`
+   的 1 行是有界轮询原语的 poll interval（见下一节「共享测试基建已纳入扫描」）。三者都不会随任何后续重构消失，
+   给它们一个到期日是编造 deadline 而不是设 deadline。
    为此 baseline schema 升到 **2**，每行必须显式声明 `classification`：
 
    | classification | 必填 | 禁止 | 到期硬失败 |

@@ -128,7 +128,5 @@ public sealed class GlobalTestStateScopeTests
             await first.DisposeAsync();
             await (await secondCapture).DisposeAsync();
         }
-
-        Assert.True(secondCapture.IsCompletedSuccessfully);
     }
 }
