@@ -5,6 +5,27 @@ using FluentValidation;
 
 namespace Nerv.IIP.Testing;
 
+/// <summary>
+/// Serialises the tests that take a scope against each other and restores the exact prior value on
+/// dispose, including the difference between "was never set", "was set to the empty string" and
+/// "had a value". It cannot stop a test that never takes a scope from observing a mutated value
+/// while a scope is open — process-global state has no other owner.
+/// </summary>
+/// <remarks>
+/// The mutators are instance methods rather than something the caller writes inline for two reasons.
+/// First, <see cref="SetEnvironmentVariable"/> captures a variable's prior value the moment it is first
+/// written, so a caller can never mutate a variable it forgot to name in <see cref="CaptureAsync"/> —
+/// the previous shape made that omission silent and unrecoverable. Second, it keeps every raw
+/// <c>Environment.SetEnvironmentVariable</c> / <c>CultureInfo.Current*</c> write inside this one
+/// audited type instead of scattered across test bodies, which is what the backend test-determinism
+/// gate (<c>scripts/check-backend-test-determinism.ps1</c>) is looking for.
+/// <para>
+/// Capture and restore deliberately cover more statics than the mutator surface does: the
+/// FluentValidation global resolvers and the default-thread cultures have no mutator because nothing
+/// currently needs one, yet a scope still puts them back, so a test that reaches past the scope is
+/// still cleaned up after. A mutator is only added when a caller exists to exercise it.
+/// </para>
+/// </remarks>
 public sealed class GlobalTestStateScope : IAsyncDisposable
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
@@ -15,7 +36,7 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
     private readonly CultureInfo _currentUiCulture;
     private readonly CultureInfo? _defaultThreadCurrentCulture;
     private readonly CultureInfo? _defaultThreadCurrentUiCulture;
-    private readonly IReadOnlyDictionary<string, string?> _environmentVariables;
+    private readonly Dictionary<string, string?> _environmentVariables;
     private int _disposed;
 
     private GlobalTestStateScope(IReadOnlyList<string> environmentVariables)
@@ -54,6 +75,44 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
         }
     }
 
+    /// <summary>Sets both the current culture and the current UI culture for the running thread.</summary>
+    public GlobalTestStateScope UseCulture(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        return UseCulture(CultureInfo.GetCultureInfo(name));
+    }
+
+    /// <summary>Sets both the current culture and the current UI culture for the running thread.</summary>
+    public GlobalTestStateScope UseCulture(CultureInfo culture)
+    {
+        ArgumentNullException.ThrowIfNull(culture);
+        ThrowIfDisposed();
+
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        return this;
+    }
+
+    /// <summary>
+    /// Writes a process environment variable, capturing its prior value on first write so dispose can
+    /// restore it whether it was absent, empty, or set. Names never passed to
+    /// <see cref="CaptureAsync"/> are therefore still restored.
+    /// </summary>
+    public GlobalTestStateScope SetEnvironmentVariable(string name, string? value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ThrowIfDisposed();
+
+        if (!_environmentVariables.ContainsKey(name))
+        {
+            _environmentVariables[name] = Environment.GetEnvironmentVariable(name);
+        }
+
+        Environment.SetEnvironmentVariable(name, value);
+        return this;
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -81,5 +140,10 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
     }
 }

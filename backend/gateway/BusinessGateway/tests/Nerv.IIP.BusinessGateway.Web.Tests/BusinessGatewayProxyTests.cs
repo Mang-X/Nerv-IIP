@@ -22,6 +22,7 @@ using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -7366,28 +7367,22 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Product_engineering_http_client_formats_decimal_query_values_with_invariant_culture()
     {
-        var originalCulture = CultureInfo.CurrentCulture;
-        var originalUiCulture = CultureInfo.CurrentUICulture;
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
-        try
-        {
-            var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringRequest(request)));
-            using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
-            var client = new HttpBusinessProductEngineeringClient(httpClient);
+        // The scope serialises every culture mutator in the assembly and restores the exact prior
+        // values on dispose, so fr-FR cannot outlive this test. It is still the process culture
+        // while the scope is open.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState.UseCulture("fr-FR");
 
-            await client.ResolveProductionVersionAsync(
-                "internal-token-001",
-                new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100.5m),
-                CancellationToken.None);
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringRequest(request)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
+        var client = new HttpBusinessProductEngineeringClient(httpClient);
 
-            Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100.5", handler.Requests.Single().RequestUri!.PathAndQuery);
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-            CultureInfo.CurrentUICulture = originalUiCulture;
-        }
+        await client.ResolveProductionVersionAsync(
+            "internal-token-001",
+            new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100.5m),
+            CancellationToken.None);
+
+        Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100.5", handler.Requests.Single().RequestUri!.PathAndQuery);
     }
 
     [Fact]

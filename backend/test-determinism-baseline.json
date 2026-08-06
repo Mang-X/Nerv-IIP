@@ -1,475 +1,203 @@
 {
-  "schema": 1,
+  "schema": 2,
   "exceptions": [
-    {
-      "path": "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "0db8bce8748a91f79a0cee42e29b144356424d7387bbf803eebd73eabdc0262b",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The product-engineering HTTP client test sets fr-FR to prove decimal query values stay invariant, then restores both process cultures.",
-      "exitCondition": "Delete when the client formatter accepts an injected culture context or this regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "5d3eaa65d13d4fe8bd4432eeb2c4f8eada49a6458df6ae9fde531a5432e64e15",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The product-engineering HTTP client test sets fr-FR to prove decimal query values stay invariant, then restores both process cultures.",
-      "exitCondition": "Delete when the client formatter accepts an injected culture context or this regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "920a9be4c7297afa43f82c16eaeb576cf9321b887a08574829b15bfa1c4a0282",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The product-engineering HTTP client test sets fr-FR to prove decimal query values stay invariant, then restores both process cultures.",
-      "exitCondition": "Delete when the client formatter accepts an injected culture context or this regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "a377e388efd2dc952cff857e7859297ea005acb8bf7cbf7a34b55ed5e281f5f8",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The product-engineering HTTP client test sets fr-FR to prove decimal query values stay invariant, then restores both process cultures.",
-      "exitCondition": "Delete when the client formatter accepts an injected culture context or this regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubServiceReadinessTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "2c7c077eab33ab3978c97e3b7760d744a6808fd45bc6d0452f5ec8b001806d32",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The AppHub production-readiness test sets PostgreSQL, AutoMigrate, and AppHubDb environment values to prove unsafe production migration is rejected, then restores them.",
-      "exitCondition": "Delete when AppHub readiness configuration is supplied through isolated host settings instead of process environment mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubServiceReadinessTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "5f840bedd5b649cd76f9d45dde60baac426232b8fdebc1d5b91e173bccef60fd",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The AppHub production-readiness test sets PostgreSQL, AutoMigrate, and AppHubDb environment values to prove unsafe production migration is rejected, then restores them.",
-      "exitCondition": "Delete when AppHub readiness configuration is supplied through isolated host settings instead of process environment mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubServiceReadinessTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The AppHub production-readiness test sets PostgreSQL, AutoMigrate, and AppHubDb environment values to prove unsafe production migration is rejected, then restores them.",
-      "exitCondition": "Delete when AppHub readiness configuration is supplied through isolated host settings instead of process environment mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubServiceReadinessTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "c4bef3798aaf7c3ae5da3eb8e77ee11797e3a9183f085861aadae43e8a6d7b7e",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The AppHub production-readiness test sets PostgreSQL, AutoMigrate, and AppHubDb environment values to prove unsafe production migration is rejected, then restores them.",
-      "exitCondition": "Delete when AppHub readiness configuration is supplied through isolated host settings instead of process environment mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceWorkOrderIdempotencyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "5d3eaa65d13d4fe8bd4432eeb2c4f8eada49a6458df6ae9fde531a5432e64e15",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The maintenance completion test sets fr-FR to prove its idempotency fingerprint is culture-invariant, Unicode-safe, and spare-part-order independent, then restores culture.",
-      "exitCondition": "Delete when fingerprint culture is injected or the culture-sensitive assertion runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceWorkOrderIdempotencyTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "a377e388efd2dc952cff857e7859297ea005acb8bf7cbf7a34b55ed5e281f5f8",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The maintenance completion test sets fr-FR to prove its idempotency fingerprint is culture-invariant, Unicode-safe, and spare-part-order independent, then restores culture.",
-      "exitCondition": "Delete when fingerprint culture is injected or the culture-sensitive assertion runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "2c7c077eab33ab3978c97e3b7760d744a6808fd45bc6d0452f5ec8b001806d32",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "68b202fa855410e1d14431fab183be571dc8bd4554f9c4c1311b823f66dbcecd",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "2841dd911fecdb52e4bde8778c2b01d41153cc19fc2c54e63312c0c509d74242",
-      "occurrenceCount": 9,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "2c7c077eab33ab3978c97e3b7760d744a6808fd45bc6d0452f5ec8b001806d32",
-      "occurrenceCount": 10,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "76c678a08db77a5bd514678b12983624c03bd25410168c6af822240da33fe650",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "7a29caec91d541f3533e3480a796da42dcbb1bf86c81dc09baccea261cdc53e0",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "7fc80002c7cf870d293932d8435d6566e372d1df3e068b2aa4611ce768074fe0",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "9fc1a26140756688ff2df5b995412ed945cef3b053e4e6fe4a35a33a55b83b52",
-      "occurrenceCount": 9,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "d23aa0a16465e459a6bb4dc991d79bbfd2359368d0ec6e2618808d1cbc0c9b40",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "e4f4b3301747cb79be19d2f41ff7de194508c791e2b58d6e940ebffc310a2c3b",
-      "occurrenceCount": 9,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "ea018fedab318965cf0bdce312b7a3ca06b07cae626881e30fef304c6e24c9e7",
-      "occurrenceCount": 9,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "ede456082d676d04dc6271f523c8349c563157e4981cc34ea60b4f756c39d413",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM PostgreSQL profile suite configures provider, database, seed credentials, external client, and JWT keys through process environment for real persistence and production AutoMigrate guards, then restores all values.",
-      "exitCondition": "Delete when every IAM profile case supplies these values through isolated factory settings or an isolated child process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamRepositoryTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "0db8bce8748a91f79a0cee42e29b144356424d7387bbf803eebd73eabdc0262b",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM repository lookup test sets Turkish culture to prove login and email normalization remain invariant, then restores both process cultures.",
-      "exitCondition": "Delete when repository normalization culture is injected or the regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamRepositoryTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "34b72151a44caac4bfb8576b63ef4d318e9e3da906fce27a9a6781236f8a7274",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM repository lookup test sets Turkish culture to prove login and email normalization remain invariant, then restores both process cultures.",
-      "exitCondition": "Delete when repository normalization culture is injected or the regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamRepositoryTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "376a76107e40334800cc5dfdfe3838a9d0c6fc77e12942fdf04309d3a9cbbe62",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM repository lookup test sets Turkish culture to prove login and email normalization remain invariant, then restores both process cultures.",
-      "exitCondition": "Delete when repository normalization culture is injected or the regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamRepositoryTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "920a9be4c7297afa43f82c16eaeb576cf9321b887a08574829b15bfa1c4a0282",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The IAM repository lookup test sets Turkish culture to prove login and email normalization remain invariant, then restores both process cultures.",
-      "exitCondition": "Delete when repository normalization culture is injected or the regression runs in an isolated process.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Business.Performance.Tests/PerformanceMetricTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "f458f448b773f664af85746803e86936ebb5bc461c30ee5d2b25957e59af77d9",
-      "occurrenceCount": 2,
-      "ownerIssue": "#1471",
-      "reason": "The performance metric test sets PerformanceBaselineSettings.MetricsPathEnvironmentVariable to a temporary JSONL path, verifies WriteTo emits machine-readable output, and restores it.",
-      "exitCondition": "Delete when PerformanceMetric.WriteTo accepts an explicit metrics path or injectable settings without process environment mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Localization.Tests/NervIipLocalizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "0db8bce8748a91f79a0cee42e29b144356424d7387bbf803eebd73eabdc0262b",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The localization middleware test starts from zh-CN to prove an en-US Accept-Language request replaces current cultures, then restores both process cultures.",
-      "exitCondition": "Delete when request culture state can be isolated per test without mutating process culture.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Localization.Tests/NervIipLocalizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "241906175d6608e45bbf53d3401a10e17c9ecf9e6c3c3eb2bac58fccc429cf80",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The localization middleware test starts from zh-CN to prove an en-US Accept-Language request replaces current cultures, then restores both process cultures.",
-      "exitCondition": "Delete when request culture state can be isolated per test without mutating process culture.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Localization.Tests/NervIipLocalizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "52e2670d7c7e87594c56032a16b62f2861ea402b9cb063460a47a8e0ecd0f733",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The localization middleware test starts from zh-CN to prove an en-US Accept-Language request replaces current cultures, then restores both process cultures.",
-      "exitCondition": "Delete when request culture state can be isolated per test without mutating process culture.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Localization.Tests/NervIipLocalizationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "920a9be4c7297afa43f82c16eaeb576cf9321b887a08574829b15bfa1c4a0282",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The localization middleware test starts from zh-CN to prove an en-US Accept-Language request replaces current cultures, then restores both process cultures.",
-      "exitCondition": "Delete when request culture state can be isolated per test without mutating process culture.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Observability.Tests/NervIipObservabilityRegistrationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "2fad4abecdeb79040e2f09f6c898b0fce77471f6c0a042c3f683cdc5415c85a8",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The OTLP protocol precedence test sets OTEL_EXPORTER_OTLP_PROTOCOL to http/protobuf, verifies it overrides configured grpc, and restores the prior value.",
-      "exitCondition": "Delete when the protocol resolver accepts an isolated environment abstraction or explicit environment-value dictionary.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Observability.Tests/NervIipObservabilityRegistrationTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "be9e30ffa68d5f95c651e57cb41b0ec31cab72ceedc01dd6161373e7766f7028",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The OTLP protocol precedence test sets OTEL_EXPORTER_OTLP_PROTOCOL to http/protobuf, verifies it overrides configured grpc, and restores the prior value.",
-      "exitCondition": "Delete when the protocol resolver accepts an isolated environment abstraction or explicit environment-value dictionary.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "1199c74df0e63e5f7ff8a5c7ac24350559d7c883d6d8cc1cdfe4ff19548bdda1",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "18999b399b79dd216b1ce7675fb3e56e23ebca8835a7dcccef8b871861537cc4",
       "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "227c86aaef01301800090de88c93fff20a92cbe58bffca5411d1c0734089c658",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "337b5ce43fbbd29688320aee1709df8316e18dbb2b78091a111dda757bda29ad",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "3940321b7b7f37d51cc5b301a2d31b3c6daf1e039f68812d68d8fd48a3e7a02a",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "3df7255e8d6f743fa45f5e0e0b5d176280b7580cd6b782ece198f22d3bb26381",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "7ee988452552756073fcb56c5944539bd44fa5f1d2b98a86c9c77ae83f3b850b",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
+      "classification": "permanent",
+      "reason": "Arranges the \"variable is absent\" precondition before capture so the test can prove dispose restores absence rather than an empty string.",
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "94b441b3e5a14777b1d0eb5e782fb307ba2deef3dd44978d24ee5192e7287bd4",
       "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
+      "classification": "permanent",
+      "reason": "Arranges the \"variable is set to the empty string\" precondition before capture, the state most easily confused with absence.",
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "227c86aaef01301800090de88c93fff20a92cbe58bffca5411d1c0734089c658",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Mutates the FluentValidation global property-name resolver inside the scope; the assertion is that dispose puts the original delegate instance back.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "7ee988452552756073fcb56c5944539bd44fa5f1d2b98a86c9c77ae83f3b850b",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Mutates the FluentValidation global display-name resolver inside the scope; the assertion is that dispose puts the original delegate instance back.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "a377e388efd2dc952cff857e7859297ea005acb8bf7cbf7a34b55ed5e281f5f8",
       "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
-      "pattern": "StaticSetter",
-      "lineTextSha256": "acd627040b35fff27fae779a106b8037f123d44b951441156b62b68df0fdc357",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
+      "classification": "permanent",
+      "reason": "Mutates the current culture inside the scope so dispose can be shown to restore it.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "e68cceec88937467ad4eff0f8b9aab97f6d5598935bfae7d1e4c6b8b8781c8b9",
       "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
+      "classification": "permanent",
+      "reason": "Mutates the current UI culture inside the scope, distinct from the current culture, so a single-field restore would fail the test.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "1199c74df0e63e5f7ff8a5c7ac24350559d7c883d6d8cc1cdfe4ff19548bdda1",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Mutates the default thread culture inside the scope; it is a separate static from the current culture and needs its own restore evidence.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "337b5ce43fbbd29688320aee1709df8316e18dbb2b78091a111dda757bda29ad",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Mutates the default thread UI culture inside the scope; it is a separate static from the default thread culture and needs its own restore evidence.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "acd627040b35fff27fae779a106b8037f123d44b951441156b62b68df0fdc357",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Writes TZ inside the scope so dispose can be shown to restore the absent state captured beforehand.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "ec010391e1327c621487f572d510980aef91d17304bfc273446732ebe912e98f",
       "occurrenceCount": 1,
-      "ownerIssue": "#1471",
-      "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
-      "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
-      "expiresOn": "2026-09-12"
+      "classification": "permanent",
+      "reason": "Removes the captured variable inside the scope so dispose can be shown to restore the empty string rather than leaving it absent.",
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "3940321b7b7f37d51cc5b301a2d31b3c6daf1e039f68812d68d8fd48a3e7a02a",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Test teardown outside the scope: returns TZ to the value the process had before the test arranged its precondition.",
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
+    },
+    {
+      "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "3df7255e8d6f743fa45f5e0e0b5d176280b7580cd6b782ece198f22d3bb26381",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Test teardown outside the scope: returns the probe variable to the value the process had before the test arranged its precondition.",
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "f00b28bdde8ced3448dc4ba45a3d0d2681d543aacbdc985b5a6e650371ea5e84",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "UseCulture sets the current culture; this is the write the mutator exists to own.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "ad6f524b6bc313358fa76827da328c6f3502281b2622d194362ee8e028257cac",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "UseCulture also sets the current UI culture, so a caller cannot set one and forget the other.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
+      "occurrenceCount": 2,
+      "classification": "permanent",
+      "reason": "The single environment-variable write, shared by SetEnvironmentVariable (which captures the prior value first) and by dispose (which writes the captured value back).",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "7b3ccdb135faa53ca32425511b2f01b80ec483b7264cd111f933bde1b491551b",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the FluentValidation property-name resolver captured at CaptureAsync.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "9f056b46de1c6b7c15e05fd7e4ca26074c820e23dd13bd4e67b4cfa568e60c1a",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the FluentValidation display-name resolver captured at CaptureAsync.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "1b3d2ac16875081091673aed258f4c33c142de8a82871798b0e8e89fa34d0e02",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the default thread culture, a separate static from the current culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "4de549de24c6f860b80cd7df5a521aff7bf48843587ac062fb59743d74917b3f",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the default thread UI culture, a separate static from the default thread culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "9b821ecd89f89233d3d7efd3de2f7c232fcc4d24cc1cc83a80f7ceaab2d9f5e3",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the current culture; it runs after the default-thread statics so a restored default cannot re-derive the current culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "8adc44691166013f4a0d8a0fdb47c6fe85c09908480e9fda9a52b140707e826a",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the current UI culture, the counterpart of the current-culture restore.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "ecca1ef73d613352ddf64a6da7d591a6bb46b21307c1f0354dd5e1554b376c22",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "The poll interval of the bounded observation window, awaited on the injected TimeProvider and cancelled by the window token — a paced re-observation, not a sleep-before-assert.",
+      "rationale": "BoundedObservationWindow is the bounded-polling primitive that Eventually and Consistently are built on, and this Task.Delay is its poll interval. It is the bottom of the wait stack: the advice \"replace the delay with Eventually\" terminates here, so there is nothing to migrate to and no date to set. The allowlist entry covers only Task.Delay on this path."
     }
   ]
 }

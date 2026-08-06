@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -304,10 +303,10 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
     public async Task Completion_fingerprint_is_culture_invariant_unicode_safe_and_spare_part_order_independent()
     {
         // The scope serialises every culture mutator in the assembly and restores the exact prior
-        // values (including "was never set") on dispose, so this test cannot leak fr-FR onwards.
+        // values (including "was never set") on dispose, so fr-FR cannot outlive this test. It is
+        // still the process culture while the scope is open.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+        globalState.UseCulture("fr-FR");
 
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(

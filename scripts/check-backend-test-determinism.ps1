@@ -15,7 +15,24 @@
 param(
     [string] $SourceRoot = (Join-Path $PSScriptRoot '../backend'),
 
-    [string] $BaselinePath = (Join-Path $PSScriptRoot '../backend/test-determinism-baseline.json')
+    [string] $BaselinePath = (Join-Path $PSScriptRoot '../backend/test-determinism-baseline.json'),
+
+    # Where a flagged construct IS the audited primitive itself — its implementation or its own
+    # self-test — so the finding can never be removed and dating it would be theatre. Each entry is
+    # `<repo-relative-path>=<pattern>`: a path alone is not enough, because the justification is
+    # always about one specific construct in that file. Allow-listing the path only would mean a
+    # `Thread.Sleep` added to `GlobalTestStateScope.cs` next year could be registered as permanent on
+    # a rationale written for culture setters.
+    #
+    # The list is deliberately hard-coded rather than read from the baseline: a `permanent` row must
+    # be countersigned by the checker, otherwise the classification degrades into a self-served
+    # exemption. The parameter exists so the checker's own fixture harness can exercise both sides of
+    # the rule; CI invokes the script with no arguments.
+    [string[]] $PermanentAllowlist = @(
+        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter',
+        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter',
+        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay'
+    )
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,8 +44,22 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $backendRoot = (Resolve-Path (Join-Path $repoRoot 'backend')).Path
 $solutionPath = Join-Path $backendRoot 'Nerv.IIP.sln'
 $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAddress', 'StaticSetter')
-$requiredBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
-$requiredStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
+
+# Two classifications, deliberately disjoint metadata:
+#   expiring-debt — an admitted debt. Carries an owner who outlives the registering change, an exit
+#                   condition, and a date after which the checker fails. This is the default and the
+#                   only classification that may grow.
+#   permanent     — the flagged construct is the audited primitive itself: its implementation, or its
+#                   own self-test. There is nothing to expire towards, so a date would be a lie;
+#                   instead it carries a rationale and is only legal for an allow-listed
+#                   path + pattern pair (see $PermanentAllowlist).
+$expiringClassification = 'expiring-debt'
+$permanentClassification = 'permanent'
+$allowedClassifications = @($expiringClassification, $permanentClassification)
+$commonBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'classification', 'reason')
+$commonStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'classification', 'reason')
+$expiringOnlyFields = @('ownerIssue', 'exitCondition', 'expiresOn')
+$permanentOnlyFields = @('rationale')
 
 function Resolve-RepoInputPath {
     param(
@@ -64,6 +95,24 @@ function Get-LineTextSha256 {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($LineText.Trim())
     $hash = [System.Security.Cryptography.SHA256]::HashData($bytes)
     return [System.Convert]::ToHexString($hash).ToLowerInvariant()
+}
+
+# Single source of the finding identity: baseline rows and source findings are matched, deduped and
+# marked as admitted through this key, so the separator and the field order must never be spelled
+# out at a call site.
+function Get-FindingIdentity {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [string] $Pattern,
+
+        [Parameter(Mandatory)]
+        [string] $LineTextSha256
+    )
+
+    return "$Path|$Pattern|$LineTextSha256"
 }
 
 function Test-GeneratedSource {
@@ -116,6 +165,21 @@ function Test-IsTestProject {
     return $projectContent -match '(?is)<IsTestProject>\s*true\s*</IsTestProject>'
 }
 
+# The shared test-infrastructure projects (`Nerv.IIP.Testing`, `.Xunit`, `.PostgreSql`) satisfy
+# neither Test-IsTestProject condition — no `Tests` suffix, no `<IsTestProject>`. They used to fall
+# out of the scan as a side effect of that. #1471 made this directory the place process-global writes
+# are supposed to live, which turns "not scanned" from a harmless fact into an unguarded hole, so the
+# scan includes it explicitly and the permanent allowlist countersigns each construct inside it.
+function Test-IsSharedTestingProject {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ProjectPath
+    )
+
+    $relativePath = Get-RepoRelativePath -Path $ProjectPath
+    return $relativePath -clike 'backend/common/Testing/*'
+}
+
 function Get-SolutionTestSourceFiles {
     $solutionList = Invoke-DotNetOutput `
         -Arguments @('sln', $solutionPath, 'list') `
@@ -129,12 +193,19 @@ function Get-SolutionTestSourceFiles {
             Where-Object { $_ -match '(?i)\.csproj$' } |
             ForEach-Object { Join-Path $backendRoot ($_ -replace '\\', [System.IO.Path]::DirectorySeparatorChar) } |
             Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-            Where-Object { Test-IsTestProject -ProjectPath $_ } |
+            Where-Object { (Test-IsTestProject -ProjectPath $_) -or (Test-IsSharedTestingProject -ProjectPath $_) } |
             Sort-Object -Unique
     )
 
     if ($projectPaths.Count -eq 0) {
         throw "No C# test projects were returned for solution '$solutionPath'."
+    }
+
+    # If the shared test infrastructure is ever moved or dropped from the solution, the scan would
+    # quietly shrink back to the old blind spot. Fail loudly instead.
+    $sharedTestingProjects = @($projectPaths | Where-Object { Test-IsSharedTestingProject -ProjectPath $_ })
+    if ($sharedTestingProjects.Count -eq 0) {
+        throw "No shared test-infrastructure projects were found under backend/common/Testing in solution '$solutionPath'."
     }
 
     $files = foreach ($projectPath in $projectPaths) {
@@ -640,8 +711,8 @@ function Read-Baseline {
     }
 
     $schema = Get-PropertyValue -Object $baseline -Name 'schema'
-    if ($schema -isnot [long] -or $schema -ne 1) {
-        $Errors.Add('schema must equal 1 as a JSON number.')
+    if ($schema -isnot [long] -or $schema -ne 2) {
+        $Errors.Add('schema must equal 2 as a JSON number.')
     }
 
     $exceptionsValue = Get-PropertyValue -Object $baseline -Name 'exceptions'
@@ -653,15 +724,64 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
+    # Ordinal, not the case-insensitive default of `@{}`: an allowlist entry must match the baseline
+    # path exactly, the same way the finding comparison below uses -ceq.
+    $permanentPathPatterns = New-Object 'System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[string]]' ([StringComparer]::Ordinal)
+    foreach ($entry in $PermanentAllowlist) {
+        $normalizedEntry = ($entry -replace '\\', '/').Trim()
+        $separatorIndex = $normalizedEntry.LastIndexOf('=')
+        if ($separatorIndex -le 0 -or $separatorIndex -eq $normalizedEntry.Length - 1) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>'.")
+            continue
+        }
+
+        $entryPath = $normalizedEntry.Substring(0, $separatorIndex).Trim()
+        $entryPattern = $normalizedEntry.Substring($separatorIndex + 1).Trim()
+        if ($allowedPatterns -notcontains $entryPattern) {
+            $Errors.Add("permanent allowlist entry '$entry' names unsupported pattern '$entryPattern'.")
+            continue
+        }
+
+        if (-not $permanentPathPatterns.ContainsKey($entryPath)) {
+            $permanentPathPatterns[$entryPath] = New-Object System.Collections.Generic.List[string]
+        }
+        $permanentPathPatterns[$entryPath].Add($entryPattern)
+    }
 
     for ($index = 0; $index -lt $exceptionsValue.Count; $index++) {
         $exception = $exceptionsValue[$index]
+
+        # The classification decides which metadata the row owes, so it is resolved before the
+        # required-field check rather than alongside it.
+        $classification = Get-PropertyValue -Object $exception -Name 'classification'
+        if ($classification -isnot [string] -or $allowedClassifications -cnotcontains $classification) {
+            $Errors.Add("exception[$index] classification must be one of: $($allowedClassifications -join ', ').")
+            continue
+        }
+
+        $isPermanent = $classification -ceq $permanentClassification
+        $classificationFields = if ($isPermanent) { $permanentOnlyFields } else { $expiringOnlyFields }
+        $forbiddenFields = if ($isPermanent) { $expiringOnlyFields } else { $permanentOnlyFields }
+        $requiredBaselineFields = @($commonBaselineFields + $classificationFields)
+        $requiredStringBaselineFields = @($commonStringBaselineFields + $classificationFields)
+
         $missing = @(
             $requiredBaselineFields |
                 Where-Object { $null -eq $exception.PSObject.Properties[$_] }
         )
         if ($missing.Count -gt 0) {
-            $Errors.Add("exception[$index] missing required field(s): $($missing -join ', ').")
+            $Errors.Add("exception[$index] classification '$classification' is missing required field(s): $($missing -join ', ').")
+            continue
+        }
+
+        # A permanent row carrying an expiry (or a debt row carrying a rationale) reads as if it had
+        # been reviewed under the other set of rules. Reject the mixture rather than pick a winner.
+        $forbidden = @(
+            $forbiddenFields |
+                Where-Object { $null -ne $exception.PSObject.Properties[$_] }
+        )
+        if ($forbidden.Count -gt 0) {
+            $Errors.Add("exception[$index] classification '$classification' must not carry field(s): $($forbidden -join ', ').")
             continue
         }
 
@@ -694,6 +814,7 @@ function Read-Baseline {
         $reason = $stringValues['reason']
         $exitCondition = $stringValues['exitCondition']
         $expiresOn = $stringValues['expiresOn']
+        $rationale = $stringValues['rationale']
 
         if ([System.IO.Path]::IsPathRooted($path) -or $path -match '(^|/)\.\.(/|$)') {
             $Errors.Add("exception[$index] path must be repo-relative: '$path'.")
@@ -707,24 +828,41 @@ function Read-Baseline {
             $Errors.Add("exception[$index] lineTextSha256 must be a lowercase SHA-256 hash.")
             $rowValid = $false
         }
-        # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The owner
-        # must outlive the change that registered the debt, so a row may not point at its own issue.
-        if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
-            $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
-            $rowValid = $false
+
+        if ($isPermanent) {
+            # Only the checker decides which files may hold a permanent row, and for which pattern;
+            # the baseline cannot nominate itself into the allowlist, nor widen an entry written for
+            # one construct to cover a different one.
+            if (-not $permanentPathPatterns.ContainsKey($path)) {
+                $Errors.Add("exception[$index] permanent classification is not allowed for path '$path'.")
+                $rowValid = $false
+            }
+            elseif ($permanentPathPatterns[$path] -cnotcontains $pattern) {
+                $Errors.Add("exception[$index] permanent classification is not allowed for pattern '$pattern' on path '$path'.")
+                $rowValid = $false
+            }
+        }
+        else {
+            # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The
+            # owner must outlive the change that registered the debt, so a row may not point at its
+            # own issue.
+            if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
+                $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
+                $rowValid = $false
+            }
+
+            $expiry = [DateOnly]::MinValue
+            if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
+                $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
+                $rowValid = $false
+            }
+            elseif ($expiry -lt $today) {
+                $Errors.Add("exception[$index] expired on $expiresOn.")
+                $rowValid = $false
+            }
         }
 
-        $expiry = [DateOnly]::MinValue
-        if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
-            $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
-            $rowValid = $false
-        }
-        elseif ($expiry -lt $today) {
-            $Errors.Add("exception[$index] expired on $expiresOn.")
-            $rowValid = $false
-        }
-
-        $identity = "$path|$pattern|$hash"
+        $identity = Get-FindingIdentity -Path $path -Pattern $pattern -LineTextSha256 $hash
         if ($seen.ContainsKey($identity)) {
             $Errors.Add("exception[$index] is a duplicate baseline row for $path [$pattern] $hash.")
             $rowValid = $false
@@ -739,10 +877,12 @@ function Read-Baseline {
                 Pattern = $pattern
                 LineTextSha256 = $hash
                 OccurrenceCount = $occurrenceCount
+                Classification = $classification
                 OwnerIssue = $ownerIssue
                 Reason = $reason
                 ExitCondition = $exitCondition
                 ExpiresOn = $expiresOn
+                Rationale = $rationale
             })
         }
     }
@@ -779,7 +919,8 @@ try {
         )
         if ($exactMatches.Count -eq $row.OccurrenceCount) {
             foreach ($match in $exactMatches) {
-                $matchedFindingKeys["$($match.Path)|$($match.Pattern)|$($match.LineTextSha256)"] = $true
+                $identity = Get-FindingIdentity -Path $match.Path -Pattern $match.Pattern -LineTextSha256 $match.LineTextSha256
+                $matchedFindingKeys[$identity] = $true
             }
             continue
         }
@@ -802,7 +943,10 @@ try {
 
     $unexplained = @(
         $findings |
-            Where-Object { -not $matchedFindingKeys.ContainsKey("$($_.Path)|$($_.Pattern)|$($_.LineTextSha256)") }
+            Where-Object {
+                -not $matchedFindingKeys.ContainsKey(
+                    (Get-FindingIdentity -Path $_.Path -Pattern $_.Pattern -LineTextSha256 $_.LineTextSha256))
+            }
     )
 
     if ($baselineErrors.Count -gt 0 -or $unexplained.Count -gt 0) {
@@ -820,7 +964,9 @@ try {
         exit 1
     }
 
-    Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count)."
+    $permanentRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $permanentClassification }).Count
+    $expiringRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $expiringClassification }).Count
+    Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count), expiringDebtRows=$expiringRowCount, permanentRows=$permanentRowCount."
     exit 0
 }
 catch {

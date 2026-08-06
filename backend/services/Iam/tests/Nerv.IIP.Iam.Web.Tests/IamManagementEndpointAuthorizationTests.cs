@@ -10,10 +10,14 @@ using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Endpoints.Roles;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
+// Tests below that need the PostgreSQL profile take a GlobalTestStateScope before writing
+// process-global state: the scope serialises every process-global mutator in the assembly and
+// restores each variable's exact prior value (including "was never set") on dispose.
 public sealed class IamManagementEndpointAuthorizationTests
 {
     [Fact]
@@ -63,40 +67,18 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {
-        var environment = PreserveEnvironment(
-            "Persistence__Provider",
-            "ConnectionStrings__IamDb");
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState
+            .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", IamRefusedPersistence.ConnectionString());
 
-        try
-        {
-            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", IamRefusedPersistence.ConnectionString());
+        await using var factory = new WebApplicationFactory<Program>();
+        var client = factory.CreateClient();
 
-            await using var factory = new WebApplicationFactory<Program>();
-            var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        var response = await client.SendAsync(request);
 
-            using var request = new HttpRequestMessage(new HttpMethod(method), path);
-            var response = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        }
-        finally
-        {
-            RestoreEnvironment(environment);
-        }
-    }
-
-    private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
-    {
-        return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-    }
-
-    private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)
-    {
-        foreach (var (name, value) in environment)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private static void AssertRoleMutationEndpointUsesMediator<TEndpoint>()
