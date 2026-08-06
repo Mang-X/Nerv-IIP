@@ -12,6 +12,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
 using System.Net.Sockets;
@@ -358,28 +359,36 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 FailureCode: "timeout"));
     }
 
+    /// <summary>
+    /// CAP delivery is real transport plus a real PostgreSQL round trip, so the completion instant is
+    /// not knowable in advance — this polls the observable fact under a bounded budget. The hand-rolled
+    /// loop this replaced could also pass silently: if the clock had already run past the deadline
+    /// before the first attempt, it fell out of the loop with no observation and no failure.
+    /// </summary>
     private static async Task AssertEventuallyAsync(Func<Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
+        await Eventually.WaitAsync<Exception?>(
+            condition: "the notification CAP outbox assertion to hold",
+            observe: async _ =>
             {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        if (lastException is not null)
-        {
-            throw lastException;
-        }
+                try
+                {
+                    await assertion();
+                    return null;
+                }
+                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
+                {
+                    return exception;
+                }
+            },
+            isSatisfied: static failure => failure is null,
+            describe: static failure => failure is null
+                ? "assertion satisfied"
+                : $"{failure.GetType().Name}: {failure.Message}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(30),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [ReadPostgresConnectionString()]));
     }
 
     private static string ReadPostgresConnectionString()

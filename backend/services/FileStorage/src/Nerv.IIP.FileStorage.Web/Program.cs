@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Minio;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -23,6 +24,9 @@ var persistence = PersistenceStartupGovernance.Resolve(
     });
 var usePostgreSql = persistence.UsePostgreSql;
 builder.Services.AddFastEndpoints();
+// Upload-session expiry is a scheduling semantic, so the clock behind it is injected rather than read
+// from DateTimeOffset.UtcNow: tests replace this registration to advance past a TTL without waiting.
+builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
 builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>

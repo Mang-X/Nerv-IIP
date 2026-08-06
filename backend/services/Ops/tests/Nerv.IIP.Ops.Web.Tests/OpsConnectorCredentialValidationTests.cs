@@ -84,7 +84,7 @@ public sealed class OpsConnectorCredentialValidationTests
     {
         using var handler = new ScriptedHttpMessageHandler(async (_, cancellationToken) =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("The timeout script unexpectedly resumed.");
         });
         using var client = CreateClient(handler, TimeSpan.FromMilliseconds(500));
@@ -203,7 +203,7 @@ public sealed class OpsConnectorCredentialValidationTests
     {
         using var handler = new ScriptedHttpMessageHandler(async (_, cancellationToken) =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
             throw new InvalidOperationException("The cancellation script unexpectedly resumed.");
         });
         using var client = CreateClient(handler, TimeSpan.FromSeconds(5));

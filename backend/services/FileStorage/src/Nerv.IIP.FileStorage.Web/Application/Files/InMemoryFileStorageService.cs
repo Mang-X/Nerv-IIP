@@ -57,6 +57,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
     private readonly IConfiguration? configuration;
     private readonly TimeSpan uploadSessionTtl;
+    private readonly TimeProvider timeProvider;
 
     public InMemoryFileStorageService()
         : this(new ServerProxyUploadProvider())
@@ -66,11 +67,13 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     public InMemoryFileStorageService(
         IFileStorageUploadProvider uploadProvider,
         IConfiguration? configuration = null,
-        ILocalTusFileStoreAccessor? tusStoreAccessor = null)
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null,
+        TimeProvider? timeProvider = null)
     {
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
         this.configuration = configuration;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         uploadSessionTtl = ResolveUploadSessionTtl(configuration);
     }
 
@@ -129,7 +132,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
                 return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
             }
 
-            var now = DateTimeOffset.UtcNow;
+            var now = timeProvider.GetUtcNow();
             var uploadSessionId = NewId("ups");
             var fileId = NewId("file");
             session = new UploadSession(
@@ -185,7 +188,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
         }
 
-        if (session.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        if (session.ExpiresAtUtc <= timeProvider.GetUtcNow())
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
         }
@@ -227,7 +230,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session could not be completed.");
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var file = new FileMetadata(
             session.FileId,
             session.OrganizationId,
@@ -357,7 +360,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         }
 
         var grantId = NewId("dgr");
-        var expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10);
+        var expiresAtUtc = timeProvider.GetUtcNow().AddMinutes(10);
         downloadGrantFiles[grantId] = new DownloadGrantIndexEntry(file.FileId, file.OrganizationId, file.EnvironmentId, expiresAtUtc);
         var response = new DownloadGrantResponse(
             file.FileId,
@@ -383,7 +386,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!downloadGrantFiles.TryGetValue(downloadGrantId, out var grant)
-            || grant.ExpiresAtUtc <= DateTimeOffset.UtcNow
+            || grant.ExpiresAtUtc <= timeProvider.GetUtcNow()
             || !string.Equals(grant.OrganizationId, organizationId, StringComparison.Ordinal)
             || !string.Equals(grant.EnvironmentId, environmentId, StringComparison.Ordinal)
             || !files.TryGetValue(grant.FileId, out var file)
@@ -404,7 +407,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         cancellationToken.ThrowIfCancellationRequested();
 
         var canAccept = TryGetTusUploadSession(uploadSessionId, out var session)
-            && session.ExpiresAtUtc > DateTimeOffset.UtcNow;
+            && session.ExpiresAtUtc > timeProvider.GetUtcNow();
 
         return Task.FromResult(canAccept);
     }
@@ -442,7 +445,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
                 && (filePurpose is null || string.Equals(file.FilePurpose, filePurpose, StringComparison.Ordinal)))
             .Sum(file => file.SizeBytes);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var reservedBytes = uploadSessions.Values
             .Where(session => !session.Completed
                 && session.ExpiresAtUtc > now

@@ -8,7 +8,10 @@ using System.Security.Cryptography;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Files;
 
-public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocalTusFileStoreAccessor storeAccessor)
+public sealed class GetTusUploadOffsetEndpoint(
+    IFileStorageService files,
+    ILocalTusFileStoreAccessor storeAccessor,
+    TimeProvider timeProvider)
     : EndpointWithoutRequest
 {
     public override void Configure()
@@ -28,7 +31,7 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
             return;
         }
 
-        if (IsExpired(session))
+        if (IsExpired(session, timeProvider))
         {
             store.Delete(uploadSessionId);
             await Send.NotFoundAsync(ct);
@@ -72,16 +75,19 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
             : Task.FromResult<LocalTusUploadSession?>(null);
     }
 
-    internal static bool IsExpired(LocalTusUploadSession session)
+    internal static bool IsExpired(LocalTusUploadSession session, TimeProvider timeProvider)
     {
-        return session.ExpiresAtUtc <= DateTimeOffset.UtcNow;
+        return session.ExpiresAtUtc <= timeProvider.GetUtcNow();
     }
 }
 
 [Tags("Files")]
 [HttpPatch("/api/files/v1/tus/{uploadSessionId}")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
-public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusFileStoreAccessor storeAccessor)
+public sealed class PatchTusUploadEndpoint(
+    IFileStorageService files,
+    ILocalTusFileStoreAccessor storeAccessor,
+    TimeProvider timeProvider)
     : EndpointWithoutRequest
 {
     private const string TusVersion = "1.0.0";
@@ -97,7 +103,7 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
             return;
         }
 
-        if (GetTusUploadOffsetEndpoint.IsExpired(session))
+        if (GetTusUploadOffsetEndpoint.IsExpired(session, timeProvider))
         {
             store.Delete(uploadSessionId);
             await Send.NotFoundAsync(ct);

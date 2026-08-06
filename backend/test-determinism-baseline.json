@@ -262,16 +262,6 @@
       "expiresOn": "2026-09-05"
     },
     {
-      "path": "backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "1c49dd4a4aa19625b24b574ada67e69a810f8f45b8080cdee8a7f14f2bac8e9c",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1470",
-      "reason": "The TUS expiration test waits past the configured real-time upload lifetime before asserting the endpoint returns not found and removes local bytes.",
-      "exitCondition": "Delete when the TUS provider accepts injected time for upload-expiration checks.",
-      "expiresOn": "2026-09-05"
-    },
-    {
       "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "2c7c077eab33ab3978c97e3b7760d744a6808fd45bc6d0452f5ec8b001806d32",
@@ -452,26 +442,6 @@
       "expiresOn": "2026-09-12"
     },
     {
-      "path": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationCapOutboxAcceptanceTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "e3107d19e76fa0935148f43a39e2084244a2918f6154204913552805fc0040f5",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1470",
-      "reason": "The notification CAP outbox acceptance test polls PostgreSQL until the published notification and outbox state become observable.",
-      "exitCondition": "Delete when the CAP fixture exposes a deterministic outbox-consumed completion signal.",
-      "expiresOn": "2026-09-05"
-    },
-    {
-      "path": "backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsConnectorCredentialValidationTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "cb9651ec33c3e756f2f9ec730c6772f89855ab1faba7e034d1106fcfec527f2f",
-      "occurrenceCount": 2,
-      "ownerIssue": "#1470",
-      "reason": "The Ops credential client fake stays pending until cancellation so tests distinguish the client-owned timeout from caller cancellation.",
-      "exitCondition": "Delete when the fake transport exposes timeout and caller-cancellation states without an infinite delay sentinel.",
-      "expiresOn": "2026-09-05"
-    },
-    {
       "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.cs",
       "pattern": "Task.Delay",
       "lineTextSha256": "c4096f4c872b8a93f4a85ee23e245bce0aa2c730a97eb785a898bde7cf4beb99",
@@ -562,16 +532,6 @@
       "expiresOn": "2026-09-12"
     },
     {
-      "path": "backend/tests/Nerv.IIP.Business.Performance.Tests/ProcessMemorySamplerTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "d91f49a1f56c47338b08a5517a8a79a84a6b061db6d1092873dccc971aabe317",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1470",
-      "reason": "The process-memory sampler test waits for the configured observation interval so concurrent StopAsync callers can observe and complete the sampling loop.",
-      "exitCondition": "Delete when the sampler accepts injected time or exposes a deterministic sample-taken signal.",
-      "expiresOn": "2026-09-05"
-    },
-    {
       "path": "backend/tests/Nerv.IIP.Localization.Tests/NervIipLocalizationTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "0db8bce8748a91f79a0cee42e29b144356424d7387bbf803eebd73eabdc0262b",
@@ -630,26 +590,6 @@
       "reason": "The OTLP protocol precedence test sets OTEL_EXPORTER_OTLP_PROTOCOL to http/protobuf, verifies it overrides configured grpc, and restores the prior value.",
       "exitCondition": "Delete when the protocol resolver accepts an isolated environment abstraction or explicit environment-value dictionary.",
       "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/CapTestHostTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "18d002abea922f9fbffae51b7b616c5b3101940a20345f82d7bdc0cd75838549",
-      "occurrenceCount": 2,
-      "ownerIssue": "#1470",
-      "reason": "The CAP test-host helper tests keep bootstrap pending until cancellation and use fake time to prove host shutdown, caller cancellation, deadline, and diagnostic behavior.",
-      "exitCondition": "Delete when the bootstrap fake exposes those pending and cancellation states without delay sentinels.",
-      "expiresOn": "2026-09-05"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/CapTestHostTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "74c542165f2506a73359fad19d402b4939b39fc1f27c283998b1b12ffc1c043c",
-      "occurrenceCount": 2,
-      "ownerIssue": "#1470",
-      "reason": "The CAP test-host helper tests keep bootstrap pending until cancellation and use fake time to prove host shutdown, caller cancellation, deadline, and diagnostic behavior.",
-      "exitCondition": "Delete when the bootstrap fake exposes those pending and cancellation states without delay sentinels.",
-      "expiresOn": "2026-09-05"
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -770,26 +710,6 @@
       "reason": "The GlobalTestStateScope regression intentionally mutates validator resolvers, cultures, timezone, and absent or empty environment values to prove complete restoration.",
       "exitCondition": "Delete when GlobalTestStateScope no longer owns the corresponding global state or equivalent restoration coverage no longer requires that mutation.",
       "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/TestTimeoutTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "b7e16d25dfe7fd95c041e69800d8f1ce3d4b813f8023c23ab9e0b08cd43fc88a",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1470",
-      "reason": "The TestTimeout helper tests keep operations pending on fake time to prove sanitized timeout cancellation and caller-cancellation propagation.",
-      "exitCondition": "Delete when the timeout fake exposes pending operations without infinite delay sentinels.",
-      "expiresOn": "2026-09-05"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.Tests/TestTimeoutTests.cs",
-      "pattern": "Task.Delay",
-      "lineTextSha256": "c615c7edd371aad3a7efdd875ebb6423b45e4f577009143a7b1c4ce62841289b",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1470",
-      "reason": "The TestTimeout helper tests keep operations pending on fake time to prove sanitized timeout cancellation and caller-cancellation propagation.",
-      "exitCondition": "Delete when the timeout fake exposes pending operations without infinite delay sentinels.",
-      "expiresOn": "2026-09-05"
     },
     {
       "path": "backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalOverdueSchedulerTests.cs",
