@@ -1,19 +1,24 @@
+using Nerv.IIP.Testing;
+
 namespace Nerv.IIP.Business.Performance.Tests;
 
 public sealed class PerformanceMetricTests(ITestOutputHelper output)
 {
     [Fact]
-    public void WriteTo_writes_machine_readable_metric_when_path_is_configured()
+    public async Task WriteTo_writes_machine_readable_metric_when_path_is_configured()
     {
         var metricsPath = Path.Combine(
             Path.GetTempPath(),
             $"nerv-iip-performance-metrics-{Guid.NewGuid():N}.jsonl");
-        var originalMetricsPath = Environment.GetEnvironmentVariable(
-            PerformanceBaselineSettings.MetricsPathEnvironmentVariable);
+
+        // The scope serialises every process-global mutator in the assembly and restores the exact
+        // prior value (including "was never set") on dispose, so this test cannot leak the metrics
+        // path onwards.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
 
         try
         {
-            Environment.SetEnvironmentVariable(
+            globalState.SetEnvironmentVariable(
                 PerformanceBaselineSettings.MetricsPathEnvironmentVariable,
                 metricsPath);
 
@@ -35,10 +40,6 @@ public sealed class PerformanceMetricTests(ITestOutputHelper output)
         }
         finally
         {
-            Environment.SetEnvironmentVariable(
-                PerformanceBaselineSettings.MetricsPathEnvironmentVariable,
-                originalMetricsPath);
-
             if (File.Exists(metricsPath))
             {
                 File.Delete(metricsPath);

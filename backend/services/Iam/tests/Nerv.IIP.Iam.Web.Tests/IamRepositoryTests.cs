@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,37 +15,28 @@ public sealed class IamRepositoryTests
     [Fact]
     public async Task User_lookup_normalizes_parameters_with_invariant_culture()
     {
-        var originalCulture = CultureInfo.CurrentCulture;
-        var originalUiCulture = CultureInfo.CurrentUICulture;
-        try
-        {
-            var turkish = CultureInfo.GetCultureInfo("tr-TR");
-            CultureInfo.CurrentCulture = turkish;
-            CultureInfo.CurrentUICulture = turkish;
+        // The scope serialises every culture mutator in the assembly and restores the exact prior
+        // values on dispose, so this test cannot leak tr-TR onwards.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState.UseCulture("tr-TR");
 
-            await using var db = CreateDbContext();
-            var passwordService = new IamPasswordService();
-            var user = new User(
-                new UserId("user-invariant-lookup"),
-                "identity",
-                "info@nerv-iip.local",
-                passwordService.Hash("Password123!"),
-                true,
-                Guid.NewGuid().ToString("n"),
-                1);
-            db.Users.Add(user);
-            await db.SaveChangesAsync();
+        await using var db = CreateDbContext();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-invariant-lookup"),
+            "identity",
+            "info@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
 
-            var repository = new UserRepository(db);
+        var repository = new UserRepository(db);
 
-            Assert.NotNull(await repository.GetByLoginNameAsync("IDENTITY"));
-            Assert.NotNull(await repository.GetByEmailAsync("INFO@nerv-iip.local"));
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-            CultureInfo.CurrentUICulture = originalUiCulture;
-        }
+        Assert.NotNull(await repository.GetByLoginNameAsync("IDENTITY"));
+        Assert.NotNull(await repository.GetByEmailAsync("INFO@nerv-iip.local"));
     }
 
     [Fact]

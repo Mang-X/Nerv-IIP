@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Observability;
+using Nerv.IIP.Testing;
 using System.Net;
 using OpenTelemetry.Exporter;
 using Serilog.Sinks.OpenTelemetry;
@@ -269,25 +270,21 @@ public sealed class NervIipObservabilityRegistrationTests
     }
 
     [Fact]
-    public void ReadOpenTelemetryOtlpProtocol_ShouldPreferOtelProtocolEnvironmentVariable()
+    public async Task ReadOpenTelemetryOtlpProtocol_ShouldPreferOtelProtocolEnvironmentVariable()
     {
-        var previousValue = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL");
-        try
-        {
-            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
-            var configuration = CreateConfiguration(new Dictionary<string, string?>
-            {
-                ["OpenTelemetry:Protocol"] = "grpc"
-            });
+        // The scope serialises every process-global mutator in the assembly and restores the exact
+        // prior value (including "was never set") on dispose.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
 
-            var protocol = NervIipObservabilityRegistration.ReadOpenTelemetryOtlpProtocol(configuration, "http://collector:9999");
-
-            Assert.Equal(OtlpExportProtocol.HttpProtobuf, protocol);
-        }
-        finally
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
         {
-            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL", previousValue);
-        }
+            ["OpenTelemetry:Protocol"] = "grpc"
+        });
+
+        var protocol = NervIipObservabilityRegistration.ReadOpenTelemetryOtlpProtocol(configuration, "http://collector:9999");
+
+        Assert.Equal(OtlpExportProtocol.HttpProtobuf, protocol);
     }
 
     private static bool IsOpenTelemetryHostedServiceRegistration(ServiceDescriptor descriptor)

@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -306,8 +305,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         // The scope serialises every culture mutator in the assembly and restores the exact prior
         // values (including "was never set") on dispose, so this test cannot leak fr-FR onwards.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+        globalState.UseCulture("fr-FR");
 
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(

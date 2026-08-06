@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
@@ -27,40 +28,20 @@ public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> f
     }
 
     [Fact]
-    public void Postgres_automigrate_is_rejected_outside_development()
+    public async Task Postgres_automigrate_is_rejected_outside_development()
     {
-        var environment = PreserveEnvironment(
-            "Persistence__Provider",
-            "Persistence__AutoMigrate",
-            "ConnectionStrings__AppHubDb");
+        // The scope serialises every process-global mutator in the assembly and restores each
+        // variable's exact prior value (including "was never set") on dispose, so the guard
+        // configuration cannot leak into any other host build.
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState
+            .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
+            .SetEnvironmentVariable("Persistence__AutoMigrate", " true ")
+            .SetEnvironmentVariable("ConnectionStrings__AppHubDb", "Host=localhost;Database=nerv_iip_apphub_guard;Username=nerv;Password=nerv");
 
-        try
-        {
-            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", " true ");
-            Environment.SetEnvironmentVariable("ConnectionStrings__AppHubDb", "Host=localhost;Database=nerv_iip_apphub_guard;Username=nerv;Password=nerv");
+        using var guardedFactory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
 
-            using var guardedFactory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
-
-            var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
-            Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
-        }
-        finally
-        {
-            RestoreEnvironment(environment);
-        }
-    }
-
-    private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
-    {
-        return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-    }
-
-    private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)
-    {
-        foreach (var (name, value) in environment)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
+        var exception = Assert.Throws<InvalidOperationException>(() => guardedFactory.CreateClient());
+        Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
     }
 }
