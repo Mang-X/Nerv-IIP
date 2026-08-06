@@ -31,7 +31,7 @@ public sealed class IamManagementEndpointAuthorizationTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("Persistence:Provider", "PostgreSQL");
-                builder.UseSetting("ConnectionStrings:IamDb", IamUnreachablePersistence.ConnectionString());
+                builder.UseSetting("ConnectionStrings:IamDb", IamRefusedPersistence.ConnectionString());
                 builder.ConfigureTestServices(services =>
                 {
                     services.RemoveAll<IIamAuthService>();
@@ -70,7 +70,7 @@ public sealed class IamManagementEndpointAuthorizationTests
         try
         {
             Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", IamUnreachablePersistence.ConnectionString());
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", IamRefusedPersistence.ConnectionString());
 
             await using var factory = new WebApplicationFactory<Program>();
             var client = factory.CreateClient();

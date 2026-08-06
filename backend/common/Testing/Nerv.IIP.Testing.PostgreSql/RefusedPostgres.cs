@@ -7,22 +7,36 @@ namespace Nerv.IIP.Testing.PostgreSql;
 /// the machine the test happens to run on. The endpoint comes from
 /// <see cref="NetworkFailureFixture.ReserveRefusedLoopbackEndpoint"/>, so a connect attempt is
 /// refused immediately and classifies as <see cref="NetworkFailureKind.ConnectionRefused"/>.
+///
+/// The type is named for the outcome it guarantees — <em>refused</em> — and deliberately not
+/// "unreachable": "unreachable" is the vague word this fixture exists to remove, because it lumps
+/// DNS failure, refusal and timeout into one shrug.
 /// </summary>
-public static class UnreachablePostgres
+public static class RefusedPostgres
 {
-    /// <summary>Budget for opening the TCP/startup connection. Never elapses against a refused port.</summary>
-    public static TimeSpan DefaultConnectBudget { get; } = TimeSpan.FromSeconds(5);
-
-    /// <summary>Budget for an individual command once a connection exists — deliberately separate.</summary>
-    public static TimeSpan DefaultRequestBudget { get; } = TimeSpan.FromSeconds(5);
-
-    public static string ConnectionRefusedConnectionString(
+    /// <summary>
+    /// Both budgets are required rather than defaulted. A default would let every call site inherit
+    /// one number and quietly reproduce the "single fuzzy duration standing in for connect, DNS and
+    /// response budgets" that docs/architecture/backend-test-determinism.md ("网络结果与预算")
+    /// forbids — which is exactly what happens when an optional parameter exists and nobody passes it.
+    /// </summary>
+    /// <param name="connectBudget">
+    /// Bounds establishing the TCP/startup connection. Against a refused loopback port the verdict
+    /// arrives in microseconds, so this is a stall guard, not an expected wait.
+    /// </param>
+    /// <param name="requestBudget">
+    /// Bounds an individual command once a connection exists. Against a refused endpoint no command
+    /// can ever run, so this budget is unreachable by construction; it is still stated explicitly so
+    /// that a regression which makes the host reachable is bounded by a real dependency's jitter
+    /// rather than by whatever the connect budget happened to be.
+    /// </param>
+    public static string ConnectionString(
         RefusedTcpEndpoint endpoint,
         string database,
         string username,
         string password,
-        TimeSpan? connectBudget = null,
-        TimeSpan? requestBudget = null)
+        TimeSpan connectBudget,
+        TimeSpan requestBudget)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(database);
@@ -36,8 +50,8 @@ public static class UnreachablePostgres
             Database = database,
             Username = username,
             Password = password,
-            Timeout = ToWholeSeconds(connectBudget ?? DefaultConnectBudget, nameof(connectBudget)),
-            CommandTimeout = ToWholeSeconds(requestBudget ?? DefaultRequestBudget, nameof(requestBudget)),
+            Timeout = ToWholeSeconds(connectBudget, nameof(connectBudget)),
+            CommandTimeout = ToWholeSeconds(requestBudget, nameof(requestBudget)),
 
             // A pooled connection to a dead endpoint would let one test's failure leak into the
             // next one's first open; each attempt must dial for itself.

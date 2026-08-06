@@ -50,15 +50,20 @@ await TestTimeout.RunAsync(
 
 `NetworkFailureClassifier.FromException` 强制传入 caller 的 `CancellationToken`：token 已取消时原样重抛原异常（`ExceptionDispatchInfo`），只有 helper 自己的超时才归类为 `RequestTimeout`。分类器不允许有"猜"caller 意图的默认参数。
 
-生产侧的等价分类（如 `IamOpsConnectorCredentialValidator.ClassifyTransportFailure`）**刻意不复用** `Nerv.IIP.Testing`：发布程序集不得引用测试程序集。两处的相似结构是有意的边界重复，不是待消除的 duplication；任一侧改变分类语义时必须同步另一侧和本表。
+非 HTTP 客户端（Npgsql、裸 socket）不另立一套词汇：它们的传输失败以 `SocketException` 呈现，按 `SocketErrorCode` 归入同一四分法。两侧的 socket 搜索都从**异常自身**起步而不是从 `InnerException` 起步，因此裸 `SocketException` 与被驱动异常包裹的 `SocketException` 分类一致。
 
-| 结果 | 分类 | 必须保留 | 禁止混淆或输出 |
-| --- | --- | --- | --- |
-| DNS 解析失败 | `NetworkFailureKind.Dns` | 脱敏的 DNS 失败类别 | 不伪装为 HTTP 503；不输出目标凭据 |
-| 连接被拒绝 | `NetworkFailureKind.ConnectionRefused` | 脱敏的 refused 类别 | 不伪装为 request timeout |
-| helper 自己的 request timeout | `NetworkFailureKind.RequestTimeout` | 预算、elapsed、脱敏 operation | caller cancellation 必须原样传播，不能改写成 timeout |
-| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | 数字 status code | 不并入 `BusinessError`，否则四分法失去意义 |
-| 其余非成功 HTTP 业务响应 | `NetworkFailureKind.BusinessError` | 数字 status code 与脱敏 reason phrase | 不记录 response body 或 headers；不降级成 transport fault |
+`SocketError.TimedOut` 归入 `RequestTimeout`，这**不表示**建连阶段超时被并进了 request 预算：connect 预算与 request 预算始终分开配置（`OpsConnectorCredentialValidationOptions` 的 `ConnectTimeout` 5s / `RequestTimeout` 10s），四分法保留的区分是 **caller 拥有的取消 vs helper 拥有的超时**，不是 connect 阶段 vs 交换阶段。枚举**不为此扩容**：再切一类 `ConnectTimeout` 会把「谁拥有这次放弃」这个真正的判据换成一个调用方无法据以决策的阶段标签。阶段信息属于诊断字段（预算、elapsed、脱敏 operation），不属于分类。
+
+生产侧的等价分类（如 `IamOpsConnectorCredentialValidator.ClassifyTransportFailure`）**刻意不复用** `Nerv.IIP.Testing`：发布程序集不得引用测试程序集。两处的相似结构是有意的边界重复，不是待消除的 duplication；任一侧改变分类语义时必须同步另一侧和本表。该同步不靠自觉：`OpsConnectorCredentialValidationTests.TransportFailures` 逐行同时断言 `NetworkFailureKind` 与生产侧的 `FailureKind` 字符串，任一侧漏同步即在此处变红。
+
+| 结果 | 分类 | 生产侧 `FailureKind` | 必须保留 | 禁止混淆或输出 |
+| --- | --- | --- | --- | --- |
+| DNS 解析失败（`HttpRequestError.NameResolutionError`，或 socket `HostNotFound`/`NoData`/`TryAgain`/`NoRecovery`） | `NetworkFailureKind.Dns` | `dns` | 脱敏的 DNS 失败类别 | 不伪装为 HTTP 503；不输出目标凭据 |
+| 连接被拒绝（socket `ConnectionRefused`） | `NetworkFailureKind.ConnectionRefused` | `connection-refused` | 脱敏的 refused 类别 | 不伪装为 request timeout |
+| helper 自己的超时（HTTP 侧的 helper-owned cancellation，或 socket `TimedOut`；connect 与交换两个阶段同归此类） | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 预算、elapsed、脱敏 operation | caller cancellation 必须原样传播，不能改写成 timeout |
+| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 数字 status code | 不并入 `BusinessError`，否则四分法失去意义 |
+| 其余非成功 HTTP 业务响应 | `NetworkFailureKind.BusinessError` | 数字 status code | 数字 status code 与脱敏 reason phrase | 不记录 response body 或 headers；不降级成 transport fault |
+| 其余传输失败（未在上表列出的 socket 错误码） | 分类器抛 `ArgumentException`（测试侧必须显式扩表） | `transport-error` | 脱敏的类别 | 不静默归入以上任何一类 |
 
 ## 可变全局状态隔离矩阵
 
@@ -198,7 +203,7 @@ project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**
 
 MAN-661 独占 required-lane/opt-in-lane policy、machine-readable quarantine registry 与 enforcement；MAN-662 不创建 quarantine registry 或规则。MAN-661 的定量 trend/flake evidence 是外部证据，不阻塞本变更实现、评审、合并或 code-completion。当前 baseline status 为 `awaiting MAN-661`；只能在 MAN-661 落地后用真实 artifact identifier 替换，不能填推测值。
 
-现有 `backend/test-determinism-baseline.json` 有 87 个登记债务行，按 pattern 分派给三个**独立于 MAN-662 的**跟进 issue，各自到期日不同：`Task.Delay` 33 行 → `#1470`（2026-09-05）、`StaticSetter` 47 行 → `#1471`（2026-09-12）、`UnreachableAddress` 7 行 → `#1472`（2026-08-25）。owner 必须在登记它的变更合并之后依然存在——用当前 PR 自己的票做 owner，等于合并当天债务就没有责任人。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
+现有 `backend/test-determinism-baseline.json` 有 80 个登记债务行，按 pattern 分派给两个**独立于 MAN-662 的**跟进 issue，各自到期日不同：`Task.Delay` 33 行 → `#1470`（2026-09-05）、`StaticSetter` 47 行 → `#1471`（2026-09-12）。登记之初还有第三类 `UnreachableAddress` 7 行 → `#1472`（2026-08-25），已由 #1472 把这 7 处硬编码不可达地址收敛为显式网络失败夹具而**清零**，该 pattern 在 baseline 中不再有登记行（checker 的 `$allowedPatterns` 仍保留它，以便回潮时能被重新识别）。owner 必须在登记它的变更合并之后依然存在——用当前 PR 自己的票做 owner，等于合并当天债务就没有责任人。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
 
 Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
 

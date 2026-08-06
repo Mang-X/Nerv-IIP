@@ -35,11 +35,21 @@ public sealed class QualityCalibrationRecordQueryTests
     private const string OrganizationId = "org-001";
     private const string EnvironmentId = "env-dev";
 
+    // 两档预算显式分开，不用一个模糊总时长冒充两者。connect 预算按「本地 loopback 立即 RST」取小：
+    // 这条用例期望的正是连接被拒，2s 只是停滞上限而非预期等待。request 预算取秒级并**大于** connect
+    // 预算：它约束的是连接建立之后的单条命令，对着被拒端点不可能被触发，但翻译探针一旦被改成对着真库
+    // 跑，命令就该按真实依赖的正常抖动兜底。
+    private static readonly TimeSpan ConnectBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
+
     /// <summary>
-    /// 指向一个必然被拒的本地端口：翻译成功后才会走到连接失败。连接预算与 request 预算由
-    /// <see cref="UnreachablePostgres"/> 分开显式配置，不用一个模糊总时长冒充两者。
+    /// 指向一个必然被拒的本地端口：翻译成功后才会走到连接失败。
+    ///
+    /// 刻意是**实例**字段而不是 <c>static</c>：xUnit 为每个测试新建一次实例，因此端口按用例预留，
+    /// 而不是由整个测试类长期持有 —— 后者会把「端口已释放、可被同机其他进程占用」的暴露窗口拉长到
+    /// 整个类的生命周期。
     /// </summary>
-    private static readonly RefusedTcpEndpoint RefusedPostgres =
+    private readonly RefusedTcpEndpoint _refusedEndpoint =
         NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
 
     /// <summary>
@@ -209,13 +219,15 @@ public sealed class QualityCalibrationRecordQueryTests
         Assert.Equal(NetworkFailureKind.ConnectionRefused, observation.Kind);
     }
 
-    private static ApplicationDbContext CreateNpgsqlContext()
+    private ApplicationDbContext CreateNpgsqlContext()
     {
-        var connectionString = UnreachablePostgres.ConnectionRefusedConnectionString(
-            RefusedPostgres,
+        var connectionString = RefusedPostgres.ConnectionString(
+            _refusedEndpoint,
             database: "nerv_iip_translation_probe",
             username: "probe",
-            password: "probe");
+            password: "probe",
+            connectBudget: ConnectBudget,
+            requestBudget: RequestBudget);
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
             .Options;

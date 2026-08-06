@@ -234,6 +234,51 @@ public sealed class OpsConnectorCredentialValidationTests
                 new SocketException((int)SocketError.ConnectionRefused)),
             NetworkFailureKind.ConnectionRefused,
             "connection-refused"
+        },
+
+        // The production validator deliberately duplicates Nerv.IIP.Testing's classifier because a
+        // shipped assembly cannot reference a test assembly. Every row below pins the two mirrors to
+        // the same verdict, so a change on either side that is not carried across fails here rather
+        // than drifting silently (docs/architecture/backend-test-determinism.md, "网络结果与预算").
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.HostNotFound)),
+            NetworkFailureKind.Dns,
+            "dns"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.TryAgain)),
+            NetworkFailureKind.Dns,
+            "dns"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.NoData)),
+            NetworkFailureKind.Dns,
+            "dns"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.NoRecovery)),
+            NetworkFailureKind.Dns,
+            "dns"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.TimedOut)),
+            NetworkFailureKind.RequestTimeout,
+            "request-timeout"
         }
     };
 

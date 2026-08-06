@@ -1,3 +1,4 @@
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -13,8 +14,6 @@ using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
-using Nerv.IIP.Testing;
-using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
@@ -297,15 +296,15 @@ public sealed class ConnectorTagManifestTests
     [Fact]
     public void Coverage_projection_translates_for_npgsql_and_uses_only_the_full_key_summary_join()
     {
-        // 只做翻译：EF 在建立连接**之前**完成 SQL 生成，这里从头到尾不会拨号。连接串仍然指向一个
-        // 显式「连接被拒」夹具，这样万一回归让它真的去连库，会立刻拿到 ConnectionRefused 而不是挂住。
-        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+        // 这条用例的被测意图是**翻译**，不是网络行为：EF 在建立连接之前就完成 SQL 生成，
+        // `ToQueryString()` 从头到尾不拨号。因此这里刻意**不**使用 NetworkFailureFixture ——
+        // 预留一个真实端口只会带来无谓的端口竞态，却不会被这条用例的任何一行断言触及；给它套一句
+        // `Assert.Equal(ConnectionRefused, ...)` 更是假断言，因为根本没有连接尝试可供分类。
+        //
+        // 「不拨号」不靠注释自证：下面显式断言连接自始至终处于 Closed。主机名用 RFC 2606 保留的
+        // `.invalid` 顶级域，一旦回归真的去连库，得到的是立即的解析失败而不是静默连上某台真机。
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(UnreachablePostgres.ConnectionRefusedConnectionString(
-                refused,
-                database: "translation_only",
-                username: "nerv",
-                password: "nerv"))
+            .UseNpgsql("Host=translation-only.invalid;Port=5432;Database=translation_only;Username=nerv;Password=nerv")
             .Options;
         using var dbContext = new ApplicationDbContext(options, new NoopMediator());
 
@@ -324,6 +323,10 @@ public sealed class ConnectorTagManifestTests
         Assert.Contains("tag_key", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("telemetry_raw_samples", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("device_control", sql, StringComparison.OrdinalIgnoreCase);
+
+        // 被测意图的最后一环：整段翻译没有触碰过网络。这条断言一旦失败，说明查询构造退化成了会
+        // 拨号的路径，那时才需要谈网络失败分类 —— 在此之前谈它属于装饰。
+        Assert.Equal(ConnectionState.Closed, dbContext.Database.GetDbConnection().State);
     }
 
     [Theory]

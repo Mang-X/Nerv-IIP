@@ -295,7 +295,7 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
                 builder.UseSetting("Persistence:Provider", "PostgreSQL");
-                builder.UseSetting("ConnectionStrings:IamDb", IamUnreachablePersistence.ConnectionString());
+                builder.UseSetting("ConnectionStrings:IamDb", IamRefusedPersistence.ConnectionString());
             });
     }
 

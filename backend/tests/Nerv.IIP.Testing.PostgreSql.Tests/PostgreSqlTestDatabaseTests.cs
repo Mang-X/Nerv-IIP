@@ -7,6 +7,12 @@ public sealed class PostgreSqlTestDatabaseTests
 {
     private const string Secret = "postgres-test-diagnostic-secret";
 
+    // connect 预算按「本地 loopback 立即 RST」取小 —— 它是停滞上限而非预期等待；request 预算取秒级
+    // 且大于 connect 预算 —— 它约束连接建立之后的单条命令，对着被拒端点不可能被触发，但一旦这些用例
+    // 被指向真库，命令就该按真实依赖的正常抖动兜底，而不是继承为 loopback 挑的小数字。
+    private static readonly TimeSpan ConnectBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
+
     [Fact]
     public void Database_names_are_bounded_safe_and_unique_for_parallel_tests()
     {
@@ -28,11 +34,26 @@ public sealed class PostgreSqlTestDatabaseTests
     public async Task Connection_failures_are_diagnostic_without_leaking_credentials()
     {
         var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
-        var connectionString = UnreachablePostgres.ConnectionRefusedConnectionString(
+        var connectionString = RefusedPostgres.ConnectionString(
             refused,
             database: "postgres",
             username: "test-user",
-            password: Secret);
+            password: Secret,
+            connectBudget: ConnectBudget,
+            requestBudget: RequestBudget);
+
+        // 前提固定：这条用例断言的是「连接失败时的诊断脱敏」，它只有在失败确实是**连接被拒**时才有
+        // 意义。CreateAsync 按契约不保留 InnerException（见末行断言），分类只能在它之外做一次，
+        // 因此这里直接对同一端点拨号并用四分法钉死前提，而不是把「反正会失败」当默认。
+        var probe = await Record.ExceptionAsync(async () =>
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+        });
+        Assert.NotNull(probe);
+        Assert.Equal(
+            NetworkFailureKind.ConnectionRefused,
+            NetworkFailureClassifier.FromException(probe!, CancellationToken.None).Kind);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             PostgreSqlTestDatabase.CreateAsync(connectionString, "redaction"));
@@ -52,15 +73,20 @@ public sealed class PostgreSqlTestDatabaseTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
+        // 这条用例的被测意图是「取消发生在拨号之前」，因此它**不会**产生任何连接尝试，也就没有
+        // 网络失败可供分类；套一句 ConnectionRefused 断言会断言一个不存在的事件。连接串仍指向被拒
+        // 端点，纯粹作为护栏：一旦回归让它先拨号再看取消，会立刻失败而不是挂住。
         var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             PostgreSqlTestDatabase.CreateAsync(
-                UnreachablePostgres.ConnectionRefusedConnectionString(
+                RefusedPostgres.ConnectionString(
                     refused,
                     database: "postgres",
                     username: "test-user",
-                    password: Secret),
+                    password: Secret,
+                    connectBudget: ConnectBudget,
+                    requestBudget: RequestBudget),
                 "cancelled",
                 cancellationToken: cancellation.Token));
     }

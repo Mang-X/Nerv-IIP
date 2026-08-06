@@ -284,7 +284,7 @@
     {
       "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
       "pattern": "StaticSetter",
-      "lineTextSha256": "c22fa3cec9262f9e90946e27fea29341bac3f770f71816bc758a7fdedb6a4f3f",
+      "lineTextSha256": "68b202fa855410e1d14431fab183be571dc8bd4554f9c4c1311b823f66dbcecd",
       "occurrenceCount": 1,
       "ownerIssue": "#1471",
       "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
