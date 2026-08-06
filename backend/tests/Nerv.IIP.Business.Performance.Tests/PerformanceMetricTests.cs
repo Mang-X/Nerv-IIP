@@ -2,6 +2,11 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Performance.Tests;
 
+// Tests below that point the metrics writer at a temp file take a GlobalTestStateScope before
+// writing the environment variable: the scope serialises every process-global mutator in the
+// assembly and restores the exact prior value (including "was never set") on dispose, so the
+// metrics path cannot outlive the test that set it. It is still process-global while the scope is
+// open: a test that never takes a scope can observe it.
 public sealed class PerformanceMetricTests(ITestOutputHelper output)
 {
     [Fact]
@@ -11,10 +16,6 @@ public sealed class PerformanceMetricTests(ITestOutputHelper output)
             Path.GetTempPath(),
             $"nerv-iip-performance-metrics-{Guid.NewGuid():N}.jsonl");
 
-        // The scope serialises every process-global mutator in the assembly and restores the exact
-        // prior value (including "was never set") on dispose, so the metrics path cannot outlive this
-        // test. It is still process-global while the scope is open: a test that never takes a scope
-        // can observe it.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
 
         try

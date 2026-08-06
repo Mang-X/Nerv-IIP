@@ -97,6 +97,24 @@ function Get-LineTextSha256 {
     return [System.Convert]::ToHexString($hash).ToLowerInvariant()
 }
 
+# Single source of the finding identity: baseline rows and source findings are matched, deduped and
+# marked as admitted through this key, so the separator and the field order must never be spelled
+# out at a call site.
+function Get-FindingIdentity {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [string] $Pattern,
+
+        [Parameter(Mandatory)]
+        [string] $LineTextSha256
+    )
+
+    return "$Path|$Pattern|$LineTextSha256"
+}
+
 function Test-GeneratedSource {
     param(
         [Parameter(Mandatory)]
@@ -844,7 +862,7 @@ function Read-Baseline {
             }
         }
 
-        $identity = "$path|$pattern|$hash"
+        $identity = Get-FindingIdentity -Path $path -Pattern $pattern -LineTextSha256 $hash
         if ($seen.ContainsKey($identity)) {
             $Errors.Add("exception[$index] is a duplicate baseline row for $path [$pattern] $hash.")
             $rowValid = $false
@@ -901,7 +919,8 @@ try {
         )
         if ($exactMatches.Count -eq $row.OccurrenceCount) {
             foreach ($match in $exactMatches) {
-                $matchedFindingKeys["$($match.Path)|$($match.Pattern)|$($match.LineTextSha256)"] = $true
+                $identity = Get-FindingIdentity -Path $match.Path -Pattern $match.Pattern -LineTextSha256 $match.LineTextSha256
+                $matchedFindingKeys[$identity] = $true
             }
             continue
         }
@@ -924,7 +943,10 @@ try {
 
     $unexplained = @(
         $findings |
-            Where-Object { -not $matchedFindingKeys.ContainsKey("$($_.Path)|$($_.Pattern)|$($_.LineTextSha256)") }
+            Where-Object {
+                -not $matchedFindingKeys.ContainsKey(
+                    (Get-FindingIdentity -Path $_.Path -Pattern $_.Pattern -LineTextSha256 $_.LineTextSha256))
+            }
     )
 
     if ($baselineErrors.Count -gt 0 -or $unexplained.Count -gt 0) {

@@ -4,6 +4,12 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
+// Tests below that drive readiness guards through environment variables take a
+// GlobalTestStateScope before writing them: the scope serialises every process-global mutator in
+// the assembly and restores each variable's exact prior value (including "was never set") on
+// dispose, so the guard configuration cannot outlive the test that set it. It is still
+// process-global while the scope is open: a host built by a test that never takes a scope can
+// read it.
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
@@ -30,10 +36,6 @@ public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> f
     [Fact]
     public async Task Postgres_automigrate_is_rejected_outside_development()
     {
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose, so the guard
-        // configuration cannot outlive this test. It is still process-global while the scope is
-        // open: a host built by a test that never takes a scope can read it.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")

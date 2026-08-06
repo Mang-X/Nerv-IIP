@@ -23,6 +23,9 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
+// Every test below that needs the PostgreSQL profile takes a GlobalTestStateScope before writing
+// process-global state: the scope serialises every process-global mutator in the assembly and
+// restores each variable's exact prior value (including "was never set") on dispose.
 public sealed class IamPostgresProfileTests
 {
     [Fact]
@@ -107,8 +110,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -252,8 +253,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -313,8 +312,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -418,8 +415,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -490,8 +485,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -562,8 +555,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -639,8 +630,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -783,8 +772,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -919,8 +906,6 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
@@ -986,8 +971,6 @@ public sealed class IamPostgresProfileTests
     [Fact]
     public async Task Postgres_automigrate_is_rejected_outside_development()
     {
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")

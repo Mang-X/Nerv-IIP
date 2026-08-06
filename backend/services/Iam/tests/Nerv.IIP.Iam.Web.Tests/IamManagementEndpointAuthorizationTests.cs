@@ -15,6 +15,9 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
+// Tests below that need the PostgreSQL profile take a GlobalTestStateScope before writing
+// process-global state: the scope serialises every process-global mutator in the assembly and
+// restores each variable's exact prior value (including "was never set") on dispose.
 public sealed class IamManagementEndpointAuthorizationTests
 {
     [Fact]
@@ -64,8 +67,6 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {
-        // The scope serialises every process-global mutator in the assembly and restores each
-        // variable's exact prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")

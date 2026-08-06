@@ -8,6 +8,9 @@ using Serilog.Sinks.OpenTelemetry;
 
 namespace Nerv.IIP.Observability.Tests;
 
+// Tests below that read OTEL environment variables take a GlobalTestStateScope before writing
+// them: the scope serialises every process-global mutator in the assembly and restores the exact
+// prior value (including "was never set") on dispose.
 public sealed class NervIipObservabilityRegistrationTests
 {
     [Fact]
@@ -272,8 +275,6 @@ public sealed class NervIipObservabilityRegistrationTests
     [Fact]
     public async Task ReadOpenTelemetryOtlpProtocol_ShouldPreferOtelProtocolEnvironmentVariable()
     {
-        // The scope serialises every process-global mutator in the assembly and restores the exact
-        // prior value (including "was never set") on dispose.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
 
