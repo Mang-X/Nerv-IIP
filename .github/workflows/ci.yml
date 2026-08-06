@@ -42,18 +42,20 @@ jobs:
   #      thing enforced is the case that is dead under every schedule — a step budget at or above
   #      the whole job budget.
   #
-  # Shard test-step budgets are ~2x the observed maximum over the runs measured for MAN-669
-  # (business-core-a 6.2m → 15m, business-core-b 4.8m → 12m, platform 3.7m → 10m), while short
-  # fixed-cost steps (checkout, SDK setup, cache restore, evidence collect/upload) get a 3–8 minute
-  # floor that no healthy run comes near.
+  # Shard test-step budgets are ~2x the observed maximum for that shard, while short fixed-cost
+  # steps (checkout, SDK setup, cache restore, evidence collect/upload) get a 3–8 minute floor that
+  # no healthy run comes near.
   #
-  # BusinessGateway is the exception and is re-measured rather than kept at its MAN-669 value. Its
-  # 16.0m/14.3m observation was the cost of a serialized `WebApplicationFactory`-per-test assembly;
-  # MAN-663 removed that, and the step now measures 1.0m (see the job below). A step budget sized
-  # from a runtime that no longer exists is not a fail-fast bound, so it is re-derived here: the
-  # step is no longer test-dominated — restore + build now dominate it — and it therefore takes the
-  # same 3–8 minute fixed-cost floor as the other restore/build-shaped steps rather than a multiple
-  # of a 22-second test window. Re-measure again if that assembly's shape changes.
+  # MAN-669 PR-A re-homed the shard contents (see scripts/backend-test-shards.json), so the four
+  # shards no longer have four different shapes: measured on run 30999368607 the fast-shard work is
+  # 741s of TRX elapsed and the rebalance splits it 199.9s / 169.2s / 199.8s / 172.5s. The old
+  # per-shard budget spread (8m / 10m / 15m / 12m) was sized from the pre-rebalance split where one
+  # shard carried 357s and another 23s; those numbers describe a topology that no longer exists. All
+  # four shards therefore take the same 10m test-step budget, ~2x the ~4.3m each is projected to
+  # cost, and the same 39m step sum inside a 45m job.
+  #
+  # The budgets above are provisional until this branch's own CI run is measured; the per-job
+  # comments below carry the run they were last derived from.
   #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
@@ -106,21 +108,21 @@ jobs:
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
-    # Tier A (evidence steps). Re-measured after MAN-663 made this assembly safely parallel: the
-    # test step is 1.0m / 1.1m and the whole job 1.6m over two measured runs (30983575535,
-    # 30988510793; hot NuGet cache), against 14.7m / 15.2m on the last pre-MAN-663 main run
-    # (30978158138). The step is now restore/build-dominated
-    # — the 1036 tests themselves are ~22s — so it takes the 8m fixed-cost floor, not a multiple of
-    # the test window. Step budgets sum to 37m, leaving 6m of margin for the implicit setup/post
-    # steps.
+    # Tier A (evidence steps). The job name is frozen (MAN-661 maps evidence lane backend-shard-1 to
+    # it in scripts/lib/TestEvidence.ps1); after MAN-669 PR-A the shard is no longer
+    # BusinessGateway-only — MAN-663 cut that assembly from 869s to 23s, so the shard now also
+    # carries ERP, MasterData, WMS, Maintenance and Scheduling. Projected 199.9s of TRX elapsed,
+    # the largest of the four, and a ~4.3m test step. Budget: 10m test step (~2x), step budgets sum
+    # to 39m, leaving 6m of margin for the implicit setup/post steps. Provisional until this
+    # branch's own run is measured.
     #
     # The job budget cannot usefully go below that sum: tier A requires job > sum, and the six
-    # non-test steps already carry a mandatory 29m of shared-convention budget. So 8m — the budget
-    # that actually fires on a hung run — is the real fail-fast bound here; 43m is the structural
+    # non-test steps already carry a mandatory 29m of shared-convention budget. So 10m — the budget
+    # that actually fires on a hung run — is the real fail-fast bound here; 45m is the structural
     # floor the invariant leaves behind, not a claim about this job's runtime. If the test step ever
-    # approaches 8m, raise both budgets rather than only the step one, or the strict inequality
+    # approaches 10m, raise both budgets rather than only the step one, or the strict inequality
     # stops protecting the evidence steps.
-    timeout-minutes: 43
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -154,7 +156,7 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Test BusinessGateway shard
-        timeout-minutes: 8
+        timeout-minutes: 10
         id: shard-tests
         shell: pwsh
         run: >-
@@ -206,8 +208,10 @@ jobs:
 
   backend-tests-platform:
     name: Backend Tests - Platform
-    # Tier A (evidence steps). Observed max 3.7m. Step budgets sum to 39m, leaving 6m of margin
-    # for the implicit setup/post steps.
+    # Tier A (evidence steps). The only shard MAN-669 PR-A left untouched: its 169.2s of TRX elapsed
+    # on run 30999368607 already sat at the rebalance target, so its contents, its 3.7m observed
+    # maximum and its 10m/45m budgets all carry over unchanged. Step budgets sum to 39m, leaving 6m
+    # of margin for the implicit setup/post steps.
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -294,9 +298,13 @@ jobs:
 
   backend-tests-business-core-a:
     name: Backend Tests - Business Core A
-    # Tier A (evidence steps). Observed max 6.2m. Step budgets sum to 44m, leaving 6m of margin
-    # for the implicit setup/post steps.
-    timeout-minutes: 50
+    # Tier A (evidence steps). The job name is frozen (MAN-661 maps evidence lane backend-shard-3 to
+    # it); MAN-669 PR-A moved WMS, ERP and MasterData out and Quality plus the acceptance suite in,
+    # taking the shard from 357.5s to a projected 199.8s of TRX elapsed and its 6.2m observed
+    # maximum down to a projected ~4.3m test step. Budget: 10m test step (~2x), step budgets sum to
+    # 39m, leaving 6m of margin for the implicit setup/post steps. Provisional until this branch's
+    # own run is measured.
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -330,7 +338,7 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Test business core A shard
-        timeout-minutes: 15
+        timeout-minutes: 10
         id: shard-tests
         shell: pwsh
         run: >-
@@ -382,9 +390,15 @@ jobs:
 
   backend-tests-business-core-b:
     name: Backend Tests - Business Core B
-    # Tier A (evidence steps). Observed max 4.8m. Step budgets sum to 41m, leaving 6m of margin
-    # for the implicit setup/post steps.
-    timeout-minutes: 47
+    # Tier A (evidence steps). The job name is frozen (MAN-661 maps evidence lane backend-shard-4 to
+    # it); MAN-669 PR-A left IndustrialTelemetry — the single heaviest assembly at 133.1s — here and
+    # moved Quality, Maintenance, Scheduling and the acceptance suite out, adding DemandPlanning and
+    # ProductEngineering. Projected 172.5s of TRX elapsed, deliberately the lowest of the four
+    # because this shard measured the worst step-to-TRX ratio (265s step for 191.7s TRX on run
+    # 30999368607). Budget: 10m test step (~2x the projected ~4.3m), step budgets sum to 39m,
+    # leaving 6m of margin for the implicit setup/post steps. Provisional until this branch's own
+    # run is measured.
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -418,7 +432,7 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Test business core B shard
-        timeout-minutes: 12
+        timeout-minutes: 10
         id: shard-tests
         shell: pwsh
         run: >-

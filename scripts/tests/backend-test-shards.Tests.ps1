@@ -59,9 +59,17 @@ Assert-Contract ($fastShards.Count -eq 4) 'Phase 1 must define exactly four fast
 Assert-Contract (((@($fastShards.id) | Sort-Object) -join '|') -ceq 'business-core-a|business-core-b|business-gateway|platform') 'Fast shard IDs must remain the four phase-1 CI jobs.'
 Assert-Contract (((@($heavyLanes.id) | Sort-Object) -join '|') -ceq 'full-chain|performance|real-postgres') 'Heavy lane IDs must remain explicit and separate from fast shards.'
 $businessGatewayShard = @($fastShards | Where-Object { $_.id -eq 'business-gateway' })
-$businessCoreBShard = @($fastShards | Where-Object { $_.id -eq 'business-core-b' })
-Assert-Contract ($businessGatewayShard.Count -eq 1 -and @($businessGatewayShard[0].projects).Count -eq 1) 'BusinessGateway must stay isolated in its own fast shard before MAN-663.'
-Assert-Contract ($businessCoreBShard.Count -eq 1 -and @($businessCoreBShard[0].projects) -contains 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj') 'Regular business acceptance facts must be part of the default fast gate.'
+# The BusinessGateway assembly used to be alone in its shard because it cost 869s and serialized
+# every other assembly behind it. MAN-663 removed that cost (23s on run 30999368607) and MAN-669
+# PR-A rebalanced the shards by measured TRX elapsed, so "exactly one project" is no longer the
+# contract — the lane identity is. What must not drift is which shard owns that assembly, because
+# MAN-661 maps evidence lane backend-shard-1 to this job's name.
+Assert-Contract ($businessGatewayShard.Count -eq 1 -and @($businessGatewayShard[0].projects) -contains 'backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj') 'The BusinessGateway assembly must stay in the fast shard whose evidence lane is named after it.'
+# Which fast shard owns the acceptance suite is a balancing decision (PR-A moved it from
+# business-core-b to business-core-a); that it stays inside the *default fast gate* rather than
+# drifting into an opt-in heavy lane is the contract.
+$acceptanceOwners = @($fastShards | Where-Object { @($_.projects) -contains 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj' })
+Assert-Contract ($acceptanceOwners.Count -eq 1) 'Regular business acceptance facts must be part of the default fast gate.'
 $excludedSelectors = @(
     foreach ($shard in $fastShards) {
         $classes = $shard.PSObject.Properties['excludedTestClasses']
@@ -335,10 +343,13 @@ try {
     }
     Assert-Contract ($policyCoverageText.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
 
+    # The under-declaration has to be planted on whichever shard currently owns the one exclusion
+    # whose MAN-661 requiredLane is not `postgres`; pinning that to a shard id made this negative
+    # test silently pass the moment MAN-669 PR-A moved that exclusion to another shard.
     $laneManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    foreach ($laneShard in @($laneManifest.fastShards)) {
-        if ([string] $laneShard.id -ceq 'business-core-a') { $laneShard.excludedTestLanes = @('real-postgres') }
-    }
+    $fullChainShards = @($laneManifest.fastShards | Where-Object { @($_.excludedTestLanes | ForEach-Object { [string] $_ }) -contains 'full-chain' })
+    Assert-Contract ($fullChainShards.Count -eq 1) 'Exactly one fast shard must own the full-chain exclusion for the lane-attribution contract to be able to under-declare it.'
+    $fullChainShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
     $laneAttributionText = ''
     try {
