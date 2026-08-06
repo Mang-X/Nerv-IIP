@@ -1,10 +1,11 @@
-using System.Diagnostics;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 using Nerv.IIP.Business.Approval.Web.Application.Scheduling;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Approval.Web.Tests;
 
@@ -14,6 +15,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_dispatches_configured_overdue_check_scope()
     {
         var sender = new CapturingSender();
+        var clock = new FakeTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -29,7 +31,8 @@ public sealed class ApprovalOverdueSchedulerTests
         var scheduler = new ApprovalOverdueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
-            NullLogger<ApprovalOverdueScheduler>.Instance);
+            NullLogger<ApprovalOverdueScheduler>.Instance,
+            clock);
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.LastCommand is not null || scheduler.ExecuteTask?.IsCompleted == true);
@@ -42,6 +45,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_dispatches_all_configured_overdue_check_scopes()
     {
         var sender = new CapturingSender();
+        var clock = new FakeTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -59,7 +63,8 @@ public sealed class ApprovalOverdueSchedulerTests
         var scheduler = new ApprovalOverdueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
-            NullLogger<ApprovalOverdueScheduler>.Instance);
+            NullLogger<ApprovalOverdueScheduler>.Instance,
+            clock);
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.Commands.Count == 2 || scheduler.ExecuteTask?.IsCompleted == true);
@@ -77,6 +82,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_deduplicates_matching_scopes_from_array_and_legacy_keys()
     {
         var sender = new CapturingSender();
+        var clock = new FakeTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -94,13 +100,27 @@ public sealed class ApprovalOverdueSchedulerTests
         var scheduler = new ApprovalOverdueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
-            NullLogger<ApprovalOverdueScheduler>.Instance);
+            NullLogger<ApprovalOverdueScheduler>.Instance,
+            clock);
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.Commands.Count > 0 || scheduler.ExecuteTask?.IsCompleted == true);
         await AssertStaysAtAsync(() => sender.Commands.Count, 1);
-
         Assert.Equal([new CheckOverdueApprovalStepsCommand("org-001", "env-dev")], sender.Commands);
+
+        // The first pass dispatched exactly one command and the fake clock has not moved, so the periodic
+        // timer is registered and parked. Advancing one interval drives exactly one further pass, which
+        // must also dispatch exactly one command — the per-tick dedup claim, previously untested.
+        clock.Advance(TimeSpan.FromHours(1));
+        await WaitUntilAsync(() => sender.Commands.Count > 1 || scheduler.ExecuteTask?.IsCompleted == true);
+        await AssertStaysAtAsync(() => sender.Commands.Count, 2);
+
+        Assert.Equal(
+            [
+                new CheckOverdueApprovalStepsCommand("org-001", "env-dev"),
+                new CheckOverdueApprovalStepsCommand("org-001", "env-dev"),
+            ],
+            sender.Commands);
         await scheduler.StopAsync(CancellationToken.None);
     }
 
@@ -108,6 +128,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_keeps_running_when_one_overdue_check_fails()
     {
         var sender = new ThrowingSender();
+        var clock = new FakeTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -123,7 +144,8 @@ public sealed class ApprovalOverdueSchedulerTests
         var scheduler = new ApprovalOverdueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
-            NullLogger<ApprovalOverdueScheduler>.Instance);
+            NullLogger<ApprovalOverdueScheduler>.Instance,
+            clock);
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.Attempts > 0 || scheduler.ExecuteTask?.IsCompleted == true);
@@ -137,6 +159,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_falls_back_to_default_interval_when_configured_interval_is_not_positive()
     {
         var sender = new CapturingSender();
+        var clock = new FakeTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -152,7 +175,8 @@ public sealed class ApprovalOverdueSchedulerTests
         var scheduler = new ApprovalOverdueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
-            NullLogger<ApprovalOverdueScheduler>.Instance);
+            NullLogger<ApprovalOverdueScheduler>.Instance,
+            clock);
 
         await scheduler.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => sender.LastCommand is not null || scheduler.ExecuteTask?.IsCompleted == true);
@@ -163,34 +187,26 @@ public sealed class ApprovalOverdueSchedulerTests
     }
 
     /// <summary>
-    /// Bounded stability check for a negative assertion: the scheduler deduplicates before it sends, so
-    /// a duplicate would be dispatched immediately after the first one. The observation is polled and
-    /// fails on the first extra command instead of sleeping once and hoping the window was long enough.
+    /// Bounded stability check for a negative assertion, failing on the first extra command rather than
+    /// sleeping once and hoping the window was wide enough. The scheduler's periodic tick runs on the
+    /// injected <see cref="FakeTimeProvider"/> that the test never advances, so a second command inside
+    /// this window can only come from the deduplication itself.
     /// </summary>
-    private static async Task AssertStaysAtAsync(Func<int> observe, int expected)
-    {
-        var deadline = Stopwatch.StartNew();
-        var attempts = 0;
-        while (deadline.Elapsed < TimeSpan.FromMilliseconds(200))
-        {
-            attempts++;
-            var observed = observe();
-            Assert.True(
-                observed == expected,
-                $"Expected the observation to stay at {expected}; observed {observed} after {attempts} attempts and {deadline.Elapsed}.");
-            await Task.Delay(10);
-        }
-    }
+    private static async Task AssertStaysAtAsync(Func<int> observe, int expected) =>
+        await Consistently.StaysAsync(
+            condition: $"the dispatched command count stays at {expected}",
+            observe: _ => ValueTask.FromResult(observe()),
+            isSatisfied: observed => observed == expected,
+            describe: observed => $"commands={observed}; expected={expected}",
+            options: new EventuallyOptions(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(10), []));
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!predicate())
-        {
-            timeout.Token.ThrowIfCancellationRequested();
-            await Task.Delay(10, timeout.Token);
-        }
-    }
+    private static async Task WaitUntilAsync(Func<bool> predicate) =>
+        await Eventually.WaitAsync(
+            condition: "the scheduler reaches the awaited observable state",
+            observe: _ => ValueTask.FromResult(predicate()),
+            isSatisfied: satisfied => satisfied,
+            describe: satisfied => $"satisfied={satisfied}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
 
     private sealed class CapturingSender : ISender
     {

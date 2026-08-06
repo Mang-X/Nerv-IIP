@@ -11,6 +11,7 @@ using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
@@ -1270,11 +1271,22 @@ public sealed class PlanningInputAdapterTests
         Assert.Contains("5000", exception.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The fan-out limit is observed through an explicit barrier instead of a hold time. Every request
+    /// parks at a gate the test controls, so the test can wait for the in-flight count to reach the limit
+    /// (a real edge), then assert that it <em>stays</em> there while all 20 requests are outstanding — that
+    /// is what proves the 9th request is blocked. The previous version held each response for 50 ms and
+    /// could only assert an upper bound, which a machine slow enough to serialize the requests satisfied
+    /// vacuously.
+    /// </summary>
     [Fact]
     public async Task Master_data_planning_parameter_client_limits_sku_detail_concurrency()
     {
+        const int expectedConcurrencyLimit = 8;
+        const int skuCount = 20;
         var current = 0;
         var observedMax = 0;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var handler = new StubHttpMessageHandler(async request =>
         {
             var running = Interlocked.Increment(ref current);
@@ -1284,7 +1296,13 @@ public sealed class PlanningInputAdapterTests
                 Interlocked.CompareExchange(ref observedMax, running, snapshot);
             }
 
-            await Task.Delay(50);
+            // Safety net only: the test releases the gate itself, so this budget is never spent on a
+            // healthy run. Without it a regression in the throttle would park the test instead of failing.
+            await TestTimeout.RunAsync(
+                operation: "MasterData SKU detail fan-out gate",
+                action: async token => await gate.Task.WaitAsync(token),
+                timeout: TimeSpan.FromSeconds(30));
+
             Interlocked.Decrement(ref current);
             var skuCode = request.RequestUri!.AbsolutePath.Split('/').Last();
             return JsonResponse($$"""
@@ -1308,17 +1326,34 @@ public sealed class PlanningInputAdapterTests
         });
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
         var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
-        var items = Enumerable.Range(1, 20)
+        var items = Enumerable.Range(1, skuCount)
             .Select(x => new PlanningParameterSnapshotItem($"SKU-{x:000}", "pcs", "SITE-01"))
             .ToArray();
 
-        var snapshot = await client.GetPlanningParametersAsync(
+        var pending = client.GetPlanningParametersAsync(
             "token",
             new PlanningParameterSnapshotRequest("org-001", "env-dev", items),
             CancellationToken.None);
 
-        Assert.Equal(20, snapshot.PlanningParameters.Count);
-        Assert.True(observedMax <= 8, $"Expected at most 8 concurrent MasterData SKU requests, observed {observedMax}.");
+        await Eventually.WaitAsync(
+            condition: $"concurrent MasterData SKU detail requests reach the {expectedConcurrencyLimit} request limit",
+            observe: _ => ValueTask.FromResult(Volatile.Read(ref current)),
+            isSatisfied: inFlight => inFlight >= expectedConcurrencyLimit,
+            describe: inFlight => $"inFlight={inFlight}; observedMax={Volatile.Read(ref observedMax)}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10), []));
+        await Consistently.StaysAsync(
+            condition: $"concurrent MasterData SKU detail requests never exceed {expectedConcurrencyLimit}"
+                + $" while all {skuCount} requests are outstanding",
+            observe: _ => ValueTask.FromResult(Volatile.Read(ref observedMax)),
+            isSatisfied: max => max <= expectedConcurrencyLimit,
+            describe: max => $"observedMax={max}; inFlight={Volatile.Read(ref current)}",
+            options: new EventuallyOptions(TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(10), []));
+
+        gate.SetResult();
+        var snapshot = await pending;
+
+        Assert.Equal(skuCount, snapshot.PlanningParameters.Count);
+        Assert.Equal(expectedConcurrencyLimit, Volatile.Read(ref observedMax));
     }
 
     private static ServiceProvider CreateInMemoryProvider()

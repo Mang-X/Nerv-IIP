@@ -21,6 +21,7 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
@@ -594,23 +595,28 @@ public sealed class DemandPlanningEndpointContractTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MrpRunWorker>>());
 
+    /// <summary>
+    /// The MRP worker is a real <see cref="Microsoft.Extensions.Hosting.BackgroundService"/> draining a
+    /// queue, so the run's persisted status is the only observable completion fact. Bounded polling with a
+    /// reported last observation replaces the hand-rolled deadline loop, which used to throw a
+    /// <see cref="TimeoutException"/> that said nothing about the status actually reached.
+    /// </summary>
     private static async Task<MrpRun> WaitForTerminalRunAsync(ServiceProvider provider, MrpRunId runId)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (DateTime.UtcNow < deadline)
-        {
-            using var scope = provider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var run = await dbContext.MrpRuns.AsNoTracking().SingleAsync(x => x.Id == runId, CancellationToken.None);
-            if (run.Status is MrpRunStatus.Completed or MrpRunStatus.Failed)
+        return await Eventually.WaitAsync(
+            condition: $"MRP run {runId} reaches a terminal status",
+            observe: async token =>
             {
-                return run;
-            }
-
-            await Task.Delay(50, CancellationToken.None);
-        }
-
-        throw new TimeoutException($"MRP run {runId} did not reach a terminal status in time.");
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                return await dbContext.MrpRuns.AsNoTracking().SingleAsync(x => x.Id == runId, token);
+            },
+            isSatisfied: run => run.Status is MrpRunStatus.Completed or MrpRunStatus.Failed,
+            describe: run => $"status={run.Status}; failureReason={run.FailureReason ?? "<none>"}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: []));
     }
 
     private static ServiceProvider CreateWorkerProvider(

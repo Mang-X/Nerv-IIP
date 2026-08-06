@@ -591,8 +591,8 @@ public sealed class MaintenanceCommandLockTests
     {
         public async Task Handle(CancellableLockedCommand request, CancellationToken cancellationToken)
         {
-            // MAN-662 real wait: cancellation primitive; exit when the fake handler exposes a completion signal.
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            // The handler holds the command lock until the caller cancels it — no timer, no wall clock.
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
         }
     }
 

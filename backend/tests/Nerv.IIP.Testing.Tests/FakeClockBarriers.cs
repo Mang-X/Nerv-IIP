@@ -17,6 +17,8 @@ internal sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
 {
     private readonly TaskCompletionSource firstTimerCreated =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Lock gate = new();
+    private readonly List<(int ExpectedCount, TaskCompletionSource Reached)> countWaiters = [];
     private int timersCreated;
 
     /// <summary>Completes once at least one timer has been registered against this clock.</summary>
@@ -27,8 +29,9 @@ internal sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         var timer = base.CreateTimer(callback, state, dueTime, period);
-        Interlocked.Increment(ref timersCreated);
+        var created = Interlocked.Increment(ref timersCreated);
         firstTimerCreated.TrySetResult();
+        ReleaseCountWaiters(created);
         return timer;
     }
 
@@ -41,6 +44,57 @@ internal sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
             FirstTimerCreated,
             "the operation under test to register its timer on the fake clock",
             () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}");
+
+    /// <summary>
+    /// Bounded wait until <paramref name="expectedCount"/> timers have been registered against this clock.
+    /// A polling loop re-registers a timer per iteration, so "the previous tick was delivered" is not the
+    /// same fact as "the next timer exists"; only the latter makes the next
+    /// <see cref="FakeTimeProvider.Advance"/> safe.
+    /// </summary>
+    public Task WaitForTimerCountAsync(int expectedCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(expectedCount, 1);
+
+        TaskCompletionSource reached;
+        lock (gate)
+        {
+            if (Volatile.Read(ref timersCreated) >= expectedCount)
+            {
+                return Task.CompletedTask;
+            }
+
+            reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            countWaiters.Add((expectedCount, reached));
+        }
+
+        return BoundedSignal.ObserveAsync(
+            reached.Task,
+            $"the operation under test to register timer #{expectedCount} on the fake clock",
+            () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}");
+    }
+
+    private void ReleaseCountWaiters(int created)
+    {
+        List<TaskCompletionSource>? released = null;
+        lock (gate)
+        {
+            for (var index = countWaiters.Count - 1; index >= 0; index--)
+            {
+                if (countWaiters[index].ExpectedCount > created)
+                {
+                    continue;
+                }
+
+                (released ??= []).Add(countWaiters[index].Reached);
+                countWaiters.RemoveAt(index);
+            }
+        }
+
+        foreach (var waiter in released ?? [])
+        {
+            waiter.TrySetResult();
+        }
+    }
 }
 
 /// <summary>

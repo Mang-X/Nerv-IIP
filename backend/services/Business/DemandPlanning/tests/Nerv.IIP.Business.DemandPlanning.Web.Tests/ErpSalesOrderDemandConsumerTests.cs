@@ -14,6 +14,7 @@ using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
@@ -138,12 +139,13 @@ public sealed class ErpSalesOrderDemandConsumerTests
         await provider.GetRequiredService<ICapPublisher>()
             .PublishAsync(nameof(SalesOrderChangedIntegrationEvent), targetEvent);
 
-        var immediateRetryWait = System.Diagnostics.Stopwatch.StartNew();
         var failureProbe = provider.GetRequiredService<ChangedV2FallbackFailureProbe>();
-        while (failureProbe.InjectedFailureCount < 3 && immediateRetryWait.Elapsed < TimeSpan.FromSeconds(15))
-        {
-            await Task.Delay(50);
-        }
+        await Eventually.WaitAsync(
+            condition: "CAP exhausts its three immediate delivery attempts for the failing v2 message",
+            observe: _ => ValueTask.FromResult(failureProbe.InjectedFailureCount),
+            isSatisfied: failures => failures >= 3,
+            describe: failures => $"injectedFailures={failures}; attempts={failureProbe.AttemptCount}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(50), []));
 
         Assert.Equal(3, failureProbe.InjectedFailureCount);
         await using (var failedAttemptScope = provider.CreateAsyncScope())
@@ -155,30 +157,39 @@ public sealed class ErpSalesOrderDemandConsumerTests
             Assert.Single(await failedAttemptDb.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
         }
 
-        await Task.Delay(TimeSpan.FromSeconds(5));
-        Assert.Equal(3, failureProbe.AttemptCount);
+        // Negative assertion: the immediate retries are exhausted, so no fourth attempt may happen until
+        // the fallback scanner picks the message up. A bounded stability window fails on the first extra
+        // attempt instead of sleeping once and asserting whatever the clock happened to allow.
+        await Consistently.StaysAsync(
+            condition: "no further delivery attempt happens before the CAP fallback scan window opens",
+            observe: _ => ValueTask.FromResult(failureProbe.AttemptCount),
+            isSatisfied: attempts => attempts == 3,
+            describe: attempts => $"attempts={attempts}; injectedFailures={failureProbe.InjectedFailureCount}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(200), []));
 
-        var fallbackScanWait = System.Diagnostics.Stopwatch.StartNew();
-        while (fallbackScanWait.Elapsed < TimeSpan.FromSeconds(50))
-        {
-            await using var verificationScope = provider.CreateAsyncScope();
-            var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var demand = await dbContext.DemandSources.AsNoTracking().SingleAsync();
-            if (demand.SourceVersion == 2)
+        var retried = await Eventually.WaitAsync(
+            condition: "the CAP fallback scan redelivers the failed v2 message and the demand reaches version 2",
+            observe: async token =>
             {
-                Assert.Equal(3, failureProbe.InjectedFailureCount);
-                Assert.True(failureProbe.AttemptCount >= 4);
-                Assert.True(retryPathWait.Elapsed >= TimeSpan.FromSeconds(25));
-                Assert.Equal(4m, demand.Quantity);
-                Assert.Equal("active", demand.SourceStatus);
-                Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
-                return;
-            }
+                await using var verificationScope = provider.CreateAsyncScope();
+                var dbContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var demand = await dbContext.DemandSources.AsNoTracking().SingleAsync(token);
+                var processedCount = await dbContext.ProcessedIntegrationEvents.CountAsync(token);
+                return (demand.SourceVersion, demand.Quantity, demand.SourceStatus, ProcessedCount: processedCount);
+            },
+            isSatisfied: observation => observation.SourceVersion == 2,
+            describe: observation =>
+                $"sourceVersion={observation.SourceVersion}; quantity={observation.Quantity}; "
+                + $"sourceStatus={observation.SourceStatus}; processedEvents={observation.ProcessedCount}; "
+                + $"attempts={failureProbe.AttemptCount}; injectedFailures={failureProbe.InjectedFailureCount}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(50), TimeSpan.FromMilliseconds(200), []));
 
-            await Task.Delay(200);
-        }
-
-        Assert.Fail($"CAP fallback scan did not retry the failed v2 message within the test deadline. attempts={failureProbe.AttemptCount}, failures={failureProbe.InjectedFailureCount}");
+        Assert.Equal(3, failureProbe.InjectedFailureCount);
+        Assert.True(failureProbe.AttemptCount >= 4);
+        Assert.True(retryPathWait.Elapsed >= TimeSpan.FromSeconds(25));
+        Assert.Equal(4m, retried.Quantity);
+        Assert.Equal("active", retried.SourceStatus);
+        Assert.Equal(2, retried.ProcessedCount);
     }
 
     [DemandPlanningRealPostgresFact]
@@ -436,25 +447,31 @@ public sealed class ErpSalesOrderDemandConsumerTests
         });
     }
 
+    /// <summary>
+    /// Real Redis + PostgreSQL consumption has no completion receipt, so the projection is polled on a
+    /// bounded budget until the caller's assertions hold. A timeout reports the last failing assertion.
+    /// </summary>
     private static async Task AssertEventuallyAsync(Func<Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
+        await Eventually.WaitAsync(
+            condition: "the Redis CAP sales-order demand projection satisfies the asserted state",
+            observe: async _ =>
             {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        throw lastException ?? new Xunit.Sdk.XunitException("Timed out waiting for Redis CAP sales-order demand projection.");
+                try
+                {
+                    await assertion();
+                    return (Satisfied: true, Failure: (Exception?)null);
+                }
+                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
+                {
+                    return (Satisfied: false, Failure: exception);
+                }
+            },
+            isSatisfied: observation => observation.Satisfied,
+            describe: observation => observation.Satisfied
+                ? "assertion holds"
+                : $"assertion still failing: {observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
     }
 
     private static SalesOrderReleasedIntegrationEvent Released(int version, decimal quantity, string lineNo) =>

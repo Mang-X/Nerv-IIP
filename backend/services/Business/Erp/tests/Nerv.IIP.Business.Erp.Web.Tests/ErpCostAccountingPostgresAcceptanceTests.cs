@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -245,9 +246,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         string applicationName,
         int expectedCount)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(timeout.Token);
+        await connection.OpenAsync();
         await using var command = new NpgsqlCommand("""
             SELECT count(*)
             FROM pg_stat_activity
@@ -257,18 +257,16 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             """, connection);
         command.Parameters.AddWithValue("application_name", applicationName);
 
-        while (!timeout.IsCancellationRequested)
-        {
-            var waitingCount = Convert.ToInt32(await command.ExecuteScalarAsync(timeout.Token));
-            if (waitingCount >= expectedCount)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
-        }
-
-        throw new TimeoutException($"Expected {expectedCount} PostgreSQL advisory-lock waiters for {applicationName}.");
+        // Real PostgreSQL: the only observable fact is pg_stat_activity, so poll it on a bounded budget.
+        await Eventually.WaitAsync(
+            condition: $"{expectedCount} PostgreSQL advisory-lock waiters for {applicationName}",
+            observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
+            isSatisfied: waitingCount => waitingCount >= expectedCount,
+            describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(10),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [connectionString]));
     }
 }
 

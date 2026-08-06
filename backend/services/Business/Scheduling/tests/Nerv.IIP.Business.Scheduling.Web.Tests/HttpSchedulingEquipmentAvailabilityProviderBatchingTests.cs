@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -96,9 +97,18 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
             x.ReasonCode == HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode);
     }
 
+    /// <summary>
+    /// The fan-out limit is observed through a gate the test controls rather than a per-request hold time:
+    /// wait for the in-flight count to reach the limit (a real edge), then assert it <em>stays</em> there
+    /// while all 20 downstream requests are outstanding — that is what proves the 9th one is blocked.
+    /// Holding each response for 50 ms instead only ever supported an upper bound, which a machine slow
+    /// enough to serialize the requests satisfied vacuously.
+    /// </summary>
     [Fact]
     public async Task QueryAsync_LargeResourceSet_LimitsConcurrentDownstreamRequests()
     {
+        const int expectedTotalRequests = 20;
+        const int limit = HttpSchedulingEquipmentAvailabilityProvider.MaxConcurrentAvailabilityQueries;
         var tracker = new ConcurrentRequestTracker();
         var provider = new HttpSchedulingEquipmentAvailabilityProvider(
             new ConcurrentHttpClientFactory(tracker),
@@ -106,10 +116,27 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
             NullLogger<HttpSchedulingEquipmentAvailabilityProvider>.Instance);
         var problem = CreateProblem(451);
 
-        await provider.QueryAsync(problem, CancellationToken.None);
+        var pending = provider.QueryAsync(problem, CancellationToken.None);
 
-        Assert.Equal(20, tracker.TotalRequests);
-        Assert.InRange(tracker.MaxInFlight, 1, HttpSchedulingEquipmentAvailabilityProvider.MaxConcurrentAvailabilityQueries);
+        await Eventually.WaitAsync(
+            condition: $"concurrent downstream availability requests reach the {limit} request limit",
+            observe: _ => ValueTask.FromResult(tracker.InFlight),
+            isSatisfied: inFlight => inFlight >= limit,
+            describe: inFlight => $"inFlight={inFlight}; maxInFlight={tracker.MaxInFlight}; total={tracker.TotalRequests}",
+            options: new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10), []));
+        await Consistently.StaysAsync(
+            condition: $"concurrent downstream availability requests never exceed {limit}"
+                + $" while all {expectedTotalRequests} batches are outstanding",
+            observe: _ => ValueTask.FromResult(tracker.MaxInFlight),
+            isSatisfied: max => max <= limit,
+            describe: max => $"maxInFlight={max}; inFlight={tracker.InFlight}; total={tracker.TotalRequests}",
+            options: new EventuallyOptions(TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(10), []));
+
+        tracker.Release();
+        await pending;
+
+        Assert.Equal(expectedTotalRequests, tracker.TotalRequests);
+        Assert.Equal(limit, tracker.MaxInFlight);
     }
 
     [Fact]
@@ -285,13 +312,19 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
 
     private sealed class ConcurrentRequestTracker
     {
+        private readonly TaskCompletionSource gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int currentInFlight;
         private int maxInFlight;
         private int totalRequests;
 
-        public int MaxInFlight => maxInFlight;
+        public int InFlight => Volatile.Read(ref currentInFlight);
 
-        public int TotalRequests => totalRequests;
+        public int MaxInFlight => Volatile.Read(ref maxInFlight);
+
+        public int TotalRequests => Volatile.Read(ref totalRequests);
+
+        /// <summary>Lets every parked downstream request complete. Called by the test, never by a timer.</summary>
+        public void Release() => gate.TrySetResult();
 
         public async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -304,7 +337,13 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
 
             try
             {
-                await Task.Delay(50, cancellationToken);
+                // Safety net only: the test releases the gate itself, so this budget is never spent on a
+                // healthy run. Without it a throttle regression would park the test instead of failing it.
+                await TestTimeout.RunAsync(
+                    operation: "scheduling availability fan-out gate",
+                    action: async token => await gate.Task.WaitAsync(token),
+                    timeout: TimeSpan.FromSeconds(30),
+                    cancellationToken);
                 var deviceAssetId = QueryList(request, "deviceAssetIds").First();
                 var reasonCode = clientName == HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName
                     ? EquipmentRuntimeReasonCodes.ActiveAlarm
