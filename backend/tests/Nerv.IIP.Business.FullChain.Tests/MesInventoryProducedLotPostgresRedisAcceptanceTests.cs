@@ -71,9 +71,9 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         {
             var observed = await Eventually.WaitAsync(
                 condition: "MES and Inventory closed both Redis CAP produced-lot paths",
-                observe: async _ => (
-                    Mes: await ReadMesFactsAsync(mesPostgres, source),
-                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source)),
+                observe: async token => (
+                    Mes: await ReadMesFactsAsync(mesPostgres, source, token),
+                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source, token)),
                 isSatisfied: state => state.Mes.SuccessStatus == "Posted"
                     && state.Mes.SuccessMovementId is not null
                     && state.Mes.FailureStatus == "InventoryPostingFailed"
@@ -168,6 +168,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         };
         // Real external processes registering CAP consumer groups on Redis: bounded polling of an observable
         // fact, reporting per-group readiness so a timeout names the group that never appeared.
+        // StackExchange.Redis has no CancellationToken overloads, so the window token is genuinely unusable
+        // in this observation rather than dropped; Eventually still abandons it when the window closes.
         await Eventually.WaitAsync(
             condition: "the Inventory request and MES posted/failed CAP consumer groups exist on Redis",
             observe: async _ =>
@@ -260,10 +262,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return source;
     }
 
-    private static async Task<ReceiptFacts> ReadMesFactsAsync(string connectionString, ProbeSource source)
+    private static async Task<ReceiptFacts> ReadMesFactsAsync(
+        string connectionString,
+        ProbeSource source,
+        CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
@@ -281,8 +286,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? successMovementId = null;
         string? failureStatus = null;
         string? failureCode = null;
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             if (reader.GetString(0) == source.SuccessRequestNo)
             {
@@ -299,10 +304,13 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         return new ReceiptFacts(successStatus, successMovementId, failureStatus, failureCode);
     }
 
-    private static async Task<InventoryFacts> ReadInventoryFactsAsync(string connectionString, ProbeSource source)
+    private static async Task<InventoryFacts> ReadInventoryFactsAsync(
+        string connectionString,
+        ProbeSource source,
+        CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
@@ -324,8 +332,8 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         string? successSourceService = null;
         string? successSourceDocumentLineId = null;
         string? successLotNo = null;
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var requestNo = reader.GetString(0);
             if (requestNo == source.SuccessRequestNo)

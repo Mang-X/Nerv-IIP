@@ -127,8 +127,10 @@ public sealed class ConsistentlyTests
 
         var exception = await Assert.ThrowsAsync<ConsistentlyObservationTimeoutException>(() => wait);
         Assert.Equal("no second maintenance work order is generated", exception.Condition);
-        Assert.Equal(0, exception.Attempts);
         Assert.Equal(Window, exception.Elapsed);
+        // No attempt count: this branch is reached only when nothing was ever observed, so any such number
+        // would be a constant. The message must not pretend otherwise.
+        Assert.DoesNotContain("observations", exception.Message, StringComparison.Ordinal);
         Assert.Contains("never observed", exception.Message, StringComparison.Ordinal);
         Assert.Contains("not a violation", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<ConsistentlyViolatedException>(exception);

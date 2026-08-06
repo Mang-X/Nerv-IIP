@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Time.Testing;
 
-namespace Nerv.IIP.Testing.Tests;
+namespace Nerv.IIP.Testing;
 
 /// <summary>
 /// A <see cref="FakeTimeProvider"/> that publishes an edge signal the moment a timer is registered
@@ -11,9 +11,11 @@ namespace Nerv.IIP.Testing.Tests;
 /// that registers its timer after the advance re-bases on the advanced now, nothing advances the clock
 /// again, and the tick is lost permanently — the waiter never returns and the test host parks instead
 /// of failing. Neither <c>await Task.Yield()</c> nor "the async method returned a pending task" is a
-/// barrier against that. This provider turns the registration itself into an awaitable fact.
+/// barrier against that, and neither is "the statement that creates the timer happens to come first in
+/// the production method" — that is a property of today's source order, not an observable fact. This
+/// provider turns the registration itself into an awaitable fact.
 /// </remarks>
-internal sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
+public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
 {
     private readonly TaskCompletionSource firstTimerCreated =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -101,7 +103,7 @@ internal sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
 /// Bounded await on an edge-triggered signal, reporting the redacted condition, elapsed time, attempt
 /// count and last observation, so a lost fake-clock tick fails with a diagnosis instead of hanging.
 /// </summary>
-internal static class BoundedSignal
+public static class BoundedSignal
 {
     private static readonly TimeSpan Budget = TimeSpan.FromSeconds(5);
 
@@ -110,14 +112,18 @@ internal static class BoundedSignal
         string condition,
         Func<string> lastObservation)
     {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(condition);
+        ArgumentNullException.ThrowIfNull(lastObservation);
+
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            await observation.WaitAsync(Budget);
+            await observation.WaitAsync(Budget).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            throw new global::Xunit.Sdk.XunitException(
+            throw new Xunit.Sdk.XunitException(
                 $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
                 + $"(budget {Budget.TotalSeconds:0.###}s, attempts 1/1 — single bounded await on a "
                 + $"completion signal); last observation: {lastObservation()}");

@@ -41,22 +41,25 @@ public sealed class ConsistentlyViolatedException : Exception
 /// <see cref="TimeoutException"/> so it lines up with <see cref="EventuallyTimeoutException"/> and
 /// <see cref="TestTimeoutException"/>.
 /// </remarks>
+/// <remarks>
+/// It deliberately carries no attempt count. This exception is thrown on exactly one branch — "no
+/// observation ever completed" — so a completed-observation count would be structurally zero and a
+/// started-observation count structurally one; either would be a constant dressed up as a diagnostic.
+/// The condition and the elapsed window are the only facts this failure actually knows.
+/// </remarks>
 public sealed class ConsistentlyObservationTimeoutException : TimeoutException
 {
-    public ConsistentlyObservationTimeoutException(string condition, int attempts, TimeSpan elapsed)
+    public ConsistentlyObservationTimeoutException(string condition, TimeSpan elapsed)
         : base(
             $"Condition '{condition}' was never observed: the {elapsed} stability window elapsed before a " +
-            $"single observation completed ({attempts} completed observations). This is a timeout, not a " +
-            "violation of the invariant — widen the window or make the observation cheaper.")
+            "single observation completed. This is a timeout, not a violation of the invariant — widen the " +
+            "window or make the observation cheaper.")
     {
         Condition = condition;
-        Attempts = attempts;
         Elapsed = elapsed;
     }
 
     public string Condition { get; }
-
-    public int Attempts { get; }
 
     public TimeSpan Elapsed { get; }
 }
@@ -121,7 +124,9 @@ public static class Consistently
         {
             while (true)
             {
-                var observation = await observe(linkedSource.Token).ConfigureAwait(false);
+                var observation = await Eventually
+                    .ObserveWithinWindowAsync(observe, linkedSource.Token)
+                    .ConfigureAwait(false);
                 attempts++;
                 lastObservation = observation;
                 observedAtLeastOnce = true;
@@ -152,7 +157,6 @@ public static class Consistently
             {
                 throw new ConsistentlyObservationTimeoutException(
                     TestDiagnostic.Sanitize(condition, options.SensitiveValues),
-                    attempts,
                     effectiveTimeProvider.GetElapsedTime(startedAt));
             }
 

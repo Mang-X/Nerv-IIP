@@ -99,7 +99,11 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
                     payloadLines,
                     "erp-delivery-order",
                     deliveryOrderNo));
-            receivedBeforeReplay = await CountSiblingConsumerReceiptsAsync(postgres, processed.EventId);
+            // One-shot baseline read outside any bounded window: there is no caller token to honour here.
+            receivedBeforeReplay = await CountSiblingConsumerReceiptsAsync(
+                postgres,
+                processed.EventId,
+                CancellationToken.None);
         }
 
         var publisher = provider.GetRequiredService<ICapPublisher>();
@@ -111,7 +115,7 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
         var expectedReceipts = receivedBeforeReplay + 2;
         var receivedAfterReplay = await Eventually.WaitAsync(
             condition: "ERP received both repeated WMS completion envelopes through the real Redis CAP transport",
-            observe: async _ => await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId),
+            observe: async token => await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId, token),
             isSatisfied: count => count >= expectedReceipts,
             describe: count => $"siblingReceipts={count}; before={receivedBeforeReplay}; expected>={expectedReceipts}",
             options: new EventuallyOptions(
@@ -139,12 +143,15 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
             && x.EventId == replay.EventId));
     }
 
-    private static async Task<int> CountSiblingConsumerReceiptsAsync(string connectionString, string eventId)
+    private static async Task<int> CountSiblingConsumerReceiptsAsync(
+        string connectionString,
+        string eventId,
+        CancellationToken cancellationToken)
     {
         // Successful Redis CAP deliveries are not retained in cap_received_messages in this profile.
         // The sibling WMS consumer durably rejects this outbound event type once per physical envelope.
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.Text;
         command.CommandText = """
@@ -157,7 +164,7 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
             "consumer_name",
             WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName);
         command.Parameters.AddWithValue("event_id", eventId);
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 }
 

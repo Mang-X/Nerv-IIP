@@ -274,11 +274,62 @@ MAN-661，普通测试变更不得自行改动门禁口径。
 - **`Eventually.AssertAsync`。** `ErpSalesOrderDemandConsumerTests`、`MesCapSubscriptionTests`、
   `NotificationCapOutboxAcceptanceTests` 三份「重试断言块直到成立」的 helper（观测类型还分两种形状）收编为
   一个原语。只重试断言形状的失败（`XunitException` 与 EF 的 `InvalidOperationException`），其余异常立即上抛，
-  不被当成「还没就绪」重试满整个预算。为此 `Nerv.IIP.Testing` 引用了 `xunit`——它的 22 个消费方全部是 xUnit
-  测试项目，没有任何发布程序集引用它，边界不变。
+  不被当成「还没就绪」重试满整个预算。为此 `Nerv.IIP.Testing` 引用了 xUnit 断言包（落点与白名单口径在第二轮
+  收窄，见下节 S2/S3）。
 - **显式预算/取消。** `ErpCostAccountingPostgresAcceptanceTests` 与 `MesPostgresAdvisoryLockProbe` 的探针
   连接改回显式 10 s 预算并接收 caller 的 `CancellationToken`（此前一处退回 Npgsql 默认 15 s，一处传
   `CancellationToken.None`）。
+
+## 第二轮走查修复（#1470 / PR #1482）
+
+- **窗口内的观测有了结构性预算（S1/S8）。** `Eventually.WaitAsync` 与 `Consistently.StaysAsync` 现在都经由
+  `Eventually.ObserveWithinWindowAsync` 发起观测：token 仍然交给 `observe`，但**即使 `observe` 完全忽略它**，
+  窗口关闭时该次观测也会被放弃。此前一次卡住的 Npgsql 连接有两个不同的后果——`Eventually` 一侧是测试**挂死
+  而不是变红**（最贵的失败形态），`Consistently` 一侧是**窗口静默退化成单次观测**，负向断言根本没有被复查。
+  放弃掉的观测会显式消费它后来的异常，不会以 `UnobservedTaskException` 落到别的测试头上。
+  `ObservationBudgetTests` 四条用例钉住这一层：删掉那个 `WaitAsync` 后它们从「失败」变成「挂起」，因此每条
+  都自带有界外层预算。
+- **同时把 token 真正接到 IO 上。** `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.ReadFactsAsync`、
+  `ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.CountSiblingConsumerReceiptsAsync`、
+  `MesInventoryProducedLotPostgresRedisAcceptanceTests` 的 `ReadMesFactsAsync`/`ReadInventoryFactsAsync`
+  改为**必填**的 `CancellationToken` 参数并传到 `OpenAsync`/`ExecuteReaderAsync`/`ReadAsync`；三处
+  `Eventually.AssertAsync` 的 helper（Notification/MES/DemandPlanning）签名从 `Func<Task>` 改为
+  `Func<CancellationToken, Task>`，token 一路进到 EF 查询与裸 ADO 诊断查询。必填参数本身就是「不许再丢」的
+  编译期护栏。剩余仍然丢弃 token 的观测**只有 StackExchange.Redis 那几处**（`StreamGroupInfoAsync`、
+  `PingAsync`、`ConnectionMultiplexer.ConnectAsync`）：该库根本没有 `CancellationToken` 重载，预算只能由
+  multiplexer 自己的 connect/sync timeout 加上上面那道结构性放弃提供，位点处已逐条注明。
+  `ConcurrencyFanOutGate` 与 `ApprovalOverdueSchedulerTests` 里的 `_ =>` 是内存计数器读取，不可能阻塞，
+  同样逐条注明而不是改写。
+- **`Eventually.AssertAsync` 的白名单与它的契约对齐（S2）。** 原实现写的是
+  `exception is XunitException or InvalidOperationException`，而 `ObjectDisposedException` 与 Npgsql 的
+  `NpgsqlOperationInProgressException` 都**继承自** `InvalidOperationException`，于是注释里宣称「立即上抛」
+  的那两类失败恰好会被重试满整个 30 s 预算再报成 timeout。现在改为**精确类型**判定
+  （`exception.GetType() == typeof(InvalidOperationException)`，EF 的 `SingleAsync` 正好抛这个精确类型），
+  派生类型一律立即上抛。`EventuallyAssertTests` 双向钉住：plain 与 `XunitException` 重试、
+  `ObjectDisposedException`/派生类型/无关异常在第一次尝试就原样抛出。
+- **xUnit 依赖收到最窄落点（S3）。** `Nerv.IIP.Testing` 此前引 `xunit` 元包（core + assert + analyzers），
+  实际只用到 `Xunit.Sdk.XunitException` 一个类型，该类型位于 `xunit.assert`，故改为只引 `xunit.assert`。
+  **同目录的 `Nerv.IIP.Testing.Xunit` 评估后不是更窄落点**：它带的是 `xunit.extensibility.core`，而
+  `xunit.core.dll` 里根本没有 `XunitException`（仍要额外加 `xunit.assert`）；把 `AssertAsync` 挪过去还会
+  把它与它转调的 `WaitAsync` 拆开，而它的三个真实消费方（Erp/Mes/Notification 验收测试）引用的是
+  `Nerv.IIP.Testing` 而不是 `Nerv.IIP.Testing.Xunit`。边界口径同时更正：22 个消费方中 21 个是 xUnit 测试
+  项目，第 22 个是 `common/Testing` 下的共享库 `Nerv.IIP.Testing.PostgreSql`（checker 的
+  `Test-IsTestProject` 也判它不是测试项目）；真正成立的不变量是**没有任何可发布程序集**引用它们。
+- **假时钟推进的屏障换成显式边沿（S4）。** `ApprovalOverdueSchedulerTests` 的 `clock.Advance(1h)` 此前以
+  「已派发一条命令」为屏障，这只在 `ApprovalOverdueScheduler.ExecuteAsync` 今天恰好先建 `PeriodicTimer`
+  再调 `TryCheckAllScopesAsync` 时成立——两行调换顺序，测试就静默挂死。现在改为等
+  `TimerRegistrationObservingTimeProvider.WaitForTimerCountAsync(1)`，即计时器**注册**这件事本身。为此
+  `TimerRegistrationObservingTimeProvider` 与 `BoundedSignal` 从 `Nerv.IIP.Testing.Tests` 提升为
+  `Nerv.IIP.Testing` 的公开设施（原 `FakeClockBarriers.cs` 删除），业务测试程序集可以直接用同一道屏障。
+- **`ConcurrencyFanOutGate.StaysWithinAsync` 的 describe 改为描述被观测值（S5）。** 原来是
+  `describe: _ => Describe(InFlight)`：丢掉传入的 `MaxInFlight` 改为在诊断时刻**重读** `InFlight`，报出来的
+  可能不是触发违例的那个值。
+- **`ConsistentlyObservationTimeoutException` 去掉恒为 0 的 `attempts`（S6）。** 该异常只在
+  `!observedAtLeastOnce` 分支抛出，所以「已完成观测数」结构上恒为 0、「已发起观测数」结构上恒为 1，两者都是
+  伪装成诊断的常量。现在只保留 condition 与 elapsed，消息里那句「(0 completed observations)」一并删除。
+- **`ProcessMemorySampler` 的 J9 契约补齐另一半（S7）。** 此前只覆盖「取过样之后 stop，信号仍是
+  `RanToCompletion`」；新增 `FirstIntervalSampleTaken_is_cancelled_when_the_sampler_stops_before_its_first_tick`
+  覆盖「从未 tick 就结束时必须取消」——采样间隔取 1 小时，让「从未 tick」是结构事实而不是竞态。
 
 ## MAN-650 迁移状态
 

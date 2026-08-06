@@ -51,4 +51,26 @@ public sealed class ProcessMemorySamplerTests
         await sampler.FirstIntervalSampleTaken;
         Assert.Equal(TaskStatus.RanToCompletion, sampler.FirstIntervalSampleTaken.Status);
     }
+
+    /// <summary>
+    /// The other half of the same contract. The <c>finally</c> block's <c>TrySetCanceled</c> only bites
+    /// when the loop ended <em>before</em> its first tick, and then cancelling is the whole point: the
+    /// event can no longer happen, so a waiter must fail loudly instead of parking forever. A sampling
+    /// interval far longer than the test's own lifetime makes "never ticked" a structural fact rather than
+    /// a race.
+    /// </summary>
+    [Fact]
+    public async Task FirstIntervalSampleTaken_is_cancelled_when_the_sampler_stops_before_its_first_tick()
+    {
+        var sampler = ProcessMemorySampler.Start(TimeSpan.FromHours(1));
+
+        await sampler.StopAsync();
+
+        Assert.Equal(0, sampler.IntervalSamplesTaken);
+        Assert.Equal(TaskStatus.Canceled, sampler.FirstIntervalSampleTaken.Status);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await sampler.FirstIntervalSampleTaken);
+
+        await sampler.DisposeAsync();
+    }
 }

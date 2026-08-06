@@ -70,17 +70,17 @@ public sealed class ErpSalesOrderDemandConsumerTests
             await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), Changed(3, 9m, "10"));
         }
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync(async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var demand = await dbContext.DemandSources.AsNoTracking().SingleOrDefaultAsync();
+            var demand = await dbContext.DemandSources.AsNoTracking().SingleOrDefaultAsync(token);
             Assert.NotNull(demand);
             Assert.Equal(0m, demand.Quantity);
             Assert.Equal(4, demand.SourceVersion);
             Assert.Equal("cancelled", demand.SourceStatus);
-            Assert.Equal(4, (await dbContext.SalesOrderDemandProjections.AsNoTracking().SingleAsync()).OrderVersion);
-            Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+            Assert.Equal(4, (await dbContext.SalesOrderDemandProjections.AsNoTracking().SingleAsync(token)).OrderVersion);
+            Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync(token));
         });
     }
 
@@ -451,11 +451,11 @@ public sealed class ErpSalesOrderDemandConsumerTests
     /// Real Redis + PostgreSQL consumption has no completion receipt, so the projection is polled on a
     /// bounded budget until the caller's assertions hold. A timeout reports the last failing assertion.
     /// </summary>
-    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    private static async Task AssertEventuallyAsync(Func<CancellationToken, Task> assertion)
     {
         await Eventually.AssertAsync(
             condition: "the Redis CAP sales-order demand projection satisfies the asserted state",
-            assertion: _ => assertion(),
+            assertion: assertion,
             options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
     }
 

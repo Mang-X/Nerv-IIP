@@ -78,6 +78,8 @@ public sealed class ConcurrencyFanOutGate
     {
         await Eventually.WaitAsync(
             condition: $"concurrent {operation} requests reach the {expected} request limit",
+            // In-memory counter read; nothing here can block, so discarding the window token is not a
+            // dropped budget.
             observe: _ => ValueTask.FromResult(InFlight),
             isSatisfied: current => current >= expected,
             describe: Describe,
@@ -97,9 +99,13 @@ public sealed class ConcurrencyFanOutGate
     {
         await Consistently.StaysAsync(
             condition: $"concurrent {operation} requests never exceed {limit} while {scope}",
+            // In-memory counters: the observation cannot block, so there is nothing for the window token to
+            // cancel here. The observed maximum is what decides the verdict, so it is also what the
+            // diagnostic leads with — re-reading a counter at diagnosis time would report a value other
+            // than the one that tripped the assertion.
             observe: _ => ValueTask.FromResult(MaxInFlight),
             isSatisfied: max => max <= limit,
-            describe: _ => Describe(InFlight),
+            describe: max => $"maxInFlight={max} (violating); inFlight={InFlight}; totalEntries={TotalEntries}",
             options: new EventuallyOptions(window, PollInterval, []),
             cancellationToken).ConfigureAwait(false);
     }

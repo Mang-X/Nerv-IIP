@@ -24,7 +24,7 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         // fact and fails on the first violation instead of sleeping once and asserting once.
         var belowThreshold = await Consistently.StaysAsync(
             condition: $"no runtime-hour work order is generated for {source.PlanCode} while runtime stays below the threshold",
-            observe: _ => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source)),
+            observe: token => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source, token)),
             isSatisfied: facts => facts.WorkOrderCount == 0
                 && facts.LastGeneratedRuntimeHours == 0m
                 && facts.NextDueRuntimeHours == 1m,
@@ -43,7 +43,7 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         // on a bounded budget and report the last sanitized observation on timeout.
         var facts = await Eventually.WaitAsync(
             condition: $"the real scheduler generated the runtime-hour work order for {source.PlanCode}",
-            observe: _ => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source)),
+            observe: token => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source, token)),
             isSatisfied: observed => observed.WorkOrderCount == 1,
             describe: DescribeFacts,
             options: new EventuallyOptions(
@@ -58,7 +58,7 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         // process the test cannot signal, so it stays a bounded stability window rather than a single sleep.
         var afterMoreSchedulerTicks = await Consistently.StaysAsync(
             condition: $"later scheduler ticks do not regenerate the runtime-hour work order for {source.PlanCode}",
-            observe: _ => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source)),
+            observe: token => new ValueTask<MaintenanceFacts>(ReadFactsAsync(maintenancePostgres, source, token)),
             isSatisfied: observed => observed.WorkOrderCount == 1
                 && observed.LastGeneratedRuntimeHours == 1.25m
                 && observed.NextDueRuntimeHours == 2m
@@ -88,6 +88,9 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         var expectedGroup = $"business-maintenance.alarm-raised.{capVersion}";
 
         // Real external process on Redis: bounded polling of an observable fact (the consumer group exists).
+        // StackExchange.Redis exposes no CancellationToken overloads (its budget is the multiplexer's own
+        // SyncTimeout/AsyncTimeout), so the token is genuinely unusable here rather than dropped; the
+        // observation is still bounded because Eventually abandons an observation when the window closes.
         await Eventually.WaitAsync(
             condition: $"the Maintenance Redis CAP consumer group {expectedGroup} exists",
             observe: async _ =>
@@ -192,10 +195,19 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         }
     }
 
-    private static async Task<MaintenanceFacts> ReadFactsAsync(string connectionString, ProbeSource source)
+    /// <summary>
+    /// Reads the observable Maintenance facts. The <see cref="CancellationToken"/> is required rather than
+    /// optional on purpose: this runs inside an <c>Eventually</c>/<c>Consistently</c> window, and every
+    /// step of it (opening the connection, executing the query, reading the row) can block. A discarded
+    /// token here would give the query no budget at all and would hold the surrounding window open.
+    /// </summary>
+    private static async Task<MaintenanceFacts> ReadFactsAsync(
+        string connectionString,
+        ProbeSource source,
+        CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT p.last_generated_runtime_hours, p.next_due_runtime_hours,
@@ -214,8 +226,8 @@ public sealed class MaintenanceRuntimeHoursPostgresRedisAcceptanceTests
         command.Parameters.AddWithValue("organization_id", source.OrganizationId);
         command.Parameters.AddWithValue("environment_id", source.EnvironmentId);
         command.Parameters.AddWithValue("plan_code", source.PlanCode);
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException("MAN-440 acceptance plan disappeared from PostgreSQL.");
         }

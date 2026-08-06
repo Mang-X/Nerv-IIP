@@ -82,7 +82,7 @@ public sealed class ApprovalOverdueSchedulerTests
     public async Task Scheduler_deduplicates_matching_scopes_from_array_and_legacy_keys()
     {
         var sender = new CapturingSender();
-        var clock = new FakeTimeProvider();
+        var clock = new TimerRegistrationObservingTimeProvider();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
             .BuildServiceProvider();
@@ -108,9 +108,15 @@ public sealed class ApprovalOverdueSchedulerTests
         await AssertStaysAtAsync(() => sender.Commands.Count, 1);
         Assert.Equal([new CheckOverdueApprovalStepsCommand("org-001", "env-dev")], sender.Commands);
 
-        // The first pass dispatched exactly one command and the fake clock has not moved, so the periodic
-        // timer is registered and parked. Advancing one interval drives exactly one further pass, which
-        // must also dispatch exactly one command — the per-tick dedup claim, previously untested.
+        // Advancing a fake clock is only safe once the timer that must observe the advance actually exists.
+        // "A command was dispatched" is not that fact: it only implies the timer exists because
+        // ApprovalOverdueScheduler.ExecuteAsync happens to construct the PeriodicTimer before the first
+        // TryCheckAllScopesAsync call today. Once that ordering no longer holds, the advance lands before
+        // the registration, the tick is re-based on the advanced now and is lost for good. Measured: with
+        // the dispatch-count barrier, swapping those two statements and giving the first pass 1.5 s fails
+        // this test; with the barrier below, the same production code passes. The registration itself is
+        // the observable edge, and it does not depend on the order those statements are written in.
+        await clock.WaitForTimerCountAsync(1);
         clock.Advance(TimeSpan.FromHours(1));
         await WaitUntilAsync(() => sender.Commands.Count > 1 || scheduler.ExecuteTask?.IsCompleted == true);
         await AssertStaysAtAsync(() => sender.Commands.Count, 2);

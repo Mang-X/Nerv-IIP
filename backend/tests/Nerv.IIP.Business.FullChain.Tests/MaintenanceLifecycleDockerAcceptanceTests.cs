@@ -782,6 +782,10 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
 
     /// <summary>
     /// Real container startup: bounded polling of an observable fact (the container answers PING).
+    /// StackExchange.Redis exposes no <see cref="CancellationToken"/> overloads (its budget is the
+    /// multiplexer's own connect/sync timeouts), so this observation genuinely cannot honour the window
+    /// token — unlike the PostgreSQL probe above, which does. Eventually abandons the observation when the
+    /// window closes, so a wedged multiplexer still fails the test instead of parking it.
     /// </summary>
     private static async Task WaitForRedisAsync(string connectionString)
     {
