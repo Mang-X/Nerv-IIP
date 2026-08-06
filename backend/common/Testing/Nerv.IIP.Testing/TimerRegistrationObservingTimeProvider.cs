@@ -21,7 +21,18 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock gate = new();
     private readonly List<(int ExpectedCount, TaskCompletionSource Reached)> countWaiters = [];
+    private readonly TimeSpan registrationBudget;
     private int timersCreated;
+
+    /// <param name="registrationBudget">
+    /// Wall-clock budget for the <c>WaitFor…</c> barriers below; defaults to
+    /// <see cref="BoundedSignal.DefaultBudget"/>. A healthy run never spends it.
+    /// </param>
+    public TimerRegistrationObservingTimeProvider(TimeSpan? registrationBudget = null)
+    {
+        this.registrationBudget = registrationBudget ?? BoundedSignal.DefaultBudget;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(this.registrationBudget, TimeSpan.Zero);
+    }
 
     /// <summary>Completes once at least one timer has been registered against this clock.</summary>
     public Task FirstTimerCreated => firstTimerCreated.Task;
@@ -45,7 +56,8 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
         BoundedSignal.ObserveAsync(
             FirstTimerCreated,
             "the operation under test to register its timer on the fake clock",
-            () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}");
+            () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}",
+            registrationBudget);
 
     /// <summary>
     /// Bounded wait until <paramref name="expectedCount"/> timers have been registered against this clock.
@@ -72,7 +84,8 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
         return BoundedSignal.ObserveAsync(
             reached.Task,
             $"the operation under test to register timer #{expectedCount} on the fake clock",
-            () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}");
+            () => $"fake now={GetUtcNow():O}, timers registered={TimersCreated}",
+            registrationBudget);
     }
 
     private void ReleaseCountWaiters(int created)
@@ -95,38 +108,6 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
         foreach (var waiter in released ?? [])
         {
             waiter.TrySetResult();
-        }
-    }
-}
-
-/// <summary>
-/// Bounded await on an edge-triggered signal, reporting the redacted condition, elapsed time, attempt
-/// count and last observation, so a lost fake-clock tick fails with a diagnosis instead of hanging.
-/// </summary>
-public static class BoundedSignal
-{
-    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(5);
-
-    public static async Task ObserveAsync(
-        Task observation,
-        string condition,
-        Func<string> lastObservation)
-    {
-        ArgumentNullException.ThrowIfNull(observation);
-        ArgumentException.ThrowIfNullOrWhiteSpace(condition);
-        ArgumentNullException.ThrowIfNull(lastObservation);
-
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            await observation.WaitAsync(Budget).ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            throw new Xunit.Sdk.XunitException(
-                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
-                + $"(budget {Budget.TotalSeconds:0.###}s, attempts 1/1 — single bounded await on a "
-                + $"completion signal); last observation: {lastObservation()}");
         }
     }
 }

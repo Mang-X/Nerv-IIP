@@ -93,44 +93,18 @@ public static class Eventually
     }
 
     /// <summary>
-    /// Runs one observation under the bounded window's own token and abandons it the moment the window
-    /// closes.
+    /// EF Core's marker for "this <c>DbContext</c> is already busy with another operation". EF raises it as a
+    /// plain <see cref="InvalidOperationException"/>, so the exact-type test below cannot tell it apart from
+    /// "the row is not projected yet" by type alone.
     /// </summary>
     /// <remarks>
-    /// The token is handed to <paramref name="observe"/> so a well-behaved observation unwinds at the
-    /// source. This <c>WaitAsync</c> is the structural backstop for the observations that cannot:
-    /// StackExchange.Redis exposes no <see cref="CancellationToken"/> overloads at all, and a lambda that
-    /// simply discards the parameter is an easy regression to write. Without the backstop, one stuck
-    /// observation holds the window open forever and the test <em>parks</em> instead of failing — and a
-    /// <c>Consistently</c> window silently degrades into a single observation. With it, the worst case is a
-    /// reported timeout. The abandoned task is not awaited, so its eventual fault is observed explicitly
-    /// rather than resurfacing as an <c>UnobservedTaskException</c>.
+    /// The string is EF Core's own <c>CoreStrings.ConcurrentMethodInvocation</c>, which ships English-only
+    /// (EF Core has no localized resource satellites), so matching on it is stable across cultures.
+    /// <c>EventuallyAssertTests.EfCoreConcurrentContextUse_…</c> pins both the runtime type and this wording
+    /// against the real EF Core in use rather than against a memory of it — if a future EF version rewords or
+    /// retypes it, that test goes red instead of this guard going quietly ineffective.
     /// </remarks>
-    internal static async ValueTask<TObservation> ObserveWithinWindowAsync<TObservation>(
-        Func<CancellationToken, ValueTask<TObservation>> observe,
-        CancellationToken windowToken)
-    {
-        var observation = observe(windowToken);
-        if (observation.IsCompleted)
-        {
-            return observation.Result;
-        }
-
-        var pending = observation.AsTask();
-        try
-        {
-            return await pending.WaitAsync(windowToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            _ = pending.ContinueWith(
-                static abandoned => _ = abandoned.Exception,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-            throw;
-        }
-    }
+    internal const string EfConcurrentContextUseMarker = "A second operation was started on this context";
 
     /// <summary>
     /// True for the two failure shapes that mean "not projected yet, look again": an xUnit assertion
@@ -138,9 +112,24 @@ public static class Eventually
     /// types (<see cref="ObjectDisposedException"/>, <c>NpgsqlOperationInProgressException</c>, …) are
     /// deliberately excluded — see the remarks on <see cref="AssertAsync"/>.
     /// </summary>
+    /// <remarks>
+    /// The one exception carved out of the exact-type test is EF Core's concurrent-context-use error, which
+    /// is a plain <see cref="InvalidOperationException"/> and would otherwise be retried for the whole budget
+    /// and then reported as a timeout. It is the EF spelling of the same "this can never become true" family
+    /// as Npgsql's <c>NpgsqlOperationInProgressException</c>, and it is the shape an observation that outlives
+    /// its window produces when it shares a <c>DbContext</c> with its caller — see the resource invariant on
+    /// <see cref="BoundedObservationWindow"/>.
+    /// </remarks>
     internal static bool IsAssertionShaped(Exception exception) =>
-        exception is Xunit.Sdk.XunitException || exception.GetType() == typeof(InvalidOperationException);
+        exception is Xunit.Sdk.XunitException
+        || (exception.GetType() == typeof(InvalidOperationException)
+            && !exception.Message.Contains(EfConcurrentContextUseMarker, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Polls <paramref name="observe"/> until <paramref name="isSatisfied"/> holds or the budget expires.
+    /// An observation still running when the budget expires is abandoned: "satisfied, but late" is exactly
+    /// what a positive assertion's budget exists to reject.
+    /// </summary>
     public static async ValueTask<TObservation> WaitAsync<TObservation>(
         string condition,
         Func<CancellationToken, ValueTask<TObservation>> observe,
@@ -150,58 +139,21 @@ public static class Eventually
         CancellationToken cancellationToken = default,
         TimeProvider? timeProvider = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(condition);
-        ArgumentNullException.ThrowIfNull(observe);
-        ArgumentNullException.ThrowIfNull(isSatisfied);
-        ArgumentNullException.ThrowIfNull(describe);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.Timeout, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.PollInterval, TimeSpan.Zero);
+        BoundedObservationWindow.ValidateArguments(condition, observe, isSatisfied, describe, options);
 
-        var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
-        var startedAt = effectiveTimeProvider.GetTimestamp();
-        using var timeoutSource = new CancellationTokenSource(options.Timeout, effectiveTimeProvider);
-        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutSource.Token);
-
-        var attempts = 0;
-        var lastObservation = "none";
-
-        try
-        {
-            while (true)
-            {
-                var observation = await ObserveWithinWindowAsync(observe, linkedSource.Token)
-                    .ConfigureAwait(false);
-                attempts++;
-                lastObservation = TestDiagnostic.Sanitize(
-                    describe(observation),
-                    options.SensitiveValues);
-
-                if (isSatisfied(observation))
-                {
-                    return observation;
-                }
-
-                await Task.Delay(
-                    options.PollInterval,
-                    effectiveTimeProvider,
-                    linkedSource.Token).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            throw;
-        }
-        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
-        {
-            throw new EventuallyTimeoutException(
+        return await BoundedObservationWindow.RunAsync(
+            observe,
+            options,
+            adjudicate: (observation, _, _) => isSatisfied(observation),
+            onWindowClosed: (attempts, elapsed, lastObservation) => throw new EventuallyTimeoutException(
                 TestDiagnostic.Sanitize(condition, options.SensitiveValues),
                 attempts,
-                effectiveTimeProvider.GetElapsedTime(startedAt),
-                lastObservation);
-        }
+                elapsed,
+                attempts == 0
+                    ? "none"
+                    : TestDiagnostic.Sanitize(describe(lastObservation), options.SensitiveValues)),
+            grace: null,
+            cancellationToken,
+            timeProvider).ConfigureAwait(false);
     }
 }
