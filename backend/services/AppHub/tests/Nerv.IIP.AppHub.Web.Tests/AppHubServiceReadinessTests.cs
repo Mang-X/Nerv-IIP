@@ -32,7 +32,8 @@ public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> f
     {
         // The scope serialises every process-global mutator in the assembly and restores each
         // variable's exact prior value (including "was never set") on dispose, so the guard
-        // configuration cannot leak into any other host build.
+        // configuration cannot outlive this test. It is still process-global while the scope is
+        // open: a host built by a test that never takes a scope can read it.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")

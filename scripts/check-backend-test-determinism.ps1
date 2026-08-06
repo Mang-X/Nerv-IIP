@@ -17,13 +17,21 @@ param(
 
     [string] $BaselinePath = (Join-Path $PSScriptRoot '../backend/test-determinism-baseline.json'),
 
-    # Files where a process-global mutation IS the behaviour under test, so the finding can never be
-    # removed and dating it would be theatre. This list is deliberately hard-coded rather than read
-    # from the baseline: a `permanent` row must be countersigned by the checker, otherwise the
-    # classification degrades into a self-served exemption. The parameter exists so the checker's own
-    # fixture harness can exercise both sides of the rule; CI invokes the script with no arguments.
-    [string[]] $PermanentPathAllowlist = @(
-        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs'
+    # Where a flagged construct IS the audited primitive itself — its implementation or its own
+    # self-test — so the finding can never be removed and dating it would be theatre. Each entry is
+    # `<repo-relative-path>=<pattern>`: a path alone is not enough, because the justification is
+    # always about one specific construct in that file. Allow-listing the path only would mean a
+    # `Thread.Sleep` added to `GlobalTestStateScope.cs` next year could be registered as permanent on
+    # a rationale written for culture setters.
+    #
+    # The list is deliberately hard-coded rather than read from the baseline: a `permanent` row must
+    # be countersigned by the checker, otherwise the classification degrades into a self-served
+    # exemption. The parameter exists so the checker's own fixture harness can exercise both sides of
+    # the rule; CI invokes the script with no arguments.
+    [string[]] $PermanentAllowlist = @(
+        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter',
+        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter',
+        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay'
     )
 )
 
@@ -41,9 +49,10 @@ $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAdd
 #   expiring-debt — an admitted debt. Carries an owner who outlives the registering change, an exit
 #                   condition, and a date after which the checker fails. This is the default and the
 #                   only classification that may grow.
-#   permanent     — the mutation is the behaviour under test (the isolation mechanism's own tests).
-#                   There is nothing to expire towards, so a date would be a lie; instead it carries a
-#                   rationale and is only legal on an allow-listed path (see $PermanentPathAllowlist).
+#   permanent     — the flagged construct is the audited primitive itself: its implementation, or its
+#                   own self-test. There is nothing to expire towards, so a date would be a lie;
+#                   instead it carries a rationale and is only legal for an allow-listed
+#                   path + pattern pair (see $PermanentAllowlist).
 $expiringClassification = 'expiring-debt'
 $permanentClassification = 'permanent'
 $allowedClassifications = @($expiringClassification, $permanentClassification)
@@ -138,6 +147,21 @@ function Test-IsTestProject {
     return $projectContent -match '(?is)<IsTestProject>\s*true\s*</IsTestProject>'
 }
 
+# The shared test-infrastructure projects (`Nerv.IIP.Testing`, `.Xunit`, `.PostgreSql`) satisfy
+# neither Test-IsTestProject condition — no `Tests` suffix, no `<IsTestProject>`. They used to fall
+# out of the scan as a side effect of that. #1471 made this directory the place process-global writes
+# are supposed to live, which turns "not scanned" from a harmless fact into an unguarded hole, so the
+# scan includes it explicitly and the permanent allowlist countersigns each construct inside it.
+function Test-IsSharedTestingProject {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ProjectPath
+    )
+
+    $relativePath = Get-RepoRelativePath -Path $ProjectPath
+    return $relativePath -clike 'backend/common/Testing/*'
+}
+
 function Get-SolutionTestSourceFiles {
     $solutionList = Invoke-DotNetOutput `
         -Arguments @('sln', $solutionPath, 'list') `
@@ -151,12 +175,19 @@ function Get-SolutionTestSourceFiles {
             Where-Object { $_ -match '(?i)\.csproj$' } |
             ForEach-Object { Join-Path $backendRoot ($_ -replace '\\', [System.IO.Path]::DirectorySeparatorChar) } |
             Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-            Where-Object { Test-IsTestProject -ProjectPath $_ } |
+            Where-Object { (Test-IsTestProject -ProjectPath $_) -or (Test-IsSharedTestingProject -ProjectPath $_) } |
             Sort-Object -Unique
     )
 
     if ($projectPaths.Count -eq 0) {
         throw "No C# test projects were returned for solution '$solutionPath'."
+    }
+
+    # If the shared test infrastructure is ever moved or dropped from the solution, the scan would
+    # quietly shrink back to the old blind spot. Fail loudly instead.
+    $sharedTestingProjects = @($projectPaths | Where-Object { Test-IsSharedTestingProject -ProjectPath $_ })
+    if ($sharedTestingProjects.Count -eq 0) {
+        throw "No shared test-infrastructure projects were found under backend/common/Testing in solution '$solutionPath'."
     }
 
     $files = foreach ($projectPath in $projectPaths) {
@@ -675,10 +706,29 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
-    $normalizedPermanentPaths = @(
-        $PermanentPathAllowlist |
-            ForEach-Object { ($_ -replace '\\', '/').Trim() }
-    )
+    # Ordinal, not the case-insensitive default of `@{}`: an allowlist entry must match the baseline
+    # path exactly, the same way the finding comparison below uses -ceq.
+    $permanentPathPatterns = New-Object 'System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[string]]' ([StringComparer]::Ordinal)
+    foreach ($entry in $PermanentAllowlist) {
+        $normalizedEntry = ($entry -replace '\\', '/').Trim()
+        $separatorIndex = $normalizedEntry.LastIndexOf('=')
+        if ($separatorIndex -le 0 -or $separatorIndex -eq $normalizedEntry.Length - 1) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>'.")
+            continue
+        }
+
+        $entryPath = $normalizedEntry.Substring(0, $separatorIndex).Trim()
+        $entryPattern = $normalizedEntry.Substring($separatorIndex + 1).Trim()
+        if ($allowedPatterns -notcontains $entryPattern) {
+            $Errors.Add("permanent allowlist entry '$entry' names unsupported pattern '$entryPattern'.")
+            continue
+        }
+
+        if (-not $permanentPathPatterns.ContainsKey($entryPath)) {
+            $permanentPathPatterns[$entryPath] = New-Object System.Collections.Generic.List[string]
+        }
+        $permanentPathPatterns[$entryPath].Add($entryPattern)
+    }
 
     for ($index = 0; $index -lt $exceptionsValue.Count; $index++) {
         $exception = $exceptionsValue[$index]
@@ -762,10 +812,15 @@ function Read-Baseline {
         }
 
         if ($isPermanent) {
-            # Only the checker decides which files may hold a permanent row; the baseline cannot
-            # nominate itself into the allowlist.
-            if ($normalizedPermanentPaths -cnotcontains $path) {
+            # Only the checker decides which files may hold a permanent row, and for which pattern;
+            # the baseline cannot nominate itself into the allowlist, nor widen an entry written for
+            # one construct to cover a different one.
+            if (-not $permanentPathPatterns.ContainsKey($path)) {
                 $Errors.Add("exception[$index] permanent classification is not allowed for path '$path'.")
+                $rowValid = $false
+            }
+            elseif ($permanentPathPatterns[$path] -cnotcontains $pattern) {
+                $Errors.Add("exception[$index] permanent classification is not allowed for pattern '$pattern' on path '$path'.")
                 $rowValid = $false
             }
         }

@@ -8,7 +8,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Arranges the \"variable is absent\" precondition before capture so the test can prove dispose restores absence rather than an empty string.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -17,7 +17,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Arranges the \"variable is set to the empty string\" precondition before capture, the state most easily confused with absence.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -26,7 +26,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the FluentValidation global property-name resolver inside the scope; the assertion is that dispose puts the original delegate instance back.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -35,7 +35,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the FluentValidation global display-name resolver inside the scope; the assertion is that dispose puts the original delegate instance back.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -44,7 +44,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the current culture inside the scope so dispose can be shown to restore it.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -53,7 +53,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the current UI culture inside the scope, distinct from the current culture, so a single-field restore would fail the test.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -62,7 +62,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the default thread culture inside the scope; it is a separate static from the current culture and needs its own restore evidence.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -71,7 +71,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Mutates the default thread UI culture inside the scope; it is a separate static from the default thread culture and needs its own restore evidence.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -80,7 +80,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Writes TZ inside the scope so dispose can be shown to restore the absent state captured beforehand.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -89,7 +89,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Removes the captured variable inside the scope so dispose can be shown to restore the empty string rather than leaving it absent.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "Performing the mutation for real, inside the scope, is the only way to prove restoration; a test that avoided the mutation would assert nothing. The mutation is the behaviour under test, so there is no exit condition to date."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -98,7 +98,7 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Test teardown outside the scope: returns TZ to the value the process had before the test arranged its precondition.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs",
@@ -107,7 +107,97 @@
       "occurrenceCount": 1,
       "classification": "permanent",
       "reason": "Test teardown outside the scope: returns the probe variable to the value the process had before the test arranged its precondition.",
-      "rationale": "GlobalTestStateScope is the mechanism every other test uses to avoid leaking process-global state; its own tests can only prove restoration by performing the mutation for real. There is no future state of the repo in which this finding disappears, so an expiry date would be fiction rather than a deadline."
+      "rationale": "The scope cannot arrange the state a scope is asked to restore. These writes happen before CaptureAsync (to build the \"absent\" / \"empty string\" preconditions) or after DisposeAsync (to hand the process back what it had before the test began), so by construction they cannot be routed through the scope. Nothing about a future refactor removes them."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "f00b28bdde8ced3448dc4ba45a3d0d2681d543aacbdc985b5a6e650371ea5e84",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "UseCulture sets the current culture; this is the write the mutator exists to own.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "ad6f524b6bc313358fa76827da328c6f3502281b2622d194362ee8e028257cac",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "UseCulture also sets the current UI culture, so a caller cannot set one and forget the other.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
+      "occurrenceCount": 2,
+      "classification": "permanent",
+      "reason": "The single environment-variable write, shared by SetEnvironmentVariable (which captures the prior value first) and by dispose (which writes the captured value back).",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "7b3ccdb135faa53ca32425511b2f01b80ec483b7264cd111f933bde1b491551b",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the FluentValidation property-name resolver captured at CaptureAsync.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "9f056b46de1c6b7c15e05fd7e4ca26074c820e23dd13bd4e67b4cfa568e60c1a",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the FluentValidation display-name resolver captured at CaptureAsync.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "1b3d2ac16875081091673aed258f4c33c142de8a82871798b0e8e89fa34d0e02",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the default thread culture, a separate static from the current culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "4de549de24c6f860b80cd7df5a521aff7bf48843587ac062fb59743d74917b3f",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the default thread UI culture, a separate static from the default thread culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "9b821ecd89f89233d3d7efd3de2f7c232fcc4d24cc1cc83a80f7ceaab2d9f5e3",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the current culture; it runs after the default-thread statics so a restored default cannot re-derive the current culture.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs",
+      "pattern": "StaticSetter",
+      "lineTextSha256": "8adc44691166013f4a0d8a0fdb47c6fe85c09908480e9fda9a52b140707e826a",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "Dispose restores the current UI culture, the counterpart of the current-culture restore.",
+      "rationale": "This is the audited primitive itself: GlobalTestStateScope is where the repo has decided every process-global write belongs, so the writes it performs cannot be migrated anywhere else without dissolving the mechanism. Registering them keeps the file inside the gate — a Thread.Sleep or a new static added here still fails the check, because the allowlist entry covers only StaticSetter on this path."
+    },
+    {
+      "path": "backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs",
+      "pattern": "Task.Delay",
+      "lineTextSha256": "ecca1ef73d613352ddf64a6da7d591a6bb46b21307c1f0354dd5e1554b376c22",
+      "occurrenceCount": 1,
+      "classification": "permanent",
+      "reason": "The poll interval of the bounded observation window, awaited on the injected TimeProvider and cancelled by the window token — a paced re-observation, not a sleep-before-assert.",
+      "rationale": "BoundedObservationWindow is the bounded-polling primitive that Eventually and Consistently are built on, and this Task.Delay is its poll interval. It is the bottom of the wait stack: the advice \"replace the delay with Eventually\" terminates here, so there is nothing to migrate to and no date to set. The allowlist entry covers only Task.Delay on this path."
     }
   ]
 }

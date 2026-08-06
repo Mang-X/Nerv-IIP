@@ -6,9 +6,10 @@ using FluentValidation;
 namespace Nerv.IIP.Testing;
 
 /// <summary>
-/// Serialises process-global mutations across an assembly's tests and restores the exact prior value
-/// on dispose, including the difference between "was never set", "was set to the empty string" and
-/// "had a value".
+/// Serialises the tests that take a scope against each other and restores the exact prior value on
+/// dispose, including the difference between "was never set", "was set to the empty string" and
+/// "had a value". It cannot stop a test that never takes a scope from observing a mutated value
+/// while a scope is open — process-global state has no other owner.
 /// </summary>
 /// <remarks>
 /// The mutators are instance methods rather than something the caller writes inline for two reasons.
@@ -18,6 +19,12 @@ namespace Nerv.IIP.Testing;
 /// <c>Environment.SetEnvironmentVariable</c> / <c>CultureInfo.Current*</c> write inside this one
 /// audited type instead of scattered across test bodies, which is what the backend test-determinism
 /// gate (<c>scripts/check-backend-test-determinism.ps1</c>) is looking for.
+/// <para>
+/// Capture and restore deliberately cover more statics than the mutator surface does: the
+/// FluentValidation global resolvers and the default-thread cultures have no mutator because nothing
+/// currently needs one, yet a scope still puts them back, so a test that reaches past the scope is
+/// still cleaned up after. A mutator is only added when a caller exists to exercise it.
+/// </para>
 /// </remarks>
 public sealed class GlobalTestStateScope : IAsyncDisposable
 {
@@ -84,60 +91,6 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
 
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = culture;
-        return this;
-    }
-
-    public GlobalTestStateScope UseCurrentCulture(CultureInfo culture)
-    {
-        ArgumentNullException.ThrowIfNull(culture);
-        ThrowIfDisposed();
-
-        CultureInfo.CurrentCulture = culture;
-        return this;
-    }
-
-    public GlobalTestStateScope UseCurrentUiCulture(CultureInfo culture)
-    {
-        ArgumentNullException.ThrowIfNull(culture);
-        ThrowIfDisposed();
-
-        CultureInfo.CurrentUICulture = culture;
-        return this;
-    }
-
-    public GlobalTestStateScope UseDefaultThreadCulture(CultureInfo? culture)
-    {
-        ThrowIfDisposed();
-
-        CultureInfo.DefaultThreadCurrentCulture = culture;
-        return this;
-    }
-
-    public GlobalTestStateScope UseDefaultThreadUiCulture(CultureInfo? culture)
-    {
-        ThrowIfDisposed();
-
-        CultureInfo.DefaultThreadCurrentUICulture = culture;
-        return this;
-    }
-
-    public GlobalTestStateScope UsePropertyNameResolver(
-        Func<Type, MemberInfo, LambdaExpression, string> resolver)
-    {
-        ArgumentNullException.ThrowIfNull(resolver);
-        ThrowIfDisposed();
-
-        ValidatorOptions.Global.PropertyNameResolver = resolver;
-        return this;
-    }
-
-    public GlobalTestStateScope UseDisplayNameResolver(
-        Func<Type, MemberInfo, LambdaExpression, string> resolver)
-    {
-        ArgumentNullException.ThrowIfNull(resolver);
-        ThrowIfDisposed();
-
-        ValidatorOptions.Global.DisplayNameResolver = resolver;
         return this;
     }
 

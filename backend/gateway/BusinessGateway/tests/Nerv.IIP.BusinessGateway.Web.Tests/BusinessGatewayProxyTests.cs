@@ -7368,7 +7368,8 @@ public sealed class BusinessGatewayProxyTests
     public async Task Product_engineering_http_client_formats_decimal_query_values_with_invariant_culture()
     {
         // The scope serialises every culture mutator in the assembly and restores the exact prior
-        // values on dispose, so this test cannot leak fr-FR onwards.
+        // values on dispose, so fr-FR cannot outlive this test. It is still the process culture
+        // while the scope is open.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState.UseCulture("fr-FR");
 

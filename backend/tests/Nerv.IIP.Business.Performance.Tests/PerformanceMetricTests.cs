@@ -12,8 +12,9 @@ public sealed class PerformanceMetricTests(ITestOutputHelper output)
             $"nerv-iip-performance-metrics-{Guid.NewGuid():N}.jsonl");
 
         // The scope serialises every process-global mutator in the assembly and restores the exact
-        // prior value (including "was never set") on dispose, so this test cannot leak the metrics
-        // path onwards.
+        // prior value (including "was never set") on dispose, so the metrics path cannot outlive this
+        // test. It is still process-global while the scope is open: a test that never takes a scope
+        // can observe it.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
 
         try

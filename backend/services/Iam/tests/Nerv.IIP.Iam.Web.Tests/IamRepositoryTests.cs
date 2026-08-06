@@ -16,7 +16,8 @@ public sealed class IamRepositoryTests
     public async Task User_lookup_normalizes_parameters_with_invariant_culture()
     {
         // The scope serialises every culture mutator in the assembly and restores the exact prior
-        // values on dispose, so this test cannot leak tr-TR onwards.
+        // values on dispose, so tr-TR cannot outlive this test. It is still the process culture
+        // while the scope is open.
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState.UseCulture("tr-TR");
 

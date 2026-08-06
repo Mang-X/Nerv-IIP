@@ -234,12 +234,14 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
 #1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把 setter 写得更礼貌」——checker 命中的是**赋值语句本身**，
 包一层 try/finally 或在旁边 `await using` 一个 scope 都不会让它消失。真正的出路只有两条，本次两条都用上了：
 
-1. **把静态写入搬进 `GlobalTestStateScope`。** `Nerv.IIP.Testing` 不是测试项目（项目名不以 `Tests` 结尾、
-   csproj 没有 `<IsTestProject>`），因此不在扫描清单里——这不是钻空子，而是与「等待原语盲区」同一条边界：
-   受审计的共享测试基建集中承担这些写入，测试体里不再散落裸 setter。scope 新增
-   `UseCulture` / `UseCurrentCulture` / `UseCurrentUiCulture` / `UseDefaultThreadCulture` /
-   `UseDefaultThreadUiCulture` / `UsePropertyNameResolver` / `UseDisplayNameResolver` /
-   `SetEnvironmentVariable` 八个 mutator。`SetEnvironmentVariable` 在**首次写入该变量时**捕获旧值，因此
+1. **把静态写入搬进 `GlobalTestStateScope`。** 受审计的共享测试基建集中承担这些写入，测试体里不再散落裸
+   setter。scope 只提供**当前真有调用点**的 `UseCulture`（同时设 current 与 current UI culture）与
+   `SetEnvironmentVariable` 两个 mutator——首版还写了 `UseCurrentCulture` / `UseCurrentUiCulture` /
+   `UseDefaultThreadCulture` / `UseDefaultThreadUiCulture` / `UsePropertyNameResolver` /
+   `UseDisplayNameResolver` 六个，全仓零调用、零覆盖，等于推荐一段没有任何会变红的测试的代码，已删除；
+   capture/restore 面**不跟着缩**：默认线程 culture 与 FluentValidation 两个 resolver 仍然被捕获与恢复，
+   所以绕过 mutator 直接写这些静态的测试同样会被清理干净。需要新 mutator 时连同调用点与自测一起加。
+   `SetEnvironmentVariable` 在**首次写入该变量时**捕获旧值，因此
    「忘了在 `CaptureAsync` 里报名」不再是静默且不可恢复的错误；dispose 后再调用任何 mutator 抛
    `ObjectDisposedException`，而不是做一次无人恢复的写入。三态（不存在 / 空串 / 有值）恢复语义未变。
    35 行按此迁移：`IamPostgresProfileTests`(11)、`BusinessGatewayProxyTests`(4)、
@@ -250,9 +252,10 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    FastEndpoints serializer/validation/discovery 类的静态变异**本批不存在**（实测这 47 行全是 culture 与
    环境变量），因此没有动用 collection serialization / 一次性进程隔离；那两条手段的适用面不变。
 
-2. **`GlobalTestStateScopeTests.cs` 的 12 行重新分类为常设例外。** 这是隔离机制自身的自测，变异就是被测行为：
-   它不会随任何后续重构消失，给它一个到期日是编造 deadline 而不是设 deadline。为此 baseline schema 升到 **2**，
-   每行必须显式声明 `classification`：
+2. **隔离机制自身的位点重新分类为常设例外（22 行）。** 分两处：`GlobalTestStateScopeTests.cs` 的 12 行是
+   自测，变异就是被测行为；`GlobalTestStateScope.cs` 的 10 行是这条机制的实现本身，也就是仓库指定的静态写入
+   落点，没有别处可搬。二者都不会随任何后续重构消失，给它们一个到期日是编造 deadline 而不是设 deadline。
+   为此 baseline schema 升到 **2**，每行必须显式声明 `classification`：
 
    | classification | 必填 | 禁止 | 到期硬失败 |
    |---|---|---|---|
@@ -264,32 +267,47 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    schema 1 的旧行不会被当成默认 debt 悄悄放行。
 
    防止 permanent 退化成万能豁免，靠三道锁：
-   - **路径白名单由 checker 自己持有**（`$PermanentPathAllowlist` 参数默认值，当前唯一条目
-     `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs`）。baseline 不能把自己写进白名单——
-     新增一个常设例外必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker 自测
-     harness 的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
-   - **`rationale` 与 `reason` 都必填**且逐行书写，规则与 debt 行一致。
+   - **`路径=pattern` 白名单由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
+     `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter`、
+     `backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter`、
+     `backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay`）。**锁到 pattern 一级**
+     是关键：只锁路径的话，白名单文件里将来出现的任何 pattern（`Thread.Sleep`、`ShortLease`…）都能拿一条为
+     culture setter 写的理由蒙混过关，而「变异即被测行为」只覆盖 `StaticSetter`。baseline 不能把自己写进
+     白名单——新增一个常设例外必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker
+     自测 harness 的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
+   - **`rationale` 与 `reason` 都必填**：`reason` 逐行写「这一行为什么在这里写」，`rationale` 按常设理由
+     分类写。当前四类：scope **之外**的前置/teardown（scope 造不出自己要恢复的状态）、scope **之内**的变异
+     （变异即被测行为）、原语实现本身（没有别处可搬）、有界轮询原语的 poll interval（等待栈的底，无处可迁）。
+     全文件一串样板等于没写。
    - **checker 自测覆盖被削弱的形态**（`scripts/tests/check-backend-test-determinism.Tests.ps1`）：白名单内通过、
      用**默认白名单**校验同一行必须失败（白名单一旦放宽成「permanent 即放行」，这条立刻变红）、白名单指向别的
-     文件必须失败、permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification`
-     失败、debt 行带 `rationale` 失败。
+     文件必须失败、**白名单未覆盖的 pattern（同一路径）必须失败、把该 pattern 写进白名单后必须通过**（这一对
+     锁住 pattern 一级，白名单退回只锁 path 即变红）、白名单条目格式错误或 pattern 不受支持必须失败、
+     permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification` 失败、
+     debt 行带 `rationale` 失败。
 
    通过输出也随之细化为 `... admitted=N, expiringDebtRows=X, permanentRows=Y.`，「到期债务是否归零」在门禁输出里
    一眼可读，不必去数 JSON。
 
-## 等待原语自身在门禁扫描范围之外（已知盲区，非豁免）
+## 共享测试基建已纳入扫描（#1471 前是盲区）
 
 `scripts/check-backend-test-determinism.ps1` 的 `Get-SolutionTestSourceFiles` 先 `dotnet sln list`，再用
 `Test-IsTestProject` 过滤：项目名以 `Tests` 结尾，或 csproj 里写了 `<IsTestProject>true</IsTestProject>`。
 `backend/common/Testing/` 下的三个项目（`Nerv.IIP.Testing`、`Nerv.IIP.Testing.Xunit`、`Nerv.IIP.Testing.PostgreSql`）
-两个条件都不满足，因此**整个目录不在扫描清单里**。2026-08-06 实测：solution 共 162 个项目，选中 66 个测试项目，
-`common/Testing` 下的 3 个项目全部落选；#1471 清偿前 checker 的输出为 `files=577, findings=89, admitted=47`，
-清偿后为 `files=577, findings=12, admitted=12, expiringDebtRows=0, permanentRows=12`。#1471 把 35 处 culture /
-环境变量写入迁进 `GlobalTestStateScope`，正是把静态写入集中到这条边界的**内侧**——盲区因此从「顺带的事实」变成
-被依赖的设计前提：`Nerv.IIP.Testing` 一旦被改名或加上 `<IsTestProject>true</IsTestProject>`，这些写入会重新
-成为未登记 finding 而门禁变红，这是想要的行为，不需要预先豁免。
+两个条件都不满足，因此**整个目录曾不在扫描清单里**。2026-08-06 实测：solution 共 162 个项目，按测试项目口径选中
+66 个，`common/Testing` 下的 3 个项目全部落选；#1471 清偿前 checker 的输出为 `files=577, findings=89, admitted=47`。
 
-**落在盲区里的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
+#1471 把 35 处 culture / 环境变量写入迁进 `GlobalTestStateScope`，也就是把静态写入集中到了这条边界的**内侧**。
+那一步把「不扫描 `common/Testing`」从顺带的事实升级成被依赖的设计前提，而该目录里的裸静态变异当时没有任何门禁
+会发现——口头约定而已。因此 checker 现在**显式**把 `backend/common/Testing/**` 的项目并入扫描
+（`Test-IsSharedTestingProject`），并在该目录一个项目都没选中时直接失败，避免改名/搬迁把覆盖面悄悄缩回去。
+纳入后实测输出为 `files=597, findings=23, admitted=22, expiringDebtRows=0, permanentRows=22`：新增的 11 个
+finding 全部登记为 `permanent`——`GlobalTestStateScope.cs` 的 10 个 `StaticSetter`（`Environment.SetEnvironmentVariable(name, value);`
+一行文本出现两次，占一行 `occurrenceCount: 2`）与 `BoundedObservationWindow.cs` 的 1 个轮询 `Task.Delay`。
+`admitted` 计的是去重后的 `path|pattern|hash` 键数，所以它比 `findings` 少 1 是这条重复行造成的，不是漏登记。
+`Nerv.IIP.Testing.Xunit` 与 `Nerv.IIP.Testing.PostgreSql` 实测零 finding。
+
+**曾落在盲区、现已登记或仍需人读的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
 `Consistently.StaysAsync` 的轮询 `Task.Delay`（两者现在共用 `BoundedObservationWindow`）、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
 以及 `PendingOperation`、`CapTestHost` 里的等待路径。
 
@@ -299,12 +317,14 @@ cancellation 原样传播；窗口关闭时在飞的观测在 grace 内被裁定
 且每个原语都接受注入的 `TimeProvider`，测试用 `FakeTimeProvider` 驱动而不是等真实时间。换句话说：这一层的
 正确性由行为断言保证，而不是由文本扫描保证。这与 main 上既有的 `Eventually.cs` 同源，不是本次新造的规避手段。
 
-**回潮如何识别**：`Nerv.IIP.Testing` 里任何**不是**「有界轮询间隔」的新等待——固定 sleep、无预算的
-`Task.WhenAny(x, Task.Delay(...))` 竞速、或读 `DateTimeOffset.UtcNow` 而不是注入 `TimeProvider` 的计时——
-都不会被 checker 拦下，只能在 code review 里拦。判据：新等待必须(1)接受 `TimeProvider`，(2)接受 caller 的
-`CancellationToken` 并原样传播取消，(3)超时抛带诊断的专用异常，(4)在 `Nerv.IIP.Testing.Tests` 里有一条会在
-该性质被削弱时变红的测试。**不要**为此扩大 checker 的项目选择范围：required/opt-in lane 与 enforcement 归
-MAN-661，普通测试变更不得自行改动门禁口径。
+**回潮如何识别**：#1471 起，`Nerv.IIP.Testing` 里新增的 `Task.Delay` / `Thread.Sleep` / 静态 setter 会作为
+**未登记 finding 直接变红**——白名单只覆盖 `BoundedObservationWindow.cs=Task.Delay` 与
+`GlobalTestStateScope.cs=StaticSetter` 两条，别的文件、别的 pattern 都不在内。文本扫描仍然只能问「有没有」，
+不能问「是不是有界轮询」：`Task.WhenAny(x, Task.Delay(...))` 无预算竞速、或读 `DateTimeOffset.UtcNow` 而不是
+注入 `TimeProvider` 的计时，扫描器分不出好坏，只能在 code review 里拦。判据不变：新等待必须(1)接受
+`TimeProvider`，(2)接受 caller 的 `CancellationToken` 并原样传播取消，(3)超时抛带诊断的专用异常，(4)在
+`Nerv.IIP.Testing.Tests` 里有一条会在该性质被削弱时变红的测试。扫描范围到此为止：required/opt-in lane 与
+enforcement 归 MAN-661，普通测试变更不得自行再改门禁口径。
 
 ## 第一轮走查修复（#1470 / PR #1482）
 

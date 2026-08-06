@@ -61,13 +61,13 @@ function Invoke-CheckerCase {
         [Parameter(Mandatory)]
         [string] $BaselinePath,
 
-        [string[]] $PermanentPathAllowlist
+        [string[]] $PermanentAllowlist
     )
 
     $arguments = @('-SourceRoot', $SourceRoot, '-BaselinePath', $BaselinePath)
-    if ($PSBoundParameters.ContainsKey('PermanentPathAllowlist')) {
-        $arguments += '-PermanentPathAllowlist'
-        $arguments += $PermanentPathAllowlist
+    if ($PSBoundParameters.ContainsKey('PermanentAllowlist')) {
+        $arguments += '-PermanentAllowlist'
+        $arguments += $PermanentAllowlist
     }
 
     $exitCode = 0
@@ -241,6 +241,38 @@ function New-PermanentClassificationSource {
     }
 }
 
+function New-OtherPatternSource {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $caseRoot = Join-Path $generatedFixtureRoot $Name
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'other-pattern.cs'
+    $sleepLine = 'Thread.Sleep(25);'
+    $sourceLines = @(
+        'using System.Threading;',
+        '',
+        'public static class OtherPatternFixture',
+        '{',
+        '    public static void Pause()',
+        '    {',
+        "        $sleepLine",
+        '    }',
+        '}'
+    )
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($sleepLine))
+
+    return [pscustomobject]@{
+        SourcePath = $sourcePath
+        RelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
+        LineTextSha256 = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
+    }
+}
+
 function New-PermanentClassificationRow {
     param(
         [Parameter(Mandatory)]
@@ -278,11 +310,11 @@ function Assert-CheckerCase {
 
         [hashtable] $MinimumOccurrences = @{},
 
-        [string[]] $PermanentPathAllowlist
+        [string[]] $PermanentAllowlist
     )
 
-    $result = if ($PSBoundParameters.ContainsKey('PermanentPathAllowlist')) {
-        Invoke-CheckerCase -SourceRoot $SourceRoot -BaselinePath $BaselinePath -PermanentPathAllowlist $PermanentPathAllowlist
+    $result = if ($PSBoundParameters.ContainsKey('PermanentAllowlist')) {
+        Invoke-CheckerCase -SourceRoot $SourceRoot -BaselinePath $BaselinePath -PermanentAllowlist $PermanentAllowlist
     }
     else {
         Invoke-CheckerCase -SourceRoot $SourceRoot -BaselinePath $BaselinePath
@@ -530,7 +562,7 @@ try {
         -Name 'permanent row on an allow-listed path' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentPathAllowlist @($permanentSource.RelativePath) `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
         -ExpectedExitCode 0 `
         -ExpectedOutput @('check passed', 'permanentRows=1')
 
@@ -548,9 +580,58 @@ try {
         -Name 'permanent row against an allowlist for another file' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentPathAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs') `
+        -PermanentAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs=StaticSetter') `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for path')
+
+    # The allowlist locks a path AND a pattern. A file that legitimately holds one permanent finding
+    # must not become a free pass for every other pattern the checker knows about: the rationale that
+    # justified the culture setters says nothing about a Thread.Sleep added to the same file later.
+    $otherPatternSource = New-OtherPatternSource -Name 'permanent-other-pattern'
+    $otherPatternRow = [ordered]@{
+        path = $otherPatternSource.RelativePath
+        pattern = 'Thread.Sleep'
+        lineTextSha256 = $otherPatternSource.LineTextSha256
+        occurrenceCount = 1
+        classification = 'permanent'
+        reason = 'Fixture proves an allow-listed path does not admit a permanent row for a different pattern.'
+        rationale = 'Deliberately unjustified: the allowlist entry for this path covers StaticSetter only.'
+    }
+    $otherPatternPath = Join-Path $tempRoot 'permanent-other-pattern.json'
+    Write-JsonFile -Path $otherPatternPath -Value ([ordered]@{ schema = 2; exceptions = @($otherPatternRow) })
+    Assert-CheckerCase `
+        -Name 'permanent row for a pattern the allowlist does not cover' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=StaticSetter") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('permanent classification is not allowed for pattern')
+
+    # ...and the same row passes once the allowlist actually names that pattern, so the case above is
+    # proving the pattern check rather than some unrelated rejection.
+    Assert-CheckerCase `
+        -Name 'permanent row for a pattern the allowlist does cover' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=1')
+
+    Assert-CheckerCase `
+        -Name 'malformed allowlist entry' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @($otherPatternSource.RelativePath) `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("must use '<path>=<pattern>'")
+
+    Assert-CheckerCase `
+        -Name 'allowlist entry naming an unsupported pattern' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Whatever") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("names unsupported pattern 'Whatever'")
 
     $permanentWithExpiryRow = New-PermanentClassificationRow -Source $permanentSource
     $permanentWithExpiryRow['ownerIssue'] = 'MAN-662'
@@ -562,7 +643,7 @@ try {
         -Name 'permanent row carrying debt metadata' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithExpiryPath `
-        -PermanentPathAllowlist @($permanentSource.RelativePath) `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("classification 'permanent' must not carry field(s)", 'expiresOn')
 
@@ -574,7 +655,7 @@ try {
         -Name 'permanent row without a rationale' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithoutRationalePath `
-        -PermanentPathAllowlist @($permanentSource.RelativePath) `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("classification 'permanent' is missing required field(s): rationale")
 
@@ -586,7 +667,7 @@ try {
         -Name 'unknown classification' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $unknownClassificationPath `
-        -PermanentPathAllowlist @($permanentSource.RelativePath) `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('classification must be one of')
 
