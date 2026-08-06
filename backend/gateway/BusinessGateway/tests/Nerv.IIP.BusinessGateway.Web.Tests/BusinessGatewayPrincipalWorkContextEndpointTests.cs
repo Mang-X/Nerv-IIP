@@ -233,8 +233,6 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
                 new TestInternalServiceTokenProvider("internal-context-token"));
         });
 
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
-
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];

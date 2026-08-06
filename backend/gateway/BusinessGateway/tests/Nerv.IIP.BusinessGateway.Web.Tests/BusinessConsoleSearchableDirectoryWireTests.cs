@@ -679,6 +679,4 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         string permissionCode,
         bool organizationWide = false) =>
         new("role", "role-directory-reader", scopeKind, scopeId, [permissionCode], organizationWide);
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

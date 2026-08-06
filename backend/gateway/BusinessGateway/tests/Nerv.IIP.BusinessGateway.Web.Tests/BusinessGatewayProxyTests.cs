@@ -10068,8 +10068,6 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(pathAndQuery, request.RequestUri!.PathAndQuery);
     }
 
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
-
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];

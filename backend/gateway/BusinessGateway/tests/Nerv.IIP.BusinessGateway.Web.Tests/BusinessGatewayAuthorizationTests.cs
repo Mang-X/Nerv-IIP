@@ -1426,8 +1426,6 @@ public sealed class BusinessGatewayAuthorizationTests
             configureServices,
             BusinessGatewayTestHostProfile.ServiceBaseUrls,
             configureBuilder);
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }
 
 internal sealed class FakeBusinessGatewayAuthorizationClient(

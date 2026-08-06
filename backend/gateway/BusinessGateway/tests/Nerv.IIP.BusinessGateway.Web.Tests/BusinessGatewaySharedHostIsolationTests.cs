@@ -58,8 +58,8 @@ public sealed class BusinessGatewaySharedHostIsolationTests
         Assert.NotEqual(allowed.ScopeId, denied.ScopeId);
         Assert.Same(allowed.Services, denied.Services);
 
-        using var allowedClient = Authenticated(allowed.CreateClient());
-        using var deniedClient = Authenticated(denied.CreateClient());
+        using var allowedClient = BusinessGatewayTestHost.Authenticated(allowed.CreateClient());
+        using var deniedClient = BusinessGatewayTestHost.Authenticated(denied.CreateClient());
 
         // Interleave the two leases against the one host: a shared slot would let the second call
         // observe the first lease's authorization decision.
@@ -84,7 +84,7 @@ public sealed class BusinessGatewaySharedHostIsolationTests
             FakeBusinessGatewayAuthorizationClient.Allowed(),
             services => AddMasterData(services, theirs, "internal-theirs"));
 
-        using var client = Authenticated(lease.CreateClient());
+        using var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
         var response = await client.GetAsync(SkusRoute);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -109,7 +109,7 @@ public sealed class BusinessGatewaySharedHostIsolationTests
                     ? FakeBusinessGatewayAuthorizationClient.Allowed()
                     : FakeBusinessGatewayAuthorizationClient.Forbidden(),
                 services => AddMasterData(services, masterData, token));
-            using var client = Authenticated(lease.CreateClient());
+            using var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
 
             var response = await client.GetAsync(SkusRoute);
             return (Index: index, Allow: allow, response.StatusCode, masterData.LastInternalToken, Expected: token);
@@ -134,14 +134,14 @@ public sealed class BusinessGatewaySharedHostIsolationTests
     public async Task Downstream_health_degradation_recorded_by_one_lease_is_invisible_to_the_next()
     {
         await using var degrading = BusinessGatewayTestHost.Lease(new UnavailableAuthorizationClient());
-        using var degradingClient = Authenticated(degrading.CreateClient());
+        using var degradingClient = BusinessGatewayTestHost.Authenticated(degrading.CreateClient());
         var degraded = await degradingClient.GetAsync(
             "/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
         Assert.Equal(HttpStatusCode.OK, degraded.StatusCode);
         Assert.Equal("Degraded: IAM", await degradingClient.GetStringAsync("/health"));
 
         await using var clean = BusinessGatewayTestHost.Lease(FakeBusinessGatewayAuthorizationClient.Allowed());
-        using var cleanClient = Authenticated(clean.CreateClient());
+        using var cleanClient = BusinessGatewayTestHost.Authenticated(clean.CreateClient());
 
         Assert.Equal("Healthy", await cleanClient.GetStringAsync("/health"));
     }
@@ -153,7 +153,7 @@ public sealed class BusinessGatewaySharedHostIsolationTests
             FakeBusinessGatewayAuthorizationClient.Allowed(),
             services => AddMasterData(services, new RecordingMasterDataClient(), "internal-disposed"));
         var scopeId = lease.ScopeId!;
-        using var client = Authenticated(lease.CreateClient());
+        using var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
 
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SkusRoute)).StatusCode);
 
@@ -200,7 +200,7 @@ public sealed class BusinessGatewaySharedHostIsolationTests
         await using var pinnedWarmup = BusinessGatewayTestHost.Lease(
             FakeBusinessGatewayAuthorizationClient.Allowed(),
             profile: BusinessGatewayTestHostProfile.ServiceBaseUrls);
-        using var warmupClient = Authenticated(defaultWarmup.CreateClient());
+        using var warmupClient = BusinessGatewayTestHost.Authenticated(defaultWarmup.CreateClient());
         await warmupClient.GetStringAsync("/health");
         var defaultHost = defaultWarmup.Services;
         var pinnedHost = pinnedWarmup.Services;
@@ -218,7 +218,7 @@ public sealed class BusinessGatewaySharedHostIsolationTests
                 FakeBusinessGatewayAuthorizationClient.Allowed(),
                 services => AddMasterData(services, new RecordingMasterDataClient(), $"internal-pinned-{i}"),
                 BusinessGatewayTestHostProfile.ServiceBaseUrls);
-            using var client = Authenticated(lease.CreateClient());
+            using var client = BusinessGatewayTestHost.Authenticated(lease.CreateClient());
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(SkusRoute)).StatusCode);
 
             // Reference identity, not a global counter: a counter that can only be incremented by
@@ -335,16 +335,8 @@ public sealed class BusinessGatewaySharedHostIsolationTests
         services.AddSingleton(masterData);
         services.RemoveAll<IInternalServiceTokenProvider>();
         services.AddSingleton<IInternalServiceTokenProvider>(
-            new IsolationInternalServiceTokenProvider(internalToken));
+            new TestInternalServiceTokenProvider(internalToken));
     }
-
-    private static HttpClient Authenticated(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
-        return client;
-    }
-
-    private sealed record IsolationInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     /// <summary>Stands in for an unreachable IAM, which is what marks a downstream degraded.</summary>
     private sealed class UnavailableAuthorizationClient : IBusinessGatewayAuthorizationClient

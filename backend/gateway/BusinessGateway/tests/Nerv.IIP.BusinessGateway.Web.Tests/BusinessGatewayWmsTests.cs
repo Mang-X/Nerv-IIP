@@ -2271,8 +2271,6 @@ public sealed class BusinessGatewayWmsTests
             },
             BusinessGatewayTestHostProfile.ServiceBaseUrls);
 
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
-
     private static Task<HttpResponseMessage> PostTaskActionAsync(
         HttpClient client,
         string taskKind,

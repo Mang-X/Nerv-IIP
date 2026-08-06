@@ -207,6 +207,4 @@ public sealed class BusinessGatewaySearchTests
             auth,
             configureServices,
             BusinessGatewayTestHostProfile.ServiceBaseUrls);
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

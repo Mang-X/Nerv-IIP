@@ -24,7 +24,7 @@ public sealed class BusinessGatewayRateLimitTests
     public async Task Business_console_requests_are_rejected_once_the_principal_permit_window_is_exhausted()
     {
         await using var factory = CreateRateLimitedFactory(permitLimit: 2);
-        using var client = Authenticated(BusinessGatewayTestHost.CreateGatedClient(factory));
+        using var client = BusinessGatewayTestHost.Authenticated(BusinessGatewayTestHost.CreateGatedClient(factory));
 
         var first = await client.GetAsync(SkusRoute);
         var second = await client.GetAsync(SkusRoute);
@@ -39,7 +39,7 @@ public sealed class BusinessGatewayRateLimitTests
     public async Task Cors_preflight_does_not_consume_the_principal_permit_window()
     {
         await using var factory = CreateRateLimitedFactory(permitLimit: 1);
-        using var client = Authenticated(BusinessGatewayTestHost.CreateGatedClient(factory));
+        using var client = BusinessGatewayTestHost.Authenticated(BusinessGatewayTestHost.CreateGatedClient(factory));
 
         using var preflight = new HttpRequestMessage(HttpMethod.Options, SkusRoute);
         preflight.Headers.TryAddWithoutValidation("Origin", "http://localhost:5105");
@@ -71,14 +71,6 @@ public sealed class BusinessGatewayRateLimitTests
                 services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(
-                    new RateLimitInternalServiceTokenProvider("internal-rate-limit-token"));
+                    new TestInternalServiceTokenProvider("internal-rate-limit-token"));
             });
-
-    private static HttpClient Authenticated(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
-        return client;
-    }
-
-    private sealed record RateLimitInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

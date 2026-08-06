@@ -258,7 +258,4 @@ public sealed class WmsTrustedRequestContextTests
             [],
             [],
             []);
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken)
-        : IInternalServiceTokenProvider;
 }

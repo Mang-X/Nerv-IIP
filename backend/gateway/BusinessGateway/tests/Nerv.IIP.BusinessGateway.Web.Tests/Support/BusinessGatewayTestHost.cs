@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -172,9 +173,29 @@ internal static class BusinessGatewayTestHost
         var client = factory.CreateDefaultClient(baseAddress ?? new Uri("http://localhost"));
         if (scopeId is not null)
         {
-            BusinessGatewayTestHostGate.ApplyScopeHeader(client.DefaultRequestHeaders, scopeId);
+            ApplyScopeHeader(client.DefaultRequestHeaders, scopeId);
         }
 
+        return client;
+    }
+
+    /// <summary>
+    /// Applies the <see cref="ScopeHeader"/> that routes a request's downstream fakes to the owning
+    /// lease.
+    /// </summary>
+    internal static void ApplyScopeHeader(HttpHeaders headers, string scopeId)
+    {
+        headers.Remove(ScopeHeader);
+        headers.Add(ScopeHeader, scopeId);
+    }
+
+    /// <summary>
+    /// Stamps the standard valid access token on <paramref name="client"/> and returns it, for the
+    /// tests that sign in as the ordinary gateway principal.
+    /// </summary>
+    internal static HttpClient Authenticated(HttpClient client)
+    {
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         return client;
     }
 
