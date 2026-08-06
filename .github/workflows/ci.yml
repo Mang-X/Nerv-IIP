@@ -52,10 +52,13 @@ jobs:
   # 357s of TRX elapsed and another 23s; that topology no longer exists, and a budget inherited
   # across a topology change describes nothing.
   #
-  # Re-derived from run 31114441118 (this branch, all 11 jobs green), where the rebalanced shards
-  # measured 129.8s / 150.6s / 164.5s / 112.9s of TRX elapsed and test steps of 3.5m / 3.0m / 4.2m
-  # / 2.4m. All four therefore take the same 9m test-step budget — ~2x the 4.2m observed maximum —
-  # the same 38m step sum and the same 44m job budget, keeping the 6m margin.
+  # Re-derived from the two runs of this branch, both all-green: 31114441118 measured the
+  # rebalanced shards at 129.8s / 150.6s / 164.5s / 112.9s of TRX elapsed with test steps of
+  # 3.5m / 3.0m / 4.2m / 2.4m, and 31115903098 at 215.5s / 144.5s / 139.6s / 130.2s with test steps
+  # of 4.5m / 3.0m / 4.2m / 3.3m. Which shard tops the list moves between runs — hosted-runner
+  # variance on the same commit is tens of percent — which is the reason all four take one budget
+  # instead of four: 9m test step (~2x the 4.5m maximum over both runs), 38m step sum, 44m job
+  # budget, keeping the 6m margin.
   #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
@@ -111,9 +114,10 @@ jobs:
     # Tier A (evidence steps). The job name is frozen (MAN-661 maps evidence lane backend-shard-1 to
     # it in scripts/lib/TestEvidence.ps1); after MAN-669 PR-A the shard is no longer
     # BusinessGateway-only — MAN-663 cut that assembly from 869s to 23s, so the shard now also
-    # carries ERP, MasterData, WMS, Maintenance and Scheduling. Measured on run 31114441118: 129.8s
-    # of TRX elapsed over 2550 tests, 3.5m test step, 4.0m job. Budget: 9m test step, step budgets
-    # sum to 38m, leaving 6m of margin for the implicit setup/post steps.
+    # carries ERP, MasterData, WMS, Maintenance and Scheduling. Measured over 2550 tests: 129.8s of
+    # TRX elapsed / 3.5m test step on run 31114441118, 215.5s / 4.5m on 31115903098 — the 4.5m the
+    # shared budget is sized on. Budget: 9m test step, step budgets sum to 38m, leaving 6m of
+    # margin for the implicit setup/post steps.
     #
     # The job budget cannot usefully go below that sum: tier A requires job > sum, and the six
     # non-test steps already carry a mandatory 29m of shared-convention budget. So 9m — the budget
@@ -209,8 +213,9 @@ jobs:
     name: Backend Tests - Platform
     # Tier A (evidence steps). The only shard MAN-669 PR-A left untouched: its 169.2s of TRX elapsed
     # on run 30999368607 already sat at the rebalance target, so its project list carries over
-    # unchanged. Measured on run 31114441118: 150.6s of TRX elapsed, 3.0m test step, 3.7m job. It
-    # takes the same 9m/38m/44m budgets as the other three so one measurement governs all four.
+    # unchanged, and it is the steadiest of the four: 150.6s of TRX elapsed / 3.0m test step on run
+    # 31114441118, 144.5s / 3.0m on 31115903098. It takes the same 9m/38m/44m budgets as the other
+    # three so one measurement governs all four.
     timeout-minutes: 44
     runs-on: ubuntu-latest
     steps:
@@ -299,10 +304,9 @@ jobs:
     name: Backend Tests - Business Core A
     # Tier A (evidence steps). The job name is frozen (MAN-661 maps evidence lane backend-shard-3 to
     # it); MAN-669 PR-A moved WMS, ERP and MasterData out and Quality plus the acceptance suite in.
-    # Measured on run 31114441118: 164.5s of TRX elapsed, 4.2m test step, 4.6m job — the largest of
-    # the four and therefore the shard the shared 9m budget is sized on, against 6.2m/6.9m before
-    # the rebalance. Step budgets sum to 38m, leaving 6m of margin for the implicit setup/post
-    # steps.
+    # Measured: 164.5s of TRX elapsed / 4.2m test step on run 31114441118, 139.6s / 4.2m on
+    # 31115903098, against 357.5s / 6.2m on the pre-rebalance run 30999368607. Step budgets sum to
+    # 38m, leaving 6m of margin for the implicit setup/post steps.
     timeout-minutes: 44
     runs-on: ubuntu-latest
     steps:
@@ -394,9 +398,9 @@ jobs:
     # moved Quality, Maintenance, Scheduling and the acceptance suite out, adding DemandPlanning and
     # ProductEngineering. It is deliberately given the lowest TRX share of the four because it
     # measured the worst step-to-TRX ratio before the rebalance (265s step for 191.7s TRX on run
-    # 30999368607). Measured on run 31114441118: 112.9s of TRX elapsed, 2.4m test step, 2.8m job,
-    # against 4.4m/4.9m before. It takes the same 9m/38m/44m budgets as the other three. Step
-    # budgets sum to 38m, leaving 6m of margin for the implicit setup/post steps.
+    # 30999368607). Measured: 112.9s of TRX elapsed / 2.4m test step on run 31114441118, 130.2s /
+    # 3.3m on 31115903098, against 191.7s / 4.4m before. It takes the same 9m/38m/44m budgets as the
+    # other three. Step budgets sum to 38m, leaving 6m of margin for the implicit setup/post steps.
     timeout-minutes: 44
     runs-on: ubuntu-latest
     steps:
