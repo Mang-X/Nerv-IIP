@@ -465,24 +465,9 @@ public sealed class MesCapSubscriptionTests
     /// </summary>
     private static async Task AssertEventuallyAsync(string condition, Func<Task> assertion)
     {
-        await Eventually.WaitAsync(
+        await Eventually.AssertAsync(
             condition: condition,
-            observe: async _ =>
-            {
-                try
-                {
-                    await assertion();
-                    return (Satisfied: true, Failure: (Exception?)null);
-                }
-                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-                {
-                    return (Satisfied: false, Failure: exception);
-                }
-            },
-            isSatisfied: observation => observation.Satisfied,
-            describe: observation => observation.Satisfied
-                ? "assertion holds"
-                : $"{observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            assertion: _ => assertion(),
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(30),
                 PollInterval: TimeSpan.FromMilliseconds(250),

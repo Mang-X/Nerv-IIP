@@ -367,24 +367,9 @@ public sealed class NotificationCapOutboxAcceptanceTests
     /// </summary>
     private static async Task AssertEventuallyAsync(Func<Task> assertion)
     {
-        await Eventually.WaitAsync<Exception?>(
+        await Eventually.AssertAsync(
             condition: "the notification CAP outbox assertion to hold",
-            observe: async _ =>
-            {
-                try
-                {
-                    await assertion();
-                    return null;
-                }
-                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-                {
-                    return exception;
-                }
-            },
-            isSatisfied: static failure => failure is null,
-            describe: static failure => failure is null
-                ? "assertion satisfied"
-                : $"{failure.GetType().Name}: {failure.Message}",
+            assertion: _ => assertion(),
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(30),
                 PollInterval: TimeSpan.FromMilliseconds(250),

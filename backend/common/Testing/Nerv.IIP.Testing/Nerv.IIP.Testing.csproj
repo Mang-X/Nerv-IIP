@@ -11,6 +11,12 @@
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <!--
+      Eventually.AssertAsync retries assertion-shaped failures only, which means it has to recognise
+      Xunit.Sdk.XunitException. Every consumer of this library is already an xUnit test project, so the
+      dependency does not widen any boundary: no production assembly references Nerv.IIP.Testing.
+    -->
+    <PackageReference Include="xunit" />
   </ItemGroup>
 
 </Project>

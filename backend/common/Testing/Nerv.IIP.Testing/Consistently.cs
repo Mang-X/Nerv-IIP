@@ -30,6 +30,38 @@ public sealed class ConsistentlyViolatedException : Exception
 }
 
 /// <summary>
+/// Raised when a bounded stability window closed before a single observation completed.
+/// </summary>
+/// <remarks>
+/// This is deliberately <em>not</em> a <see cref="ConsistentlyViolatedException"/>. Nothing about the
+/// asserted invariant was learned: the window simply expired while the first <c>observe</c> call was still
+/// in flight (a cold Docker PostgreSQL query on a loaded CI runner is the canonical case). Reporting that as
+/// a violation turns "the infrastructure was slower than the window" into "the negative assertion failed",
+/// and the diagnostic would have to invent a "last observation" that never existed. It is a
+/// <see cref="TimeoutException"/> so it lines up with <see cref="EventuallyTimeoutException"/> and
+/// <see cref="TestTimeoutException"/>.
+/// </remarks>
+public sealed class ConsistentlyObservationTimeoutException : TimeoutException
+{
+    public ConsistentlyObservationTimeoutException(string condition, int attempts, TimeSpan elapsed)
+        : base(
+            $"Condition '{condition}' was never observed: the {elapsed} stability window elapsed before a " +
+            $"single observation completed ({attempts} completed observations). This is a timeout, not a " +
+            "violation of the invariant — widen the window or make the observation cheaper.")
+    {
+        Condition = condition;
+        Attempts = attempts;
+        Elapsed = elapsed;
+    }
+
+    public string Condition { get; }
+
+    public int Attempts { get; }
+
+    public TimeSpan Elapsed { get; }
+}
+
+/// <summary>
 /// Bounded stability assertion: the counterpart of <see cref="Eventually"/> for negative assertions.
 /// </summary>
 /// <remarks>
@@ -54,6 +86,8 @@ public static class Consistently
     /// Observes <paramref name="observe"/> repeatedly for the whole of <c>options.Timeout</c> and throws a
     /// <see cref="ConsistentlyViolatedException"/> as soon as an observation does not satisfy
     /// <paramref name="isSatisfied"/>. Returns the last observation when the window elapsed without a violation.
+    /// Throws <see cref="ConsistentlyObservationTimeoutException"/> — not a violation — when the window closed
+    /// before the first observation completed.
     /// </summary>
     public static async ValueTask<TObservation> StaysAsync<TObservation>(
         string condition,
@@ -116,11 +150,10 @@ public static class Consistently
         {
             if (!observedAtLeastOnce)
             {
-                throw new ConsistentlyViolatedException(
+                throw new ConsistentlyObservationTimeoutException(
                     TestDiagnostic.Sanitize(condition, options.SensitiveValues),
                     attempts,
-                    effectiveTimeProvider.GetElapsedTime(startedAt),
-                    "the stability window elapsed before a single observation was taken");
+                    effectiveTimeProvider.GetElapsedTime(startedAt));
             }
 
             return lastObservation;

@@ -1277,33 +1277,19 @@ public sealed class PlanningInputAdapterTests
     /// (a real edge), then assert that it <em>stays</em> there while all 20 requests are outstanding — that
     /// is what proves the 9th request is blocked. The previous version held each response for 50 ms and
     /// could only assert an upper bound, which a machine slow enough to serialize the requests satisfied
-    /// vacuously.
+    /// vacuously. The barrier itself is <see cref="ConcurrencyFanOutGate"/>: the scheduling availability
+    /// provider needs the identical shape, and two hand-copied gates had already drifted apart on whether
+    /// the caller's cancellation token reached the safety budget.
     /// </summary>
     [Fact]
     public async Task Master_data_planning_parameter_client_limits_sku_detail_concurrency()
     {
         const int expectedConcurrencyLimit = 8;
         const int skuCount = 20;
-        var current = 0;
-        var observedMax = 0;
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handler = new StubHttpMessageHandler(async request =>
+        var gate = new ConcurrencyFanOutGate("MasterData SKU detail");
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
         {
-            var running = Interlocked.Increment(ref current);
-            int snapshot;
-            while (running > (snapshot = Volatile.Read(ref observedMax)))
-            {
-                Interlocked.CompareExchange(ref observedMax, running, snapshot);
-            }
-
-            // Safety net only: the test releases the gate itself, so this budget is never spent on a
-            // healthy run. Without it a regression in the throttle would park the test instead of failing.
-            await TestTimeout.RunAsync(
-                operation: "MasterData SKU detail fan-out gate",
-                action: async token => await gate.Task.WaitAsync(token),
-                timeout: TimeSpan.FromSeconds(30));
-
-            Interlocked.Decrement(ref current);
+            await gate.PassAsync(cancellationToken);
             var skuCode = request.RequestUri!.AbsolutePath.Split('/').Last();
             return JsonResponse($$"""
                 {
@@ -1335,25 +1321,18 @@ public sealed class PlanningInputAdapterTests
             new PlanningParameterSnapshotRequest("org-001", "env-dev", items),
             CancellationToken.None);
 
-        await Eventually.WaitAsync(
-            condition: $"concurrent MasterData SKU detail requests reach the {expectedConcurrencyLimit} request limit",
-            observe: _ => ValueTask.FromResult(Volatile.Read(ref current)),
-            isSatisfied: inFlight => inFlight >= expectedConcurrencyLimit,
-            describe: inFlight => $"inFlight={inFlight}; observedMax={Volatile.Read(ref observedMax)}",
-            options: new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10), []));
-        await Consistently.StaysAsync(
-            condition: $"concurrent MasterData SKU detail requests never exceed {expectedConcurrencyLimit}"
-                + $" while all {skuCount} requests are outstanding",
-            observe: _ => ValueTask.FromResult(Volatile.Read(ref observedMax)),
-            isSatisfied: max => max <= expectedConcurrencyLimit,
-            describe: max => $"observedMax={max}; inFlight={Volatile.Read(ref current)}",
-            options: new EventuallyOptions(TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(10), []));
+        await gate.WaitForInFlightAsync(expectedConcurrencyLimit, TimeSpan.FromSeconds(10));
+        await gate.StaysWithinAsync(
+            expectedConcurrencyLimit,
+            TimeSpan.FromMilliseconds(250),
+            scope: $"all {skuCount} requests are outstanding");
 
-        gate.SetResult();
+        gate.Release();
         var snapshot = await pending;
 
         Assert.Equal(skuCount, snapshot.PlanningParameters.Count);
-        Assert.Equal(expectedConcurrencyLimit, Volatile.Read(ref observedMax));
+        Assert.Equal(skuCount, gate.TotalEntries);
+        Assert.Equal(expectedConcurrencyLimit, gate.MaxInFlight);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -1581,7 +1560,7 @@ public sealed class PlanningInputAdapterTests
         {
         }
 
-        private StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
         {
             this.send = send;
         }

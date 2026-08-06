@@ -95,6 +95,74 @@ public sealed class ConsistentlyTests
     }
 
     /// <summary>
+    /// A window that closes while the very first observation is still in flight learned nothing about the
+    /// invariant, so it must not be reported as a violation. The canonical real case is a negative
+    /// assertion whose observation is a query against a cold Docker PostgreSQL on a loaded runner: calling
+    /// that "the invariant was violated" turns slow infrastructure into a business defect, and the
+    /// diagnostic would have to name an observation that never existed.
+    /// </summary>
+    [Fact]
+    public async Task StaysAsync_ReportsATimeoutRatherThanAViolationWhenNoObservationEverCompleted()
+    {
+        var clock = new TimerRegistrationObservingTimeProvider();
+        var observationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wait = Consistently.StaysAsync(
+            "no second maintenance work order is generated",
+            async token =>
+            {
+                observationStarted.TrySetResult();
+                await PendingOperation.UntilCanceledAsync(token).ConfigureAwait(false);
+                return 1;
+            },
+            observation => observation == 1,
+            observation => $"workOrders={observation}",
+            Options(),
+            timeProvider: clock).AsTask();
+
+        // The window's own CancellationTokenSource is timer #1; advancing past the whole window while the
+        // first observation is still parked is exactly the race being pinned down.
+        await observationStarted.Task;
+        await clock.WaitForTimerCountAsync(1);
+        clock.Advance(Window);
+
+        var exception = await Assert.ThrowsAsync<ConsistentlyObservationTimeoutException>(() => wait);
+        Assert.Equal("no second maintenance work order is generated", exception.Condition);
+        Assert.Equal(0, exception.Attempts);
+        Assert.Equal(Window, exception.Elapsed);
+        Assert.Contains("never observed", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("not a violation", exception.Message, StringComparison.Ordinal);
+        Assert.IsNotType<ConsistentlyViolatedException>(exception);
+    }
+
+    [Fact]
+    public async Task StaysAsync_SanitizesTheConditionOnTheNoObservationTimeout()
+    {
+        const string secret = "Host=db;Password=super-sensitive-value";
+        var clock = new TimerRegistrationObservingTimeProvider();
+        var observationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wait = Consistently.StaysAsync(
+            $"connection={secret}; state=no second work order",
+            async token =>
+            {
+                observationStarted.TrySetResult();
+                await PendingOperation.UntilCanceledAsync(token).ConfigureAwait(false);
+                return 1;
+            },
+            observation => observation == 1,
+            observation => $"workOrders={observation}",
+            new EventuallyOptions(Window, PollInterval, [secret]),
+            timeProvider: clock).AsTask();
+
+        await observationStarted.Task;
+        await clock.WaitForTimerCountAsync(1);
+        clock.Advance(Window);
+
+        var exception = await Assert.ThrowsAsync<ConsistentlyObservationTimeoutException>(() => wait);
+        Assert.Equal("connection=[REDACTED]; state=no second work order", exception.Condition);
+        Assert.DoesNotContain(secret, exception.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Advances the fake clock one poll interval at a time, always waiting for the *next* timer
     /// registration first. The window's own <see cref="CancellationTokenSource"/> registers timer #1 and
     /// each poll delay registers the next one, so timer #(round + 1) is the edge that makes advancing

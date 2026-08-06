@@ -29,4 +29,26 @@ public sealed class ProcessMemorySamplerTests
         Assert.True(sampler.PeakWorkingSetBytes > 0);
         Assert.True(sampler.PeakManagedHeapBytes > 0);
     }
+
+    /// <summary>
+    /// The sampling loop's <c>finally</c> block calls <c>TrySetCanceled</c> on the first-sample signal.
+    /// This pins down that it cannot turn into a trap for a later caller: once a sample has been taken the
+    /// signal is latched completed, so awaiting it after <c>StopAsync</c> returns normally instead of
+    /// throwing <see cref="TaskCanceledException"/>.
+    /// </summary>
+    [Fact]
+    public async Task FirstIntervalSampleTaken_stays_completed_after_the_sampler_is_stopped()
+    {
+        await using var sampler = ProcessMemorySampler.Start(TimeSpan.FromMilliseconds(10));
+        await TestTimeout.RunAsync(
+            "process-memory sampler to take its first interval sample",
+            async cancellationToken =>
+                await sampler.FirstIntervalSampleTaken.WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(10));
+
+        await sampler.StopAsync();
+
+        await sampler.FirstIntervalSampleTaken;
+        Assert.Equal(TaskStatus.RanToCompletion, sampler.FirstIntervalSampleTaken.Status);
+    }
 }

@@ -12,14 +12,26 @@ public sealed record FileStorageGarbageCollectionResult(
     int FormalFilesSoftDeleted = 0,
     int FormalFilesPhysicallyDeleted = 0);
 
+/// <remarks>
+/// The collector reads exactly the columns <see cref="PostgreSqlFileStorageService"/> writes
+/// (<c>ExpiresAtUtc</c> on upload sessions and download grants, <c>CompletedAtUtc</c> and
+/// <c>PhysicalDeleteAfterUtc</c> on stored files), so it must read them through the <b>same</b>
+/// <see cref="TimeProvider"/> that wrote them. Two clocks over one set of columns is not a rounding
+/// difference: a test that advances a fake clock past a TTL would leave the collector blind to that
+/// advance, and a fake clock anchored in the past would make every freshly created session already expired
+/// from the collector's point of view.
+/// </remarks>
 public sealed class PostgreSqlFileStorageGarbageCollector(
     ApplicationDbContext dbContext,
     ILocalTusFileStoreAccessor tusStoreAccessor,
-    IConfiguration? configuration = null)
+    IConfiguration? configuration = null,
+    TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+
     public async Task<FileStorageGarbageCollectionResult> CollectAsync(CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = clock.GetUtcNow();
         var expiredUploadSessions = await dbContext.UploadSessions
             .Where(x => !x.Completed && x.ExpiresAtUtc <= now)
             .ToArrayAsync(cancellationToken);

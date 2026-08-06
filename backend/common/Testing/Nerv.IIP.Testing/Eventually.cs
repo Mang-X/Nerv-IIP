@@ -33,6 +33,51 @@ public sealed class EventuallyTimeoutException : TimeoutException
 
 public static class Eventually
 {
+    /// <summary>
+    /// Retries an xUnit assertion block until it passes or the budget expires. This is the shared form of the
+    /// "assert-until-it-holds" loop that Redis/RabbitMQ/CAP acceptance tests need: the observable fact is the
+    /// assertion block itself, and the only useful diagnostic is the assertion failure last seen.
+    /// </summary>
+    /// <remarks>
+    /// Only assertion-shaped failures are retried: <c>Xunit.Sdk.XunitException</c> (every <c>Assert.*</c>
+    /// failure) and <see cref="InvalidOperationException"/> (EF Core's <c>SingleAsync</c> on a row that has
+    /// not been projected yet). Anything else — a broken connection string, a disposed context, a real bug in
+    /// the query — is rethrown immediately instead of being retried for the whole budget and then reported as
+    /// a timeout. On timeout the sanitized type and message of the last assertion failure are reported through
+    /// <see cref="EventuallyTimeoutException"/> alongside the attempt count and elapsed time.
+    /// </remarks>
+    public static async ValueTask AssertAsync(
+        string condition,
+        Func<CancellationToken, Task> assertion,
+        EventuallyOptions options,
+        CancellationToken cancellationToken = default,
+        TimeProvider? timeProvider = null)
+    {
+        ArgumentNullException.ThrowIfNull(assertion);
+
+        await WaitAsync<Exception?>(
+            condition: condition,
+            observe: async token =>
+            {
+                try
+                {
+                    await assertion(token).ConfigureAwait(false);
+                    return null;
+                }
+                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
+                {
+                    return exception;
+                }
+            },
+            isSatisfied: static failure => failure is null,
+            describe: static failure => failure is null
+                ? "assertion holds"
+                : $"assertion still failing: {failure.GetType().Name}: {failure.Message}",
+            options: options,
+            cancellationToken: cancellationToken,
+            timeProvider: timeProvider).ConfigureAwait(false);
+    }
+
     public static async ValueTask<TObservation> WaitAsync<TObservation>(
         string condition,
         Func<CancellationToken, ValueTask<TObservation>> observe,

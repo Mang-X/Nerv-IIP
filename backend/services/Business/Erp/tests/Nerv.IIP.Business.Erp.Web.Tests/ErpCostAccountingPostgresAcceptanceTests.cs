@@ -244,10 +244,19 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     private static async Task WaitForAdvisoryLockWaitersAsync(
         string connectionString,
         string applicationName,
-        int expectedCount)
+        int expectedCount,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        // Opening the probe connection is a single operation that can hang, so it keeps its own explicit
+        // budget instead of falling back to Npgsql's 15 s default. Caller cancellation propagates as-is;
+        // only this helper's own budget turns into a TestTimeoutException.
+        await TestTimeout.RunAsync(
+            operation: $"open the advisory-lock probe connection for {applicationName}",
+            action: async token => await connection.OpenAsync(token),
+            timeout: TimeSpan.FromSeconds(10),
+            cancellationToken,
+            sensitiveValues: [connectionString]);
         await using var command = new NpgsqlCommand("""
             SELECT count(*)
             FROM pg_stat_activity
@@ -266,7 +275,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(10),
                 PollInterval: TimeSpan.FromMilliseconds(50),
-                SensitiveValues: [connectionString]));
+                SensitiveValues: [connectionString]),
+            cancellationToken);
     }
 }
 

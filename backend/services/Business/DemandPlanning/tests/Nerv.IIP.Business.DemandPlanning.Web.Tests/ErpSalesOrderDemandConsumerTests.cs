@@ -453,24 +453,9 @@ public sealed class ErpSalesOrderDemandConsumerTests
     /// </summary>
     private static async Task AssertEventuallyAsync(Func<Task> assertion)
     {
-        await Eventually.WaitAsync(
+        await Eventually.AssertAsync(
             condition: "the Redis CAP sales-order demand projection satisfies the asserted state",
-            observe: async _ =>
-            {
-                try
-                {
-                    await assertion();
-                    return (Satisfied: true, Failure: (Exception?)null);
-                }
-                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-                {
-                    return (Satisfied: false, Failure: exception);
-                }
-            },
-            isSatisfied: observation => observation.Satisfied,
-            describe: observation => observation.Satisfied
-                ? "assertion holds"
-                : $"assertion still failing: {observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            assertion: _ => assertion(),
             options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
     }
 
