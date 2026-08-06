@@ -279,6 +279,80 @@ public sealed class OpsConnectorCredentialValidationTests
                 new SocketException((int)SocketError.TimedOut)),
             NetworkFailureKind.RequestTimeout,
             "request-timeout"
+        },
+
+        // 移除 HttpRequestError.ConnectionError 前置门的**唯一理由**就在这两行：socket 错误码才是
+        // 权威信号，同一个 refused 可以挂在别的 HttpRequestError bucket 下（TLS 握手期、代理隧道
+        // 建立期）。前置门还在时这两行会落到 transport-error，DNS / refused / timeout 的三分被抹平。
+        {
+            new HttpRequestException(
+                HttpRequestError.SecureConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.ConnectionRefused)),
+            NetworkFailureKind.ConnectionRefused,
+            "connection-refused"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ProxyTunnelError,
+                "transport-detail",
+                new SocketException((int)SocketError.HostNotFound)),
+            NetworkFailureKind.Dns,
+            "dns"
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(UnclassifiedTransportFailures))]
+    public async Task Transport_failures_outside_the_split_stay_transport_error_and_fail_closed(
+        Exception failure,
+        string expectedLogKind)
+    {
+        // default 分支的正向覆盖：上一条 Theory 的每一行都被分进四分法，那样一来「什么还落到
+        // transport-error」就完全没有用例。两侧对「超出四分法」的表达不同——测试侧必须显式扩表
+        // 所以抛 ArgumentException，生产侧必须继续 fail closed 所以记 transport-error——这里同时
+        // 钉住两者，任一侧偷偷把新错误码归进四分法都会在此变红。
+        Assert.Throws<ArgumentException>(() =>
+            NetworkFailureClassifier.FromException(failure, CancellationToken.None));
+
+        using var handler = new ScriptedHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(failure));
+        using var client = CreateClient(handler);
+        var logger = new RecordingLogger<IamOpsConnectorCredentialValidator>();
+        var validator = new IamOpsConnectorCredentialValidator(client, logger);
+
+        var result = await validator.ValidateAsync(CreateRequest("request-secret"), CancellationToken.None);
+
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-unavailable", result.Reason);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(expectedLogKind, entry.Properties["FailureKind"]);
+        Assert.Null(entry.Properties["StatusCode"]);
+        Assert.Same(failure, entry.Exception);
+        AssertSafeLog(entry, "request-secret");
+    }
+
+    public static TheoryData<Exception, string> UnclassifiedTransportFailures => new()
+    {
+        // 完全没有 socket 异常可查：既不是 DNS，也没有可读的 socket 错误码。
+        {
+            new HttpRequestException(HttpRequestError.SecureConnectionError, "transport-detail"),
+            "transport-error"
+        },
+
+        // 有 socket 异常，但错误码不在四分法里。
+        {
+            new HttpRequestException(
+                HttpRequestError.ConnectionError,
+                "transport-detail",
+                new SocketException((int)SocketError.AccessDenied)),
+            "transport-error"
+        },
+        {
+            new HttpRequestException(
+                HttpRequestError.ResponseEnded,
+                "transport-detail",
+                new SocketException((int)SocketError.ConnectionReset)),
+            "transport-error"
         }
     };
 

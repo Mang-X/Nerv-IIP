@@ -1,4 +1,4 @@
-using System.Data;
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.ConnectorTagManifestAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
@@ -301,10 +302,14 @@ public sealed class ConnectorTagManifestTests
         // 预留一个真实端口只会带来无谓的端口竞态，却不会被这条用例的任何一行断言触及；给它套一句
         // `Assert.Equal(ConnectionRefused, ...)` 更是假断言，因为根本没有连接尝试可供分类。
         //
-        // 「不拨号」不靠注释自证：下面显式断言连接自始至终处于 Closed。主机名用 RFC 2606 保留的
-        // `.invalid` 顶级域，一旦回归真的去连库，得到的是立即的解析失败而不是静默连上某台真机。
+        // 「不拨号」不靠注释自证，也不靠 `GetDbConnection().State`：连接用完即关，那个断言在「从未
+        // 拨号」和「拨过又关了」两种情况下都为真，是恒真断言。这里改为拦截**拨号动作本身**并断言
+        // 次数为 0 —— 一旦翻译退化成会执行的路径，计数就 > 0 而变红。主机名仍用 RFC 2606 保留的
+        // `.invalid` 顶级域兜底：万一真去连库，得到的是立即的解析失败而不是静默连上某台真机。
+        var connectionAttempts = new ConnectionOpenCountingInterceptor();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=translation-only.invalid;Port=5432;Database=translation_only;Username=nerv;Password=nerv")
+            .AddInterceptors(connectionAttempts)
             .Options;
         using var dbContext = new ApplicationDbContext(options, new NoopMediator());
 
@@ -326,7 +331,33 @@ public sealed class ConnectorTagManifestTests
 
         // 被测意图的最后一环：整段翻译没有触碰过网络。这条断言一旦失败，说明查询构造退化成了会
         // 拨号的路径，那时才需要谈网络失败分类 —— 在此之前谈它属于装饰。
-        Assert.Equal(ConnectionState.Closed, dbContext.Database.GetDbConnection().State);
+        Assert.Equal(0, connectionAttempts.OpenAttempts);
+    }
+
+    [Fact]
+    public void Connection_open_counting_interceptor_actually_observes_a_dial()
+    {
+        // 上一条用例断言计数为 0；这条是它的正向对照，防止「计数器压根没接上 EF」把那个断言变成
+        // 又一个恒真断言。用 SQLite 内存库拨号：走的是同一条 EF relational 连接拦截路径，却完全
+        // 不碰网络与文件系统。
+        var connectionAttempts = new ConnectionOpenCountingInterceptor();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .AddInterceptors(connectionAttempts)
+            .Options;
+        using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+
+        Assert.Equal(0, connectionAttempts.OpenAttempts);
+
+        dbContext.Database.OpenConnection();
+        try
+        {
+            Assert.Equal(1, connectionAttempts.OpenAttempts);
+        }
+        finally
+        {
+            dbContext.Database.CloseConnection();
+        }
     }
 
     [Theory]
@@ -471,6 +502,36 @@ public sealed class ConnectorTagManifestTests
     {
         return actual.Replace(" ", string.Empty, StringComparison.Ordinal)
             .EndsWith(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 计数 EF 尝试打开数据库连接的次数。刻意计的是 <c>ConnectionOpening</c>（拨号动作）而不是
+    /// 事后的 <c>DbConnection.State</c>：后者用完即关，无法区分「从未拨号」与「拨过又关了」。
+    /// </summary>
+    private sealed class ConnectionOpenCountingInterceptor : DbConnectionInterceptor
+    {
+        private int openAttempts;
+
+        public int OpenAttempts => Volatile.Read(ref openAttempts);
+
+        public override InterceptionResult ConnectionOpening(
+            DbConnection connection,
+            ConnectionEventData eventData,
+            InterceptionResult result)
+        {
+            Interlocked.Increment(ref openAttempts);
+            return base.ConnectionOpening(connection, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult> ConnectionOpeningAsync(
+            DbConnection connection,
+            ConnectionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref openAttempts);
+            return base.ConnectionOpeningAsync(connection, eventData, result, cancellationToken);
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

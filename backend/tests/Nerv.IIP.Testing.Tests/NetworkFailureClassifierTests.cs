@@ -39,6 +39,7 @@ public sealed class NetworkFailureClassifierTests
     [InlineData(SocketError.HostNotFound, NetworkFailureKind.Dns, "DNS name resolution failed.")]
     [InlineData(SocketError.NoData, NetworkFailureKind.Dns, "DNS name resolution failed.")]
     [InlineData(SocketError.TryAgain, NetworkFailureKind.Dns, "DNS name resolution failed.")]
+    [InlineData(SocketError.NoRecovery, NetworkFailureKind.Dns, "DNS name resolution failed.")]
     [InlineData(SocketError.TimedOut, NetworkFailureKind.RequestTimeout, "Request timed out.")]
     public void FromException_ClassifiesNonHttpSocketFailuresWithTheSameVocabulary(
         SocketError socketError,

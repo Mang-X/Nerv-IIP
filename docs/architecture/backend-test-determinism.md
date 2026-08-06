@@ -52,18 +52,22 @@ await TestTimeout.RunAsync(
 
 非 HTTP 客户端（Npgsql、裸 socket）不另立一套词汇：它们的传输失败以 `SocketException` 呈现，按 `SocketErrorCode` 归入同一四分法。两侧的 socket 搜索都从**异常自身**起步而不是从 `InnerException` 起步，因此裸 `SocketException` 与被驱动异常包裹的 `SocketException` 分类一致。
 
-`SocketError.TimedOut` 归入 `RequestTimeout`，这**不表示**建连阶段超时被并进了 request 预算：connect 预算与 request 预算始终分开配置（`OpsConnectorCredentialValidationOptions` 的 `ConnectTimeout` 5s / `RequestTimeout` 10s），四分法保留的区分是 **caller 拥有的取消 vs helper 拥有的超时**，不是 connect 阶段 vs 交换阶段。枚举**不为此扩容**：再切一类 `ConnectTimeout` 会把「谁拥有这次放弃」这个真正的判据换成一个调用方无法据以决策的阶段标签。阶段信息属于诊断字段（预算、elapsed、脱敏 operation），不属于分类。
+`SocketError.TimedOut` 归入 `RequestTimeout`，这**不表示**建连阶段超时被并进了 request 预算：connect 预算与 request 预算始终分开配置（`OpsIamClientOptions` 的 `ConnectTimeout` 5s / `RequestTimeout` 10s），四分法保留的区分是 **caller 拥有的取消 vs helper 拥有的超时**，不是 connect 阶段 vs 交换阶段。枚举**不为此扩容**：再切一类 `ConnectTimeout` 会把「谁拥有这次放弃」这个真正的判据换成一个调用方无法据以决策的阶段标签。阶段信息属于诊断字段（预算、elapsed、脱敏 operation），不属于分类。
 
 生产侧的等价分类（如 `IamOpsConnectorCredentialValidator.ClassifyTransportFailure`）**刻意不复用** `Nerv.IIP.Testing`：发布程序集不得引用测试程序集。两处的相似结构是有意的边界重复，不是待消除的 duplication；任一侧改变分类语义时必须同步另一侧和本表。该同步不靠自觉：`OpsConnectorCredentialValidationTests.TransportFailures` 逐行同时断言 `NetworkFailureKind` 与生产侧的 `FailureKind` 字符串，任一侧漏同步即在此处变红。
 
-| 结果 | 分类 | 生产侧 `FailureKind` | 必须保留 | 禁止混淆或输出 |
+镜像的**范围只到异常路径**（`ClassifyTransportFailure`）。HTTP **响应**路径两侧刻意不同，下表如实登记：测试侧 `FromResponse` 把对端上报的 408/504 归为 `RequestTimeout`，而生产侧只按 `IsSuccessStatusCode` 分叉，所有非成功且非 401 的响应一律记 `FailureKind=business-response`，数字 status code 走**独立的** `StatusCode` 日志属性而不是塞进 `FailureKind`。这不是漏同步：生产此处唯一的决策是 fail-closed 拒绝，它不需要区分对端超时与对端业务拒绝；需要区分的是测试断言。若哪天生产要按对端超时做重试，才把这条分叉补上并同步本表。
+
+| 结果 | 测试侧分类（`NetworkFailureClassifier`） | 生产侧 `FailureKind`（`IamOpsConnectorCredentialValidator`） | 必须保留 | 禁止混淆或输出 |
 | --- | --- | --- | --- | --- |
 | DNS 解析失败（`HttpRequestError.NameResolutionError`，或 socket `HostNotFound`/`NoData`/`TryAgain`/`NoRecovery`） | `NetworkFailureKind.Dns` | `dns` | 脱敏的 DNS 失败类别 | 不伪装为 HTTP 503；不输出目标凭据 |
 | 连接被拒绝（socket `ConnectionRefused`） | `NetworkFailureKind.ConnectionRefused` | `connection-refused` | 脱敏的 refused 类别 | 不伪装为 request timeout |
 | helper 自己的超时（HTTP 侧的 helper-owned cancellation，或 socket `TimedOut`；connect 与交换两个阶段同归此类） | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 预算、elapsed、脱敏 operation | caller cancellation 必须原样传播，不能改写成 timeout |
-| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 数字 status code | 不并入 `BusinessError`，否则四分法失去意义 |
-| 其余非成功 HTTP 业务响应 | `NetworkFailureKind.BusinessError` | 数字 status code | 数字 status code 与脱敏 reason phrase | 不记录 response body 或 headers；不降级成 transport fault |
-| 其余传输失败（未在上表列出的 socket 错误码） | 分类器抛 `ArgumentException`（测试侧必须显式扩表） | `transport-error` | 脱敏的类别 | 不静默归入以上任何一类 |
+| 其余传输失败（未列入上面三行的 socket 错误码，以及不带 socket 异常的 `HttpRequestException`） | 分类器抛 `ArgumentException`（测试侧必须显式扩表） | `transport-error` | 脱敏的类别 | 不静默归入以上任何一类 |
+| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | `business-response`，`StatusCode=408`/`504`（生产不单独分叉，见上一段） | 数字 status code | 测试侧不并入 `BusinessError`，否则四分法失去意义 |
+| 其余非成功 HTTP 响应（401 除外） | `NetworkFailureKind.BusinessError` | `business-response`，数字 status code 记在 `StatusCode` | 数字 status code 与脱敏 reason phrase | 不记录 response body 或 headers；不降级成 transport fault |
+| HTTP 401 | 无（不是网络失败） | 不记日志，直接 `iam-rejected` | 拒绝判定本身 | 不记为传输故障，也不写入凭据 |
+| 成功响应但 body 不可解析或 principal 不完整 | 无（不是网络失败） | `invalid-response`，`StatusCode` 为该成功码 | 数字 status code 与异常 | 不记录 response body |
 
 ## 可变全局状态隔离矩阵
 
