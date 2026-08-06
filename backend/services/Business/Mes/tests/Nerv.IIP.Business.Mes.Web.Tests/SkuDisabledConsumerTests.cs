@@ -263,7 +263,12 @@ public sealed class SkuDisabledConsumerTests
             PlanningSuggestionEvent(DateTimeOffset.Parse("2026-07-18T08:01:00Z")),
             CancellationToken.None);
 
-        await Task.Delay(250);
+        // Wait for the real edge instead of a settle window: the creating transaction is observably parked on
+        // the SKU-scope advisory lock held by the in-flight disable transaction.
+        await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
+            database.ConnectionString,
+            expectedWaiters: 1,
+            scopeDescription: "the MES SKU-availability scope held by the in-flight disable transaction");
         Assert.False(createTask.IsCompleted, "Creation must wait for the in-flight disable transaction for the same SKU scope.");
         allowConsumerCommit.SetResult();
         await consumeTask;

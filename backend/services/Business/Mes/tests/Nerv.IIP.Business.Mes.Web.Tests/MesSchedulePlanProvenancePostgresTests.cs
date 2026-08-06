@@ -44,7 +44,12 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             releaseDb,
             releaseDeadLetters,
             new PostgreSqlMesScheduleReleaseScopeCoordinator(releaseDb)).HandleAsync(CreateReleasedEvent(), CancellationToken.None);
-        await Task.Delay(200);
+        // Wait for the real edge instead of a settle window: the release transaction is observably parked on
+        // the schedule-release advisory lock held by the in-flight revoke transaction.
+        await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
+            database.ConnectionString,
+            expectedWaiters: 1,
+            scopeDescription: "the MES schedule-release scope held by the in-flight revoke transaction");
         Assert.False(releaseTask.IsCompleted, "Release must wait for the same-scope revoke transaction lock.");
         allowRevoke.SetResult();
         await Task.WhenAll(revokeTask, releaseTask);

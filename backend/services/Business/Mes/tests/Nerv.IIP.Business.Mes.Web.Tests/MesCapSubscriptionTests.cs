@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
 using System.Reflection;
@@ -174,7 +175,7 @@ public sealed class MesCapSubscriptionTests
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the work-center unavailable window and rescheduled", async () =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -369,7 +370,7 @@ public sealed class MesCapSubscriptionTests
         string expectedHeldInspectionRecordId,
         int expectedInboxCount)
     {
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync($"the MES CAP consumer projected the quality hold (active={active}) and its inbox receipt", async () =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -458,28 +459,34 @@ public sealed class MesCapSubscriptionTests
         return $"{candidate.GetType().Name}({string.Join("; ", properties)})";
     }
 
-    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    /// <summary>
+    /// Real CAP dispatch against real PostgreSQL: the consumer runs on its own scope, so the only observable
+    /// fact is the persisted MES state. Bounded polling of that fact, reporting the last failed assertion.
+    /// </summary>
+    private static async Task AssertEventuallyAsync(string condition, Func<Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
+        await Eventually.WaitAsync(
+            condition: condition,
+            observe: async _ =>
             {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        if (lastException is not null)
-        {
-            throw lastException;
-        }
+                try
+                {
+                    await assertion();
+                    return (Satisfied: true, Failure: (Exception?)null);
+                }
+                catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
+                {
+                    return (Satisfied: false, Failure: exception);
+                }
+            },
+            isSatisfied: observation => observation.Satisfied,
+            describe: observation => observation.Satisfied
+                ? "assertion holds"
+                : $"{observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(30),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [ReadPostgresConnectionString()]));
     }
 
     private static string ReadPostgresConnectionString()

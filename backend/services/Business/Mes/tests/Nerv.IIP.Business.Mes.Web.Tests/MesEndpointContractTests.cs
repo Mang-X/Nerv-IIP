@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Time.Testing;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -198,6 +199,12 @@ public sealed class MesEndpointContractTests
         var sender = new RealOperationActionSender(
             new ChangeOperationTaskStateCommandHandler(dbContext));
 
+        // The endpoint stamps the command with the injected TimeProvider when the caller omits ChangedAtUtc.
+        // Replacing it with a fake clock makes "the two requests carry different server timestamps" a fact the
+        // test controls, instead of a wall-clock gap that only probably produces two distinct instants. The
+        // anchor is the real now because the MES readiness path still evaluates the seeded work order against
+        // real-world dates; only the delta between the two requests is fabricated.
+        var serverClock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -206,6 +213,8 @@ public sealed class MesEndpointContractTests
                 {
                     services.RemoveAll<ISender>();
                     services.AddSingleton<ISender>(sender);
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton<TimeProvider>(serverClock);
                 });
             });
         var client = factory.CreateClient();
@@ -221,7 +230,7 @@ public sealed class MesEndpointContractTests
         var first = await client.PostAsJsonAsync(
             "/api/business/v1/mes/operation-tasks/OP-HTTP-REPLAY/start",
             body);
-        await Task.Delay(5);
+        serverClock.Advance(TimeSpan.FromMinutes(1));
         var replay = await client.PostAsJsonAsync(
             "/api/business/v1/mes/operation-tasks/OP-HTTP-REPLAY/start",
             body);
@@ -232,6 +241,9 @@ public sealed class MesEndpointContractTests
             await first.Content.ReadAsStringAsync(),
             await replay.Content.ReadAsStringAsync());
         Assert.Equal(2, sender.CallCount);
+        // The point of the test: the two commands really did carry different server-generated timestamps.
+        Assert.Equal(2, sender.ObservedChangedAtUtc.Count);
+        Assert.NotEqual(sender.ObservedChangedAtUtc[0], sender.ObservedChangedAtUtc[1]);
     }
 
     [Fact]
@@ -2148,7 +2160,14 @@ public sealed class MesEndpointContractTests
 
     private sealed class RealOperationActionSender(ChangeOperationTaskStateCommandHandler handler) : ISender
     {
+        private readonly List<DateTimeOffset> observedChangedAtUtc = [];
+
         public int CallCount { get; private set; }
+
+        /// <summary>
+        /// The server-generated timestamps the endpoint stamped on each command, in call order.
+        /// </summary>
+        public IReadOnlyList<DateTimeOffset> ObservedChangedAtUtc => observedChangedAtUtc;
 
         public async Task<TResponse> Send<TResponse>(
             IRequest<TResponse> request,
@@ -2156,6 +2175,7 @@ public sealed class MesEndpointContractTests
         {
             CallCount++;
             var command = Assert.IsType<ChangeOperationTaskStateCommand>(request);
+            observedChangedAtUtc.Add(command.ChangedAtUtc);
             var response = await handler.Handle(command, cancellationToken);
             return (TResponse)(object)response;
         }

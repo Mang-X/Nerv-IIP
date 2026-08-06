@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing;
 using Npgsql;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 
@@ -105,22 +106,19 @@ public sealed class ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests
         await publisher.PublishAsync(nameof(WmsIntegrationEvent), replay);
         await publisher.PublishAsync(nameof(WmsIntegrationEvent), replay);
 
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId) >= receivedBeforeReplay + 2)
-            {
-                break;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        var receivedAfterReplay = await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId);
-        Assert.True(
-            receivedAfterReplay >= receivedBeforeReplay + 2,
-            $"ERP did not receive both repeated WMS completion envelopes through the real Redis CAP transport. " +
-            $"Sibling-consumer receipt count before={receivedBeforeReplay}, after={receivedAfterReplay}.");
+        // Real Redis CAP transport across processes: the only observable fact is the sibling-consumer receipt
+        // count in PostgreSQL, so poll it on a bounded budget and report the last sanitized observation.
+        var expectedReceipts = receivedBeforeReplay + 2;
+        var receivedAfterReplay = await Eventually.WaitAsync(
+            condition: "ERP received both repeated WMS completion envelopes through the real Redis CAP transport",
+            observe: async _ => await CountSiblingConsumerReceiptsAsync(postgres, replay.EventId),
+            isSatisfied: count => count >= expectedReceipts,
+            describe: count => $"siblingReceipts={count}; before={receivedBeforeReplay}; expected>={expectedReceipts}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(45),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [postgres, redis]));
+        Assert.True(receivedAfterReplay >= expectedReceipts);
 
         await using var verificationScope = provider.CreateAsyncScope();
         var verificationDbContext = verificationScope.ServiceProvider.GetRequiredService<ErpDbContext>();

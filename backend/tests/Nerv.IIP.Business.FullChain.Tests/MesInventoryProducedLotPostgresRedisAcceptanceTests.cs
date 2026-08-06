@@ -8,6 +8,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing;
 using Npgsql;
 using StackExchange.Redis;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
@@ -64,43 +65,53 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), successEvent);
         await publisher.PublishAsync(nameof(InventoryMovementRequestedIntegrationEvent), failureEvent);
 
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
-        while (DateTimeOffset.UtcNow < deadline)
+        // Real cross-process Redis CAP transport: the observable facts live in the two PostgreSQL databases,
+        // so poll them on a bounded budget instead of guessing a single completion instant.
+        try
         {
-            var mesFacts = await ReadMesFactsAsync(mesPostgres, source);
-            var inventoryFacts = await ReadInventoryFactsAsync(inventoryPostgres, source);
-            if (mesFacts.SuccessStatus == "Posted"
-                && mesFacts.SuccessMovementId is not null
-                && mesFacts.FailureStatus == "InventoryPostingFailed"
-                && !string.IsNullOrWhiteSpace(mesFacts.FailureCode)
-                && inventoryFacts.SuccessMovementCount == 1
-                && inventoryFacts.FailureMovementCount == 0)
-            {
-                Assert.Equal(source.SuccessLotNo, inventoryFacts.SuccessLotNo);
-                Assert.Equal(source.WorkOrderId, inventoryFacts.SuccessSourceDocumentLineId);
-                Assert.Equal("business-mes", inventoryFacts.SuccessSourceService);
-                Assert.Equal(0, inventoryFacts.SimilarSourceMovementCount);
-                return;
-            }
+            var observed = await Eventually.WaitAsync(
+                condition: "MES and Inventory closed both Redis CAP produced-lot paths",
+                observe: async _ => (
+                    Mes: await ReadMesFactsAsync(mesPostgres, source),
+                    Inventory: await ReadInventoryFactsAsync(inventoryPostgres, source)),
+                isSatisfied: state => state.Mes.SuccessStatus == "Posted"
+                    && state.Mes.SuccessMovementId is not null
+                    && state.Mes.FailureStatus == "InventoryPostingFailed"
+                    && !string.IsNullOrWhiteSpace(state.Mes.FailureCode)
+                    && state.Inventory.SuccessMovementCount == 1
+                    && state.Inventory.FailureMovementCount == 0,
+                describe: state =>
+                    $"SuccessStatus={state.Mes.SuccessStatus}, SuccessMovement={state.Mes.SuccessMovementId}, " +
+                    $"FailureStatus={state.Mes.FailureStatus}, FailureCode={state.Mes.FailureCode}, " +
+                    $"InventorySuccess={state.Inventory.SuccessMovementCount}, " +
+                    $"InventoryFailure={state.Inventory.FailureMovementCount}",
+                options: new EventuallyOptions(
+                    Timeout: TimeSpan.FromSeconds(90),
+                    PollInterval: TimeSpan.FromMilliseconds(500),
+                    SensitiveValues: [mesPostgres, inventoryPostgres, redis]));
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            Assert.Equal(source.SuccessLotNo, observed.Inventory.SuccessLotNo);
+            Assert.Equal(source.WorkOrderId, observed.Inventory.SuccessSourceDocumentLineId);
+            Assert.Equal("business-mes", observed.Inventory.SuccessSourceService);
+            Assert.Equal(0, observed.Inventory.SimilarSourceMovementCount);
         }
-
-        var finalMesFacts = await ReadMesFactsAsync(mesPostgres, source);
-        var finalInventoryFacts = await ReadInventoryFactsAsync(inventoryPostgres, source);
-        var finalMessagingFacts = await ReadMessagingFactsAsync(
-            mesPostgres,
-            inventoryPostgres,
-            successEvent.EventId,
-            failureEvent.EventId);
-        throw new TimeoutException(
-            "MES/Inventory did not close both Redis CAP paths within 90 seconds. " +
-            $"SuccessStatus={finalMesFacts.SuccessStatus}, SuccessMovement={finalMesFacts.SuccessMovementId}, " +
-            $"FailureStatus={finalMesFacts.FailureStatus}, FailureCode={finalMesFacts.FailureCode}, " +
-            $"InventorySuccess={finalInventoryFacts.SuccessMovementCount}, InventoryFailure={finalInventoryFacts.FailureMovementCount}, " +
-            $"PublisherSuccess={finalMessagingFacts.SuccessPublishStatus}, PublisherFailure={finalMessagingFacts.FailurePublishStatus}, " +
-            $"InventoryRetainedReceipts={finalMessagingFacts.InventoryRetainedReceiptCount}, " +
-            $"InventoryDeadLetters={finalMessagingFacts.InventoryDeadLetterCount}.");
+        catch (EventuallyTimeoutException timeout)
+        {
+            // The messaging tables are only read once, on failure: they are diagnostics for the timeout, not
+            // part of the awaited condition.
+            var finalMessagingFacts = await ReadMessagingFactsAsync(
+                mesPostgres,
+                inventoryPostgres,
+                successEvent.EventId,
+                failureEvent.EventId);
+            throw new TimeoutException(
+                $"{timeout.Message} " +
+                $"PublisherSuccess={finalMessagingFacts.SuccessPublishStatus}, " +
+                $"PublisherFailure={finalMessagingFacts.FailurePublishStatus}, " +
+                $"InventoryRetainedReceipts={finalMessagingFacts.InventoryRetainedReceiptCount}, " +
+                $"InventoryDeadLetters={finalMessagingFacts.InventoryDeadLetterCount}.",
+                timeout);
+        }
     }
 
     private static InventoryMovementRequestedIntegrationEvent MovementRequested(
@@ -155,34 +166,40 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTests
             (Stream: nameof(StockMovementPostedIntegrationEvent), Group: $"business-mes.stock-movement-posted.{capVersion}"),
             (Stream: nameof(StockMovementPostingFailedIntegrationEvent), Group: $"business-mes.stock-movement-posting-failed.{capVersion}"),
         };
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(6);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            var ready = true;
-            foreach (var item in required)
+        // Real external processes registering CAP consumer groups on Redis: bounded polling of an observable
+        // fact, reporting per-group readiness so a timeout names the group that never appeared.
+        await Eventually.WaitAsync(
+            condition: "the Inventory request and MES posted/failed CAP consumer groups exist on Redis",
+            observe: async _ =>
             {
-                try
+                var missing = new List<string>();
+                foreach (var item in required)
                 {
-                    var groups = await database.StreamGroupInfoAsync(item.Stream);
-                    ready &= groups.Any(group => group.Name == item.Group);
+                    try
+                    {
+                        var groups = await database.StreamGroupInfoAsync(item.Stream);
+                        if (!groups.Any(group => group.Name == item.Group))
+                        {
+                            missing.Add(item.Group);
+                        }
+                    }
+                    catch (RedisServerException exception) when (
+                        exception.Message.Contains("no such key", StringComparison.OrdinalIgnoreCase))
+                    {
+                        missing.Add($"{item.Group} (stream {item.Stream} not created yet)");
+                    }
                 }
-                catch (RedisServerException exception) when (
-                    exception.Message.Contains("no such key", StringComparison.OrdinalIgnoreCase))
-                {
-                    ready = false;
-                }
-            }
 
-            if (ready)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-
-        throw new TimeoutException(
-            "MAN-528 Redis acceptance timed out waiting for the Inventory request and MES posted/failed consumer groups.");
+                return missing;
+            },
+            isSatisfied: missing => missing.Count == 0,
+            describe: missing => missing.Count == 0
+                ? "all consumer groups registered"
+                : $"missing={string.Join(", ", missing)}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromMinutes(6),
+                PollInterval: TimeSpan.FromMilliseconds(500),
+                SensitiveValues: [redisConnectionString]));
     }
 
     private static async Task<ProbeSource> SeedReceiptPairAsync(string connectionString, string probeRunId)
