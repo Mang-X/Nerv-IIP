@@ -142,6 +142,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
         var failureProbe = provider.GetRequiredService<ChangedV2FallbackFailureProbe>();
         await Eventually.WaitAsync(
             condition: "CAP exhausts its three immediate delivery attempts for the failing v2 message",
+            // In-memory probe counter; nothing here can block, so discarding the window token drops no budget.
             observe: _ => ValueTask.FromResult(failureProbe.InjectedFailureCount),
             isSatisfied: failures => failures >= 3,
             describe: failures => $"injectedFailures={failures}; attempts={failureProbe.AttemptCount}",
@@ -162,6 +163,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
         // attempt instead of sleeping once and asserting whatever the clock happened to allow.
         await Consistently.StaysAsync(
             condition: "no further delivery attempt happens before the CAP fallback scan window opens",
+            // In-memory probe counter; nothing here can block, so discarding the window token drops no budget.
             observe: _ => ValueTask.FromResult(failureProbe.AttemptCount),
             isSatisfied: attempts => attempts == 3,
             describe: attempts => $"attempts={attempts}; injectedFailures={failureProbe.InjectedFailureCount}",

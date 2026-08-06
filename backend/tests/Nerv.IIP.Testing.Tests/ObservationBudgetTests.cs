@@ -292,14 +292,23 @@ public sealed class ObservationBudgetTests
     /// strong reference escape this frame. "Already collected" counts as reached: it can only have been
     /// collected after faulting.
     /// </summary>
+    /// <remarks>
+    /// The budget is a yield count rather than a <c>Task.Delay</c> on purpose. What is being waited for is a
+    /// thread-pool continuation that was already queued by <c>release.SetResult()</c>, so yielding <em>is</em>
+    /// the edge — a wall-clock interval would only be guessing at it, and a guessed interval in this library
+    /// is exactly what the determinism contract forbids.
+    /// </remarks>
     private static async Task WaitUntilFaultedAsync(WeakReference<Task<int>> handle)
     {
-        var deadline = DateTime.UtcNow + OuterBudget;
-        while (!IsCompletedOrCollected(handle))
+        const int maxYields = 10_000;
+        for (var yields = 0; yields < maxYields && !IsCompletedOrCollected(handle); yields++)
         {
-            Assert.True(DateTime.UtcNow < deadline, "The abandoned observation never reached its faulted state.");
-            await Task.Delay(TimeSpan.FromMilliseconds(10));
+            await Task.Yield();
         }
+
+        Assert.True(
+            IsCompletedOrCollected(handle),
+            $"The abandoned observation had not reached its faulted state after {maxYields} yields.");
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

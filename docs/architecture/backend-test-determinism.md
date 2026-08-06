@@ -9,7 +9,7 @@
 | scheduler、lease、expiry、renewal、retention | 注入 `TimeProvider`；测试使用 `FakeTimeProvider` 推进时间 | 不等待真实时间；生产代码与 timeout/timer 必须使用同一个 provider |
 | 真实 transport、进程启动、容器就绪、外部消费者可见性 | 使用 wall clock，并通过 `Eventually` 有界轮询可观察事实 | 不用一次固定 sleep 猜完成时刻；超时必须报告最后一次脱敏观测 |
 | 单次可能挂起的异步操作 | 使用 `TestTimeout.RunAsync` 和显式 timeout | helper 自己触发的 timeout 与 caller cancellation 分开；caller cancellation 原样传播 |
-| 负向断言（"不再发生第二次"）的 settle 窗口 | 使用 `Consistently.StaysAsync` 有界稳定性断言 | 整个窗口持续观测，第一次观测到违例即失败并报告脱敏观测；不得"睡一次再断言一次"。窗口在首次观测完成前就到期属于**超时**（`ConsistentlyObservationTimeoutException`）而不是违例——一条事实都没读到就不能说不变式被打破。窗口本身仍是对"该事件没有可观测边沿"的承认——只要被测代码能给出边沿（例如未推进的注入时钟让计时器驱动的事件结构上不可能发生），就应当先消除窗口 |
+| 负向断言（"不再发生第二次"）的 settle 窗口 | 使用 `Consistently.StaysAsync` 有界稳定性断言 | 整个窗口持续观测，第一次观测到违例即失败并报告脱敏观测；不得"睡一次再断言一次"。窗口关闭时仍在飞的那次观测不被丢弃：它在独立的 grace 预算内被等完再照常裁定（丢掉它等于丢掉最可能暴露违例的那一次）；grace 也超时才判**超时**（`ConsistentlyObservationTimeoutException`）——verdict unknown，既不是 pass 也不是违例。窗口本身仍是对"该事件没有可观测边沿"的承认——只要被测代码能给出边沿（例如未推进的注入时钟让计时器驱动的事件结构上不可能发生），就应当先消除窗口 |
 
 `Eventually` 的每次观测都必须可读、稳定并脱敏。示例：
 
@@ -238,12 +238,12 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
 `common/Testing` 下的 3 个项目全部落选；checker 的输出为 `files=576, findings=89, admitted=47`。
 
 **落在盲区里的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
-`Consistently.StaysAsync` 的轮询 `Task.Delay`、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
+`Consistently.StaysAsync` 的轮询 `Task.Delay`（两者现在共用 `BoundedObservationWindow`）、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
 以及 `PendingOperation`、`CapTestHost` 里的等待路径。
 
 **为什么可以接受**：这些 `Task.Delay` 是**有界轮询的间隔**，不是 sleep-before-assert。它们的语义由
 `Nerv.IIP.Testing.Tests` 里的直接单测钉住（超时必须报告 condition/attempts/elapsed/脱敏最后观测；caller
-cancellation 原样传播；窗口内一次观测都没完成时抛 `ConsistentlyObservationTimeoutException` 而不是违例），
+cancellation 原样传播；窗口关闭时在飞的观测在 grace 内被裁定、grace 也超时才抛 `ConsistentlyObservationTimeoutException` 而不是判 pass），
 且每个原语都接受注入的 `TimeProvider`，测试用 `FakeTimeProvider` 驱动而不是等真实时间。换句话说：这一层的
 正确性由行为断言保证，而不是由文本扫描保证。这与 main 上既有的 `Eventually.cs` 同源，不是本次新造的规避手段。
 
@@ -282,24 +282,22 @@ MAN-661，普通测试变更不得自行改动门禁口径。
 
 ## 第二轮走查修复（#1470 / PR #1482）
 
-- **窗口内的观测有了结构性预算（S1/S8）。** `Eventually.WaitAsync` 与 `Consistently.StaysAsync` 现在都经由
-  `Eventually.ObserveWithinWindowAsync` 发起观测：token 仍然交给 `observe`，但**即使 `observe` 完全忽略它**，
+- **窗口内的观测有了结构性预算（S1/S8）。** `Eventually.WaitAsync` 与 `Consistently.StaysAsync` 现在都经由共享驱动器
+  `BoundedObservationWindow`（第二轮时叫 `Eventually.ObserveWithinWindowAsync`）发起观测：token 仍然交给 `observe`，但**即使 `observe` 完全忽略它**，
   窗口关闭时该次观测也会被放弃。此前一次卡住的 Npgsql 连接有两个不同的后果——`Eventually` 一侧是测试**挂死
   而不是变红**（最贵的失败形态），`Consistently` 一侧是**窗口静默退化成单次观测**，负向断言根本没有被复查。
   放弃掉的观测会显式消费它后来的异常，不会以 `UnobservedTaskException` 落到别的测试头上。
-  `ObservationBudgetTests` 四条用例钉住这一层：删掉那个 `WaitAsync` 后它们从「失败」变成「挂起」，因此每条
-  都自带有界外层预算。
+  `ObservationBudgetTests` 钉住这一层：删掉那个 `WaitAsync` 后它们从「失败」变成「挂起」，因此每条都自带有界
+  外层预算。（其中「晚故障被谁消费」那一条在第三轮被证明并未真正钉住，见下节 A2。）
 - **同时把 token 真正接到 IO 上。** `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.ReadFactsAsync`、
   `ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.CountSiblingConsumerReceiptsAsync`、
   `MesInventoryProducedLotPostgresRedisAcceptanceTests` 的 `ReadMesFactsAsync`/`ReadInventoryFactsAsync`
   改为**必填**的 `CancellationToken` 参数并传到 `OpenAsync`/`ExecuteReaderAsync`/`ReadAsync`；三处
   `Eventually.AssertAsync` 的 helper（Notification/MES/DemandPlanning）签名从 `Func<Task>` 改为
   `Func<CancellationToken, Task>`，token 一路进到 EF 查询与裸 ADO 诊断查询。必填参数本身就是「不许再丢」的
-  编译期护栏。剩余仍然丢弃 token 的观测**只有 StackExchange.Redis 那几处**（`StreamGroupInfoAsync`、
-  `PingAsync`、`ConnectionMultiplexer.ConnectAsync`）：该库根本没有 `CancellationToken` 重载，预算只能由
-  multiplexer 自己的 connect/sync timeout 加上上面那道结构性放弃提供，位点处已逐条注明。
-  `ConcurrencyFanOutGate` 与 `ApprovalOverdueSchedulerTests` 里的 `_ =>` 是内存计数器读取，不可能阻塞，
-  同样逐条注明而不是改写。
+  编译期护栏。**这句穷举在第二轮写错过一次**（漏了 `ErpSalesOrderDemandConsumerTests` 等位点），第三轮重新
+  逐个调用点核过，完整清单见下节「丢弃观测 token 的位点（完整清单）」——声明穷举就必须真穷举，不真穷举的
+  穷举比不写更糟。
 - **`Eventually.AssertAsync` 的白名单与它的契约对齐（S2）。** 原实现写的是
   `exception is XunitException or InvalidOperationException`，而 `ObjectDisposedException` 与 Npgsql 的
   `NpgsqlOperationInProgressException` 都**继承自** `InvalidOperationException`，于是注释里宣称「立即上抛」
@@ -320,16 +318,90 @@ MAN-661，普通测试变更不得自行改动门禁口径。
   再调 `TryCheckAllScopesAsync` 时成立——两行调换顺序，测试就静默挂死。现在改为等
   `TimerRegistrationObservingTimeProvider.WaitForTimerCountAsync(1)`，即计时器**注册**这件事本身。为此
   `TimerRegistrationObservingTimeProvider` 与 `BoundedSignal` 从 `Nerv.IIP.Testing.Tests` 提升为
-  `Nerv.IIP.Testing` 的公开设施（原 `FakeClockBarriers.cs` 删除），业务测试程序集可以直接用同一道屏障。
+  `Nerv.IIP.Testing` 的公开设施（原 `FakeClockBarriers.cs` 删除；`BoundedSignal` 第三轮再迁到自己的文件），业务测试程序集可以直接用同一道屏障。
 - **`ConcurrencyFanOutGate.StaysWithinAsync` 的 describe 改为描述被观测值（S5）。** 原来是
   `describe: _ => Describe(InFlight)`：丢掉传入的 `MaxInFlight` 改为在诊断时刻**重读** `InFlight`，报出来的
   可能不是触发违例的那个值。
 - **`ConsistentlyObservationTimeoutException` 去掉恒为 0 的 `attempts`（S6）。** 该异常只在
   `!observedAtLeastOnce` 分支抛出，所以「已完成观测数」结构上恒为 0、「已发起观测数」结构上恒为 1，两者都是
   伪装成诊断的常量。现在只保留 condition 与 elapsed，消息里那句「(0 completed observations)」一并删除。
+  **该结论在第三轮被 A1 推翻**：加上 grace 裁定之后完成观测数不再恒为 0，`CompletedObservations` 重新加回，
+  见下节。
 - **`ProcessMemorySampler` 的 J9 契约补齐另一半（S7）。** 此前只覆盖「取过样之后 stop，信号仍是
   `RanToCompletion`」；新增 `FirstIntervalSampleTaken_is_cancelled_when_the_sampler_stops_before_its_first_tick`
   覆盖「从未 tick 就结束时必须取消」——采样间隔取 1 小时，让「从未 tick」是结构事实而不是竞态。
+
+## 第三轮走查修复（#1470 / PR #1482）
+
+- **`Consistently.StaysAsync` 窗口关闭时不再放弃在飞观测（A1）。** 第二轮把「窗口静默退化」的退化点后移了一次
+  观测而已：窗口关闭时若已有 ≥1 次完成观测，原实现直接 `return lastObservation`，被放弃的那次观测继续跑完但
+  结论被丢弃。**最可能暴露违例的恰恰是那一次观测**（它跨过了整个窗口的尾部），丢掉它 = 负向断言的灵敏度被
+  静默削弱，真阳性可能被吞——与 spec 第 3 条「第一次观测到额外事件即失败」直接冲突。现在：
+  - 在飞观测拿到的**不是**窗口 token，而是只与 caller 绑定的 token，窗口关闭不再打断它；
+  - 窗口关闭后它在一个**独立的** grace 预算内被等完，然后照常裁定：违例就抛
+    `ConsistentlyViolatedException`，成立就作为最后一次观测返回；
+  - grace 也超时则抛 `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族）——**verdict
+    unknown，既不是 pass 也不是违例**；
+  - grace 默认取 `options.Timeout`（与调用方已经认可的窗口同数量级），可由 `observationGrace` 覆盖。
+
+  `ConsistentlyObservationTimeoutException` 因此改带 `CompletedObservations` 与 `Grace`。第二轮 S6 曾以
+  「attempts 恒为 0，是伪装成诊断的常量」为由删掉计数——该理由随本改动失效：现在它是 0（窗口内一次都没读到）
+  或 N（前 N 次干净、尾部那次读不到），两种情况的读法完全不同，消息也分别措辞。
+
+  **护栏**：`ConsistentlyTests.StaysAsync_AdjudicatesAnObservationThatStartedInsideTheWindowAndFinishedAfterItClosed`
+  构造「窗口 T-ε 才翻转」的观测并断言仍抛 `ConsistentlyViolatedException`；把裁定退回旧行为（`grace: null`）
+  实测变红，报 `The stability window ended without adjudicating the observation that was in flight when it
+  closed. Verdict: returned commands=1 (a pass)`（同批 6 条变红）。
+- **`Eventually` 一侧刻意不跟进。** 正向断言的预算存在的意义就是拒绝「满足了，但晚了」，所以窗口关闭时它继续
+  放弃在飞观测。两侧语义不同这件事写在 `BoundedObservationWindow` 的 XML 里，抽共享驱动器时不许抹平。
+- **两个原语的逐行克隆收编为 `BoundedObservationWindow`（A6）。** 8 条参数校验、时钟与 linked CTS、观测/裁定/
+  轮询循环、两条 cancellation 过滤器只剩一份；裁定语义（adjudicate / onWindowClosed / grace 策略）作为
+  callback 留在各自一侧。分叉风险此前已可见（两侧 attempts 递增与脱敏时机已经不一致）。
+- **被放弃观测的资源前提写进契约（A4）。** `BoundedObservationWindow` 的 XML 现在把它写成不变量：**`observe`
+  必须自持它触碰的一切资源**（连接、DI scope、`DbContext`），因为它可能在启动它的窗口结束之后仍在运行。今天
+  仓库里不存在违反：`ReadFactsAsync` 自建 `NpgsqlConnection`，三处 `Eventually.AssertAsync` 都在 lambda 内
+  `CreateScope()`。违反的症状是 EF 的「A second operation was started on this context instance」从某个不相干的
+  后续行抛出，因此与下一条互为兜底。
+- **`Eventually.AssertAsync` 白名单补上 EF 拼写（A5）。** EF Core 的并发使用错误是**精确**
+  `InvalidOperationException`，第二轮的精确类型判据只挡住了 Npgsql 的 `NpgsqlOperationInProgressException`
+  拼写，EF 拼写会被重试满 30 s 再报 timeout。现在按 EF 自己的 `CoreStrings.ConcurrentMethodInvocation` 措辞
+  排除，措辞钉在真实 EF 程序集上（改词即变红）。
+  **实测记录（EF Core 10.0.8，2026-08-06）**：持有 context 自己的 `IConcurrencyDetector` 临界区后，再次进入该
+  临界区，以及 `ToListAsync`/`SaveChangesAsync`/`FindAsync`/`AnyAsync`，**全部未抛出**——EF Core 10 无法被
+  确定性地驱动抛出该异常，剩下的唯一办法是真线程竞态，那会是 flaky 测试。因此测试如实声明：它钉的是**措辞与
+  行为**，**不钉运行时类型**；类型判断若有误只会让该分支失效（派生类早已被精确类型判据立即上抛），不会造成危害。
+- **`BoundedSignal` 落点与预算（A7）。** 从 `TimerRegistrationObservingTimeProvider.cs` 迁到
+  `BoundedSignal.cs`；5 s 预算从不可注入的 `private static readonly` 改为带默认值的参数
+  （`BoundedSignal.DefaultBudget` / `TimerRegistrationObservingTimeProvider(registrationBudget:)`）。
+- **A2：一条自称钉住却没钉住的用例改真。** `ObservationBudgetTests` 里那条用例的 XML 写着「fault 必须被原语的
+  `ContinueWith` 消费」，但用例自己 `await` 了被放弃的 task——**这个 await 本身就消费了异常**。实测把
+  `ConsumeLateFault` 整段删空后 86 条测试仍全绿。现在拆成两条：
+  - verdict 一条保留原形状，XML 如实写明**它不钉 `ContinueWith`**；
+  - `TheLateFaultOfAnAbandonedObservationIsConsumedByThePrimitive` 真钉住：全程不持有被放弃 task 的强引用
+    （只留 `WeakReference`，创建它的 helper 标 `NoInlining`），挂 `TaskScheduler.UnobservedTaskException`
+    并强制 GC/终结器，按唯一 marker 过滤掉并行测试的串扰。实测把 `ConsumeLateFault` 删空后**只有这一条**变红：
+    `The abandoned observation's fault reached TaskScheduler.UnobservedTaskException, which means the
+    bounded-window driver no longer consumes it`。
+
+### 丢弃观测 token 的位点（完整清单）
+
+第二轮那句「剩余只有 StackExchange.Redis 那几处 + `ConcurrencyFanOutGate`/`ApprovalOverdueSchedulerTests`」
+**不成立**。2026-08-06 对全部 `Eventually.WaitAsync` / `Eventually.AssertAsync` / `Consistently.StaysAsync`
+调用点逐个核过，丢弃 token 的 observe 共 13 处（不含 `Nerv.IIP.Testing.Tests` 内部刻意如此的用例）：
+
+| 位点 | 类别 |
+| --- | --- |
+| `MaintenanceLifecycleDockerAcceptanceTests`（Redis PING/Connect） | StackExchange.Redis 无 `CancellationToken` 重载 |
+| `MesInventoryProducedLotPostgresRedisAcceptanceTests`（`StreamGroupInfoAsync`） | 同上 |
+| `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests`（`StreamGroupInfoAsync`） | 同上 |
+| `ConcurrencyFanOutGate` × 2（`InFlight` / `MaxInFlight`） | 内存计数器，不可能阻塞 |
+| `ErpSalesOrderDemandConsumerTests` × 2（`InjectedFailureCount` / `AttemptCount`） | 内存计数器（第二轮**漏登记**，本轮补注释） |
+| `ApprovalOverdueSchedulerTests` × 2 | 内存计数器 |
+| `InventoryReservationExpirationTests` × 2（Prometheus 文本导出到 `MemoryStream`、内存字段读取） | 内存；main 上既有，本 PR 未改动 |
+| `MaintenancePlanDueSchedulerTests` × 2（`sender.LastCommand` / `sender.Attempts`） | 内存；main 上既有，本 PR 未改动 |
+
+Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `BoundedObservationWindow` 的结构性放弃提供；
+内存那十处不可能阻塞，丢 token 不构成丢预算。两类都在位点处逐条注明（本 PR 未改动的两个文件除外）。
 
 ## MAN-650 迁移状态
 
