@@ -211,7 +211,7 @@ project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**
 
 MAN-661 独占 required-lane/opt-in-lane policy、machine-readable quarantine registry 与 enforcement；MAN-662 不创建 quarantine registry 或规则。MAN-661 的定量 trend/flake evidence 是外部证据，不阻塞本变更实现、评审、合并或 code-completion。当前 baseline status 为 `awaiting MAN-661`；只能在 MAN-661 落地后用真实 artifact identifier 替换，不能填推测值。
 
-现有 `backend/test-determinism-baseline.json` 有 47 个登记债务行，**全部**是 `StaticSetter` → `#1471`（2026-09-12）。登记之初还有另外两类，现均已**清零**：`Task.Delay` 33 行 → `#1470`（2026-09-05），`UnreachableAddress` 7 行 → `#1472`（2026-08-25）。checker 的 `$allowedPatterns` 仍保留这两个 pattern，以便回潮时能被重新识别；零登记行不等于该 pattern 被豁免，而是它当前确实不存在。
+`backend/test-determinism-baseline.json` 的**到期债务行现为 0**。登记之初的三类均已清零：`Task.Delay` 33 行 → `#1470`（2026-09-05）、`UnreachableAddress` 7 行 → `#1472`（2026-08-25）、`StaticSetter` 47 行 → `#1471`（2026-09-12，见下节）。checker 的 `$allowedPatterns` 仍保留全部 pattern，以便回潮时能被重新识别；零登记行不等于该 pattern 被豁免，而是它当前确实不存在。
 
 #1470 的 33 行分三批清偿。第一批 8 行（`CapTestHostTests`、`TestTimeoutTests`、`ProcessMemorySamplerTests`、`FileStorageTusProviderTests`、`NotificationCapOutboxAcceptanceTests`、`OpsConnectorCredentialValidationTests`）：「挂起到被取消」的哨兵改为 `PendingOperation.UntilCanceledAsync`（不再创建任何计时器），TUS 上传会话过期改为注入 `TimeProvider`，CAP outbox 可见性改为 `Eventually` 有界轮询，进程内存采样改为等显式的「已采样」信号。第二批 12 行（`ErpSalesOrderDemandConsumerTests` 4 行、`DemandPlanningEndpointContractTests`、`PlanningInputAdapterTests`、`ApprovalOverdueSchedulerTests` 2 行、`ErpCostAccountingPostgresAcceptanceTests`、`InventoryDirectoryPostgresTests`、`MaintenanceCommandLockTests`、`HttpSchedulingEquipmentAvailabilityProviderBatchingTests`）：`ApprovalOverdueScheduler` 的 `PeriodicTimer` 改为跑在注入的 `TimeProvider` 上（未推进的假时钟让第二次 tick 结构上不可能发生，而不只是不太可能）；真实 PostgreSQL/Redis/CAP 的可见性（advisory-lock waiter、容器就绪、MRP run 终态、CAP 立即重试与 fallback 扫描）一律改为 `Eventually` 有界轮询并报告脱敏的最后观测；两处 HTTP 并发上限测试（MasterData SKU 明细、设备可用性批次）用测试自己控制的 gate 取代 50 ms 持有时间——先等在飞数**到达**上限这个真实边沿，再断言它在全部请求在飞期间**保持**不越界，因此断言从「不超过」升级为等值；负向断言的 settle 窗口收敛到新的共享原语 `Consistently.StaysAsync`（`Eventually` 的反向对偶：整窗轮询、第一次观测到违例即失败并报告脱敏观测/尝试次数/elapsed，而不是睡一次再断言一次）。
 
@@ -229,13 +229,65 @@ owner 必须在登记它的变更合并之后依然存在——用当前 PR 自�
 
 Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
 
+## baseline schema 2：`expiring-debt` 与 `permanent` 两种分类（#1471）
+
+#1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把 setter 写得更礼貌」——checker 命中的是**赋值语句本身**，
+包一层 try/finally 或在旁边 `await using` 一个 scope 都不会让它消失。真正的出路只有两条，本次两条都用上了：
+
+1. **把静态写入搬进 `GlobalTestStateScope`。** `Nerv.IIP.Testing` 不是测试项目（项目名不以 `Tests` 结尾、
+   csproj 没有 `<IsTestProject>`），因此不在扫描清单里——这不是钻空子，而是与「等待原语盲区」同一条边界：
+   受审计的共享测试基建集中承担这些写入，测试体里不再散落裸 setter。scope 新增
+   `UseCulture` / `UseCurrentCulture` / `UseCurrentUiCulture` / `UseDefaultThreadCulture` /
+   `UseDefaultThreadUiCulture` / `UsePropertyNameResolver` / `UseDisplayNameResolver` /
+   `SetEnvironmentVariable` 八个 mutator。`SetEnvironmentVariable` 在**首次写入该变量时**捕获旧值，因此
+   「忘了在 `CaptureAsync` 里报名」不再是静默且不可恢复的错误；dispose 后再调用任何 mutator 抛
+   `ObjectDisposedException`，而不是做一次无人恢复的写入。三态（不存在 / 空串 / 有值）恢复语义未变。
+   35 行按此迁移：`IamPostgresProfileTests`(11)、`BusinessGatewayProxyTests`(4)、
+   `AppHubServiceReadinessTests`(4)、`IamRepositoryTests`(4)、`NervIipLocalizationTests`(4)、
+   `IamManagementEndpointAuthorizationTests`(3)、`MaintenanceWorkOrderIdempotencyTests`(2)、
+   `NervIipObservabilityRegistrationTests`(2)、`PerformanceMetricTests`(1)。各文件里手写的
+   `PreserveEnvironment`/`RestoreEnvironment` 私有 helper 一并删除：它们只恢复不串行化，是 scope 的弱化复制品。
+   FastEndpoints serializer/validation/discovery 类的静态变异**本批不存在**（实测这 47 行全是 culture 与
+   环境变量），因此没有动用 collection serialization / 一次性进程隔离；那两条手段的适用面不变。
+
+2. **`GlobalTestStateScopeTests.cs` 的 12 行重新分类为常设例外。** 这是隔离机制自身的自测，变异就是被测行为：
+   它不会随任何后续重构消失，给它一个到期日是编造 deadline 而不是设 deadline。为此 baseline schema 升到 **2**，
+   每行必须显式声明 `classification`：
+
+   | classification | 必填 | 禁止 | 到期硬失败 |
+   |---|---|---|---|
+   | `expiring-debt` | `ownerIssue`、`exitCondition`、`expiresOn` | `rationale` | 是 |
+   | `permanent` | `rationale` | `ownerIssue`、`exitCondition`、`expiresOn` | 否 |
+
+   两组元数据**互斥**：permanent 行带 `expiresOn`、或 debt 行带 `rationale`，都直接判失败，而不是挑一个生效——
+   混用会让人以为该行是按另一套规则审过的。`classification` 缺失或取值不在这两者之内同样失败，所以
+   schema 1 的旧行不会被当成默认 debt 悄悄放行。
+
+   防止 permanent 退化成万能豁免，靠三道锁：
+   - **路径白名单由 checker 自己持有**（`$PermanentPathAllowlist` 参数默认值，当前唯一条目
+     `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs`）。baseline 不能把自己写进白名单——
+     新增一个常设例外必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker 自测
+     harness 的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
+   - **`rationale` 与 `reason` 都必填**且逐行书写，规则与 debt 行一致。
+   - **checker 自测覆盖被削弱的形态**（`scripts/tests/check-backend-test-determinism.Tests.ps1`）：白名单内通过、
+     用**默认白名单**校验同一行必须失败（白名单一旦放宽成「permanent 即放行」，这条立刻变红）、白名单指向别的
+     文件必须失败、permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification`
+     失败、debt 行带 `rationale` 失败。
+
+   通过输出也随之细化为 `... admitted=N, expiringDebtRows=X, permanentRows=Y.`，「到期债务是否归零」在门禁输出里
+   一眼可读，不必去数 JSON。
+
 ## 等待原语自身在门禁扫描范围之外（已知盲区，非豁免）
 
 `scripts/check-backend-test-determinism.ps1` 的 `Get-SolutionTestSourceFiles` 先 `dotnet sln list`，再用
 `Test-IsTestProject` 过滤：项目名以 `Tests` 结尾，或 csproj 里写了 `<IsTestProject>true</IsTestProject>`。
 `backend/common/Testing/` 下的三个项目（`Nerv.IIP.Testing`、`Nerv.IIP.Testing.Xunit`、`Nerv.IIP.Testing.PostgreSql`）
 两个条件都不满足，因此**整个目录不在扫描清单里**。2026-08-06 实测：solution 共 162 个项目，选中 66 个测试项目，
-`common/Testing` 下的 3 个项目全部落选；checker 的输出为 `files=577, findings=89, admitted=47`。
+`common/Testing` 下的 3 个项目全部落选；#1471 清偿前 checker 的输出为 `files=577, findings=89, admitted=47`，
+清偿后为 `files=577, findings=12, admitted=12, expiringDebtRows=0, permanentRows=12`。#1471 把 35 处 culture /
+环境变量写入迁进 `GlobalTestStateScope`，正是把静态写入集中到这条边界的**内侧**——盲区因此从「顺带的事实」变成
+被依赖的设计前提：`Nerv.IIP.Testing` 一旦被改名或加上 `<IsTestProject>true</IsTestProject>`，这些写入会重新
+成为未登记 finding 而门禁变红，这是想要的行为，不需要预先豁免。
 
 **落在盲区里的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
 `Consistently.StaysAsync` 的轮询 `Task.Delay`（两者现在共用 `BoundedObservationWindow`）、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
@@ -411,7 +463,8 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   `Backend test determinism check passed: files=577, findings=89, admitted=47.`，已按实测更正。同批复核的其余
   数字与实测吻合：`dotnet sln backend/Nerv.IIP.sln list` 为 162 个项目，按 `Test-IsTestProject` 口径选中 66 个，
   `backend/common/Testing/` 下 3 个项目全部落选；`backend/test-determinism-baseline.json` 为 47 行、全部
-  `StaticSetter`；上表丢 token 位点合计 13 处。
+  `StaticSetter`；上表丢 token 位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 2 一节；
+  此处保留的是第四轮走查当时的实测快照。）
 - **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** grace 计时器是在**窗口关闭那一刻**才用注入的
   `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的 grace 计时器仍未
   到期；若在飞观测永不返回，调用会**永久挂起而不是变红**——正是 MAN-799 与 MAN-663 各踩过一次的「计时器晚注册」

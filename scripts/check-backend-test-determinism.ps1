@@ -15,7 +15,16 @@
 param(
     [string] $SourceRoot = (Join-Path $PSScriptRoot '../backend'),
 
-    [string] $BaselinePath = (Join-Path $PSScriptRoot '../backend/test-determinism-baseline.json')
+    [string] $BaselinePath = (Join-Path $PSScriptRoot '../backend/test-determinism-baseline.json'),
+
+    # Files where a process-global mutation IS the behaviour under test, so the finding can never be
+    # removed and dating it would be theatre. This list is deliberately hard-coded rather than read
+    # from the baseline: a `permanent` row must be countersigned by the checker, otherwise the
+    # classification degrades into a self-served exemption. The parameter exists so the checker's own
+    # fixture harness can exercise both sides of the rule; CI invokes the script with no arguments.
+    [string[]] $PermanentPathAllowlist = @(
+        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs'
+    )
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,8 +36,21 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $backendRoot = (Resolve-Path (Join-Path $repoRoot 'backend')).Path
 $solutionPath = Join-Path $backendRoot 'Nerv.IIP.sln'
 $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAddress', 'StaticSetter')
-$requiredBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
-$requiredStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'ownerIssue', 'reason', 'exitCondition', 'expiresOn')
+
+# Two classifications, deliberately disjoint metadata:
+#   expiring-debt — an admitted debt. Carries an owner who outlives the registering change, an exit
+#                   condition, and a date after which the checker fails. This is the default and the
+#                   only classification that may grow.
+#   permanent     — the mutation is the behaviour under test (the isolation mechanism's own tests).
+#                   There is nothing to expire towards, so a date would be a lie; instead it carries a
+#                   rationale and is only legal on an allow-listed path (see $PermanentPathAllowlist).
+$expiringClassification = 'expiring-debt'
+$permanentClassification = 'permanent'
+$allowedClassifications = @($expiringClassification, $permanentClassification)
+$commonBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'classification', 'reason')
+$commonStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'classification', 'reason')
+$expiringOnlyFields = @('ownerIssue', 'exitCondition', 'expiresOn')
+$permanentOnlyFields = @('rationale')
 
 function Resolve-RepoInputPath {
     param(
@@ -640,8 +662,8 @@ function Read-Baseline {
     }
 
     $schema = Get-PropertyValue -Object $baseline -Name 'schema'
-    if ($schema -isnot [long] -or $schema -ne 1) {
-        $Errors.Add('schema must equal 1 as a JSON number.')
+    if ($schema -isnot [long] -or $schema -ne 2) {
+        $Errors.Add('schema must equal 2 as a JSON number.')
     }
 
     $exceptionsValue = Get-PropertyValue -Object $baseline -Name 'exceptions'
@@ -653,15 +675,45 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
+    $normalizedPermanentPaths = @(
+        $PermanentPathAllowlist |
+            ForEach-Object { ($_ -replace '\\', '/').Trim() }
+    )
 
     for ($index = 0; $index -lt $exceptionsValue.Count; $index++) {
         $exception = $exceptionsValue[$index]
+
+        # The classification decides which metadata the row owes, so it is resolved before the
+        # required-field check rather than alongside it.
+        $classification = Get-PropertyValue -Object $exception -Name 'classification'
+        if ($classification -isnot [string] -or $allowedClassifications -cnotcontains $classification) {
+            $Errors.Add("exception[$index] classification must be one of: $($allowedClassifications -join ', ').")
+            continue
+        }
+
+        $isPermanent = $classification -ceq $permanentClassification
+        $classificationFields = if ($isPermanent) { $permanentOnlyFields } else { $expiringOnlyFields }
+        $forbiddenFields = if ($isPermanent) { $expiringOnlyFields } else { $permanentOnlyFields }
+        $requiredBaselineFields = @($commonBaselineFields + $classificationFields)
+        $requiredStringBaselineFields = @($commonStringBaselineFields + $classificationFields)
+
         $missing = @(
             $requiredBaselineFields |
                 Where-Object { $null -eq $exception.PSObject.Properties[$_] }
         )
         if ($missing.Count -gt 0) {
-            $Errors.Add("exception[$index] missing required field(s): $($missing -join ', ').")
+            $Errors.Add("exception[$index] classification '$classification' is missing required field(s): $($missing -join ', ').")
+            continue
+        }
+
+        # A permanent row carrying an expiry (or a debt row carrying a rationale) reads as if it had
+        # been reviewed under the other set of rules. Reject the mixture rather than pick a winner.
+        $forbidden = @(
+            $forbiddenFields |
+                Where-Object { $null -ne $exception.PSObject.Properties[$_] }
+        )
+        if ($forbidden.Count -gt 0) {
+            $Errors.Add("exception[$index] classification '$classification' must not carry field(s): $($forbidden -join ', ').")
             continue
         }
 
@@ -694,6 +746,7 @@ function Read-Baseline {
         $reason = $stringValues['reason']
         $exitCondition = $stringValues['exitCondition']
         $expiresOn = $stringValues['expiresOn']
+        $rationale = $stringValues['rationale']
 
         if ([System.IO.Path]::IsPathRooted($path) -or $path -match '(^|/)\.\.(/|$)') {
             $Errors.Add("exception[$index] path must be repo-relative: '$path'.")
@@ -707,21 +760,33 @@ function Read-Baseline {
             $Errors.Add("exception[$index] lineTextSha256 must be a lowercase SHA-256 hash.")
             $rowValid = $false
         }
-        # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The owner
-        # must outlive the change that registered the debt, so a row may not point at its own issue.
-        if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
-            $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
-            $rowValid = $false
-        }
 
-        $expiry = [DateOnly]::MinValue
-        if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
-            $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
-            $rowValid = $false
+        if ($isPermanent) {
+            # Only the checker decides which files may hold a permanent row; the baseline cannot
+            # nominate itself into the allowlist.
+            if ($normalizedPermanentPaths -cnotcontains $path) {
+                $Errors.Add("exception[$index] permanent classification is not allowed for path '$path'.")
+                $rowValid = $false
+            }
         }
-        elseif ($expiry -lt $today) {
-            $Errors.Add("exception[$index] expired on $expiresOn.")
-            $rowValid = $false
+        else {
+            # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The
+            # owner must outlive the change that registered the debt, so a row may not point at its
+            # own issue.
+            if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
+                $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
+                $rowValid = $false
+            }
+
+            $expiry = [DateOnly]::MinValue
+            if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
+                $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
+                $rowValid = $false
+            }
+            elseif ($expiry -lt $today) {
+                $Errors.Add("exception[$index] expired on $expiresOn.")
+                $rowValid = $false
+            }
         }
 
         $identity = "$path|$pattern|$hash"
@@ -739,10 +804,12 @@ function Read-Baseline {
                 Pattern = $pattern
                 LineTextSha256 = $hash
                 OccurrenceCount = $occurrenceCount
+                Classification = $classification
                 OwnerIssue = $ownerIssue
                 Reason = $reason
                 ExitCondition = $exitCondition
                 ExpiresOn = $expiresOn
+                Rationale = $rationale
             })
         }
     }
@@ -820,7 +887,9 @@ try {
         exit 1
     }
 
-    Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count)."
+    $permanentRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $permanentClassification }).Count
+    $expiringRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $expiringClassification }).Count
+    Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count), expiringDebtRows=$expiringRowCount, permanentRows=$permanentRowCount."
     exit 0
 }
 catch {
