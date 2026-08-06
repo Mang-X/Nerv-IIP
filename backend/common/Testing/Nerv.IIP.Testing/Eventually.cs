@@ -130,6 +130,30 @@ public static class Eventually
     /// An observation still running when the budget expires is abandoned: "satisfied, but late" is exactly
     /// what a positive assertion's budget exists to reject.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Invariant: <typeparamref name="TObservation"/> must be a value snapshot.</strong>
+    /// <paramref name="describe"/> is deliberately <em>not</em> evaluated after each observation — formatting a
+    /// diagnostic on every poll of a 2-minute window is pure waste — so it runs exactly once, on the failure
+    /// path, against the observation that was banked as the last one. If that observation is a live handle
+    /// rather than a snapshot (a <c>DbContext</c>, an entity still attached to a scope the observation
+    /// disposed, a collection some other thread keeps mutating, an open connection), the timeout would report
+    /// the state at <em>diagnosis</em> time rather than the state that failed — or <paramref name="describe"/>
+    /// would throw on a disposed resource. Return scalars, strings, tuples of scalars, detached records, or a
+    /// freshly allocated collection; never a handle whose owner outlives the observation.
+    /// </para>
+    /// <para>
+    /// Closing over live counters as <em>supplementary</em> context is a deliberate exception and reads as one
+    /// at the call site: <c>ConcurrencyFanOutGate.StaysWithinAsync</c> leads with the observed value that
+    /// decided the verdict and appends the current gate counters behind it. The observation still decides; the
+    /// live reads only add colour.
+    /// </para>
+    /// <para>
+    /// A <paramref name="describe"/> that throws anyway cannot destroy the diagnostic: it degrades to a
+    /// sanitized placeholder naming the exception, and <see cref="EventuallyTimeoutException"/> is still what
+    /// the caller sees — see <c>BoundedObservationWindow.SafeDescribe</c>.
+    /// </para>
+    /// </remarks>
     public static async ValueTask<TObservation> WaitAsync<TObservation>(
         string condition,
         Func<CancellationToken, ValueTask<TObservation>> observe,
@@ -151,7 +175,10 @@ public static class Eventually
                 elapsed,
                 attempts == 0
                     ? "none"
-                    : TestDiagnostic.Sanitize(describe(lastObservation), options.SensitiveValues)),
+                    : BoundedObservationWindow.SafeDescribe(
+                        describe,
+                        lastObservation,
+                        options.SensitiveValues)),
             grace: null,
             cancellationToken,
             timeProvider).ConfigureAwait(false);

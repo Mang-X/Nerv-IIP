@@ -134,6 +134,21 @@ public static class Consistently
     /// of it. Because the observation is not handed the window token, an <c>observe</c> that honours
     /// cancellation unwinds only on caller cancellation or on grace expiry.
     /// </para>
+    /// <para>
+    /// <strong>Under a fake clock the grace budget needs a second <c>Advance</c>.</strong> The grace timer is
+    /// created from <paramref name="timeProvider"/> only at the moment the window closes, so with a
+    /// <c>FakeTimeProvider</c> a single advance past <c>options.Timeout</c> closes the window and <em>then</em>
+    /// registers a grace timer that is still unexpired. If the in-flight observation never returns, the call
+    /// parks forever: a test written that way <em>hangs</em> instead of going red, which is the same
+    /// late-timer-registration shape MAN-799 and MAN-663 each hit. Advance a second time, past
+    /// <paramref name="observationGrace"/>, to reach <see cref="ConsistentlyObservationTimeoutException"/>.
+    /// <c>ObservationBudgetTests.StaysAsync_ReportsATimeoutWhenTheObservationIgnoresItsTokenPastTheWindowAndTheGrace</c>
+    /// pins that two-advance sequence down; deleting its second advance reproduces the hang.
+    /// </para>
+    /// <para>
+    /// <paramref name="describe"/> is subject to the same value-snapshot invariant as
+    /// <see cref="Eventually.WaitAsync"/>: it runs once, on the violating observation, not after every poll.
+    /// </para>
     /// </remarks>
     public static async ValueTask<TObservation> StaysAsync<TObservation>(
         string condition,
@@ -157,7 +172,10 @@ public static class Consistently
                     TestDiagnostic.Sanitize(condition, options.SensitiveValues),
                     attempts,
                     elapsed,
-                    TestDiagnostic.Sanitize(describe(observation), options.SensitiveValues))
+                    BoundedObservationWindow.SafeDescribe(
+                        describe,
+                        observation,
+                        options.SensitiveValues))
                 // A holding observation never ends the window early: the whole point is to keep looking.
                 : false,
             onWindowClosed: (_, _, lastObservation) => lastObservation,

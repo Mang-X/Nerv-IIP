@@ -83,6 +83,44 @@ internal static class BoundedObservationWindow
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.PollInterval, TimeSpan.Zero);
     }
 
+    /// <summary>
+    /// Formats one observation for a failure message and sanitizes the result, without letting a faulty
+    /// <paramref name="describe"/> replace the failure it exists to explain.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="describe"/> is only ever invoked on the failure path — once, on the observation that
+    /// closed the window or violated the invariant. If it threw, that exception would propagate <em>instead
+    /// of</em> <see cref="EventuallyTimeoutException"/> or <see cref="ConsistentlyViolatedException"/>, and the
+    /// test would report "NullReferenceException in a lambda" while the real verdict — the condition, the
+    /// attempt count, the elapsed time — is lost. A diagnostic formatter is never allowed to destroy the
+    /// diagnostic, so a throwing one degrades to a safe placeholder naming what it threw.
+    /// </para>
+    /// <para>
+    /// The placeholder goes through <see cref="TestDiagnostic.Sanitize"/> as well: an observation that carries
+    /// a connection string can just as easily leak it through an exception message as through a formatted one.
+    /// </para>
+    /// </remarks>
+    internal static string SafeDescribe<TObservation>(
+        Func<TObservation, string> describe,
+        TObservation observation,
+        IReadOnlyCollection<string?> sensitiveValues)
+    {
+        string diagnostic;
+        try
+        {
+            diagnostic = describe(observation);
+        }
+#pragma warning disable CA1031 // A failing formatter must not replace the failure it describes.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            diagnostic = $"<describe threw {exception.GetType().Name}: {exception.Message}>";
+        }
+
+        return TestDiagnostic.Sanitize(diagnostic, sensitiveValues);
+    }
+
     internal static async ValueTask<TObservation> RunAsync<TObservation>(
         Func<CancellationToken, ValueTask<TObservation>> observe,
         EventuallyOptions options,

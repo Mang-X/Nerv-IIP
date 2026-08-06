@@ -370,5 +370,36 @@ public sealed class ConsistentlyTests
         return await pending.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The violation is the finding; <c>describe</c> only explains it. A throwing formatter degrades to a
+    /// sanitized placeholder instead of replacing <see cref="ConsistentlyViolatedException"/>.
+    /// </summary>
+    [Fact]
+    public async Task StaysAsync_StillReportsTheViolationWhenDescribeItselfThrows()
+    {
+        const string secret = "super-sensitive-value";
+        var clock = new TimerRegistrationObservingTimeProvider();
+        var observations = new Queue<int>([1, 1, 2, 1, 1, 1]);
+        var wait = Consistently.StaysAsync(
+            "commands stay at 1",
+            _ => ValueTask.FromResult(observations.Dequeue()),
+            observation => observation == 1,
+            _ => throw new ObjectDisposedException($"DbContext password={secret}"),
+            new EventuallyOptions(Window, PollInterval, [secret]),
+            timeProvider: clock).AsTask();
+
+        var exception = await Assert.ThrowsAsync<ConsistentlyViolatedException>(
+            async () => await DriveAsync(clock, wait));
+
+        Assert.Equal("commands stay at 1", exception.Condition);
+        Assert.Equal(3, exception.Attempts);
+        Assert.Equal(TimeSpan.FromSeconds(10), exception.Elapsed);
+        Assert.StartsWith(
+            "<describe threw ObjectDisposedException:",
+            exception.ViolatingObservation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, exception.Message, StringComparison.Ordinal);
+    }
+
     private static EventuallyOptions Options() => new(Window, PollInterval, []);
 }

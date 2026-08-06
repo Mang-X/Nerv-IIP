@@ -235,7 +235,7 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
 `Test-IsTestProject` 过滤：项目名以 `Tests` 结尾，或 csproj 里写了 `<IsTestProject>true</IsTestProject>`。
 `backend/common/Testing/` 下的三个项目（`Nerv.IIP.Testing`、`Nerv.IIP.Testing.Xunit`、`Nerv.IIP.Testing.PostgreSql`）
 两个条件都不满足，因此**整个目录不在扫描清单里**。2026-08-06 实测：solution 共 162 个项目，选中 66 个测试项目，
-`common/Testing` 下的 3 个项目全部落选；checker 的输出为 `files=576, findings=89, admitted=47`。
+`common/Testing` 下的 3 个项目全部落选；checker 的输出为 `files=577, findings=89, admitted=47`。
 
 **落在盲区里的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
 `Consistently.StaysAsync` 的轮询 `Task.Delay`（两者现在共用 `BoundedObservationWindow`）、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
@@ -402,6 +402,61 @@ MAN-661，普通测试变更不得自行改动门禁口径。
 
 Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `BoundedObservationWindow` 的结构性放弃提供；
 内存那十处不可能阻塞，丢 token 不构成丢预算。两类都在位点处逐条注明（本 PR 未改动的两个文件除外）。
+
+## 第四轮走查修复（#1470 / PR #1482）
+
+- **checker 数字更正（B1）。** 上一节曾写 `files=576`；2026-08-06 实跑 `pwsh
+  scripts/check-backend-test-determinism.ps1` 的输出是
+  `Backend test determinism check passed: files=577, findings=89, admitted=47.`，已按实测更正。同批复核的其余
+  数字与实测吻合：`dotnet sln backend/Nerv.IIP.sln list` 为 162 个项目，按 `Test-IsTestProject` 口径选中 66 个，
+  `backend/common/Testing/` 下 3 个项目全部落选；`backend/test-determinism-baseline.json` 为 47 行、全部
+  `StaticSetter`；上表丢 token 位点合计 13 处。
+- **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** grace 计时器是在**窗口关闭那一刻**才用注入的
+  `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的 grace 计时器仍未
+  到期；若在飞观测永不返回，调用会**永久挂起而不是变红**——正是 MAN-799 与 MAN-663 各踩过一次的「计时器晚注册」
+  形态。XML 现在明确要求推进第二次，并指向正面钉住它的
+  `ObservationBudgetTests.StaysAsync_ReportsATimeoutWhenTheObservationIgnoresItsTokenPastTheWindowAndTheGrace`
+  （删掉它的第二次 `Advance` 即复现挂起）。
+- **`describe` 的取值时机写成不变量，并且不再能顶替它要解释的失败（B3）。** `describe` 只在失败路径上求值一次
+  （超时的最后观测、或违例的那次观测），不是每轮观测后立即求值。两件事因此成立：
+  - **观测必须是值快照。** 若观测是活句柄（`DbContext`、观测自己已释放的 scope 里的实体、别的线程仍在改的集合、
+    未关闭的连接），诊断报告的会是**诊断时刻**的状态而不是失败时刻的状态，或者干脆在已释放资源上抛异常。
+    `Eventually.WaitAsync` 的 XML 现在把它写成不变量，`Consistently.StaysAsync` 引用同一条。
+  - **穷举复核结果：当前全部 27 个 `describe` 都是值快照，零活对象。** 逐个位点见下表。
+  - **`describe` 自己抛异常不再让诊断消失。** 此前它会**顶替** `EventuallyTimeoutException` /
+    `ConsistentlyViolatedException`，测试只会看到「某个 lambda 抛了 NRE」，而 condition / attempts / elapsed
+    全部丢失。新增 `BoundedObservationWindow.SafeDescribe`：抛异常时降级为脱敏的
+    `<describe threw {类型}: {消息}>` 占位串，原始失败照常抛出。占位串同样过 `TestDiagnostic.Sanitize`。
+    护栏：`EventuallyTests.WaitAsync_StillReportsTheTimeoutWhenDescribeItselfThrows` 与
+    `ConsistentlyTests.StaysAsync_StillReportsTheViolationWhenDescribeItselfThrows`（`Nerv.IIP.Testing.Tests`
+    因此从 86 条增至 88 条）。
+
+### `describe` 位点穷举（27 处，全部为值快照）
+
+| 位点 | 观测类型 | 判定 |
+| --- | --- | --- |
+| `Eventually.AssertAsync`（内部） | `Exception?` | 只读 `GetType().Name` 与 `Message`，均为已固化的字符串 |
+| `ConcurrencyFanOutGate.WaitForInFlightAsync` | `int` | 值；闭包另读 `MaxInFlight`/`TotalEntries` 作**补充**上下文，已在位点注明 |
+| `ConcurrencyFanOutGate.StaysWithinAsync` | `int` | 同上，判定值领先、活计数器仅作补充 |
+| `MaintenanceLifecycleDockerAcceptanceTests` × 2（PG/Redis 就绪） | `(bool, Exception?)` | 值 + 已固化的异常文本 |
+| `InventoryDirectoryPostgresTests`（PG 就绪） | `(bool, Exception?)` | 同上 |
+| `ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests` | `int` | 值；闭包只含 `int` 局部量 |
+| `SalesOrderDemandPlanningPostgresRedisAcceptanceTests` | `int` | 值 |
+| `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` × 3（`DescribeFacts`） | `MaintenanceFacts` | 只含标量的只读快照，scope 内读完即脱离 |
+| `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests`（Redis 消费组） | `string` | 值 |
+| `MesInventoryProducedLotPostgresRedisAcceptanceTests`（双库事实） | 标量元组 | 值 |
+| `MesInventoryProducedLotPostgresRedisAcceptanceTests`（消费组） | `List<string>` | **每次观测新建**的列表，无共享可变状态 |
+| `MesPostgresAdvisoryLockProbe` | `int` | 值 |
+| `InventoryReservationExpirationTests` × 2 | `string` / `decimal` | 值（Prometheus 导出文本、已读出的数量） |
+| `DemandPlanningEndpointContractTests` | `MrpRun` | `AsNoTracking` 且 scope 已释放；只读已物化的标量 `Status`/`FailureReason`，无导航属性 |
+| `ErpSalesOrderDemandConsumerTests` × 3 | `int` / 标量元组 | 值；闭包另读 probe 计数器作补充上下文 |
+| `MaintenancePlanDueSchedulerTests` × 2 | 命令对象 / `int` | 命令的 `BusinessDate` 为不可变标量 |
+| `ErpCostAccountingPostgresAcceptanceTests` | `int` | 值 |
+| `IndustrialTelemetryHistorianTests` | `(bool, bool)` | 值；`DbContext` 在 observe 内 `await using` 自持并释放 |
+| `ApprovalOverdueSchedulerTests` × 2 | `int` / `bool` | 值 |
+
+三处「闭包另读活计数器」（`ConcurrencyFanOutGate` × 2、`ErpSalesOrderDemandConsumerTests` × 3）是**有意**的：
+决定裁决的观测值排在最前，活读数只跟在后面做补充，位点处已有注释说明。它们不构成活对象观测。
 
 ## MAN-650 迁移状态
 
