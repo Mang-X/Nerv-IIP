@@ -96,7 +96,12 @@ public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
             CreateCapitalizationEvent(),
             CancellationToken.None);
 
-        await Task.Delay(250);
+        // Wait for the real edge instead of a settle window: the capitalization transaction is observably
+        // parked on the work-order-scope advisory lock held by the in-flight receipt creation.
+        await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
+            database.ConnectionString,
+            expectedWaiters: 1,
+            scopeDescription: "the MES work-order capitalization scope held by the in-flight receipt creation");
         Assert.False(
             capitalizationTask.IsCompleted,
             "Capitalization must wait for in-flight receipt creation in the same work-order scope.");

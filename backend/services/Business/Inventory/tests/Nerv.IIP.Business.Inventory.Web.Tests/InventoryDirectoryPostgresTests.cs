@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -229,25 +230,36 @@ public sealed class InventoryDirectoryPostgresTests
             }
         }
 
+        /// <summary>
+        /// Real container startup: bounded polling of an observable fact (the instance accepts a
+        /// connection). The connection string is passed as a sensitive value so a timeout never prints
+        /// credentials.
+        /// </summary>
         private static async Task WaitUntilReadyAsync(string connectionString)
         {
-            Exception? last = null;
-            for (var attempt = 0; attempt < 60; attempt++)
-            {
-                try
+            await Eventually.WaitAsync(
+                condition: "the run-scoped PostgreSQL instance accepts connections",
+                observe: async token =>
                 {
-                    await using var connection = new NpgsqlConnection(connectionString);
-                    await connection.OpenAsync();
-                    return;
-                }
-                catch (Exception ex) when (ex is NpgsqlException or TimeoutException)
-                {
-                    last = ex;
-                    await Task.Delay(TimeSpan.FromMilliseconds(500));
-                }
-            }
-
-            throw new InvalidOperationException("Run-scoped PostgreSQL did not become ready.", last);
+                    try
+                    {
+                        await using var connection = new NpgsqlConnection(connectionString);
+                        await connection.OpenAsync(token);
+                        return (Accepted: true, Failure: (Exception?)null);
+                    }
+                    catch (Exception ex) when (ex is NpgsqlException or TimeoutException)
+                    {
+                        return (Accepted: false, Failure: ex);
+                    }
+                },
+                isSatisfied: observation => observation.Accepted,
+                describe: observation => observation.Accepted
+                    ? "accepting connections"
+                    : $"not ready yet: {observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+                options: new EventuallyOptions(
+                    Timeout: TimeSpan.FromSeconds(30),
+                    PollInterval: TimeSpan.FromMilliseconds(500),
+                    SensitiveValues: [connectionString]));
         }
 
         private static async Task<string> RunDockerAsync(IReadOnlyCollection<string> arguments, bool allowFailure = false)

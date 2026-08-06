@@ -11,6 +11,7 @@ using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
@@ -1270,22 +1271,25 @@ public sealed class PlanningInputAdapterTests
         Assert.Contains("5000", exception.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The fan-out limit is observed through an explicit barrier instead of a hold time. Every request
+    /// parks at a gate the test controls, so the test can wait for the in-flight count to reach the limit
+    /// (a real edge), then assert that it <em>stays</em> there while all 20 requests are outstanding — that
+    /// is what proves the 9th request is blocked. The previous version held each response for 50 ms and
+    /// could only assert an upper bound, which a machine slow enough to serialize the requests satisfied
+    /// vacuously. The barrier itself is <see cref="ConcurrencyFanOutGate"/>: the scheduling availability
+    /// provider needs the identical shape, and two hand-copied gates had already drifted apart on whether
+    /// the caller's cancellation token reached the safety budget.
+    /// </summary>
     [Fact]
     public async Task Master_data_planning_parameter_client_limits_sku_detail_concurrency()
     {
-        var current = 0;
-        var observedMax = 0;
-        var handler = new StubHttpMessageHandler(async request =>
+        const int expectedConcurrencyLimit = 8;
+        const int skuCount = 20;
+        var gate = new ConcurrencyFanOutGate("MasterData SKU detail");
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
         {
-            var running = Interlocked.Increment(ref current);
-            int snapshot;
-            while (running > (snapshot = Volatile.Read(ref observedMax)))
-            {
-                Interlocked.CompareExchange(ref observedMax, running, snapshot);
-            }
-
-            await Task.Delay(50);
-            Interlocked.Decrement(ref current);
+            await gate.PassAsync(cancellationToken);
             var skuCode = request.RequestUri!.AbsolutePath.Split('/').Last();
             return JsonResponse($$"""
                 {
@@ -1308,17 +1312,27 @@ public sealed class PlanningInputAdapterTests
         });
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
         var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
-        var items = Enumerable.Range(1, 20)
+        var items = Enumerable.Range(1, skuCount)
             .Select(x => new PlanningParameterSnapshotItem($"SKU-{x:000}", "pcs", "SITE-01"))
             .ToArray();
 
-        var snapshot = await client.GetPlanningParametersAsync(
+        var pending = client.GetPlanningParametersAsync(
             "token",
             new PlanningParameterSnapshotRequest("org-001", "env-dev", items),
             CancellationToken.None);
 
-        Assert.Equal(20, snapshot.PlanningParameters.Count);
-        Assert.True(observedMax <= 8, $"Expected at most 8 concurrent MasterData SKU requests, observed {observedMax}.");
+        await gate.WaitForInFlightAsync(expectedConcurrencyLimit, TimeSpan.FromSeconds(10));
+        await gate.StaysWithinAsync(
+            expectedConcurrencyLimit,
+            TimeSpan.FromMilliseconds(250),
+            scope: $"all {skuCount} requests are outstanding");
+
+        gate.Release();
+        var snapshot = await pending;
+
+        Assert.Equal(skuCount, snapshot.PlanningParameters.Count);
+        Assert.Equal(skuCount, gate.TotalEntries);
+        Assert.Equal(expectedConcurrencyLimit, gate.MaxInFlight);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -1546,7 +1560,7 @@ public sealed class PlanningInputAdapterTests
         {
         }
 
-        private StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
         {
             this.send = send;
         }

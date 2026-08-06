@@ -94,6 +94,46 @@ public sealed class EventuallyTests
         Assert.Equal(cancellation.Token, exception.CancellationToken);
     }
 
+    /// <summary>
+    /// A diagnostic formatter must never destroy the diagnostic. <c>describe</c> runs once, on the failure
+    /// path; without the guard its exception would propagate instead of the timeout and the report would name
+    /// a lambda bug while losing the condition, the attempts and the elapsed time.
+    /// </summary>
+    [Fact]
+    public async Task WaitAsync_StillReportsTheTimeoutWhenDescribeItselfThrows()
+    {
+        const string secret = "super-sensitive-value";
+        var timeProvider = new FakeTimeProvider();
+        var attempts = 0;
+        var wait = Eventually.WaitAsync(
+            "inventory is posted",
+            _ => ValueTask.FromResult(++attempts),
+            _ => false,
+            _ => throw new InvalidOperationException($"the observation handle is gone: password={secret}"),
+            new EventuallyOptions(
+                TimeSpan.FromSeconds(20),
+                TimeSpan.FromSeconds(5),
+                [secret]),
+            timeProvider: timeProvider).AsTask();
+
+        await Task.Yield();
+        for (var index = 0; index < 4; index++)
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            await Task.Yield();
+        }
+
+        var exception = await Assert.ThrowsAsync<EventuallyTimeoutException>(() => wait);
+        Assert.Equal("inventory is posted", exception.Condition);
+        Assert.Equal(4, exception.Attempts);
+        Assert.Equal(TimeSpan.FromSeconds(20), exception.Elapsed);
+        Assert.StartsWith(
+            "<describe threw InvalidOperationException:",
+            exception.LastObservation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, exception.Message, StringComparison.Ordinal);
+    }
+
     private static EventuallyOptions Options() => new(
         TimeSpan.FromSeconds(20),
         TimeSpan.FromSeconds(5),

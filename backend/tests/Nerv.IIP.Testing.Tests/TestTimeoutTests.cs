@@ -36,16 +36,19 @@ public sealed class TestTimeoutTests
     public async Task RunAsync_CancelsAHangingOperationAndReportsSanitizedFakeTimeTimeout()
     {
         const string secret = "postgres-password";
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerRegistrationObservingTimeProvider();
         var wait = TestTimeout.RunAsync(
             $"connect with credential={secret}",
             async cancellationToken =>
-                await Task.Delay(Timeout.InfiniteTimeSpan, timeProvider, cancellationToken),
+                await PendingOperation.UntilCanceledAsync(cancellationToken),
             TimeSpan.FromSeconds(10),
             timeProvider: timeProvider,
             sensitiveValues: [secret]).AsTask();
 
-        await Task.Yield();
+        // The budget's own timer is the only one on this clock. Advancing before it is registered
+        // would re-base it on the advanced now and lose the tick, so wait for the registration edge
+        // instead of yielding once and hoping.
+        await timeProvider.WaitForFirstTimerAsync();
         timeProvider.Advance(TimeSpan.FromSeconds(10));
 
         var exception = await Assert.ThrowsAsync<TestTimeoutException>(() => wait);
@@ -62,7 +65,7 @@ public sealed class TestTimeoutTests
         var wait = TestTimeout.RunAsync(
             "read inventory",
             async actionCancellationToken =>
-                await Task.Delay(Timeout.InfiniteTimeSpan, timeProvider, actionCancellationToken),
+                await PendingOperation.UntilCanceledAsync(actionCancellationToken),
             TimeSpan.FromSeconds(10),
             cancellation.Token,
             timeProvider).AsTask();

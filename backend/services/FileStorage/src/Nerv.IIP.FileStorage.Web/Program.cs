@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Minio;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -23,6 +24,13 @@ var persistence = PersistenceStartupGovernance.Resolve(
     });
 var usePostgreSql = persistence.UsePostgreSql;
 builder.Services.AddFastEndpoints();
+// Upload-session / download-grant expiry and file retention are scheduling semantics, so the clock behind
+// them is injected rather than read from DateTimeOffset.UtcNow: tests replace this registration to advance
+// past a TTL without waiting. Every path that writes or reads those columns resolves this one registration
+// (the storage services, the tus endpoints and PostgreSqlFileStorageGarbageCollector), so the columns are
+// never driven by two clocks. Wall-clock audit stamps that no expiry comparison reads — the scanner's
+// ScannedAtUtc — deliberately stay on DateTimeOffset.UtcNow.
+builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
 builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>

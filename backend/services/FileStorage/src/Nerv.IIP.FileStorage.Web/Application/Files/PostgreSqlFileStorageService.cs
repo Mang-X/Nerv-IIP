@@ -15,6 +15,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
     private readonly IConfiguration? configuration;
+    private readonly TimeProvider timeProvider;
 
     public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
         : this(dbContext, new ServerProxyUploadProvider())
@@ -25,12 +26,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         ApplicationDbContext dbContext,
         IFileStorageUploadProvider uploadProvider,
         ILocalTusFileStoreAccessor? tusStoreAccessor = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        TimeProvider? timeProvider = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
         this.configuration = configuration;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -88,7 +91,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
             }
 
-            var now = DateTimeOffset.UtcNow;
+            var now = timeProvider.GetUtcNow();
             var uploadSessionId = NewId("ups");
             var fileId = NewId("file");
             session = UploadSessionRecord.Create(
@@ -146,7 +149,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
         }
 
-        if (session.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        if (session.ExpiresAtUtc <= timeProvider.GetUtcNow())
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
         }
@@ -182,7 +185,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest("Uploaded content does not match the declared file type.");
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         session.MarkCompleted(now);
         var file = StoredFileRecord.Create(
             session.FileId,
@@ -323,7 +326,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<DownloadGrantResponse>.BadRequest("File context does not match.");
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var grant = DownloadGrantRecord.Create(
             NewId("dgr"),
             file.FileId,
@@ -355,7 +358,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         string environmentId,
         CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var grant = await dbContext.DownloadGrants.SingleOrDefaultAsync(x =>
             x.DownloadGrantId == downloadGrantId
             && x.OrganizationId == organizationId
@@ -413,7 +416,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
     public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         return dbContext.UploadSessions.AnyAsync(x =>
             x.UploadSessionId == uploadSessionId
             && x.Provider == TusUploadProvider.Name
@@ -483,7 +486,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 
         var storedTotal = await storedBytes.SumAsync(file => file.SizeBytes, cancellationToken);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
         var reservedBytes = dbContext.UploadSessions
             .Where(session => !session.Completed
                 && session.ExpiresAtUtc > now

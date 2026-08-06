@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
@@ -260,11 +262,21 @@ public sealed class FileStorageTusProviderTests
         var rootPath = CreateTempDirectory();
         try
         {
-            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 2);
+            // Anchored on the real now rather than FakeTimeProvider's year-2000 default: the clock is
+            // registered service-wide, and anything else on the request path that reads it (auth,
+            // caching, rate limiting) must keep seeing a plausible present.
+            var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+            await using var factory = CreateFactoryWithTusProvider(
+                rootPath,
+                uploadSessionTtlSeconds: 2,
+                timeProvider: timeProvider);
             var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
-            await Task.Delay(TimeSpan.FromMilliseconds(2500));
+
+            // Expiry is a comparison against the injected clock, not a timer, so advancing past the
+            // 2 s TTL is enough — no wall-clock wait and no window where the assertion races the TTL.
+            timeProvider.Advance(TimeSpan.FromSeconds(3));
 
             var response = await SendTusHeadAsync(client, created.Upload.Url);
 
@@ -498,7 +510,8 @@ public sealed class FileStorageTusProviderTests
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
         double? uploadSessionTtlSeconds = null,
-        bool? scanningEnabled = null)
+        bool? scanningEnabled = null,
+        TimeProvider? timeProvider = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -513,6 +526,11 @@ public sealed class FileStorageTusProviderTests
                         ["FileStorage:Scanning:Enabled"] = scanningEnabled?.ToString()
                     });
                 });
+
+                if (timeProvider is { } clock)
+                {
+                    builder.ConfigureServices(services => services.AddSingleton(clock));
+                }
             });
     }
 

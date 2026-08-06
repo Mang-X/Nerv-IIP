@@ -1,6 +1,5 @@
 using DotNetCore.CAP;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Time.Testing;
 
 namespace Nerv.IIP.Testing.Tests;
 
@@ -26,8 +25,7 @@ public sealed class CapTestHostTests
     [Fact]
     public async Task WaitForCapBootstrapAsync_AcceptsBootstrapCanceledByHostShutdown()
     {
-        await using var bootstrapper = new FakeBootstrapper(
-            cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+        await using var bootstrapper = new FakeBootstrapper(PendingOperation.UntilCanceledAsync);
         await bootstrapper.StartAsync(CancellationToken.None);
         await bootstrapper.StopAsync(CancellationToken.None);
 
@@ -37,8 +35,7 @@ public sealed class CapTestHostTests
     [Fact]
     public async Task WaitForCapBootstrapAsync_PropagatesCallerCancellation()
     {
-        await using var bootstrapper = new FakeBootstrapper(
-            cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+        await using var bootstrapper = new FakeBootstrapper(PendingOperation.UntilCanceledAsync);
         await bootstrapper.StartAsync(CancellationToken.None);
         using var cancellation = new CancellationTokenSource();
         var wait = CapTestHost.WaitForCapBootstrapAsync(
@@ -56,22 +53,18 @@ public sealed class CapTestHostTests
     public async Task WaitForCapBootstrapAsync_UsesTheThirtySecondFakeTimeBudgetAndSanitizedDiagnostic()
     {
         const string credential = "credential-secret";
-        var timeProvider = new FakeTimeProvider();
-        await using var bootstrapper = new FakeBootstrapper(
-            cancellationToken => Task.Delay(
-                Timeout.InfiniteTimeSpan,
-                timeProvider,
-                cancellationToken));
+        var timeProvider = new TimerRegistrationObservingTimeProvider();
+        await using var bootstrapper = new FakeBootstrapper(PendingOperation.UntilCanceledAsync);
         await bootstrapper.StartAsync(CancellationToken.None);
         var services = new StubServiceProvider(bootstrapper, credential);
         var wait = CapTestHost.WaitForCapBootstrapAsync(
             services,
             timeProvider: timeProvider).AsTask();
 
-        await ObserveAsync(
-            bootstrapper.BootstrapTimersRegistered,
-            "the bootstrap delay to register its fake-clock timer",
-            () => $"fake now={timeProvider.GetUtcNow():O}");
+        // The only timer on this clock is the wait's own 30 s deadline; the bootstrap stays pending
+        // without any timer at all. Advancing before that deadline is registered would re-base it on
+        // the advanced now and lose the tick, so the registration itself is the barrier.
+        await timeProvider.WaitForFirstTimerAsync();
         timeProvider.Advance(TimeSpan.FromSeconds(30));
 
         var exception = await Assert.ThrowsAsync<TestTimeoutException>(() => wait);
@@ -85,9 +78,9 @@ public sealed class CapTestHostTests
     [Fact]
     public async Task WaitForCapBootstrapAsync_UsesOneFakeClockForBootstrapAndDeadline()
     {
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerRegistrationObservingTimeProvider();
         await using var bootstrapper = new FakeBootstrapper(
-            cancellationToken => Task.Delay(
+            cancellationToken => FakeClockElapsedAsync(
                 TimeSpan.FromSeconds(20),
                 timeProvider,
                 cancellationToken));
@@ -96,40 +89,53 @@ public sealed class CapTestHostTests
             new StubServiceProvider(bootstrapper),
             timeProvider: timeProvider).AsTask();
 
-        await ObserveAsync(
+        await BoundedSignal.ObserveAsync(
             bootstrapper.BootstrapTimersRegistered,
-            "the bootstrap delay to register its fake-clock timer",
-            () => $"fake now={timeProvider.GetUtcNow():O}");
+            "the bootstrap to register its 20 s timer on the fake clock",
+            () => $"fake now={timeProvider.GetUtcNow():O}, timers registered={timeProvider.TimersCreated}");
         timeProvider.Advance(TimeSpan.FromSeconds(20));
 
-        await ObserveAsync(
+        await BoundedSignal.ObserveAsync(
             wait,
             "the CAP bootstrap wait to observe the advanced fake clock",
             () => $"fake now={timeProvider.GetUtcNow():O}, bootstrap started={bootstrapper.IsStarted}");
     }
 
     /// <summary>
-    /// Bounded wait on an edge-triggered signal. Reports the redacted condition, elapsed time,
-    /// attempt count and last observation, so a lost fake-clock tick fails with a diagnosis instead
-    /// of parking the test host (the MAN-799 failure mode).
+    /// Completes once <paramref name="timeProvider"/>'s clock has advanced past
+    /// <paramref name="dueTime"/>, or throws when <paramref name="cancellationToken"/> is canceled.
+    /// The timer is registered before this method returns, which is what makes
+    /// <see cref="FakeBootstrapper.BootstrapTimersRegistered"/> a real barrier: the caller can await
+    /// the signal knowing the timer exists rather than inferring it from a pending task.
     /// </summary>
-    private static async Task ObserveAsync(
-        Task observation,
-        string condition,
-        Func<string> lastObservation)
+    private static Task FakeClockElapsedAsync(
+        TimeSpan dueTime,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
     {
-        var budget = TimeSpan.FromSeconds(5);
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
+        var elapsed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timer = timeProvider.CreateTimer(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            elapsed,
+            dueTime,
+            Timeout.InfiniteTimeSpan);
+        var registration = cancellationToken.Register(
+            static state =>
+            {
+                var (source, token) = ((TaskCompletionSource Source, CancellationToken Token))state!;
+                source.TrySetCanceled(token);
+            },
+            (Source: elapsed, Token: cancellationToken));
+
+        return AwaitAsync(elapsed.Task, timer, registration);
+
+        static async Task AwaitAsync(Task pending, ITimer timer, CancellationTokenRegistration registration)
         {
-            await observation.WaitAsync(budget);
-        }
-        catch (TimeoutException)
-        {
-            throw new global::Xunit.Sdk.XunitException(
-                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
-                + $"(budget {budget.TotalSeconds:0.###}s, attempts 1/1 — single bounded await on a "
-                + $"completion signal); last observation: {lastObservation()}");
+            using (timer)
+            using (registration)
+            {
+                await pending.ConfigureAwait(false);
+            }
         }
     }
 

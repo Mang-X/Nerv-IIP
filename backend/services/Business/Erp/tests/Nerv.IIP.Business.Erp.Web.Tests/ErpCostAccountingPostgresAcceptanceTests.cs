@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -243,11 +244,19 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     private static async Task WaitForAdvisoryLockWaitersAsync(
         string connectionString,
         string applicationName,
-        int expectedCount)
+        int expectedCount,
+        CancellationToken cancellationToken = default)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(timeout.Token);
+        // Opening the probe connection is a single operation that can hang, so it keeps its own explicit
+        // budget instead of falling back to Npgsql's 15 s default. Caller cancellation propagates as-is;
+        // only this helper's own budget turns into a TestTimeoutException.
+        await TestTimeout.RunAsync(
+            operation: $"open the advisory-lock probe connection for {applicationName}",
+            action: async token => await connection.OpenAsync(token),
+            timeout: TimeSpan.FromSeconds(10),
+            cancellationToken,
+            sensitiveValues: [connectionString]);
         await using var command = new NpgsqlCommand("""
             SELECT count(*)
             FROM pg_stat_activity
@@ -257,18 +266,17 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             """, connection);
         command.Parameters.AddWithValue("application_name", applicationName);
 
-        while (!timeout.IsCancellationRequested)
-        {
-            var waitingCount = Convert.ToInt32(await command.ExecuteScalarAsync(timeout.Token));
-            if (waitingCount >= expectedCount)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
-        }
-
-        throw new TimeoutException($"Expected {expectedCount} PostgreSQL advisory-lock waiters for {applicationName}.");
+        // Real PostgreSQL: the only observable fact is pg_stat_activity, so poll it on a bounded budget.
+        await Eventually.WaitAsync(
+            condition: $"{expectedCount} PostgreSQL advisory-lock waiters for {applicationName}",
+            observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
+            isSatisfied: waitingCount => waitingCount >= expectedCount,
+            describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(10),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [connectionString]),
+            cancellationToken);
     }
 }
 

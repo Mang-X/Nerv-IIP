@@ -9,8 +9,11 @@ internal sealed class ProcessMemorySampler : IAsyncDisposable
     private readonly TimeSpan samplingInterval;
     private readonly object stopLock = new();
     private readonly long baselineWorkingSetBytes;
+    private readonly TaskCompletionSource firstIntervalSampleTaken =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long peakWorkingSetBytes;
     private long peakManagedHeapBytes;
+    private long intervalSamplesTaken;
     private Task? stopTask;
 
     private ProcessMemorySampler(TimeSpan samplingInterval)
@@ -32,6 +35,27 @@ internal sealed class ProcessMemorySampler : IAsyncDisposable
     public long PeakWorkingSetBytes => Interlocked.Read(ref peakWorkingSetBytes);
     public long PeakManagedHeapBytes => Interlocked.Read(ref peakManagedHeapBytes);
     public long WorkingSetIncreaseBytes => Math.Max(0, PeakWorkingSetBytes - baselineWorkingSetBytes);
+
+    /// <summary>
+    /// Number of samples taken by the interval loop. The constructor's priming observation is not
+    /// counted, so this is strictly evidence that the configured interval actually fired.
+    /// </summary>
+    public long IntervalSamplesTaken => Interlocked.Read(ref intervalSamplesTaken);
+
+    /// <summary>
+    /// Completes when the interval loop has taken its first sample. Callers that need the loop to be
+    /// running — for example to overlap it with <see cref="StopAsync"/> — await this signal instead of
+    /// guessing an elapsed wall-clock duration from the configured interval.
+    /// </summary>
+    /// <remarks>
+    /// The signal is latched: once a sample has been taken it stays completed, including after
+    /// <see cref="StopAsync"/> and <see cref="DisposeAsync"/>, so awaiting it a second time is safe. It is
+    /// only ever cancelled when the loop ended <em>without</em> ever ticking — a waiter in that case has
+    /// nothing to wait for, and failing loudly beats parking forever.
+    /// <c>ProcessMemorySamplerTests.FirstIntervalSampleTaken_stays_completed_after_the_sampler_is_stopped</c>
+    /// pins this down.
+    /// </remarks>
+    public Task FirstIntervalSampleTaken => firstIntervalSampleTaken.Task;
 
     public static ProcessMemorySampler Start(TimeSpan? samplingInterval = null) =>
         new(samplingInterval ?? DefaultSamplingInterval);
@@ -66,10 +90,19 @@ internal sealed class ProcessMemorySampler : IAsyncDisposable
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
                 Observe();
+                Interlocked.Increment(ref intervalSamplesTaken);
+                firstIntervalSampleTaken.TrySetResult();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        finally
+        {
+            // No-op once a sample has been taken (TrySetResult already latched the signal). It only bites
+            // when the loop ended before its first tick, and then cancelling is the point: a waiter would
+            // otherwise park forever on an event that can no longer happen.
+            firstIntervalSampleTaken.TrySetCanceled();
         }
     }
 

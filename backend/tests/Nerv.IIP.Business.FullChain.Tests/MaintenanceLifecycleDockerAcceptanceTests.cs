@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.DistributedLocking;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DistributedLocks;
 using Npgsql;
 using StackExchange.Redis;
@@ -586,7 +587,24 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
                 allArrived.TrySetResult();
             }
 
-            await Task.WhenAny(allArrived.Task, Task.Delay(maximumWait, cancellationToken));
+            // Bounded barrier, not a sleep-before-assert: a participant that loses the idempotency race can
+            // fail before it ever arrives, so the waiter must be released by an explicit budget instead of
+            // hanging forever. That is a timeout on one awaited operation, so it is expressed as
+            // TestTimeout.RunAsync and the deliberate fallback is caught here rather than left implicit in a
+            // Task.WhenAny race whose loser is silently discarded.
+            try
+            {
+                await TestTimeout.RunAsync(
+                    operation: $"{participants} concurrent lifecycle savers reach the barrier",
+                    action: async token => await allArrived.Task.WaitAsync(token),
+                    timeout: maximumWait,
+                    cancellationToken);
+            }
+            catch (TestTimeoutException)
+            {
+                // Fewer participants arrived than expected; releasing the waiter is the intended behaviour.
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
         }
     }
@@ -731,50 +749,69 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
             "create MAN-631 test volume",
             TimeSpan.FromSeconds(30));
 
+    /// <summary>
+    /// Real container startup: bounded polling of an observable fact (the container accepts a connection).
+    /// The connection string is a sensitive value so a timeout never prints credentials.
+    /// </summary>
     private static async Task WaitForPostgresAsync(string connectionString)
     {
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            try
+        await Eventually.WaitAsync(
+            condition: "the Docker PostgreSQL container accepts connections",
+            observe: async token =>
             {
-                await using var connection = new NpgsqlConnection(connectionString);
-                await connection.OpenAsync();
-                return;
-            }
-            catch (Exception exception)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Docker PostgreSQL did not become ready within two minutes ({lastException?.GetType().Name ?? "unknown"}).");
+                try
+                {
+                    await using var connection = new NpgsqlConnection(connectionString);
+                    await connection.OpenAsync(token);
+                    return (Accepted: true, Failure: (Exception?)null);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return (Accepted: false, Failure: exception);
+                }
+            },
+            isSatisfied: observation => observation.Accepted,
+            describe: observation => observation.Accepted
+                ? "accepting connections"
+                : $"not ready yet: {observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromMinutes(2),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [connectionString]));
     }
 
+    /// <summary>
+    /// Real container startup: bounded polling of an observable fact (the container answers PING).
+    /// StackExchange.Redis exposes no <see cref="CancellationToken"/> overloads (its budget is the
+    /// multiplexer's own connect/sync timeouts), so this observation genuinely cannot honour the window
+    /// token — unlike the PostgreSQL probe above, which does. Eventually abandons the observation when the
+    /// window closes, so a wedged multiplexer still fails the test instead of parking it.
+    /// </summary>
     private static async Task WaitForRedisAsync(string connectionString)
     {
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            try
+        await Eventually.WaitAsync(
+            condition: "the Docker Redis container answers PING",
+            observe: async _ =>
             {
-                await using var connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
-                await connection.GetDatabase().PingAsync();
-                return;
-            }
-            catch (Exception exception)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Docker Redis did not become ready within two minutes ({lastException?.GetType().Name ?? "unknown"}).");
+                try
+                {
+                    await using var connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
+                    await connection.GetDatabase().PingAsync();
+                    return (Accepted: true, Failure: (Exception?)null);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return (Accepted: false, Failure: exception);
+                }
+            },
+            isSatisfied: observation => observation.Accepted,
+            describe: observation => observation.Accepted
+                ? "answering PING"
+                : $"not ready yet: {observation.Failure?.GetType().Name}: {observation.Failure?.Message}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromMinutes(2),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [connectionString]));
     }
 
     private static int ParsePublishedPort(string output)

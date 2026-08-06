@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
 using System.Reflection;
@@ -174,12 +175,13 @@ public sealed class MesCapSubscriptionTests
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the work-center unavailable window and rescheduled", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var window = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(x => x.DeviceAssetId == "ASSET-CNC-01");
-            var result = await dbContext.ScheduleResults.SingleOrDefaultAsync();
+            var window = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
+                x => x.DeviceAssetId == "ASSET-CNC-01", token);
+            var result = await dbContext.ScheduleResults.SingleOrDefaultAsync(token);
 
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
@@ -369,16 +371,17 @@ public sealed class MesCapSubscriptionTests
         string expectedHeldInspectionRecordId,
         int expectedInboxCount)
     {
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync($"the MES CAP consumer projected the quality hold (active={active}) and its inbox receipt", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var hold = await dbContext.QualityHoldContexts.AsNoTracking().SingleOrDefaultAsync(x =>
                 x.OrganizationId == "org-001" &&
                 x.EnvironmentId == "env-dev" &&
-                x.SourceDocumentId == "WO-MAN-429");
+                x.SourceDocumentId == "WO-MAN-429", token);
             var inboxCount = await dbContext.ProcessedIntegrationEvents.AsNoTracking().CountAsync(x =>
-                x.ConsumerName == QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName);
+                x.ConsumerName == QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+                token);
 
             Assert.NotNull(hold);
             Assert.Equal(active, hold.Active);
@@ -458,28 +461,19 @@ public sealed class MesCapSubscriptionTests
         return $"{candidate.GetType().Name}({string.Join("; ", properties)})";
     }
 
-    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    /// <summary>
+    /// Real CAP dispatch against real PostgreSQL: the consumer runs on its own scope, so the only observable
+    /// fact is the persisted MES state. Bounded polling of that fact, reporting the last failed assertion.
+    /// </summary>
+    private static async Task AssertEventuallyAsync(string condition, Func<CancellationToken, Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
-            {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        if (lastException is not null)
-        {
-            throw lastException;
-        }
+        await Eventually.AssertAsync(
+            condition: condition,
+            assertion: assertion,
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(30),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [ReadPostgresConnectionString()]));
     }
 
     private static string ReadPostgresConnectionString()

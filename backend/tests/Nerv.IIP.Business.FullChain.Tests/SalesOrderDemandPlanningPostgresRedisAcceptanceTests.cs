@@ -6,6 +6,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.FullChain.Tests;
@@ -62,25 +63,27 @@ public sealed class SalesOrderDemandPlanningPostgresRedisAcceptanceTests
         await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), duplicateEvent);
         await publisher.PublishAsync(nameof(SalesOrderChangedIntegrationEvent), staleEvent);
 
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
-        do
-        {
-            await using var verificationScope = provider.CreateAsyncScope();
-            var dbContext = verificationScope.ServiceProvider.GetRequiredService<DemandPlanningDbContext>();
-            var consumedEventIds = await dbContext.ProcessedIntegrationEvents
-                .AsNoTracking()
-                .Where(x => x.EventId == duplicateEvent.EventId || x.EventId == staleEvent.EventId)
-                .Select(x => x.EventId)
-                .ToArrayAsync();
-            if (consumedEventIds.Distinct(StringComparer.Ordinal).Count() == 2)
+        // Real Redis CAP transport: DemandPlanning consumes in its own scope, so the only observable fact is
+        // the persisted consumer evidence. Poll it on a bounded budget and report the last observation.
+        await Eventually.WaitAsync(
+            condition: "DemandPlanning persisted consumer evidence for both injected duplicate/out-of-order events",
+            observe: async token =>
             {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        } while (DateTimeOffset.UtcNow < deadline);
-
-        throw new TimeoutException("DemandPlanning did not persist consumer evidence for both injected duplicate-business-version/out-of-order events.");
+                await using var verificationScope = provider.CreateAsyncScope();
+                var dbContext = verificationScope.ServiceProvider.GetRequiredService<DemandPlanningDbContext>();
+                var consumedEventIds = await dbContext.ProcessedIntegrationEvents
+                    .AsNoTracking()
+                    .Where(x => x.EventId == duplicateEvent.EventId || x.EventId == staleEvent.EventId)
+                    .Select(x => x.EventId)
+                    .ToArrayAsync(token);
+                return consumedEventIds.Distinct(StringComparer.Ordinal).Count();
+            },
+            isSatisfied: distinctConsumed => distinctConsumed == 2,
+            describe: distinctConsumed => $"distinctConsumedEvents={distinctConsumed}; expected=2",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(45),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [postgres, redis]));
     }
 
     private static SalesOrderChangedIntegrationEvent Changed(string salesOrderId, int version, decimal quantity, string eventSuffix) =>

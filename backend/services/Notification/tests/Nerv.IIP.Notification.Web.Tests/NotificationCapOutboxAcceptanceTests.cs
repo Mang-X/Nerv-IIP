@@ -12,6 +12,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
 using System.Net.Sockets;
@@ -41,17 +42,17 @@ public sealed class NotificationCapOutboxAcceptanceTests
 
         await PublishAsync(factory, CreateFailedEvent("event-cap-inmemory", "operation-task-failed:cap-inmemory"), useTransaction: false);
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync(async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var intent = await dbContext.NotificationIntents
                 .Include(x => x.Messages)
-                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-inmemory");
-            var published = await CapTableHasRowsAsync(dbContext, "published");
-            var received = await CapTableHasRowsAsync(dbContext, "received");
+                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-inmemory", token);
+            var published = await CapTableHasRowsAsync(dbContext, "published", token);
+            var received = await CapTableHasRowsAsync(dbContext, "received", token);
 
-            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext));
+            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext, token));
             Assert.Equal(NotificationContractConstants.IntentTypeTask, intent.IntentType);
             Assert.True(published, "CAP outbox should record the published message.");
             Assert.True(received, "CAP inbox should record the consumed message.");
@@ -87,17 +88,17 @@ public sealed class NotificationCapOutboxAcceptanceTests
 
         await PublishAsync(factory, CreateFailedEvent("event-cap-rabbitmq", "operation-task-failed:cap-rabbitmq"), useTransaction: true);
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync(async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var intent = await dbContext.NotificationIntents
                 .Include(x => x.Messages)
-                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-rabbitmq");
-            var published = await CapTableHasRowsAsync(dbContext, "published");
-            var received = await CapTableHasRowsAsync(dbContext, "received");
+                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-rabbitmq", token);
+            var published = await CapTableHasRowsAsync(dbContext, "published", token);
+            var received = await CapTableHasRowsAsync(dbContext, "received", token);
 
-            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext));
+            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext, token));
             Assert.Equal(NotificationContractConstants.IntentTypeTask, intent.IntentType);
             Assert.True(published, "CAP outbox should record the published message.");
             Assert.True(received, "CAP inbox should record the consumed message.");
@@ -146,14 +147,14 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 },
             useTransaction: true);
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync(async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var deadLetter = await dbContext.Set<IntegrationEventDeadLetter>()
-                .SingleOrDefaultAsync(x => x.EventId == "event-cap-rabbitmq-poison");
+                .SingleOrDefaultAsync(x => x.EventId == "event-cap-rabbitmq-poison", token);
 
-            Assert.True(deadLetter is not null, await ReadCapDebugAsync(dbContext));
+            Assert.True(deadLetter is not null, await ReadCapDebugAsync(dbContext, token));
             Assert.Equal(IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode, deadLetter.FailureCode);
             Assert.Equal(IntegrationEventDeadLetterStatus.Pending, deadLetter.Status);
             Assert.StartsWith(OperationTaskFailedIntegrationEventHandlerForNotification.ConsumerName, deadLetter.ConsumerName, StringComparison.Ordinal);
@@ -161,14 +162,14 @@ public sealed class NotificationCapOutboxAcceptanceTests
 
         await PublishAsync(factory, CreateFailedEvent("event-cap-rabbitmq-after-poison", "operation-task-failed:cap-rabbitmq-after-poison"), useTransaction: true);
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync(async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var intent = await dbContext.NotificationIntents
-                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-rabbitmq-after-poison");
+                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-rabbitmq-after-poison", token);
 
-            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext));
+            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext, token));
             Assert.Equal(NotificationContractConstants.IntentTypeTask, intent.IntentType);
         });
     }
@@ -264,20 +265,23 @@ public sealed class NotificationCapOutboxAcceptanceTests
         await publisher.PublishAsync(TopicName, integrationEvent);
     }
 
-    private static async Task<bool> CapTableHasRowsAsync(ApplicationDbContext dbContext, string tableName)
+    private static async Task<bool> CapTableHasRowsAsync(
+        ApplicationDbContext dbContext,
+        string tableName,
+        CancellationToken cancellationToken)
     {
         var connection = dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
         if (shouldClose)
         {
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
         }
 
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = $"""SELECT EXISTS (SELECT 1 FROM cap."{tableName}");""";
-            return await command.ExecuteScalarAsync() is true;
+            return await command.ExecuteScalarAsync(cancellationToken) is true;
         }
         finally
         {
@@ -288,20 +292,25 @@ public sealed class NotificationCapOutboxAcceptanceTests
         }
     }
 
-    private static async Task<string> ReadCapDebugAsync(ApplicationDbContext dbContext)
+    private static async Task<string> ReadCapDebugAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
     {
-        var published = await ReadCapRowsAsync(dbContext, "published");
-        var received = await ReadCapRowsAsync(dbContext, "received");
+        var published = await ReadCapRowsAsync(dbContext, "published", cancellationToken);
+        var received = await ReadCapRowsAsync(dbContext, "received", cancellationToken);
         return $"Notification intent was not created. CAP published={published}; CAP received={received}";
     }
 
-    private static async Task<string> ReadCapRowsAsync(ApplicationDbContext dbContext, string tableName)
+    private static async Task<string> ReadCapRowsAsync(
+        ApplicationDbContext dbContext,
+        string tableName,
+        CancellationToken cancellationToken)
     {
         var connection = dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
         if (shouldClose)
         {
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
         }
 
         try
@@ -311,7 +320,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 SELECT COALESCE(jsonb_agg(to_jsonb(rows)), '[]'::jsonb)::text
                 FROM (SELECT * FROM cap."{tableName}" LIMIT 5) rows;
                 """;
-            return (await command.ExecuteScalarAsync())?.ToString() ?? "[]";
+            return (await command.ExecuteScalarAsync(cancellationToken))?.ToString() ?? "[]";
         }
         finally
         {
@@ -358,28 +367,21 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 FailureCode: "timeout"));
     }
 
-    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    /// <summary>
+    /// CAP delivery is real transport plus a real PostgreSQL round trip, so the completion instant is
+    /// not knowable in advance — this polls the observable fact under a bounded budget. The hand-rolled
+    /// loop this replaced could also pass silently: if the clock had already run past the deadline
+    /// before the first attempt, it fell out of the loop with no observation and no failure.
+    /// </summary>
+    private static async Task AssertEventuallyAsync(Func<CancellationToken, Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
-            {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        if (lastException is not null)
-        {
-            throw lastException;
-        }
+        await Eventually.AssertAsync(
+            condition: "the notification CAP outbox assertion to hold",
+            assertion: assertion,
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(30),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [ReadPostgresConnectionString()]));
     }
 
     private static string ReadPostgresConnectionString()
