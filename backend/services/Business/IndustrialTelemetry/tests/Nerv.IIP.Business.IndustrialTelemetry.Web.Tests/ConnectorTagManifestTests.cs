@@ -13,6 +13,8 @@ using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
+using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
@@ -295,8 +297,15 @@ public sealed class ConnectorTagManifestTests
     [Fact]
     public void Coverage_projection_translates_for_npgsql_and_uses_only_the_full_key_summary_join()
     {
+        // 只做翻译：EF 在建立连接**之前**完成 SQL 生成，这里从头到尾不会拨号。连接串仍然指向一个
+        // 显式「连接被拒」夹具，这样万一回归让它真的去连库，会立刻拿到 ConnectionRefused 而不是挂住。
+        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=127.0.0.1;Port=1;Database=translation_only;Username=nerv;Password=nerv")
+            .UseNpgsql(UnreachablePostgres.ConnectionRefusedConnectionString(
+                refused,
+                database: "translation_only",
+                username: "nerv",
+                password: "nerv"))
             .Options;
         using var dbContext = new ApplicationDbContext(options, new NoopMediator());
 

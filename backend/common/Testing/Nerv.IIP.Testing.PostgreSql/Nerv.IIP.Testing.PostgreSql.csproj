@@ -10,6 +10,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Nerv.IIP.Testing.PostgreSql.Tests" />
   </ItemGroup>
 </Project>

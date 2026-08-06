@@ -27,14 +27,19 @@ public sealed class PostgreSqlTestDatabaseTests
     [Fact]
     public async Task Connection_failures_are_diagnostic_without_leaking_credentials()
     {
-        var connectionString =
-            $"Host=127.0.0.1;Port=1;Timeout=1;Database=postgres;Username=test-user;Password={Secret}";
+        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+        var connectionString = UnreachablePostgres.ConnectionRefusedConnectionString(
+            refused,
+            database: "postgres",
+            username: "test-user",
+            password: Secret);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             PostgreSqlTestDatabase.CreateAsync(connectionString, "redaction"));
 
         Assert.Contains("operation=create", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("host=127.0.0.1", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"host={refused.Host}", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"port={refused.Port}", exception.Message, StringComparison.Ordinal);
         Assert.Contains("usernameConfigured=True", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Secret, exception.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("test-user", exception.ToString(), StringComparison.Ordinal);
@@ -47,9 +52,15 @@ public sealed class PostgreSqlTestDatabaseTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
+        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             PostgreSqlTestDatabase.CreateAsync(
-                $"Host=127.0.0.1;Port=1;Database=postgres;Username=test-user;Password={Secret}",
+                UnreachablePostgres.ConnectionRefusedConnectionString(
+                    refused,
+                    database: "postgres",
+                    username: "test-user",
+                    password: Secret),
                 "cancelled",
                 cancellationToken: cancellation.Token));
     }

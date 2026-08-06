@@ -162,16 +162,6 @@
       "expiresOn": "2026-09-05"
     },
     {
-      "path": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/ConnectorTagManifestTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "6e8b890e80b8c9b4de20f73adc76725e7c2a4aa1e7fe55b30083c03c8e29a377",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The connector tag-manifest test uses Npgsql port one only to compile the coverage projection and prove the full-key summary join translates without opening a database.",
-      "exitCondition": "Delete when production-provider translation can be asserted through an owned provider fixture without an unreachable connection sentinel.",
-      "expiresOn": "2026-08-25"
-    },
-    {
       "path": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryDirectoryPostgresTests.cs",
       "pattern": "Task.Delay",
       "lineTextSha256": "e50dcd403a5a6b20348eb4780a1efacbec0ecc0f2f812a649e8f783ee47290c8",
@@ -262,16 +252,6 @@
       "expiresOn": "2026-09-05"
     },
     {
-      "path": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityCalibrationRecordQueryTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "59add1f6ccdd5511268aa9f4caf6cfeda0265fc5d1f5af7286c6ca030f33baba",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The calibration query regression uses Npgsql port one so successful production-provider translation reaches connection failure while untranslatable LINQ fails earlier.",
-      "exitCondition": "Delete when Npgsql translation can be asserted directly without distinguishing it through an unreachable connection.",
-      "expiresOn": "2026-08-25"
-    },
-    {
       "path": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/HttpSchedulingEquipmentAvailabilityProviderBatchingTests.cs",
       "pattern": "Task.Delay",
       "lineTextSha256": "8f5ac73e6ea8b6c865526009772e3b866f94501f1f5bc951a7d15a8a874339d4",
@@ -292,33 +272,23 @@
       "expiresOn": "2026-09-05"
     },
     {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamEnterpriseIdentityTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "0211c717deb3aec65df014eff9c7d9f15b05352e7c7db46cd25213b2458fbdc2",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The production enterprise-identity factory pins IAM PostgreSQL to port one so OIDC, MFA, and external-client guards can be tested without a live persistence dependency.",
-      "exitCondition": "Delete when these production identity tests inject an owned IAM store or deterministic failing connection fixture.",
-      "expiresOn": "2026-08-25"
-    },
-    {
       "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
       "pattern": "StaticSetter",
       "lineTextSha256": "2c7c077eab33ab3978c97e3b7760d744a6808fd45bc6d0452f5ec8b001806d32",
       "occurrenceCount": 1,
       "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests configure unreachable PostgreSQL and process environment state to prove unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host and use an owned persistence probe rather than process globals and port one.",
+      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
+      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
       "expiresOn": "2026-09-12"
     },
     {
       "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
       "pattern": "StaticSetter",
-      "lineTextSha256": "419b5864e427405a40485a2d5cdaa76e9abad11b5501bf84672ab055f45363fd",
+      "lineTextSha256": "c22fa3cec9262f9e90946e27fea29341bac3f770f71816bc758a7fdedb6a4f3f",
       "occurrenceCount": 1,
       "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests configure unreachable PostgreSQL and process environment state to prove unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host and use an owned persistence probe rather than process globals and port one.",
+      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
+      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
       "expiresOn": "2026-09-12"
     },
     {
@@ -327,29 +297,9 @@
       "lineTextSha256": "c19646d535388ba28959c822eafd2628b1be9f0af7c39c49573fcb648caee96a",
       "occurrenceCount": 1,
       "ownerIssue": "#1471",
-      "reason": "The IAM management authorization tests configure unreachable PostgreSQL and process environment state to prove unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host and use an owned persistence probe rather than process globals and port one.",
+      "reason": "The IAM management authorization tests set process environment state to configure the host's persistence provider and connection string, proving unauthorized requests are rejected before persistence, then restore the environment.",
+      "exitCondition": "Delete when the tests supply persistence settings per host instead of through process globals.",
       "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "0211c717deb3aec65df014eff9c7d9f15b05352e7c7db46cd25213b2458fbdc2",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The IAM management authorization tests configure unreachable PostgreSQL and process environment state to prove unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host and use an owned persistence probe rather than process globals and port one.",
-      "expiresOn": "2026-08-25"
-    },
-    {
-      "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "419b5864e427405a40485a2d5cdaa76e9abad11b5501bf84672ab055f45363fd",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The IAM management authorization tests configure unreachable PostgreSQL and process environment state to prove unauthorized requests are rejected before persistence, then restore the environment.",
-      "exitCondition": "Delete when the tests supply persistence settings per host and use an owned persistence probe rather than process globals and port one.",
-      "expiresOn": "2026-08-25"
     },
     {
       "path": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
@@ -680,26 +630,6 @@
       "reason": "The OTLP protocol precedence test sets OTEL_EXPORTER_OTLP_PROTOCOL to http/protobuf, verifies it overrides configured grpc, and restores the prior value.",
       "exitCondition": "Delete when the protocol resolver accepts an isolated environment abstraction or explicit environment-value dictionary.",
       "expiresOn": "2026-09-12"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "9f54b1cc15e585a04b95a520c6a6e5f0adf2a06747736d04ebd79f5268258135",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The PostgreSQL test-database tests use port one to verify connection diagnostics redact credentials and precancelled creation stops before connecting.",
-      "exitCondition": "Delete when an owned deterministic failing connector can prove redaction and preconnection cancellation without a port-one sentinel.",
-      "expiresOn": "2026-08-25"
-    },
-    {
-      "path": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs",
-      "pattern": "UnreachableAddress",
-      "lineTextSha256": "bf943d8274a85cdf701bffb8f916ae0945dc9ce76e5dc4a2c2ff078ebe028856",
-      "occurrenceCount": 1,
-      "ownerIssue": "#1472",
-      "reason": "The PostgreSQL test-database tests use port one to verify connection diagnostics redact credentials and precancelled creation stops before connecting.",
-      "exitCondition": "Delete when an owned deterministic failing connector can prove redaction and preconnection cancellation without a port-one sentinel.",
-      "expiresOn": "2026-08-25"
     },
     {
       "path": "backend/tests/Nerv.IIP.Testing.Tests/CapTestHostTests.cs",

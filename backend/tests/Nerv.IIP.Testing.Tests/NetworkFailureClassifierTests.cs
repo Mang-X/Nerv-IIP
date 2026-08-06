@@ -35,6 +35,55 @@ public sealed class NetworkFailureClassifierTests
     }
 
     [Theory]
+    [InlineData(SocketError.ConnectionRefused, NetworkFailureKind.ConnectionRefused, "Connection was refused.")]
+    [InlineData(SocketError.HostNotFound, NetworkFailureKind.Dns, "DNS name resolution failed.")]
+    [InlineData(SocketError.NoData, NetworkFailureKind.Dns, "DNS name resolution failed.")]
+    [InlineData(SocketError.TryAgain, NetworkFailureKind.Dns, "DNS name resolution failed.")]
+    [InlineData(SocketError.TimedOut, NetworkFailureKind.RequestTimeout, "Request timed out.")]
+    public void FromException_ClassifiesNonHttpSocketFailuresWithTheSameVocabulary(
+        SocketError socketError,
+        NetworkFailureKind expectedKind,
+        string expectedDiagnostic)
+    {
+        // Npgsql and other non-HTTP clients surface transport failures as a SocketException nested
+        // in a driver exception; they must land in the same four-way split as HttpClient does.
+        var exception = new InvalidOperationException(
+            "driver failure",
+            new SocketException((int)socketError));
+
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
+
+        Assert.Equal(expectedKind, observation.Kind);
+        Assert.Null(observation.StatusCode);
+        Assert.Equal(expectedDiagnostic, observation.Diagnostic);
+    }
+
+    [Fact]
+    public void FromException_RejectsSocketFailuresOutsideTheSupportedSplit()
+    {
+        var exception = new SocketException((int)SocketError.AccessDenied);
+
+        Assert.Throws<ArgumentException>(() =>
+            NetworkFailureClassifier.FromException(exception, CancellationToken.None));
+    }
+
+    [Fact]
+    public void FromException_KeepsCallerCancellationEvenWhenATransportFailureIsNested()
+    {
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+        var exception = new OperationCanceledException(
+            "caller cancelled",
+            new SocketException((int)SocketError.ConnectionRefused),
+            callerCancellation.Token);
+
+        var rethrown = Assert.ThrowsAny<OperationCanceledException>(() =>
+            NetworkFailureClassifier.FromException(exception, callerCancellation.Token));
+
+        Assert.Same(exception, rethrown);
+    }
+
+    [Theory]
     [MemberData(nameof(TimeoutExceptions))]
     public void FromException_ClassifiesHelperOwnedCancellationAsRequestTimeout(Exception exception)
     {

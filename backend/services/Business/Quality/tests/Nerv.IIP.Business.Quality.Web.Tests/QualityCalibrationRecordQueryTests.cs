@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.MeasuringDevices;
-using Npgsql;
+using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -19,20 +20,27 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 ///
 /// 当初逃过 CI 的原因：服务侧该读面零测试，而网关测试用的是 fake 实现 —— 这条 LINQ 从未对任何
 /// 关系型 provider 执行过。所以这里的第一组测试刻意做成**不需要数据库**：EF 的查询翻译发生在建立连接
-/// **之前**，因此指向一个不可达的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
+/// **之前**，因此指向一个必然被拒的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
 /// 真正门禁住这类 provider 翻译回归。
 ///
 /// 注意不要改用 SQLite 兜这个底：SQLite 不支持 <c>DateTimeOffset</c> 的 ORDER BY，会给出与生产
 /// provider 无关的假红；而 InMemory provider 会做客户端求值，给出假绿。
+///
+/// 「连不上库」这一步不能靠某个 IP 恰好超时：连接目标由
+/// <see cref="NetworkFailureFixture.ReserveRefusedLoopbackEndpoint"/> 提供 —— 一个刚绑定又立刻释放的
+/// 本地端口，任何机器上都必然回 <see cref="NetworkFailureKind.ConnectionRefused"/>。
 /// </summary>
 public sealed class QualityCalibrationRecordQueryTests
 {
     private const string OrganizationId = "org-001";
     private const string EnvironmentId = "env-dev";
 
-    /// <summary>指向一个必然连不上的端口：翻译成功后才会走到连接失败。</summary>
-    private const string UnreachablePostgres =
-        "Host=127.0.0.1;Port=1;Database=nerv_iip_translation_probe;Username=probe;Password=probe;Timeout=1;Command Timeout=1";
+    /// <summary>
+    /// 指向一个必然被拒的本地端口：翻译成功后才会走到连接失败。连接预算与 request 预算由
+    /// <see cref="UnreachablePostgres"/> 分开显式配置，不用一个模糊总时长冒充两者。
+    /// </summary>
+    private static readonly RefusedTcpEndpoint RefusedPostgres =
+        NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
 
     /// <summary>
     /// 五日期 Theory（含 2026-07-27 边界日）× 全部筛选组合：断言查询能被生产 provider 翻译。
@@ -188,20 +196,28 @@ public sealed class QualityCalibrationRecordQueryTests
         }
 
         // 翻译成功的证据：执行走到了「建立连接」这一步才失败。若 LINQ 不可翻译，EF 会在建连之前
-        // 就抛出 InvalidOperationException，异常链里不会出现任何 Npgsql 连接异常。
-        var reachedConnection = Unwind(exception)
-            .Any(x => x is NpgsqlException || x is System.Net.Sockets.SocketException || x is TimeoutException);
+        // 就抛出 InvalidOperationException，异常链里不会出现任何 socket 层异常。
+        var reachedTransport = Unwind(exception).Any(x => x is System.Net.Sockets.SocketException);
 
         Assert.True(
-            reachedConnection,
+            reachedTransport,
             "查询未能被生产 provider 翻译（执行在建立连接之前就失败了）：\n"
                 + string.Join("\n", Unwind(exception).Select(x => $"  {x.GetType().FullName}: {x.Message}")));
+
+        // 且失败必须正好是「连接被拒」：既不是 DNS，也不是某个恰好超时的地址。
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
+        Assert.Equal(NetworkFailureKind.ConnectionRefused, observation.Kind);
     }
 
     private static ApplicationDbContext CreateNpgsqlContext()
     {
+        var connectionString = UnreachablePostgres.ConnectionRefusedConnectionString(
+            RefusedPostgres,
+            database: "nerv_iip_translation_probe",
+            username: "probe",
+            password: "probe");
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(UnreachablePostgres, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
+            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
