@@ -54,6 +54,19 @@ jobs:
   # these comments deliberately do not restate it, because a restated list drifts the next time the
   # shards are rebalanced.
   #
+  # One weighting input from that rebalance did NOT survive it. Recorded here so the next pass does
+  # not inherit it: business-core-b (backend-shard-4) was given the lowest TRX share because it had
+  # the worst step-to-TRX ratio on the pre-rebalance run 30999368607 — 265s step for 191.7s TRX,
+  # ratio 1.38, against business-core-a's 372s/357.5s = 1.04. That ratio described a project set
+  # that no longer exists: the rebalance moved 7 of that shard's 9 projects out, and step-minus-TRX
+  # is the dependency closure's restore/build cost, which travels with the projects, not with the
+  # lane label. Post-rebalance, on the three runs where both shards produced a reading
+  # (31114441118, 31115903098, 31118427925), business-core-b is the *fastest* shard of the four
+  # (144s / 196s / 142s test step) and business-core-a is the critical path (249s / 252s / 234s) —
+  # the shard was over-lightened, not correctly lightened. The gap sits inside runner variance, so
+  # PR-A does not re-cut the split; but the next rebalance (MAN-664) must re-derive weights from
+  # post-rebalance measurements and must NOT carry the 1.38 forward.
+  #
   # Re-derived from three runs of this branch (31114441118, 31115903098, 31116998822). Per-shard
   # test steps were 3.5m / 3.0m / 4.2m / 2.4m, then 4.5m / 3.0m / 4.2m / 3.3m, then 4.7m / 3.1m /
   # (setup-failed) / 3.1m; TRX elapsed 129.8s / 150.6s / 164.5s / 112.9s, then 215.5 / 144.5 /
@@ -66,6 +79,15 @@ jobs:
   #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
   #
   # That arithmetic is the tier A obligation above; changing any one number means re-checking it.
+  #
+  # Note what the shared budget does *not* let you do. This holds identically for all four shards —
+  # their step vectors are the same 3 / 5 / 8 / 3 / 10 / 5 / 5 — so it is stated once here rather
+  # than in any one job: the six non-test steps already carry a mandatory 29m of shared-convention
+  # budget, so tier A's strict job > step-sum requirement makes 45m the structural floor the
+  # invariant leaves behind, not a claim about any shard's runtime. The budget that actually fires
+  # on a hung run is the 10m test step. If it ever approaches 10m, raise both budgets rather than
+  # only the step one, or the strict inequality stops protecting the evidence steps.
+  #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   backend-tests:
@@ -121,13 +143,6 @@ jobs:
     # `jobs:`. The job name is frozen because MAN-661 maps evidence lane backend-shard-1 to it in
     # scripts/lib/TestEvidence.ps1 — the name identifies the lane, not the shard's contents, which
     # live only in scripts/backend-test-shards.json.
-    #
-    # Note what the shared budget does *not* let you do: tier A requires job > step sum, and the six
-    # non-test steps already carry a mandatory 29m of shared-convention budget, so 45m is the
-    # structural floor the invariant leaves behind, not a claim about this job's runtime. The budget
-    # that actually fires on a hung run is the 10m test step. If it ever approaches 10m, raise both
-    # budgets rather than only the step one, or the strict inequality stops protecting the evidence
-    # steps.
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -391,10 +406,9 @@ jobs:
   backend-tests-business-core-b:
     name: Backend Tests - Business Core B
     # Tier A; shared shard budget 39m < 45m, derived once in the timeout policy at the top of
-    # `jobs:`. Job name frozen: MAN-661 maps evidence lane backend-shard-4 to it. This is the shard
-    # MAN-669 PR-A deliberately gave the lowest TRX share, because it measured the worst
-    # step-to-TRX ratio before the rebalance (265s step for 191.7s TRX on run 30999368607); the
-    # weighting rationale lives with the split itself in scripts/backend-test-shards.json.
+    # `jobs:`. Job name frozen: MAN-661 maps evidence lane backend-shard-4 to it. MAN-669 PR-A gave
+    # this shard the lowest TRX share; that weighting rested on a pre-rebalance step-to-TRX ratio
+    # which the rebalance itself falsified — see the timeout policy at the top of `jobs:`.
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
