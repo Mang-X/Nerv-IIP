@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.MeasuringDevices;
-using Npgsql;
+using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -19,20 +20,32 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 ///
 /// 当初逃过 CI 的原因：服务侧该读面零测试，而网关测试用的是 fake 实现 —— 这条 LINQ 从未对任何
 /// 关系型 provider 执行过。所以这里的第一组测试刻意做成**不需要数据库**：EF 的查询翻译发生在建立连接
-/// **之前**，因此指向一个不可达的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
+/// **之前**，因此指向一个预期被拒的 Npgsql 连接串就能把「翻译失败」和「连不上库」区分开，从而在 CI 里
 /// 真正门禁住这类 provider 翻译回归。
 ///
 /// 注意不要改用 SQLite 兜这个底：SQLite 不支持 <c>DateTimeOffset</c> 的 ORDER BY，会给出与生产
 /// provider 无关的假红；而 InMemory provider 会做客户端求值，给出假绿。
+///
+/// 「连不上库」这一步不能靠某个 IP 恰好超时：连接目标由
+/// <see cref="NetworkFailureFixture.ReserveRefusedLoopbackEndpoint"/> 提供 —— 一个刚绑定又立刻释放的
+/// 本地端口，不经 DNS 解析器也不经防火墙策略，因此结果不随机器配置而变。这**不是**绝对保证：该端口
+/// 在返回后回到 ephemeral 池，仍存在被同机其他进程抢占的窗口（详见该方法的 XML doc 与 #1477）。
+/// 下面的分类断言正是这一前提的守卫 —— 前提一旦被破坏，是断言失败而不是静默改变语义。
 /// </summary>
 public sealed class QualityCalibrationRecordQueryTests
 {
     private const string OrganizationId = "org-001";
     private const string EnvironmentId = "env-dev";
 
-    /// <summary>指向一个必然连不上的端口：翻译成功后才会走到连接失败。</summary>
-    private const string UnreachablePostgres =
-        "Host=127.0.0.1;Port=1;Database=nerv_iip_translation_probe;Username=probe;Password=probe;Timeout=1;Command Timeout=1";
+    /// <summary>
+    /// 指向一个预期被拒的本地端口：翻译成功后才会走到连接失败。
+    ///
+    /// 刻意是**实例**字段而不是 <c>static</c>：xUnit 为每个测试新建一次实例，因此端口按用例预留，
+    /// 而不是由整个测试类长期持有 —— 后者会把「端口已释放、可被同机其他进程占用」的暴露窗口拉长到
+    /// 整个类的生命周期。
+    /// </summary>
+    private readonly RefusedTcpEndpoint _refusedEndpoint =
+        NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
 
     /// <summary>
     /// 五日期 Theory（含 2026-07-27 边界日）× 全部筛选组合：断言查询能被生产 provider 翻译。
@@ -188,20 +201,30 @@ public sealed class QualityCalibrationRecordQueryTests
         }
 
         // 翻译成功的证据：执行走到了「建立连接」这一步才失败。若 LINQ 不可翻译，EF 会在建连之前
-        // 就抛出 InvalidOperationException，异常链里不会出现任何 Npgsql 连接异常。
-        var reachedConnection = Unwind(exception)
-            .Any(x => x is NpgsqlException || x is System.Net.Sockets.SocketException || x is TimeoutException);
+        // 就抛出 InvalidOperationException，异常链里不会出现任何 socket 层异常。
+        var reachedTransport = Unwind(exception).Any(x => x is System.Net.Sockets.SocketException);
 
         Assert.True(
-            reachedConnection,
+            reachedTransport,
             "查询未能被生产 provider 翻译（执行在建立连接之前就失败了）：\n"
                 + string.Join("\n", Unwind(exception).Select(x => $"  {x.GetType().FullName}: {x.Message}")));
+
+        // 且失败必须正好是「连接被拒」：既不是 DNS，也不是某个恰好超时的地址。
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
+        Assert.Equal(NetworkFailureKind.ConnectionRefused, observation.Kind);
     }
 
-    private static ApplicationDbContext CreateNpgsqlContext()
+    private ApplicationDbContext CreateNpgsqlContext()
     {
+        // 两档预算取共享的具名 preset，理由集中在 RefusedPostgresBudgets.RefusedLoopback 一处。
+        var connectionString = RefusedPostgres.ConnectionString(
+            _refusedEndpoint,
+            database: "nerv_iip_translation_probe",
+            username: "probe",
+            password: "probe",
+            RefusedPostgresBudgets.RefusedLoopback);
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(UnreachablePostgres, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
+            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Erp\Nerv.IIP.Contracts.Erp.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Mes\Nerv.IIP.Contracts.Mes.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Wms\Nerv.IIP.Contracts.Wms.csproj" />

@@ -27,14 +27,35 @@ public sealed class PostgreSqlTestDatabaseTests
     [Fact]
     public async Task Connection_failures_are_diagnostic_without_leaking_credentials()
     {
-        var connectionString =
-            $"Host=127.0.0.1;Port=1;Timeout=1;Database=postgres;Username=test-user;Password={Secret}";
+        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+
+        // 两档预算取共享的具名 preset，理由集中在 RefusedPostgresBudgets.RefusedLoopback 一处。
+        var connectionString = RefusedPostgres.ConnectionString(
+            refused,
+            database: "postgres",
+            username: "test-user",
+            password: Secret,
+            RefusedPostgresBudgets.RefusedLoopback);
+
+        // 前提固定：这条用例断言的是「连接失败时的诊断脱敏」，它只有在失败确实是**连接被拒**时才有
+        // 意义。CreateAsync 按契约不保留 InnerException（见末行断言），分类只能在它之外做一次，
+        // 因此这里直接对同一端点拨号并用四分法钉死前提，而不是把「反正会失败」当默认。
+        var probe = await Record.ExceptionAsync(async () =>
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+        });
+        Assert.NotNull(probe);
+        Assert.Equal(
+            NetworkFailureKind.ConnectionRefused,
+            NetworkFailureClassifier.FromException(probe!, CancellationToken.None).Kind);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             PostgreSqlTestDatabase.CreateAsync(connectionString, "redaction"));
 
         Assert.Contains("operation=create", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("host=127.0.0.1", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"host={refused.Host}", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"port={refused.Port}", exception.Message, StringComparison.Ordinal);
         Assert.Contains("usernameConfigured=True", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Secret, exception.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("test-user", exception.ToString(), StringComparison.Ordinal);
@@ -47,9 +68,19 @@ public sealed class PostgreSqlTestDatabaseTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
+        // 这条用例的被测意图是「取消发生在拨号之前」，因此它**不会**产生任何连接尝试，也就没有
+        // 网络失败可供分类；套一句 ConnectionRefused 断言会断言一个不存在的事件。连接串仍指向被拒
+        // 端点，纯粹作为护栏：一旦回归让它先拨号再看取消，会立刻失败而不是挂住。
+        var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             PostgreSqlTestDatabase.CreateAsync(
-                $"Host=127.0.0.1;Port=1;Database=postgres;Username=test-user;Password={Secret}",
+                RefusedPostgres.ConnectionString(
+                    refused,
+                    database: "postgres",
+                    username: "test-user",
+                    password: Secret,
+                    RefusedPostgresBudgets.RefusedLoopback),
                 "cancelled",
                 cancellationToken: cancellation.Token));
     }

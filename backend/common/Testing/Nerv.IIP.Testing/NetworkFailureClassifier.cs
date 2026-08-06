@@ -30,22 +30,8 @@ public static class NetworkFailureClassifier
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        if (exception is HttpRequestException
-            {
-                HttpRequestError: HttpRequestError.NameResolutionError,
-            })
-        {
-            return new(NetworkFailureKind.Dns, null, "DNS name resolution failed.");
-        }
-
-        if (exception is HttpRequestException
-            {
-                HttpRequestError: HttpRequestError.ConnectionError,
-            } && FindSocketException(exception) is { SocketErrorCode: SocketError.ConnectionRefused })
-        {
-            return new(NetworkFailureKind.ConnectionRefused, null, "Connection was refused.");
-        }
-
+        // Cancellation is decided before anything else: a caller-owned cancellation must never be
+        // rewritten as a transport verdict, whatever the inner exception chain happens to contain.
         if (exception is OperationCanceledException)
         {
             if (callerCancellationToken.IsCancellationRequested)
@@ -54,6 +40,35 @@ public static class NetworkFailureClassifier
             }
 
             return new(NetworkFailureKind.RequestTimeout, null, "Request timed out.");
+        }
+
+        if (exception is HttpRequestException
+            {
+                HttpRequestError: HttpRequestError.NameResolutionError,
+            })
+        {
+            return new(NetworkFailureKind.Dns, null, "DNS name resolution failed.");
+        }
+
+        // Non-HTTP clients (Npgsql, raw sockets) surface the same four outcomes through
+        // SocketException, so they are classified from the socket error rather than through a
+        // second, parallel vocabulary.
+        if (FindSocketException(exception) is { } socketException)
+        {
+            switch (socketException.SocketErrorCode)
+            {
+                case SocketError.HostNotFound:
+                case SocketError.NoData:
+                case SocketError.TryAgain:
+                case SocketError.NoRecovery:
+                    return new(NetworkFailureKind.Dns, null, "DNS name resolution failed.");
+                case SocketError.ConnectionRefused:
+                    return new(NetworkFailureKind.ConnectionRefused, null, "Connection was refused.");
+                case SocketError.TimedOut:
+                    return new(NetworkFailureKind.RequestTimeout, null, "Request timed out.");
+                default:
+                    break;
+            }
         }
 
         throw new ArgumentException(
@@ -90,7 +105,7 @@ public static class NetworkFailureClassifier
 
     private static SocketException? FindSocketException(Exception exception)
     {
-        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        for (var current = exception; current is not null; current = current.InnerException)
         {
             if (current is SocketException socketException)
             {

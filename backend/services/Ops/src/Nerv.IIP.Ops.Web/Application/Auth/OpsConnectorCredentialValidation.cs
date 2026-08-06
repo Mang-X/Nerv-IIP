@@ -213,6 +213,11 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
             statusCode);
     }
 
+    // Deliberate boundary duplication of Nerv.IIP.Testing's NetworkFailureClassifier: a shipped
+    // assembly must not reference a test assembly. The two must stay semantically identical —
+    // docs/architecture/backend-test-determinism.md ("网络结果与预算") requires either side to sync
+    // the other and the table whenever the split changes.
+    // OpsConnectorCredentialValidationTests.TransportFailures asserts both sides agree row by row.
     private static string ClassifyTransportFailure(HttpRequestException exception)
     {
         if (exception.HttpRequestError == HttpRequestError.NameResolutionError)
@@ -220,18 +225,42 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
             return "dns";
         }
 
-        if (exception.HttpRequestError == HttpRequestError.ConnectionError
-            && FindSocketException(exception) is { SocketErrorCode: SocketError.ConnectionRefused })
+        // Not gated on HttpRequestError.ConnectionError: the socket error code is the authoritative
+        // signal, and a resolver failure can surface under a different HttpRequestError bucket while
+        // still carrying HostNotFound. Classifying off the bucket alone would report those as a
+        // generic transport error and lose the DNS / refused / timeout split.
+        if (FindSocketException(exception) is { } socketException)
         {
-            return "connection-refused";
+            switch (socketException.SocketErrorCode)
+            {
+                case SocketError.HostNotFound:
+                case SocketError.NoData:
+                case SocketError.TryAgain:
+                case SocketError.NoRecovery:
+                    return "dns";
+                case SocketError.ConnectionRefused:
+                    return "connection-refused";
+
+                // "request-timeout" is the one timeout verdict on both sides and covers a
+                // helper-owned timeout in *either* phase — the connect budget and the request budget
+                // stay separately configured (ConnectTimeout / RequestTimeout above), but the
+                // distinction the classification preserves is caller-owned vs helper-owned
+                // cancellation, not connect-phase vs exchange-phase.
+                case SocketError.TimedOut:
+                    return "request-timeout";
+                default:
+                    break;
+            }
         }
 
         return "transport-error";
     }
 
+    // Starts at the exception itself, not at InnerException: the classifier must not depend on the
+    // socket error being wrapped. Mirrors NetworkFailureClassifier.FindSocketException.
     private static SocketException? FindSocketException(Exception exception)
     {
-        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        for (var current = exception; current is not null; current = current.InnerException)
         {
             if (current is SocketException socketException)
             {
