@@ -358,9 +358,10 @@ MAN-661，普通测试变更不得自行改动门禁口径。
   轮询循环、两条 cancellation 过滤器只剩一份；裁定语义（adjudicate / onWindowClosed / grace 策略）作为
   callback 留在各自一侧。分叉风险此前已可见（两侧 attempts 递增与脱敏时机已经不一致）。
 - **被放弃观测的资源前提写进契约（A4）。** `BoundedObservationWindow` 的 XML 现在把它写成不变量：**`observe`
-  必须自持它触碰的一切资源**（连接、DI scope、`DbContext`），因为它可能在启动它的窗口结束之后仍在运行。今天
-  仓库里不存在违反：`ReadFactsAsync` 自建 `NpgsqlConnection`，三处 `Eventually.AssertAsync` 都在 lambda 内
-  `CreateScope()`。违反的症状是 EF 的「A second operation was started on this context instance」从某个不相干的
+  必须自持它触碰的一切资源**（连接、DI scope、`DbContext`），因为它可能在启动它的窗口结束之后仍在运行。
+  `ReadFactsAsync` 自建 `NpgsqlConnection`，三处 `Eventually.AssertAsync` 都在 lambda 内 `CreateScope()`；
+  当时漏掉的唯一违反位点是 `MesPostgresAdvisoryLockProbe`（闭包复用调用者作用域的连接），已在第五轮修正——
+  见下文。违反的症状是 EF 的「A second operation was started on this context instance」从某个不相干的
   后续行抛出，因此与下一条互为兜底。
 - **`Eventually.AssertAsync` 白名单补上 EF 拼写（A5）。** EF Core 的并发使用错误是**精确**
   `InvalidOperationException`，第二轮的精确类型判据只挡住了 Npgsql 的 `NpgsqlOperationInProgressException`
@@ -457,6 +458,22 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
 
 三处「闭包另读活计数器」（`ConcurrencyFanOutGate` × 2、`ErpSalesOrderDemandConsumerTests` × 3）是**有意**的：
 决定裁决的观测值排在最前，活读数只跟在后面做补充，位点处已有注释说明。它们不构成活对象观测。
+
+## 第五轮走查修复（#1470 / PR #1482）
+
+- **`MesPostgresAdvisoryLockProbe` 的 observe 改为自持连接（C1）。** 这是仓库里最后一处违反
+  `BoundedObservationWindow` 资源不变量的位点：`observe` 闭包复用 `WaitForWaitersAsync` 作用域里的
+  `NpgsqlConnection`/`NpgsqlCommand`。`Eventually` 是正向断言、**不给 grace**，窗口关闭时在飞观测被直接放弃，
+  随后方法返回触发 `await using` 释放——被弃观测与释放竞态成立（后果是一个被 `ConsumeLateFault` 吞掉的
+  `ObjectDisposedException`，即「症状被吞、不变量被破」的最坏组合）。现在每次观测在 lambda 内
+  `await using` 自建连接与命令：被弃观测自带资源，随窗口 token 取消后把连接还给 Npgsql 池，方法返回时不再有
+  共享对象被释放。显式 10 s 连接预算与 caller token 传递（第二轮 S1/H3）原样保留，`connectionString` 继续作为
+  sensitive value 传给 `TestTimeout` 与 `EventuallyOptions`。
+- **开销实测（2026-08-06，`postgres:18` 容器，各 3 轮）。** 最坏情况是 15 s 预算 / 50 ms 轮询 = 约 300 次
+  open/close，但每测试库连接串未关闭池化（只有 admin 串设 `Pooling=false`），因此除首次外都是池的租/还。三个
+  调用点（`MesSchedulePlanProvenancePostgresTests`、`SkuDisabledConsumerTests`、
+  `WorkOrderCapitalizationConcurrencyPostgresTests`，共 10 条用例）实测墙钟：改前 5.19 / 5.79 / 4.41 s，
+  改后 4.40 / 4.16 / 4.25 s——无退化（差异落在噪声内，实际轮询次数远小于最坏值，因为等待边沿在数十毫秒内出现）。
 
 ## MAN-650 迁移状态
 
