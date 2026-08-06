@@ -15,21 +15,14 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 internal static class IamRefusedPersistence
 {
-    // 两档预算在此集中说明，三个调用点共享同一份理由。connect 预算按「本地 loopback 立即 RST」取小：
-    // 它只是防呆的停滞上限，不是预期等待。request 预算取秒级并**刻意大于** connect 预算：它约束的是
-    // 连接建立之后的单条命令，对着被拒端点永远不可能被触发，但一旦回归让该主机变得可达，命令就该按
-    // 真实依赖的正常抖动来兜底，而不是继承一个为 loopback RST 挑的小数字。
-    private static readonly TimeSpan ConnectBudget = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
-
     public static string ConnectionString()
     {
+        // 两档预算取共享的具名 preset，理由集中在 RefusedPostgresBudgets.RefusedLoopback 一处。
         return RefusedPostgres.ConnectionString(
             NetworkFailureFixture.ReserveRefusedLoopbackEndpoint(),
             database: "nerv_iip_iam_unreachable",
             username: "nerv",
             password: "nerv",
-            connectBudget: ConnectBudget,
-            requestBudget: RequestBudget);
+            RefusedPostgresBudgets.RefusedLoopback);
     }
 }

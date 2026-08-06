@@ -23,15 +23,31 @@ public sealed class NetworkFailureFixtureTests
     }
 
     [Fact]
-    public void Reserved_loopback_endpoints_do_not_collide()
+    public void Simultaneously_reserved_loopback_endpoints_do_not_collide()
     {
-        var endpoints = Enumerable.Range(0, 32)
-            .Select(_ => NetworkFailureFixture.ReserveRefusedLoopbackEndpoint())
-            .ToArray();
+        // 断言的对象是**同时持有**的一批预留：读取端口的那一刻 32 个 listener 全部处于 bound 状态，
+        // 内核不会把同一个 addr:port 再交给第二次 bind(0)，因此互异是构造上的必然。
+        //
+        // 这里刻意不对**连续**预留断言互异：单个预留在返回前就已释放端口，OS 并不承诺跳过刚回到
+        // ephemeral 池的端口。那样的断言是把无保证行为当契约，属于自造抖动源；而它本来要防的
+        // 「夹具把同一个端口发两次」在这一批里已被完整覆盖。
+        const int Count = 32;
 
+        var endpoints = NetworkFailureFixture.ReserveRefusedLoopbackEndpoints(Count);
+
+        Assert.Equal(Count, endpoints.Count);
         Assert.All(endpoints, endpoint => Assert.Equal("127.0.0.1", endpoint.Host));
         Assert.All(endpoints, endpoint => Assert.InRange(endpoint.Port, 1024, 65535));
-        Assert.Equal(endpoints.Length, endpoints.Select(endpoint => endpoint.Port).Distinct().Count());
+        Assert.Equal(Count, endpoints.Select(endpoint => endpoint.Port).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Reserving_a_non_positive_batch_is_rejected(int count)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            NetworkFailureFixture.ReserveRefusedLoopbackEndpoints(count));
     }
 
     [Fact]

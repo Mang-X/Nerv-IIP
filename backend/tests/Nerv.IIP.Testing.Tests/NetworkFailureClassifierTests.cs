@@ -85,6 +85,33 @@ public sealed class NetworkFailureClassifierTests
     }
 
     [Theory]
+    [MemberData(nameof(HelperOwnedCancellationsWrappingATransportError))]
+    public void FromException_RanksHelperOwnedCancellationAboveANestedTransportError(Exception exception)
+    {
+        // 分类优先级：取消/超时语义先于内层 socket 错误码判定。放弃这次操作的**是 helper 自己**，
+        // 内层那个 refused/HostNotFound 只是放弃时刻恰好在飞的那一跳，不是本次失败的结论。
+        // 若反过来让内层错误码胜出，「谁拥有这次放弃」就会被一个更靠里的实现细节盖掉。
+        var observation = NetworkFailureClassifier.FromException(exception, CancellationToken.None);
+
+        Assert.Equal(NetworkFailureKind.RequestTimeout, observation.Kind);
+        Assert.Null(observation.StatusCode);
+        Assert.Equal("Request timed out.", observation.Diagnostic);
+    }
+
+    public static TheoryData<Exception> HelperOwnedCancellationsWrappingATransportError => new()
+    {
+        new OperationCanceledException(
+            "helper timeout",
+            new SocketException((int)SocketError.ConnectionRefused)),
+        new TaskCanceledException(
+            "helper timeout",
+            new SocketException((int)SocketError.HostNotFound)),
+        new OperationCanceledException(
+            "helper timeout",
+            new SocketException((int)SocketError.TimedOut)),
+    };
+
+    [Theory]
     [MemberData(nameof(TimeoutExceptions))]
     public void FromException_ClassifiesHelperOwnedCancellationAsRequestTimeout(Exception exception)
     {

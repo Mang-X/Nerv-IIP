@@ -37,13 +37,6 @@ public sealed class QualityCalibrationRecordQueryTests
     private const string OrganizationId = "org-001";
     private const string EnvironmentId = "env-dev";
 
-    // 两档预算显式分开，不用一个模糊总时长冒充两者。connect 预算按「本地 loopback 立即 RST」取小：
-    // 这条用例期望的正是连接被拒，2s 只是停滞上限而非预期等待。request 预算取秒级并**大于** connect
-    // 预算：它约束的是连接建立之后的单条命令，对着被拒端点不可能被触发，但翻译探针一旦被改成对着真库
-    // 跑，命令就该按真实依赖的正常抖动兜底。
-    private static readonly TimeSpan ConnectBudget = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
-
     /// <summary>
     /// 指向一个预期被拒的本地端口：翻译成功后才会走到连接失败。
     ///
@@ -223,13 +216,13 @@ public sealed class QualityCalibrationRecordQueryTests
 
     private ApplicationDbContext CreateNpgsqlContext()
     {
+        // 两档预算取共享的具名 preset，理由集中在 RefusedPostgresBudgets.RefusedLoopback 一处。
         var connectionString = RefusedPostgres.ConnectionString(
             _refusedEndpoint,
             database: "nerv_iip_translation_probe",
             username: "probe",
             password: "probe",
-            connectBudget: ConnectBudget,
-            requestBudget: RequestBudget);
+            RefusedPostgresBudgets.RefusedLoopback);
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "quality"))
             .Options;

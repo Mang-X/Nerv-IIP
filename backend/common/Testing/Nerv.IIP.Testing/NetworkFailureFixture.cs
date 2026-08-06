@@ -54,13 +54,49 @@ public static class NetworkFailureFixture
     /// production classifier and the docs table. Tracked with the identical "reserve then release"
     /// defect in <c>LoopbackPlatform.ReservePort</c> under issue #1477; fix both together.</para>
     /// </summary>
-    public static RefusedTcpEndpoint ReserveRefusedLoopbackEndpoint()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
+    public static RefusedTcpEndpoint ReserveRefusedLoopbackEndpoint() =>
+        ReserveRefusedLoopbackEndpoints(1)[0];
 
-        return new(IPAddress.Loopback, port);
+    /// <summary>
+    /// Reserves <paramref name="count"/> refused loopback endpoints in one batch: every listener is
+    /// bound before any port is read, and all of them are released together afterwards. Each returned
+    /// endpoint carries the same semantics as
+    /// <see cref="ReserveRefusedLoopbackEndpoint"/>, including the same acknowledged release race.
+    ///
+    /// <para><b>Why batch at all.</b> While the listeners are bound the kernel will not hand the same
+    /// <c>addr:port</c> to a second <c>bind(0)</c>, so the ports in one batch are distinct <em>by
+    /// construction</em>. Distinctness across <em>sequential</em> reservations is not a contract and
+    /// must not be asserted as one: this method releases each port before returning, and no OS
+    /// promises to skip a port that just went back into the ephemeral pool.</para>
+    /// </summary>
+    public static IReadOnlyList<RefusedTcpEndpoint> ReserveRefusedLoopbackEndpoints(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+
+        var listeners = new List<TcpListener>(count);
+        try
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var listener = new TcpListener(IPAddress.Loopback, 0);
+                listeners.Add(listener);
+                listener.Start();
+            }
+
+            // Read every port while every listener is still bound — that simultaneity is what makes
+            // the ports distinct.
+            return listeners
+                .Select(listener => new RefusedTcpEndpoint(
+                    IPAddress.Loopback,
+                    ((IPEndPoint)listener.LocalEndpoint).Port))
+                .ToArray();
+        }
+        finally
+        {
+            foreach (var listener in listeners)
+            {
+                listener.Stop();
+            }
+        }
     }
 }

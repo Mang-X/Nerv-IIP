@@ -303,6 +303,53 @@ public sealed class OpsConnectorCredentialValidationTests
     };
 
     [Theory]
+    [MemberData(nameof(CancellationsWrappingATransportError))]
+    public async Task Helper_owned_cancellation_outranks_a_nested_transport_error_on_both_sides(
+        Exception failure,
+        NetworkFailureKind expectedKind,
+        string expectedLogKind)
+    {
+        // 分类**优先级**的镜像行：caller token 未取消、但异常是 OperationCanceledException 且内层
+        // 裹着一个 socket 错误码。两侧都必须让「取消/超时」胜出而不是读内层的 refused/HostNotFound：
+        // 测试侧在 FromException 里取消判定前置于 socket 搜索；生产侧的 OperationCanceledException
+        // catch 块根本不会进 ClassifyTransportFailure。任一侧改成先读内层错误码都会在此变红。
+        Assert.Equal(expectedKind, NetworkFailureClassifier.FromException(failure, CancellationToken.None).Kind);
+
+        using var handler = new ScriptedHttpMessageHandler((_, _) => Task.FromException<HttpResponseMessage>(failure));
+        using var client = CreateClient(handler);
+        var logger = new RecordingLogger<IamOpsConnectorCredentialValidator>();
+        var validator = new IamOpsConnectorCredentialValidator(client, logger);
+
+        var result = await validator.ValidateAsync(CreateRequest("request-secret"), CancellationToken.None);
+
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-unavailable", result.Reason);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(expectedLogKind, entry.Properties["FailureKind"]);
+        Assert.Null(entry.Properties["StatusCode"]);
+        Assert.IsAssignableFrom<OperationCanceledException>(entry.Exception);
+        AssertSafeLog(entry, "request-secret");
+    }
+
+    public static TheoryData<Exception, NetworkFailureKind, string> CancellationsWrappingATransportError => new()
+    {
+        {
+            new OperationCanceledException(
+                "helper timeout",
+                new SocketException((int)SocketError.ConnectionRefused)),
+            NetworkFailureKind.RequestTimeout,
+            "request-timeout"
+        },
+        {
+            new TaskCanceledException(
+                "helper timeout",
+                new SocketException((int)SocketError.HostNotFound)),
+            NetworkFailureKind.RequestTimeout,
+            "request-timeout"
+        }
+    };
+
+    [Theory]
     [MemberData(nameof(UnclassifiedTransportFailures))]
     public async Task Transport_failures_outside_the_split_stay_transport_error_and_fail_closed(
         Exception failure,

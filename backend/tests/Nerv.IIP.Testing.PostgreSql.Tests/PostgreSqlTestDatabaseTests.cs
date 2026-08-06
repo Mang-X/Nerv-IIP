@@ -7,12 +7,6 @@ public sealed class PostgreSqlTestDatabaseTests
 {
     private const string Secret = "postgres-test-diagnostic-secret";
 
-    // connect 预算按「本地 loopback 立即 RST」取小 —— 它是停滞上限而非预期等待；request 预算取秒级
-    // 且大于 connect 预算 —— 它约束连接建立之后的单条命令，对着被拒端点不可能被触发，但一旦这些用例
-    // 被指向真库，命令就该按真实依赖的正常抖动兜底，而不是继承为 loopback 挑的小数字。
-    private static readonly TimeSpan ConnectBudget = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(10);
-
     [Fact]
     public void Database_names_are_bounded_safe_and_unique_for_parallel_tests()
     {
@@ -34,13 +28,14 @@ public sealed class PostgreSqlTestDatabaseTests
     public async Task Connection_failures_are_diagnostic_without_leaking_credentials()
     {
         var refused = NetworkFailureFixture.ReserveRefusedLoopbackEndpoint();
+
+        // 两档预算取共享的具名 preset，理由集中在 RefusedPostgresBudgets.RefusedLoopback 一处。
         var connectionString = RefusedPostgres.ConnectionString(
             refused,
             database: "postgres",
             username: "test-user",
             password: Secret,
-            connectBudget: ConnectBudget,
-            requestBudget: RequestBudget);
+            RefusedPostgresBudgets.RefusedLoopback);
 
         // 前提固定：这条用例断言的是「连接失败时的诊断脱敏」，它只有在失败确实是**连接被拒**时才有
         // 意义。CreateAsync 按契约不保留 InnerException（见末行断言），分类只能在它之外做一次，
@@ -85,8 +80,7 @@ public sealed class PostgreSqlTestDatabaseTests
                     database: "postgres",
                     username: "test-user",
                     password: Secret,
-                    connectBudget: ConnectBudget,
-                    requestBudget: RequestBudget),
+                    RefusedPostgresBudgets.RefusedLoopback),
                 "cancelled",
                 cancellationToken: cancellation.Token));
     }

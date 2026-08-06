@@ -12,8 +12,58 @@ namespace Nerv.IIP.Testing.PostgreSql;
 /// "unreachable": "unreachable" is the vague word this fixture exists to remove, because it lumps
 /// DNS failure, refusal and timeout into one shrug.
 /// </summary>
+/// <summary>
+/// A named, explicit pair of budgets for a <see cref="RefusedPostgres"/> connection string. It is a
+/// <em>preset</em>, not a default: <see cref="RefusedPostgres.ConnectionString(RefusedTcpEndpoint, string, string, string, RefusedPostgresBudgets)"/>
+/// still requires the caller to name one, so no call site can silently inherit a single fuzzy
+/// duration standing in for both budgets.
+/// </summary>
+public sealed record RefusedPostgresBudgets(TimeSpan ConnectBudget, TimeSpan RequestBudget)
+{
+    /// <summary>
+    /// The budgets every "this endpoint must refuse the connection" test shares, with the reasoning
+    /// stated once instead of being re-derived at each call site.
+    ///
+    /// <para><b>connect = 2s.</b> A refused loopback port answers with an immediate RST, so the
+    /// verdict arrives in microseconds. Two seconds is a stall guard — the bound past which something
+    /// other than a refusal is happening — and never an expected wait.</para>
+    ///
+    /// <para><b>request = 10s, deliberately larger than connect.</b> It bounds an individual command
+    /// once a connection exists, which against a refused endpoint can never happen. It is stated
+    /// anyway so that a regression making the host reachable is bounded by a real dependency's normal
+    /// jitter rather than inheriting the small number picked for a loopback RST. Keeping it above the
+    /// connect budget is the point: collapsing the two would reproduce exactly the single fuzzy
+    /// duration that docs/architecture/backend-test-determinism.md ("网络结果与预算") forbids.</para>
+    /// </summary>
+    public static RefusedPostgresBudgets RefusedLoopback { get; } =
+        new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10));
+}
+
 public static class RefusedPostgres
 {
+    /// <summary>
+    /// Builds the connection string from a named <see cref="RefusedPostgresBudgets"/> preset. Prefer
+    /// this overload: it keeps both budgets explicit while stating the reasoning for the numbers in
+    /// exactly one place.
+    /// </summary>
+    public static string ConnectionString(
+        RefusedTcpEndpoint endpoint,
+        string database,
+        string username,
+        string password,
+        RefusedPostgresBudgets budgets)
+    {
+        ArgumentNullException.ThrowIfNull(budgets);
+
+        return ConnectionString(
+            endpoint,
+            database,
+            username,
+            password,
+            budgets.ConnectBudget,
+            budgets.RequestBudget);
+    }
+
     /// <summary>
     /// Both budgets are required rather than defaulted. A default would let every call site inherit
     /// one number and quietly reproduce the "single fuzzy duration standing in for connect, DNS and
