@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit.Sdk;
 
 namespace Nerv.IIP.Testing.Tests;
@@ -163,6 +164,67 @@ public sealed class EventuallyAssertTests
 
         Assert.Contains("assertion still failing", exception.LastObservation, StringComparison.Ordinal);
         Assert.Contains("quantity", exception.LastObservation, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EF Core's "this context is already busy" error is the one member of the "can never become true" family
+    /// that the exact-type test cannot recognise by type: EF raises it as a plain
+    /// <see cref="InvalidOperationException"/>, indistinguishable from
+    /// <c>SingleAsync</c>-on-an-unprojected-row, so <see cref="Eventually.IsAssertionShaped"/> matches on its
+    /// wording instead. This pins that wording against the EF Core assembly actually in use — a reworded
+    /// resource string turns this red rather than leaving the carve-out quietly inert.
+    /// </summary>
+    /// <remarks>
+    /// <strong>What this test does not pin, and why.</strong> It does not drive EF into <em>raising</em> the
+    /// error, because EF Core 10.0.8 cannot be made to raise it deterministically: with a critical section
+    /// held open on the context's own <c>IConcurrencyDetector</c>, re-entering that section and each of
+    /// <c>ToListAsync</c>, <c>SaveChangesAsync</c>, <c>FindAsync</c> and <c>AnyAsync</c> all completed
+    /// normally (measured 2026-08-06). The only remaining way to produce it is a genuine thread race, which
+    /// would be a flaky test — worse than an honest gap. The runtime type therefore rests on EF's source
+    /// (<c>ConcurrencyDetector</c> throws <see cref="InvalidOperationException"/> directly), not on a
+    /// measurement here. Being wrong about the type would make the carve-out inert, never harmful: a subclass
+    /// is already rethrown immediately by the exact-type test.
+    /// </remarks>
+    [Fact]
+    public void EfCoreConcurrentContextUseMarker_MatchesTheEfCoreResourceStringInUse()
+    {
+        Assert.Contains(
+            Eventually.EfConcurrentContextUseMarker,
+            CoreStrings.ConcurrentMethodInvocation,
+            StringComparison.Ordinal);
+        Assert.False(
+            Eventually.IsAssertionShaped(
+                new InvalidOperationException(CoreStrings.ConcurrentMethodInvocation)));
+
+        // The neighbouring plain InvalidOperationException must stay retryable.
+        Assert.True(Eventually.IsAssertionShaped(new InvalidOperationException("Sequence contains no elements")));
+    }
+
+    /// <summary>
+    /// And the behavioural half: EF's concurrent-context-use error surfaces on the first attempt instead of
+    /// being retried for the whole budget and then reported as a timeout. It is the shape an observation that
+    /// outlives its window produces when it shares a <c>DbContext</c> with its caller, so retrying it would
+    /// bury a real bug under 30 seconds of polling.
+    /// </summary>
+    [Fact]
+    public async Task AssertAsync_RethrowsEfCoreConcurrentContextUseImmediately()
+    {
+        var clock = new TimerRegistrationObservingTimeProvider();
+        var attempts = 0;
+
+        var wait = Eventually.AssertAsync(
+            "the projection row exists",
+            _ =>
+            {
+                attempts++;
+                throw new InvalidOperationException(CoreStrings.ConcurrentMethodInvocation);
+            },
+            Options(),
+            timeProvider: clock).AsTask();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await wait.WaitAsync(OuterBudget));
+
+        Assert.Equal(1, attempts);
     }
 
     private sealed class ConnectionBusyLikeException()

@@ -7,6 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Eventually.IsAssertionShaped and BoundedObservationWindow are internal on purpose — they are the
+      mechanics behind the public primitives, not part of their surface — but the tests that pin their
+      contract have to reach them directly rather than inferring them from behaviour.
+    -->
+    <InternalsVisibleTo Include="Nerv.IIP.Testing.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="DotNetCore.CAP" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
