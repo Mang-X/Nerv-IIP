@@ -646,8 +646,15 @@ ERP 的 16.4–31.3 s 还要放在它自己的抖动尺度上读：同一份串�
    `$LASTEXITCODE`。实测确认「前一个脚本 `exit 1` + 后一个脚本成功」的组合**整体退出 0**——
    失败被完全吞掉。`ci.yml` 里 `Backend Test Shard Governance` job 原本正是把 checker 与其契约
    测试写在同一个 `run:` 块里，已拆成两个 step（各 5m，step 预算合计仍是 18m，job 15m 不变）。
-   > 这条「用 `exit 1` 报错的脚本必须独占一个 `run:` step」目前**只有约定、没有门禁**，
-   > 走查建议另开票补，不在本 PR 范围内。
+
+   > **这个洞在改造前不存在，拆 step 是防止引入而不是修复既有。**改成 `exit 1` 之前该 checker
+   > 用的是 `throw`，在 GitHub `pwsh` shell 的 `$ErrorActionPreference = 'Stop'` 下会**中止整个
+   > `run:` 块**——同一组合实测整体 `EXIT=1`，第二个脚本根本没被执行。也就是说 `Backend Test
+   > Shard Governance`（及经 `needs` 传导的 required check `Backend Tests`）**历史上从未 fail-open**。
+   > 会 fail-open 的只有「已改成 `exit 1` + step 仍不拆」这一种组合，而它从未进过 main。
+   >
+   > 这条「用 `exit 1` 报错的脚本必须独占一个 `run:` step」目前**只有约定、没有门禁**，已立案
+   > [#1498](https://github.com/Mang-X/Nerv-IIP/issues/1498)，不在本 PR 范围内。
 
    落地：`verify-backend-test-shards.ps1` 与 `verify-solution-configuration-membership.ps1` 同形；
    `backend-test-shards.Tests.ps1` 的断言统一走 `Invoke-ShardValidator`（判退出码 + 完整 stdout），
