@@ -319,10 +319,11 @@ public sealed class InventoryReservationExpirationTests
             // before StartAsync, when no timer exists yet.
             //
             // The count is this clock's *total* registrations, not "the worker's timer". It pins the right
-            // fact only because this host has exactly one registrant: the container above is a bare
-            // ServiceCollection that never receives the TimeProvider, and Eventually polls on
-            // TimeProvider.System. Hanging a second timer-owning component off this clock would let the
-            // other component's registration satisfy this barrier vacuously — re-derive the count then.
+            // fact only because nothing else in this host registers a timer on this clock: the worker is the
+            // sole registrant, InventoryReservationMetrics holds the same TimeProvider but only ever reads
+            // GetUtcNow() from it, and Eventually polls on TimeProvider.System. Handing this clock to a
+            // second component that owns a timer would let that component's registration satisfy this
+            // barrier vacuously — re-derive the count then.
             await timeProvider.WaitForTimerCountAsync(1);
             timeProvider.Advance(TimeSpan.FromMinutes(1));
 

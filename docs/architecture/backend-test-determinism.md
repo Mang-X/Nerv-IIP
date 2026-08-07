@@ -42,8 +42,9 @@ await TestTimeout.RunAsync(
 是不成立的假设。正确做法是有界地等待**「计时器已注册」这条边沿本身**再 `Advance`：现行标准设施是
 `TimerRegistrationObservingTimeProvider.WaitForTimerCountAsync(n)`（`CreateTimer` 内先 `base.CreateTimer` 再计数，
 信号严格晚于注册）；被测替身自己发边沿信号（`CapTestHostTests.FakeBootstrapper.BootstrapTimersRegistered`）只用在
-替身本来就要创建 pending 任务的场合。业务结果——「命令已派发」「metric 已出现」——**都不是**这条边沿：它们仅在
-「生产代码今天恰好先建计时器再干活」时才顺带成立，`ApprovalOverdueSchedulerTests`（S4）与
+替身本来就要创建 pending 任务的场合，且该信号必须发在创建 pending 任务**之后**——发在之前就又变回一个不保证注册
+已发生的假屏障。业务结果——「命令已派发」「metric 已出现」——**都不是**这条边沿：它们仅在「生产代码今天恰好先建
+计时器再干活」时才顺带成立，`ApprovalOverdueSchedulerTests`（S4）与
 `InventoryReservationExpirationTests`（#1491）各栽过一次。同一失败模式在 Connector Host 侧由 MAN-799 的
 `WaitForTimerCreatedAsync` 屏障处理；两套 helper 分处两个 solution，按仓库边界规则不得互相引用，结构重复是有意的。
 
@@ -560,10 +561,11 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   （`(DateTimeOffset startDateTime, TimeSpan? registrationBudget = null)`）。** 注入 `TimeProvider` 只覆盖「读注入
   时钟」那一面；下游可能还有读**进程 wall clock** 的领域守卫，`StockReservation.NormalizeFutureUtc`（「到期时间必须
   在未来」）就是一条。这类被测对象配上停在 2000 年的默认 `FakeTimeProvider` 会直接抛，假时钟必须锚在真实 now 再从
-  那里 `Advance`。锚点做成**构造参数**而不是事后 `SetUtcNow`：向前设时钟会触发所有**已注册**的计时器，「先构造、
-  后锚定」只在还没人注册时才安全——那正是一条隐式顺序假设，而这个类存在的意义就是让测试不再依赖顺序。原无参构造
-  函数（A7 的 `registrationBudget:`）语义不变，既有调用点零改动；`TimerRegistrationObservingTimeProviderTests`
-  钉住三件事：起点即给定值、注册边沿照常发布、非正预算被拒。
+  那里 `Advance`。锚点做成**构造参数**而不是事后 `SetUtcNow`：向前设时钟会立即触发所有**触发点已被这次跳跃跨过**
+  的已注册计时器（锚定这一跳通常宽达几十年，实际就是全部），「先构造、后锚定」只在还没人注册时才安全——那正是一条
+  隐式顺序假设，而这个类存在的意义就是让测试不再依赖顺序。原无参构造函数（A7 的 `registrationBudget:`）语义不变，
+  既有调用点零改动；`TimerRegistrationObservingTimeProviderTests` 钉住三件事：起点即给定值、注册边沿照常发布、
+  非正预算被拒。
 - **`WaitForTimerCountAsync(n)` 数的是这口时钟上的累计注册数，不是「某个组件的计时器」。** 调用点必须自证「本宿主
   里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。
 - **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，

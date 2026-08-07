@@ -46,9 +46,11 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
     /// </param>
     /// <remarks>
     /// The anchor is a constructor parameter rather than a <see cref="FakeTimeProvider.SetUtcNow"/> call
-    /// made after construction on purpose: setting the clock forward fires every timer already registered
-    /// against it, so a two-step "construct, then anchor" is only safe while nothing has registered yet —
-    /// an ordering property, which is exactly what this type exists to stop tests from relying on.
+    /// made after construction on purpose: moving the clock forward immediately fires every already-registered
+    /// timer whose due time the jump passes, so a two-step "construct, then anchor" is only safe while nothing
+    /// has registered yet — an ordering property, which is exactly what this type exists to stop tests from
+    /// relying on. (An anchoring jump is typically decades wide, so in practice "whose due time the jump
+    /// passes" is every one of them.)
     /// </remarks>
     public TimerRegistrationObservingTimeProvider(
         DateTimeOffset startDateTime,
