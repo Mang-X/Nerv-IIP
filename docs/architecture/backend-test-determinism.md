@@ -566,14 +566,20 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   那里 `Advance`。锚点做成**构造参数**而不是事后 `SetUtcNow`：向前设时钟会立即触发所有**触发点已被这次跳跃跨过**
   的已注册计时器（锚定这一跳通常宽达几十年，实际就是全部），「先构造、后锚定」只在还没人注册时才安全——那正是一条
   隐式顺序假设，而这个类存在的意义就是让测试不再依赖顺序。原无参构造函数（A7 的 `registrationBudget:`）语义不变，
-  既有调用点零改动；`TimerRegistrationObservingTimeProviderTests` 钉住三件事：起点即给定值、注册边沿照常发布、
-  非正预算被拒。
+  既有调用点零改动；`TimerRegistrationObservingTimeProviderTests` 钉住：起点即给定值、注册边沿照常发布、
+  **两个**构造函数都拒绝非正预算且 `ParamName` 是调用者可见的 `registrationBudget`。
 - **`WaitForTimerCountAsync(n)` 数的是这口时钟上的累计注册数，不是「某个组件的计时器」。** 调用点必须自证「本宿主
   里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。**这条前提由计数断言钉住**
-  （#1502）：两个消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`）都在末段加了
-  `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环改成逐轮注册）时计数改变，
-  每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与「互斥门必须有一个在门被削弱时
-  会失败的回归测试」是同一条治理先例。
+  （#1502）：两个消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`）都在
+  **`StopAsync` 之后**加了 `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环
+  改成逐轮注册）时计数改变，每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与
+  「互斥门必须有一个在门被削弱时会失败的回归测试」是同一条治理先例。
+  **断言位置是这条保障的一部分**（#1502 走查）：多出第二个注册方那条主危害与位置无关（断言时计数已是 2），
+  但逐轮注册那条分支里，下一轮的注册发生在「第二趟结果已可观测」**之后**，停机前断言会与它赛跑。因此两处断言都
+  放在 `StopAsync` 之后——`StopAsync` 会 await `ExecuteTask`，循环退出前的最后一次注册必然已计入，赛跑变成结构
+  保证。实测（把 Inventory worker 改成逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场
+  赛跑），但按 MAN-808 同一手法在 `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假
+  绿），停机后位置仍 3/3 报 `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
 - **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
   **返回之后**才 `new PeriodicTimer(interval, timeProvider)`，而 `expired_total` 在第一趟内部就已写入。原测试以
   「metric 出现」为屏障随即 `Advance`，一旦落进这个窗口，tick 永久丢失、第二趟永不发生（CI 上表现为 153 次观测全部

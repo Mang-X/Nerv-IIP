@@ -128,14 +128,20 @@ public sealed class ApprovalOverdueSchedulerTests
             ],
             sender.Commands);
 
+        await scheduler.StopAsync(CancellationToken.None);
+
         // Executable guard for the barrier's premise: the scheduler's single PeriodicTimer is this clock's
         // only registrant (the sender, Eventually and Consistently never touch it — the latter two poll on
         // TimeProvider.System), so the total is exactly 1 for the whole test. Hand this clock to a second
-        // component that owns a timer, or rewrite the scheduler to register one timer per iteration, and the
-        // count moves and this fails on every run — instead of letting WaitForTimerCountAsync(1) be satisfied
-        // vacuously and degrading into an intermittent red.
+        // component that owns a timer and the count moves and this fails on every run — instead of letting
+        // WaitForTimerCountAsync(1) be satisfied vacuously and degrading into an intermittent red. It sits
+        // after StopAsync, which awaits ExecuteTask: by here the loop has exited and every registration it
+        // ever made is counted, so a scheduler rewritten to register one timer per iteration is caught too.
+        // That extra registration happens only after the second dispatch is observable, so an assertion
+        // placed before the shutdown races it — see the measurement recorded at the sibling call site in
+        // InventoryReservationExpirationTests, where widening that window turned the pre-shutdown position
+        // into a false green while the post-shutdown position stayed red.
         Assert.Equal(1, clock.TimersCreated);
-        await scheduler.StopAsync(CancellationToken.None);
     }
 
     [Fact]

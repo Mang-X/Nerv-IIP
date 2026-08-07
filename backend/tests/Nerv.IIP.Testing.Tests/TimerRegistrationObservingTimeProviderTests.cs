@@ -1,14 +1,15 @@
 namespace Nerv.IIP.Testing.Tests;
 
 /// <summary>
-/// The start-anchored constructor of <see cref="TimerRegistrationObservingTimeProvider"/>.
+/// The two constructors of <see cref="TimerRegistrationObservingTimeProvider"/>.
 /// </summary>
 /// <remarks>
 /// Why the anchor exists at all, and why it is a constructor parameter rather than a later
 /// <c>SetUtcNow</c> call, is documented once on that constructor — see
-/// <see cref="TimerRegistrationObservingTimeProvider"/>. These tests pin the three facts that
-/// documentation claims: the clock really starts where it is told, registrations are still published, and a
-/// non-positive budget is rejected.
+/// <see cref="TimerRegistrationObservingTimeProvider"/>. These tests pin the facts that documentation
+/// claims: the start-anchored clock really starts where it is told, registrations are still published from
+/// it, and <em>both</em> constructors reject a non-positive budget by the caller-facing
+/// <c>registrationBudget</c> parameter name.
 /// </remarks>
 public sealed class TimerRegistrationObservingTimeProviderTests
 {

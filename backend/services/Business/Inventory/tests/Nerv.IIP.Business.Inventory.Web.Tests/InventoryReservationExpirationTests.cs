@@ -337,18 +337,26 @@ public sealed class InventoryReservationExpirationTests
                 new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
 
             Assert.Equal("expired", secondPassReservation.Status);
-
-            // Executable guard for the barrier's premise above: the worker's single PeriodicTimer is this
-            // clock's only registrant, so the total is exactly 1 for the whole test. A second registrant on
-            // this clock (or a worker loop rewritten to register per iteration) moves this number and fails
-            // every run, pointing straight at the broken premise — instead of letting WaitForTimerCountAsync(1)
-            // be satisfied vacuously and turning the test intermittently red somewhere else.
-            Assert.Equal(1, timeProvider.TimersCreated);
         }
         finally
         {
             await worker.StopAsync(CancellationToken.None);
         }
+
+        // Executable guard for the barrier's premise above: the worker's single PeriodicTimer is this clock's
+        // only registrant, so the total is exactly 1 for the whole test. A second registrant on this clock
+        // moves this number and fails every run, pointing straight at the broken premise — instead of letting
+        // WaitForTimerCountAsync(1) be satisfied vacuously and turning the test intermittently red somewhere
+        // else. It sits after StopAsync, and outside the try/finally so a failing assertion above still
+        // surfaces as itself: StopAsync awaits ExecuteTask, so by here the loop has exited and every
+        // registration it ever made is counted. The position is load-bearing for the *other* way the premise
+        // can break — a loop rewritten to register one timer per iteration. That extra registration happens
+        // only after the second pass is already observable, so an assertion placed before the shutdown races
+        // it: measured with the loop rewritten to build a PeriodicTimer per iteration, the pre-shutdown
+        // position won the race and went red 3/3 here, but widening the re-registration window (a 1.5 s delay
+        // between RunOnceAsync and the next construction, the same technique used to size the barrier itself)
+        // turned it green — a false green — while this position stayed red 3/3, Expected 1 / Actual 2.
+        Assert.Equal(1, timeProvider.TimersCreated);
     }
 
     [Fact]
