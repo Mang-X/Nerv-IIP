@@ -1,26 +1,60 @@
 {
-  "schemaVersion": 1,
-  "toolVersion": "MAN-661-v1",
+  "schemaVersion": 2,
+  "toolVersion": "MAN-661-v2",
   "granularity": "test",
   "durationMetric": "trx-elapsed",
   "owner": "Nerv-IIP Platform CI/Test Governance",
-  "generatedAtUtc": "2026-08-05T11:06:53.5696390Z",
+  "generatedAtUtc": "2026-08-07T13:11:36.4652870Z",
   "source": {
     "kind": "trx-evidence",
     "repository": "Mang-X/Nerv-IIP",
-    "workflowRunId": "30999368607",
+    "workflowRunId": "31180901066",
     "runAttempt": 1,
     "jobId": "",
-    "headSha": "92d7f1ddc6845b69a7bdf28dbaf8274e790c247a",
-    "testedSha": "92d7f1ddc6845b69a7bdf28dbaf8274e790c247a",
-    "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/30999368607",
+    "headSha": "2148fc21cfe5db129a839b69c83b445f4a65badc",
+    "testedSha": "2148fc21cfe5db129a839b69c83b445f4a65badc",
+    "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/31180901066",
     "event": "push",
     "headBranch": "main",
     "conclusion": "success",
     "jobConclusion": "success",
-    "runnerOs": "Linux",
-    "runnerImage": "ubuntu24@20260720.247.2",
-    "dotnetSdk": "10.0.302",
+    "laneProvenance": [
+      {
+        "lane": "backend-shard-1",
+        "jobName": "Backend Tests - BusinessGateway",
+        "runnerOs": "Linux",
+        "runnerImage": "ubuntu24@20260720.247.2",
+        "dotnetSdk": "10.0.302"
+      },
+      {
+        "lane": "backend-shard-2",
+        "jobName": "Backend Tests - Platform",
+        "runnerOs": "Linux",
+        "runnerImage": "ubuntu24@20260804.265.1",
+        "dotnetSdk": "10.0.302"
+      },
+      {
+        "lane": "backend-shard-3",
+        "jobName": "Backend Tests - Business Core A",
+        "runnerOs": "Linux",
+        "runnerImage": "ubuntu24@20260720.247.2",
+        "dotnetSdk": "10.0.302"
+      },
+      {
+        "lane": "backend-shard-4",
+        "jobName": "Backend Tests - Business Core B",
+        "runnerOs": "Linux",
+        "runnerImage": "ubuntu24@20260720.247.2",
+        "dotnetSdk": "10.0.302"
+      },
+      {
+        "lane": "connector-host",
+        "jobName": "Connector Host Tests",
+        "runnerOs": "Linux",
+        "runnerImage": "ubuntu24@20260720.247.2",
+        "dotnetSdk": "10.0.302"
+      }
+    ],
     "selectedLanes": [
       "backend-shard-1",
       "backend-shard-2",
@@ -33,13 +67,113 @@
   "assemblies": [
     {
       "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.erp.domain.tests.dll",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 51,
+      "total": 51,
+      "elapsedMilliseconds": 1825.6311
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.erp.web.tests.dll",
+      "passed": 245,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 245,
+      "total": 245,
+      "elapsedMilliseconds": 9069.0799
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.maintenance.domain.tests.dll",
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 34,
+      "total": 34,
+      "elapsedMilliseconds": 764.2296
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.maintenance.web.tests.dll",
+      "passed": 231,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 231,
+      "total": 231,
+      "elapsedMilliseconds": 15629.8763
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.masterdata.domain.tests.dll",
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 39,
+      "total": 39,
+      "elapsedMilliseconds": 1925.4216
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.masterdata.web.tests.dll",
+      "passed": 206,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 206,
+      "total": 206,
+      "elapsedMilliseconds": 14793.6529
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.scheduling.domain.tests.dll",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 36,
+      "total": 36,
+      "elapsedMilliseconds": 1617.2879
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.scheduling.web.tests.dll",
+      "passed": 328,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 328,
+      "total": 328,
+      "elapsedMilliseconds": 6596.6566
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.wms.domain.tests.dll",
+      "passed": 60,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 60,
+      "total": 60,
+      "elapsedMilliseconds": 1702.97
+    },
+    {
+      "lane": "backend-shard-1",
+      "assembly": "nerv.iip.business.wms.web.tests.dll",
+      "passed": 284,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 284,
+      "total": 284,
+      "elapsedMilliseconds": 84200.7704
+    },
+    {
+      "lane": "backend-shard-1",
       "assembly": "nerv.iip.businessgateway.web.tests.dll",
       "passed": 1036,
       "failed": 0,
       "skipped": 0,
       "executed": 1036,
       "total": 1036,
-      "elapsedMilliseconds": 22995.9818
+      "elapsedMilliseconds": 25523.6857
     },
     {
       "lane": "backend-shard-2",
@@ -49,7 +183,7 @@
       "skipped": 0,
       "executed": 35,
       "total": 35,
-      "elapsedMilliseconds": 2996.3491
+      "elapsedMilliseconds": 2544.2634
     },
     {
       "lane": "backend-shard-2",
@@ -59,7 +193,7 @@
       "skipped": 0,
       "executed": 62,
       "total": 62,
-      "elapsedMilliseconds": 12104.4098
+      "elapsedMilliseconds": 5130.6535
     },
     {
       "lane": "backend-shard-2",
@@ -69,7 +203,7 @@
       "skipped": 0,
       "executed": 59,
       "total": 59,
-      "elapsedMilliseconds": 2554.5827
+      "elapsedMilliseconds": 1978.9984
     },
     {
       "lane": "backend-shard-2",
@@ -79,7 +213,7 @@
       "skipped": 0,
       "executed": 4,
       "total": 4,
-      "elapsedMilliseconds": 2531.4737
+      "elapsedMilliseconds": 813.2407
     },
     {
       "lane": "backend-shard-2",
@@ -89,7 +223,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 1911.9027
+      "elapsedMilliseconds": 2025.7403
     },
     {
       "lane": "backend-shard-2",
@@ -99,7 +233,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 2275.8213
+      "elapsedMilliseconds": 1692.3434
     },
     {
       "lane": "backend-shard-2",
@@ -109,7 +243,7 @@
       "skipped": 0,
       "executed": 10,
       "total": 10,
-      "elapsedMilliseconds": 1369.7492
+      "elapsedMilliseconds": 1928.7673
     },
     {
       "lane": "backend-shard-2",
@@ -119,7 +253,7 @@
       "skipped": 0,
       "executed": 6,
       "total": 6,
-      "elapsedMilliseconds": 1900.6179
+      "elapsedMilliseconds": 3294.3961
     },
     {
       "lane": "backend-shard-2",
@@ -129,7 +263,7 @@
       "skipped": 0,
       "executed": 209,
       "total": 209,
-      "elapsedMilliseconds": 1767.9956
+      "elapsedMilliseconds": 1237.8815
     },
     {
       "lane": "backend-shard-2",
@@ -139,7 +273,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 2064.0216
+      "elapsedMilliseconds": 2712.6934
     },
     {
       "lane": "backend-shard-2",
@@ -149,7 +283,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 1733.2581
+      "elapsedMilliseconds": 2082.853
     },
     {
       "lane": "backend-shard-2",
@@ -159,7 +293,7 @@
       "skipped": 0,
       "executed": 18,
       "total": 18,
-      "elapsedMilliseconds": 2613.7814
+      "elapsedMilliseconds": 1391.6991
     },
     {
       "lane": "backend-shard-2",
@@ -169,7 +303,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 1723.5382
+      "elapsedMilliseconds": 1644.8304
     },
     {
       "lane": "backend-shard-2",
@@ -179,7 +313,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 2276.1253
+      "elapsedMilliseconds": 968.6744
     },
     {
       "lane": "backend-shard-2",
@@ -189,7 +323,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 2302.1979
+      "elapsedMilliseconds": 1233.7
     },
     {
       "lane": "backend-shard-2",
@@ -199,7 +333,7 @@
       "skipped": 0,
       "executed": 9,
       "total": 9,
-      "elapsedMilliseconds": 989.5607
+      "elapsedMilliseconds": 930.1042
     },
     {
       "lane": "backend-shard-2",
@@ -209,7 +343,7 @@
       "skipped": 0,
       "executed": 84,
       "total": 84,
-      "elapsedMilliseconds": 3796.9008
+      "elapsedMilliseconds": 4013.1619
     },
     {
       "lane": "backend-shard-2",
@@ -219,17 +353,17 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 3889.8582
+      "elapsedMilliseconds": 1959.3785
     },
     {
       "lane": "backend-shard-2",
       "assembly": "nerv.iip.filestorage.web.tests.dll",
-      "passed": 64,
+      "passed": 66,
       "failed": 0,
       "skipped": 0,
-      "executed": 64,
-      "total": 64,
-      "elapsedMilliseconds": 11227.7544
+      "executed": 66,
+      "total": 66,
+      "elapsedMilliseconds": 7513.8593
     },
     {
       "lane": "backend-shard-2",
@@ -239,7 +373,7 @@
       "skipped": 0,
       "executed": 116,
       "total": 116,
-      "elapsedMilliseconds": 22276.1305
+      "elapsedMilliseconds": 23203.2735
     },
     {
       "lane": "backend-shard-2",
@@ -249,7 +383,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 2554.2424
+      "elapsedMilliseconds": 1331.5674
     },
     {
       "lane": "backend-shard-2",
@@ -259,7 +393,7 @@
       "skipped": 0,
       "executed": 29,
       "total": 29,
-      "elapsedMilliseconds": 7238.6446
+      "elapsedMilliseconds": 3870.7942
     },
     {
       "lane": "backend-shard-2",
@@ -269,7 +403,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 4132.9014
+      "elapsedMilliseconds": 3662.7205
     },
     {
       "lane": "backend-shard-2",
@@ -279,7 +413,7 @@
       "skipped": 0,
       "executed": 19,
       "total": 19,
-      "elapsedMilliseconds": 2278.9717
+      "elapsedMilliseconds": 2134.9244
     },
     {
       "lane": "backend-shard-2",
@@ -289,7 +423,7 @@
       "skipped": 0,
       "executed": 95,
       "total": 95,
-      "elapsedMilliseconds": 17166.6282
+      "elapsedMilliseconds": 14013.015
     },
     {
       "lane": "backend-shard-2",
@@ -299,7 +433,7 @@
       "skipped": 0,
       "executed": 15,
       "total": 15,
-      "elapsedMilliseconds": 3077.5865
+      "elapsedMilliseconds": 1516.3362
     },
     {
       "lane": "backend-shard-2",
@@ -309,17 +443,17 @@
       "skipped": 0,
       "executed": 28,
       "total": 28,
-      "elapsedMilliseconds": 2463.5031
+      "elapsedMilliseconds": 2228.0049
     },
     {
       "lane": "backend-shard-2",
       "assembly": "nerv.iip.ops.web.tests.dll",
-      "passed": 69,
+      "passed": 81,
       "failed": 0,
       "skipped": 0,
-      "executed": 69,
-      "total": 69,
-      "elapsedMilliseconds": 10660.6052
+      "executed": 81,
+      "total": 81,
+      "elapsedMilliseconds": 10231.8239
     },
     {
       "lane": "backend-shard-2",
@@ -329,7 +463,7 @@
       "skipped": 0,
       "executed": 16,
       "total": 16,
-      "elapsedMilliseconds": 1643.1847
+      "elapsedMilliseconds": 1647.8546
     },
     {
       "lane": "backend-shard-2",
@@ -339,7 +473,7 @@
       "skipped": 0,
       "executed": 96,
       "total": 96,
-      "elapsedMilliseconds": 21521.6868
+      "elapsedMilliseconds": 15038.3865
     },
     {
       "lane": "backend-shard-2",
@@ -349,7 +483,7 @@
       "skipped": 0,
       "executed": 7,
       "total": 7,
-      "elapsedMilliseconds": 2143.6364
+      "elapsedMilliseconds": 2389.5359
     },
     {
       "lane": "backend-shard-2",
@@ -359,7 +493,7 @@
       "skipped": 0,
       "executed": 4,
       "total": 4,
-      "elapsedMilliseconds": 2268.5896
+      "elapsedMilliseconds": 1750.153
     },
     {
       "lane": "backend-shard-2",
@@ -369,7 +503,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 3010.4999
+      "elapsedMilliseconds": 2386.6691
     },
     {
       "lane": "backend-shard-2",
@@ -379,7 +513,7 @@
       "skipped": 0,
       "executed": 14,
       "total": 14,
-      "elapsedMilliseconds": 1576.5224
+      "elapsedMilliseconds": 1578.1682
     },
     {
       "lane": "backend-shard-2",
@@ -389,17 +523,27 @@
       "skipped": 0,
       "executed": 13,
       "total": 13,
-      "elapsedMilliseconds": 1447.6609
+      "elapsedMilliseconds": 1348.016
     },
     {
       "lane": "backend-shard-2",
       "assembly": "nerv.iip.testing.tests.dll",
-      "passed": 44,
+      "passed": 91,
       "failed": 0,
       "skipped": 0,
-      "executed": 44,
-      "total": 44,
-      "elapsedMilliseconds": 1724.069
+      "executed": 91,
+      "total": 91,
+      "elapsedMilliseconds": 2551.7071
+    },
+    {
+      "lane": "backend-shard-3",
+      "assembly": "nerv.iip.business.acceptance.tests.dll",
+      "passed": 74,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 74,
+      "total": 74,
+      "elapsedMilliseconds": 4687.5938
     },
     {
       "lane": "backend-shard-3",
@@ -409,7 +553,7 @@
       "skipped": 0,
       "executed": 30,
       "total": 30,
-      "elapsedMilliseconds": 2047.3209
+      "elapsedMilliseconds": 1750.0097
     },
     {
       "lane": "backend-shard-3",
@@ -419,7 +563,7 @@
       "skipped": 0,
       "executed": 83,
       "total": 83,
-      "elapsedMilliseconds": 8847.1071
+      "elapsedMilliseconds": 9015.194
     },
     {
       "lane": "backend-shard-3",
@@ -429,7 +573,7 @@
       "skipped": 0,
       "executed": 38,
       "total": 38,
-      "elapsedMilliseconds": 2572.1401
+      "elapsedMilliseconds": 2702.4615
     },
     {
       "lane": "backend-shard-3",
@@ -439,47 +583,7 @@
       "skipped": 0,
       "executed": 56,
       "total": 56,
-      "elapsedMilliseconds": 7626.8047
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.demandplanning.domain.tests.dll",
-      "passed": 18,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 18,
-      "total": 18,
-      "elapsedMilliseconds": 3080.2391
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.demandplanning.web.tests.dll",
-      "passed": 138,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 138,
-      "total": 138,
-      "elapsedMilliseconds": 8814.9285
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.erp.domain.tests.dll",
-      "passed": 51,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 51,
-      "total": 51,
-      "elapsedMilliseconds": 1170.6699
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.erp.web.tests.dll",
-      "passed": 245,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 245,
-      "total": 245,
-      "elapsedMilliseconds": 10082.8256
+      "elapsedMilliseconds": 7292.448
     },
     {
       "lane": "backend-shard-3",
@@ -489,7 +593,7 @@
       "skipped": 0,
       "executed": 26,
       "total": 26,
-      "elapsedMilliseconds": 2079.0924
+      "elapsedMilliseconds": 2137.8134
     },
     {
       "lane": "backend-shard-3",
@@ -499,27 +603,7 @@
       "skipped": 0,
       "executed": 233,
       "total": 233,
-      "elapsedMilliseconds": 89802.1378
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.masterdata.domain.tests.dll",
-      "passed": 39,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 39,
-      "total": 39,
-      "elapsedMilliseconds": 2176.6031
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.masterdata.web.tests.dll",
-      "passed": 206,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 206,
-      "total": 206,
-      "elapsedMilliseconds": 15886.4282
+      "elapsedMilliseconds": 72992.9564
     },
     {
       "lane": "backend-shard-3",
@@ -529,7 +613,7 @@
       "skipped": 0,
       "executed": 46,
       "total": 46,
-      "elapsedMilliseconds": 1893.9666
+      "elapsedMilliseconds": 1200.4295
     },
     {
       "lane": "backend-shard-3",
@@ -539,57 +623,47 @@
       "skipped": 0,
       "executed": 542,
       "total": 542,
-      "elapsedMilliseconds": 54234.8508
+      "elapsedMilliseconds": 26975.2815
     },
     {
       "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.productengineering.domain.tests.dll",
-      "passed": 16,
+      "assembly": "nerv.iip.business.quality.domain.tests.dll",
+      "passed": 80,
       "failed": 0,
       "skipped": 0,
-      "executed": 16,
-      "total": 16,
-      "elapsedMilliseconds": 2562.5184
+      "executed": 80,
+      "total": 80,
+      "elapsedMilliseconds": 2234.5341
     },
     {
       "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.productengineering.web.tests.dll",
-      "passed": 172,
+      "assembly": "nerv.iip.business.quality.web.tests.dll",
+      "passed": 226,
       "failed": 0,
       "skipped": 0,
-      "executed": 172,
-      "total": 172,
-      "elapsedMilliseconds": 22278.9801
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.wms.domain.tests.dll",
-      "passed": 60,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 60,
-      "total": 60,
-      "elapsedMilliseconds": 1952.3661
-    },
-    {
-      "lane": "backend-shard-3",
-      "assembly": "nerv.iip.business.wms.web.tests.dll",
-      "passed": 284,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 284,
-      "total": 284,
-      "elapsedMilliseconds": 120413.8965
+      "executed": 226,
+      "total": 226,
+      "elapsedMilliseconds": 20168.7307
     },
     {
       "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.acceptance.tests.dll",
-      "passed": 74,
+      "assembly": "nerv.iip.business.demandplanning.domain.tests.dll",
+      "passed": 18,
       "failed": 0,
       "skipped": 0,
-      "executed": 74,
-      "total": 74,
-      "elapsedMilliseconds": 4871.9691
+      "executed": 18,
+      "total": 18,
+      "elapsedMilliseconds": 2240.7791
+    },
+    {
+      "lane": "backend-shard-4",
+      "assembly": "nerv.iip.business.demandplanning.web.tests.dll",
+      "passed": 138,
+      "failed": 0,
+      "skipped": 0,
+      "executed": 138,
+      "total": 138,
+      "elapsedMilliseconds": 5721.2434
     },
     {
       "lane": "backend-shard-4",
@@ -599,77 +673,37 @@
       "skipped": 0,
       "executed": 86,
       "total": 86,
-      "elapsedMilliseconds": 2679.4455
+      "elapsedMilliseconds": 2099.0549
     },
     {
       "lane": "backend-shard-4",
       "assembly": "nerv.iip.business.industrialtelemetry.web.tests.dll",
-      "passed": 201,
+      "passed": 202,
       "failed": 0,
       "skipped": 0,
-      "executed": 201,
-      "total": 201,
-      "elapsedMilliseconds": 133071.6994
+      "executed": 202,
+      "total": 202,
+      "elapsedMilliseconds": 105510.12
     },
     {
       "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.maintenance.domain.tests.dll",
-      "passed": 34,
+      "assembly": "nerv.iip.business.productengineering.domain.tests.dll",
+      "passed": 16,
       "failed": 0,
       "skipped": 0,
-      "executed": 34,
-      "total": 34,
-      "elapsedMilliseconds": 2107.2173
+      "executed": 16,
+      "total": 16,
+      "elapsedMilliseconds": 2214.8508
     },
     {
       "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.maintenance.web.tests.dll",
-      "passed": 231,
+      "assembly": "nerv.iip.business.productengineering.web.tests.dll",
+      "passed": 172,
       "failed": 0,
       "skipped": 0,
-      "executed": 231,
-      "total": 231,
-      "elapsedMilliseconds": 13383.053
-    },
-    {
-      "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.quality.domain.tests.dll",
-      "passed": 80,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 80,
-      "total": 80,
-      "elapsedMilliseconds": 2518.8529
-    },
-    {
-      "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.quality.web.tests.dll",
-      "passed": 226,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 226,
-      "total": 226,
-      "elapsedMilliseconds": 23332.1912
-    },
-    {
-      "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.scheduling.domain.tests.dll",
-      "passed": 36,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 36,
-      "total": 36,
-      "elapsedMilliseconds": 2509.4905
-    },
-    {
-      "lane": "backend-shard-4",
-      "assembly": "nerv.iip.business.scheduling.web.tests.dll",
-      "passed": 328,
-      "failed": 0,
-      "skipped": 0,
-      "executed": 328,
-      "total": 328,
-      "elapsedMilliseconds": 7269.8292
+      "executed": 172,
+      "total": 172,
+      "elapsedMilliseconds": 10269.3776
     },
     {
       "lane": "connector-host",
@@ -679,7 +713,7 @@
       "skipped": 0,
       "executed": 43,
       "total": 43,
-      "elapsedMilliseconds": 1541.9798
+      "elapsedMilliseconds": 2003.1067
     },
     {
       "lane": "connector-host",
@@ -689,7 +723,7 @@
       "skipped": 1,
       "executed": 6,
       "total": 7,
-      "elapsedMilliseconds": 2087.2968
+      "elapsedMilliseconds": 2069.4055
     },
     {
       "lane": "connector-host",
@@ -699,7 +733,7 @@
       "skipped": 0,
       "executed": 19,
       "total": 19,
-      "elapsedMilliseconds": 1896.9277
+      "elapsedMilliseconds": 886.2786
     },
     {
       "lane": "connector-host",
@@ -709,7 +743,7 @@
       "skipped": 0,
       "executed": 13,
       "total": 13,
-      "elapsedMilliseconds": 2156.8385
+      "elapsedMilliseconds": 2025.1221
     },
     {
       "lane": "connector-host",
@@ -719,7 +753,7 @@
       "skipped": 1,
       "executed": 30,
       "total": 31,
-      "elapsedMilliseconds": 41027.3378
+      "elapsedMilliseconds": 42006.5493
     },
     {
       "lane": "connector-host",
@@ -729,7 +763,7 @@
       "skipped": 0,
       "executed": 53,
       "total": 53,
-      "elapsedMilliseconds": 4879.1283
+      "elapsedMilliseconds": 3958.7528
     },
     {
       "lane": "connector-host",
@@ -739,7 +773,7 @@
       "skipped": 0,
       "executed": 29,
       "total": 29,
-      "elapsedMilliseconds": 1644.6406
+      "elapsedMilliseconds": 1675.6859
     }
   ]
 }
