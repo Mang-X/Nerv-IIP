@@ -323,7 +323,9 @@ public sealed class InventoryReservationExpirationTests
             // sole registrant, InventoryReservationMetrics holds the same TimeProvider but only ever reads
             // GetUtcNow() from it, and Eventually polls on TimeProvider.System. Handing this clock to a
             // second component that owns a timer would let that component's registration satisfy this
-            // barrier vacuously — re-derive the count then.
+            // barrier vacuously — re-derive the count then. That premise is pinned by the exact-count
+            // assertion after the second pass below, so breaking it fails deterministically instead of
+            // degrading into an intermittent red.
             await timeProvider.WaitForTimerCountAsync(1);
             timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -335,6 +337,13 @@ public sealed class InventoryReservationExpirationTests
                 new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
 
             Assert.Equal("expired", secondPassReservation.Status);
+
+            // Executable guard for the barrier's premise above: the worker's single PeriodicTimer is this
+            // clock's only registrant, so the total is exactly 1 for the whole test. A second registrant on
+            // this clock (or a worker loop rewritten to register per iteration) moves this number and fails
+            // every run, pointing straight at the broken premise — instead of letting WaitForTimerCountAsync(1)
+            // be satisfied vacuously and turning the test intermittently red somewhere else.
+            Assert.Equal(1, timeProvider.TimersCreated);
         }
         finally
         {

@@ -569,7 +569,11 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   既有调用点零改动；`TimerRegistrationObservingTimeProviderTests` 钉住三件事：起点即给定值、注册边沿照常发布、
   非正预算被拒。
 - **`WaitForTimerCountAsync(n)` 数的是这口时钟上的累计注册数，不是「某个组件的计时器」。** 调用点必须自证「本宿主
-  里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。
+  里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。**这条前提由计数断言钉住**
+  （#1502）：两个消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`）都在末段加了
+  `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环改成逐轮注册）时计数改变，
+  每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与「互斥门必须有一个在门被削弱时
+  会失败的回归测试」是同一条治理先例。
 - **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
   **返回之后**才 `new PeriodicTimer(interval, timeProvider)`，而 `expired_total` 在第一趟内部就已写入。原测试以
   「metric 出现」为屏障随即 `Advance`，一旦落进这个窗口，tick 永久丢失、第二趟永不发生（CI 上表现为 153 次观测全部

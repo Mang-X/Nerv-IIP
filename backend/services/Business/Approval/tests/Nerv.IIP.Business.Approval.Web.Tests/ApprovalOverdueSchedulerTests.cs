@@ -127,6 +127,14 @@ public sealed class ApprovalOverdueSchedulerTests
                 new CheckOverdueApprovalStepsCommand("org-001", "env-dev"),
             ],
             sender.Commands);
+
+        // Executable guard for the barrier's premise: the scheduler's single PeriodicTimer is this clock's
+        // only registrant (the sender, Eventually and Consistently never touch it — the latter two poll on
+        // TimeProvider.System), so the total is exactly 1 for the whole test. Hand this clock to a second
+        // component that owns a timer, or rewrite the scheduler to register one timer per iteration, and the
+        // count moves and this fails on every run — instead of letting WaitForTimerCountAsync(1) be satisfied
+        // vacuously and degrading into an intermittent red.
+        Assert.Equal(1, clock.TimersCreated);
         await scheduler.StopAsync(CancellationToken.None);
     }
 

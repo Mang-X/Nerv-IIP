@@ -63,7 +63,9 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
     private static TimeSpan ResolveBudget(TimeSpan? registrationBudget)
     {
         var resolved = registrationBudget ?? BoundedSignal.DefaultBudget;
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(resolved, TimeSpan.Zero);
+        // The third argument is mandatory here: CallerArgumentExpression would otherwise name the local
+        // `resolved`, which does not exist from the caller's point of view.
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(resolved, TimeSpan.Zero, nameof(registrationBudget));
         return resolved;
     }
 
