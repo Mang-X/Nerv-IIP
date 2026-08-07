@@ -623,6 +623,7 @@ function New-NervTestEvidenceSummary {
         }
     })
     $baselineAssemblies = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'assemblies') { @($Baseline.assemblies) } else { @() }
+    $baselineSchemaVersion = 0
     $baselineUnavailableReason = if ($null -eq $Baseline) {
         'baseline-not-provided'
     }
@@ -631,7 +632,15 @@ function New-NervTestEvidenceSummary {
     # known versions compare identically (the comparison keys are lane+assembly, no runner field
     # participates); an unknown or missing version fails closed to report-only unavailable rather
     # than comparing against a file whose layout this code has never seen.
-    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or [int]$Baseline.schemaVersion -notin @(1, 2)) {
+    #
+    # Parsed with TryParse, not `[int]`: a hand-edited `schemaVersion` of `"abc"` or `[1, 2]` makes the
+    # cast raise a conversion error out of a pure summary builder, which is a different failure from the
+    # structured `unsupported-baseline-schema-version` this branch promises and the governance doc
+    # documents. TryParse keeps every non-integer shape — text, array, fractional, absent, null — on the
+    # one fail-closed path. `[int]` also *rounded* `1.5` into the supported set; TryParse rejects it.
+    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or
+        -not [int]::TryParse([string]$Baseline.schemaVersion, [ref]$baselineSchemaVersion) -or
+        $baselineSchemaVersion -notin @(1, 2)) {
         'unsupported-baseline-schema-version'
     }
     elseif (-not ($Baseline.PSObject.Properties.Name -contains 'granularity') -or -not ($Baseline.PSObject.Properties.Name -contains 'durationMetric')) {
