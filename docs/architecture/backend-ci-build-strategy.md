@@ -265,10 +265,144 @@ C1 只剩 **21.9 s**——余量本来就不厚。
 
 不满足以上任何一条时，请直接引用本文，不要从头再论证一遍。
 
+---
+
+# 三个专项 job 的构建盘点（MAN-669 PR-C）
+
+> 上半篇回答"四片要不要共享构建"。本节回答票面 scope 第 7 条：
+> **connector-hosts、OpenAPI drift 和 ERP 专项这三个 job 各自在构建什么，其中有多少是它们
+> 其实不需要的。** 结论：**三个 job 都已经是精确构建，没有任何一个为了跑少数项目去构建整个
+> 解决方案，"收敛到精确项目集合"这条收益假设的实际值为 0。** 盘点过程中发现并修复了一个
+> 与 PR-B 同族的真实缺陷（ConnectorHost 解决方案的 Release/Debug 配置泄漏）。
+
+## 口径：跨 job 的"重复"与 job 内的"重复"不是一回事
+
+三个专项 job 与四片 fast shard 是**并行**的独立 runner。它们的依赖闭包确实大量重叠，但
+**并行 job 之间的重复构建只花 runner 分钟，不花关键路径墙钟**；要把它变成收益，唯一途径是
+跨 job 复用产物，而 PR-B 已用四次实测否掉了这条路（更慢 59%~108%，见上半篇）。
+**PR-C 因此只把"同一个 job 内部的重复"当作可攻击面**，跨 job 的交集只做登记。
+
+三个 job 都不在关键路径上，这一点先摆在前面（run `31143773140` / `31138913408` 两次实测）：
+
+| job | 墙钟 | 关键路径（最慢 shard） |
+|---|---|---|
+| ERP Sales Order Demand Acceptance | 232 / 271 s | 281 / 307 s |
+| OpenAPI/api-client Drift | 117 / 142 s | 同上 |
+| Connector Host Tests | 102 / 117 s | 同上 |
+
+即：**把这三个 job 的构建时间全部清零，CI 的墙钟一秒都不会短。**任何改动只能以
+runner 分钟、可维护性或正确性为理由，不能以"提速 CI"为理由。
+
+## 逐 job 盘点
+
+### 1. ERP Sales Order Demand Acceptance
+
+**它构建什么**（`scripts/verify-erp-sales-order-demand-planning.ps1`，非推测：脚本里是硬编码的
+五个 `csproj` 路径 + 一个 `foreach`）：
+
+```
+dotnet build <MasterData.Web|Erp.Web|DemandPlanning.Web|FullChain.Tests|DemandPlanning.Web.Tests> -m:1 -nr:false
+```
+
+五次**串行**、单进程（`-m:1`）、不复用 MSBuild node（`-nr:false`）、不带 `--configuration`
+（因此全程 Debug，与后续 `dotnet run --no-build` / `dotnet test --no-build` 一致）。
+**没有 `dotnet build backend/Nerv.IIP.sln`，也没有任何一次整解构建。**
+
+**耗时拆分**（`Invoke-DotNet` 的 `durationMs` 原始行，两次 run）：
+
+| 项目 | run `31143773140` | run `31138913408` |
+|---|---:|---:|
+| MasterData.Web | 45.3 | 67.4 |
+| Erp.Web | 16.2 | 16.1 |
+| DemandPlanning.Web | 6.4 | 6.4 |
+| FullChain.Tests | 33.2 | 32.3 |
+| DemandPlanning.Web.Tests | 6.6 | 6.4 |
+| **构建合计** | **107.6** | **128.6** |
+| `Verify ERP …` step | 210 | 249 |
+| **构建占比** | **51%** | **52%** |
+
+另一半（约 102 / 120 s）是 compose 起 PostgreSQL+Redis、建一次性数据库、起三个真服务并等
+health、跑完整验收剧本、两次 `--no-build` 探针测试、以及清理。这部分是这个 job 的**本体**，
+与构建策略无关。
+
+**与 fast shard 的交集**：`DemandPlanning.Web.Tests` 同时属于 fast shard `business-core-b`
+（那边是 Release）；`FullChain.Tests` 属于 heavy lane `full-chain`，不在任何 fast shard 里；
+三个 `.Web` 服务项目在 `business-gateway` / `business-core-b` 两片的依赖闭包内。
+按上面的口径，这些都是并行 job 之间的交集，不构成可攻击面。
+
+**job 内部的可攻击面**：五次独立 MSBuild 调用对同一个重叠闭包各求值一次。这正是票面背景段
+"会再次串行构建 …" 指的东西。收益用探针实测，见下节，**不靠估算**。
+
+### 2. Connector Host Tests
+
+**它构建什么**：一次 `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --configuration
+Release`——一次 MSBuild 调用、一个解决方案，而该解决方案里的每个项目要么本身是被测程序集，
+要么是被测程序集的依赖。**没有多余项目，也没有 job 内重复调用，无可攻击面。**
+
+耗时：job 墙钟 102 / 117 s，`Test connector host solution` step 72 / 75 s；
+该 lane 的 committed baseline TRX 为 55.2 s，即 restore+build 约 17–20 s。
+
+**与 backend 的交集**：闭包里有 8 个 `backend/common/**` 项目（SDK 与 contracts）。
+这不是新引入的跨引用——`ProjectReference` 本来就在，解决方案里本来就登记了其中 5 个。
+`connector-hosts/` 与 `backend/` 仍是两个独立 `.sln`，本 PR 没有合并它们，也没有新增任何
+跨目录引用（AGENTS.md "Do NOT" #2 未被触碰）。
+
+**盘点中发现的真实缺陷（已修）**：那 8 个里只有 5 个是解决方案成员
+（`Sdk.Core`、`Sdk.Auth`、`Sdk.ConnectorProtocol`、`Contracts.ConnectorProtocol`、`ServiceAuth`）。
+另外 3 个——`Sdk.Ops` → `Contracts.Ops` → `Contracts.IntegrationEvents`——只能经
+`ConnectorHost.Application` 的 `ProjectReference` 传递到达。MSBuild 通过解决方案的
+configuration map 解析项目配置，不在 map 里的项目回落到自身默认配置，于是
+**`--configuration Release` 的构建把这三个产出到 `bin/Debug`**：Release 测试程序集链接
+Debug 依赖，构建输出里没有任何东西会失败。
+
+两次独立 run 各三行原始日志（run `31143773140` job `92758931855`、
+run `31138913408` job `92744407293`）：
+
+```
+Nerv.IIP.Contracts.IntegrationEvents -> …/backend/common/Contracts/…/bin/Debug/net10.0/….dll
+Nerv.IIP.Contracts.Ops               -> …/backend/common/Contracts/…/bin/Debug/net10.0/….dll
+Nerv.IIP.Sdk.Ops                     -> …/backend/common/Sdk/…/bin/Debug/net10.0/….dll
+```
+
+这与 PR-B 在 `backend/Nerv.IIP.sln` 里发现的 `Nerv.IIP.Contracts.Mes` 是**同一个缺陷类**，
+只是发生在另一个解决方案上。PR-B 的门禁挡不住它：那条规则是**目录规则**（`backend/**` 下
+每个 `csproj` 必须是 `backend/Nerv.IIP.sln` 的成员），按构造只认识一个解决方案，而本次泄漏的
+三个项目恰恰是 `backend` 解决方案的合法成员。
+
+### 3. OpenAPI/api-client Drift
+
+**它构建什么**（`scripts/verify-openapi-client-drift.ps1` → `scripts/export-gateway-openapi.ps1`）：
+
+```
+dotnet build <PlatformGateway.Web|BusinessGateway.Web> -o artifacts/openapi-export/<name> /p:UseSharedCompilation=false
+```
+
+两个项目，两次调用，不带 `--configuration`（Debug），随后各起一个进程抓 `swagger.json`；
+之后是 `pnpm install --frozen-lockfile` + `pnpm generate:api` + `git diff`。
+**没有整解构建，也没有构建任何一个不需要的项目**——导出 OpenAPI 就是要真跑这两个网关。
+
+耗时：job 墙钟 117 / 142 s，`Verify OpenAPI/api-client drift` step 92 / 118 s；
+其中 `export-gateway-openapi.ps1` 65.5 s、`pnpm install` 6.9 s、`generate:api` 4.5 s
+（run `31143773140` 的 `Invoke-*` 原始 `durationMs` 行）。
+
+**与 fast shard 的交集**：两个网关的 `.Web` 项目在 `business-gateway` / `platform` 两片的
+依赖闭包内（那边是 Release）。同样是并行 job 之间的交集。
+
+**job 内部的可攻击面**：两次独立 MSBuild 调用共享 `backend/common/**` 闭包。
+与 ERP 同类，但只有两次而不是五次，量级更小。用探针实测，见下节。
+
+## 探针：把"串行多次调用"的代价量出来
+
+（本节数字由 PR 内的临时探针 job 产出，探针跑完即从 `ci.yml` 删除，从不是 required check。）
+
+## 裁决
+
+## 复评触发条件
+
 ## 遗留 / 下一步
 
 - 关键路径仍是"最慢那一片"，当前 281–309 s。继续压缩要靠**配平**（MAN-664，必须用配平后的
   实测重定权重）和**单片内部并行**（MAN-663 已在 BusinessGateway 上做过），不是靠构建策略。
-- ERP job 的重复构建去重是 MAN-669 PR-C，本文不涉及。
+  三个专项 job 都在关键路径之下，改它们不影响这个数字。
 - 票面方案 ② 的字面形态（`--no-build --no-restore`）仍未被直接实测。本文按最有利于它的
   上界口径否定了它；若上面的复评触发条件成立而需要重开，第一件事就是补这个直测。

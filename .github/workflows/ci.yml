@@ -663,10 +663,9 @@ jobs:
 
   man669-probe-openapi-split:
     name: MAN-669 probe - OpenAPI gateway builds
-    # Tier B (no step runs after a failure); probe only. Mirrors export-gateway-openapi.ps1 exactly
-    # (`-o <dir> /p:UseSharedCompilation=false`, no --configuration), then measures the consolidated
-    # counterfactual on the same runner. The second arm is deliberately warm: it answers "what is
-    # left to save once the first gateway has already been built", which is the whole question.
+    # Tier B (no step runs after a failure); probe only. Mirrors export-gateway-openapi.ps1 exactly:
+    # `-o <dir> /p:UseSharedCompilation=false`, no --configuration, one invocation per gateway. The
+    # consolidated counterfactual is the separate job below, on its own runner.
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -705,6 +704,56 @@ jobs:
           echo "MAN669PRC openapi-split-total $(( $(date +%s%3N) - total_start ))ms"
           echo "MAN669PRC openapi-split-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
           echo "MAN669PRC openapi-split-release-outputs $(find backend -path '*/bin/Release/net10.0/*.dll' | wc -l)"
+
+  man669-probe-openapi-consolidated:
+    name: MAN-669 probe - OpenAPI consolidated build
+    # Tier B (no step runs after a failure); probe only. The counterfactual for the job above: both
+    # gateways in one MSBuild invocation, into their own bin/ (adopting this would mean the export
+    # script launching each gateway from its own bin/Debug/net10.0 instead of a shared -o directory).
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Probe consolidated gateway build
+        timeout-minutes: 20
+        env:
+          NUGET_XMLDOC_MODE: skip
+        run: |
+          set -euo pipefail
+          cat > backend/ci/man669-probe-openapi.slnf <<'SLNF'
+          {
+            "solution": {
+              "path": "../Nerv.IIP.sln",
+              "projects": [
+                "gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj",
+                "gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj"
+              ]
+            }
+          }
+          SLNF
+          start=$(date +%s%3N)
+          dotnet build backend/ci/man669-probe-openapi.slnf /p:UseSharedCompilation=false
+          echo "MAN669PRC openapi-consolidated-total $(( $(date +%s%3N) - start ))ms"
+          echo "MAN669PRC openapi-consolidated-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
+          echo "MAN669PRC openapi-consolidated-release-outputs $(find backend -path '*/bin/Release/net10.0/*.dll' | wc -l)"
 
   connector-host-tests:
     name: Connector Host Tests
