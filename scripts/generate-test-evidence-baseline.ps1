@@ -47,7 +47,13 @@ if ($PSCmdlet.ParameterSetName -eq 'GitHubConsole') {
         runAttempt = [int]$run.attempt; jobId = $GitHubJobId; headSha = [string]$checkoutProvenance.headSha; testedSha = [string]$checkoutProvenance.testedSha
         sourceUrl = [string]$run.url; event = [string]$run.event; headBranch = [string]$run.headBranch
         conclusion = [string]$run.conclusion; jobConclusion = [string]$job.conclusion
-        runnerOs = $runnerProvenance.runnerOs; runnerImage = $runnerProvenance.runnerImage; dotnetSdk = $runnerProvenance.dotnetSdk; selectedLanes = @('backend'); lane = 'backend'
+        laneProvenance = @([pscustomobject][ordered]@{
+            lane = 'backend'; jobName = [string]$job.name
+            runnerOs = [string]$runnerProvenance.runnerOs
+            runnerImage = [string]$runnerProvenance.runnerImage
+            dotnetSdk = [string]$runnerProvenance.dotnetSdk
+        })
+        selectedLanes = @('backend'); lane = 'backend'
         generatorCommand = "pwsh scripts/generate-test-evidence-baseline.ps1 -Repository $Repository -GitHubRunId $GitHubRunId -GitHubJobId $GitHubJobId -OutputPath scripts/test-evidence-baseline.json"
     }
     $summaries = @(ConvertFrom-NervDotNetConsoleSummary -Text $safeLog -RunMetadata $metadata)
@@ -72,10 +78,12 @@ else {
     $summaries = @($sourceSummaries | ForEach-Object {
         [pscustomobject]@{ schemaVersion = 1; granularity = 'test'; durationMetric = 'trx-elapsed'; lane = $_.lane; assemblies = @($_.assemblies) }
     })
+    # Runner environment is read per lane from each lane's own summary — never from `$first`, whose
+    # runner image is only the first lane's and is not a property of the run (see TestEvidence.ps1).
     $metadata = @{
         sourceKind = 'trx-evidence'; repository = [string]$first.repository; workflowRunId = [string]$first.workflowRunId; runAttempt = 1; jobId = ''
         headSha = [string]$first.headSha; testedSha = [string]$first.testedSha; sourceUrl = [string]$first.sourceUrl; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
-        runnerOs = [string]$first.runnerOs; runnerImage = [string]$first.runnerImage; dotnetSdk = [string]$first.dotnetSdk; selectedLanes = @($summaries.lane | Sort-Object -Unique)
+        laneProvenance = @(Get-NervEvidenceLaneProvenance -SourceSummaries $sourceSummaries); selectedLanes = @($summaries.lane | Sort-Object -Unique)
         generatorCommand = 'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json'
     }
 }
