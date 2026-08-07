@@ -364,10 +364,15 @@ Assert-Equal 822000 ($imported.assemblies | Where-Object assembly -eq 'Nerv.IIP.
 $baselineA = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 $baselineB = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal ($baselineA | ConvertTo-Json -Depth 100) ($baselineB | ConvertTo-Json -Depth 100) 'Baseline generation must be deterministic.'
-$selectorMetadata = $metadata.Clone(); $selectorMetadata.runnerImage = 'ubuntu-latest'; $selectorMetadata.dotnetSdk = '10.0.x'
+$selectorMetadata = $metadata.Clone()
+$selectorMetadata.laneProvenance = @(@{ lane = 'backend'; jobName = 'Backend Tests'; runnerOs = 'Linux'; runnerImage = 'ubuntu-latest'; dotnetSdk = '10.0.x' })
 $selectorRejected = $false
 try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $selectorMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $selectorRejected = $true }
 Assert-True $selectorRejected 'Baseline provenance must reject runner selectors and wildcard SDK versions.'
+$missingProvenanceMetadata = $metadata.Clone(); $missingProvenanceMetadata.laneProvenance = @()
+$missingProvenanceRejected = $false
+try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $missingProvenanceMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $missingProvenanceRejected = $true }
+Assert-True $missingProvenanceRejected 'A baseline with no per-lane runner environment row must be rejected, not silently unprovenanced.'
 $pushMismatchMetadata = $metadata.Clone(); $pushMismatchMetadata.testedSha = '1123456789abcdef0123456789abcdef01234567'
 $pushMismatchRejected = $false
 try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $pushMismatchMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $pushMismatchRejected = $true }
@@ -414,6 +419,21 @@ try {
     $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend-shard-1'; jobName = 'Backend Tests - BusinessGateway'; artifactName = 'backend-shard-1-evidence'; assemblies = @() }
     # A baseline refresh consumes every CI-wired lane, so the fixture set is the full allowlist.
     $evidenceLaneJobs = Get-NervTestEvidenceLaneJobs
+    # The fixture reproduces the real per-job image spread observed on run 31149427664 (2026-08-07):
+    # two lanes on the old image, three on the new one, in one successful attempt-1 main push.
+    # A homogeneous fixture would let the cross-lane equality rule come back unnoticed.
+    $laneRunnerImages = [ordered]@{
+        'backend-shard-1' = 'ubuntu24@20260720.247.2'
+        'backend-shard-2' = 'ubuntu24@20260804.265.1'
+        'backend-shard-3' = 'ubuntu24@20260720.247.2'
+        'backend-shard-4' = 'ubuntu24@20260804.265.1'
+        'connector-host' = 'ubuntu24@20260804.265.1'
+    }
+    function New-NervEvidenceJobLog {
+        param([Parameter(Mandatory)] [string] $RunnerImage, [string] $DotnetSdk = '10.0.302')
+        $imageVersion = $RunnerImage.Split('@')[1]
+        return "Image: ubuntu-24.04`nVersion: $imageVersion`ndotnet-install: .NET Core SDK with version '$DotnetSdk' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567"
+    }
     function New-NervEvidenceSummarySet {
         param([hashtable] $Overrides = @{}, [string] $OverrideLane = 'connector-host')
         return @(
@@ -422,6 +442,7 @@ try {
                 $summary.lane = $laneName
                 $summary.jobName = [string] $evidenceLaneJobs[$laneName]
                 $summary.artifactName = "$laneName-evidence"
+                $summary.runnerImage = [string] $laneRunnerImages[$laneName]
                 if ($laneName -ceq $OverrideLane) {
                     foreach ($key in $Overrides.Keys) { $summary[$key] = $Overrides[$key] }
                 }
@@ -433,7 +454,8 @@ try {
         @{ Name = 'mixed-head-sha'; Field = 'headSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
         @{ Name = 'mixed-tested-sha'; Field = 'testedSha'; Value = '1123456789abcdef0123456789abcdef01234567' },
         @{ Name = 'missing-image'; Field = 'runnerImage'; Value = '' },
-        @{ Name = 'mixed-sdk'; Field = 'dotnetSdk'; Value = '10.0.303' },
+        @{ Name = 'missing-runner-os'; Field = 'runnerOs'; Value = '' },
+        @{ Name = 'missing-sdk'; Field = 'dotnetSdk'; Value = '' },
         @{ Name = 'wrong-url'; Field = 'sourceUrl'; Value = 'https://example.invalid/actions/runs/101' }
     )) {
         $caseRoot = Join-Path $invalidBaselineRoot $invalidCase.Name
@@ -455,7 +477,6 @@ try {
         [IO.Directory]::CreateDirectory((Join-Path $validRoot "lane-$validIndex")) | Out-Null
         Write-NervUtf8NoBom (Join-Path $validRoot "lane-$validIndex/summary.json") (($validSummary | ConvertTo-Json -Depth 20) + "`n")
     }
-    $authoritativeJobLog = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-install: .NET Core SDK with version '10.0.302' is already installed.`ntested-sha=0123456789abcdef0123456789abcdef01234567"
     $authorityJobs = [Collections.Generic.List[object]]::new()
     $authorityJobLogs = [ordered]@{}
     # The test-free shard aggregate must still be a successful job, but owns no lane and no log.
@@ -464,12 +485,13 @@ try {
     foreach ($laneName in $evidenceLaneJobs.Keys) {
         $authorityJobId++
         $authorityJobs.Add([ordered]@{ databaseId = "$authorityJobId"; name = [string] $evidenceLaneJobs[$laneName]; conclusion = 'success' })
-        $authorityJobLogs[[string] $evidenceLaneJobs[$laneName]] = $authoritativeJobLog
+        # Each lane's log carries that lane's own image, which is what the authority check compares against.
+        $authorityJobLogs[[string] $evidenceLaneJobs[$laneName]] = New-NervEvidenceJobLog -RunnerImage ([string] $laneRunnerImages[$laneName])
     }
     $authorityTemplate = [ordered]@{ run = [ordered]@{ databaseId = '101'; event = 'push'; headBranch = 'main'; headSha = '0123456789abcdef0123456789abcdef01234567'; attempt = 1; conclusion = 'success'; url = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; workflowName = 'CI'; jobs = @($authorityJobs) }; latestRuns = @([ordered]@{ databaseId = '101'; attempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; conclusion = 'success'; event = 'push'; headBranch = 'main' }); jobLogs = $authorityJobLogs }
     $sourceSummaries = @(New-NervEvidenceSummarySet | ForEach-Object { [pscustomobject]$_ })
     Assert-NervEvidenceRootAuthority -SourceSummaries $sourceSummaries -Run ([pscustomobject]$authorityTemplate.run) -LatestRuns @([pscustomobject]$authorityTemplate.latestRuns[0]) -JobLogs $authorityTemplate.jobLogs | Out-Null
-    foreach ($authorityCase in @('partial-shard-family','wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
+    foreach ($authorityCase in @('partial-shard-family','wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','lane-image-swapped','single-lane-sdk-forged','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
         $authority = ($authorityTemplate | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable)
         $caseSummaries = @($sourceSummaries | ForEach-Object { $_ | ConvertTo-Json -Depth 20 | ConvertFrom-Json })
         if ($authorityCase -eq 'partial-shard-family') { $caseSummaries = @($caseSummaries | Where-Object { [string]$_.lane -cne 'backend-shard-3' }) }
@@ -479,6 +501,10 @@ try {
         elseif ($authorityCase -eq 'runner-os-mismatch') { $caseSummaries | ForEach-Object { $_.runnerOs = 'Windows' } }
         elseif ($authorityCase -eq 'wrong-resolved-image') { $caseSummaries | ForEach-Object { $_.runnerImage = 'ubuntu24@20260720.247.3' } }
         elseif ($authorityCase -eq 'wrong-resolved-sdk') { $caseSummaries | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
+        # Dropping cross-lane equality must not let one lane borrow a sibling's image. The swapped value
+        # is genuinely present in this very run, so only the per-lane job-log comparison can reject it.
+        elseif ($authorityCase -eq 'lane-image-swapped') { @($caseSummaries | Where-Object { [string]$_.lane -ceq 'backend-shard-1' }) | ForEach-Object { $_.runnerImage = [string]$laneRunnerImages['backend-shard-2'] } }
+        elseif ($authorityCase -eq 'single-lane-sdk-forged') { @($caseSummaries | Where-Object { [string]$_.lane -ceq 'connector-host' }) | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
         elseif ($authorityCase -eq 'forged-tested-sha') { $caseSummaries | ForEach-Object { $_.testedSha = '1123456789abcdef0123456789abcdef01234567' } }
         elseif ($authorityCase -eq 'latest-attempt-drift') { $authority.latestRuns[0].attempt = 2 }
         elseif ($authorityCase -eq 'latest-sha-drift') { $authority.latestRuns[0].headSha = '1123456789abcdef0123456789abcdef01234567' }
@@ -489,6 +515,85 @@ try {
         try { Assert-NervEvidenceRootAuthority -SourceSummaries $caseSummaries -Run ([pscustomobject]$authority.run) -LatestRuns @([pscustomobject]$authority.latestRuns[0]) -JobLogs $authority.jobLogs } catch { $authorityFailed = $true }
         Assert-True $authorityFailed "Actions authority case '$authorityCase' must fail."
     }
+
+    # ---------------------------------------------------------------------------------------------
+    # Provenance splits into run identity (structurally shared by every job of one run) and per-job
+    # environment (never shared by construction). Three contract tests hold that split in place; each
+    # one fails if the split is weakened in either direction.
+    # ---------------------------------------------------------------------------------------------
+
+    # (1) A qualifying run whose jobs landed on different runner images is ACCEPTED.
+    #     Weakening guard: put 'runnerOs'/'runnerImage'/'dotnetSdk' back into the run-identity list and
+    #     this fails with "Evidence summaries have mixed provenance field '<f>'".
+    $mixedImages = @($sourceSummaries | ForEach-Object { [string]$_.runnerImage } | Sort-Object -Unique)
+    Assert-True ($mixedImages.Count -gt 1) 'The mixed-environment fixture must actually span more than one runner image.'
+    $mixedIdentity = Assert-NervEvidenceSourceSummaries -SourceSummaries $sourceSummaries
+    Assert-Equal '101' $mixedIdentity.workflowRunId 'A mixed-runner-image run must still resolve one run identity.'
+    Assert-NervEvidenceRootAuthority -SourceSummaries $sourceSummaries -Run ([pscustomobject]$authorityTemplate.run) -LatestRuns @([pscustomobject]$authorityTemplate.latestRuns[0]) -JobLogs $authorityTemplate.jobLogs | Out-Null
+    # The returned identity is narrowed on purpose: no caller can read a per-job field off it and
+    # promote one lane's machine to a run-wide fact. Reintroducing those properties fails this.
+    foreach ($leakedField in (Get-NervEvidenceLaneEnvironmentFields)) {
+        Assert-True (-not ($mixedIdentity.PSObject.Properties.Name -ccontains $leakedField)) "Run identity must not expose per-job environment field '$leakedField'."
+    }
+    Assert-Equal ((Get-NervEvidenceRunIdentityFields) -join ',') (@($mixedIdentity.PSObject.Properties.Name) -join ',') 'Run identity must expose exactly the run-identity field set.'
+
+    # (2) Run identity stays byte-for-byte equal across lanes. One mismatching lane is still REJECTED,
+    #     field by field, with the exact message — so moving any field out of the identity set fails here.
+    foreach ($identityField in (Get-NervEvidenceRunIdentityFields)) {
+        $driftValue = switch ($identityField) {
+            'workflowRunId' { '102' }
+            'runAttempt' { 2 }
+            'headSha' { '1123456789abcdef0123456789abcdef01234567' }
+            'testedSha' { '1123456789abcdef0123456789abcdef01234567' }
+            'repository' { 'Mang-X/Other' }
+            'event' { 'pull_request' }
+            'headBranch' { 'feature' }
+            'sourceUrl' { 'https://github.com/Mang-X/Nerv-IIP/actions/runs/102' }
+        }
+        $driftSummaries = @(New-NervEvidenceSummarySet -Overrides @{ $identityField = $driftValue } -OverrideLane 'connector-host' | ForEach-Object { [pscustomobject]$_ })
+        $driftMessage = $null
+        try { Assert-NervEvidenceSourceSummaries -SourceSummaries $driftSummaries | Out-Null } catch { $driftMessage = [string]$_.Exception.Message }
+        Assert-Equal "Evidence summaries have mixed provenance field '$identityField'." $driftMessage "Mixed run identity field '$identityField' must be rejected by the cross-lane equality rule."
+    }
+
+    # (3) Per-lane environment is recorded per lane in the baseline, and there is no run-wide runner
+    #     field left to mistake for the whole. Reintroducing a flat source.runnerImage fails this.
+    $laneProvenance = @(Get-NervEvidenceLaneProvenance -SourceSummaries $sourceSummaries)
+    $provenanceBaseline = New-NervTestEvidenceBaseline -Summaries @($sourceSummaries | ForEach-Object {
+        [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$_.lane; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) }
+    }) -SourceMetadata @{
+        sourceKind = 'trx-evidence'; repository = 'Mang-X/Nerv-IIP'; workflowRunId = '101'; runAttempt = 1; jobId = ''
+        headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'
+        sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
+        laneProvenance = $laneProvenance; selectedLanes = @($sourceSummaries.lane | Sort-Object -Unique); generatorCommand = 'fixture'
+    } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z')
+    Assert-Equal 2 $provenanceBaseline.schemaVersion 'Per-lane provenance is schema 2; a schema-1 file carries the misleading flat trio instead.'
+    foreach ($flatField in (Get-NervEvidenceLaneEnvironmentFields)) {
+        Assert-True (-not ($provenanceBaseline.source.PSObject.Properties.Name -ccontains $flatField)) "Baseline source must not carry a run-wide '$flatField'; one lane's value is not the run's."
+    }
+    Assert-Equal @($sourceSummaries).Count @($provenanceBaseline.source.laneProvenance).Count 'Baseline must record one runner-environment row per evidence lane.'
+    foreach ($expectedRow in $laneProvenance) {
+        $actualRow = @($provenanceBaseline.source.laneProvenance | Where-Object { [string]$_.lane -ceq [string]$expectedRow.lane })
+        Assert-Equal 1 $actualRow.Count "Baseline lane provenance must contain exactly one row for lane '$($expectedRow.lane)'."
+        Assert-Equal ([string]$expectedRow.runnerImage) ([string]$actualRow[0].runnerImage) "Baseline lane provenance must record lane '$($expectedRow.lane)' own runner image."
+        Assert-Equal ([string]$expectedRow.jobName) ([string]$actualRow[0].jobName) "Baseline lane provenance must bind lane '$($expectedRow.lane)' to its own job name."
+        Assert-Equal ([string]$expectedRow.dotnetSdk) ([string]$actualRow[0].dotnetSdk) "Baseline lane provenance must record lane '$($expectedRow.lane)' own SDK."
+        Assert-Equal ([string]$expectedRow.runnerOs) ([string]$actualRow[0].runnerOs) "Baseline lane provenance must record lane '$($expectedRow.lane)' own runner OS."
+    }
+    # Both observed images survive into the baseline: collapsing the rows to a single value fails here.
+    Assert-Equal ($mixedImages -join ',') ((@($provenanceBaseline.source.laneProvenance | ForEach-Object { [string]$_.runnerImage }) | Sort-Object -Unique) -join ',') 'Baseline must preserve every distinct runner image the run actually used.'
+    # A row that names a lane the baseline does not cover would be provenance for nothing.
+    $strayProvenanceRejected = $false
+    try {
+        New-NervTestEvidenceBaseline -Summaries @([pscustomobject]@{ granularity = 'test'; assemblies = @() }) -SourceMetadata @{
+            sourceKind = 'trx-evidence'; repository = 'Mang-X/Nerv-IIP'; workflowRunId = '101'; runAttempt = 1; jobId = ''
+            headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'
+            sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
+            laneProvenance = @($laneProvenance[0], $laneProvenance[0]); selectedLanes = @('backend-shard-1'); generatorCommand = 'fixture'
+        } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z') | Out-Null
+    }
+    catch { $strayProvenanceRejected = $true }
+    Assert-True $strayProvenanceRejected 'Duplicate lane provenance rows must be rejected so a lane cannot carry two environments.'
 }
 finally { if (Test-Path $invalidBaselineRoot) { Remove-Item $invalidBaselineRoot -Recurse -Force } }
 

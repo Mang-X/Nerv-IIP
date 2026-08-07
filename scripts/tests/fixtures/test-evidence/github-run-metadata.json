@@ -9,9 +9,15 @@
   "headSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
   "testedSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
   "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/30819675007",
-  "runnerOs": "Linux",
-  "runnerImage": "ubuntu24@20260720.247.2",
-  "dotnetSdk": "10.0.302",
+  "laneProvenance": [
+    {
+      "lane": "backend",
+      "jobName": "Backend Tests",
+      "runnerOs": "Linux",
+      "runnerImage": "ubuntu24@20260720.247.2",
+      "dotnetSdk": "10.0.302"
+    }
+  ],
   "selectedLanes": ["backend"],
   "sourceKind": "github-console",
   "repository": "Mang-X/Nerv-IIP",
