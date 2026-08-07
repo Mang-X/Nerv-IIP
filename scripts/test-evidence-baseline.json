@@ -4,16 +4,16 @@
   "granularity": "test",
   "durationMetric": "trx-elapsed",
   "owner": "Nerv-IIP Platform CI/Test Governance",
-  "generatedAtUtc": "2026-08-07T13:11:36.4652870Z",
+  "generatedAtUtc": "2026-08-07T14:23:28.5941820Z",
   "source": {
     "kind": "trx-evidence",
     "repository": "Mang-X/Nerv-IIP",
-    "workflowRunId": "31180901066",
+    "workflowRunId": "31185687984",
     "runAttempt": 1,
     "jobId": "",
-    "headSha": "2148fc21cfe5db129a839b69c83b445f4a65badc",
-    "testedSha": "2148fc21cfe5db129a839b69c83b445f4a65badc",
-    "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/31180901066",
+    "headSha": "8f42c5ea4cdc28d28edb5b6b7523058ccdcebb2e",
+    "testedSha": "8f42c5ea4cdc28d28edb5b6b7523058ccdcebb2e",
+    "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/31185687984",
     "event": "push",
     "headBranch": "main",
     "conclusion": "success",
@@ -30,14 +30,14 @@
         "lane": "backend-shard-2",
         "jobName": "Backend Tests - Platform",
         "runnerOs": "Linux",
-        "runnerImage": "ubuntu24@20260804.265.1",
+        "runnerImage": "ubuntu24@20260720.247.2",
         "dotnetSdk": "10.0.302"
       },
       {
         "lane": "backend-shard-3",
         "jobName": "Backend Tests - Business Core A",
         "runnerOs": "Linux",
-        "runnerImage": "ubuntu24@20260720.247.2",
+        "runnerImage": "ubuntu24@20260804.265.1",
         "dotnetSdk": "10.0.302"
       },
       {
@@ -73,7 +73,7 @@
       "skipped": 0,
       "executed": 51,
       "total": 51,
-      "elapsedMilliseconds": 1825.6311
+      "elapsedMilliseconds": 2272.2119
     },
     {
       "lane": "backend-shard-1",
@@ -83,7 +83,7 @@
       "skipped": 0,
       "executed": 245,
       "total": 245,
-      "elapsedMilliseconds": 9069.0799
+      "elapsedMilliseconds": 9203.5168
     },
     {
       "lane": "backend-shard-1",
@@ -93,7 +93,7 @@
       "skipped": 0,
       "executed": 34,
       "total": 34,
-      "elapsedMilliseconds": 764.2296
+      "elapsedMilliseconds": 2030.3221
     },
     {
       "lane": "backend-shard-1",
@@ -103,7 +103,7 @@
       "skipped": 0,
       "executed": 231,
       "total": 231,
-      "elapsedMilliseconds": 15629.8763
+      "elapsedMilliseconds": 10285.7908
     },
     {
       "lane": "backend-shard-1",
@@ -113,7 +113,7 @@
       "skipped": 0,
       "executed": 39,
       "total": 39,
-      "elapsedMilliseconds": 1925.4216
+      "elapsedMilliseconds": 2610.5253
     },
     {
       "lane": "backend-shard-1",
@@ -123,7 +123,7 @@
       "skipped": 0,
       "executed": 206,
       "total": 206,
-      "elapsedMilliseconds": 14793.6529
+      "elapsedMilliseconds": 11857.7217
     },
     {
       "lane": "backend-shard-1",
@@ -133,7 +133,7 @@
       "skipped": 0,
       "executed": 36,
       "total": 36,
-      "elapsedMilliseconds": 1617.2879
+      "elapsedMilliseconds": 1818.6977
     },
     {
       "lane": "backend-shard-1",
@@ -143,7 +143,7 @@
       "skipped": 0,
       "executed": 328,
       "total": 328,
-      "elapsedMilliseconds": 6596.6566
+      "elapsedMilliseconds": 12584.8613
     },
     {
       "lane": "backend-shard-1",
@@ -153,7 +153,7 @@
       "skipped": 0,
       "executed": 60,
       "total": 60,
-      "elapsedMilliseconds": 1702.97
+      "elapsedMilliseconds": 2439.8327
     },
     {
       "lane": "backend-shard-1",
@@ -163,7 +163,7 @@
       "skipped": 0,
       "executed": 284,
       "total": 284,
-      "elapsedMilliseconds": 84200.7704
+      "elapsedMilliseconds": 95961.5135
     },
     {
       "lane": "backend-shard-1",
@@ -173,7 +173,7 @@
       "skipped": 0,
       "executed": 1036,
       "total": 1036,
-      "elapsedMilliseconds": 25523.6857
+      "elapsedMilliseconds": 20726.0298
     },
     {
       "lane": "backend-shard-2",
@@ -183,7 +183,7 @@
       "skipped": 0,
       "executed": 35,
       "total": 35,
-      "elapsedMilliseconds": 2544.2634
+      "elapsedMilliseconds": 2585.1357
     },
     {
       "lane": "backend-shard-2",
@@ -193,7 +193,7 @@
       "skipped": 0,
       "executed": 62,
       "total": 62,
-      "elapsedMilliseconds": 5130.6535
+      "elapsedMilliseconds": 7448.0561
     },
     {
       "lane": "backend-shard-2",
@@ -203,7 +203,7 @@
       "skipped": 0,
       "executed": 59,
       "total": 59,
-      "elapsedMilliseconds": 1978.9984
+      "elapsedMilliseconds": 2366.5415
     },
     {
       "lane": "backend-shard-2",
@@ -213,7 +213,7 @@
       "skipped": 0,
       "executed": 4,
       "total": 4,
-      "elapsedMilliseconds": 813.2407
+      "elapsedMilliseconds": 1843.263
     },
     {
       "lane": "backend-shard-2",
@@ -223,7 +223,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 2025.7403
+      "elapsedMilliseconds": 2516.0085
     },
     {
       "lane": "backend-shard-2",
@@ -233,7 +233,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 1692.3434
+      "elapsedMilliseconds": 2160.0344
     },
     {
       "lane": "backend-shard-2",
@@ -243,7 +243,7 @@
       "skipped": 0,
       "executed": 10,
       "total": 10,
-      "elapsedMilliseconds": 1928.7673
+      "elapsedMilliseconds": 2543.8759
     },
     {
       "lane": "backend-shard-2",
@@ -253,7 +253,7 @@
       "skipped": 0,
       "executed": 6,
       "total": 6,
-      "elapsedMilliseconds": 3294.3961
+      "elapsedMilliseconds": 2245.3546
     },
     {
       "lane": "backend-shard-2",
@@ -263,7 +263,7 @@
       "skipped": 0,
       "executed": 209,
       "total": 209,
-      "elapsedMilliseconds": 1237.8815
+      "elapsedMilliseconds": 1510.0748
     },
     {
       "lane": "backend-shard-2",
@@ -273,7 +273,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 2712.6934
+      "elapsedMilliseconds": 2574.4867
     },
     {
       "lane": "backend-shard-2",
@@ -283,7 +283,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 2082.853
+      "elapsedMilliseconds": 1775.879
     },
     {
       "lane": "backend-shard-2",
@@ -293,7 +293,7 @@
       "skipped": 0,
       "executed": 18,
       "total": 18,
-      "elapsedMilliseconds": 1391.6991
+      "elapsedMilliseconds": 1884.0689
     },
     {
       "lane": "backend-shard-2",
@@ -303,7 +303,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 1644.8304
+      "elapsedMilliseconds": 2130.4794
     },
     {
       "lane": "backend-shard-2",
@@ -313,7 +313,7 @@
       "skipped": 0,
       "executed": 2,
       "total": 2,
-      "elapsedMilliseconds": 968.6744
+      "elapsedMilliseconds": 1730.0789
     },
     {
       "lane": "backend-shard-2",
@@ -323,7 +323,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 1233.7
+      "elapsedMilliseconds": 1359.2383
     },
     {
       "lane": "backend-shard-2",
@@ -333,7 +333,7 @@
       "skipped": 0,
       "executed": 9,
       "total": 9,
-      "elapsedMilliseconds": 930.1042
+      "elapsedMilliseconds": 1017.9323
     },
     {
       "lane": "backend-shard-2",
@@ -343,7 +343,7 @@
       "skipped": 0,
       "executed": 84,
       "total": 84,
-      "elapsedMilliseconds": 4013.1619
+      "elapsedMilliseconds": 3813.2021
     },
     {
       "lane": "backend-shard-2",
@@ -353,7 +353,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 1959.3785
+      "elapsedMilliseconds": 1665.6398
     },
     {
       "lane": "backend-shard-2",
@@ -363,7 +363,7 @@
       "skipped": 0,
       "executed": 66,
       "total": 66,
-      "elapsedMilliseconds": 7513.8593
+      "elapsedMilliseconds": 12480.0573
     },
     {
       "lane": "backend-shard-2",
@@ -373,7 +373,7 @@
       "skipped": 0,
       "executed": 116,
       "total": 116,
-      "elapsedMilliseconds": 23203.2735
+      "elapsedMilliseconds": 24825.7822
     },
     {
       "lane": "backend-shard-2",
@@ -383,7 +383,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 1331.5674
+      "elapsedMilliseconds": 2586.8931
     },
     {
       "lane": "backend-shard-2",
@@ -393,7 +393,7 @@
       "skipped": 0,
       "executed": 29,
       "total": 29,
-      "elapsedMilliseconds": 3870.7942
+      "elapsedMilliseconds": 3838.6575
     },
     {
       "lane": "backend-shard-2",
@@ -403,7 +403,7 @@
       "skipped": 0,
       "executed": 1,
       "total": 1,
-      "elapsedMilliseconds": 3662.7205
+      "elapsedMilliseconds": 3860.7907
     },
     {
       "lane": "backend-shard-2",
@@ -413,7 +413,7 @@
       "skipped": 0,
       "executed": 19,
       "total": 19,
-      "elapsedMilliseconds": 2134.9244
+      "elapsedMilliseconds": 1827.9306
     },
     {
       "lane": "backend-shard-2",
@@ -423,7 +423,7 @@
       "skipped": 0,
       "executed": 95,
       "total": 95,
-      "elapsedMilliseconds": 14013.015
+      "elapsedMilliseconds": 13142.5249
     },
     {
       "lane": "backend-shard-2",
@@ -433,7 +433,7 @@
       "skipped": 0,
       "executed": 15,
       "total": 15,
-      "elapsedMilliseconds": 1516.3362
+      "elapsedMilliseconds": 1924.7374
     },
     {
       "lane": "backend-shard-2",
@@ -443,7 +443,7 @@
       "skipped": 0,
       "executed": 28,
       "total": 28,
-      "elapsedMilliseconds": 2228.0049
+      "elapsedMilliseconds": 1981.2941
     },
     {
       "lane": "backend-shard-2",
@@ -453,7 +453,7 @@
       "skipped": 0,
       "executed": 81,
       "total": 81,
-      "elapsedMilliseconds": 10231.8239
+      "elapsedMilliseconds": 15858.0173
     },
     {
       "lane": "backend-shard-2",
@@ -463,7 +463,7 @@
       "skipped": 0,
       "executed": 16,
       "total": 16,
-      "elapsedMilliseconds": 1647.8546
+      "elapsedMilliseconds": 3577.4373
     },
     {
       "lane": "backend-shard-2",
@@ -473,7 +473,7 @@
       "skipped": 0,
       "executed": 96,
       "total": 96,
-      "elapsedMilliseconds": 15038.3865
+      "elapsedMilliseconds": 14422.9512
     },
     {
       "lane": "backend-shard-2",
@@ -483,7 +483,7 @@
       "skipped": 0,
       "executed": 7,
       "total": 7,
-      "elapsedMilliseconds": 2389.5359
+      "elapsedMilliseconds": 1383.7423
     },
     {
       "lane": "backend-shard-2",
@@ -493,7 +493,7 @@
       "skipped": 0,
       "executed": 4,
       "total": 4,
-      "elapsedMilliseconds": 1750.153
+      "elapsedMilliseconds": 1199.9068
     },
     {
       "lane": "backend-shard-2",
@@ -503,7 +503,7 @@
       "skipped": 0,
       "executed": 3,
       "total": 3,
-      "elapsedMilliseconds": 2386.6691
+      "elapsedMilliseconds": 1538.7199
     },
     {
       "lane": "backend-shard-2",
@@ -513,7 +513,7 @@
       "skipped": 0,
       "executed": 14,
       "total": 14,
-      "elapsedMilliseconds": 1578.1682
+      "elapsedMilliseconds": 1583.0464
     },
     {
       "lane": "backend-shard-2",
@@ -523,17 +523,17 @@
       "skipped": 0,
       "executed": 13,
       "total": 13,
-      "elapsedMilliseconds": 1348.016
+      "elapsedMilliseconds": 2308.653
     },
     {
       "lane": "backend-shard-2",
       "assembly": "nerv.iip.testing.tests.dll",
-      "passed": 91,
+      "passed": 93,
       "failed": 0,
       "skipped": 0,
-      "executed": 91,
-      "total": 91,
-      "elapsedMilliseconds": 2551.7071
+      "executed": 93,
+      "total": 93,
+      "elapsedMilliseconds": 2276.4595
     },
     {
       "lane": "backend-shard-3",
@@ -543,7 +543,7 @@
       "skipped": 0,
       "executed": 74,
       "total": 74,
-      "elapsedMilliseconds": 4687.5938
+      "elapsedMilliseconds": 4629.8229
     },
     {
       "lane": "backend-shard-3",
@@ -553,7 +553,7 @@
       "skipped": 0,
       "executed": 30,
       "total": 30,
-      "elapsedMilliseconds": 1750.0097
+      "elapsedMilliseconds": 2890.6161
     },
     {
       "lane": "backend-shard-3",
@@ -563,7 +563,7 @@
       "skipped": 0,
       "executed": 83,
       "total": 83,
-      "elapsedMilliseconds": 9015.194
+      "elapsedMilliseconds": 7446.5178
     },
     {
       "lane": "backend-shard-3",
@@ -573,7 +573,7 @@
       "skipped": 0,
       "executed": 38,
       "total": 38,
-      "elapsedMilliseconds": 2702.4615
+      "elapsedMilliseconds": 2620.1262
     },
     {
       "lane": "backend-shard-3",
@@ -583,7 +583,7 @@
       "skipped": 0,
       "executed": 56,
       "total": 56,
-      "elapsedMilliseconds": 7292.448
+      "elapsedMilliseconds": 6964.2807
     },
     {
       "lane": "backend-shard-3",
@@ -593,7 +593,7 @@
       "skipped": 0,
       "executed": 26,
       "total": 26,
-      "elapsedMilliseconds": 2137.8134
+      "elapsedMilliseconds": 2281.1535
     },
     {
       "lane": "backend-shard-3",
@@ -603,7 +603,7 @@
       "skipped": 0,
       "executed": 233,
       "total": 233,
-      "elapsedMilliseconds": 72992.9564
+      "elapsedMilliseconds": 61116.7467
     },
     {
       "lane": "backend-shard-3",
@@ -613,7 +613,7 @@
       "skipped": 0,
       "executed": 46,
       "total": 46,
-      "elapsedMilliseconds": 1200.4295
+      "elapsedMilliseconds": 2321.3642
     },
     {
       "lane": "backend-shard-3",
@@ -623,7 +623,7 @@
       "skipped": 0,
       "executed": 542,
       "total": 542,
-      "elapsedMilliseconds": 26975.2815
+      "elapsedMilliseconds": 37964.1714
     },
     {
       "lane": "backend-shard-3",
@@ -633,7 +633,7 @@
       "skipped": 0,
       "executed": 80,
       "total": 80,
-      "elapsedMilliseconds": 2234.5341
+      "elapsedMilliseconds": 2136.5394
     },
     {
       "lane": "backend-shard-3",
@@ -643,7 +643,7 @@
       "skipped": 0,
       "executed": 226,
       "total": 226,
-      "elapsedMilliseconds": 20168.7307
+      "elapsedMilliseconds": 26799.5817
     },
     {
       "lane": "backend-shard-4",
@@ -653,7 +653,7 @@
       "skipped": 0,
       "executed": 18,
       "total": 18,
-      "elapsedMilliseconds": 2240.7791
+      "elapsedMilliseconds": 1938.0127
     },
     {
       "lane": "backend-shard-4",
@@ -663,7 +663,7 @@
       "skipped": 0,
       "executed": 138,
       "total": 138,
-      "elapsedMilliseconds": 5721.2434
+      "elapsedMilliseconds": 6673.21
     },
     {
       "lane": "backend-shard-4",
@@ -673,7 +673,7 @@
       "skipped": 0,
       "executed": 86,
       "total": 86,
-      "elapsedMilliseconds": 2099.0549
+      "elapsedMilliseconds": 1790.3439
     },
     {
       "lane": "backend-shard-4",
@@ -683,7 +683,7 @@
       "skipped": 0,
       "executed": 202,
       "total": 202,
-      "elapsedMilliseconds": 105510.12
+      "elapsedMilliseconds": 93068.474
     },
     {
       "lane": "backend-shard-4",
@@ -693,7 +693,7 @@
       "skipped": 0,
       "executed": 16,
       "total": 16,
-      "elapsedMilliseconds": 2214.8508
+      "elapsedMilliseconds": 1753.4285
     },
     {
       "lane": "backend-shard-4",
@@ -703,7 +703,7 @@
       "skipped": 0,
       "executed": 172,
       "total": 172,
-      "elapsedMilliseconds": 10269.3776
+      "elapsedMilliseconds": 6630.6686
     },
     {
       "lane": "connector-host",
@@ -713,7 +713,7 @@
       "skipped": 0,
       "executed": 43,
       "total": 43,
-      "elapsedMilliseconds": 2003.1067
+      "elapsedMilliseconds": 842.8164
     },
     {
       "lane": "connector-host",
@@ -723,7 +723,7 @@
       "skipped": 1,
       "executed": 6,
       "total": 7,
-      "elapsedMilliseconds": 2069.4055
+      "elapsedMilliseconds": 1214.9626
     },
     {
       "lane": "connector-host",
@@ -733,7 +733,7 @@
       "skipped": 0,
       "executed": 19,
       "total": 19,
-      "elapsedMilliseconds": 886.2786
+      "elapsedMilliseconds": 1150.3904
     },
     {
       "lane": "connector-host",
@@ -743,7 +743,7 @@
       "skipped": 0,
       "executed": 13,
       "total": 13,
-      "elapsedMilliseconds": 2025.1221
+      "elapsedMilliseconds": 1182.8938
     },
     {
       "lane": "connector-host",
@@ -753,7 +753,7 @@
       "skipped": 1,
       "executed": 30,
       "total": 31,
-      "elapsedMilliseconds": 42006.5493
+      "elapsedMilliseconds": 41211.7761
     },
     {
       "lane": "connector-host",
@@ -763,7 +763,7 @@
       "skipped": 0,
       "executed": 53,
       "total": 53,
-      "elapsedMilliseconds": 3958.7528
+      "elapsedMilliseconds": 3346.6867
     },
     {
       "lane": "connector-host",
@@ -773,7 +773,7 @@
       "skipped": 0,
       "executed": 29,
       "total": 29,
-      "elapsedMilliseconds": 1675.6859
+      "elapsedMilliseconds": 2212.3389
     }
   ]
 }

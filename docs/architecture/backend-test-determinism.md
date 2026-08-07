@@ -200,7 +200,7 @@ elapsed** 做 before/after 对比。局限如实记录：这是程序集粒度�
 `granularity: test` / `durationMetric: trx-elapsed`，`backend-shard-1` 的
 `nerv.iip.businessgateway.web.tests.dll` 当时记为 **22 996.0 ms / 1036 例**，耗时对比恢复为 `available` 的
 report-only delta。2026-08-07 又因 MAN-669 PR-A 换片导致的 (lane, assembly) 失键刷新到 run
-`31180901066`（schema 2、per-lane provenance），该行现为 **25 523.7 ms / 1036 例**；差额落在 hosted
+`31185687984`（schema 2、per-lane provenance），该行现为 **20 726.0 ms / 1036 例**；差额落在 hosted
 runner 抖动内。上表保留为 MAN-663 当时的取证过程，权威数字以 committed baseline 为准。另注：
 implementation-readiness 里「822 000 ms → 22 996 ms（约 −97.2%）」是**跨口径**百分比（分母取自旧
 project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**同口径**佐证正是上表两行——

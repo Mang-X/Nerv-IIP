@@ -633,16 +633,9 @@ function New-NervTestEvidenceSummary {
     # participates); an unknown or missing version fails closed to report-only unavailable rather
     # than comparing against a file whose layout this code has never seen.
     #
-    # Parsed with TryParse, not `[int]`, because the cast did three different wrong things to the
-    # non-integer values a hand-edited JSON file can actually hold:
-    #   `"abc"` / `[1, 2]` -> raised a conversion error out of this pure summary builder, which is a
-    #                         different failure from the structured reason this branch promises;
-    #   `1.5`              -> ROUNDED to 2 and compared as if the file had said schema 2;
-    #   `true`             -> became 1 and compared as if the file had said schema 1.
-    # TryParse keeps every non-integer shape — text, boolean, array, fractional, absent, null — on the
-    # one fail-closed path. Current culture is not a factor: PowerShell's `[string]` cast formats
-    # numerics invariantly, so no culture-dependent string reaches TryParse (measured across
-    # en-US/de-DE/zh-CN; an explicit InvariantCulture overload changes no observable outcome).
+    # TryParse, not `[int]`: the cast mishandled three shapes a hand-edited JSON file can hold, each in
+    # a different way. Which shapes, and why no NumberStyles/culture argument is needed, are in
+    # docs/architecture/test-evidence-governance.md ("Run identity versus per-job environment").
     elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or
         -not [int]::TryParse([string]$Baseline.schemaVersion, [ref]$baselineSchemaVersion) -or
         $baselineSchemaVersion -notin @(1, 2)) {

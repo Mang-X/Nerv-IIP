@@ -435,17 +435,12 @@ $schemalessBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertF
 $schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
-# The cases above all carry an integer. A hand-edited baseline does not have to: `"abc"`, `true`,
-# `[1, 2]` and `null` are all things a JSON file can say, and the guard promises the *same* structured
-# `unsupported-baseline-schema-version` for every one of them. The `[int]` cast this guard replaced did
-# three different wrong things instead, and the first four rows below are each a guard against one of
-# them — deleting the TryParse turns each of them red:
-#   non-numeric-text  `[int]"abc"`  threw a conversion error out of this pure builder
-#   array-value       `[int]@(1,2)` threw a conversion error out of this pure builder
-#   fractional        `[int]1.5`    ROUNDED to 2 and compared as if the file said schema 2
-#   boolean-true      `[int]$true`  became 1 and compared as if the file said schema 1
-# `json-null` is the honest exception: `[int]$null` was already 0, so both spellings reject it. It is
-# shape coverage, not a guard, and is kept for that — do not count it as evidence for this fix.
+# Non-integer `schemaVersion` shapes a hand-edited baseline can hold. Why the guard uses TryParse is in
+# docs/architecture/test-evidence-governance.md; what matters *here* is which rows are load-bearing:
+#   guards  — `non-numeric-text`, `array-value`, `fractional`, `boolean-true` each go red if the
+#             TryParse is reverted to `[int]`. Deleting one silently removes a regression guard.
+#   coverage — `json-null` (and the schemaless case above) reject identically under both spellings, so
+#             they document the contract but prove nothing about this fix. Never cite them as evidence.
 # Each value goes through a real ConvertTo-Json/ConvertFrom-Json round trip so it arrives in the exact
 # shape a caller reading a hand-edited file off disk would hand in.
 foreach ($malformedSchemaCase in @(
