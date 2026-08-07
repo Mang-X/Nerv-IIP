@@ -579,12 +579,13 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   但逐轮注册那条分支里，Inventory 的形状（先 `RunOnceAsync`、后建计时器）使下一轮的注册发生在「第二趟结果已可
   观测」**之后**，停机前断言会与它赛跑（Approval 是先建计时器后 dispatch，同样的重写大概率在下次 dispatch 前就
   注册完，停机前位置未必输——但「大概率」不是保障，两处统一取结构上成立的那个位置）。因此两处断言都放在
-  `StopAsync` 之后——`StopAsync(CancellationToken.None)` 会 await `ExecuteTask`（这条只在传 `None` 时成立：
-  它是 `ExecuteTask` 与 `Task.Delay(Timeout.Infinite, cancellationToken)` 的 `WhenAny`，带超时的 token 可能在
-  循环退出前返回、少数掉注册），循环退出前的最后一次注册必然已计入，赛跑变成结构保证。断言钉住的范围是「停机
-  返回前已完成的注册」，更晚出现的注册方不在其内。实测（把 Inventory worker 改成逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场
-  赛跑），但按 MAN-808 同一手法在 `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假
-  绿），停机后位置仍 3/3 报 `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
+  `StopAsync` 之后——`StopAsync` 是「用调用者交进来的 token 有界地等 `ExecuteTask`」，因此只有传 `None` 才会一直
+  等到循环真正退出；带超时的 token 可能提前返回、少数掉注册。（这里刻意只写行为、不写它当下用的是哪个 BCL API：
+  该实现细节在 runtime 版本间已经变过一次，行为没变。）传 `None` 时循环退出前的最后一次注册必然已计入，赛跑变成
+  结构保证。断言钉住的范围是「停机返回前已完成的注册」，更晚出现的注册方不在其内。实测（把 Inventory worker 改成
+  逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场赛跑），但按 MAN-808 同一手法在
+  `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假绿），停机后位置仍 3/3 报
+  `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
 - **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
   **返回之后**才 `new PeriodicTimer(interval, timeProvider)`，而 `expired_total` 在第一趟内部就已写入。原测试以
   「metric 出现」为屏障随即 `Advance`，一旦落进这个窗口，tick 永久丢失、第二趟永不发生（CI 上表现为 153 次观测全部

@@ -353,17 +353,18 @@ public sealed class InventoryReservationExpirationTests
         // execute — but it is the honest scope of the guard. It sits after StopAsync, and outside the
         // try/finally so a failing assertion above still surfaces as itself: StopAsync(CancellationToken.None)
         // awaits ExecuteTask, so by here the loop has exited and every registration it ever made is counted.
-        // The None matters and is not incidental — StopAsync only races ExecuteTask against
-        // Task.Delay(Timeout.Infinite, cancellationToken), so a token carrying a timeout could return before
-        // the loop exits and undercount the registrations this assertion is here to see. The position is
-        // load-bearing for the *other* way the premise can break — a loop rewritten to register one timer per
-        // iteration. In this worker's shape (RunOnceAsync first, PeriodicTimer after) that extra registration
-        // happens
-        // only after the second pass is already observable, so an assertion placed before the shutdown races
-        // it: measured with the loop rewritten to build a PeriodicTimer per iteration, the pre-shutdown
-        // position won the race and went red 3/3 here, but widening the re-registration window (a 1.5 s delay
-        // between RunOnceAsync and the next construction, the same technique used to size the barrier itself)
-        // turned it green — a false green — while this position stayed red 3/3, Expected 1 / Actual 2.
+        // The None matters and is not incidental — StopAsync waits for ExecuteTask bounded by the token the
+        // caller hands it, so only None waits until the loop has actually exited; a token carrying a timeout
+        // could return earlier and undercount the registrations this assertion is here to see. (Stated as
+        // behaviour rather than as a BCL implementation detail on purpose: the mechanism has already changed
+        // once across runtime versions, the behaviour has not.) The position is load-bearing for the *other*
+        // way the premise can break — a loop rewritten to register one timer per iteration. In this worker's
+        // shape (RunOnceAsync first, PeriodicTimer after) that extra registration happens only after the
+        // second pass is already observable, so an assertion placed before the shutdown races it: measured with
+        // the loop rewritten to build a PeriodicTimer per iteration, the pre-shutdown position won the race and
+        // went red 3/3 here, but widening the re-registration window (a 1.5 s delay between RunOnceAsync and
+        // the next construction, the same technique used to size the barrier itself) turned it green — a false
+        // green — while this position stayed red 3/3, Expected 1 / Actual 2.
         Assert.Equal(1, timeProvider.TimersCreated);
     }
 

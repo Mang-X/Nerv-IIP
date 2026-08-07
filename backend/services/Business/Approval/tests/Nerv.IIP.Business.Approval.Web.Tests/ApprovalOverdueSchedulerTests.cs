@@ -130,23 +130,16 @@ public sealed class ApprovalOverdueSchedulerTests
 
         await scheduler.StopAsync(CancellationToken.None);
 
-        // Executable guard for the barrier's premise: the scheduler's single PeriodicTimer is this clock's
-        // only registrant (the sender, Eventually and Consistently never touch it — the latter two poll on
-        // TimeProvider.System), so the total is exactly 1 for the whole test. Hand this clock to a second
-        // component that owns a timer and the count moves and this fails on every run — instead of letting
-        // WaitForTimerCountAsync(1) be satisfied vacuously and degrading into an intermittent red. What it
-        // pins is every registration made by the time shutdown returns; a registrant appearing only later is
-        // outside its reach. It sits after StopAsync(CancellationToken.None), which awaits ExecuteTask — and
-        // only because the token is None: StopAsync races ExecuteTask against
-        // Task.Delay(Timeout.Infinite, cancellationToken), so a token with a timeout could return before the
-        // loop exits and undercount. By here the loop has exited and every registration it ever made is
-        // counted, so a scheduler rewritten to register one timer per iteration is caught too. The position
-        // follows the same convention as the sibling call site in InventoryReservationExpirationTests, where
-        // the reasoning and the measurement are recorded; this scheduler builds its PeriodicTimer *before*
-        // the first dispatch, so a per-iteration rewrite would likely re-register before the next dispatch
-        // is observable and a pre-shutdown assertion might well hold here — but "might well" is not a
-        // guarantee, and the post-shutdown position is the one that is structural. Same position, one
-        // reason, no per-host reasoning to re-derive.
+        // Executable guard for the barrier's premise: this clock's only timer registrant is the scheduler's
+        // single PeriodicTimer (the sender never touches it; Eventually/Consistently poll TimeProvider.System),
+        // so the total is exactly 1 — a second registrant would otherwise satisfy WaitForTimerCountAsync(1)
+        // vacuously and turn this test intermittently red elsewhere. The reasoning, the post-StopAsync position
+        // convention and the measurement behind them are recorded once at the sibling call site in
+        // InventoryReservationExpirationTests and in docs/architecture/backend-test-determinism.md.
+        // Only the shape differs here: this scheduler builds its PeriodicTimer *before* the first dispatch
+        // (the Inventory worker builds it after), so the pre-shutdown race that makes the position provably
+        // load-bearing there does not reproduce — the post-shutdown position is taken anyway, as the one that
+        // holds structurally rather than by timing.
         Assert.Equal(1, clock.TimersCreated);
     }
 
