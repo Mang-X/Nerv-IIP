@@ -571,7 +571,8 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
 - **`WaitForTimerCountAsync(n)` 数的是这口时钟上的累计注册数，不是「某个组件的计时器」。** 调用点必须自证「本宿主
   里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。**这条前提由计数断言钉住**
   （#1502）：两个**业务侧**消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`；
-  `ObservationBudgetTests`/`ConsistentlyTests`/`EventuallyAssertTests` 里的调用点属原语自测，不受此约束）都在
+  `Nerv.IIP.Testing.Tests` 下的调用点——`ObservationBudgetTests`/`ConsistentlyTests`/`EventuallyAssertTests`/
+  `TimerRegistrationObservingTimeProviderTests`——属原语自测，不受此约束）都在
   **`StopAsync` 之后**加了 `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环
   改成逐轮注册）时计数改变，每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与
   「互斥门必须有一个在门被削弱时会失败的回归测试」是同一条治理先例。
