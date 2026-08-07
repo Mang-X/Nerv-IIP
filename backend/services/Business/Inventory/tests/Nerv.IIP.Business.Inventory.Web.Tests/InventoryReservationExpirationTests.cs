@@ -311,10 +311,18 @@ public sealed class InventoryReservationExpirationTests
             // worker never ran again, rather than ran slowly). Widening the Eventually budget cannot help:
             // the tick is lost permanently. The registration itself is the observable edge, and unlike
             // "which statement comes first in ExecuteAsync" it stays true however the worker is rewritten.
-            // Measured: widening the registration window (a 1.5 s delay in the worker between the first pass
-            // and the PeriodicTimer construction) fails this test with the metric barrier alone — with the
-            // exact CI message, openQuantity=1 after 2 s — and passes it with the barrier below. The first
-            // Advance above needs no barrier: it happens before StartAsync, when no timer exists yet.
+            // Measured once by hand (the experiment is not in the tree; it is also recorded in
+            // docs/architecture/backend-test-determinism.md): widening the registration window with a 1.5 s
+            // delay in the worker between the first pass and the PeriodicTimer construction fails this test
+            // with the metric barrier alone — with the exact CI message, openQuantity=1 after 2 s — and
+            // passes it with the barrier below. The first Advance above needs no barrier at all: it happens
+            // before StartAsync, when no timer exists yet.
+            //
+            // The count is this clock's *total* registrations, not "the worker's timer". It pins the right
+            // fact only because this host has exactly one registrant: the container above is a bare
+            // ServiceCollection that never receives the TimeProvider, and Eventually polls on
+            // TimeProvider.System. Hanging a second timer-owning component off this clock would let the
+            // other component's registration satisfy this barrier vacuously — re-derive the count then.
             await timeProvider.WaitForTimerCountAsync(1);
             timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -371,9 +379,10 @@ public sealed class InventoryReservationExpirationTests
     /// StockReservation.Reserve validates "expiration must be in the future" against the process wall
     /// clock, so the fake clock must be anchored to real now — a fixed calendar date would make these
     /// tests pass on the day they were written and throw every day after. Every assertion below is
-    /// relative to this anchor and advances the fake clock explicitly, so nothing waits on real time.
-    /// The clock also publishes timer registrations, so a test that advances it while a worker is running
-    /// can wait for the edge that makes the advance observable instead of guessing.
+    /// relative to this anchor and advances the fake clock explicitly, so nothing waits on real time. The
+    /// anchored constructor of <see cref="TimerRegistrationObservingTimeProvider"/> carries the general form
+    /// of that rule; this clock additionally publishes timer registrations, so a test that advances it while
+    /// a worker is running can wait for the edge that makes the advance observable.
     /// </summary>
     private static TimerRegistrationObservingTimeProvider CreateReservationClock() => new(DateTimeOffset.UtcNow);
 

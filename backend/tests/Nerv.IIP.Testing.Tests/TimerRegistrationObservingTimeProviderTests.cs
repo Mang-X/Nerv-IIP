@@ -4,12 +4,11 @@ namespace Nerv.IIP.Testing.Tests;
 /// The start-anchored constructor of <see cref="TimerRegistrationObservingTimeProvider"/>.
 /// </summary>
 /// <remarks>
-/// A subject whose <em>other</em> guard still reads the process wall clock (for example a domain rule that
-/// rejects a deadline in the past) cannot be driven by a clock parked in the year 2000, so those tests anchor
-/// at real now. The anchor has to be part of construction: <c>SetUtcNow</c> after the fact fires every timer
-/// already registered against the clock, which is only harmless while nothing has registered yet — precisely
-/// the kind of ordering assumption this provider exists to remove. These tests pin that the anchored
-/// constructor really starts where it is told and still publishes registrations.
+/// Why the anchor exists at all, and why it is a constructor parameter rather than a later
+/// <c>SetUtcNow</c> call, is documented once on that constructor — see
+/// <see cref="TimerRegistrationObservingTimeProvider"/>. These tests pin the three facts that
+/// documentation claims: the clock really starts where it is told, registrations are still published, and a
+/// non-positive budget is rejected.
 /// </remarks>
 public sealed class TimerRegistrationObservingTimeProviderTests
 {
