@@ -314,6 +314,13 @@ $discoveredProjects = @(
         Sort-Object -Unique
 )
 
+$discoveredBackendProjects = @(
+    Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.csproj' |
+        Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
+        ForEach-Object { Get-RepoRelativePath -RepositoryRoot $repositoryRoot -Path $_.FullName } |
+        Sort-Object -Unique
+)
+
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
 if ($unclassifiedProjects.Count -gt 0) {
     $errors.Add("Unclassified backend test projects: $($unclassifiedProjects -join ', ').")
@@ -332,7 +339,7 @@ else {
     $solutionProjects = @(
         Get-Content -LiteralPath $solutionPath |
             ForEach-Object {
-                if ($_ -match '"(?<path>[^" ]*\.Tests\.csproj)"') {
+                if ($_ -match '"(?<path>[^" ]*\.csproj)"') {
                     'backend/' + ($Matches.path -replace '\\', '/')
                 }
             } |
@@ -341,6 +348,23 @@ else {
     $projectsMissingFromSolution = @($discoveredProjects | Where-Object { $solutionProjects -notcontains $_ })
     if ($projectsMissingFromSolution.Count -gt 0) {
         $errors.Add("Backend test projects must also be in backend/Nerv.IIP.sln: $($projectsMissingFromSolution -join ', ').")
+    }
+
+    # Solution membership is a build-configuration invariant, not bookkeeping, and it covers *every*
+    # backend project rather than only the test ones. Each shard builds a `.slnf` over
+    # backend/Nerv.IIP.sln with `--configuration Release`, and MSBuild resolves a project's
+    # configuration through the solution's configuration map. A project that is only reachable as a
+    # transitive ProjectReference has no entry in that map, so it falls back to its own default and
+    # is emitted into bin/Debug — the shard then runs Release test assemblies linked against a Debug
+    # dependency, on every shard at once, with nothing in the build output that fails. That is
+    # exactly what backend/common/Contracts/Nerv.IIP.Contracts.Mes did until MAN-669 PR-B (visible
+    # as one `-> …/bin/Debug/net10.0/…` line in each shard log of run 31136085020).
+    $backendProjectsMissingFromSolution = @(
+        $discoveredBackendProjects |
+            Where-Object { $solutionProjects -notcontains $_ -and $projectsMissingFromSolution -notcontains $_ }
+    )
+    if ($backendProjectsMissingFromSolution.Count -gt 0) {
+        $errors.Add("Backend projects must be registered in backend/Nerv.IIP.sln, otherwise a Release shard build resolves them through their own default configuration and emits them into bin/Debug: $($backendProjectsMissingFromSolution -join ', ').")
     }
 }
 
@@ -549,4 +573,4 @@ if ($errors.Count -gt 0) {
     throw ("Backend test shard governance failed:`n  " + ($errors -join "`n  "))
 }
 
-Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards."
+Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards; $($discoveredBackendProjects.Count) backend projects are solution members and therefore build under the shard's own Release configuration."
