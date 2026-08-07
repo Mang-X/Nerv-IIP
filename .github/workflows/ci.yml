@@ -88,16 +88,26 @@ jobs:
   # on a hung run is the 10m test step. If it ever approaches 10m, raise both budgets rather than
   # only the step one, or the strict inequality stops protecting the evidence steps.
   #
-  # MAN-669 PR-B settled the build strategy and did NOT change these budgets. Each shard keeps
-  # restoring and building only its own .slnf. Measured over four runs (hot 31139435243 /
-  # 31139971326, cold 31140517256 / 31141123938): building the whole solution once costs 196-233s,
-  # which is more than any single shard's own restore+build (64-181s), so hoisting the build into a
-  # serial job lengthens the critical path even before the 3.03 GB of outputs (1.01 GB packed) are
-  # moved between jobs. Splitting a shard into restore / build --no-restore / test is also slower.
-  # Do not re-litigate this from first principles — read docs/architecture/backend-ci-build-strategy.md.
-  #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
+  #
+  # ---------------------------------------------------------------------------------------------
+  # Build strategy (MAN-669 PR-B). Separate subject from the timeout policy above; PR-B changed no
+  # budget. Each shard keeps restoring and building only its own .slnf. Measured over four runs
+  # (hot 31139435243 / 31139971326, cold 31140517256 / 31141123938): building the whole solution
+  # once costs 195.7-233.2s, more than any single shard's own restore+build (62.7-180.9s), so
+  # hoisting the build into a serial job lengthens the critical path even before the 3.03 GB of
+  # outputs (1.01 GB packed) are moved between jobs. Splitting a shard into
+  # restore / build --no-restore / test is also slower.
+  #
+  # Re-open the question only when one of these is true, and re-measure rather than reason:
+  #   (a) the slowest shard's own restore+build reaches ~90% of the whole-solution restore+build
+  #       (the margin was 69.2 / 31.4 / 21.9 / 89.8s across those four runs — MAN-664's rebalance
+  #       can eat it);
+  #   (b) the runner spec changes;
+  #   (c) artifact transfer cost drops by an order of magnitude;
+  #   (d) total test time drops sharply again (as MAN-663 did to BusinessGateway).
+  # Otherwise cite docs/architecture/backend-ci-build-strategy.md instead of re-deriving this.
   backend-tests:
     name: Backend Tests
     # Tier B. Pure aggregate: five `test` comparisons over needs results, ~2s observed.

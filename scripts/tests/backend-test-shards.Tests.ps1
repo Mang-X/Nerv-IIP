@@ -408,18 +408,30 @@ try {
     # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
     # readable file and would otherwise be reported as a malformed solution filter rather than as
     # the thing it is, so the rejection has to be explicit — and therefore has to be tested.
-    $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $wholeSolutionManifest.fastShards[0].solutionFilter = [string] $wholeSolutionManifest.solution
-    Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
-    $wholeSolutionText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-whole-solution-contract' | Out-Null
-        throw 'A fast shard pointed at the whole backend solution must fail shard governance.'
+    # The spellings below all name the same file. A case-sensitive equality check would let every
+    # variant except the first slip past this branch and be reported as "invalid JSON" instead,
+    # which is exactly the misleading diagnostic the branch exists to prevent — so each variant is
+    # asserted, not just the canonical one.
+    $solutionSpelling = [string] (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).solution
+    foreach ($wholeSolutionSpelling in @(
+            $solutionSpelling,
+            "./$solutionSpelling",
+            ($solutionSpelling -replace '/', '\'),
+            $solutionSpelling.ToLowerInvariant()
+        )) {
+        $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $wholeSolutionManifest.fastShards[0].solutionFilter = $wholeSolutionSpelling
+        Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
+        $wholeSolutionText = ''
+        try {
+            Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-whole-solution-contract' | Out-Null
+            throw "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
+        }
+        catch {
+            $wholeSolutionText = $_.Exception.Message
+        }
+        Assert-Contract ($wholeSolutionText.Contains('not the whole backend solution')) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
     }
-    catch {
-        $wholeSolutionText = $_.Exception.Message
-    }
-    Assert-Contract ($wholeSolutionText.Contains('not the whole backend solution')) 'Shard governance must reject a fast shard that rebuilds the entire backend solution instead of its own filter.'
 
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
     $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.') + 1)
