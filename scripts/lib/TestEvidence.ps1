@@ -626,6 +626,14 @@ function New-NervTestEvidenceSummary {
     $baselineUnavailableReason = if ($null -eq $Baseline) {
         'baseline-not-provided'
     }
+    # The reader must know which `source` shape it is looking at, or "schema 1's flat runner trio is
+    # the first lane's, schema 2's laneProvenance is per lane" is a comment rather than a rule. Both
+    # known versions compare identically (the comparison keys are lane+assembly, no runner field
+    # participates); an unknown or missing version fails closed to report-only unavailable rather
+    # than comparing against a file whose layout this code has never seen.
+    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or [int]$Baseline.schemaVersion -notin @(1, 2)) {
+        'unsupported-baseline-schema-version'
+    }
     elseif (-not ($Baseline.PSObject.Properties.Name -contains 'granularity') -or -not ($Baseline.PSObject.Properties.Name -contains 'durationMetric')) {
         'baseline-metadata-incomplete'
     }
@@ -1246,8 +1254,14 @@ function New-NervTestEvidenceBaseline {
     }
     # Runner environment is recorded per lane and only per lane. There is no run-wide runnerImage
     # field to write, so no reader can mistake one lane's machine for the whole baseline's.
+    #
+    # "Per lane" is only honest if the rows actually cover the lanes the baseline records. A partial
+    # `laneProvenance` would be worse than the old flat trio, not better: the flat field at least
+    # claimed to be run-wide, whereas one row against five lanes of timing is a silent partial record
+    # that reads as complete. So coverage is checked both directions — no missing lane, no stray lane.
     [object[]] $laneProvenance = @($SourceMetadata.laneProvenance)
     if ($laneProvenance.Count -eq 0) { throw 'Baseline provenance requires at least one per-lane runner environment row.' }
+    $laneJobs = Get-NervTestEvidenceLaneJobs
     foreach ($row in $laneProvenance) {
         if (-not (Test-NervTestEvidenceLaneName ([string]$row.lane)) -or
             [string]$row.runnerOs -cnotmatch '^(?:Linux|Windows|macOS)$' -or
@@ -1255,9 +1269,24 @@ function New-NervTestEvidenceBaseline {
             [string]$row.runnerImage -match '(?i)latest' -or [string]$row.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
             throw "Baseline provenance requires a resolved runner image/version and exact dotnet SDK for lane '$($row.lane)'."
         }
+        # `jobName` is written into the retained baseline, so it is provenance and must be checked like
+        # provenance. For an allowlisted lane the binding is exact — a row cannot claim a sibling's job.
+        # A lane outside the allowlist (only the legacy console import's unsharded `backend`, which
+        # `Get-NervTestEvidenceLaneJobs` deliberately omits) still has to name some job.
+        if ([string]::IsNullOrWhiteSpace([string]$row.jobName)) {
+            throw "Baseline lane provenance for lane '$($row.lane)' must name the job that produced it."
+        }
+        if ($laneJobs.Contains([string]$row.lane) -and [string]$row.jobName -cne [string]$laneJobs[[string]$row.lane]) {
+            throw "Baseline lane provenance for lane '$($row.lane)' names the wrong authoritative job '$($row.jobName)'."
+        }
     }
     if (@($laneProvenance | ForEach-Object { [string]$_.lane } | Sort-Object -Unique).Count -ne $laneProvenance.Count) {
         throw 'Baseline lane provenance rows must name unique lanes.'
+    }
+    [string[]] $recordedLanes = @($Summaries | ForEach-Object { @($_.assemblies) } | ForEach-Object { [string]$_.lane } | Sort-Object -Unique)
+    [string[]] $provenanceLanes = @($laneProvenance | ForEach-Object { [string]$_.lane } | Sort-Object -Unique)
+    if (($provenanceLanes -join '|') -cne ($recordedLanes -join '|')) {
+        throw "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$($provenanceLanes -join ', ')] recorded=[$($recordedLanes -join ', ')]."
     }
     $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)

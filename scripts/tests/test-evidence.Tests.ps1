@@ -358,6 +358,22 @@ Assert-True $pushMismatchFailed 'Push checkout authority must reject a tested SH
 $prCheckout = Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]@{ event = 'pull_request'; headSha = '0123456789abcdef0123456789abcdef01234567' }) -RunnerProvenance $historicalCheckout
 Assert-Equal '0123456789abcdef0123456789abcdef01234567' $prCheckout.headSha 'PR provenance must retain the branch head.'
 Assert-Equal '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' $prCheckout.testedSha 'PR provenance must allow a distinct synthetic merge checkout.'
+# Baseline lane provenance must cover exactly the lanes a baseline records, so every fixture that
+# records a lane has to bring that lane's row (with its allowlisted job name) along with it.
+function New-NervLaneProvenanceFor {
+    param([Parameter(Mandatory)] [string[]] $Lanes, [string] $RunnerImage = 'ubuntu24@20260720.247.2', [string] $DotnetSdk = '10.0.302')
+    $jobs = Get-NervTestEvidenceLaneJobs
+    return @($Lanes | Sort-Object -Unique | ForEach-Object {
+        [pscustomobject][ordered]@{
+            lane = [string]$_
+            jobName = if ($jobs.Contains([string]$_)) { [string]$jobs[[string]$_] } else { 'Backend Tests' }
+            runnerOs = 'Linux'
+            runnerImage = $RunnerImage
+            dotnetSdk = $DotnetSdk
+        }
+    })
+}
+
 $imported = ConvertFrom-NervDotNetConsoleSummary -Text (Get-Content (Join-Path $fixtures 'github-backend-console.log.txt') -Raw) -RunMetadata $metadata
 Assert-Equal 'project' $imported.granularity 'Console import is project-granularity.'
 Assert-Equal 822000 ($imported.assemblies | Where-Object assembly -eq 'Nerv.IIP.BusinessGateway.Web.Tests.dll').elapsedMilliseconds '13m42s must normalize to milliseconds.'
@@ -377,10 +393,11 @@ $pushMismatchMetadata = $metadata.Clone(); $pushMismatchMetadata.testedSha = '11
 $pushMismatchRejected = $false
 try { New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $pushMismatchMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z') | Out-Null } catch { $pushMismatchRejected = $true }
 Assert-True $pushMismatchRejected 'Non-PR push provenance must reject different head and tested SHAs.'
+$shardedMetadata = $metadata.Clone(); $shardedMetadata.laneProvenance = New-NervLaneProvenanceFor -Lanes @('backend-shard-1', 'backend-shard-2')
 $shardedBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-1'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) },
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-2'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 20 }) }
-) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
+) -SourceMetadata $shardedMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal 2 @($shardedBaseline.assemblies).Count 'Baseline identity must be lane plus assembly, not assembly alone.'
 $incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline ($baselineA | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
 Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
@@ -388,15 +405,35 @@ Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaseline
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.assemblies[0].unavailableReason 'Each unavailable assembly comparison must expose its reason.'
 $compatibleRun = @{ workflowRunId = '1001'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; lane = 'backend-shard-1'; selectedLanes = @('backend-shard-1') }
 $compatibleRecords = @(Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $compatibleRun)
+$compatibleMetadata = $metadata.Clone(); $compatibleMetadata.laneProvenance = New-NervLaneProvenanceFor -Lanes @([string]$compatibleRecords[0].lane)
 $compatibleBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$compatibleRecords[0].lane; assembly = [string]$compatibleRecords[0].assembly; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 6000.0 }) }
-) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-05T11:06:53Z')
+) -SourceMetadata $compatibleMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-05T11:06:53Z')
 Assert-Equal 'test' $compatibleBaseline.granularity 'A TRX-sourced baseline must stay test-granularity.'
 Assert-Equal 'trx-elapsed' $compatibleBaseline.durationMetric 'A test-granularity baseline must expose the trx-elapsed metric.'
 $compatibleBaselineSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
 Assert-True ([bool]$compatibleBaselineSummary.baseline.available) 'A test-granularity trx-elapsed baseline must produce an available comparison.'
 Assert-Equal $null $compatibleBaselineSummary.baseline.unavailableReason 'An available baseline comparison must not carry an unavailable reason.'
 Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 'Available comparison must report the exact signed delta percent.'
+
+# The reader must be able to tell which `source` shape it has. Both known schema versions compare
+# identically (keys are lane+assembly); an unknown or missing version fails closed to report-only.
+Assert-Equal 2 $compatibleBaseline.schemaVersion 'A freshly generated baseline must declare schema 2.'
+foreach ($schemaCase in @(
+    @{ Name = 'schema-1-legacy'; Version = 1; Expected = $null; Available = $true },
+    @{ Name = 'schema-2-current'; Version = 2; Expected = $null; Available = $true },
+    @{ Name = 'schema-3-unknown'; Version = 3; Expected = 'unsupported-baseline-schema-version'; Available = $false },
+    @{ Name = 'schema-0-bogus'; Version = 0; Expected = 'unsupported-baseline-schema-version'; Available = $false }
+)) {
+    $schemaBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json
+    $schemaBaseline.schemaVersion = [int]$schemaCase.Version
+    $schemaSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemaBaseline -PriorAttemptOutcome $null -TopCount 5
+    Assert-Equal $schemaCase.Expected $schemaSummary.baseline.unavailableReason "Baseline schema case '$($schemaCase.Name)' must report the exact unavailable reason."
+    Assert-Equal ([bool]$schemaCase.Available) ([bool]$schemaSummary.baseline.available) "Baseline schema case '$($schemaCase.Name)' availability mismatch."
+}
+$schemalessBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json | Select-Object -ExcludeProperty schemaVersion
+$schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
 # The committed baseline is the artifact MAN-661 governs; it must stay comparable with the TRX evidence CI actually produces.
 $committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
@@ -535,7 +572,13 @@ try {
     foreach ($leakedField in (Get-NervEvidenceLaneEnvironmentFields)) {
         Assert-True (-not ($mixedIdentity.PSObject.Properties.Name -ccontains $leakedField)) "Run identity must not expose per-job environment field '$leakedField'."
     }
-    Assert-Equal ((Get-NervEvidenceRunIdentityFields) -join ',') (@($mixedIdentity.PSObject.Properties.Name) -join ',') 'Run identity must expose exactly the run-identity field set.'
+    # Both memberships are pinned to a LITERAL list, not to the implementation's own list. Deriving
+    # the expectation from `Get-NervEvidenceRunIdentityFields` would let a field be deleted from the
+    # list and the projection at the same time with nothing going red — five of the eight are not
+    # read by `Assert-NervEvidenceRootAuthority`, so StrictMode would not catch them either.
+    Assert-Equal 'workflowRunId,runAttempt,headSha,testedSha,repository,event,headBranch,sourceUrl' ((Get-NervEvidenceRunIdentityFields) -join ',') 'The run-identity field set is frozen; adding or removing one changes what cross-lane equality certifies.'
+    Assert-Equal 'runnerOs,runnerImage,dotnetSdk' ((Get-NervEvidenceLaneEnvironmentFields) -join ',') 'The per-job environment field set is frozen; moving a field here silently drops it from cross-lane equality.'
+    Assert-Equal 'workflowRunId,runAttempt,headSha,testedSha,repository,event,headBranch,sourceUrl' (@($mixedIdentity.PSObject.Properties.Name) -join ',') 'Run identity must project exactly the frozen run-identity field set.'
 
     # (2) Run identity stays byte-for-byte equal across lanes. One mismatching lane is still REJECTED,
     #     field by field, with the exact message — so moving any field out of the identity set fails here.
@@ -582,18 +625,51 @@ try {
     }
     # Both observed images survive into the baseline: collapsing the rows to a single value fails here.
     Assert-Equal ($mixedImages -join ',') ((@($provenanceBaseline.source.laneProvenance | ForEach-Object { [string]$_.runnerImage }) | Sort-Object -Unique) -join ',') 'Baseline must preserve every distinct runner image the run actually used.'
-    # A row that names a lane the baseline does not cover would be provenance for nothing.
-    $strayProvenanceRejected = $false
-    try {
-        New-NervTestEvidenceBaseline -Summaries @([pscustomobject]@{ granularity = 'test'; assemblies = @() }) -SourceMetadata @{
+    # "Per lane" only means something if the rows cover the lanes the baseline actually records.
+    # A partial record is worse than the old flat trio: it reads as complete while certifying one
+    # lane's machine for five lanes of timing — literally the failure this whole split exists to
+    # prevent. Each case below asserts the exact rejection message, so deleting the check goes red.
+    $provenanceSummaries = @($sourceSummaries | ForEach-Object {
+        [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$_.lane; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) }
+    })
+    $recordedLaneList = (@($sourceSummaries | ForEach-Object { [string]$_.lane } | Sort-Object -Unique) -join ', ')
+    function Invoke-NervProvenanceBaseline {
+        param([Parameter(Mandatory)] [object[]] $LaneProvenance, [object[]] $Summaries = $provenanceSummaries)
+        New-NervTestEvidenceBaseline -Summaries $Summaries -SourceMetadata @{
             sourceKind = 'trx-evidence'; repository = 'Mang-X/Nerv-IIP'; workflowRunId = '101'; runAttempt = 1; jobId = ''
             headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'
             sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
-            laneProvenance = @($laneProvenance[0], $laneProvenance[0]); selectedLanes = @('backend-shard-1'); generatorCommand = 'fixture'
-        } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z') | Out-Null
+            laneProvenance = $LaneProvenance; selectedLanes = @($sourceSummaries.lane | Sort-Object -Unique); generatorCommand = 'fixture'
+        } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z')
     }
-    catch { $strayProvenanceRejected = $true }
-    Assert-True $strayProvenanceRejected 'Duplicate lane provenance rows must be rejected so a lane cannot carry two environments.'
+    # Baseline for the negative cases: the full, correct row set is accepted.
+    Assert-Equal @($sourceSummaries).Count @((Invoke-NervProvenanceBaseline -LaneProvenance $laneProvenance).source.laneProvenance).Count 'The complete per-lane provenance row set must be accepted.'
+
+    $strayRow = [pscustomobject][ordered]@{ lane = 'postgres'; jobName = 'Real PostgreSQL Tests'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302' }
+    foreach ($coverageCase in @(
+        @{ Name = 'missing-lane-rows'; Rows = @($laneProvenance[0]); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$([string]$laneProvenance[0].lane)] recorded=[$recordedLaneList]." },
+        @{ Name = 'stray-lane-row'; Rows = @($laneProvenance + @($strayRow)); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$recordedLaneList, postgres] recorded=[$recordedLaneList]." },
+        @{ Name = 'duplicate-lane-rows'; Rows = @($laneProvenance + @($laneProvenance[0])); Expected = 'Baseline lane provenance rows must name unique lanes.' }
+    )) {
+        $coverageMessage = $null
+        try { Invoke-NervProvenanceBaseline -LaneProvenance $coverageCase.Rows | Out-Null } catch { $coverageMessage = [string]$_.Exception.Message }
+        Assert-Equal $coverageCase.Expected $coverageMessage "Lane provenance coverage case '$($coverageCase.Name)' must be rejected with its exact reason."
+    }
+
+    # `jobName` is written into the retained baseline, so it is provenance too. A row must name the
+    # allowlisted job for its own lane — it cannot be blank, invented, or borrowed from a sibling.
+    $laneJobsForProvenance = Get-NervTestEvidenceLaneJobs
+    foreach ($jobNameCase in @(
+        @{ Name = 'empty'; Value = ''; Expected = "Baseline lane provenance for lane '$([string]$laneProvenance[0].lane)' must name the job that produced it." },
+        @{ Name = 'invented'; Value = 'Totally Bogus Job'; Expected = "Baseline lane provenance for lane '$([string]$laneProvenance[0].lane)' names the wrong authoritative job 'Totally Bogus Job'." },
+        @{ Name = 'sibling-borrowed'; Value = [string]$laneJobsForProvenance['backend-shard-2']; Expected = "Baseline lane provenance for lane '$([string]$laneProvenance[0].lane)' names the wrong authoritative job '$([string]$laneJobsForProvenance['backend-shard-2'])'." }
+    )) {
+        $jobNameRows = @($laneProvenance | ForEach-Object { $_ | Select-Object * })
+        $jobNameRows[0].jobName = [string]$jobNameCase.Value
+        $jobNameMessage = $null
+        try { Invoke-NervProvenanceBaseline -LaneProvenance $jobNameRows | Out-Null } catch { $jobNameMessage = [string]$_.Exception.Message }
+        Assert-Equal $jobNameCase.Expected $jobNameMessage "Lane provenance jobName case '$($jobNameCase.Name)' must be rejected with its exact reason."
+    }
 }
 finally { if (Test-Path $invalidBaselineRoot) { Remove-Item $invalidBaselineRoot -Recurse -Force } }
 
