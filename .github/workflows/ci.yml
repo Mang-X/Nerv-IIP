@@ -108,6 +108,22 @@ jobs:
   #   (c) artifact transfer cost drops by an order of magnitude;
   #   (d) total test time drops sharply again (as MAN-663 did to BusinessGateway).
   # Otherwise cite docs/architecture/backend-ci-build-strategy.md instead of re-deriving this.
+  #
+  # MAN-669 PR-C inventoried the three specialist jobs (erp-sales-order-demand-acceptance,
+  # connector-host-tests, openapi-client-drift) for the same duplication and changed none of their
+  # build commands. None of them builds the whole solution: the ERP acceptance script builds five
+  # hardcoded csproj, the OpenAPI export builds two gateway .Web projects, and the connector-host job
+  # builds its own separate solution, every project of which is under test or a dependency of one.
+  # All three also sit well below the critical path (36-210s of slack over three runs 31143773140 /
+  # 31138913408 / 31145563813), so zeroing their build time would buy zero CI wall clock. Temporary
+  # probes measured what consolidating their serial MSBuild invocations would save — ERP 16.4-31.3s,
+  # OpenAPI 2.1-11.6s — and both were declined; the probes were removed. Full inventory, the
+  # measurements, and executable re-open conditions are in
+  # docs/architecture/backend-ci-build-strategy.md ("三个专项 job 的构建盘点").
+  #
+  # "Critical path" above means the largest job of the run, not the slowest shard — the two are no
+  # longer the same thing. On run 31145563813 `Frontend Typecheck and Build` (305s) exceeded the
+  # slowest shard (287s). Sizing anything off "slowest shard" now understates the run's wall clock.
   backend-tests:
     name: Backend Tests
     # Tier B. Pure aggregate: five `test` comparisons over needs results, ~2s observed.
@@ -740,8 +756,10 @@ jobs:
     name: Script Governance
     # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
     # include the evidence contract-test step; the 0.7m average this comment used to quote predates
-    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 33m and are per-step
-    # upper bounds only.
+    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 43m and are per-step
+    # upper bounds only. MAN-669 PR-C added the two solution-configuration-membership steps; both
+    # run in under 5s locally (0.8s for the checker, 3.6s for its contract test), so the job budget
+    # is unchanged.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -779,3 +797,13 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/test-evidence.Tests.ps1
+
+      - name: Test solution configuration membership checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/solution-configuration-membership.Tests.ps1
+
+      - name: Run solution configuration membership check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-solution-configuration-membership.ps1
