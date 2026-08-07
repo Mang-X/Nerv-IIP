@@ -2,8 +2,10 @@
 #   Category: check
 #   SideEffects:
 #     - Creates and removes one temporary unclassified backend test project
+#     - Creates and removes one temporary backend project that is not a solution member
 #   Writes:
 #     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
+#     - backend/common/Nerv.IIP.TemporarySolutionMembership/** (temporarily)
 #     - OS temporary directory: workflow, manifest, policy and shard TRX fixtures (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/script-logs/**
@@ -23,6 +25,8 @@ $validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryProjectDirectory = Join-Path $repoRoot 'backend/tests/Nerv.IIP.TemporaryShardClassification.Tests'
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
+$temporarySolutionMemberDirectory = Join-Path $repoRoot 'backend/common/Nerv.IIP.TemporarySolutionMembership'
+$temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv.IIP.TemporarySolutionMembership.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
 $executionTrxDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-execution-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -185,6 +189,46 @@ foreach ($shard in $fastShards) {
     Assert-Contract ($filter.solution.path -eq '../Nerv.IIP.sln') "Solution filter $($shard.solutionFilter) must target the backend solution."
     Assert-Contract ((@($filter.solution.projects | Where-Object { $_ -match '^\.\./' })).Count -eq 0) "Solution filter $($shard.solutionFilter) project paths must be relative to backend/Nerv.IIP.sln."
 }
+
+# Solution membership must be enforced for *non-test* backend projects too. A project reachable only
+# as a transitive ProjectReference has no entry in the solution configuration map, so a
+# `--configuration Release` shard emits it into bin/Debug and every shard silently tests Release
+# assemblies linked against a Debug dependency. Planting a non-test project proves the check is the
+# general one and not the pre-existing `*.Tests.csproj`-only rule: this fixture is invisible to that
+# rule, so if the general check is weakened away the validator passes and this contract goes red.
+$solutionMembershipValidatorText = ''
+try {
+    New-Item -ItemType Directory -Path $temporarySolutionMemberDirectory -Force | Out-Null
+    Set-Content -LiteralPath $temporarySolutionMemberPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
+
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-solution-membership' | Out-Null
+        throw 'A backend project outside backend/Nerv.IIP.sln must fail shard governance.'
+    }
+    catch {
+        $solutionMembershipValidatorText = $_.Exception.Message
+        $logMatch = [regex]::Match($solutionMembershipValidatorText, 'Logs: (?<path>.+)$')
+        if ($logMatch.Success) {
+            foreach ($logName in @('stdout.log', 'stderr.log')) {
+                $logPath = Join-Path $logMatch.Groups['path'].Value $logName
+                if (Test-Path -LiteralPath $logPath) {
+                    $solutionMembershipValidatorText += "`n" + (Get-Content -LiteralPath $logPath -Raw)
+                }
+            }
+        }
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $temporarySolutionMemberDirectory) {
+        Remove-Item -LiteralPath $temporarySolutionMemberDirectory -Recurse -Force
+    }
+}
+# The captured text is PowerShell's line-wrapped rendering of the throw, so only short fragments are
+# safe to match; the load-bearing assertion is that the validator failed at all.
+Assert-Contract ($solutionMembershipValidatorText.Contains('bin/Debug')) 'Shard governance must reject a backend project that is not a solution member, naming the Release/Debug consequence.'
+Assert-Contract ($solutionMembershipValidatorText.Contains('backend/common/Nerv.IIP.TemporarySolutionMembership/Nerv.IIP.TemporarySolutionMembership.csproj')) 'The solution-membership failure must identify the offending project path.'
+Assert-Contract (-not $solutionMembershipValidatorText.Contains('Unclassified backend test')) 'The solution-membership contract must be tripped by a non-test project, not by the test classification rule.'
+Assert-Contract (@(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln') | Where-Object { $_ -match 'Nerv\.IIP\.Contracts\.Mes\.csproj' }).Count -eq 1) 'Nerv.IIP.Contracts.Mes must stay a solution member; outside the solution every Release shard builds it as Debug.'
 
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
@@ -360,6 +404,34 @@ try {
         $laneAttributionText = $_.Exception.Message
     }
     Assert-Contract ($laneAttributionText.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
+
+    # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
+    # readable file and would otherwise be reported as a malformed solution filter rather than as
+    # the thing it is, so the rejection has to be explicit — and therefore has to be tested.
+    # The spellings below all name the same file. A case-sensitive equality check would let every
+    # variant except the first slip past this branch and be reported as "invalid JSON" instead,
+    # which is exactly the misleading diagnostic the branch exists to prevent — so each variant is
+    # asserted, not just the canonical one.
+    $solutionSpelling = [string] (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).solution
+    foreach ($wholeSolutionSpelling in @(
+            $solutionSpelling,
+            "./$solutionSpelling",
+            ($solutionSpelling -replace '/', '\'),
+            $solutionSpelling.ToLowerInvariant()
+        )) {
+        $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $wholeSolutionManifest.fastShards[0].solutionFilter = $wholeSolutionSpelling
+        Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
+        $wholeSolutionText = ''
+        try {
+            Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-whole-solution-contract' | Out-Null
+            throw "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
+        }
+        catch {
+            $wholeSolutionText = $_.Exception.Message
+        }
+        Assert-Contract ($wholeSolutionText.Contains('not the whole backend solution')) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
+    }
 
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
     $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.') + 1)
