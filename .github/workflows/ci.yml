@@ -661,6 +661,51 @@ jobs:
           echo "MAN669PRC consolidated-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
           echo "MAN669PRC consolidated-release-outputs $(find backend -path '*/bin/Release/net10.0/*.dll' | wc -l)"
 
+  man669-probe-openapi-split:
+    name: MAN-669 probe - OpenAPI gateway builds
+    # Tier B (no step runs after a failure); probe only. Mirrors export-gateway-openapi.ps1 exactly
+    # (`-o <dir> /p:UseSharedCompilation=false`, no --configuration), then measures the consolidated
+    # counterfactual on the same runner. The second arm is deliberately warm: it answers "what is
+    # left to save once the first gateway has already been built", which is the whole question.
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Probe gateway export builds
+        timeout-minutes: 20
+        env:
+          NUGET_XMLDOC_MODE: skip
+        run: |
+          set -euo pipefail
+          total_start=$(date +%s%3N)
+          for gateway in PlatformGateway BusinessGateway; do
+            start=$(date +%s%3N)
+            dotnet build "backend/gateway/$gateway/src/Nerv.IIP.$gateway.Web/Nerv.IIP.$gateway.Web.csproj" \
+              -o "artifacts/openapi-export/$gateway" /p:UseSharedCompilation=false
+            echo "MAN669PRC openapi-split-step $gateway $(( $(date +%s%3N) - start ))ms"
+          done
+          echo "MAN669PRC openapi-split-total $(( $(date +%s%3N) - total_start ))ms"
+          echo "MAN669PRC openapi-split-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
+          echo "MAN669PRC openapi-split-release-outputs $(find backend -path '*/bin/Release/net10.0/*.dll' | wc -l)"
+
   connector-host-tests:
     name: Connector Host Tests
     # Tier A (evidence steps). Observed max 1.9m / avg 1.6m. This is the job that hung for 28m
