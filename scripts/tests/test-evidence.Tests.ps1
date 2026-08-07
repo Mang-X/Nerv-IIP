@@ -435,16 +435,24 @@ $schemalessBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertF
 $schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
-# The four cases above all carry an integer. A hand-edited baseline does not have to: `"abc"`, `[1, 2]`
-# and `null` are all things a JSON file can say, and the guard promises the *same* structured
-# `unsupported-baseline-schema-version` for them. An `[int]` cast raised a conversion error out of this
-# pure builder instead — a different failure mode from the one the governance doc documents — and it
-# rounded `1.5` into the supported set. Each value goes through a real ConvertTo-Json/ConvertFrom-Json
-# round trip so it has the exact shape a caller reading the file off disk would hand in.
+# The cases above all carry an integer. A hand-edited baseline does not have to: `"abc"`, `true`,
+# `[1, 2]` and `null` are all things a JSON file can say, and the guard promises the *same* structured
+# `unsupported-baseline-schema-version` for every one of them. The `[int]` cast this guard replaced did
+# three different wrong things instead, and the first four rows below are each a guard against one of
+# them — deleting the TryParse turns each of them red:
+#   non-numeric-text  `[int]"abc"`  threw a conversion error out of this pure builder
+#   array-value       `[int]@(1,2)` threw a conversion error out of this pure builder
+#   fractional        `[int]1.5`    ROUNDED to 2 and compared as if the file said schema 2
+#   boolean-true      `[int]$true`  became 1 and compared as if the file said schema 1
+# `json-null` is the honest exception: `[int]$null` was already 0, so both spellings reject it. It is
+# shape coverage, not a guard, and is kept for that — do not count it as evidence for this fix.
+# Each value goes through a real ConvertTo-Json/ConvertFrom-Json round trip so it arrives in the exact
+# shape a caller reading a hand-edited file off disk would hand in.
 foreach ($malformedSchemaCase in @(
     @{ Name = 'non-numeric-text'; Value = 'abc' },
     @{ Name = 'array-value'; Value = @(1, 2) },
     @{ Name = 'fractional'; Value = 1.5 },
+    @{ Name = 'boolean-true'; Value = $true },
     @{ Name = 'json-null'; Value = $null }
 )) {
     $malformedBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json
