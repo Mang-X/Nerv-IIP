@@ -9,6 +9,12 @@
 > 两篇的结论都来自 hosted-runner 实测（PR-B 四次：热两次冷两次；PR-C 两次 A/B 探针 +
 > 三次 in-situ 观测），不是推断。数字全部可回溯到文中列出的 run id 与它们日志里的
 > `MAN669PROBE` / `MAN669PRC` 原始行。
+>
+> **本文是这些实测数字与论证的唯一权威。** `ci.yml` 注释、`scripts/verify-*.ps1` 的
+> docstring/注释、契约测试注释、`implementation-readiness.md` 一律**只写结论并指回本文**，
+> 不复述数字、run id 与推导过程 —— 复述过的事实在 MAN-664 重测时必然只改一处、剩下三处
+> 变成陈旧断言（PR-B 那轮走查已经在 `test-evidence-governance.md` 的「8m step budget」上
+> 抓到过一次同样的漂移）。要改数字，改这里；别处只更新指针。
 
 ## 结论一句话
 
@@ -598,3 +604,45 @@ ERP 的 16.4–31.3 s 还要放在它自己的抖动尺度上读：同一份串�
   上界口径否定了它；若上面的复评触发条件成立而需要重开，第一件事就是补这个直测。
 - scope 7 后半句（scenario runner 精确构建需要的服务）阻塞于
   [#1240](https://github.com/Mang-X/Nerv-IIP/issues/1240)，**MAN-669 不承担**。
+
+# 走查收尾（PR-B #1494 / PR-C #1495 合并后）
+
+两个 PR 的双轴走查均**无阻断、维持合并现状**；下面四条是那两轮留下的判断题与微瑕的处置。
+裁决本身（build-once 不采用、三个专项 job 不改构建命令）**未被触碰**。
+
+1. **叙述收敛（两份走查各自提出）。**#1494:「实测数字同时写入 ci.yml 注释、verify 脚本注释、
+   implementation-readiness、strategy 文档四处；前三处可只留结论 + 指针」；#1495:「『漏一行即
+   复现』论证在 verifier docstring、测试注释、治理文档、readiness 四处近逐字重复；建议保
+   strategy 文档一处权威」。已按本文开头的单一权威声明收敛：`ci.yml` 的 build-strategy 注释块、
+   `verify-backend-test-shards.ps1` 的整解拒绝注释、`verify-solution-configuration-membership.ps1`
+   的 docstring、`solution-configuration-membership.Tests.ps1` 的步骤 4 注释、
+   `implementation-readiness.md` 的 PR-B/PR-C 段落全部改为结论 + 指回本文。
+   **`ci.yml` 顶部超时策略块里的 tier A/B 算术依据（`3+5+8+3+10+5+5 = 39 < 45` 及其权重推导）
+   原样保留** —— 那不是复述，而是 `Test-NervCiWorkflowBudgets` 的可审计依据，删掉门禁就失去底稿。
+
+2. **整解拒绝分支改用真规范化。**#1494 微瑕 1：「`backend//Nerv.IIP.sln`（双斜杠）或绝对路径
+   拼法会绕过新分支、落回『JSON 非法』误报」。原实现只剥一层 `^\./` 前缀。现在两侧都经
+   `[System.IO.Path]::GetFullPath()` 相对仓库根规范化后比较，八种拼法（原样 / `./` /
+   反斜杠 / 全小写 / 双斜杠 / `/./` / `../` 回绕 / 绝对路径）逐一实测落进整解分支，
+   契约测试同时断言「不得被报成 invalid JSON」——只断言失败的话，删掉整条分支也是全绿。
+   这从来不是安全洞（八种拼法本来就全部 `exit 1`），修的是诊断质量。
+
+3. **两个 checker 的失败输出统一成 stdout + `exit 1`。**#1494 微瑕 2：「整 sln 回退用例只在异常
+   Message 上 `Contains(...)`，折行截断会假红」；判断题 2 同源。PR-C 已经在
+   `verify-solution-configuration-membership.ps1` 上用这个解法（PowerShell 错误格式化器按终端
+   宽度折行并加 `|` 续行前缀，会把 `Release|Any CPU` 和长 csproj 路径拦腰截断）；
+   `verify-backend-test-shards.ps1` 现在同形，其契约测试改为统一的
+   `Invoke-ShardValidator`（判退出码 + 完整 stdout），删掉了原先「从命令日志目录捞
+   stdout.log/stderr.log 补全文本」的兜底，断言也从短片段升级成整句。
+   **连带的必要改动**：`ci.yml` 里 `Backend Test Shard Governance` job 原本把 checker 与其契约
+   测试写在同一个 `run:` 块里。`exit` 在被点斜杠调用的 .ps1 里**不会**中止调用方脚本，
+   而契约测试内部的 native 调用会覆写 `$LASTEXITCODE`——实测确认「前一个脚本 exit 1 + 后一个
+   脚本成功」的组合整体退出 0。已拆成两个 step（各 5m，step 预算合计仍是 18m，job 15m 不变）。
+
+4. **解决方案发现跳过 git 忽略的路径**（[#1496](https://github.com/Mang-X/Nerv-IIP/issues/1496)，
+   #1495 走查的唯一新发现）。从仓库根实测：过滤前发现 **10** 个 `.sln`，其中 8 个来自
+   `/worktrees/` 下的 agent 工作副本；过滤后为 2 个。选 issue 的修法 B（与 `.gitignore` 单一
+   来源对齐）而非修法 A（枚举 `\.claude` 等目录名）：本次泄漏的恰恰是 `.gitignore:8` 的
+   `/worktrees/`，黑名单方案会漏掉它。CI 是干净 checkout，不受影响；发现语义不变——git 跟踪
+   的一切仍然被发现，包括没人登记过的第三个 `.sln`。空扫描仍然失败（不得 vacuously pass），
+   契约测试用「同一棵树 + 有/无忽略规则」的成对断言证明该过滤削弱即红。

@@ -30,27 +30,21 @@
          `ProjectConfigurationPlatforms` lacks its `.ActiveCfg` for some solution configuration, or
          points a `Release|*` solution configuration at a `Debug|*` project configuration.
 
-    Form 1 has happened twice in this repository:
+    Form 1 has happened twice in this repository (MAN-669 PR-B and PR-C). Form 2 has not, but it is
+    one hand-edit away and produces byte-for-byte the same symptom, which is why both are checked.
 
-      * backend/common/Contracts/Nerv.IIP.Contracts.Mes was missing from backend/Nerv.IIP.sln, so all
-        four Release shards emitted it into bin/Debug (MAN-669 PR-B, run 31136085020).
-      * backend/common/Sdk/Nerv.IIP.Sdk.Ops, backend/common/Contracts/Nerv.IIP.Contracts.Ops and
-        backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents were missing from
-        connector-hosts/Nerv.IIP.ConnectorHost.sln, so `dotnet test connector-hosts/… -c Release`
-        emitted those three into bin/Debug (MAN-669 PR-C, runs 31143773140 and 31138913408).
+    The evidence for all of that — the leaked projects, the CI run ids showing the bin/Debug lines
+    before and after, why fixing form 1 by hand is what makes form 2 reachable, and how PR-C's
+    review reproduced form 2 with a two-project fixture — is written down ONCE, in
+    docs/architecture/backend-ci-build-strategy.md ("PR-C 实际落地的改动"). Read it there rather
+    than here: the same argument repeated in four files is an argument that will disagree with
+    itself the first time any of it changes.
 
-    Form 2 has not been observed in this repository, but it is one hand-edit away and produces
-    byte-for-byte the same symptom: fixing form 1 means writing 12 map lines per project by hand
-    (42 lines for the three projects above), and dropping any of them re-creates the bug while every
-    `Project(...)`-line rule stays green. PR-C's review reproduced exactly that with a two-project
-    fixture solution and confirmed `Lib -> …/bin/Debug/…` under `--configuration Release`.
-
-    PR-B's earlier rule was a *directory* rule inside scripts/verify-backend-test-shards.ps1: every
-    csproj under backend/ must be a member of backend/Nerv.IIP.sln. It is per-solution by
-    construction and could not see the connector-host solution, whose leak came from projects that
-    live under backend/ and are perfectly good members of the *backend* solution. It also reads only
-    `Project(...)` lines, so it cannot see form 2 either. This script complements rather than
-    replaces it: the directory rule still catches an orphan backend project that nothing references.
+    Relationship to the *directory* rule in scripts/verify-backend-test-shards.ps1 (every csproj
+    under backend/ must be a member of backend/Nerv.IIP.sln): that rule is per-solution by
+    construction and reads only `Project(...)` lines, so it sees neither PR-C's form 1 nor form 2 at
+    all. This script complements rather than replaces it — the directory rule still catches an
+    orphan backend project that nothing references.
 
     Solutions are **discovered**, not listed, so a third solution added later is covered
     automatically rather than silently unchecked.
@@ -85,17 +79,80 @@ function Get-NormalizedFullPath {
     return ([System.IO.Path]::GetFullPath($Path) -replace '\\', '/')
 }
 
+# "Which files are part of this repository?" already has an answer, and it is .gitignore — not a
+# second list maintained here. Agent tooling puts working copies of the whole repository under
+# ignored roots (`/worktrees/`, `/.claude/worktrees/`, `/.agents/worktrees/`, `/.codex/worktrees/`
+# are lines 5-8 of .gitignore), so a checker that discovers `*.sln` by walking the tree finds every
+# one of those copies too and reports another agent's half-finished solution as this developer's
+# failure. Measured from the repository root before this filter existed: 10 solutions instead of 2,
+# eight of them under `/worktrees/`. Enumerating agent directory names instead would have missed
+# exactly that one, because the leak came from the plainest name in the set.
+#
+# CI is unaffected either way — a fresh checkout has no worktrees — so this is a local-developer
+# fix, and the gate's meaning must not change with it: everything git tracks is still discovered,
+# including a third solution nobody registered anywhere. (MAN-669 PR-C follow-up, issue #1496.)
+function Select-GitIgnoredPath {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $RelativePath
+    )
+
+    $candidates = @($RelativePath)
+    if ($candidates.Count -eq 0) {
+        return @()
+    }
+
+    $ignored = [System.Collections.Generic.List[string]]::new()
+    for ($offset = 0; $offset -lt $candidates.Count; $offset += 100) {
+        $batch = @($candidates | Select-Object -Skip $offset -First 100)
+        try {
+            $result = Invoke-NativeCommandOutput `
+                -Command 'git' `
+                -Arguments (@('check-ignore', '--') + $batch) `
+                -WorkingDirectory $Root `
+                -TimeoutSeconds 60 `
+                -Name 'solution-discovery-check-ignore'
+            foreach ($line in ($result.Stdout -split "`r?`n")) {
+                $trimmed = $line.Trim()
+                if (-not [string]::IsNullOrWhiteSpace($trimmed)) { $ignored.Add($trimmed) }
+            }
+        }
+        catch {
+            # `git check-ignore` exits 1 when nothing matched — a documented answer, not a failure.
+            # Anything else (128 = not a git work tree, or git missing altogether) means the
+            # question cannot be asked here at all; that is the normal case for the contract test's
+            # throwaway fixture roots. Fall back to discovering everything rather than to
+            # discovering nothing: over-discovery is a visible failure, under-discovery is silence.
+            $exitCode = $_.Exception.Data['ExitCode']
+            if ($null -eq $exitCode -or [int] $exitCode -ne 1) {
+                return @()
+            }
+        }
+    }
+
+    return @($ignored)
+}
+
 function Get-DiscoveredSolutionPath {
     param(
         [Parameter(Mandatory)] [string] $Root
     )
 
-    return @(
+    # Build output is excluded structurally as well: it is never a solution anyone edits, and this
+    # keeps working when the root is not a git work tree.
+    $discovered = @(
         Get-ChildItem -LiteralPath $Root -Recurse -File -Filter '*.sln' -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notmatch '[/\\](bin|obj|node_modules|artifacts|\.git)[/\\]' } |
             ForEach-Object { ([System.IO.Path]::GetRelativePath($Root, $_.FullName) -replace '\\', '/') } |
             Sort-Object -Unique
     )
+
+    $ignored = @(Select-GitIgnoredPath -Root $Root -RelativePath $discovered)
+    if ($ignored.Count -eq 0) {
+        return $discovered
+    }
+
+    return @($discovered | Where-Object { $ignored -notcontains $_ })
 }
 
 # One pass over the solution text produces both halves of the picture: which projects the solution
@@ -232,8 +289,12 @@ $summaryLines = [System.Collections.Generic.List[string]]::new()
 $solutionPaths = @($SolutionPath)
 if ($solutionPaths.Count -eq 0) {
     $solutionPaths = @(Get-DiscoveredSolutionPath -Root $normalizedRoot)
+    # Narrowing discovery (as the .gitignore filter above does) must never be able to turn the gate
+    # into a no-op, so an empty scan is a failure, reported in the same shape as every other one.
     if ($solutionPaths.Count -eq 0) {
-        throw "No solution files were discovered under $RepositoryRoot; the configuration-map check would pass vacuously."
+        Write-Host 'Solution configuration membership failed:'
+        Write-Host "  No solution files were discovered under $RepositoryRoot; the configuration-map check would pass vacuously."
+        exit 1
     }
 }
 

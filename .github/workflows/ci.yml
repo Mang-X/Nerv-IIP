@@ -92,38 +92,32 @@ jobs:
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   #
   # ---------------------------------------------------------------------------------------------
-  # Build strategy (MAN-669 PR-B). Separate subject from the timeout policy above; PR-B changed no
-  # budget. Each shard keeps restoring and building only its own .slnf. Measured over four runs
-  # (hot 31139435243 / 31139971326, cold 31140517256 / 31141123938): building the whole solution
-  # once costs 195.7-233.2s, more than any single shard's own restore+build (62.7-180.9s), so
-  # hoisting the build into a serial job lengthens the critical path even before the 3.03 GB of
-  # outputs (1.01 GB packed) are moved between jobs. Splitting a shard into
-  # restore / build --no-restore / test is also slower.
+  # Build strategy (MAN-669 PR-B / PR-C). Separate subject from the timeout policy above; neither PR
+  # changed a budget, so nothing here feeds the arithmetic enforced by Test-NervCiWorkflowBudgets.
+  # Conclusions only — every measurement, run id, sample caveat and re-open condition lives in ONE
+  # place, docs/architecture/backend-ci-build-strategy.md. Do not restate the numbers here: MAN-664
+  # will re-measure, and a number copied into four files is a number that drifts in three of them.
   #
-  # Re-open the question only when one of these is true, and re-measure rather than reason:
-  #   (a) the slowest shard's own restore+build reaches ~90% of the whole-solution restore+build
-  #       (the margin was 69.2 / 31.4 / 21.9 / 89.8s across those four runs — MAN-664's rebalance
-  #       can eat it);
-  #   (b) the runner spec changes;
-  #   (c) artifact transfer cost drops by an order of magnitude;
-  #   (d) total test time drops sharply again (as MAN-663 did to BusinessGateway).
-  # Otherwise cite docs/architecture/backend-ci-build-strategy.md instead of re-deriving this.
+  #   * Each shard keeps restoring and building only its own .slnf. build-once (a serial build job
+  #     feeding prebuilt output to the shards) was measured on four hosted-runner runs, two hot and
+  #     two cold, and is slower under both accounting conventions — the whole-solution build alone
+  #     costs more than any single shard's own restore+build, so hoisting it onto the critical path
+  #     loses even before the multi-GB output is moved between jobs. Splitting a shard into
+  #     restore / build --no-restore / test is also slower.
+  #   * The three specialist jobs (erp-sales-order-demand-acceptance, connector-host-tests,
+  #     openapi-client-drift) were inventoried for the same duplication and none of their build
+  #     commands changed: none builds the whole solution, and all three sit well below the critical
+  #     path, so zeroing their build time would buy zero CI wall clock.
   #
-  # MAN-669 PR-C inventoried the three specialist jobs (erp-sales-order-demand-acceptance,
-  # connector-host-tests, openapi-client-drift) for the same duplication and changed none of their
-  # build commands. None of them builds the whole solution: the ERP acceptance script builds five
-  # hardcoded csproj, the OpenAPI export builds two gateway .Web projects, and the connector-host job
-  # builds its own separate solution, every project of which is under test or a dependency of one.
-  # All three also sit well below the critical path (36-210s of slack over three runs 31143773140 /
-  # 31138913408 / 31145563813), so zeroing their build time would buy zero CI wall clock. Temporary
-  # probes measured what consolidating their serial MSBuild invocations would save — ERP 16.4-31.3s,
-  # OpenAPI 2.1-11.6s — and both were declined; the probes were removed. Full inventory, the
-  # measurements, and executable re-open conditions are in
-  # docs/architecture/backend-ci-build-strategy.md ("三个专项 job 的构建盘点").
+  # Re-open either decision only on the executable conditions listed in that document (slowest
+  # shard's build approaching the whole-solution build, runner spec change, an order-of-magnitude
+  # artifact-transfer improvement, another sharp drop in total test time, or a specialist job
+  # reaching the critical path) — and re-measure rather than reason. Otherwise cite the document.
   #
-  # "Critical path" above means the largest job of the run, not the slowest shard — the two are no
-  # longer the same thing. On run 31145563813 `Frontend Typecheck and Build` (305s) exceeded the
-  # slowest shard (287s). Sizing anything off "slowest shard" now understates the run's wall clock.
+  # One definition that must not be re-derived either way: "critical path" means the largest job of
+  # the run, not the slowest shard. The two are no longer the same thing — a frontend job has
+  # already exceeded the slowest shard — so sizing anything off "slowest shard" understates the
+  # run's wall clock.
   backend-tests:
     name: Backend Tests
     # Tier B. Pure aggregate: five `test` comparisons over needs results, ~2s observed.
@@ -164,12 +158,21 @@ jobs:
         with:
           ruby-version: '3.4'
 
+      # One script per step. The validator reports findings on stdout and exits 1 rather than
+      # throwing (see the note at the bottom of scripts/verify-backend-test-shards.ps1), and `exit`
+      # from a dot-slash script does not abort the calling pwsh script — chaining the two here would
+      # let the contract test's own `$LASTEXITCODE` overwrite the validator's and turn a real
+      # failure green. Measured with a probe before splitting: chained, a failing first script plus
+      # a passing second one exits 0.
       - name: Validate backend test shard classification
-        timeout-minutes: 10
+        timeout-minutes: 5
         shell: pwsh
-        run: |
-          ./scripts/verify-backend-test-shards.ps1
-          ./scripts/tests/backend-test-shards.Tests.ps1
+        run: ./scripts/verify-backend-test-shards.ps1
+
+      - name: Test backend test shard governance
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/backend-test-shards.Tests.ps1
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway

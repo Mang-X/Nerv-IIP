@@ -51,6 +51,38 @@ function Assert-Contract {
     }
 }
 
+# Every assertion below is about *what the validator said*, so the validator is always run as a real
+# process and judged by its exit code plus its output.
+#
+# It reports findings on stdout and exits 1 rather than throwing (see the note at the bottom of
+# scripts/verify-backend-test-shards.ps1). That is what makes these assertions safe: PowerShell's
+# error formatter hard-wraps a thrown message at the console width and prefixes continuation lines
+# with a `|` gutter, so a csproj path or `Release|Any CPU` gets split mid-token and a perfectly
+# correct assertion goes red on a narrow terminal. This file used to work around that by matching
+# only short fragments and by scraping the command log for the real text; both are gone.
+#
+# Whitespace is collapsed so that where the validator chose to break lines is not part of the
+# contract. The assertions are about content, not layout.
+function Invoke-ShardValidator {
+    param(
+        [string[]] $Arguments = @(),
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    try {
+        $result = Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments (@('-NoProfile', '-File', $validatorPath) + $Arguments) `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 300 `
+            -Name $Name
+        return [pscustomobject]@{ Passed = $true; Message = ("$($result.Stdout)" -replace '\s+', ' ') }
+    }
+    catch {
+        return [pscustomobject]@{ Passed = $false; Message = ("$($_.Exception.Message)" -replace '\s+', ' ') }
+    }
+}
+
 Assert-Contract (Test-Path -LiteralPath $manifestPath) 'Backend test shard manifest is missing.'
 Assert-Contract (Test-Path -LiteralPath $validatorPath) 'Backend test shard validator is missing.'
 
@@ -196,139 +228,63 @@ foreach ($shard in $fastShards) {
 # assemblies linked against a Debug dependency. Planting a non-test project proves the check is the
 # general one and not the pre-existing `*.Tests.csproj`-only rule: this fixture is invisible to that
 # rule, so if the general check is weakened away the validator passes and this contract goes red.
-$solutionMembershipValidatorText = ''
+$solutionMembership = $null
 try {
     New-Item -ItemType Directory -Path $temporarySolutionMemberDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporarySolutionMemberPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-solution-membership' | Out-Null
-        throw 'A backend project outside backend/Nerv.IIP.sln must fail shard governance.'
-    }
-    catch {
-        $solutionMembershipValidatorText = $_.Exception.Message
-        $logMatch = [regex]::Match($solutionMembershipValidatorText, 'Logs: (?<path>.+)$')
-        if ($logMatch.Success) {
-            foreach ($logName in @('stdout.log', 'stderr.log')) {
-                $logPath = Join-Path $logMatch.Groups['path'].Value $logName
-                if (Test-Path -LiteralPath $logPath) {
-                    $solutionMembershipValidatorText += "`n" + (Get-Content -LiteralPath $logPath -Raw)
-                }
-            }
-        }
-    }
+    $solutionMembership = Invoke-ShardValidator -Name 'backend-test-shard-solution-membership'
 }
 finally {
     if (Test-Path -LiteralPath $temporarySolutionMemberDirectory) {
         Remove-Item -LiteralPath $temporarySolutionMemberDirectory -Recurse -Force
     }
 }
-# The captured text is PowerShell's line-wrapped rendering of the throw, so only short fragments are
-# safe to match; the load-bearing assertion is that the validator failed at all.
-Assert-Contract ($solutionMembershipValidatorText.Contains('bin/Debug')) 'Shard governance must reject a backend project that is not a solution member, naming the Release/Debug consequence.'
-Assert-Contract ($solutionMembershipValidatorText.Contains('backend/common/Nerv.IIP.TemporarySolutionMembership/Nerv.IIP.TemporarySolutionMembership.csproj')) 'The solution-membership failure must identify the offending project path.'
-Assert-Contract (-not $solutionMembershipValidatorText.Contains('Unclassified backend test')) 'The solution-membership contract must be tripped by a non-test project, not by the test classification rule.'
+Assert-Contract (-not $solutionMembership.Passed) 'A backend project outside backend/Nerv.IIP.sln must fail shard governance.'
+Assert-Contract ($solutionMembership.Message.Contains('bin/Debug')) 'Shard governance must reject a backend project that is not a solution member, naming the Release/Debug consequence.'
+Assert-Contract ($solutionMembership.Message.Contains('backend/common/Nerv.IIP.TemporarySolutionMembership/Nerv.IIP.TemporarySolutionMembership.csproj')) 'The solution-membership failure must identify the offending project path.'
+Assert-Contract (-not $solutionMembership.Message.Contains('Unclassified backend test')) 'The solution-membership contract must be tripped by a non-test project, not by the test classification rule.'
 Assert-Contract (@(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln') | Where-Object { $_ -match 'Nerv\.IIP\.Contracts\.Mes\.csproj' }).Count -eq 1) 'Nerv.IIP.Contracts.Mes must stay a solution member; outside the solution every Release shard builds it as Debug.'
 
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    $validatorText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-unclassified-project' | Out-Null
-        throw 'An unclassified temporary backend test project must fail classification.'
-    }
-    catch {
-        $validatorText = $_.Exception.Message
-        $logMatch = [regex]::Match($validatorText, 'Logs: (?<path>.+)$')
-        if ($logMatch.Success) {
-            foreach ($logName in @('stdout.log', 'stderr.log')) {
-                $logPath = Join-Path $logMatch.Groups['path'].Value $logName
-                if (Test-Path -LiteralPath $logPath) {
-                    $validatorText += "`n" + (Get-Content -LiteralPath $logPath -Raw)
-                }
-            }
-        }
-    }
-    Assert-Contract ($validatorText.Contains('Unclassified backend test')) 'Unclassified project failure must identify the classification error.'
-    Assert-Contract ($validatorText.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj')) 'Unclassified project failure must identify the temporary project path.'
+    $unclassified = Invoke-ShardValidator -Name 'backend-test-shard-unclassified-project'
+    Assert-Contract (-not $unclassified.Passed) 'An unclassified temporary backend test project must fail classification.'
+    Assert-Contract ($unclassified.Message.Contains('Unclassified backend test')) 'Unclassified project failure must identify the classification error.'
+    Assert-Contract ($unclassified.Message.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj')) 'Unclassified project failure must identify the temporary project path.'
 
     $workflowContent = Get-Content -LiteralPath $workflowPath -Raw
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^\s+- backend-tests-business-core-b\r?\n', '') -NoNewline
-    $workflowValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-workflow-contract' | Out-Null
-        throw 'A workflow with a missing aggregate dependency must fail structured shard governance.'
-    }
-    catch {
-        $workflowValidationText = $_.Exception.Message
-        $logMatch = [regex]::Match($workflowValidationText, 'Logs: (?<path>.+)$')
-        if ($logMatch.Success) {
-            foreach ($logName in @('stdout.log', 'stderr.log')) {
-                $logPath = Join-Path $logMatch.Groups['path'].Value $logName
-                if (Test-Path -LiteralPath $logPath) {
-                    $workflowValidationText += "`n" + (Get-Content -LiteralPath $logPath -Raw)
-                }
-            }
-        }
-    }
-    Assert-Contract ($workflowValidationText.Contains('Backend Tests aggregate must need exactly')) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
+    $workflowValidation = Invoke-ShardValidator -Name 'backend-test-shard-workflow-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
+    Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.')) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
-    $noOpValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-noop-aggregate-contract' | Out-Null
-        throw 'A no-op aggregate dependency expression must fail structured shard governance.'
-    }
-    catch {
-        $noOpValidationText = $_.Exception.Message
-    }
-    Assert-Contract ($noOpValidationText.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
+    $noOpValidation = Invoke-ShardValidator -Name 'backend-test-shard-noop-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $noOpValidation.Passed) 'A no-op aggregate dependency expression must fail structured shard governance.'
+    Assert-Contract ($noOpValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'test "${{ needs.backend-tests-platform.result }}" = "success" || true') -NoNewline
-    $maskedFailureValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-masked-aggregate-contract' | Out-Null
-        throw 'An aggregate assertion masked with || true must fail structured shard governance.'
-    }
-    catch {
-        $maskedFailureValidationText = $_.Exception.Message
-    }
-    Assert-Contract ($maskedFailureValidationText.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
+    $maskedFailureValidation = Invoke-ShardValidator -Name 'backend-test-shard-masked-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $maskedFailureValidation.Passed) 'An aggregate assertion masked with || true must fail structured shard governance.'
+    Assert-Contract ($maskedFailureValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(\s+- name: Require all backend fast shards\r?\n)', ('$1        continue-on-error: true' + [Environment]::NewLine)) -NoNewline
-    $continueOnErrorValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-continue-on-error-contract' | Out-Null
-        throw 'An aggregate step with continue-on-error must fail structured shard governance.'
-    }
-    catch {
-        $continueOnErrorValidationText = $_.Exception.Message
-    }
-    Assert-Contract ($continueOnErrorValidationText.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
+    $continueOnErrorValidation = Invoke-ShardValidator -Name 'backend-test-shard-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $continueOnErrorValidation.Passed) 'An aggregate step with continue-on-error must fail structured shard governance.'
+    Assert-Contract ($continueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(    if: always\(\)\r?\n)', ('$1    continue-on-error: true' + [Environment]::NewLine)) -NoNewline
-    $jobContinueOnErrorValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-job-continue-on-error-contract' | Out-Null
-        throw 'An aggregate job with continue-on-error must fail structured shard governance.'
-    }
-    catch {
-        $jobContinueOnErrorValidationText = $_.Exception.Message
-    }
-    Assert-Contract ($jobContinueOnErrorValidationText.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
+    $jobContinueOnErrorValidation = Invoke-ShardValidator -Name 'backend-test-shard-job-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $jobContinueOnErrorValidation.Passed) 'An aggregate job with continue-on-error must fail structured shard governance.'
+    Assert-Contract ($jobContinueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)(-TrxFilePrefix backend-tests-platform)', '$1 -TestCommand "Write-Output pass"') -NoNewline
-    $bypassValidationText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-command-bypass-contract' | Out-Null
-        throw 'A fast shard command replacement parameter must fail structured shard governance.'
-    }
-    catch {
-        $bypassValidationText = $_.Exception.Message
-    }
-    Assert-Contract ($bypassValidationText.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.")) 'Structured workflow validation must reject a command replacement parameter.'
+    $bypassValidation = Invoke-ShardValidator -Name 'backend-test-shard-command-bypass-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $bypassValidation.Passed) 'A fast shard command replacement parameter must fail structured shard governance.'
+    Assert-Contract ($bypassValidation.Message.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.")) 'Structured workflow validation must reject a command replacement parameter.'
 
     foreach ($evidenceMutation in @(
             @{
@@ -357,15 +313,9 @@ try {
             }
         )) {
         Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace $evidenceMutation.Pattern, $evidenceMutation.Replacement) -NoNewline
-        $evidenceValidationText = ''
-        try {
-            Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-WorkflowPath', $temporaryWorkflowPath) -WorkingDirectory $repoRoot -Name "backend-test-shard-evidence-$($evidenceMutation.Name)-contract" | Out-Null
-            throw "Evidence mutation '$($evidenceMutation.Name)' must fail structured shard governance."
-        }
-        catch {
-            $evidenceValidationText = $_.Exception.Message
-        }
-        Assert-Contract ($evidenceValidationText.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
+        $evidenceValidation = Invoke-ShardValidator -Name "backend-test-shard-evidence-$($evidenceMutation.Name)-contract" -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+        Assert-Contract (-not $evidenceValidation.Passed) "Evidence mutation '$($evidenceMutation.Name)' must fail structured shard governance."
+        Assert-Contract ($evidenceValidation.Message.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
     }
 
     $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
@@ -377,15 +327,9 @@ try {
         }
     }
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($policy | ConvertTo-Json -Depth 100) -NoNewline
-    $policyCoverageText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-PolicyPath', $temporaryPolicyPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-policy-coverage-contract' | Out-Null
-        throw 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
-    }
-    catch {
-        $policyCoverageText = $_.Exception.Message
-    }
-    Assert-Contract ($policyCoverageText.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
+    $policyCoverage = Invoke-ShardValidator -Name 'backend-test-shard-policy-coverage-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    Assert-Contract (-not $policyCoverage.Passed) 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
+    Assert-Contract ($policyCoverage.Message.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
 
     # The under-declaration has to be planted on whichever shard currently owns the one exclusion
     # whose MAN-661 requiredLane is not `postgres`; pinning that to a shard id made this negative
@@ -395,42 +339,42 @@ try {
     Assert-Contract ($fullChainShards.Count -eq 1) 'Exactly one fast shard must own the full-chain exclusion for the lane-attribution contract to be able to under-declare it.'
     $fullChainShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
-    $laneAttributionText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-lane-attribution-contract' | Out-Null
-        throw 'A shard that under-declares its excluded test lanes must fail shard governance.'
-    }
-    catch {
-        $laneAttributionText = $_.Exception.Message
-    }
-    Assert-Contract ($laneAttributionText.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
+    $laneAttribution = Invoke-ShardValidator -Name 'backend-test-shard-lane-attribution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    Assert-Contract (-not $laneAttribution.Passed) 'A shard that under-declares its excluded test lanes must fail shard governance.'
+    Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
 
     # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
     # readable file and would otherwise be reported as a malformed solution filter rather than as
     # the thing it is, so the rejection has to be explicit — and therefore has to be tested.
-    # The spellings below all name the same file. A case-sensitive equality check would let every
-    # variant except the first slip past this branch and be reported as "invalid JSON" instead,
-    # which is exactly the misleading diagnostic the branch exists to prevent — so each variant is
-    # asserted, not just the canonical one.
+    #
+    # Every spelling below names the same file, and each one must land in the *whole-solution*
+    # branch rather than in the downstream "invalid JSON" report — the misleading diagnostic that
+    # branch exists to prevent. The first four were covered from the start; the last four are the
+    # ones a hand-written `^\./` strip let through (#1494 review, 微瑕 1: "`backend//Nerv.IIP.sln`
+    # 或绝对路径拼法会绕过新分支、落回「JSON 非法」误报"), and they are why the comparison now
+    # canonicalizes with GetFullPath instead of trimming one prefix.
+    #
+    # Both halves are asserted per spelling: the run must fail, AND it must fail with the
+    # whole-solution finding rather than with "invalid JSON" — a failure-only assertion would be
+    # green for all eight even with the branch deleted, because every spelling fails either way.
     $solutionSpelling = [string] (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).solution
     foreach ($wholeSolutionSpelling in @(
             $solutionSpelling,
             "./$solutionSpelling",
             ($solutionSpelling -replace '/', '\'),
-            $solutionSpelling.ToLowerInvariant()
+            $solutionSpelling.ToLowerInvariant(),
+            ($solutionSpelling -replace '/', '//'),
+            ($solutionSpelling -replace '/', '/./'),
+            ("$(Split-Path -Parent $solutionSpelling)/../$solutionSpelling"),
+            ((Join-Path $repoRoot $solutionSpelling) -replace '\\', '/')
         )) {
         $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         $wholeSolutionManifest.fastShards[0].solutionFilter = $wholeSolutionSpelling
         Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
-        $wholeSolutionText = ''
-        try {
-            Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-whole-solution-contract' | Out-Null
-            throw "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
-        }
-        catch {
-            $wholeSolutionText = $_.Exception.Message
-        }
-        Assert-Contract ($wholeSolutionText.Contains('not the whole backend solution')) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
+        $wholeSolution = Invoke-ShardValidator -Name 'backend-test-shard-whole-solution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+        Assert-Contract (-not $wholeSolution.Passed) "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
+        Assert-Contract ($wholeSolution.Message.Contains('must build its own solution filter, not the whole backend solution')) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
+        Assert-Contract (-not $wholeSolution.Message.Contains('solution filter is invalid JSON')) "'$wholeSolutionSpelling' must be diagnosed as the whole solution, not as a malformed solution filter."
     }
 
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
@@ -445,15 +389,9 @@ try {
         }
     }
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($collisionPolicy | ConvertTo-Json -Depth 100) -NoNewline
-    $collisionText = ''
-    try {
-        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-PolicyPath', $temporaryPolicyPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-selector-collision-contract' | Out-Null
-        throw 'A method selector that substring-excludes a sibling member must fail shard governance.'
-    }
-    catch {
-        $collisionText = $_.Exception.Message
-    }
-    Assert-Contract ($collisionText.Contains('would also substring-exclude a sibling member')) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
+    $collision = Invoke-ShardValidator -Name 'backend-test-shard-selector-collision-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    Assert-Contract (-not $collision.Passed) 'A method selector that substring-excludes a sibling member must fail shard governance.'
+    Assert-Contract ($collision.Message.Contains('would also substring-exclude a sibling member')) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
 
     $timeoutText = ''
     $timedOut = $false
