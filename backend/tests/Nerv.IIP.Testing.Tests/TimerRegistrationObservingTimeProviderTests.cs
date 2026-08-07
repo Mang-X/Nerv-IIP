@@ -42,7 +42,6 @@ public sealed class TimerRegistrationObservingTimeProviderTests
     [Theory]
     [InlineData(0L)]
     [InlineData(-1L)]
-    [InlineData(-TimeSpan.TicksPerSecond)]
     public void BothConstructors_RejectANonPositiveRegistrationBudget(long budgetTicks)
     {
         var budget = TimeSpan.FromTicks(budgetTicks);

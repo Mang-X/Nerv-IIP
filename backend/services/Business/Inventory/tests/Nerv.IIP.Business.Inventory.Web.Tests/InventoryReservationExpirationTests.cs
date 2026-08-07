@@ -343,28 +343,13 @@ public sealed class InventoryReservationExpirationTests
             await worker.StopAsync(CancellationToken.None);
         }
 
-        // Executable guard for the barrier's premise above: the worker's single PeriodicTimer is this clock's
-        // only registrant, so the total is exactly 1 for the whole test. A second registrant on this clock
-        // moves this number and fails deterministically here, pointing straight at the broken premise —
-        // instead of letting WaitForTimerCountAsync(1) be satisfied vacuously and turning the test
-        // intermittently red somewhere else. What it pins is every registration made *by the time shutdown
-        // returns*; a registrant that only appears later, or races the shutdown asynchronously, is outside
-        // its reach. That is the whole realistic surface here — host components register during arrange and
-        // execute — but it is the honest scope of the guard. It sits after StopAsync, and outside the
-        // try/finally so a failing assertion above still surfaces as itself: StopAsync(CancellationToken.None)
-        // awaits ExecuteTask, so by here the loop has exited and every registration it ever made is counted.
-        // The None matters and is not incidental — StopAsync waits for ExecuteTask bounded by the token the
-        // caller hands it, so only None waits until the loop has actually exited; a token carrying a timeout
-        // could return earlier and undercount the registrations this assertion is here to see. (Stated as
-        // behaviour rather than as a BCL implementation detail on purpose: the mechanism has already changed
-        // once across runtime versions, the behaviour has not.) The position is load-bearing for the *other*
-        // way the premise can break — a loop rewritten to register one timer per iteration. In this worker's
-        // shape (RunOnceAsync first, PeriodicTimer after) that extra registration happens only after the
-        // second pass is already observable, so an assertion placed before the shutdown races it: measured with
-        // the loop rewritten to build a PeriodicTimer per iteration, the pre-shutdown position won the race and
-        // went red 3/3 here, but widening the re-registration window (a 1.5 s delay between RunOnceAsync and
-        // the next construction, the same technique used to size the barrier itself) turned it green — a false
-        // green — while this position stayed red 3/3, Expected 1 / Actual 2.
+        // Executable guard for the barrier's premise above: this clock's only timer registrant is the worker's
+        // single PeriodicTimer, so the total is exactly 1. It sits after StopAsync — and outside the
+        // try/finally, so a failing assertion above still surfaces as itself — because
+        // StopAsync(CancellationToken.None) waits for the loop to actually exit, which is what makes the count
+        // complete. Why an executable assertion rather than a comment, why this position rather than before the
+        // shutdown, what it does and does not pin, and the measurement behind it are recorded once in
+        // docs/architecture/backend-test-determinism.md, §MAN-808.
         Assert.Equal(1, timeProvider.TimersCreated);
     }
 
