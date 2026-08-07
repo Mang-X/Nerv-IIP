@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using MediatR;
 using Nerv.IIP.Testing;
 using Prometheus;
@@ -302,6 +301,21 @@ public sealed class InventoryReservationExpirationTests
                 exposition => exposition,
                 new EventuallyOptions(TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10), []));
             Assert.Equal(1m, secondPassReservation.OpenQuantity);
+
+            // Advancing a fake clock is only safe once the timer that must observe the advance actually
+            // exists. "The first pass published expired_total 1" is not that fact: the worker registers its
+            // PeriodicTimer only after RunOnceAsync returns, so the metric is visible strictly *before* the
+            // registration. An advance that lands in that window re-bases the tick on the advanced now,
+            // nothing advances the clock again, and the second pass never happens — which is exactly the
+            // intermittent CI failure this test showed (every observation stuck at openQuantity=1, i.e. the
+            // worker never ran again, rather than ran slowly). Widening the Eventually budget cannot help:
+            // the tick is lost permanently. The registration itself is the observable edge, and unlike
+            // "which statement comes first in ExecuteAsync" it stays true however the worker is rewritten.
+            // Measured: widening the registration window (a 1.5 s delay in the worker between the first pass
+            // and the PeriodicTimer construction) fails this test with the metric barrier alone — with the
+            // exact CI message, openQuantity=1 after 2 s — and passes it with the barrier below. The first
+            // Advance above needs no barrier: it happens before StartAsync, when no timer exists yet.
+            await timeProvider.WaitForTimerCountAsync(1);
             timeProvider.Advance(TimeSpan.FromMinutes(1));
 
             await Eventually.WaitAsync(
@@ -358,8 +372,10 @@ public sealed class InventoryReservationExpirationTests
     /// clock, so the fake clock must be anchored to real now — a fixed calendar date would make these
     /// tests pass on the day they were written and throw every day after. Every assertion below is
     /// relative to this anchor and advances the fake clock explicitly, so nothing waits on real time.
+    /// The clock also publishes timer registrations, so a test that advances it while a worker is running
+    /// can wait for the edge that makes the advance observable instead of guessing.
     /// </summary>
-    private static FakeTimeProvider CreateReservationClock() => new(DateTimeOffset.UtcNow);
+    private static TimerRegistrationObservingTimeProvider CreateReservationClock() => new(DateTimeOffset.UtcNow);
 
     private static StockLedger CreateLedger()
     {

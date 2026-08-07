@@ -30,8 +30,39 @@ public sealed class TimerRegistrationObservingTimeProvider : FakeTimeProvider
     /// </param>
     public TimerRegistrationObservingTimeProvider(TimeSpan? registrationBudget = null)
     {
-        this.registrationBudget = registrationBudget ?? BoundedSignal.DefaultBudget;
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(this.registrationBudget, TimeSpan.Zero);
+        this.registrationBudget = ResolveBudget(registrationBudget);
+    }
+
+    /// <param name="startDateTime">
+    /// Where this clock starts. <see cref="FakeTimeProvider"/> otherwise starts in the year 2000, which
+    /// breaks any subject whose <em>other</em> guard still reads the process wall clock (a domain rule such
+    /// as "the deadline must be in the future" is checked against real <c>UtcNow</c>, and injecting a
+    /// <see cref="TimeProvider"/> only covers the side that reads the injected clock). Such a test anchors
+    /// at real now and advances from there.
+    /// </param>
+    /// <param name="registrationBudget">
+    /// Wall-clock budget for the <c>WaitFor…</c> barriers below; defaults to
+    /// <see cref="BoundedSignal.DefaultBudget"/>. A healthy run never spends it.
+    /// </param>
+    /// <remarks>
+    /// The anchor is a constructor parameter rather than a <see cref="FakeTimeProvider.SetUtcNow"/> call
+    /// made after construction on purpose: setting the clock forward fires every timer already registered
+    /// against it, so a two-step "construct, then anchor" is only safe while nothing has registered yet —
+    /// an ordering property, which is exactly what this type exists to stop tests from relying on.
+    /// </remarks>
+    public TimerRegistrationObservingTimeProvider(
+        DateTimeOffset startDateTime,
+        TimeSpan? registrationBudget = null)
+        : base(startDateTime)
+    {
+        this.registrationBudget = ResolveBudget(registrationBudget);
+    }
+
+    private static TimeSpan ResolveBudget(TimeSpan? registrationBudget)
+    {
+        var resolved = registrationBudget ?? BoundedSignal.DefaultBudget;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(resolved, TimeSpan.Zero);
+        return resolved;
     }
 
     /// <summary>Completes once at least one timer has been registered against this clock.</summary>
