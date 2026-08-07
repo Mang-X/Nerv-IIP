@@ -583,7 +583,8 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   `StopAsync` 之后——`StopAsync` 是「用调用者交进来的 token 有界地等 `ExecuteTask`」，因此只有传 `None` 才会一直
   等到循环真正退出；带超时的 token 可能提前返回、少数掉注册。（这里刻意只写行为、不写它当下用的是哪个 BCL API：
   该实现细节在 runtime 版本间已经变过一次，行为没变。）传 `None` 时循环退出前的最后一次注册必然已计入，赛跑变成
-  结构保证。断言钉住的范围是「停机返回前已完成的注册」，更晚出现的注册方不在其内。实测（把 Inventory worker 改成
+  结构保证。断言钉住的范围是「停机返回前已完成的注册」，更晚出现的注册方不在其内——这两个宿主里注册都发生在
+  arrange/execute 期，该边界不留现实缺口，但它是 guard 的诚实边界而不是「无所不包」。实测（把 Inventory worker 改成
   逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场赛跑），但按 MAN-808 同一手法在
   `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假绿），停机后位置仍 3/3 报
   `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
