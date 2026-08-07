@@ -8,10 +8,40 @@
       "jobName": "Backend Tests - BusinessGateway",
       "solutionFilter": "backend/ci/backend-tests-business-gateway.slnf",
       "projects": [
-        "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj"
+        "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj",
+        "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj",
+        "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj",
+        "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj",
+        "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+        "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj",
+        "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
+        "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Domain.Tests/Nerv.IIP.Business.Scheduling.Domain.Tests.csproj",
+        "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
+        "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/Nerv.IIP.Business.Wms.Domain.Tests.csproj",
+        "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj"
       ],
-      "excludedTestClasses": [],
-      "excludedTestLanes": []
+      "excludedTestClasses": [
+        "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests",
+        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
+      ],
+      "excludedTestLanes": [
+        "real-postgres"
+      ]
     },
     {
       "id": "platform",
@@ -61,8 +91,8 @@
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests"
       ],
       "excludedTests": [
-        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed",
-        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics"
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics",
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed"
       ],
       "excludedTestLanes": [
         "real-postgres"
@@ -78,33 +108,20 @@
         "backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/Nerv.IIP.Business.Approval.Web.Tests.csproj",
         "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Domain.Tests/Nerv.IIP.Business.BarcodeLabel.Domain.Tests.csproj",
         "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests.csproj",
-        "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests.csproj",
-        "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj",
-        "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj",
-        "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj",
         "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj",
         "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
-        "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj",
-        "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
         "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Domain.Tests/Nerv.IIP.Business.Mes.Domain.Tests.csproj",
         "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
-        "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj",
-        "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj",
-        "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/Nerv.IIP.Business.Wms.Domain.Tests.csproj",
-        "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj"
+        "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj",
+        "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
+        "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests",
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests",
-        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
-        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
@@ -113,16 +130,18 @@
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests",
-        "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests",
+        "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests"
+      ],
+      "excludedTests": [
+        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
+        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
       ],
       "excludedTestLanes": [
-        "full-chain",
         "real-postgres"
       ]
     },
@@ -132,40 +151,24 @@
       "jobName": "Backend Tests - Business Core B",
       "solutionFilter": "backend/ci/backend-tests-business-core-b.slnf",
       "projects": [
+        "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests.csproj",
+        "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj",
         "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.csproj",
         "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj",
-        "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj",
-        "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
-        "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj",
-        "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
-        "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Domain.Tests/Nerv.IIP.Business.Scheduling.Domain.Tests.csproj",
-        "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
-        "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj"
+        "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj",
+        "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
-        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests",
-        "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityCalibrationRecordQueryTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests",
-        "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests",
-        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests",
-        "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
-        "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests"
-      ],
-      "excludedTests": [
-        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
-        "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict"
+        "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"
       ],
       "excludedTestLanes": [
+        "full-chain",
         "real-postgres"
       ]
     }
