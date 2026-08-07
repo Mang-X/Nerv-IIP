@@ -161,9 +161,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -249,9 +249,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -337,9 +337,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -427,9 +427,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -518,9 +518,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Prepare PostgreSQL and Redis images
         timeout-minutes: 10
@@ -567,9 +567,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -695,9 +695,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Setup pnpm
         timeout-minutes: 3
@@ -806,9 +806,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Measure restore, build and warm test
         timeout-minutes: 30
@@ -850,9 +850,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Restore and build the whole backend solution
         timeout-minutes: 35
@@ -917,9 +917,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold1-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold1-
+            ${{ runner.os }}-nuget-man669cold2-
 
       - name: Download build outputs artifact
         timeout-minutes: 20
