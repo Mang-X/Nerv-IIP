@@ -106,10 +106,9 @@ function Invoke-Verifier {
         [Parameter(Mandatory)] [string] $Name
     )
 
-    # Whitespace is collapsed because PowerShell's own error formatter hard-wraps the message at the
-    # console width, and it wraps *inside* the phrases these assertions look for ("no 'Release|Any\n
-    # CPU.ActiveCfg' entry"). Matching raw text would make the assertions depend on terminal width —
-    # green on a wide runner, red on a narrow one. The assertions are about content, not layout.
+    # Whitespace is collapsed so that where a line happens to break is not part of the contract; the
+    # assertions are about content, not layout. (Why this mattered enough to write down:
+    # docs/architecture/backend-ci-build-strategy.md, "走查收尾" 第 3 条.)
     try {
         $result = Invoke-NativeCommandOutput `
             -Command 'pwsh' `
@@ -170,11 +169,10 @@ try {
     $fixed = Invoke-FixtureVerifier -FixtureDirectory $leakDirectory -SolutionRelativePath 'Fixed.sln' -Name 'solution-membership-fixed-fixture'
     Assert-Contract $fixed.Passed "A fully-registered closure must pass; the verifier said: $($fixed.Message)"
 
-    # 4. A *declared* member whose configuration map is missing must fail. This is the second way a
-    #    project ends up in bin/Debug under `--configuration Release`, and it is invisible to every
-    #    rule that reads only `Project(...)` lines — including PR-B's directory rule. It is one
-    #    hand-edit away in practice: fixing form 1 means writing 12 map lines per project by hand
-    #    (42 lines for PR-C's three projects), and dropping any of them re-creates the bug silently.
+    # 4. A *declared* member whose configuration map is missing must fail (form 2). It is invisible
+    #    to every rule that reads only `Project(...)` lines — including PR-B's directory rule — and
+    #    is one hand-edit away in practice. Why that is so is argued once, in
+    #    docs/architecture/backend-ci-build-strategy.md; not restated here.
     $mapDirectory = Join-Path $fixtureRoot 'map'
     New-FixtureProject -Path (Join-Path $mapDirectory 'lib/Lib.csproj')
     New-FixtureProject -Path (Join-Path $mapDirectory 'app/App.csproj') -ProjectReferenceInclude @('..\lib\Lib.csproj')
@@ -232,6 +230,52 @@ try {
     $discovery = Invoke-Verifier -Name 'solution-membership-discovery-fixture' -Arguments @('-RepositoryRoot', $discoveryDirectory)
     Assert-Contract (-not $discovery.Passed) 'An unregistered solution anywhere in the tree must still be discovered and checked.'
     Assert-Contract ($discovery.Message -match 'Undeclared\.sln') 'The discovered solution must be named in the failure.'
+
+    # 9. ...but discovery stops where .gitignore says the repository stops. Agent tooling keeps whole
+    #    working copies of this repository under ignored roots (`/worktrees/`,
+    #    `/.claude/worktrees/`, …), and before issue #1496 the walk found every one of them — 10
+    #    solutions from the repository root instead of 2 — so another agent's half-finished solution
+    #    failed *your* local check while your own tree was clean.
+    #
+    #    Asserted as a matched pair on one tree, which is what makes it mutation-sensitive instead
+    #    of vacuous: with the ignore rule present the deliberately broken copy is invisible and the
+    #    run is green; with the very same tree and the rule removed, that copy is discovered and the
+    #    run is red. Neither half can pass on its own if the filter is dropped or widened, and
+    #    neither reads the verifier's source.
+    $ignoreDirectory = Join-Path $fixtureRoot 'gitignored'
+    New-FixtureProject -Path (Join-Path $ignoreDirectory 'lib/Lib.csproj')
+    New-FixtureProject -Path (Join-Path $ignoreDirectory 'app/App.csproj') -ProjectReferenceInclude @('..\lib\Lib.csproj')
+    New-FixtureSolution -Path (Join-Path $ignoreDirectory 'Tracked.sln') -MemberRelativePath @('app/App.csproj', 'lib/Lib.csproj')
+    New-FixtureProject -Path (Join-Path $ignoreDirectory 'worktrees/agent/orphan/Orphan.csproj')
+    New-FixtureProject -Path (Join-Path $ignoreDirectory 'worktrees/agent/member/Member.csproj') -ProjectReferenceInclude @('..\orphan\Orphan.csproj')
+    New-FixtureSolution -Path (Join-Path $ignoreDirectory 'worktrees/agent/Halfway.sln') -MemberRelativePath @('member/Member.csproj')
+    Invoke-NativeCommandOutput `
+        -Command 'git' `
+        -Arguments @('init', '--quiet') `
+        -WorkingDirectory $ignoreDirectory `
+        -Name 'solution-membership-gitignore-fixture-init' | Out-Null
+
+    Set-Content -LiteralPath (Join-Path $ignoreDirectory '.gitignore') -Value '/worktrees/' -Encoding utf8
+    $ignoredScope = Invoke-Verifier -Name 'solution-membership-gitignored-worktree' -Arguments @('-RepositoryRoot', $ignoreDirectory)
+    Assert-Contract $ignoredScope.Passed "A solution under a gitignored root must not be checked; the verifier said: $($ignoredScope.Message)"
+    Assert-Contract ($ignoredScope.Message -match 'Tracked\.sln: 2 members') 'The solution git does track must still be discovered and reported.'
+    # Anchored on the report line's own shape (`<solution>: N members …` on success,
+    # `<solution> builds …` on failure). The captured text also carries the helper's INFO line,
+    # which echoes the candidate paths handed to `git check-ignore` — a bare name match would find
+    # the solution there and never be able to fail.
+    Assert-Contract ($ignoredScope.Message -notmatch 'Halfway\.sln:') 'The ignored working copy must not be among the checked solutions.'
+
+    Set-Content -LiteralPath (Join-Path $ignoreDirectory '.gitignore') -Value '# nothing ignored' -Encoding utf8
+    $unignoredScope = Invoke-Verifier -Name 'solution-membership-unignored-worktree' -Arguments @('-RepositoryRoot', $ignoreDirectory)
+    Assert-Contract (-not $unignoredScope.Passed) 'Control: without the ignore rule the same fixture must be discovered and must fail, otherwise the step above proves nothing.'
+    Assert-Contract ($unignoredScope.Message -match 'Halfway\.sln builds') 'The control run must report a finding against the solution the ignore rule was hiding.'
+
+    # 10. Narrowing discovery must not be able to make the gate vacuous: ignore every solution and
+    #     the verifier must fail rather than report a clean run over nothing.
+    Set-Content -LiteralPath (Join-Path $ignoreDirectory '.gitignore') -Value '*.sln' -Encoding utf8
+    $vacuousScope = Invoke-Verifier -Name 'solution-membership-vacuous-scan' -Arguments @('-RepositoryRoot', $ignoreDirectory)
+    Assert-Contract (-not $vacuousScope.Passed) 'An empty scan must fail instead of passing vacuously.'
+    Assert-Contract ($vacuousScope.Message -match 'pass vacuously') 'The empty-scan failure must say why an empty scan is not a pass.'
 
     Write-Host 'Solution configuration membership contract tests passed.'
 }

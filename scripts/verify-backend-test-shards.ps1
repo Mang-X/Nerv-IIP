@@ -33,6 +33,36 @@ function Get-RepoRelativePath {
     return ([System.IO.Path]::GetRelativePath($RepositoryRoot, $Path) -replace '\\', '/')
 }
 
+# Two repo-relative spellings name the same file far more often than string equality admits:
+# `./backend/Nerv.IIP.sln`, `backend\Nerv.IIP.sln`, `backend//Nerv.IIP.sln`,
+# `backend/./Nerv.IIP.sln`, `backend/../backend/Nerv.IIP.sln` and an absolute path are all the
+# backend solution. Stripping a single `^\./` prefix by hand only covers the first two, so every
+# other spelling used to slip past the whole-solution rejection below and be reported as malformed
+# JSON instead — a misleading diagnostic for the exact case that branch exists to name.
+# GetFullPath collapses `.`, `..` and duplicate separators and resolves a relative path against the
+# repository root, which reduces all of them to one comparable string.
+function Get-CanonicalRepoPath {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ''
+    }
+
+    $slashed = $Path -replace '\\', '/'
+    try {
+        return ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($RepositoryRoot, $slashed)) -replace '\\', '/')
+    }
+    catch {
+        # A spelling the runtime cannot canonicalize (invalid path characters) is not the solution
+        # path either. Returning it verbatim keeps the existence check below as the reporter rather
+        # than making two uncanonicalizable spellings compare equal to each other.
+        return $slashed
+    }
+}
+
 function ConvertFrom-CiWorkflowYaml {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -383,19 +413,20 @@ foreach ($shard in $fastShards) {
 
     # A shard exists to restore and build only its own dependency closure. Pointing it at
     # backend/Nerv.IIP.sln would keep the "shard" label while every job rebuilt the whole solution
-    # again — measured at 195.7-233.2s and 3.03 GB of output, against 62.7-180.9s and 0.41-1.78 GB
-    # for the four filters (MAN-669 PR-B, runs 31139435243 / 31139971326 / 31140517256 /
-    # 31141123938; narrative in docs/architecture/backend-ci-build-strategy.md). Rejected
-    # explicitly, because the JSON parse below would otherwise report it as a malformed solution
-    # filter and hide what actually happened.
+    # again, which MAN-669 PR-B measured and rejected. The measurements, run ids and re-open
+    # conditions live in exactly one place — docs/architecture/backend-ci-build-strategy.md — and
+    # are deliberately not restated here: a restated number is a number that drifts the next time
+    # MAN-664 re-measures. The rejection is explicit because the JSON parse below would otherwise
+    # report the solution as a malformed solution filter and hide what actually happened.
     #
     # Note this is the narrow case only. A `.slnf` that *lists* the whole solution is already
     # rejected further down by "solution filter must match manifest projects exactly", which
-    # predates MAN-669 PR-B. Compared case-insensitively after separator and relative-path
-    # normalization, because `./backend/Nerv.IIP.sln`, `backend\Nerv.IIP.sln` and
-    # `backend/nerv.iip.sln` all name the same file and must all land in this branch.
-    $normalizedFilter = (([string] $shard.solutionFilter) -replace '\\', '/') -replace '^\./', ''
-    $normalizedSolution = (([string] $manifest.solution) -replace '\\', '/') -replace '^\./', ''
+    # predates MAN-669 PR-B. Both sides are canonicalized to an absolute path first (see
+    # Get-CanonicalRepoPath) and compared case-insensitively, so every spelling of the same file —
+    # `./backend/…`, `backend\…`, `backend//…`, `backend/./…`, `backend/../backend/…`, an absolute
+    # path, or `backend/nerv.iip.sln` — lands in this branch instead of the "invalid JSON" report.
+    $normalizedFilter = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $shard.solutionFilter)
+    $normalizedSolution = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $manifest.solution)
     if ($normalizedFilter -eq $normalizedSolution) {
         $errors.Add("Fast shard '$($shard.id)' must build its own solution filter, not the whole backend solution.")
         continue
@@ -597,8 +628,19 @@ else {
     }
 }
 
+# Findings go to stdout and the script exits nonzero, the same shape as
+# scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
+# deliberately not `throw`, and callers must therefore check the exit code. In particular this file
+# must never share a `run:` block with another script; .github/workflows/ci.yml gives it its own
+# step. Why both rules hold is argued once, in docs/architecture/backend-ci-build-strategy.md
+# ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
-    throw ("Backend test shard governance failed:`n  " + ($errors -join "`n  "))
+    Write-Host 'Backend test shard governance failed:'
+    foreach ($failure in $errors) {
+        Write-Host "  $failure"
+    }
+
+    exit 1
 }
 
 Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards; $($discoveredBackendProjects.Count) backend projects are solution members and therefore build under the shard's own Release configuration."
