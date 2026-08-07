@@ -626,6 +626,14 @@ function New-NervTestEvidenceSummary {
     $baselineUnavailableReason = if ($null -eq $Baseline) {
         'baseline-not-provided'
     }
+    # The reader must know which `source` shape it is looking at, or "schema 1's flat runner trio is
+    # the first lane's, schema 2's laneProvenance is per lane" is a comment rather than a rule. Both
+    # known versions compare identically (the comparison keys are lane+assembly, no runner field
+    # participates); an unknown or missing version fails closed to report-only unavailable rather
+    # than comparing against a file whose layout this code has never seen.
+    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or [int]$Baseline.schemaVersion -notin @(1, 2)) {
+        'unsupported-baseline-schema-version'
+    }
     elseif (-not ($Baseline.PSObject.Properties.Name -contains 'granularity') -or -not ($Baseline.PSObject.Properties.Name -contains 'durationMetric')) {
         'baseline-metadata-incomplete'
     }
@@ -1090,16 +1098,74 @@ function Resolve-NervPriorAttemptAuthority {
     return $result
 }
 
+# Provenance splits in two, because the two halves have different kinds of truth behind them.
+#
+# `Get-NervEvidenceRunIdentityFields` names the run itself. Five jobs of one workflow run share one
+# run id, attempt, head/tested SHA, repository, event, branch and run URL by construction, so
+# cross-lane inequality there means the summaries came from different runs and the set is not one
+# baseline. Equality is a real check and stays byte-for-byte strict.
+#
+# `Get-NervEvidenceLaneEnvironmentFields` names the machine a single job happened to land on. There
+# is no such thing as "this run's runner image": GitHub schedules each job independently, and during
+# an image rollout one run legitimately spans two images (run 31149427664 on 2026-08-07 mixed
+# ubuntu24@20260720.247.2 and ubuntu24@20260804.265.1 across its five lanes, in a different mix from
+# the run before it). Requiring cross-lane equality there asserted a property the platform never
+# promised; it held only while the hosted fleet happened to be homogeneous, and it blocked baseline
+# refresh the moment that stopped. Per-summary shape validation is kept, and the load-bearing check
+# is `Assert-NervEvidenceRootAuthority`, which re-derives each lane's environment from *that lane's
+# own* job log — strictly stronger than any cross-lane comparison could be.
+function Get-NervEvidenceRunIdentityFields {
+    return , @('workflowRunId', 'runAttempt', 'headSha', 'testedSha', 'repository', 'event', 'headBranch', 'sourceUrl')
+}
+
+function Get-NervEvidenceLaneEnvironmentFields {
+    return , @('runnerOs', 'runnerImage', 'dotnetSdk')
+}
+
+function New-NervEvidenceRunIdentity {
+    param([Parameter(Mandatory)] [object] $Summary)
+    # Deliberately narrow: callers get the run identity and nothing else, so no downstream consumer
+    # can reach through the "first summary" and quietly promote one lane's runner environment into a
+    # run-wide fact. Under Set-StrictMode that is a hard error, not a silent empty string.
+    [pscustomobject][ordered]@{
+        workflowRunId = [string]$Summary.workflowRunId
+        runAttempt = [int]$Summary.runAttempt
+        headSha = [string]$Summary.headSha
+        testedSha = [string]$Summary.testedSha
+        repository = [string]$Summary.repository
+        event = [string]$Summary.event
+        headBranch = [string]$Summary.headBranch
+        sourceUrl = [string]$Summary.sourceUrl
+    }
+}
+
+function Get-NervEvidenceLaneProvenance {
+    param([Parameter(Mandatory)] [object[]] $SourceSummaries)
+    @($SourceSummaries | Sort-Object { [string]$_.lane } | ForEach-Object {
+        [pscustomobject][ordered]@{
+            lane = [string]$_.lane
+            jobName = [string]$_.jobName
+            runnerOs = [string]$_.runnerOs
+            runnerImage = [string]$_.runnerImage
+            dotnetSdk = [string]$_.dotnetSdk
+        }
+    })
+}
+
 function Assert-NervEvidenceSourceSummaries {
     param([Parameter(Mandatory)] [object[]] $SourceSummaries)
 
     if ($SourceSummaries.Count -eq 0) { throw 'Evidence baseline requires at least one summary.' }
     $first = $SourceSummaries[0]
-    $commonFields = @('workflowRunId', 'runAttempt', 'headSha', 'testedSha', 'repository', 'event', 'headBranch', 'sourceUrl', 'runnerOs', 'runnerImage', 'dotnetSdk')
+    $runIdentityFields = Get-NervEvidenceRunIdentityFields
+    $laneEnvironmentFields = Get-NervEvidenceLaneEnvironmentFields
     foreach ($summary in $SourceSummaries) {
-        foreach ($field in $commonFields) {
+        foreach ($field in $runIdentityFields) {
             if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary provenance field '$field' must be nonempty." }
             if ([string]$summary.$field -cne [string]$first.$field) { throw "Evidence summaries have mixed provenance field '$field'." }
+        }
+        foreach ($field in $laneEnvironmentFields) {
+            if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary per-job environment field '$field' must be nonempty." }
         }
         foreach ($field in @('lane', 'jobName', 'artifactName')) {
             if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary metadata field '$field' must be nonempty." }
@@ -1111,13 +1177,14 @@ function Assert-NervEvidenceSourceSummaries {
             [string]$summary.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$summary.testedSha -notmatch '^[0-9a-f]{40}$' -or
             [string]$summary.testedSha -cne [string]$summary.headSha -or
             [string]$summary.sourceUrl -cne "https://github.com/$($summary.repository)/actions/runs/$($summary.workflowRunId)" -or
+            [string]$summary.runnerOs -cnotmatch '^(?:Linux|Windows|macOS)$' -or
             [string]$summary.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
             [string]$summary.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or -not (Test-NervTestEvidenceLaneName ([string]$summary.lane))) {
             throw 'Evidence baseline requires clean successful attempt-1 initial summaries from one main push.'
         }
     }
     if (@($SourceSummaries.lane | Sort-Object -Unique).Count -ne $SourceSummaries.Count) { throw 'Evidence summaries must have unique lane metadata.' }
-    return $first
+    return New-NervEvidenceRunIdentity -Summary $first
 }
 
 function Assert-NervEvidenceRootAuthority {
@@ -1185,9 +1252,41 @@ function New-NervTestEvidenceBaseline {
         ([string]$SourceMetadata.event -ceq 'push' -and [string]$SourceMetadata.headSha -cne [string]$SourceMetadata.testedSha)) {
         throw 'Baseline provenance requires valid headSha/testedSha values; push sources require equality.'
     }
-    if ([string]$SourceMetadata.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
-        [string]$SourceMetadata.runnerImage -match '(?i)latest' -or [string]$SourceMetadata.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-        throw 'Baseline provenance requires a resolved runner image/version and exact dotnet SDK.'
+    # Runner environment is recorded per lane and only per lane. There is no run-wide runnerImage
+    # field to write, so no reader can mistake one lane's machine for the whole baseline's.
+    #
+    # "Per lane" is only honest if the rows actually cover the lanes the baseline records. A partial
+    # `laneProvenance` would be worse than the old flat trio, not better: the flat field at least
+    # claimed to be run-wide, whereas one row against five lanes of timing is a silent partial record
+    # that reads as complete. So coverage is checked both directions — no missing lane, no stray lane.
+    [object[]] $laneProvenance = @($SourceMetadata.laneProvenance)
+    if ($laneProvenance.Count -eq 0) { throw 'Baseline provenance requires at least one per-lane runner environment row.' }
+    $laneJobs = Get-NervTestEvidenceLaneJobs
+    foreach ($row in $laneProvenance) {
+        if (-not (Test-NervTestEvidenceLaneName ([string]$row.lane)) -or
+            [string]$row.runnerOs -cnotmatch '^(?:Linux|Windows|macOS)$' -or
+            [string]$row.runnerImage -notmatch '^(?:ubuntu[0-9]{2}|(?:ubuntu|windows|macos)-[^@\s]+)@[0-9A-Za-z._-]+$' -or
+            [string]$row.runnerImage -match '(?i)latest' -or [string]$row.dotnetSdk -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Baseline provenance requires a resolved runner image/version and exact dotnet SDK for lane '$($row.lane)'."
+        }
+        # `jobName` is written into the retained baseline, so it is provenance and must be checked like
+        # provenance. For an allowlisted lane the binding is exact — a row cannot claim a sibling's job.
+        # A lane outside the allowlist (only the legacy console import's unsharded `backend`, which
+        # `Get-NervTestEvidenceLaneJobs` deliberately omits) still has to name some job.
+        if ([string]::IsNullOrWhiteSpace([string]$row.jobName)) {
+            throw "Baseline lane provenance for lane '$($row.lane)' must name the job that produced it."
+        }
+        if ($laneJobs.Contains([string]$row.lane) -and [string]$row.jobName -cne [string]$laneJobs[[string]$row.lane]) {
+            throw "Baseline lane provenance for lane '$($row.lane)' names the wrong authoritative job '$($row.jobName)'."
+        }
+    }
+    if (@($laneProvenance | ForEach-Object { [string]$_.lane } | Sort-Object -Unique).Count -ne $laneProvenance.Count) {
+        throw 'Baseline lane provenance rows must name unique lanes.'
+    }
+    [string[]] $recordedLanes = @($Summaries | ForEach-Object { @($_.assemblies) } | ForEach-Object { [string]$_.lane } | Sort-Object -Unique)
+    [string[]] $provenanceLanes = @($laneProvenance | ForEach-Object { [string]$_.lane } | Sort-Object -Unique)
+    if (($provenanceLanes -join '|') -cne ($recordedLanes -join '|')) {
+        throw "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$($provenanceLanes -join ', ')] recorded=[$($recordedLanes -join ', ')]."
     }
     $assemblies = @($Summaries | ForEach-Object { @($_.assemblies) } | Group-Object lane, assembly | Sort-Object Name | ForEach-Object {
         $items = @($_.Group)
@@ -1204,8 +1303,10 @@ function New-NervTestEvidenceBaseline {
     })
     $granularities = @($Summaries.granularity | Sort-Object -Unique)
     [pscustomobject][ordered]@{
-        schemaVersion = 1
-        toolVersion = 'MAN-661-v1'
+        # schema 2 replaced the flat source.runnerOs/runnerImage/dotnetSdk trio with source.laneProvenance.
+        # A schema-1 file's flat trio is the *first lane's* environment and must never be read as run-wide.
+        schemaVersion = 2
+        toolVersion = 'MAN-661-v2'
         granularity = if ($granularities.Count -eq 1) { $granularities[0] } else { 'mixed' }
         durationMetric = if ($granularities.Count -eq 1 -and $granularities[0] -ceq 'test') { 'trx-elapsed' } else { 'project-wall-clock' }
         owner = 'Nerv-IIP Platform CI/Test Governance'
@@ -1223,9 +1324,15 @@ function New-NervTestEvidenceBaseline {
             headBranch = [string]$SourceMetadata.headBranch
             conclusion = [string]$SourceMetadata.conclusion
             jobConclusion = [string]$SourceMetadata.jobConclusion
-            runnerOs = [string]$SourceMetadata.runnerOs
-            runnerImage = [string]$SourceMetadata.runnerImage
-            dotnetSdk = [string]$SourceMetadata.dotnetSdk
+            laneProvenance = @($laneProvenance | Sort-Object { [string]$_.lane } | ForEach-Object {
+                [pscustomobject][ordered]@{
+                    lane = [string]$_.lane
+                    jobName = [string]$_.jobName
+                    runnerOs = [string]$_.runnerOs
+                    runnerImage = [string]$_.runnerImage
+                    dotnetSdk = [string]$_.dotnetSdk
+                }
+            })
             selectedLanes = @($SourceMetadata.selectedLanes)
             generatorCommand = [string]$SourceMetadata.generatorCommand
         }
