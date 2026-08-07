@@ -345,12 +345,20 @@ public sealed class InventoryReservationExpirationTests
 
         // Executable guard for the barrier's premise above: the worker's single PeriodicTimer is this clock's
         // only registrant, so the total is exactly 1 for the whole test. A second registrant on this clock
-        // moves this number and fails every run, pointing straight at the broken premise — instead of letting
-        // WaitForTimerCountAsync(1) be satisfied vacuously and turning the test intermittently red somewhere
-        // else. It sits after StopAsync, and outside the try/finally so a failing assertion above still
-        // surfaces as itself: StopAsync awaits ExecuteTask, so by here the loop has exited and every
-        // registration it ever made is counted. The position is load-bearing for the *other* way the premise
-        // can break — a loop rewritten to register one timer per iteration. That extra registration happens
+        // moves this number and fails deterministically here, pointing straight at the broken premise —
+        // instead of letting WaitForTimerCountAsync(1) be satisfied vacuously and turning the test
+        // intermittently red somewhere else. What it pins is every registration made *by the time shutdown
+        // returns*; a registrant that only appears later, or races the shutdown asynchronously, is outside
+        // its reach. That is the whole realistic surface here — host components register during arrange and
+        // execute — but it is the honest scope of the guard. It sits after StopAsync, and outside the
+        // try/finally so a failing assertion above still surfaces as itself: StopAsync(CancellationToken.None)
+        // awaits ExecuteTask, so by here the loop has exited and every registration it ever made is counted.
+        // The None matters and is not incidental — StopAsync only races ExecuteTask against
+        // Task.Delay(Timeout.Infinite, cancellationToken), so a token carrying a timeout could return before
+        // the loop exits and undercount the registrations this assertion is here to see. The position is
+        // load-bearing for the *other* way the premise can break — a loop rewritten to register one timer per
+        // iteration. In this worker's shape (RunOnceAsync first, PeriodicTimer after) that extra registration
+        // happens
         // only after the second pass is already observable, so an assertion placed before the shutdown races
         // it: measured with the loop rewritten to build a PeriodicTimer per iteration, the pre-shutdown
         // position won the race and went red 3/3 here, but widening the re-registration window (a 1.5 s delay

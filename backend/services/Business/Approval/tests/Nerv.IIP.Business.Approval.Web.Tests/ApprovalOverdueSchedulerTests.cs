@@ -134,13 +134,19 @@ public sealed class ApprovalOverdueSchedulerTests
         // only registrant (the sender, Eventually and Consistently never touch it — the latter two poll on
         // TimeProvider.System), so the total is exactly 1 for the whole test. Hand this clock to a second
         // component that owns a timer and the count moves and this fails on every run — instead of letting
-        // WaitForTimerCountAsync(1) be satisfied vacuously and degrading into an intermittent red. It sits
-        // after StopAsync, which awaits ExecuteTask: by here the loop has exited and every registration it
-        // ever made is counted, so a scheduler rewritten to register one timer per iteration is caught too.
-        // That extra registration happens only after the second dispatch is observable, so an assertion
-        // placed before the shutdown races it — see the measurement recorded at the sibling call site in
-        // InventoryReservationExpirationTests, where widening that window turned the pre-shutdown position
-        // into a false green while the post-shutdown position stayed red.
+        // WaitForTimerCountAsync(1) be satisfied vacuously and degrading into an intermittent red. What it
+        // pins is every registration made by the time shutdown returns; a registrant appearing only later is
+        // outside its reach. It sits after StopAsync(CancellationToken.None), which awaits ExecuteTask — and
+        // only because the token is None: StopAsync races ExecuteTask against
+        // Task.Delay(Timeout.Infinite, cancellationToken), so a token with a timeout could return before the
+        // loop exits and undercount. By here the loop has exited and every registration it ever made is
+        // counted, so a scheduler rewritten to register one timer per iteration is caught too. The position
+        // follows the same convention as the sibling call site in InventoryReservationExpirationTests, where
+        // the reasoning and the measurement are recorded; this scheduler builds its PeriodicTimer *before*
+        // the first dispatch, so a per-iteration rewrite would likely re-register before the next dispatch
+        // is observable and a pre-shutdown assertion might well hold here — but "might well" is not a
+        // guarantee, and the post-shutdown position is the one that is structural. Same position, one
+        // reason, no per-host reasoning to re-derive.
         Assert.Equal(1, clock.TimersCreated);
     }
 

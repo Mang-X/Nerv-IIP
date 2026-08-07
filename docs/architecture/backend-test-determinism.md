@@ -570,14 +570,19 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   **两个**构造函数都拒绝非正预算且 `ParamName` 是调用者可见的 `registrationBudget`。
 - **`WaitForTimerCountAsync(n)` 数的是这口时钟上的累计注册数，不是「某个组件的计时器」。** 调用点必须自证「本宿主
   里只有一个计时器注册方」，否则第二个组件的注册会静默满足屏障。**这条前提由计数断言钉住**
-  （#1502）：两个消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`）都在
+  （#1502）：两个**业务侧**消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`；
+  `ObservationBudgetTests`/`ConsistentlyTests`/`EventuallyAssertTests` 里的调用点属原语自测，不受此约束）都在
   **`StopAsync` 之后**加了 `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环
   改成逐轮注册）时计数改变，每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与
   「互斥门必须有一个在门被削弱时会失败的回归测试」是同一条治理先例。
   **断言位置是这条保障的一部分**（#1502 走查）：多出第二个注册方那条主危害与位置无关（断言时计数已是 2），
-  但逐轮注册那条分支里，下一轮的注册发生在「第二趟结果已可观测」**之后**，停机前断言会与它赛跑。因此两处断言都
-  放在 `StopAsync` 之后——`StopAsync` 会 await `ExecuteTask`，循环退出前的最后一次注册必然已计入，赛跑变成结构
-  保证。实测（把 Inventory worker 改成逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场
+  但逐轮注册那条分支里，Inventory 的形状（先 `RunOnceAsync`、后建计时器）使下一轮的注册发生在「第二趟结果已可
+  观测」**之后**，停机前断言会与它赛跑（Approval 是先建计时器后 dispatch，同样的重写大概率在下次 dispatch 前就
+  注册完，停机前位置未必输——但「大概率」不是保障，两处统一取结构上成立的那个位置）。因此两处断言都放在
+  `StopAsync` 之后——`StopAsync(CancellationToken.None)` 会 await `ExecuteTask`（这条只在传 `None` 时成立：
+  它是 `ExecuteTask` 与 `Task.Delay(Timeout.Infinite, cancellationToken)` 的 `WhenAny`，带超时的 token 可能在
+  循环退出前返回、少数掉注册），循环退出前的最后一次注册必然已计入，赛跑变成结构保证。断言钉住的范围是「停机
+  返回前已完成的注册」，更晚出现的注册方不在其内。实测（把 Inventory worker 改成逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场
   赛跑），但按 MAN-808 同一手法在 `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假
   绿），停机后位置仍 3/3 报 `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
 - **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
