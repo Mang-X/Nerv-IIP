@@ -405,6 +405,22 @@ try {
     }
     Assert-Contract ($laneAttributionText.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
 
+    # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
+    # readable file and would otherwise be reported as a malformed solution filter rather than as
+    # the thing it is, so the rejection has to be explicit — and therefore has to be tested.
+    $wholeSolutionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $wholeSolutionManifest.fastShards[0].solutionFilter = [string] $wholeSolutionManifest.solution
+    Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
+    $wholeSolutionText = ''
+    try {
+        Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $validatorPath, '-ManifestPath', $temporaryManifestPath) -WorkingDirectory $repoRoot -Name 'backend-test-shard-whole-solution-contract' | Out-Null
+        throw 'A fast shard pointed at the whole backend solution must fail shard governance.'
+    }
+    catch {
+        $wholeSolutionText = $_.Exception.Message
+    }
+    Assert-Contract ($wholeSolutionText.Contains('not the whole backend solution')) 'Shard governance must reject a fast shard that rebuilds the entire backend solution instead of its own filter.'
+
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
     $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.') + 1)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null

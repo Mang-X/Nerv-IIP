@@ -61,7 +61,11 @@ MAN-661 证据面按 shard 落到 `backend-shard-1`..`backend-shard-4` 四条 sc
 **退出条件（明确登记）**：本 PR 合并后，用首个合格的 main push run 的 normalized artifacts 跑
 `pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json` 刷新 baseline，使 (lane, assembly) 键重新覆盖 64/64；在此之前上述 17 行的 delta 一律按不可用对待，不得据其做性能结论。legacy console import 路径因聚合 job 不再产出测试输出而不可用，刷新只能走 `-EvidenceRoot`。
 
-其余未完成项：四个 shard 各自 restore/build，build-once/`--no-build` 与缓存测量属后续 PR（MAN-669 PR-B）；BusinessGateway 内部并行属 MAN-663。
+**MAN-669 PR-B（2026-08-07）已把「四个 shard 各自 restore/build」从待办变成一个有实测支撑的决定：保持现状，不采用 build-once。** 四次 hosted runner 实测（热缓存 `31139435243`、`31139971326`，冷缓存 `31140517256`、`31141123938`；冷缓存靠临时改 NuGet cache key 前缀制造 miss，日志已确认 `Cache not found for input keys`，key 已还原）给出的结构性事实是：`dotnet build backend/Nerv.IIP.sln` 的整解决方案构建本身要 196–233 s，比**任何**一片自己的 restore+build（64–181 s）都贵，所以把构建提成一个串行 build job 即使产物传输免费也会拉长关键路径；实测传输并不免费（产物原始 3.03 GB、tar.zst 1.01 GB、打包 16 s、上传 6–14 s、下载 11–57 s）。四次对照的关键路径为现状 281/309/297/300 s，build-once 526/473/583/623 s（+53%~+108%）。shard 内部拆成 `restore` + `build --no-restore` + `dotnet test` 三步同样更慢（Business Core A 287–342 s vs 现状 235–270 s），一并不采用；既然没有任何跨 job 产物复用，"防陈旧产物验证"不适用，不做成恒真断言。冷/热 NuGet 缓存差落在 runner 抖动之内，缓存不是这条流水线的杠杆。完整数据与方法：`docs/architecture/backend-ci-build-strategy.md`。
+
+PR-B 顺带修掉一个同族真缺陷：`backend/common/Contracts/Nerv.IIP.Contracts.Mes` 是 163 个后端项目里唯一没登记进 `backend/Nerv.IIP.sln` 的一个，只能被 9 个 `.Web` 项目经 `ProjectReference` 传递引用；MSBuild 按解决方案的 configuration map 解析配置，不在 map 里的项目回落到自身默认值，于是**四条 shard 的 `--configuration Release` 构建都把它产出到 `bin/Debug`**（run `31136085020` 四条 shard 日志各一行），Release 测试程序集链接的是 Debug 依赖而构建输出里没有任何东西会失败。`scripts/verify-backend-test-shards.ps1` 现在要求 `backend/**` 下每个 `csproj` 都是解决方案成员（原先只查 `*.Tests.csproj`），并拒绝把 shard 的 `solutionFilter` 指成整个解决方案；两条都有会因削弱而变红的自测。CI 超时预算未变（四片仍是 checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3 + test 10 + collect 5 + upload 5 = 39 < 45）。
+
+其余未完成项：ERP job 的重复构建去重属 MAN-669 PR-C；BusinessGateway 内部并行属 MAN-663；关键路径的进一步压缩靠 MAN-664 重新配平。
 
 ## PDA 当前工序与服务端门禁演示闭环（MAN-637 / #1174）
 

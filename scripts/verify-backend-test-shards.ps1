@@ -373,6 +373,17 @@ foreach ($shard in $fastShards) {
         continue
     }
 
+    # A shard exists to restore and build only its own dependency closure. Pointing it at
+    # backend/Nerv.IIP.sln would restore the "shard" label while every job rebuilt the whole
+    # solution again — measured at 197-225s and 3.0 GB of output, against 64-155s and 0.4-1.8 GB
+    # for the four filters (MAN-669 PR-B, runs 31139435243 / 31139971326 / 31140517256 /
+    # 31141123938). Rejected explicitly, because the JSON parse below would otherwise report it as
+    # a malformed solution filter.
+    if (([string] $shard.solutionFilter) -ceq ([string] $manifest.solution)) {
+        $errors.Add("Fast shard '$($shard.id)' must build its own solution filter, not the whole backend solution.")
+        continue
+    }
+
     $filterPath = Join-Path $repositoryRoot ([string] $shard.solutionFilter)
     if (-not (Test-Path -LiteralPath $filterPath -PathType Leaf)) {
         $errors.Add("Fast shard '$($shard.id)' solution filter does not exist: $($shard.solutionFilter).")

@@ -88,6 +88,14 @@ jobs:
   # on a hung run is the 10m test step. If it ever approaches 10m, raise both budgets rather than
   # only the step one, or the strict inequality stops protecting the evidence steps.
   #
+  # MAN-669 PR-B settled the build strategy and did NOT change these budgets. Each shard keeps
+  # restoring and building only its own .slnf. Measured over four runs (hot 31139435243 /
+  # 31139971326, cold 31140517256 / 31141123938): building the whole solution once costs 196-233s,
+  # which is more than any single shard's own restore+build (64-181s), so hoisting the build into a
+  # serial job lengthens the critical path even before the 3.03 GB of outputs (1.01 GB packed) are
+  # moved between jobs. Splitting a shard into restore / build --no-restore / test is also slower.
+  # Do not re-litigate this from first principles — read docs/architecture/backend-ci-build-strategy.md.
+  #
   # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
   # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
   backend-tests:
@@ -161,9 +169,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -249,9 +257,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -337,9 +345,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -427,9 +435,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -518,9 +526,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Prepare PostgreSQL and Redis images
         timeout-minutes: 10
@@ -567,9 +575,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Resolve test evidence environment
         timeout-minutes: 3
@@ -695,9 +703,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
+            ${{ runner.os }}-nuget-
 
       - name: Setup pnpm
         timeout-minutes: 3
@@ -761,186 +769,3 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/test-evidence.Tests.ps1
-
-  # ---------------------------------------------------------------------------------------------
-  # MAN-669 PR-B TEMPORARY MEASUREMENT PROBES — deleted before merge.
-  # They exist only to produce the cold/hot baselines the ticket requires: the per-shard
-  # restore/build/test split, the full-solution build cost, the build-output size, and the
-  # artifact upload/download cost. Not required checks. The numbers land in
-  # docs/architecture/backend-ci-build-strategy.md.
-  # ---------------------------------------------------------------------------------------------
-  man669-probe-shard-split:
-    name: MAN-669 probe - per-shard restore/build/test split
-    # Tier B: no step runs after a failure, so the job budget is the fail-fast bound.
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - shard: business-gateway
-            filter: backend/ci/backend-tests-business-gateway.slnf
-            lane: backend-shard-1
-          - shard: platform
-            filter: backend/ci/backend-tests-platform.slnf
-            lane: backend-shard-2
-          - shard: business-core-a
-            filter: backend/ci/backend-tests-business-core-a.slnf
-            lane: backend-shard-3
-          - shard: business-core-b
-            filter: backend/ci/backend-tests-business-core-b.slnf
-            lane: backend-shard-4
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        timeout-minutes: 8
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
-
-      - name: Measure restore, build and warm test
-        timeout-minutes: 30
-        shell: bash
-        run: |
-          set -euo pipefail
-          probe() {
-            local label="$1"; shift
-            local s=$(date +%s.%N)
-            if ! "$@" >/tmp/"$label".log 2>&1; then
-              echo "FAILED $label"; tail -60 /tmp/"$label".log; exit 1
-            fi
-            local e=$(date +%s.%N)
-            echo "MAN669PROBE shard=${{ matrix.shard }} phase=$label seconds=$(echo "$e - $s" | bc)"
-          }
-          probe restore dotnet restore ${{ matrix.filter }}
-          probe build dotnet build ${{ matrix.filter }} --configuration Release --no-restore
-          echo "MAN669PROBE shard=${{ matrix.shard }} metric=binobj_bytes value=$(du -sb backend | cut -f1)"
-          probe warmtest pwsh ./scripts/run-backend-test-shard.ps1 -ShardId ${{ matrix.shard }} -ResultsDirectory /tmp/probe-trx/${{ matrix.lane }} -TrxFilePrefix probe-${{ matrix.shard }}
-
-  man669-probe-build-once:
-    name: MAN-669 probe - build once and publish artifact
-    # Tier B: no step runs after a failure, so the job budget is the fail-fast bound.
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        timeout-minutes: 8
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
-
-      - name: Restore and build the whole backend solution
-        timeout-minutes: 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          probe() {
-            local label="$1"; shift
-            local s=$(date +%s.%N)
-            if ! "$@" >/tmp/"$label".log 2>&1; then
-              echo "FAILED $label"; tail -60 /tmp/"$label".log; exit 1
-            fi
-            local e=$(date +%s.%N)
-            echo "MAN669PROBE scope=full-solution phase=$label seconds=$(echo "$e - $s" | bc)"
-          }
-          probe restore dotnet restore backend/Nerv.IIP.sln
-          probe build dotnet build backend/Nerv.IIP.sln --configuration Release --no-restore
-
-      - name: Measure and pack build outputs
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          set -euo pipefail
-          find backend -type d \( -name bin -o -name obj \) -prune -print | sort > /tmp/outdirs.txt
-          echo "MAN669PROBE scope=full-solution metric=output_dir_count value=$(wc -l < /tmp/outdirs.txt)"
-          echo "MAN669PROBE scope=full-solution metric=raw_bytes value=$(du -sb backend | cut -f1)"
-          s=$(date +%s.%N)
-          tar --zstd -cf /tmp/backend-build-outputs.tar.zst -T /tmp/outdirs.txt
-          e=$(date +%s.%N)
-          echo "MAN669PROBE scope=full-solution phase=pack seconds=$(echo "$e - $s" | bc)"
-          echo "MAN669PROBE scope=full-solution metric=packed_bytes value=$(stat -c%s /tmp/backend-build-outputs.tar.zst)"
-
-      - name: Upload build outputs artifact
-        timeout-minutes: 20
-        uses: actions/upload-artifact@v4
-        with:
-          name: man669-backend-build-outputs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/backend-build-outputs.tar.zst
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-
-  man669-probe-consume:
-    name: MAN-669 probe - consume artifact and run one shard no-build
-    # Tier B: no step runs after a failure, so the job budget is the fail-fast bound.
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    needs: man669-probe-build-once
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        timeout-minutes: 8
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-man669cold2-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-man669cold2-
-
-      - name: Download build outputs artifact
-        timeout-minutes: 20
-        uses: actions/download-artifact@v4
-        with:
-          name: man669-backend-build-outputs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/incoming
-
-      - name: Unpack and run one shard with no-build
-        timeout-minutes: 25
-        shell: bash
-        run: |
-          set -euo pipefail
-          probe() {
-            local label="$1"; shift
-            local s=$(date +%s.%N)
-            if ! "$@" >/tmp/"$label".log 2>&1; then
-              echo "FAILED $label"; tail -60 /tmp/"$label".log; exit 1
-            fi
-            local e=$(date +%s.%N)
-            echo "MAN669PROBE scope=consume phase=$label seconds=$(echo "$e - $s" | bc)"
-          }
-          probe unpack tar --zstd -xf /tmp/incoming/backend-build-outputs.tar.zst
-          probe warmtest pwsh ./scripts/run-backend-test-shard.ps1 -ShardId business-core-a -ResultsDirectory /tmp/probe-trx/backend-shard-3 -TrxFilePrefix probe-consume
