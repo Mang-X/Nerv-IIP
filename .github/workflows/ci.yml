@@ -563,6 +563,104 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # TEMPORARY MAN-669 PR-C probes. Removed before merge; never required checks. They answer one
+  # question with measurement instead of reasoning: the ERP acceptance script builds its five
+  # projects as five serial `dotnet build <csproj> -m:1 -nr:false` invocations over one overlapping
+  # dependency closure, so how much does one consolidated MSBuild invocation save? Two jobs, two
+  # fresh runners, same cache key, so neither leaves a warm obj/ for the other.
+  man669-probe-erp-serial:
+    name: MAN-669 probe - ERP serial builds
+    # Tier B (no step runs after a failure); probe only.
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Probe five serial builds
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          total_start=$(date +%s%3N)
+          for project in \
+            backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj \
+            backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj \
+            backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj \
+            backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj \
+            backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj
+          do
+            start=$(date +%s%3N)
+            dotnet build "$project" -m:1 -nr:false
+            echo "MAN669PRC serial-step $project $(( $(date +%s%3N) - start ))ms"
+          done
+          echo "MAN669PRC serial-total $(( $(date +%s%3N) - total_start ))ms"
+          echo "MAN669PRC serial-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
+
+  man669-probe-erp-consolidated:
+    name: MAN-669 probe - ERP consolidated build
+    # Tier B (no step runs after a failure); probe only.
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Probe one consolidated build
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cat > backend/ci/man669-probe-erp.slnf <<'SLNF'
+          {
+            "solution": {
+              "path": "../Nerv.IIP.sln",
+              "projects": [
+                "services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj",
+                "services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj",
+                "services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj",
+                "tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+                "services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj"
+              ]
+            }
+          }
+          SLNF
+          start=$(date +%s%3N)
+          dotnet build backend/ci/man669-probe-erp.slnf
+          echo "MAN669PRC consolidated-total $(( $(date +%s%3N) - start ))ms"
+          echo "MAN669PRC consolidated-debug-outputs $(find backend -path '*/bin/Debug/net10.0/*.dll' | wc -l)"
+          echo "MAN669PRC consolidated-release-outputs $(find backend -path '*/bin/Release/net10.0/*.dll' | wc -l)"
+
   connector-host-tests:
     name: Connector Host Tests
     # Tier A (evidence steps). Observed max 1.9m / avg 1.6m. This is the job that hung for 28m
@@ -740,8 +838,10 @@ jobs:
     name: Script Governance
     # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
     # include the evidence contract-test step; the 0.7m average this comment used to quote predates
-    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 33m and are per-step
-    # upper bounds only.
+    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 43m and are per-step
+    # upper bounds only. MAN-669 PR-C added the two solution-configuration-membership steps; both
+    # run in under 5s locally (0.8s for the checker, 3.6s for its contract test), so the job budget
+    # is unchanged.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -779,3 +879,13 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/test-evidence.Tests.ps1
+
+      - name: Test solution configuration membership checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/solution-configuration-membership.Tests.ps1
+
+      - name: Run solution configuration membership check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-solution-configuration-membership.ps1
