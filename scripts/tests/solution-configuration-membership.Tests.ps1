@@ -106,10 +106,9 @@ function Invoke-Verifier {
         [Parameter(Mandatory)] [string] $Name
     )
 
-    # Whitespace is collapsed because PowerShell's own error formatter hard-wraps the message at the
-    # console width, and it wraps *inside* the phrases these assertions look for ("no 'Release|Any\n
-    # CPU.ActiveCfg' entry"). Matching raw text would make the assertions depend on terminal width —
-    # green on a wide runner, red on a narrow one. The assertions are about content, not layout.
+    # Whitespace is collapsed so that where a line happens to break is not part of the contract; the
+    # assertions are about content, not layout. (Why this mattered enough to write down:
+    # docs/architecture/backend-ci-build-strategy.md, "走查收尾" 第 3 条.)
     try {
         $result = Invoke-NativeCommandOutput `
             -Command 'pwsh' `

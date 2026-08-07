@@ -84,13 +84,15 @@ function Get-NormalizedFullPath {
 # ignored roots (`/worktrees/`, `/.claude/worktrees/`, `/.agents/worktrees/`, `/.codex/worktrees/`
 # are lines 5-8 of .gitignore), so a checker that discovers `*.sln` by walking the tree finds every
 # one of those copies too and reports another agent's half-finished solution as this developer's
-# failure. Measured from the repository root before this filter existed: 10 solutions instead of 2,
-# eight of them under `/worktrees/`. Enumerating agent directory names instead would have missed
-# exactly that one, because the leak came from the plainest name in the set.
+# failure. Enumerating agent directory names here instead would work, but it is a list that has to
+# be extended for every future tool directory, and .gitignore is already that list.
 #
 # CI is unaffected either way — a fresh checkout has no worktrees — so this is a local-developer
 # fix, and the gate's meaning must not change with it: everything git tracks is still discovered,
-# including a third solution nobody registered anywhere. (MAN-669 PR-C follow-up, issue #1496.)
+# including a third solution nobody registered anywhere. The measurements and the weighing of the
+# two candidate fixes are in docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 4 条);
+# they are machine- and moment-specific (how many working copies that checkout happened to have),
+# so they are deliberately not repeated here. (MAN-669 PR-C follow-up, issue #1496.)
 function Select-GitIgnoredPath {
     param(
         [Parameter(Mandatory)] [string] $Root,
@@ -123,6 +125,11 @@ function Select-GitIgnoredPath {
             # question cannot be asked here at all; that is the normal case for the contract test's
             # throwaway fixture roots. Fall back to discovering everything rather than to
             # discovering nothing: over-discovery is a visible failure, under-discovery is silence.
+            #
+            # Note this discards whatever earlier batches had already collected, on purpose: a
+            # partial ignore list would filter some copies and keep others, which is a third
+            # behaviour nobody reasoned about. Only reachable past 100 discovered solutions, and it
+            # fails in the safe direction (everything checked).
             $exitCode = $_.Exception.Data['ExitCode']
             if ($null -eq $exitCode -or [int] $exitCode -ne 1) {
                 return @()
@@ -390,10 +397,9 @@ foreach ($relativeSolution in $solutionPaths) {
 }
 
 # Findings are written to stdout and the script exits nonzero, the same shape as
-# scripts/check-script-governance.ps1 — deliberately not `throw`. PowerShell's error formatter
-# hard-wraps a thrown message at the console width and prefixes continuation lines with a `|`
-# gutter, which splits identifiers such as `Release|Any CPU` across lines. That makes the failure
-# harder to read in a CI log and makes any downstream matching depend on terminal width.
+# scripts/check-script-governance.ps1 — deliberately not `throw`, and callers must therefore check
+# the exit code rather than share a `run:` block with another script. Why: see
+# docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
     Write-Host 'Solution configuration membership failed:'
     foreach ($failure in $errors) {

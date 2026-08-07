@@ -54,12 +54,11 @@ function Assert-Contract {
 # Every assertion below is about *what the validator said*, so the validator is always run as a real
 # process and judged by its exit code plus its output.
 #
-# It reports findings on stdout and exits 1 rather than throwing (see the note at the bottom of
-# scripts/verify-backend-test-shards.ps1). That is what makes these assertions safe: PowerShell's
-# error formatter hard-wraps a thrown message at the console width and prefixes continuation lines
-# with a `|` gutter, so a csproj path or `Release|Any CPU` gets split mid-token and a perfectly
-# correct assertion goes red on a narrow terminal. This file used to work around that by matching
-# only short fragments and by scraping the command log for the real text; both are gone.
+# The validator reports findings on stdout and exits 1 rather than throwing, which is what lets
+# these assertions match whole sentences instead of the short fragments a thrown (and therefore
+# width-wrapped) message forced — this file used to also scrape the command log to reassemble that
+# text, and both workarounds are gone. Why the shape matters:
+# docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
 #
 # Whitespace is collapsed so that where the validator chose to break lines is not part of the
 # contract. The assertions are about content, not layout.

@@ -158,12 +158,10 @@ jobs:
         with:
           ruby-version: '3.4'
 
-      # One script per step. The validator reports findings on stdout and exits 1 rather than
-      # throwing (see the note at the bottom of scripts/verify-backend-test-shards.ps1), and `exit`
-      # from a dot-slash script does not abort the calling pwsh script — chaining the two here would
-      # let the contract test's own `$LASTEXITCODE` overwrite the validator's and turn a real
-      # failure green. Measured with a probe before splitting: chained, a failing first script plus
-      # a passing second one exits 0.
+      # One script per step, not chained in one `run:` block: both scripts report findings on stdout
+      # and exit 1, and chaining would let the second script's `$LASTEXITCODE` overwrite the first's
+      # and turn a real failure green (measured). Why:
+      # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
       - name: Validate backend test shard classification
         timeout-minutes: 5
         shell: pwsh

@@ -630,15 +630,10 @@ else {
 
 # Findings go to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
-# deliberately not `throw`. PowerShell's error formatter hard-wraps a thrown message at the console
-# width and prefixes continuation lines with a `|` gutter, which splits identifiers such as
-# `Release|Any CPU` and long csproj paths across lines. That makes the failure harder to read in a
-# CI log and makes any downstream matching depend on terminal width — the contract test used to
-# match only short fragments for exactly that reason.
-#
-# Callers must therefore check the exit code. `exit` from a dot-slash script does NOT abort the
-# calling pwsh script, so this file must never be chained with another script in one `run:` block;
-# .github/workflows/ci.yml gives it its own step.
+# deliberately not `throw`, and callers must therefore check the exit code. In particular this file
+# must never share a `run:` block with another script; .github/workflows/ci.yml gives it its own
+# step. Why both rules hold is argued once, in docs/architecture/backend-ci-build-strategy.md
+# ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
     Write-Host 'Backend test shard governance failed:'
     foreach ($failure in $errors) {
