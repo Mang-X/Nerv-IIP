@@ -623,6 +623,7 @@ function New-NervTestEvidenceSummary {
         }
     })
     $baselineAssemblies = if ($null -ne $Baseline -and $Baseline.PSObject.Properties.Name -contains 'assemblies') { @($Baseline.assemblies) } else { @() }
+    $baselineSchemaVersion = 0
     $baselineUnavailableReason = if ($null -eq $Baseline) {
         'baseline-not-provided'
     }
@@ -631,7 +632,13 @@ function New-NervTestEvidenceSummary {
     # known versions compare identically (the comparison keys are lane+assembly, no runner field
     # participates); an unknown or missing version fails closed to report-only unavailable rather
     # than comparing against a file whose layout this code has never seen.
-    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or [int]$Baseline.schemaVersion -notin @(1, 2)) {
+    #
+    # TryParse, not `[int]`: the cast mishandled three shapes a hand-edited JSON file can hold, each in
+    # a different way. Which shapes, and why no NumberStyles/culture argument is needed, are in
+    # docs/architecture/test-evidence-governance.md ("Run identity versus per-job environment").
+    elseif (-not ($Baseline.PSObject.Properties.Name -contains 'schemaVersion') -or
+        -not [int]::TryParse([string]$Baseline.schemaVersion, [ref]$baselineSchemaVersion) -or
+        $baselineSchemaVersion -notin @(1, 2)) {
         'unsupported-baseline-schema-version'
     }
     elseif (-not ($Baseline.PSObject.Properties.Name -contains 'granularity') -or -not ($Baseline.PSObject.Properties.Name -contains 'durationMetric')) {

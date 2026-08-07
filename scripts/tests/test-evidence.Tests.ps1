@@ -435,6 +435,36 @@ $schemalessBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertF
 $schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
+# Non-integer `schemaVersion` shapes a hand-edited baseline can hold. Why the guard uses TryParse is in
+# docs/architecture/test-evidence-governance.md; what matters *here* is which rows are load-bearing:
+#   guards  — `non-numeric-text`, `array-value`, `fractional`, `boolean-true` each go red if the
+#             TryParse is reverted to `[int]`. Deleting one silently removes a regression guard.
+#   coverage — `json-null` (and the schemaless case above) reject identically under both spellings, so
+#             they document the contract but prove nothing about this fix. Never cite them as evidence.
+# Each value goes through a real ConvertTo-Json/ConvertFrom-Json round trip so it arrives in the exact
+# shape a caller reading a hand-edited file off disk would hand in.
+foreach ($malformedSchemaCase in @(
+    @{ Name = 'non-numeric-text'; Value = 'abc' },
+    @{ Name = 'array-value'; Value = @(1, 2) },
+    @{ Name = 'fractional'; Value = 1.5 },
+    @{ Name = 'boolean-true'; Value = $true },
+    @{ Name = 'json-null'; Value = $null }
+)) {
+    $malformedBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json
+    $malformedBaseline.schemaVersion = $malformedSchemaCase.Value
+    $malformedBaseline = $malformedBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json
+    $malformedSummary = $null
+    $malformedError = $null
+    try {
+        $malformedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $malformedBaseline -PriorAttemptOutcome $null -TopCount 5
+    }
+    catch { $malformedError = [string]$_.Exception.Message }
+    Assert-Equal $null $malformedError "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must be reported as an unavailable reason, never thrown."
+    Assert-Equal 'unsupported-baseline-schema-version' $malformedSummary.baseline.unavailableReason "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must report the documented unavailable reason."
+    Assert-True (-not [bool]$malformedSummary.baseline.available) "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must not produce a comparison."
+    Assert-Equal 'unsupported-baseline-schema-version' $malformedSummary.baseline.assemblies[0].unavailableReason "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must propagate its reason to every assembly row."
+}
+
 # The committed baseline is the artifact MAN-661 governs; it must stay comparable with the TRX evidence CI actually produces.
 $committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
 Assert-Equal 'test' $committedBaseline.granularity 'Committed baseline must be test-granularity.'

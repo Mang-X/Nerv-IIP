@@ -196,10 +196,12 @@ spec §8 要求「使用 MAN-661 的每用例基线对比」。MAN-663 落地当
 运行摘要是 test-granularity trx-elapsed，不可比），因此上表改用同一 evidence artifact 的 **per-assembly TRX
 elapsed** 做 before/after 对比。局限如实记录：这是程序集粒度而非每用例粒度，两个 run 的 runner 硬件不完全同机，
 且不含 restore/build 时间；结论「量级下降」稳健，但不应被当作每用例 baseline 已经建立。2026-08-05 已用合并后
-首个合格 main push run `30999368607` 的 normalized artifacts 完成 refresh：committed baseline 现为
+首个合格 main push run `30999368607` 的 normalized artifacts 完成 refresh：committed baseline 自此为
 `granularity: test` / `durationMetric: trx-elapsed`，`backend-shard-1` 的
-`nerv.iip.businessgateway.web.tests.dll` 记为 **22 996.0 ms / 1036 例**，耗时对比恢复为 `available` 的
-report-only delta。上表保留为 MAN-663 当时的取证过程，权威数字以 committed baseline 为准。另注：
+`nerv.iip.businessgateway.web.tests.dll` 当时记为 **22 996.0 ms / 1036 例**，耗时对比恢复为 `available` 的
+report-only delta。2026-08-07 又因 MAN-669 PR-A 换片导致的 (lane, assembly) 失键刷新到 run
+`31185687984`（schema 2、per-lane provenance），该行现为 **20 726.0 ms / 1036 例**；差额落在 hosted
+runner 抖动内。上表保留为 MAN-663 当时的取证过程，权威数字以 committed baseline 为准。另注：
 implementation-readiness 里「822 000 ms → 22 996 ms（约 −97.2%）」是**跨口径**百分比（分母取自旧
 project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**同口径**佐证正是上表两行——
 869.4 s / 1023 例 → 22.0 s / 1036 例，同为 hosted runner 的 per-assembly TRX elapsed。
