@@ -116,13 +116,14 @@ function Invoke-Man517JsonRequest {
         [string]$Uri,
         [hashtable]$Headers,
         [AllowNull()][hashtable]$Body,
-        [ValidateRange(1, 30)]
+        [ValidateRange(1, 60)]
         [int]$TimeoutSeconds = 5,
         [datetime]$Deadline
     )
 
     $safeMethod = Protect-Man517DiagnosticText -Text $Method.ToUpperInvariant()
     $safeUri = Protect-Man517DiagnosticText -Text $Uri
+    $requestStage = 'deadline-before-send'
     $effectiveDeadline = if ($PSBoundParameters.ContainsKey('Deadline')) {
         $Deadline
     } else {
@@ -131,7 +132,7 @@ function Invoke-Man517JsonRequest {
     $remaining = $effectiveDeadline - (Get-Date)
     if ($remaining -le [TimeSpan]::Zero) {
         throw [System.TimeoutException]::new(
-            "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri")
+            "MAN-517 request deadline exceeded: stage=deadline-before-send method=$safeMethod uri=$safeUri")
     }
 
     $handler = $null
@@ -142,6 +143,7 @@ function Invoke-Man517JsonRequest {
     $httpStatus = $null
     $responseContent = $null
     try {
+        $requestStage = 'prepare'
         $deadlineCancellation = [System.Threading.CancellationTokenSource]::new($remaining)
         $handler = [System.Net.Http.SocketsHttpHandler]::new()
         $handler.ConnectTimeout = [TimeSpan]::FromSeconds(5)
@@ -152,7 +154,7 @@ function Invoke-Man517JsonRequest {
             $Uri)
         foreach ($header in $Headers.GetEnumerator()) {
             if (-not $requestMessage.Headers.TryAddWithoutValidation([string]$header.Key, [string]$header.Value)) {
-                throw "MAN-517 request header was rejected: method=$safeMethod uri=$safeUri header=$($header.Key)"
+                throw "MAN-517 request header was rejected: stage=prepare method=$safeMethod uri=$safeUri header=$($header.Key)"
             }
         }
         if ($PSBoundParameters.ContainsKey('Body')) {
@@ -162,14 +164,17 @@ function Invoke-Man517JsonRequest {
                 'application/json')
         }
 
+        $requestStage = 'awaiting-server-response'
         $responseMessage = $client.SendAsync(
             $requestMessage,
             [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
             $deadlineCancellation.Token).GetAwaiter().GetResult()
+        $requestStage = 'server-response'
         $httpStatus = [int]$responseMessage.StatusCode
         if ($httpStatus -lt 200 -or $httpStatus -ge 300) {
-            throw "MAN-517 request HTTP failure: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+            throw "MAN-517 request HTTP failure: stage=server-response method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
         }
+        $requestStage = 'response-body'
         $responseContent = $responseMessage.Content.ReadAsStringAsync(
             $deadlineCancellation.Token).GetAwaiter().GetResult()
     }
@@ -177,18 +182,29 @@ function Invoke-Man517JsonRequest {
         if (($null -ne $deadlineCancellation -and $deadlineCancellation.IsCancellationRequested) -or
             (Get-Date) -ge $effectiveDeadline) {
             throw [System.TimeoutException]::new(
-                "MAN-517 request deadline exceeded: method=$safeMethod uri=$safeUri",
+                "MAN-517 request deadline exceeded: stage=$requestStage method=$safeMethod uri=$safeUri",
                 $_.Exception)
         }
         $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
-        throw "MAN-517 request transport failed: method=$safeMethod uri=$safeUri error=$safeError"
+        throw "MAN-517 request transport failed: stage=connect method=$safeMethod uri=$safeUri error=$safeError"
     }
     catch {
         if ($null -ne $httpStatus -and ($httpStatus -lt 200 -or $httpStatus -ge 300)) {
-            throw "MAN-517 request HTTP failure: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+            throw "MAN-517 request HTTP failure: stage=server-response method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+        }
+        $transportStage = $requestStage
+        if ($_.Exception -is [System.Net.Http.HttpRequestException]) {
+            $httpRequestError = "$($_.Exception.HttpRequestError)"
+            if ($httpRequestError -in @(
+                    'NameResolutionError',
+                    'ConnectionError',
+                    'SecureConnectionError',
+                    'ProxyTunnelError')) {
+                $transportStage = 'connect'
+            }
         }
         $safeError = Protect-Man517DiagnosticText -Text $_.Exception.Message
-        throw "MAN-517 request transport failed: method=$safeMethod uri=$safeUri error=$safeError"
+        throw "MAN-517 request transport failed: stage=$transportStage method=$safeMethod uri=$safeUri error=$safeError"
     }
     finally {
         if ($null -ne $responseMessage) {
@@ -205,31 +221,44 @@ function Invoke-Man517JsonRequest {
         }
     }
 
+    $requestStage = 'response-json'
     try {
         $response = "$responseContent" | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        throw "MAN-517 request did not return valid JSON: method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+        throw "MAN-517 request did not return valid JSON: stage=response-json method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
     }
 
+    $requestStage = 'business-envelope'
     $successProperty = $response.PSObject.Properties['success']
     if ($null -eq $successProperty -or $successProperty.Value -isnot [bool]) {
-        throw "MAN-517 response is missing boolean 'success': method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
+        throw "MAN-517 response is missing boolean 'success': stage=business-envelope method=$safeMethod uri=$safeUri httpStatus=$httpStatus"
     }
     if (-not $successProperty.Value) {
         $codeProperty = $response.PSObject.Properties['code']
         $messageProperty = $response.PSObject.Properties['message']
         $safeCode = Protect-Man517DiagnosticText -Text $(if ($null -eq $codeProperty) { 'missing' } else { "$($codeProperty.Value)" })
         $safeMessage = Protect-Man517DiagnosticText -Text $(if ($null -eq $messageProperty) { 'missing' } else { "$($messageProperty.Value)" })
-        throw "MAN-517 business request failed: method=$safeMethod uri=$safeUri code=$safeCode message=$safeMessage"
+        throw "MAN-517 business request failed: stage=business-envelope method=$safeMethod uri=$safeUri code=$safeCode message=$safeMessage"
     }
 
     return $response
 }
 
 function Invoke-JsonPost {
-    param([string]$Uri, [hashtable]$Body, [hashtable]$Headers)
-    Invoke-Man517JsonRequest -Method Post -Uri $Uri -Headers $Headers -Body $Body
+    param(
+        [string]$Uri,
+        [hashtable]$Body,
+        [hashtable]$Headers,
+        [ValidateRange(10, 60)]
+        [int]$TimeoutSeconds
+    )
+    Invoke-Man517JsonRequest `
+        -Method Post `
+        -Uri $Uri `
+        -Headers $Headers `
+        -Body $Body `
+        -TimeoutSeconds $TimeoutSeconds
 }
 
 function Wait-ErpSalesOrderReady {
@@ -504,6 +533,7 @@ $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Datab
 }
 $capVersion = "man517-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
 $internalToken = "man517-$([Guid]::NewGuid().ToString('N'))"
+$mutationRequestTimeoutSeconds = 30
 $masterDataUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $erpUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
 $demandPlanningUrl = "http://127.0.0.1:$(Get-FreeTcpPort)"
@@ -579,11 +609,11 @@ try {
     $erpSalesOrder = Wait-ErpSalesOrderReady -ErpUrl $erpUrl -Headers $headers
     $released = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 1 -Quantity 2 -Status 'active'
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -TimeoutSeconds $mutationRequestTimeoutSeconds -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 4; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v2'
     } | Out-Null
     $changedV2 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 2 -Quantity 4 -Status 'active'
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10" -Headers $headers -TimeoutSeconds $mutationRequestTimeoutSeconds -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; lineNo = '10'; orderedQuantity = 5; unitPrice = 100; requiredDate = '2026-08-15'; reason = 'MAN-517 change v3'
     } | Out-Null
     $changedV3 = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active'
@@ -638,7 +668,7 @@ try {
         }
     }
 
-    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Body @{
+    Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -TimeoutSeconds $mutationRequestTimeoutSeconds -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'
     } | Out-Null
     Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled' | Out-Null

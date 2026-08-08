@@ -139,6 +139,11 @@ try {
                 $reason = 'Service Unavailable'
                 $body = '{"success":false,"code":503,"message":"temporarily unavailable","data":null}'
             }
+            elseif ($target.StartsWith('/server-cancelled', [StringComparison]::Ordinal)) {
+                $statusCode = 499
+                $reason = 'Client Closed Request'
+                $body = '{"success":false,"code":499,"message":"server cancelled request","data":null}'
+            }
             elseif ($target.StartsWith('/invalid-json', [StringComparison]::Ordinal)) {
                 $body = 'not-json'
             }
@@ -162,7 +167,10 @@ try {
                 }
                 continue
             }
-            elseif ($target.StartsWith('/half-open', [StringComparison]::Ordinal)) {
+            # Routing occurs only after the fixture has read Content-Length in
+            # full, so this branch proves the request body reached the server
+            # before it withholds response headers.
+            elseif ($target.StartsWith('/awaiting-server-response', [StringComparison]::Ordinal)) {
                 Start-Sleep -Seconds 30
                 continue
             }
