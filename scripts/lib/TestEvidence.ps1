@@ -629,9 +629,9 @@ function New-NervTestEvidenceSummary {
     }
     # The reader must know which `source` shape it is looking at, or "schema 1's flat runner trio is
     # the first lane's, schema 2's laneProvenance is per lane" is a comment rather than a rule. Both
-    # known versions compare identically (the comparison keys are lane+assembly, no runner field
-    # participates); an unknown or missing version fails closed to report-only unavailable rather
-    # than comparing against a file whose layout this code has never seen.
+    # known versions compare identically (the comparison key is the assembly, no lane and no runner
+    # field participates); an unknown or missing version fails closed to report-only unavailable
+    # rather than comparing against a file whose layout this code has never seen.
     #
     # TryParse, not `[int]`: the cast mishandled three shapes a hand-edited JSON file can hold, each in
     # a different way. Which shapes, and why no NumberStyles/culture argument is needed, are in
@@ -648,12 +648,47 @@ function New-NervTestEvidenceSummary {
         'incompatible-granularity-or-duration-metric'
     }
     else { $null }
+    # The comparison key is the **assembly alone** (#1507). It used to be lane plus assembly, which
+    # made a pure "how we run the tests" change invalidate keys no test had touched: MAN-669 PR-A
+    # re-homed 17 of 64 backend assemblies between shards and every one of those rows fell to
+    # "not in baseline" until a human regenerated and re-committed the snapshot. Timing is a
+    # measurement, not a governed list; a measurement of an assembly does not become a different
+    # measurement because the assembly moved to another job. Lane survives on the row for display
+    # and provenance and is used only to disambiguate, never to look up.
+    #
+    # Known residual, report-only: a baseline holding one row for an assembly while the current run
+    # splits that assembly across two lanes compares both current rows against the whole previous
+    # measurement, so both deltas overstate the change. Recorded rather than silently tolerated in
+    # docs/architecture/test-evidence-governance.md, "One known report-only artefact".
     $deltas = @($assemblies | ForEach-Object {
         $current = $_
         $compatible = $null -eq $baselineUnavailableReason
-        [object[]]$previous = if ($compatible) { @($baselineAssemblies | Where-Object { [string]$_.lane -ceq $current.lane -and [string]$_.assembly -ceq $current.assembly } | Select-Object -First 1) } else { @() }
+        # Ordinal, not `-ceq`. The `c` prefix only disables case-insensitivity; the comparison still
+        # runs through the collation table, which reports "equal" for strings that differ by an
+        # ignorable character. An assembly name is an identifier, so it is compared as bytes.
+        [object[]]$assemblyMatches = if ($compatible) { @($baselineAssemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]$current.assembly, [StringComparison]::Ordinal) }) } else { @() }
+        # One assembly classified into two lanes would give two rows that are not the same
+        # measurement. Prefer this lane's row; with no lane match the comparison is genuinely
+        # ambiguous and stays report-only unavailable rather than picking one arbitrarily.
+        #
+        # `Merge-NervShardTimingObservations` in scripts/lib/BackendTestShardTimings.ps1 resolves the
+        # very same situation by *summing* the two rows, and the divergence is intentional. That one
+        # builds a shard budget, where the answer wanted is total work and two lanes are two halves
+        # of one number. This one compares one lane's run against one baseline row, where the answer
+        # wanted is a row identity — summing would invent a measurement nobody took. Neither rule is
+        # a fallback for the other; changing either does not imply changing the other.
+        [object[]]$previous = if (@($assemblyMatches).Count -le 1) {
+            @($assemblyMatches)
+        }
+        else {
+            @(@($assemblyMatches) | Where-Object { [string]::Equals([string]$_.lane, [string]$current.lane, [StringComparison]::Ordinal) } | Select-Object -First 1)
+        }
         $baselineDuration = if (@($previous).Count -eq 1) { [double]@($previous)[0].elapsedMilliseconds } else { $null }
-        $unavailableReason = if ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } elseif (@($previous).Count -ne 1) { 'lane-assembly-not-in-baseline' } elseif ($baselineDuration -le 0) { 'baseline-duration-not-positive' } else { $null }
+        $unavailableReason = if ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason }
+            elseif (@($previous).Count -ne 1 -and @($assemblyMatches).Count -gt 1) { 'ambiguous-assembly-in-baseline' }
+            elseif (@($previous).Count -ne 1) { 'assembly-not-in-baseline' }
+            elseif ($baselineDuration -le 0) { 'baseline-duration-not-positive' }
+            else { $null }
         [pscustomobject][ordered]@{
             lane = $current.lane
             assembly = $current.assembly
@@ -666,7 +701,7 @@ function New-NervTestEvidenceSummary {
         }
     })
     $baselineAvailable = @($deltas | Where-Object available).Count -gt 0
-    $summaryBaselineUnavailableReason = if ($baselineAvailable) { $null } elseif ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } else { 'no-compatible-lane-assembly' }
+    $summaryBaselineUnavailableReason = if ($baselineAvailable) { $null } elseif ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } else { 'no-compatible-assembly' }
     $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }

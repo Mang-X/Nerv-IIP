@@ -229,19 +229,20 @@ else {
         $policySourcePaths[[string] $source.id] = [string] $source.sourcePath
     }
 
-    $realDependencyLaneByIdentity = @{}
-    $sourceIdByIdentity = @{}
-    foreach ($rule in @($policy.rules)) {
-        if ([string] $rule.classification -cne 'environment-gated') { continue }
-        $requiredLane = [string] $rule.requiredLane
-        if ([string]::IsNullOrWhiteSpace($requiredLane)) { continue }
-        $laneMatches = @($policy.lanes | Where-Object { $requiredLane -cmatch [string] $_.namePattern })
-        if ($laneMatches.Count -ne 1 -or -not [bool] $laneMatches[0].realDependency) { continue }
-        foreach ($identity in @($rule.testIdentities)) {
-            $realDependencyLaneByIdentity[[string] $identity] = $requiredLane
-            $sourceIdByIdentity[[string] $identity] = [string] $rule.sourceId
+    # The rules a fast-shard exclusion is allowed to appeal to: environment-gated, with a
+    # requiredLane that resolves to exactly one policy lane and that lane is a real dependency.
+    # Selector-to-identity resolution itself lives in Get-BackendTestShardPolicyIdentityMatches so
+    # that the gate and its contract tests run the same derivation rather than two copies of it.
+    $realDependencyRules = @(
+        foreach ($rule in @($policy.rules)) {
+            if (-not [string]::Equals([string] $rule.classification, 'environment-gated', [StringComparison]::Ordinal)) { continue }
+            $requiredLane = [string] $rule.requiredLane
+            if ([string]::IsNullOrWhiteSpace($requiredLane)) { continue }
+            $laneMatches = @($policy.lanes | Where-Object { $requiredLane -cmatch [string] $_.namePattern })
+            if ($laneMatches.Count -ne 1 -or -not [bool] $laneMatches[0].realDependency) { continue }
+            $rule
         }
-    }
+    )
 
     $heavyLaneByPolicyLane = @{}
     foreach ($lane in $heavyLanes) {
@@ -259,17 +260,13 @@ else {
             # A fast shard may only filter away work that MAN-661 has registered as an
             # environment-gated real-dependency skip. Without this the exclusion list is a private
             # escape hatch for dropping anything from the default gate.
-            $covering = @(
-                $realDependencyLaneByIdentity.Keys | Where-Object {
-                    $_ -ceq $selector -or $_.StartsWith("$selector.", [StringComparison]::Ordinal)
-                }
-            )
+            $covering = @(Get-BackendTestShardPolicyIdentityMatches -Selector $selector -Rules $realDependencyRules)
             if ($covering.Count -eq 0) {
                 $errors.Add("Fast shard exclusion '$selector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip.")
                 continue
             }
-            foreach ($identity in $covering) {
-                $policyLane = [string] $realDependencyLaneByIdentity[$identity]
+            foreach ($match in $covering) {
+                $policyLane = [string] $match.requiredLane
                 if (-not $heavyLaneByPolicyLane.ContainsKey($policyLane)) {
                     $errors.Add("MAN-661 policy lane '$policyLane' required by '$selector' has no owning heavy lane in the shard manifest.")
                     continue
@@ -291,9 +288,8 @@ else {
         # runner and cannot collide this way.
         foreach ($methodSelector in @(Get-BackendTestShardExcludedSelectors -Shard $shard -Kind 'method')) {
             $sourceIds = @(
-                $sourceIdByIdentity.Keys |
-                    Where-Object { $_ -ceq $methodSelector -or $_.StartsWith("$methodSelector.", [StringComparison]::Ordinal) } |
-                    ForEach-Object { [string] $sourceIdByIdentity[$_] } |
+                Get-BackendTestShardPolicyIdentityMatches -Selector $methodSelector -Rules $realDependencyRules |
+                    ForEach-Object { [string] $_.sourceId } |
                     Sort-Object -Unique
             )
             if ($sourceIds.Count -eq 0) {

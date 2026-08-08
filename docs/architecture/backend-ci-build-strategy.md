@@ -600,6 +600,11 @@ ERP 的 16.4–31.3 s 还要放在它自己的抖动尺度上读：同一份串�
   实测重定权重）和**单片内部并行**（MAN-663 已在 BusinessGateway 上做过），不是靠构建策略；
   再往下压之前，先确认压的是当次真正的最大 job。三个专项 job 都在关键路径之下，
   改它们不影响这个数字。
+- **配平的耗时来源自 #1507 起是 `pwsh scripts/report-backend-test-shard-balance.ps1`**：它聚合最近
+  5 次成功 `main` push run 的 TRX 证据 artifact（同 run 内同程序集先求和，跨 run 取中位数），
+  缓存超过 24 小时自行刷新，因此不再需要「先刷新 baseline 再读数」这一步。缓存拉不到时回落
+  到 committed snapshot、再回落到估值，**全程 report-only，永不变红**。MAN-664 重测时直接跑它
+  取权重，不要再从 `scripts/test-evidence-baseline.json` 手读——那份文件现在只是离线兜底快照。
 - 票面方案 ② 的字面形态（`--no-build --no-restore`）仍未被直接实测。本文按最有利于它的
   上界口径否定了它；若上面的复评触发条件成立而需要重开，第一件事就是补这个直测。
 - scope 7 后半句（scenario runner 精确构建需要的服务）阻塞于

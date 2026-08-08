@@ -398,7 +398,10 @@ $shardedBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-1'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) },
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = 'backend-shard-2'; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 20 }) }
 ) -SourceMetadata $shardedMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
-Assert-Equal 2 @($shardedBaseline.assemblies).Count 'Baseline identity must be lane plus assembly, not assembly alone.'
+# Storage still records one row per lane+assembly, because a lane is real provenance for where a
+# measurement was taken. What changed in #1507 is the *reader's* key, asserted further down: it looks
+# rows up by assembly alone so a shard rearrangement cannot invalidate them.
+Assert-Equal 2 @($shardedBaseline.assemblies).Count 'Baseline storage must keep one row per lane+assembly so provenance is not collapsed.'
 $incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline ($baselineA | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
 Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.unavailableReason 'Incompatible baseline must expose a structured unavailable reason.'
@@ -416,8 +419,49 @@ Assert-True ([bool]$compatibleBaselineSummary.baseline.available) 'A test-granul
 Assert-Equal $null $compatibleBaselineSummary.baseline.unavailableReason 'An available baseline comparison must not carry an unavailable reason.'
 Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 'Available comparison must report the exact signed delta percent.'
 
+# #1507: the timing comparison key is the assembly alone, so a shard rearrangement cannot lose it.
+# This fixture is the exact MAN-669 PR-A shape — the snapshot recorded the assembly under one lane,
+# the current run reports it under another. Under the old lane+assembly key the row fell to
+# `lane-assembly-not-in-baseline` with a null delta, and the only way to clear it was for a human to
+# regenerate and re-commit the snapshot. Re-introducing the lane into the key turns this red.
+$rehomedBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+Assert-True (-not [string]::Equals([string]$rehomedBaseline.assemblies[0].lane, 'backend-shard-4', [StringComparison]::Ordinal)) 'The re-homing fixture must actually move the assembly to a different lane.'
+$rehomedBaseline.assemblies[0].lane = 'backend-shard-4'
+$rehomedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $rehomedBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-True ([bool]$rehomedSummary.baseline.available) 'An assembly re-homed to another shard must keep its timing comparison key.'
+Assert-Equal $null $rehomedSummary.baseline.assemblies[0].unavailableReason 'A re-homed assembly must not report an unavailable comparison reason.'
+Assert-Equal -50 $rehomedSummary.baseline.assemblies[0].deltaPercent 'A re-homed assembly must report the same signed delta as before the move.'
+
+# An assembly the snapshot genuinely never recorded is still report-only unavailable; only the reason
+# name changed with the key, and nothing about this path fails a gate.
+$absentBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+$absentBaseline.assemblies[0].assembly = 'never.observed.tests.dll'
+$absentSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $absentBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-True (-not [bool]$absentSummary.baseline.available) 'An assembly with no snapshot row must not produce a comparison.'
+Assert-Equal 'assembly-not-in-baseline' $absentSummary.baseline.assemblies[0].unavailableReason 'A missing assembly must report the assembly-keyed unavailable reason.'
+Assert-Equal 'no-compatible-assembly' $absentSummary.baseline.unavailableReason 'A summary with no comparable assembly must report the assembly-keyed summary reason.'
+Assert-Equal 'report-only' $absentSummary.baseline.enforcement 'Missing timing data must stay report-only, never a gate.'
+
+# Two snapshot rows for one assembly are two different measurements, not one. This lane's row wins;
+# with a row for neither lane the comparison is ambiguous and stays unavailable rather than guessing.
+$currentLane = [string]$compatibleRecords[0].lane
+$duplicateRow = ($compatibleBaseline.assemblies[0] | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+$duplicateRow.lane = 'backend-shard-4'
+$duplicateRow.elapsedMilliseconds = 99000.0
+$sameLaneBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+$sameLaneBaseline.assemblies = @($sameLaneBaseline.assemblies[0], $duplicateRow)
+$sameLaneSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $sameLaneBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-True ([bool]$sameLaneSummary.baseline.available) "A duplicated assembly must still compare when this lane ('$currentLane') has its own row."
+Assert-Equal 6000.0 ([double]$sameLaneSummary.baseline.assemblies[0].baselineDurationMilliseconds) 'A duplicated assembly must resolve to this lane row, not to an arbitrary sibling.'
+$ambiguousBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+$ambiguousBaseline.assemblies[0].lane = 'backend-shard-3'
+$ambiguousBaseline.assemblies = @($ambiguousBaseline.assemblies[0], $duplicateRow)
+$ambiguousSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $ambiguousBaseline -PriorAttemptOutcome $null -TopCount 5
+Assert-True (-not [bool]$ambiguousSummary.baseline.available) 'An assembly recorded under two foreign lanes must not silently pick one.'
+Assert-Equal 'ambiguous-assembly-in-baseline' $ambiguousSummary.baseline.assemblies[0].unavailableReason 'An ambiguous duplicated assembly must report its own reason.'
+
 # The reader must be able to tell which `source` shape it has. Both known schema versions compare
-# identically (keys are lane+assembly); an unknown or missing version fails closed to report-only.
+# identically (the key is the assembly); an unknown or missing version fails closed to report-only.
 Assert-Equal 2 $compatibleBaseline.schemaVersion 'A freshly generated baseline must declare schema 2.'
 foreach ($schemaCase in @(
     @{ Name = 'schema-1-legacy'; Version = 1; Expected = $null; Available = $true },
@@ -465,20 +509,22 @@ foreach ($malformedSchemaCase in @(
     Assert-Equal 'unsupported-baseline-schema-version' $malformedSummary.baseline.assemblies[0].unavailableReason "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must propagate its reason to every assembly row."
 }
 
-# The committed baseline is the artifact MAN-661 governs; it must stay comparable with the TRX evidence CI actually produces.
+# The committed snapshot is a *fallback measurement*, not a governed list (#1507). What is asserted
+# here is only that it is still the shape the reader can consume: provenance is honest and the
+# durations are usable. What is deliberately NOT asserted any more is topology coverage — "this file
+# must carry a row for every authenticated lane" made a shard rearrangement or a new test project
+# turn a measurement into a red gate, which is the ceremony #1507 removed. Coverage gaps are now
+# reported by scripts/report-backend-test-shard-balance.ps1 as report-only warnings with an estimate.
 $committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
-Assert-Equal 'test' $committedBaseline.granularity 'Committed baseline must be test-granularity.'
-Assert-Equal 'trx-elapsed' $committedBaseline.durationMetric 'Committed baseline must use the trx-elapsed duration metric.'
-Assert-Equal 'trx-evidence' $committedBaseline.source.kind 'Committed baseline must be generated from TRX evidence, not console wall clock.'
-Assert-Equal 'push' $committedBaseline.source.event 'Committed baseline must come from a push run.'
-Assert-Equal 'main' $committedBaseline.source.headBranch 'Committed baseline must come from main.'
-Assert-Equal 'success' $committedBaseline.source.conclusion 'Committed baseline must come from a successful run.'
-$committedBaselineLanes = @($committedBaseline.assemblies.lane | Sort-Object -Unique)
-foreach ($requiredLane in @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object)) {
-    Assert-True ($committedBaselineLanes -ccontains $requiredLane) "Committed baseline is missing authenticated lane '$requiredLane'."
-}
-Assert-True (@($committedBaseline.assemblies).Count -gt 0) 'Committed baseline must carry at least one assembly row.'
-Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [double]$_.elapsedMilliseconds -le 0 }).Count 'Committed baseline must not contain non-positive assembly durations.'
+Assert-Equal 'test' $committedBaseline.granularity 'Committed snapshot must be test-granularity.'
+Assert-Equal 'trx-elapsed' $committedBaseline.durationMetric 'Committed snapshot must use the trx-elapsed duration metric.'
+Assert-Equal 'trx-evidence' $committedBaseline.source.kind 'Committed snapshot must be generated from TRX evidence, not console wall clock.'
+Assert-Equal 'push' $committedBaseline.source.event 'Committed snapshot must come from a push run.'
+Assert-Equal 'main' $committedBaseline.source.headBranch 'Committed snapshot must come from main.'
+Assert-Equal 'success' $committedBaseline.source.conclusion 'Committed snapshot must come from a successful run.'
+Assert-True (@($committedBaseline.assemblies).Count -gt 0) 'Committed snapshot must carry at least one assembly row.'
+Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [double]$_.elapsedMilliseconds -le 0 }).Count 'Committed snapshot must not contain non-positive assembly durations.'
+Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.assembly) }).Count 'Every committed snapshot row must carry the assembly that is now the comparison key.'
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -744,12 +790,15 @@ try {
     Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%')) 'Unavailable baseline comparison must not render empty metric placeholders.'
     Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)')) 'Each incompatible assembly comparison must render its unavailable reason.'
 
-    # Field-level assertions on the committed baseline cannot show the one property a MAN-661 refresh
-    # exists to preserve: that the collector can actually consume the committed file. So run the real
-    # collector end to end with `-BaselinePath` pointing at the committed artifact, using synthesized
-    # TRX evidence for a lane/assembly the committed baseline itself claims to cover.
+    # Field-level assertions on the committed snapshot cannot show the one property that matters:
+    # that the collector can actually consume it. So run the real collector end to end with
+    # `-BaselinePath` pointing at the committed artifact, using synthesized TRX evidence for an
+    # assembly the snapshot covers — deliberately reported from a **different** shard lane than the
+    # one the snapshot recorded it under (#1507). This is the whole-pipeline version of the unit
+    # assertion above: if the lane ever re-enters the comparison key, this end-to-end case goes red.
     $committedRow = @($committedBaseline.assemblies | Sort-Object lane, assembly | Select-Object -First 1)[0]
-    $committedLane = [string]$committedRow.lane
+    $committedLane = @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object | Where-Object { -not [string]::Equals([string]$_, [string]$committedRow.lane, [StringComparison]::Ordinal) })[0]
+    Assert-True (-not [string]::IsNullOrWhiteSpace($committedLane)) 'The committed-snapshot collector case needs a second authenticated lane to report from.'
     $committedAssembly = [string]$committedRow.assembly
     $committedRaw = Join-Path $collectorRoot 'committed-baseline-raw'
     $committedOut = Join-Path $collectorRoot 'committed-baseline'
@@ -1234,9 +1283,21 @@ foreach ($requiredText in @(
     'selectedLaneResults', 'incompatible-granularity-or-duration-metric', 'single-lane collector',
     '2000-01-01T00:00:00Z', 'Actions job log',
     'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
-    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d'
+    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d',
+    # #1507. The operator contract has to keep saying which of the two things it governs, or the
+    # boundary decays back into "one file, two purposes" the next time someone adds a gate.
+    'Timing data is a cache, not a governed asset',
+    'assembly-not-in-baseline', 'ambiguous-assembly-in-baseline', 'no-compatible-assembly',
+    'timing-assembly-missing', 'timing-source-unavailable',
+    'scripts/update-backend-test-shard-timings.ps1', 'scripts/report-backend-test-shard-balance.ps1',
+    'There are no longer any mandatory refresh triggers'
 )) {
     Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
+}
+foreach ($registeredScriptPath in @(
+    'update-backend-test-shard-timings.ps1', 'report-backend-test-shard-balance.ps1', 'scripts/lib/BackendTestShardTimings.ps1'
+)) {
+    Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
 }
 $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
 foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
