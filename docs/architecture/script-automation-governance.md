@@ -87,28 +87,34 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | `scripts/lib/ScriptAutomation.ps1` | 所有规则指向的那个 wrapper。`ForbiddenCommand`/`DynamicInvocation` 存在的目的就是把调用方赶进这个文件，对它本身施加即构造性循环。 |
 | `scripts/tests/*` | 测试脚本要把被治理的程序当**真进程**跑，并刻意构造非法 fixture；这两件事都是测试的目的，不是治理发现。 |
 
-清单是 `check-script-governance.ps1` 里一份具名数据（`$scanExclusions`），不是内联布尔链——`scripts/tests/check-script-governance.Tests.ps1` 逐字断言这三条，因此**放宽边界必然改到一条被命名的契约**，而不是改一处没人看的 `Where-Object`。
+清单是 `check-script-governance.ps1` 里一份具名数据（`$scanExclusions`），不是内联布尔链——`scripts/tests/script-governance-scan-boundary.Tests.ps1` 逐字断言这三条，因此**放宽边界必然改到一条被命名的契约**，而不是改一处没人看的 `Where-Object`。
 
 ### 库作用域（library scope）
 
 `scripts/lib/` 下的文件按 library scope 扫描。规则差异只有两条，其余（`ParseError`、`MissingGovernanceHeader`、`MissingCategory`/`InvalidCategory`、`ForbiddenCommand`、`ForbiddenDynamicScriptBlock`、`ForbiddenProcessStart`）与入口脚本完全一致：
 
 1. **`MissingHelper` 不适用。** 库是被 dot-source 进调用方作用域的，调用方已经加载了 wrapper；而且 `BackendTestShardSelectors.ps1`、`CiWorkflowBudgets.ps1` 这类库根本不调用任何外部进程，强塞一个用不到的 import 买不到任何东西。这条规则真正要防的「库绕过 wrapper 直接 shell out」并没有失守：`ForbiddenCommand`、`ForbiddenProcessStart` 和下面收窄后的 `DynamicInvocation` 在库作用域全部生效，而确实要 shell out 的库（`BackendTestShardTimings.ps1`、`FullStackSessionRuntime.ps1`）为自己的需要本来就 dot-source 了 wrapper。
-2. **`DynamicInvocation` 收窄为「注入式 action seam」。** 库可以 `& $Action`，条件是该变量在本文件里**可证明是 script block**：要么是 `[scriptblock]` 类型的参数，要么是被 `{ … }` 字面量（含 `.GetNewClosure()`）赋值的变量。这正是本仓库构造可测试库所依赖的注入 seam（见 `AGENTS.md` 后端测试确定性一节）。`& 'dotnet'`、`& "$exe"`、`& (Get-Command …)`、`& $stringVariable` 一律仍是违规——最后一种是 `ForbiddenCommand` 在结构上看不见的那个洞，所以这条规则必须留在库作用域，而不是整体豁免。
+2. **`DynamicInvocation` 收窄为「注入式 action seam」。** 库可以 `& $Action`，条件是该变量在**本次调用所在的作用域链上可证明是 script block**：要么是 `[scriptblock]` 类型的参数，要么是被 `{ … }` 字面量（含 `.GetNewClosure()`）赋值的变量。作用域单位是一个 `ScriptBlockAst`（函数体或 `{ … }` 字面量），查找沿包围链向外走——与 PowerShell 自身的作用域一致：外层的 seam 对内层可见，**兄弟函数的同名变量永远不可见**。这一条是刻意的：若按整文件收集，A 函数里的 `$action = { }` 就会替 B 函数里的 `$action = 'dotnet'; & $action` 放行，等于用一个流行参数名重新打开这条规则要堵的洞。这正是本仓库构造可测试库所依赖的注入 seam（见 `AGENTS.md` 后端测试确定性一节）。`& 'dotnet'`、`& "$exe"`、`& (Get-Command …)`、`& $stringVariable` 一律仍是违规——最后一种是 `ForbiddenCommand` 在结构上看不见的那个洞，所以这条规则必须留在库作用域，而不是整体豁免。
 
 library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/` 下的文件必须在自己的 header 里写 `Category: library`（否则报 `MissingLibraryCategory`），而目录之外的文件不能通过贴这个标签来蹭上述两条放宽（否则报 `InvalidCategory`）。放宽写在被放宽者自己的头部，改动可见。
 
 ### 可执行守卫
 
-裁决的每一条都有会红的对照，全部在 `scripts/tests/check-script-governance.Tests.ps1`：
+裁决的每一条都有会红的对照，全部在 `scripts/tests/script-governance-scan-boundary.Tests.ps1`（从 `check-script-governance.Tests.ps1` 拆出来的独立文件，见下面「守卫落在哪里」）：
 
 - 排除清单逐字断言 → 往里加 `scripts/lib/*` 直接红；
 - 在 `scripts/lib/` 下临时种一个违规库文件，**默认扫描**（不带 `-Path`）必须报出它 → 边界被行为性放宽时红；
-- seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` 七个用例逐条对照 → 任何一条规则被削弱或过度收紧都红。
+- seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` / 跨函数同名变量不放行八个用例逐条对照 → 任何一条规则被削弱或过度收紧都红。
+
+**守卫落在哪里**：该文件是 CI `Script Governance` job 的一步（`.github/workflows/ci.yml`），同时进入本节末尾的 `compat-fast` 清单与 `scripts/check-script-compatibility.ps1`。它从 `check-script-governance.Tests.ps1` 拆出来，是因为后者还要驱动 ScriptAutomation 的流排空与游离进程夹具，比一条边界契约重得多。
+
+**夹具不落在被跟踪目录**：所有 library scope 用例都在临时目录里搭一棵 `<temp>/scripts/` 镜像树（把 checker 原文件复制进去），在那棵树里种违规夹具并跑默认扫描。checker 的 repo root 是 `$PSScriptRoot/..`，因此镜像树里的 `scripts/lib/x.ps1` 走的正是同一套 `$scanExclusions` 与 library scope 判定；而进程被 kill 或 CI step 超时后，残留只会留在临时目录，不会让此后每次治理门禁变红，也不会污染并行 worktree 的工作树。
 
 ### 已知残余
 
-同一文件里 `& $x` 与 `$x` 的真实内容仍受运行时决定：若有人写 `$x = { … }` 之后再重新赋值成字符串，AST 层面无法判否。该残余被接受，因为它需要一次刻意的、可见的重新赋值，而更常见的绕过路径（直呼命令、字面量调用、字符串变量调用）都已被上面的规则堵死。
+**同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否。该残余被接受，因为它需要一次刻意的、可见的重新赋值，而更常见的绕过路径（直呼命令、字面量调用、字符串变量调用、借用兄弟函数的同名变量）都已被上面的规则堵死。
+
+这条残余的边界是**作用域**而不是文件：跨函数借名不在残余里，它是被 `cross-function-name-collision` 用例钉死的违规。措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。
 
 ## 端口、数据库与容器
 
@@ -147,7 +153,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 跨平台兼容门禁分三步推进：
 
-1. `compat-fast`：在 macOS 或 Linux 环境运行 `pwsh scripts/check-script-governance.ps1`、`pwsh scripts/tests/check-script-governance.Tests.ps1`、`pwsh scripts/tests/test-evidence.Tests.ps1` 和 `git diff --check`。
+1. `compat-fast`：在 macOS 或 Linux 环境运行 `pwsh scripts/check-script-governance.ps1`、`pwsh scripts/tests/check-script-governance.Tests.ps1`、`pwsh scripts/tests/script-governance-scan-boundary.Tests.ps1`、`pwsh scripts/tests/test-evidence.Tests.ps1` 和 `git diff --check`。
 2. `compat-core-verify`：在 macOS 或 Linux 环境安装 PowerShell 7、.NET 10 SDK、Docker Compose v2 后，运行已经迁移到 helper 的核心验证脚本；首批目标是 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`。
 3. `compat-release-install`：Linux 私有化安装不直接复用本地 `verify` 脚本。后续 `scripts/install/linux/**` Bash/systemd 入口必须满足同一套分类、副作用、日志、超时、清理和敏感信息脱敏契约。
 
