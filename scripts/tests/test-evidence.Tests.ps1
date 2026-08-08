@@ -127,6 +127,66 @@ $leadingPaddedPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Js
 $leadingPaddedPolicy.rules[0].testIdentities[0] = " $([string] $livePolicy.rules[0].testIdentities[0])"
 Assert-True (@((Test-NervTestEvidencePolicy -Policy $leadingPaddedPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) | Where-Object { [string]$_.message -clike '*must not carry leading or trailing whitespace*' }).Count -eq 1) 'A leading-padded frozen identity must be rejected for the padding itself, not only as a pattern mismatch.'
 
+# Ordinal identifier comparison in the evidence library (#1509). Every probe below uses a U+00AD soft
+# hyphen, which PowerShell's `-ceq`/`-cne`/`-ccontains` and `Sort-Object -Unique` all fold — the `c`
+# prefix only turns off case-insensitivity, the comparison itself stays culture-aware. Measured, not
+# assumed: on this runtime `@($a) -ccontains "$a$softHyphen"` is True and an ordinal HashSet keeps two
+# entries. Each probe therefore passes under the culture-aware spelling and fails under it once the
+# implementation is ordinal, which is what makes them regressions rather than restatements.
+$softHyphen = [string][char]0x00AD
+
+# 1. Identity-set uniqueness. Two frozen identities differing only by an ignorable character are two
+#    identities; folding them makes uniqueCount < count and the rule is rejected for the wrong
+#    reason ("not unique") while the real defect is a testPattern mismatch.
+$ordinalIdentityPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$ordinalIdentityPolicy.rules[0].testIdentities = @(
+    @($livePolicy.rules[0].testIdentities | ForEach-Object { [string]$_ }) +
+    "$([string] $livePolicy.rules[0].testIdentities[0])$softHyphen")
+$ordinalIdentityPolicy.rules[0].expectedRuntimeTestCount = @($ordinalIdentityPolicy.rules[0].testIdentities).Count
+Assert-True (@((Test-NervTestEvidencePolicy -Policy $ordinalIdentityPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) |
+    Where-Object { [string]$_.message -clike '*unique test identity set*' }).Count -eq 0) 'Two frozen identities differing only by an ignorable character must count as two; identity uniqueness must be ordinal.'
+
+# 2. Rule applicability. allowedLanes / requiredLane / allowedOperatingSystems are the applicability
+#    condition the zero-execution hard gate is built on, so a fold here silently changes which rule
+#    governs a lane. Positive controls included so the probes cannot pass by rejecting everything.
+$allowedLaneRule = [pscustomobject]@{ allowedLanes = @('postgres'); requiredLane = $null; allowedOperatingSystems = @() }
+Assert-True (Test-NervRuleApplies -Rule $allowedLaneRule -SelectedLanes @('postgres') -RunnerOs 'Linux') 'A rule must apply to the lane it allows.'
+Assert-True (-not (Test-NervRuleApplies -Rule $allowedLaneRule -SelectedLanes @("postgres$softHyphen") -RunnerOs 'Linux')) 'A lane differing from an allowed lane by an ignorable character is a different lane; allowedLanes membership must be ordinal.'
+$requiredLaneRule = [pscustomobject]@{ allowedLanes = @(); requiredLane = 'postgres'; allowedOperatingSystems = @() }
+Assert-True (-not (Test-NervRuleApplies -Rule $requiredLaneRule -SelectedLanes @('postgres') -RunnerOs 'Linux')) 'A rule must stop applying once its required lane is actually selected.'
+Assert-True (Test-NervRuleApplies -Rule $requiredLaneRule -SelectedLanes @("postgres$softHyphen") -RunnerOs 'Linux') 'A lane differing from the required lane by an ignorable character must not count as having selected it; requiredLane membership must be ordinal.'
+$runnerOsRule = [pscustomobject]@{ allowedLanes = @(); requiredLane = $null; allowedOperatingSystems = @('Linux') }
+Assert-True (Test-NervRuleApplies -Rule $runnerOsRule -SelectedLanes @('backend') -RunnerOs 'Linux') 'A rule must apply on the operating system it allows.'
+Assert-True (-not (Test-NervRuleApplies -Rule $runnerOsRule -SelectedLanes @('backend') -RunnerOs "Linux$softHyphen")) 'allowedOperatingSystems membership must be ordinal.'
+
+# 3. Frozen-identity membership at runtime — the comparison the padding ruling above depends on. The
+#    fixture policy anchors testPattern exactly, so it cannot separate the two axes; this policy uses
+#    a `.+` tail so the padded name still matches the pattern and only the identity membership
+#    decides. Under `-ccontains` the skip claims a rule that froze a different string.
+$identityMembershipPolicy = [pscustomobject]@{
+    schemaVersion = 1
+    lanes = @([pscustomobject]@{ namePattern = '^backend(?:-shard-[1-9][0-9]*)?$'; realDependency = $false })
+    sources = @()
+    rules = @([pscustomobject]@{
+        id = 'ordinal-identity'
+        sourceId = 'fixture-source'
+        classification = 'optional'
+        testPattern = '^Fixture\.Ordinal\..+$'
+        reasonPattern = '^Opt in\.$'
+        allowedLanes = @('backend')
+        requiredLane = $null
+        allowedOperatingSystems = @()
+        testIdentities = @('Fixture.Ordinal.Alpha')
+        expectedRuntimeTestCount = 1
+    })
+}
+$exactIdentityRecord = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = 'Fixture.Ordinal.Alpha'; skipReason = 'Opt in.' })
+# Counted rather than passed through Assert-ViolationSet: an empty result is the expectation here,
+# and that helper cannot take a null pipeline input.
+Assert-Equal 0 @(Get-NervTestEvidenceViolations -Records $exactIdentityRecord -Policy $identityMembershipPolicy -SelectedLanes @('backend') -RunnerOs 'Linux').Count 'A skip whose name is exactly a frozen identity must match its rule; the ordinal probe below must not pass by rejecting everything.'
+$foldedIdentityRecord = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = "Fixture.Ordinal.Alpha$softHyphen"; skipReason = 'Opt in.' })
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedIdentityRecord -Policy $identityMembershipPolicy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
+
 $run = @{
     workflowRunId = '1001'
     runAttempt = 2
@@ -153,6 +213,29 @@ $counterMismatchFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) -RunMetadata $run | Out-Null }
 catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters') }
 Assert-True $counterMismatchFailed 'TRX counter/result mismatches must fail closed.'
+
+# Normalized-TRX provenance is an identifier comparison too (#1509). A rewritten TRX carries the head
+# and tested SHAs it was produced under, and this guard is what stops it from being re-read under
+# someone else's run metadata. `-cne` folds an ignorable character into the SHA, so a mismatched
+# artifact would pass; ordinal equality is what makes the guard fail closed.
+$provenanceDirectory = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-man-661-provenance-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $provenanceDirectory -Force | Out-Null
+    $trxTemplate = Get-Content (Join-Path $fixtures 'backend-results.trx') -Raw
+    $matchingProvenanceTrx = Join-Path $provenanceDirectory 'matching.trx'
+    Set-Content -LiteralPath $matchingProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)`" testedSha=`"$($run.testedSha)`" id=`"")
+    Assert-Equal 3 (Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.Clone()).Count 'A normalized TRX whose persisted provenance matches the run must be readable.'
+
+    $foldedProvenanceTrx = Join-Path $provenanceDirectory 'folded.trx'
+    Set-Content -LiteralPath $foldedProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)$softHyphen`" testedSha=`"$($run.testedSha)`" id=`"")
+    $foldedProvenanceRejected = $false
+    try { Read-NervTrxResults -Path @($foldedProvenanceTrx) -RunMetadata $run.Clone() | Out-Null }
+    catch { $foldedProvenanceRejected = $_.Exception.Message.Contains('Normalized TRX provenance does not match') }
+    Assert-True $foldedProvenanceRejected 'A persisted head SHA differing by an ignorable character must not be accepted as this run''s provenance; the comparison must be ordinal.'
+}
+finally {
+    if (Test-Path -LiteralPath $provenanceDirectory) { Remove-Item -LiteralPath $provenanceDirectory -Recurse -Force }
+}
 
 $parameterized = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized-results.trx')) -RunMetadata $run
 Assert-Equal 2 @($parameterized.displayName | Sort-Object -Unique).Count 'Parameterized display names must remain distinct.'
@@ -259,6 +342,48 @@ Assert-ViolationSet $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $shardViolations = Get-NervTestEvidenceViolations -Records $otherShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
 Assert-ViolationSet $shardViolations 'zero-execution'
+
+# Lane names are selectors, so the zero-execution gate's own lane matching must be ordinal too
+# (#1509). This is the same shape as the two probes above, with one ignorable character inserted: a
+# record from `postgres<U+00AD>-shard-1` is not execution of `postgres-shard-1`, and a culture-aware
+# `-ceq` would report the lane as covered and suppress the violation.
+$foldedLaneShard = @([pscustomobject]@{ lane = "postgres$softHyphen-shard-1"; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedLaneShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux') 'zero-execution'
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedLaneShard -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux') 'zero-execution'
+
+# …and so must the summary's own lane/selector merge, which is a second implementation of the same
+# decision: it groups records into a base lane and decides which violations belong to that group.
+$foldedSummaryRun = @{
+    workflowRunId = '1001'
+    runAttempt = 1
+    headSha = '0123456789abcdef0123456789abcdef01234567'
+    testedSha = '0123456789abcdef0123456789abcdef01234567'
+    lane = 'postgres-shard-1'
+    selectedLanes = @('postgres-shard-1')
+}
+# Cloned from a real parsed record so the summary sees the full retained schema; only the lane
+# differs between the probes.
+$passedRecordTemplate = @($records | Where-Object outcome -eq 'passed')[0]
+$executedShardRecordSource = $passedRecordTemplate.PSObject.Copy()
+$executedShardRecordSource.lane = 'postgres-shard-1'
+$executedShardRecord = @($executedShardRecordSource)
+$foldedViolations = @(
+    New-NervTestEvidenceViolation 'zero-execution' "postgres$softHyphen-shard-1" 'Folded selector must not be attributed to this lane.'
+)
+$foldedSelectorSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations $foldedViolations -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedSelectorSummary.selectedLaneResults[0].gateResult 'A violation whose id differs from the selector by an ignorable character belongs to a different selector; the summary selector set must be ordinal.'
+$foldedCodeViolations = @(
+    New-NervTestEvidenceViolation "zero-execution$softHyphen" 'postgres-shard-1' 'Folded violation code must not be read as zero-execution.'
+)
+$foldedCodeSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations $foldedCodeViolations -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedCodeSummary.selectedLaneResults[0].gateResult 'A violation code differing by an ignorable character is a different code; the summary code comparison must be ordinal.'
+$realZeroExecutionSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(New-NervTestEvidenceViolation 'zero-execution' 'postgres-shard-1' 'Real violation.') -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'zero-execution' $realZeroExecutionSummary.selectedLaneResults[0].gateResult 'The exact selector and code must still be attributed to the lane; ordinal comparison must not turn the summary into "nothing ever matches".'
+Assert-Equal 1 $foldedSelectorSummary.selectedLaneResults[0].executed 'The exact lane must still be counted as executed; ordinal grouping must not empty the lane.'
+$foldedLaneRecordSource = $passedRecordTemplate.PSObject.Copy()
+$foldedLaneRecordSource.lane = "postgres$softHyphen-shard-1"
+$foldedRecordLaneSummary = New-NervTestEvidenceSummary -Records @($foldedLaneRecordSource) -RunMetadata $foldedSummaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 0 $foldedRecordLaneSummary.selectedLaneResults[0].executed 'A record from a lane differing by an ignorable character must not be counted as this lane executing; the summary lane grouping must be ordinal.'
 
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')

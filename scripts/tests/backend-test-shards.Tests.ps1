@@ -236,6 +236,27 @@ catch {
 }
 Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
 
+# The third ordinal decision in this library: the real-PostgreSQL selector gate. It asks whether every
+# discovered test actually appears in the TRX, and that membership used to be `-notcontains`. A test
+# whose TRX name differs from the discovered name by an ignorable character never ran under that
+# name, so the gate must still report it missing — which is the direction it exists to fail closed on.
+$ordinalSelectorExecutionText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Selector' `
+        -DiscoveredTests @('Nerv.Probe.Selector.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = "Nerv.Probe.Selector.Alpha$ordinalSoftHyphen"; outcome = 'Passed' })
+}
+catch {
+    $ordinalSelectorExecutionText = $_.Exception.Message
+}
+Assert-Contract ($ordinalSelectorExecutionText.Contains("must execute every discovered test as Passed; discovered=1, trx=1, missing=1")) 'A TRX test name differing from a discovered test by an ignorable character must not satisfy that test; the selector execution membership must be ordinal.'
+# Positive control, so the probe above cannot pass by rejecting everything.
+Assert-BackendTestShardSelectorExecution `
+    -Selector 'Nerv.Probe.Selector' `
+    -DiscoveredTests @('Nerv.Probe.Selector.Alpha') `
+    -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Selector.Alpha'; outcome = 'Passed' })
+
 # ...and the case axis, which the fixture above deliberately does not exercise. VSTest writes the
 # TRX `storage` path lowercased, so the executed side of this comparison never carries the manifest's
 # casing: a real shard reports `nerv.iip.apphub.domain.tests.dll` against a classified
@@ -255,7 +276,9 @@ try {
 </TestRun>
 '@
     $lowercaseAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $lowercaseStorageDirectory)
-    Assert-Contract ((@($lowercaseAssemblies) -join '|') -ceq 'nerv.iip.apphub.domain.tests.dll') 'The TRX storage attribute must be read verbatim; VSTest writes it lowercased and this fixture pins that shape.'
+    # Ordinal, per the #1507 ruling: `-ceq` only disables case-insensitivity and still folds
+    # ignorable characters, so it cannot pin an assembly name.
+    Assert-Contract ([string]::Equals((@($lowercaseAssemblies) -join '|'), 'nerv.iip.apphub.domain.tests.dll', [StringComparison]::Ordinal)) 'The TRX storage attribute must be read verbatim; VSTest writes it lowercased and this fixture pins that shape.'
     Assert-BackendTestShardProjectExecution `
         -ShardId 'storage-case' `
         -ClassifiedProjects @('backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/Nerv.IIP.AppHub.Domain.Tests.csproj') `
@@ -273,6 +296,29 @@ try {
         $lowercaseDriftText = $_.Exception.Message
     }
     Assert-Contract ($lowercaseDriftText.Contains('produced no executed test result for classified projects: Nerv.IIP.AppHub.Web.Tests')) 'Case-insensitive assembly matching must still reject an assembly that is a different project.'
+
+    # Get-BackendTestShardExecutedAssemblies makes the same two-part decision when it deduplicates,
+    # and both halves are pinned here because the two failure modes point in opposite directions:
+    #   * culture-aware (`Sort-Object -Unique`) folds the soft-hyphen name into the plain one, so an
+    #     assembly that never ran is reported as the one that did — 1 entry instead of 2;
+    #   * strictly case-sensitive Ordinal keeps `NERV.…` and `nerv.…` apart, so one real assembly is
+    #     counted twice and the shard's executed set drifts from its manifest — 3 entries instead of 2.
+    # Only OrdinalIgnoreCase yields 2, which is what makes this one assertion discriminate both ways.
+    Set-Content -LiteralPath (Join-Path $lowercaseStorageDirectory 'dedup.trx') -NoNewline -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000005" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest id="00000000-0000-0000-0000-000000000006" name="Lower" storage="/w/bin/release/net10.0/nerv.probe.dedup.tests.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Lower" /></UnitTest>
+    <UnitTest id="00000000-0000-0000-0000-000000000007" name="Upper" storage="/w/bin/Release/net10.0/NERV.PROBE.DEDUP.TESTS.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Upper" /></UnitTest>
+    <UnitTest id="00000000-0000-0000-0000-000000000008" name="Ignorable" storage="/w/bin/release/net10.0/nerv.probe.dedup${ordinalSoftHyphen}.tests.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Ignorable" /></UnitTest>
+  </TestDefinitions>
+</TestRun>
+"@
+    $dedupAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $lowercaseStorageDirectory)
+    $dedupProbe = @($dedupAssemblies | Where-Object { $_.StartsWith('nerv.probe.dedup', [StringComparison]::OrdinalIgnoreCase) })
+    Assert-Contract ($dedupProbe.Count -eq 2) "Executed-assembly deduplication must be ordinal *and* case-insensitive: two spellings of one assembly collapse, an ignorable-character variant does not. Kept $($dedupProbe.Count)."
+    Assert-Contract (@($dedupProbe | Where-Object { $_.Contains($ordinalSoftHyphen) }).Count -eq 1) 'The ignorable-character assembly must survive deduplication as its own entry.'
+    Assert-Contract (@($dedupProbe | Where-Object { -not $_.Contains($ordinalSoftHyphen) }).Count -eq 1) 'The two case spellings of one assembly must collapse into a single entry.'
 }
 finally {
     if (Test-Path -LiteralPath $lowercaseStorageDirectory) {
@@ -293,8 +339,14 @@ Assert-Contract ((Get-BackendTestShardOrdinalUniqueSorted -Values $classifiedPro
 #   * it caught a project silently dropped out of the manifest — now caught by
 #     `$missingFromManifest`, against the very solution the shards build;
 #   * it caught a manifest row naming a project that is not part of the backend test inventory —
-#     now caught by `$notInSolution`, and already by the validator's own
-#     "Classified projects are not discovered backend test projects" rule;
+#     now caught by `$notInSolution`. That is deliberately *not* the same rule as the validator's
+#     "Classified projects are not discovered backend test projects": the validator's inventory is a
+#     filesystem glob for `**/*.Tests.csproj`, this one is membership of backend/Nerv.IIP.sln. A
+#     project that exists on disk but was never added to the solution passes the validator and fails
+#     here — and it is the one that matters, because a shard runs a `.slnf` filter over the solution,
+#     so an unlisted project is never built or tested no matter how many files sit next to it. Both
+#     are kept: they fail on different defects, and the cheaper of the two is the one already run by
+#     verify-backend-test-shards.ps1 in a separate job;
 #   * it never caught anything else, because "the count is 66" cannot distinguish which 66.
 #
 # Coverage goes up rather than down: the set comparison also fails when one project is swapped for
@@ -304,11 +356,28 @@ Assert-Contract ((Get-BackendTestShardOrdinalUniqueSorted -Values $classifiedPro
 # purpose. The validator already globs `**/*.Tests.csproj`; re-globbing here would assert this
 # file's own arithmetic. The solution is the artifact each shard's `.slnf` is a filter over, so a
 # project that is in the solution but unclassified is exactly the defect that reaches CI.
-$solutionTestProjects = Get-BackendTestShardOrdinalUniqueSorted -Values @(
-    Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln') |
-        ForEach-Object {
-            if ($_ -match '"(?<path>[^" ]*\.Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
+#
+# The path is taken as the whole quoted run (`[^"]*`), not "up to the first space". A solution file
+# always quotes project paths, so the quotes are the real delimiter; excluding the space instead made
+# a project whose directory contains a space simply not match, which is a blind spot exactly where
+# the coverage check is supposed to be total.
+function Get-BackendSolutionTestProjects {
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $SolutionLines)
+
+    return @(
+        $SolutionLines | ForEach-Object {
+            if ($_ -match '"(?<path>[^"]*\.Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
         }
+    )
+}
+
+# Control: a solution row whose path carries a space must still be derived. Under the old
+# `[^" ]*` spelling this line yields nothing and the project silently drops out of the expected set.
+$spacedSolutionLine = 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nerv.IIP.Spaced.Tests", "tests\Nerv IIP Spaced.Tests\Nerv.IIP.Spaced.Tests.csproj", "{00000000-0000-0000-0000-000000000009}"'
+Assert-Contract ([string]::Equals(((Get-BackendSolutionTestProjects -SolutionLines @($spacedSolutionLine)) -join '|'), 'backend/tests/Nerv IIP Spaced.Tests/Nerv.IIP.Spaced.Tests.csproj', [StringComparison]::Ordinal)) 'A backend test project whose solution path contains a space must still be derived from the solution; the path is delimited by quotes, not by whitespace.'
+
+$solutionTestProjects = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+    Get-BackendSolutionTestProjects -SolutionLines @(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln'))
 )
 Assert-Contract ($solutionTestProjects.Count -gt 0) 'The backend solution must list backend test projects; an empty derivation would make the coverage comparison below vacuous.'
 $classifiedProjectSet = Get-BackendTestShardOrdinalSet -Values $classifiedProjects
