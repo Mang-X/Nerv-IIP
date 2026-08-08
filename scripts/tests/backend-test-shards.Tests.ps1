@@ -212,6 +212,10 @@ Assert-Contract ($driftText.Contains('executed assemblies it does not classify: 
 # U+00AD soft hyphen is enough — measured, not assumed. Both probes below pass under a culture-aware
 # implementation and only fail under an ordinal one, which is what makes them regressions rather than
 # restatements: revert either helper and this block goes red.
+#
+# Ordinal is the axis under test here; *case* is deliberately not, and the fixture right below this
+# block is why. Keep the two apart when reading: the soft-hyphen probes must fail under a
+# culture-aware comparer, and the lowercase-storage probe must pass under a case-insensitive one.
 $ordinalSoftHyphen = [string][char]0x00AD
 $ordinalSelectorShard = [pscustomobject]@{
     excludedTestClasses = @('Nerv.Probe.Ordinal.Alpha', "Nerv.Probe.Ordinal${ordinalSoftHyphen}.Alpha")
@@ -231,6 +235,50 @@ catch {
     $ordinalExecutionText = $_.Exception.Message
 }
 Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
+
+# ...and the case axis, which the fixture above deliberately does not exercise. VSTest writes the
+# TRX `storage` path lowercased, so the executed side of this comparison never carries the manifest's
+# casing: a real shard reports `nerv.iip.apphub.domain.tests.dll` against a classified
+# `Nerv.IIP.AppHub.Domain.Tests.csproj`. This file used to prove the guard only with a hand-written
+# fixture that kept the manifest casing, so a case-sensitive comparison passed here and failed every
+# real shard — run 31251016878 named all 36 platform projects as unexecuted while all 36 had passed.
+# The fixture below is the real shape, so that regression cannot come back green.
+$lowercaseStorageDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-storage-case-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $lowercaseStorageDirectory -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $lowercaseStorageDirectory 'shard.trx') -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000003" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest id="00000000-0000-0000-0000-000000000004" name="Case" storage="/home/runner/work/nerv-iip/nerv-iip/backend/tests/nerv.iip.apphub.domain.tests/bin/release/net10.0/nerv.iip.apphub.domain.tests.dll"><TestMethod className="Nerv.IIP.AppHub.Domain.Tests.SomeTests" name="Case" /></UnitTest>
+  </TestDefinitions>
+</TestRun>
+'@
+    $lowercaseAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $lowercaseStorageDirectory)
+    Assert-Contract ((@($lowercaseAssemblies) -join '|') -ceq 'nerv.iip.apphub.domain.tests.dll') 'The TRX storage attribute must be read verbatim; VSTest writes it lowercased and this fixture pins that shape.'
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'storage-case' `
+        -ClassifiedProjects @('backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/Nerv.IIP.AppHub.Domain.Tests.csproj') `
+        -ExecutedAssemblies $lowercaseAssemblies
+
+    # Still discriminating: case folding must not turn the guard into "any assembly will do".
+    $lowercaseDriftText = ''
+    try {
+        Assert-BackendTestShardProjectExecution `
+            -ShardId 'storage-case' `
+            -ClassifiedProjects @('backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj') `
+            -ExecutedAssemblies $lowercaseAssemblies
+    }
+    catch {
+        $lowercaseDriftText = $_.Exception.Message
+    }
+    Assert-Contract ($lowercaseDriftText.Contains('produced no executed test result for classified projects: Nerv.IIP.AppHub.Web.Tests')) 'Case-insensitive assembly matching must still reject an assembly that is a different project.'
+}
+finally {
+    if (Test-Path -LiteralPath $lowercaseStorageDirectory) {
+        Remove-Item -LiteralPath $lowercaseStorageDirectory -Recurse -Force
+    }
+}
 
 $classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
 Assert-Contract ((Get-BackendTestShardOrdinalUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'

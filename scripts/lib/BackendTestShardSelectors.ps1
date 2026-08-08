@@ -11,7 +11,7 @@
 
 function Get-BackendTestShardOrdinalUniqueSorted {
     <#
-        Deduplicates and orders identifiers by ordinal comparison.
+        Deduplicates and orders identifiers by an *ordinal* comparer.
 
         Every string this library handles is an identifier — a test selector, an assembly file name,
         a project file name — and identifiers are equal only when they are the same sequence of
@@ -21,26 +21,40 @@ function Get-BackendTestShardOrdinalUniqueSorted {
         them silently stops being excluded — or, in Assert-BackendTestShardProjectExecution, an
         assembly that never ran is accepted as having run. #1509 measured both.
 
+        Ordinal is the axis that matters; *case* is a separate decision the caller makes through
+        -Comparer, because the two kinds of identifier this library handles disagree about it. A C#
+        fully-qualified test name is case-significant (Ordinal). An assembly file name read out of a
+        TRX `storage` attribute is not: VSTest writes that path lowercased, so the shard's
+        `nerv.iip.apphub.domain.tests.dll` has to match the manifest's
+        `Nerv.IIP.AppHub.Domain.Tests` (observed on run 31251016878, where a strictly case-sensitive
+        comparison reported all 36 executed assemblies as missing).
+
         Callers that need membership rather than ordering build a
-        [System.Collections.Generic.HashSet[string]] over [System.StringComparer]::Ordinal for the
-        same reason; the two regression assertions live in
-        scripts/tests/backend-test-shards.Tests.ps1 under "Ordinal identifier comparison".
+        [System.Collections.Generic.HashSet[string]] over the same comparer; the regression
+        assertions live in scripts/tests/backend-test-shards.Tests.ps1 under "Ordinal identifier
+        comparison".
     #>
-    param([Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values)
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values,
+        [System.StringComparer] $Comparer = [System.StringComparer]::Ordinal
+    )
 
     $unique = [System.Collections.Generic.List[string]]::new(
-        [System.Collections.Generic.HashSet[string]]::new([string[]] $Values, [System.StringComparer]::Ordinal))
-    $unique.Sort([System.StringComparer]::Ordinal)
+        [System.Collections.Generic.HashSet[string]]::new([string[]] $Values, $Comparer))
+    $unique.Sort($Comparer)
     return @($unique)
 }
 
 function Get-BackendTestShardOrdinalSet {
-    param([Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values)
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values,
+        [System.StringComparer] $Comparer = [System.StringComparer]::Ordinal
+    )
 
     # Wrapped in a single-element array on the way out: PowerShell unrolls an IEnumerable return
     # value, which would hand the caller a plain object[] (or $null for an empty set) and turn every
     # `.Contains()` below into a culture-aware `-contains` at best and a null-reference at worst.
-    return ,([System.Collections.Generic.HashSet[string]]::new([string[]] $Values, [System.StringComparer]::Ordinal))
+    return ,([System.Collections.Generic.HashSet[string]]::new([string[]] $Values, $Comparer))
 }
 
 function Get-BackendTestShardOptionalArray {
@@ -177,7 +191,10 @@ function Get-BackendTestShardExecutedAssemblies {
         }
     }
 
-    return Get-BackendTestShardOrdinalUniqueSorted -Values @($assemblies)
+    # OrdinalIgnoreCase, for the same reason Assert-BackendTestShardProjectExecution uses it: the
+    # `storage` attribute is a file path VSTest writes lowercased, so case carries no information
+    # here and two spellings of one assembly must collapse to one entry.
+    return Get-BackendTestShardOrdinalUniqueSorted -Values @($assemblies) -Comparer ([System.StringComparer]::OrdinalIgnoreCase)
 }
 
 function Assert-BackendTestShardProjectExecution {
@@ -187,18 +204,28 @@ function Assert-BackendTestShardProjectExecution {
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ExecutedAssemblies
     )
 
-    # Assembly names are identifiers, so both the deduplication and the membership tests below are
-    # ordinal. `-notcontains` is culture-aware: it reports an assembly that differs from a classified
-    # project only by an ignorable character as executed, which is exactly the direction this guard
-    # exists to fail closed on.
-    $expected = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+    # OrdinalIgnoreCase, and both halves of that name are load-bearing.
+    #
+    # *Ordinal*, because `-notcontains` — what this used to use — is culture-aware: it reports an
+    # assembly differing from a classified project only by an ignorable character (U+00AD) as
+    # executed, which is exactly the direction this guard exists to fail closed on.
+    #
+    # *IgnoreCase*, because the two sides are not the same kind of string. The left side is a
+    # manifest path a human typed (`…/Nerv.IIP.AppHub.Domain.Tests.csproj`); the right side is a
+    # file name VSTest wrote into a TRX `storage` attribute, which it lowercases
+    # (`nerv.iip.apphub.domain.tests.dll` — see any shard evidence summary.json). Comparing them
+    # case-sensitively reports every executed assembly as missing: measured on run 31251016878,
+    # where all 36 platform projects were named in this throw while all 36 had in fact passed.
+    # scripts/tests/backend-test-shards.Tests.ps1 carries that exact TRX shape as a fixture.
+    $assemblyComparer = [System.StringComparer]::OrdinalIgnoreCase
+    $expected = Get-BackendTestShardOrdinalUniqueSorted -Comparer $assemblyComparer -Values @(
         $ClassifiedProjects | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
-    $observed = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+    $observed = Get-BackendTestShardOrdinalUniqueSorted -Comparer $assemblyComparer -Values @(
         $ExecutedAssemblies | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
-    $expectedSet = Get-BackendTestShardOrdinalSet -Values $expected
-    $observedSet = Get-BackendTestShardOrdinalSet -Values $observed
+    $expectedSet = Get-BackendTestShardOrdinalSet -Values $expected -Comparer $assemblyComparer
+    $observedSet = Get-BackendTestShardOrdinalSet -Values $observed -Comparer $assemblyComparer
 
     $missing = @($expected | Where-Object { -not $observedSet.Contains($_) })
     if ($missing.Count -gt 0) {

@@ -204,3 +204,13 @@ finally {
 
 
 Write-Host 'Script governance scan boundary tests passed.'
+
+# Every case above runs the checker as a native process, and most of them *expect* it to exit 1.
+# GitHub's `shell: pwsh` wrapper is `pwsh -command ". '<script>'"` and re-exits with whatever
+# `$LASTEXITCODE` is left behind, so without this line a fully passing run reports failure — measured
+# on run 31251016878, where this file printed the success message and the step still went red.
+# Failures are unaffected: they `throw`, so control never reaches here.
+#
+# `exit` is only safe because this file owns its whole `run:` block in .github/workflows/ci.yml. If
+# it is ever chained behind another script in one block, the exit code stops being this file's.
+exit 0
