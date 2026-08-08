@@ -19,19 +19,19 @@ param(
 
     # Where a flagged construct IS the audited primitive itself — its implementation or its own
     # self-test — so the finding can never be removed and dating it would be theatre. Each entry is
-    # `<repo-relative-path>=<pattern>`: a path alone is not enough, because the justification is
-    # always about one specific construct in that file. Allow-listing the path only would mean a
-    # `Thread.Sleep` added to `GlobalTestStateScope.cs` next year could be registered as permanent on
-    # a rationale written for culture setters.
+    # `<repo-relative-path>=<pattern>=<maxRows>`: a path alone is not enough, because the justification
+    # is always about one specific construct in that file, and the positive row capacity prevents a
+    # previously reviewed pair from growing through baseline-only edits. The cap counts valid
+    # permanent baseline rows, not source occurrences and not occurrenceCount.
     #
     # The list is deliberately hard-coded rather than read from the baseline: a `permanent` row must
     # be countersigned by the checker, otherwise the classification degrades into a self-served
     # exemption. The parameter exists so the checker's own fixture harness can exercise both sides of
     # the rule; CI invokes the script with no arguments.
     [string[]] $PermanentAllowlist = @(
-        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter',
-        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter',
-        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay'
+        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter=12',
+        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter=9',
+        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay=1'
     )
 )
 
@@ -52,7 +52,8 @@ $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAdd
 #   permanent     — the flagged construct is the audited primitive itself: its implementation, or its
 #                   own self-test. There is nothing to expire towards, so a date would be a lie;
 #                   instead it carries a rationale and is only legal for an allow-listed
-#                   path + pattern pair (see $PermanentAllowlist).
+#                   path + pattern pair within its checker-owned row capacity (see
+#                   $PermanentAllowlist).
 $expiringClassification = 'expiring-debt'
 $permanentClassification = 'permanent'
 $allowedClassifications = @($expiringClassification, $permanentClassification)
@@ -745,28 +746,60 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
-    # Ordinal, not the case-insensitive default of `@{}`: an allowlist entry must match the baseline
-    # path exactly, the same way the finding comparison below uses -ceq.
-    $permanentPathPatterns = New-Object 'System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[string]]' ([StringComparer]::Ordinal)
+    # Ordinal dictionaries make both path and pattern membership exact, matching the -ceq finding
+    # comparisons below. The nested value is the checker-owned maximum number of valid baseline rows.
+    $permanentPathPatternCapacities = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($entry in $PermanentAllowlist) {
         $normalizedEntry = ($entry -replace '\\', '/').Trim()
-        $separatorIndex = $normalizedEntry.LastIndexOf('=')
-        if ($separatorIndex -le 0 -or $separatorIndex -eq $normalizedEntry.Length - 1) {
-            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>'.")
+        $capacitySeparatorIndex = $normalizedEntry.LastIndexOf('=')
+        if ($capacitySeparatorIndex -lt 0) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
             continue
         }
 
-        $entryPath = $normalizedEntry.Substring(0, $separatorIndex).Trim()
-        $entryPattern = $normalizedEntry.Substring($separatorIndex + 1).Trim()
-        if ($allowedPatterns -notcontains $entryPattern) {
+        $pathAndPattern = $normalizedEntry.Substring(0, $capacitySeparatorIndex)
+        $patternSeparatorIndex = $pathAndPattern.LastIndexOf('=')
+        if ($patternSeparatorIndex -lt 0) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
+            continue
+        }
+
+        $entryPath = $pathAndPattern.Substring(0, $patternSeparatorIndex).Trim()
+        $entryPattern = $pathAndPattern.Substring($patternSeparatorIndex + 1).Trim()
+        $entryMaxRows = $normalizedEntry.Substring($capacitySeparatorIndex + 1).Trim()
+        if ([string]::IsNullOrWhiteSpace($entryPath)) {
+            $Errors.Add("permanent allowlist entry '$entry' path must be non-empty.")
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($entryPattern)) {
+            $Errors.Add("permanent allowlist entry '$entry' pattern must be non-empty.")
+            continue
+        }
+
+        $maxRows = 0
+        $maxRowsValid = [int]::TryParse(
+            $entryMaxRows,
+            [Globalization.NumberStyles]::Integer,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [ref] $maxRows)
+        if (-not $maxRowsValid -or $maxRows -le 0) {
+            $Errors.Add("permanent allowlist entry '$entry' maxRows must be a positive integer.")
+            continue
+        }
+        if ($allowedPatterns -cnotcontains $entryPattern) {
             $Errors.Add("permanent allowlist entry '$entry' names unsupported pattern '$entryPattern'.")
             continue
         }
 
-        if (-not $permanentPathPatterns.ContainsKey($entryPath)) {
-            $permanentPathPatterns[$entryPath] = New-Object System.Collections.Generic.List[string]
+        if (-not $permanentPathPatternCapacities.ContainsKey($entryPath)) {
+            $permanentPathPatternCapacities[$entryPath] = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         }
-        $permanentPathPatterns[$entryPath].Add($entryPattern)
+        $patternCapacities = $permanentPathPatternCapacities[$entryPath]
+        if ($patternCapacities.ContainsKey($entryPattern)) {
+            $Errors.Add("duplicate permanent allowlist entry for path '$entryPath' and pattern '$entryPattern'.")
+            continue
+        }
+        $patternCapacities[$entryPattern] = $maxRows
     }
 
     for ($index = 0; $index -lt $exceptionsValue.Count; $index++) {
@@ -856,11 +889,11 @@ function Read-Baseline {
             # Only the checker decides which files may hold a permanent row, and for which pattern;
             # the baseline cannot nominate itself into the allowlist, nor widen an entry written for
             # one construct to cover a different one.
-            if (-not $permanentPathPatterns.ContainsKey($path)) {
+            if (-not $permanentPathPatternCapacities.ContainsKey($path)) {
                 $Errors.Add("exception[$index] permanent classification is not allowed for path '$path'.")
                 $rowValid = $false
             }
-            elseif ($permanentPathPatterns[$path] -cnotcontains $pattern) {
+            elseif (-not $permanentPathPatternCapacities[$path].ContainsKey($pattern)) {
                 $Errors.Add("exception[$index] permanent classification is not allowed for pattern '$pattern' on path '$path'.")
                 $rowValid = $false
             }
@@ -945,6 +978,25 @@ function Read-Baseline {
                 ExpiresOn = $expiresOn
                 Rationale = $rationale
             })
+        }
+    }
+
+    foreach ($entryPath in $permanentPathPatternCapacities.Keys) {
+        $patternCapacities = $permanentPathPatternCapacities[$entryPath]
+        foreach ($entryPattern in $patternCapacities.Keys) {
+            $actualRows = @(
+                $rows | Where-Object {
+                    $_.Classification -ceq $permanentClassification -and
+                    $_.Path -ceq $entryPath -and
+                    $_.Pattern -ceq $entryPattern
+                }
+            ).Count
+            $maximumRows = $patternCapacities[$entryPattern]
+            if ($actualRows -gt $maximumRows) {
+                $Errors.Add(
+                    "permanent allowlist capacity exceeded for path '$entryPath' and pattern '$entryPattern': valid permanent baseline rows=$actualRows, maximum=$maximumRows."
+                )
+            }
         }
     }
 

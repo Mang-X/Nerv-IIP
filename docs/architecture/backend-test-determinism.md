@@ -238,7 +238,7 @@ owner 必须在登记它的变更合并之后依然存在：`registeredByIssue` 
 
 Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
 
-## baseline schema 3：有界 `expiring-debt` 与 `permanent`（#1471 / #1487）
+## baseline schema 3：有界 `expiring-debt` 与 `permanent`（#1471 / #1487 / #1488）
 
 #1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把 setter 写得更礼貌」——checker 命中的是**赋值语句本身**，
 包一层 try/finally 或在旁边 `await using` 一个 scope 都不会让它消失。真正的出路只有两条，本次两条都用上了：
@@ -280,13 +280,16 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须指向不同 issue；身份比较按命名空间与去掉前导零后的数字进行，因此 `#1487` / `#01487` 仍是同一个 GitHub issue，不能绕过自担保拒绝。`registeredOn`/`expiresOn` 均以 invariant `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；expiry 不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。checker 不访问 GitHub 或 Linear：它只验证 baseline 自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
 
    防止 permanent 退化成万能豁免，靠三道锁：
-   - **`路径=pattern` 白名单由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
-     `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter`、
-     `backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter`、
-     `backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay`）。**锁到 pattern 一级**
+   - **`路径=pattern=maxRows` 白名单及容量由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
+     `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter=12`、
+     `backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter=9`、
+     `backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay=1`）。path、pattern 都按 ordinal
+     精确匹配，`maxRows` 必须是正整数且同一 pair 不得重复声明。容量统计的是通过全部行级校验后的 **permanent
+     baseline 行数**，不是源代码 occurrence 数，也不是各行 `occurrenceCount` 的和；实际行数只要求不超过容量，
+     删除一行无需先降低 cap。**锁到 pattern 一级**
      是关键：只锁路径的话，白名单文件里将来出现的任何 pattern（`Thread.Sleep`、`ShortLease`…）都能拿一条为
      culture setter 写的理由蒙混过关，而「变异即被测行为」只覆盖 `StaticSetter`。baseline 不能把自己写进
-     白名单——新增一个常设例外必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker
+     白名单——新增一个常设例外或提高既有容量必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker
      自测 harness 的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
    - **`rationale` 与 `reason` 都必填**：`reason` 逐行写「这一行为什么在这里写」，`rationale` 按常设理由
      分类写。当前四类：scope **之外**的前置/teardown（scope 造不出自己要恢复的状态）、scope **之内**的变异
@@ -295,7 +298,8 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    - **checker 自测覆盖被削弱的形态**（`scripts/tests/check-backend-test-determinism.Tests.ps1`）：白名单内通过、
      用**默认白名单**校验同一行必须失败（白名单一旦放宽成「permanent 即放行」，这条立刻变红）、白名单指向别的
      文件必须失败、**白名单未覆盖的 pattern（同一路径）必须失败、把该 pattern 写进白名单后必须通过**（这一对
-     锁住 pattern 一级，白名单退回只锁 path 即变红）、白名单条目格式错误或 pattern 不受支持必须失败、
+     锁住 pattern 一级，白名单退回只锁 path 即变红）、两条不同 permanent 行超过 cap 必须失败且 cap=2 必须通过、
+     旧 `path=pattern` 语法、空字段、非正整数/非整数容量、重复 pair 或不支持的 pattern 必须失败、
      permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification` 失败、
      debt 行带 `rationale` 失败；schema 3 另以真实 checker 覆盖登记票自担保、两项登记字段缺失/畸形、未来登记日、
      expiry 早于登记日、46 天超限，并以正好 45 天作为通过对照；所有正向日期与 45/46 天边界都从测试启动时的
@@ -317,7 +321,7 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
 那一步把「不扫描 `common/Testing`」从顺带的事实升级成被依赖的设计前提，而该目录里的裸静态变异当时没有任何门禁
 会发现——口头约定而已。因此 checker 现在**显式**把 `backend/common/Testing/**` 的项目并入扫描
 （`Test-IsSharedTestingProject`），并在该目录一个项目都没选中时直接失败，避免改名/搬迁把覆盖面悄悄缩回去。
-纳入后实测输出为 `files=597, findings=23, admitted=22, expiringDebtRows=0, permanentRows=22`：新增的 11 个
+纳入后当时的实测输出为 `files=597, findings=23, admitted=22, expiringDebtRows=0, permanentRows=22`：新增的 11 个
 finding 全部登记为 `permanent`——`GlobalTestStateScope.cs` 的 10 个 `StaticSetter`（`Environment.SetEnvironmentVariable(name, value);`
 一行文本出现两次，占一行 `occurrenceCount: 2`）与 `BoundedObservationWindow.cs` 的 1 个轮询 `Task.Delay`。
 `admitted` 计的是去重后的 `path|pattern|hash` 键数，所以它比 `findings` 少 1 是这条重复行造成的，不是漏登记。

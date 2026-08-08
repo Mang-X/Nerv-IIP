@@ -71,17 +71,46 @@ function Invoke-CheckerCase {
         [string[]] $PermanentAllowlist
     )
 
+    $scriptPath = $checker
     $arguments = @('-SourceRoot', $SourceRoot, '-BaselinePath', $BaselinePath)
     if ($PSBoundParameters.ContainsKey('PermanentAllowlist')) {
-        $arguments += '-PermanentAllowlist'
-        $arguments += $PermanentAllowlist
+        if ($PermanentAllowlist.Count -le 1) {
+            $arguments += '-PermanentAllowlist'
+            $arguments += $PermanentAllowlist
+        }
+        else {
+            # `pwsh -File` cannot bind multiple native argv tokens to one array parameter. Keep the
+            # checker in a child process while using a generated wrapper to reconstruct the array,
+            # so duplicate-entry behavior is exercised by the real checker rather than a mock.
+            $scriptPath = Join-Path $tempRoot 'invoke-checker-with-array.ps1'
+            if (-not (Test-Path -LiteralPath $scriptPath)) {
+                $wrapper = @'
+param(
+    [Parameter(Mandatory)] [string] $CheckerPath,
+    [Parameter(Mandatory)] [string] $SourceRoot,
+    [Parameter(Mandatory)] [string] $BaselinePath,
+    [Parameter(Mandatory)] [string] $PermanentAllowlistJson
+)
+$allowlist = @($PermanentAllowlistJson | ConvertFrom-Json)
+& $CheckerPath -SourceRoot $SourceRoot -BaselinePath $BaselinePath -PermanentAllowlist $allowlist
+exit $LASTEXITCODE
+'@
+                [System.IO.File]::WriteAllText($scriptPath, "$wrapper`n", [System.Text.UTF8Encoding]::new($false))
+            }
+            $arguments = @(
+                '-CheckerPath', $checker,
+                '-SourceRoot', $SourceRoot,
+                '-BaselinePath', $BaselinePath,
+                '-PermanentAllowlistJson', ($PermanentAllowlist | ConvertTo-Json -Compress)
+            )
+        }
     }
 
     $exitCode = 0
     $logDirectory = $null
     try {
         $result = Invoke-PwshScript `
-            -ScriptPath $checker `
+            -ScriptPath $scriptPath `
             -Arguments $arguments `
             -WorkingDirectory $repoRoot `
             -TimeoutSeconds 60 `
@@ -279,6 +308,53 @@ function New-OtherPatternSource {
         SourcePath = $sourcePath
         RelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
         LineTextSha256 = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
+    }
+}
+
+function New-PermanentCapacitySource {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $caseRoot = Join-Path $generatedFixtureRoot $Name
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'permanent-capacity.cs'
+    $sleepLines = @('Thread.Sleep(25);', 'Thread.Sleep(50);')
+    $sourceLines = @(
+        'using System.Threading;',
+        '',
+        'public static class PermanentCapacityFixture',
+        '{',
+        '    public static void PauseTwice()',
+        '    {',
+        "        $($sleepLines[0])",
+        "        $($sleepLines[1])",
+        '    }',
+        '}'
+    )
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    $relativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
+    $rows = @(
+        $sleepLines | ForEach-Object {
+            $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($_))
+            [ordered]@{
+                path = $relativePath
+                pattern = 'Thread.Sleep'
+                lineTextSha256 = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
+                occurrenceCount = 1
+                classification = 'permanent'
+                reason = "Fixture keeps the distinct permanent source line '$($_)' under row-cap governance."
+                rationale = 'The sleep is the audited primitive exercised by this capacity fixture.'
+            }
+        }
+    )
+
+    return [pscustomobject]@{
+        SourcePath = $sourcePath
+        RelativePath = $relativePath
+        Rows = $rows
     }
 }
 
@@ -703,13 +779,51 @@ try {
     # and it must carry a rationale instead of (never alongside) an owner and an expiry date.
     $permanentSource = New-PermanentClassificationSource -Name 'permanent-classification'
 
+    # Capacity counts valid permanent baseline rows for the exact pair, not source occurrences and
+    # not occurrenceCount. Two distinct rows exceed one slot, while a cap of two admits them.
+    # The generated directory includes '=' so the passing control also proves parsing from the right.
+    $permanentCapacitySource = New-PermanentCapacitySource -Name 'permanent=capacity'
+    $permanentCapacityPath = Join-Path $tempRoot 'permanent-capacity.json'
+    Write-JsonFile -Path $permanentCapacityPath -Value ([ordered]@{ schema = 3; exceptions = $permanentCapacitySource.Rows })
+    Assert-CheckerCase `
+        -Name 'permanent row growth exceeds checker-owned capacity' `
+        -SourceRoot $permanentCapacitySource.SourcePath `
+        -BaselinePath $permanentCapacityPath `
+        -PermanentAllowlist @("$($permanentCapacitySource.RelativePath)=Thread.Sleep=1") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @($permanentCapacitySource.RelativePath, 'Thread.Sleep', 'valid permanent baseline rows=2', 'maximum=1')
+    Assert-CheckerCase `
+        -Name 'permanent row count equal to checker-owned capacity' `
+        -SourceRoot $permanentCapacitySource.SourcePath `
+        -BaselinePath $permanentCapacityPath `
+        -PermanentAllowlist @("$($permanentCapacitySource.RelativePath)=Thread.Sleep=2") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=2')
+
+    $permanentOccurrenceCase = New-OccurrenceCase -Name 'permanent-occurrence-capacity' -ActualCount 2 -ExpectedCount 2
+    $permanentOccurrenceRow = (Get-Content -LiteralPath $permanentOccurrenceCase.BaselinePath -Raw | ConvertFrom-Json).exceptions[0]
+    $permanentOccurrenceRow.classification = 'permanent'
+    foreach ($debtField in @('ownerIssue', 'registeredByIssue', 'exitCondition', 'registeredOn', 'expiresOn')) {
+        $permanentOccurrenceRow.PSObject.Properties.Remove($debtField)
+    }
+    $permanentOccurrenceRow | Add-Member -NotePropertyName 'rationale' -NotePropertyValue 'One baseline row covers two identical audited occurrences.'
+    Write-JsonFile -Path $permanentOccurrenceCase.BaselinePath -Value ([ordered]@{ schema = 3; exceptions = @($permanentOccurrenceRow) })
+    $permanentOccurrenceRelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $permanentOccurrenceCase.SourcePath) -replace '\\', '/'
+    Assert-CheckerCase `
+        -Name 'permanent capacity counts a row rather than occurrenceCount' `
+        -SourceRoot $permanentOccurrenceCase.SourcePath `
+        -BaselinePath $permanentOccurrenceCase.BaselinePath `
+        -PermanentAllowlist @("$permanentOccurrenceRelativePath=Task.Delay=1") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=1')
+
     $permanentAllowedPath = Join-Path $tempRoot 'permanent-allowed.json'
     Write-JsonFile -Path $permanentAllowedPath -Value ([ordered]@{ schema = 3; exceptions = @((New-PermanentClassificationRow -Source $permanentSource)) })
     Assert-CheckerCase `
         -Name 'permanent row on an allow-listed path' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 0 `
         -ExpectedOutput @('check passed', 'permanentRows=1')
 
@@ -727,7 +841,16 @@ try {
         -Name 'permanent row against an allowlist for another file' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs=StaticSetter') `
+        -PermanentAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs=StaticSetter=1') `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('permanent classification is not allowed for path')
+
+    $caseChangedPermanentPath = $permanentSource.RelativePath.Substring(0, 1).ToUpperInvariant() + $permanentSource.RelativePath.Substring(1)
+    Assert-CheckerCase `
+        -Name 'permanent allowlist path matching is ordinal' `
+        -SourceRoot $permanentSource.SourcePath `
+        -BaselinePath $permanentAllowedPath `
+        -PermanentAllowlist @("$caseChangedPermanentPath=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for path')
 
@@ -750,7 +873,7 @@ try {
         -Name 'permanent row for a pattern the allowlist does not cover' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for pattern')
 
@@ -760,25 +883,70 @@ try {
         -Name 'permanent row for a pattern the allowlist does cover' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep=1") `
         -ExpectedExitCode 0 `
         -ExpectedOutput @('check passed', 'permanentRows=1')
 
     Assert-CheckerCase `
-        -Name 'malformed allowlist entry' `
+        -Name 'permanent row count below checker-owned capacity' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @($otherPatternSource.RelativePath) `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep=2") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=1')
+
+    Assert-CheckerCase `
+        -Name 'legacy pair-only allowlist entry' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep") `
         -ExpectedExitCode 1 `
-        -ExpectedOutput @("must use '<path>=<pattern>'")
+        -ExpectedOutput @("must use '<path>=<pattern>=<maxRows>'")
 
     Assert-CheckerCase `
         -Name 'allowlist entry naming an unsupported pattern' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Whatever") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Whatever=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("names unsupported pattern 'Whatever'")
+
+    Assert-CheckerCase `
+        -Name 'permanent allowlist pattern matching is ordinal' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=thread.sleep=1") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("names unsupported pattern 'thread.sleep'")
+
+    $invalidCapacityEntries = @(
+        [pscustomobject]@{ Name = 'zero permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=0"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'negative permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=-1"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'non-integer permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=one"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'empty permanent allowlist path'; Entry = '=Thread.Sleep=1'; Expected = 'path must be non-empty' },
+        [pscustomobject]@{ Name = 'empty permanent allowlist pattern'; Entry = "$($otherPatternSource.RelativePath)==1"; Expected = 'pattern must be non-empty' },
+        [pscustomobject]@{ Name = 'empty permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep="; Expected = 'maxRows must be a positive integer' }
+    )
+    foreach ($invalidCapacityEntry in $invalidCapacityEntries) {
+        Assert-CheckerCase `
+            -Name $invalidCapacityEntry.Name `
+            -SourceRoot $otherPatternSource.SourcePath `
+            -BaselinePath $otherPatternPath `
+            -PermanentAllowlist @($invalidCapacityEntry.Entry) `
+            -ExpectedExitCode 1 `
+            -ExpectedOutput @($invalidCapacityEntry.Expected)
+    }
+
+    Assert-CheckerCase `
+        -Name 'duplicate permanent allowlist pair' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @(
+            "$($otherPatternSource.RelativePath)=Thread.Sleep=1",
+            "$($otherPatternSource.RelativePath)=Thread.Sleep=2"
+        ) `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('duplicate permanent allowlist entry', $otherPatternSource.RelativePath, 'Thread.Sleep')
 
     $permanentWithExpiryRow = New-PermanentClassificationRow -Source $permanentSource
     $permanentWithExpiryRow['ownerIssue'] = 'MAN-662'
@@ -792,7 +960,7 @@ try {
         -Name 'permanent row carrying debt metadata' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithExpiryPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("classification 'permanent' must not carry field(s)", 'registeredByIssue', 'registeredOn', 'expiresOn')
 
@@ -804,7 +972,7 @@ try {
         -Name 'permanent row without a rationale' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithoutRationalePath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("classification 'permanent' is missing required field(s): rationale")
 
@@ -816,7 +984,7 @@ try {
         -Name 'unknown classification' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $unknownClassificationPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('classification must be one of')
 
