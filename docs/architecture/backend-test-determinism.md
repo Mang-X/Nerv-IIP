@@ -277,7 +277,7 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    混用会让人以为该行是按另一套规则审过的。`classification` 缺失或取值不在这两者之内同样失败，所以
    旧 schema 的行不会被当成默认 debt 悄悄放行。
 
-   schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须不同；`registeredOn`/`expiresOn` 均以 invariant `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；expiry 不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。checker 不访问 GitHub 或 Linear：它只验证 baseline 自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
+   schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须指向不同 issue；身份比较按命名空间与去掉前导零后的数字进行，因此 `#1487` / `#01487` 仍是同一个 GitHub issue，不能绕过自担保拒绝。`registeredOn`/`expiresOn` 均以 invariant `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；expiry 不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。checker 不访问 GitHub 或 Linear：它只验证 baseline 自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
 
    防止 permanent 退化成万能豁免，靠三道锁：
    - **`路径=pattern` 白名单由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
@@ -298,7 +298,9 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
      锁住 pattern 一级，白名单退回只锁 path 即变红）、白名单条目格式错误或 pattern 不受支持必须失败、
      permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification` 失败、
      debt 行带 `rationale` 失败；schema 3 另以真实 checker 覆盖登记票自担保、两项登记字段缺失/畸形、未来登记日、
-     expiry 早于登记日、46 天超限，并以正好 45 天作为通过对照。
+     expiry 早于登记日、46 天超限，并以正好 45 天作为通过对照；所有正向日期与 45/46 天边界都从测试启动时的
+     UTC 今日动态生成，静态 fixture 只保存占位模板，不会在 45 天后无代码变更地自然变红。另有 `#1487` / `#01487`
+     对抗用例锁住 issue 数字身份的规范化比较。
 
    通过输出也随之细化为 `... admitted=N, expiringDebtRows=X, permanentRows=Y.`，「到期债务是否归零」在门禁输出里
    一眼可读，不必去数 JSON。

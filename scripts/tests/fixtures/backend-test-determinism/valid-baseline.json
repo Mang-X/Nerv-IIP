@@ -10,9 +10,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described timing exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer contains the delay finding.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
@@ -23,9 +23,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described cross-line timing exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer contains the cross-line delay finding.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/unexplained-delay.cs",
@@ -36,9 +36,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described blocking-delay exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer contains the blocking delay.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/raw-empty-followed-by-delay.cs",
@@ -49,9 +49,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves an empty raw string cannot hide a following cross-line delay.",
       "exitCondition": "Delete when the fixture no longer contains the delay after an empty raw string.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-raw-expression.cs",
@@ -62,9 +62,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves executable code inside a raw interpolation remains scannable.",
       "exitCondition": "Delete when the fixture no longer contains the raw interpolation delay.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-string-expression.cs",
@@ -75,9 +75,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves executable code inside an ordinary interpolation remains scannable.",
       "exitCondition": "Delete when the fixture no longer contains the ordinary interpolation delay.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/interpolated-verbatim-expression.cs",
@@ -88,9 +88,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves executable code inside a verbatim interpolation remains scannable.",
       "exitCondition": "Delete when the fixture no longer contains the verbatim interpolation delay.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/nested-interpolated-string-expression.cs",
@@ -101,9 +101,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves executable code inside nested interpolations remains scannable.",
       "exitCondition": "Delete when the fixture no longer contains the nested interpolation delay.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
@@ -114,9 +114,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described short lease exception can be admitted.",
       "exitCondition": "Delete when the fixture lease duration is no longer sub-second.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
@@ -127,9 +127,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described short renewal exception can be admitted.",
       "exitCondition": "Delete when the fixture renewal interval is no longer sub-second.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/short-lease.cs",
@@ -140,9 +140,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves numeric separators do not hide a short lease exception.",
       "exitCondition": "Delete when the fixture no longer contains the separated-numeric lease duration.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
@@ -153,9 +153,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described loopback port-one exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer uses the unreachable endpoint sentinel.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/unreachable-address.cs",
@@ -166,9 +166,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described connection-string port-one exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer uses the port-one sentinel.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
@@ -179,9 +179,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described environment mutation exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer mutates process environment state.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
@@ -192,9 +192,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described global validator mutation exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer mutates global validator options.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
@@ -205,9 +205,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described current-culture mutation exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer mutates current culture.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
@@ -218,9 +218,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described default-culture mutation exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer mutates default thread culture.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     },
     {
       "path": "scripts/tests/fixtures/backend-test-determinism/static-setter.cs",
@@ -231,9 +231,9 @@
       "ownerIssue": "MAN-662",
       "reason": "Fixture proves a fully described nested global validator mutation exception can be admitted.",
       "exitCondition": "Delete when the fixture no longer mutates nested global validator options.",
-      "expiresOn": "2026-09-22",
+      "expiresOn": "<generated-current-utc-plus-45-days>",
       "registeredByIssue": "#1487",
-      "registeredOn": "2026-08-08"
+      "registeredOn": "<generated-current-utc>"
     }
   ]
 }

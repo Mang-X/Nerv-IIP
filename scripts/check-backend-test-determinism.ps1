@@ -115,6 +115,27 @@ function Get-FindingIdentity {
     return "$Path|$Pattern|$LineTextSha256"
 }
 
+# Issue keys keep their namespace but normalize the numeric identity before comparison. GitHub and
+# Linear render canonical keys without leading zeroes, yet the documented `\d+` input shape accepts
+# them; comparing raw strings would let `#1487` self-guarantee through `#01487`.
+function Get-CanonicalIssueIdentity {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Issue
+    )
+
+    $issueMatch = [regex]::Match(
+        $Issue,
+        '^(?<namespace>MAN-|#)(?<number>\d+)$',
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    if (-not $issueMatch.Success) {
+        return $null
+    }
+
+    $canonicalNumber = $issueMatch.Groups['number'].Value -replace '^0+(?=\d)', ''
+    return "$($issueMatch.Groups['namespace'].Value)$canonicalNumber"
+}
+
 function Test-GeneratedSource {
     param(
         [Parameter(Mandatory)]
@@ -847,18 +868,20 @@ function Read-Baseline {
         else {
             # Both issue fields are checked offline. Keeping the registering change distinct from
             # the follow-up owner prevents a debt row from self-guaranteeing its own cleanup.
-            $ownerIssueValid = $ownerIssue -cmatch '^(MAN-\d+|#\d+)$'
+            $ownerIssueIdentity = Get-CanonicalIssueIdentity -Issue $ownerIssue
+            $ownerIssueValid = $null -ne $ownerIssueIdentity
             if (-not $ownerIssueValid) {
                 $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
                 $rowValid = $false
             }
 
-            $registeredByIssueValid = $registeredByIssue -cmatch '^(MAN-\d+|#\d+)$'
+            $registeredByIssueIdentity = Get-CanonicalIssueIdentity -Issue $registeredByIssue
+            $registeredByIssueValid = $null -ne $registeredByIssueIdentity
             if (-not $registeredByIssueValid) {
                 $Errors.Add("exception[$index] registeredByIssue must be a MAN issue key or a #<number> GitHub issue.")
                 $rowValid = $false
             }
-            elseif ($ownerIssueValid -and $registeredByIssue -ceq $ownerIssue) {
+            elseif ($ownerIssueValid -and $registeredByIssueIdentity -ceq $ownerIssueIdentity) {
                 $Errors.Add("exception[$index] registeredByIssue must differ from ownerIssue.")
                 $rowValid = $false
             }

@@ -19,12 +19,19 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 
 $checker = Join-Path $repoRoot 'scripts/check-backend-test-determinism.ps1'
 $fixtureRoot = Join-Path $repoRoot 'scripts/tests/fixtures/backend-test-determinism'
-$validBaselinePath = Join-Path $fixtureRoot 'valid-baseline.json'
+$validBaselineTemplatePath = Join-Path $fixtureRoot 'valid-baseline.json'
 $runId = [Guid]::NewGuid().ToString('N')
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-backend-test-determinism-$runId"
+$validBaselinePath = Join-Path $tempRoot 'valid-baseline.json'
 $scriptLogName = "backend-test-determinism-fixture-$runId"
 $scriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName"
 $generatedFixtureRoot = Join-Path $repoRoot "artifacts/script-tests/backend-test-determinism-$runId"
+$todayUtc = [DateOnly]::FromDateTime([DateTime]::UtcNow)
+$registeredOnUtc = $todayUtc.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$maximumExpiryUtc = $todayUtc.AddDays(45).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$overlongExpiryUtc = $todayUtc.AddDays(46).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$yesterdayUtc = $todayUtc.AddDays(-1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$futureRegistrationUtc = $todayUtc.AddDays(2).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 
 function Assert-True {
     param(
@@ -142,8 +149,8 @@ function New-OccurrenceCase {
             registeredByIssue = '#1487'
             reason = 'Fixture intentionally repeats one identical source line to verify occurrence accounting.'
             exitCondition = 'Delete when occurrence accounting no longer uses this fixture.'
-            registeredOn = '2026-08-08'
-            expiresOn = '2026-09-22'
+            registeredOn = $registeredOnUtc
+            expiresOn = $maximumExpiryUtc
         })
     })
 
@@ -343,6 +350,13 @@ function Assert-CheckerCase {
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
 
 try {
+    $validBaseline = Get-Content -LiteralPath $validBaselineTemplatePath -Raw | ConvertFrom-Json
+    foreach ($row in $validBaseline.exceptions) {
+        $row.registeredOn = $registeredOnUtc
+        $row.expiresOn = $maximumExpiryUtc
+    }
+    Write-JsonFile -Path $validBaselinePath -Value $validBaseline
+
     $emptyBaselinePath = Join-Path $tempRoot 'empty.json'
     Write-JsonFile -Path $emptyBaselinePath -Value ([ordered]@{ schema = 3; exceptions = @() })
 
@@ -527,8 +541,8 @@ try {
 
     $overlongDebtRow = $validExpiringRow.PSObject.Copy()
     $overlongDebtRow.registeredByIssue = '#1487'
-    $overlongDebtRow.registeredOn = '2026-08-08'
-    $overlongDebtRow.expiresOn = '2026-09-23'
+    $overlongDebtRow.registeredOn = $registeredOnUtc
+    $overlongDebtRow.expiresOn = $overlongExpiryUtc
     $overlongDebtPath = Join-Path $tempRoot 'overlong-debt.json'
     Write-JsonFile -Path $overlongDebtPath -Value ([ordered]@{ schema = 3; exceptions = @($overlongDebtRow) })
     Assert-CheckerCase `
@@ -540,8 +554,8 @@ try {
 
     $selfGuaranteedRow = $validExpiringRow.PSObject.Copy()
     $selfGuaranteedRow.registeredByIssue = 'MAN-662'
-    $selfGuaranteedRow.registeredOn = '2026-08-08'
-    $selfGuaranteedRow.expiresOn = '2026-09-22'
+    $selfGuaranteedRow.registeredOn = $registeredOnUtc
+    $selfGuaranteedRow.expiresOn = $maximumExpiryUtc
     $selfGuaranteedPath = Join-Path $tempRoot 'self-guaranteed.json'
     Write-JsonFile -Path $selfGuaranteedPath -Value ([ordered]@{ schema = 3; exceptions = @($selfGuaranteedRow) })
     Assert-CheckerCase `
@@ -551,10 +565,22 @@ try {
         -ExpectedExitCode 1 `
         -ExpectedOutput @('registeredByIssue must differ from ownerIssue')
 
+    $zeroPaddedSelfGuaranteedRow = $validExpiringRow.PSObject.Copy()
+    $zeroPaddedSelfGuaranteedRow.ownerIssue = '#1487'
+    $zeroPaddedSelfGuaranteedRow.registeredByIssue = '#01487'
+    $zeroPaddedSelfGuaranteedPath = Join-Path $tempRoot 'zero-padded-self-guaranteed.json'
+    Write-JsonFile -Path $zeroPaddedSelfGuaranteedPath -Value ([ordered]@{ schema = 3; exceptions = @($zeroPaddedSelfGuaranteedRow) })
+    Assert-CheckerCase `
+        -Name 'zero-padded self-guarantee uses the same issue identity' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $zeroPaddedSelfGuaranteedPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredByIssue must differ from ownerIssue')
+
     $missingRegisteredByRow = $validExpiringRow.PSObject.Copy()
     $missingRegisteredByRow.PSObject.Properties.Remove('registeredByIssue')
-    $missingRegisteredByRow.registeredOn = '2026-08-08'
-    $missingRegisteredByRow.expiresOn = '2026-09-22'
+    $missingRegisteredByRow.registeredOn = $registeredOnUtc
+    $missingRegisteredByRow.expiresOn = $maximumExpiryUtc
     $missingRegisteredByPath = Join-Path $tempRoot 'missing-registered-by.json'
     Write-JsonFile -Path $missingRegisteredByPath -Value ([ordered]@{ schema = 3; exceptions = @($missingRegisteredByRow) })
     Assert-CheckerCase `
@@ -566,8 +592,8 @@ try {
 
     $malformedRegisteredByRow = $validExpiringRow.PSObject.Copy()
     $malformedRegisteredByRow.registeredByIssue = 'issue-1487'
-    $malformedRegisteredByRow.registeredOn = '2026-08-08'
-    $malformedRegisteredByRow.expiresOn = '2026-09-22'
+    $malformedRegisteredByRow.registeredOn = $registeredOnUtc
+    $malformedRegisteredByRow.expiresOn = $maximumExpiryUtc
     $malformedRegisteredByPath = Join-Path $tempRoot 'malformed-registered-by.json'
     Write-JsonFile -Path $malformedRegisteredByPath -Value ([ordered]@{ schema = 3; exceptions = @($malformedRegisteredByRow) })
     Assert-CheckerCase `
@@ -580,7 +606,7 @@ try {
     $missingRegisteredOnRow = $validExpiringRow.PSObject.Copy()
     $missingRegisteredOnRow.registeredByIssue = '#1487'
     $missingRegisteredOnRow.PSObject.Properties.Remove('registeredOn')
-    $missingRegisteredOnRow.expiresOn = '2026-09-22'
+    $missingRegisteredOnRow.expiresOn = $maximumExpiryUtc
     $missingRegisteredOnPath = Join-Path $tempRoot 'missing-registered-on.json'
     Write-JsonFile -Path $missingRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($missingRegisteredOnRow) })
     Assert-CheckerCase `
@@ -593,7 +619,7 @@ try {
     $malformedRegisteredOnRow = $validExpiringRow.PSObject.Copy()
     $malformedRegisteredOnRow.registeredByIssue = '#1487'
     $malformedRegisteredOnRow.registeredOn = '2026/08/08'
-    $malformedRegisteredOnRow.expiresOn = '2026-09-22'
+    $malformedRegisteredOnRow.expiresOn = $maximumExpiryUtc
     $malformedRegisteredOnPath = Join-Path $tempRoot 'malformed-registered-on.json'
     Write-JsonFile -Path $malformedRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($malformedRegisteredOnRow) })
     Assert-CheckerCase `
@@ -605,8 +631,8 @@ try {
 
     $futureRegisteredOnRow = $validExpiringRow.PSObject.Copy()
     $futureRegisteredOnRow.registeredByIssue = '#1487'
-    $futureRegisteredOnRow.registeredOn = '2999-01-01'
-    $futureRegisteredOnRow.expiresOn = '2999-01-02'
+    $futureRegisteredOnRow.registeredOn = $futureRegistrationUtc
+    $futureRegisteredOnRow.expiresOn = $futureRegistrationUtc
     $futureRegisteredOnPath = Join-Path $tempRoot 'future-registered-on.json'
     Write-JsonFile -Path $futureRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($futureRegisteredOnRow) })
     Assert-CheckerCase `
@@ -618,8 +644,8 @@ try {
 
     $expiryBeforeRegistrationRow = $validExpiringRow.PSObject.Copy()
     $expiryBeforeRegistrationRow.registeredByIssue = '#1487'
-    $expiryBeforeRegistrationRow.registeredOn = '2026-08-09'
-    $expiryBeforeRegistrationRow.expiresOn = '2026-08-08'
+    $expiryBeforeRegistrationRow.registeredOn = $registeredOnUtc
+    $expiryBeforeRegistrationRow.expiresOn = $yesterdayUtc
     $expiryBeforeRegistrationPath = Join-Path $tempRoot 'expiry-before-registration.json'
     Write-JsonFile -Path $expiryBeforeRegistrationPath -Value ([ordered]@{ schema = 3; exceptions = @($expiryBeforeRegistrationRow) })
     Assert-CheckerCase `
@@ -631,8 +657,8 @@ try {
 
     $maximumLifetimeRow = $validExpiringRow.PSObject.Copy()
     $maximumLifetimeRow.registeredByIssue = '#1487'
-    $maximumLifetimeRow.registeredOn = '2026-08-08'
-    $maximumLifetimeRow.expiresOn = '2026-09-22'
+    $maximumLifetimeRow.registeredOn = $registeredOnUtc
+    $maximumLifetimeRow.expiresOn = $maximumExpiryUtc
     $maximumLifetimePath = Join-Path $tempRoot 'maximum-lifetime.json'
     Write-JsonFile -Path $maximumLifetimePath -Value ([ordered]@{ schema = 3; exceptions = @($maximumLifetimeRow) })
     Assert-CheckerCase `
@@ -643,7 +669,7 @@ try {
         -ExpectedOutput @('check passed')
 
     $expiredRow = $validBaseline.exceptions[0].PSObject.Copy()
-    $expiredRow.expiresOn = '2026-01-01'
+    $expiredRow.expiresOn = $yesterdayUtc
     $expiredPath = Join-Path $tempRoot 'expired.json'
     Write-JsonFile -Path $expiredPath -Value ([ordered]@{ schema = 3; exceptions = @($expiredRow) })
     Assert-CheckerCase -Name 'expired baseline row' -SourceRoot $matchingSource -BaselinePath $expiredPath -ExpectedExitCode 1 -ExpectedOutput @('expired')
@@ -758,8 +784,8 @@ try {
     $permanentWithExpiryRow['ownerIssue'] = 'MAN-662'
     $permanentWithExpiryRow['registeredByIssue'] = '#1487'
     $permanentWithExpiryRow['exitCondition'] = 'Never.'
-    $permanentWithExpiryRow['registeredOn'] = '2026-08-08'
-    $permanentWithExpiryRow['expiresOn'] = '2999-12-31'
+    $permanentWithExpiryRow['registeredOn'] = $registeredOnUtc
+    $permanentWithExpiryRow['expiresOn'] = $maximumExpiryUtc
     $permanentWithExpiryPath = Join-Path $tempRoot 'permanent-with-expiry.json'
     Write-JsonFile -Path $permanentWithExpiryPath -Value ([ordered]@{ schema = 3; exceptions = @($permanentWithExpiryRow) })
     Assert-CheckerCase `
