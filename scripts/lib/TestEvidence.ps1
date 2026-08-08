@@ -655,10 +655,18 @@ function New-NervTestEvidenceSummary {
     # measurement, not a governed list; a measurement of an assembly does not become a different
     # measurement because the assembly moved to another job. Lane survives on the row for display
     # and provenance and is used only to disambiguate, never to look up.
+    #
+    # Known residual, report-only: a baseline holding one row for an assembly while the current run
+    # splits that assembly across two lanes compares both current rows against the whole previous
+    # measurement, so both deltas overstate the change. Recorded rather than silently tolerated in
+    # docs/architecture/test-evidence-governance.md, "One known report-only artefact".
     $deltas = @($assemblies | ForEach-Object {
         $current = $_
         $compatible = $null -eq $baselineUnavailableReason
-        [object[]]$assemblyMatches = if ($compatible) { @($baselineAssemblies | Where-Object { [string]$_.assembly -ceq $current.assembly }) } else { @() }
+        # Ordinal, not `-ceq`. The `c` prefix only disables case-insensitivity; the comparison still
+        # runs through the collation table, which reports "equal" for strings that differ by an
+        # ignorable character. An assembly name is an identifier, so it is compared as bytes.
+        [object[]]$assemblyMatches = if ($compatible) { @($baselineAssemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]$current.assembly, [StringComparison]::Ordinal) }) } else { @() }
         # One assembly classified into two lanes would give two rows that are not the same
         # measurement. Prefer this lane's row; with no lane match the comparison is genuinely
         # ambiguous and stays report-only unavailable rather than picking one arbitrarily.
@@ -666,7 +674,7 @@ function New-NervTestEvidenceSummary {
             @($assemblyMatches)
         }
         else {
-            @(@($assemblyMatches) | Where-Object { [string]$_.lane -ceq $current.lane } | Select-Object -First 1)
+            @(@($assemblyMatches) | Where-Object { [string]::Equals([string]$_.lane, [string]$current.lane, [StringComparison]::Ordinal) } | Select-Object -First 1)
         }
         $baselineDuration = if (@($previous).Count -eq 1) { [double]@($previous)[0].elapsedMilliseconds } else { $null }
         $unavailableReason = if ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason }

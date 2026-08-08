@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: check, generate
 #   SideEffects:
 #     - Reads the shard manifest and the shard timing cache
 #     - Opportunistically refreshes the timing cache from read-only GitHub Actions metadata
@@ -22,7 +22,14 @@
 # docs/architecture/test-evidence-governance.md ("Timing data is a cache, not a governed asset").
 #
 # The only nonzero exit is a structurally unusable manifest, which is a defect in a governed file
-# rather than in a measurement.
+# rather than in a measurement. A cache that is missing, stale, corrupt, or valid JSON in the wrong
+# shape is a cache miss, handled inside the library and reported — never an exit code.
+#
+# Classification is `check` + `generate` (like `collect-test-evidence.ps1`) rather than plain
+# `check`: the default path refreshes the timing cache, and `docs/architecture/
+# script-automation-governance.md` reserves `check` for scripts that write no artefact. The written
+# artefact is the gitignored cache declared under Writes: above; `-NoRefresh` reduces this to a pure
+# read.
 
 [CmdletBinding()]
 param(

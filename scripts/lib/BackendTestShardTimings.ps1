@@ -81,6 +81,76 @@ function Get-NervShardTimingAssemblyKey {
     return ($leaf.ToLowerInvariant() + '.dll')
 }
 
+function Get-NervShardTimingProperty {
+    <#
+        Reads one property off a `ConvertFrom-Json` object without asserting that it exists.
+        `Set-StrictMode -Version Latest` (scripts/lib/ScriptAutomation.ps1) makes `$obj.missing` a
+        *terminating* error, so every field this file reads out of a file on disk has to go through
+        an existence check first — otherwise a structurally wrong cache stops being a cache miss and
+        becomes a nonzero exit in whatever script happened to read it.
+    #>
+    param(
+        [AllowNull()] [object] $Object,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function ConvertTo-NervShardTimingArray {
+    <#
+        `@($null).Count` is 1, so the usual `@($x).Count -gt 0` idiom reports "one element" for an
+        absent JSON array and then indexes into `$null`. Every array read out of a file goes through
+        here so an absent property is an empty array rather than a one-element array of nothing.
+    #>
+    param([AllowNull()] [object] $Value)
+
+    if ($null -eq $Value) { return @() }
+    return @($Value)
+}
+
+function ConvertTo-NervShardTimingDouble {
+    <#
+        Invariant numeric parse, and the *only* one this file uses for external text.
+
+        `[double]::TryParse($s, [ref]$x)` binds the culture-aware overload, while PowerShell renders
+        `[string]$double` under the invariant culture — so writing the cache and reading it back is
+        not a round-trip on a machine whose culture is not en-US. Measured on this repository's
+        .NET: `87643.2` reads back as `876432` under `de-DE` (a silent 10x, because `.` is a group
+        separator there) and fails to parse at all under `fr-FR`, which drops every observation and
+        leaves `Update-NervShardTimingCache` with nothing to write, so the cache is never refreshed
+        again. `ConvertTo-NervShardTimingTimestampText` below already had this treatment for dates;
+        the numbers did not.
+
+        `NumberStyles::Float` deliberately excludes `AllowThousands`: this text is machine-written
+        invariant, so a group separator in it is corruption rather than formatting.
+    #>
+    param([AllowNull()] [object] $Value)
+
+    $parsed = 0.0
+    if ([double]::TryParse([string] $Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref] $parsed)) {
+        return $parsed
+    }
+    return $null
+}
+
+function ConvertTo-NervShardTimingInteger {
+    <#
+        Integer counterpart of ConvertTo-NervShardTimingDouble, for the same reason: the schema
+        version arrives as external text and its verdict must not depend on who is reading it.
+    #>
+    param([AllowNull()] [object] $Value)
+
+    $parsed = 0
+    if ([int]::TryParse([string] $Value, [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref] $parsed)) {
+        return $parsed
+    }
+    return $null
+}
+
 function Get-NervShardTimingMedian {
     <#
         Median, not mean: runner-image rollouts and noisy neighbours produce one-sided outliers, and
@@ -103,21 +173,18 @@ function Get-NervShardTimingRowsFromEvidenceSummary {
     #>
     param([Parameter(Mandatory)] [AllowNull()] [object] $Summary)
 
-    if ($null -eq $Summary -or -not ($Summary.PSObject.Properties.Name -contains 'assemblies')) { return @() }
-
     return @(
-        foreach ($assembly in @($Summary.assemblies)) {
-            $key = Get-NervShardTimingAssemblyKey -Name ([string] $assembly.assembly)
+        foreach ($assembly in @(ConvertTo-NervShardTimingArray -Value (Get-NervShardTimingProperty -Object $Summary -Name 'assemblies'))) {
+            $key = Get-NervShardTimingAssemblyKey -Name ([string] (Get-NervShardTimingProperty -Object $assembly -Name 'assembly'))
             if ([string]::IsNullOrWhiteSpace($key)) { continue }
-            $elapsed = 0.0
-            if (-not [double]::TryParse([string] $assembly.elapsedMilliseconds, [ref] $elapsed)) { continue }
-            # A non-positive duration is not an observation. Keeping it would let a run that failed
-            # to record elapsed time pull an assembly's median toward zero, which is exactly the
-            # direction that hides a slow shard.
-            if ($elapsed -le 0) { continue }
+            $elapsed = ConvertTo-NervShardTimingDouble -Value (Get-NervShardTimingProperty -Object $assembly -Name 'elapsedMilliseconds')
+            # A non-positive (or unparseable) duration is not an observation. Keeping it would let a
+            # run that failed to record elapsed time pull an assembly's median toward zero, which is
+            # exactly the direction that hides a slow shard.
+            if ($null -eq $elapsed -or $elapsed -le 0) { continue }
             [pscustomobject][ordered]@{
                 assembly = $key
-                lane = [string] $assembly.lane
+                lane = [string] (Get-NervShardTimingProperty -Object $assembly -Name 'lane')
                 elapsedMilliseconds = $elapsed
             }
         }
@@ -185,27 +252,52 @@ function New-NervShardTimingCache {
 }
 
 function Import-NervShardTimingCache {
+    <#
+        Reads the cache file into a normalized lookup, or returns `$null` for "no usable cache".
+
+        The whole read — file, JSON parse, every field access, every numeric conversion — is inside
+        one try/catch on purpose, and that is a fix rather than a style choice. Under
+        `Set-StrictMode -Version Latest` a missing property and a bad type conversion are both
+        *terminating* errors, so a cache that is valid JSON but structurally wrong escaped the older
+        wrapping (which covered only `ConvertFrom-Json`) and propagated out of a report whose
+        contract says its only nonzero exit is an unusable manifest. Two shapes actually did it: a
+        cache object with no `assemblies` property, and an `elapsedMilliseconds` holding a string.
+        A malformed cache is a cache miss by definition — it is regenerated on the next refresh —
+        and a cache can never make a caller red.
+    #>
     param([Parameter(Mandatory)] [string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+
     try {
         $cache = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+
+        $schemaVersion = ConvertTo-NervShardTimingInteger -Value (Get-NervShardTimingProperty -Object $cache -Name 'schemaVersion')
+        if ($null -eq $schemaVersion -or $schemaVersion -ne $script:NervShardTimingCacheSchemaVersion) {
+            Write-Diagnostic -Level 'WARN' -Message 'Shard timing cache has an unsupported schemaVersion and will be ignored.'
+            return $null
+        }
+
+        $rows = @{}
+        foreach ($row in @(ConvertTo-NervShardTimingArray -Value (Get-NervShardTimingProperty -Object $cache -Name 'assemblies'))) {
+            $key = Get-NervShardTimingAssemblyKey -Name ([string] (Get-NervShardTimingProperty -Object $row -Name 'assembly'))
+            if ([string]::IsNullOrWhiteSpace($key)) { continue }
+            $elapsed = ConvertTo-NervShardTimingDouble -Value (Get-NervShardTimingProperty -Object $row -Name 'elapsedMilliseconds')
+            if ($null -eq $elapsed -or $elapsed -le 0) { continue }
+            $rows[$key] = $elapsed
+        }
+
+        return [pscustomobject][ordered]@{
+            runCount = @(ConvertTo-NervShardTimingArray -Value (Get-NervShardTimingProperty -Object $cache -Name 'runs')).Count
+            statistic = [string] (Get-NervShardTimingProperty -Object $cache -Name 'statistic')
+            generatedAtUtc = ConvertTo-NervShardTimingTimestampText -Value (Get-NervShardTimingProperty -Object $cache -Name 'generatedAtUtc')
+            rows = $rows
+        }
     }
     catch {
-        # A corrupt cache is a cache miss, never a failure: it is regenerated on the next refresh.
         Write-Diagnostic -Level 'WARN' -Message "Shard timing cache is unreadable and will be ignored: $(Protect-ScriptAutomationText $_.Exception.Message)"
         return $null
     }
-
-    $schemaVersion = 0
-    if (-not ($cache.PSObject.Properties.Name -contains 'schemaVersion') -or
-        -not [int]::TryParse([string] $cache.schemaVersion, [ref] $schemaVersion) -or
-        $schemaVersion -ne $script:NervShardTimingCacheSchemaVersion) {
-        Write-Diagnostic -Level 'WARN' -Message 'Shard timing cache has an unsupported schemaVersion and will be ignored.'
-        return $null
-    }
-
-    return $cache
 }
 
 function ConvertTo-NervShardTimingTimestampText {
@@ -239,15 +331,14 @@ function Get-NervShardTimingLookup {
     $sourceDetail = ''
     $generatedAtUtc = $null
 
+    # Import-NervShardTimingCache has already normalized and validated every row, so nothing here can
+    # throw on a malformed cache; an unusable cache arrives as `$null` and the fallback below runs.
     $cache = if ([string]::IsNullOrWhiteSpace($CachePath)) { $null } else { Import-NervShardTimingCache -Path $CachePath }
-    if ($null -ne $cache -and @($cache.assemblies).Count -gt 0) {
-        foreach ($row in @($cache.assemblies)) {
-            $key = Get-NervShardTimingAssemblyKey -Name ([string] $row.assembly)
-            if (-not [string]::IsNullOrWhiteSpace($key)) { $rows[$key] = [double] $row.elapsedMilliseconds }
-        }
+    if ($null -ne $cache -and $cache.rows.Count -gt 0) {
+        $rows = $cache.rows
         $source = 'main-run-evidence-cache'
-        $sourceDetail = "$(@($cache.runs).Count) successful main run(s), statistic=$([string] $cache.statistic)"
-        $generatedAtUtc = ConvertTo-NervShardTimingTimestampText -Value $cache.generatedAtUtc
+        $sourceDetail = "$($cache.runCount) successful main run(s), statistic=$([string] $cache.statistic)"
+        $generatedAtUtc = $cache.generatedAtUtc
     }
     elseif (-not [string]::IsNullOrWhiteSpace($FallbackEvidencePath) -and (Test-Path -LiteralPath $FallbackEvidencePath -PathType Leaf)) {
         # Offline / no-token degradation path. The committed snapshot is the *fallback*, never the
@@ -266,7 +357,7 @@ function Get-NervShardTimingLookup {
             if ($rows.Count -gt 0) {
                 $source = 'committed-evidence-snapshot'
                 $sourceDetail = ([System.IO.Path]::GetFileName($FallbackEvidencePath))
-                if ($snapshot.PSObject.Properties.Name -contains 'generatedAtUtc') { $generatedAtUtc = ConvertTo-NervShardTimingTimestampText -Value $snapshot.generatedAtUtc }
+                $generatedAtUtc = ConvertTo-NervShardTimingTimestampText -Value (Get-NervShardTimingProperty -Object $snapshot -Name 'generatedAtUtc')
             }
         }
         catch {
@@ -423,11 +514,20 @@ function Get-NervShardTimingObservationsFromEvidenceDirectory {
 
     return @(
         foreach ($summaryFile in @(Get-ChildItem -LiteralPath $Path -Filter 'summary.json' -File -Recurse | Sort-Object FullName)) {
-            $summary = $null
-            try { $summary = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json }
+            $rows = @()
+            try {
+                $summary = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json
+                $status = Get-NervShardTimingProperty -Object $summary -Name 'collectionStatus'
+                # Ordinal, not `-cne`. PowerShell's `c` prefix does not make a comparison ordinal —
+                # `-ceq`/`-cne` still consult the collation table, which folds away ignorable
+                # characters, so a status of "succee<U+00AD>ded" compares *equal* to 'succeeded' and
+                # a failed bundle's diagnostics would be admitted as measurements. Same rule as the
+                # rest of the repository (AGENTS.md, "Backend Test Determinism").
+                if ($null -ne $status -and -not [string]::Equals([string] $status, 'succeeded', [StringComparison]::Ordinal)) { continue }
+                $rows = @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $summary)
+            }
             catch { continue }
-            if (($summary.PSObject.Properties.Name -contains 'collectionStatus') -and [string] $summary.collectionStatus -cne 'succeeded') { continue }
-            foreach ($row in @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $summary)) {
+            foreach ($row in $rows) {
                 [pscustomobject][ordered]@{
                     runId = $RunId
                     assembly = [string] $row.assembly
@@ -484,10 +584,16 @@ function Update-NervShardTimingCache {
     $downloadRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-shard-timings-{0}" -f [Guid]::NewGuid().ToString('N'))
     $observations = [System.Collections.Generic.List[object]]::new()
     $usedRuns = [System.Collections.Generic.List[object]]::new()
+    # One catch over the whole collect-and-write block, not only over the per-run download. Directory
+    # enumeration, unpacking a bundle and writing the cache file are all IO, and IO on a runner
+    # fails for reasons that have nothing to do with this repository — a read-only or full
+    # `artifacts/` tree, a partially extracted archive, a permission change. Before this catch
+    # existed those escaped into the caller, whose `$ErrorActionPreference = 'Stop'` turned a failed
+    # *cache refresh* into a nonzero exit: exactly the ceremony #1507 removed, rebuilt by accident.
     try {
         [IO.Directory]::CreateDirectory($downloadRoot) | Out-Null
         foreach ($run in @($runs)) {
-            $runId = [string] $run.databaseId
+            $runId = [string] (Get-NervShardTimingProperty -Object $run -Name 'databaseId')
             if ([string]::IsNullOrWhiteSpace($runId)) { continue }
             $runDirectory = Join-Path $downloadRoot $runId
             try {
@@ -514,24 +620,28 @@ function Update-NervShardTimingCache {
             foreach ($observation in $runObservations) { [void] $observations.Add($observation) }
             [void] $usedRuns.Add([pscustomobject][ordered]@{
                 workflowRunId = $runId
-                headSha = [string] $run.headSha
-                completedAtUtc = [string] $run.updatedAt
+                headSha = [string] (Get-NervShardTimingProperty -Object $run -Name 'headSha')
+                completedAtUtc = [string] (Get-NervShardTimingProperty -Object $run -Name 'updatedAt')
                 assemblyObservationCount = $runObservations.Count
             })
         }
+
+        if ($observations.Count -eq 0) {
+            Write-Diagnostic -Level 'WARN' -Message 'Shard timing refresh produced no observations; the existing cache (if any) is left untouched.'
+            return $null
+        }
+
+        $cache = New-NervShardTimingCache -Observations @($observations) -Runs @($usedRuns) -GeneratedAtUtc $GeneratedAtUtc
+        $outputParent = Split-Path -Parent ([IO.Path]::GetFullPath($OutputPath))
+        [IO.Directory]::CreateDirectory($outputParent) | Out-Null
+        [IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath), (($cache | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+        return $cache
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Shard timing refresh failed; the existing cache (if any) is left untouched: $(Protect-ScriptAutomationText $_.Exception.Message)"
+        return $null
     }
     finally {
         Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-
-    if ($observations.Count -eq 0) {
-        Write-Diagnostic -Level 'WARN' -Message 'Shard timing refresh produced no observations; the existing cache (if any) is left untouched.'
-        return $null
-    }
-
-    $cache = New-NervShardTimingCache -Observations @($observations) -Runs @($usedRuns) -GeneratedAtUtc $GeneratedAtUtc
-    $outputParent = Split-Path -Parent ([IO.Path]::GetFullPath($OutputPath))
-    [IO.Directory]::CreateDirectory($outputParent) | Out-Null
-    [IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath), (($cache | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
-    return $cache
 }
