@@ -1,3 +1,15 @@
+# Script-Governance:
+#   Category: library
+#   SideEffects:
+#     - Drives full-stack session lifecycle through ScriptAutomation-wrapped commands
+#     - Reads Docker, Aspire and HTTP state through caller-injected actions
+#   Writes:
+#     - The session state and evidence roots the caller supplies
+#   Cleanup:
+#     - Stops the sessions it starts through the caller-supplied stop action
+#   Requires:
+#     - PowerShell 7
+
 Set-StrictMode -Version Latest
 
 $runtimeLibraryRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')

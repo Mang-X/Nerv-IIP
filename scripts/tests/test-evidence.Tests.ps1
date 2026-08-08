@@ -108,6 +108,85 @@ $brokenCount = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Dept
 $brokenCount.rules[0].expectedRuntimeTestCount++
 Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 
+# Identity padding ruling (#1509). Every consumer of a frozen identity compares it as written —
+# ordinal equality or ordinal prefix, never trimmed (see Get-BackendTestShardPolicyIdentityMatches).
+# That is only safe if a padded identity cannot be authored in the first place, so the schema
+# rejects it here. Trailing padding is the case that used to pass silently: an anchored testPattern
+# ending in `.+$` consumes a trailing space, so the pattern check saw nothing wrong, while the shard
+# exclusion gate would then never match the row. Leading padding is asserted too, but it fails the
+# anchored pattern as well, so only its message is pinned rather than the exact violation set.
+$paddedIdentityPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$paddedIdentityPolicy.rules[0].testIdentities[0] = "$([string] $livePolicy.rules[0].testIdentities[0]) "
+$paddedIdentityViolations = @(Test-NervTestEvidencePolicy -Policy $paddedIdentityPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+# The named-message assertion comes first on purpose: it is the discriminating one, and asserting it
+# before the set keeps the failure readable when the padding rule is removed (an empty violation list
+# would otherwise fail inside Assert-ViolationSet as a null-input error).
+Assert-True (@($paddedIdentityViolations | Where-Object { [string]$_.message -clike '*must not carry leading or trailing whitespace*' }).Count -eq 1) 'A trailing-padded frozen identity must be rejected by the policy schema, not silently accepted by the anchored testPattern.'
+Assert-ViolationSet $paddedIdentityViolations 'unregistered-skip'
+$leadingPaddedPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$leadingPaddedPolicy.rules[0].testIdentities[0] = " $([string] $livePolicy.rules[0].testIdentities[0])"
+Assert-True (@((Test-NervTestEvidencePolicy -Policy $leadingPaddedPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) | Where-Object { [string]$_.message -clike '*must not carry leading or trailing whitespace*' }).Count -eq 1) 'A leading-padded frozen identity must be rejected for the padding itself, not only as a pattern mismatch.'
+
+# Ordinal identifier comparison in the evidence library (#1509). Every probe below uses a U+00AD soft
+# hyphen, which PowerShell's `-ceq`/`-cne`/`-ccontains` and `Sort-Object -Unique` all fold — the `c`
+# prefix only turns off case-insensitivity, the comparison itself stays culture-aware. Measured, not
+# assumed: on this runtime `@($a) -ccontains "$a$softHyphen"` is True and an ordinal HashSet keeps two
+# entries. Each probe therefore passes under the culture-aware spelling and fails under it once the
+# implementation is ordinal, which is what makes them regressions rather than restatements.
+$softHyphen = [string][char]0x00AD
+
+# 1. Identity-set uniqueness. Two frozen identities differing only by an ignorable character are two
+#    identities; folding them makes uniqueCount < count and the rule is rejected for the wrong
+#    reason ("not unique") while the real defect is a testPattern mismatch.
+$ordinalIdentityPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$ordinalIdentityPolicy.rules[0].testIdentities = @(
+    @($livePolicy.rules[0].testIdentities | ForEach-Object { [string]$_ }) +
+    "$([string] $livePolicy.rules[0].testIdentities[0])$softHyphen")
+$ordinalIdentityPolicy.rules[0].expectedRuntimeTestCount = @($ordinalIdentityPolicy.rules[0].testIdentities).Count
+Assert-True (@((Test-NervTestEvidencePolicy -Policy $ordinalIdentityPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) |
+    Where-Object { [string]$_.message -clike '*unique test identity set*' }).Count -eq 0) 'Two frozen identities differing only by an ignorable character must count as two; identity uniqueness must be ordinal.'
+
+# 2. Rule applicability. allowedLanes / requiredLane / allowedOperatingSystems are the applicability
+#    condition the zero-execution hard gate is built on, so a fold here silently changes which rule
+#    governs a lane. Positive controls included so the probes cannot pass by rejecting everything.
+$allowedLaneRule = [pscustomobject]@{ allowedLanes = @('postgres'); requiredLane = $null; allowedOperatingSystems = @() }
+Assert-True (Test-NervRuleApplies -Rule $allowedLaneRule -SelectedLanes @('postgres') -RunnerOs 'Linux') 'A rule must apply to the lane it allows.'
+Assert-True (-not (Test-NervRuleApplies -Rule $allowedLaneRule -SelectedLanes @("postgres$softHyphen") -RunnerOs 'Linux')) 'A lane differing from an allowed lane by an ignorable character is a different lane; allowedLanes membership must be ordinal.'
+$requiredLaneRule = [pscustomobject]@{ allowedLanes = @(); requiredLane = 'postgres'; allowedOperatingSystems = @() }
+Assert-True (-not (Test-NervRuleApplies -Rule $requiredLaneRule -SelectedLanes @('postgres') -RunnerOs 'Linux')) 'A rule must stop applying once its required lane is actually selected.'
+Assert-True (Test-NervRuleApplies -Rule $requiredLaneRule -SelectedLanes @("postgres$softHyphen") -RunnerOs 'Linux') 'A lane differing from the required lane by an ignorable character must not count as having selected it; requiredLane membership must be ordinal.'
+$runnerOsRule = [pscustomobject]@{ allowedLanes = @(); requiredLane = $null; allowedOperatingSystems = @('Linux') }
+Assert-True (Test-NervRuleApplies -Rule $runnerOsRule -SelectedLanes @('backend') -RunnerOs 'Linux') 'A rule must apply on the operating system it allows.'
+Assert-True (-not (Test-NervRuleApplies -Rule $runnerOsRule -SelectedLanes @('backend') -RunnerOs "Linux$softHyphen")) 'allowedOperatingSystems membership must be ordinal.'
+
+# 3. Frozen-identity membership at runtime — the comparison the padding ruling above depends on. The
+#    fixture policy anchors testPattern exactly, so it cannot separate the two axes; this policy uses
+#    a `.+` tail so the padded name still matches the pattern and only the identity membership
+#    decides. Under `-ccontains` the skip claims a rule that froze a different string.
+$identityMembershipPolicy = [pscustomobject]@{
+    schemaVersion = 1
+    lanes = @([pscustomobject]@{ namePattern = '^backend(?:-shard-[1-9][0-9]*)?$'; realDependency = $false })
+    sources = @()
+    rules = @([pscustomobject]@{
+        id = 'ordinal-identity'
+        sourceId = 'fixture-source'
+        classification = 'optional'
+        testPattern = '^Fixture\.Ordinal\..+$'
+        reasonPattern = '^Opt in\.$'
+        allowedLanes = @('backend')
+        requiredLane = $null
+        allowedOperatingSystems = @()
+        testIdentities = @('Fixture.Ordinal.Alpha')
+        expectedRuntimeTestCount = 1
+    })
+}
+$exactIdentityRecord = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = 'Fixture.Ordinal.Alpha'; skipReason = 'Opt in.' })
+# Counted rather than passed through Assert-ViolationSet: an empty result is the expectation here,
+# and that helper cannot take a null pipeline input.
+Assert-Equal 0 @(Get-NervTestEvidenceViolations -Records $exactIdentityRecord -Policy $identityMembershipPolicy -SelectedLanes @('backend') -RunnerOs 'Linux').Count 'A skip whose name is exactly a frozen identity must match its rule; the ordinal probe below must not pass by rejecting everything.'
+$foldedIdentityRecord = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = "Fixture.Ordinal.Alpha$softHyphen"; skipReason = 'Opt in.' })
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedIdentityRecord -Policy $identityMembershipPolicy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
+
 $run = @{
     workflowRunId = '1001'
     runAttempt = 2
@@ -134,6 +213,29 @@ $counterMismatchFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) -RunMetadata $run | Out-Null }
 catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters') }
 Assert-True $counterMismatchFailed 'TRX counter/result mismatches must fail closed.'
+
+# Normalized-TRX provenance is an identifier comparison too (#1509). A rewritten TRX carries the head
+# and tested SHAs it was produced under, and this guard is what stops it from being re-read under
+# someone else's run metadata. `-cne` folds an ignorable character into the SHA, so a mismatched
+# artifact would pass; ordinal equality is what makes the guard fail closed.
+$provenanceDirectory = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-man-661-provenance-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $provenanceDirectory -Force | Out-Null
+    $trxTemplate = Get-Content (Join-Path $fixtures 'backend-results.trx') -Raw
+    $matchingProvenanceTrx = Join-Path $provenanceDirectory 'matching.trx'
+    Set-Content -LiteralPath $matchingProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)`" testedSha=`"$($run.testedSha)`" id=`"")
+    Assert-Equal 3 (Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.Clone()).Count 'A normalized TRX whose persisted provenance matches the run must be readable.'
+
+    $foldedProvenanceTrx = Join-Path $provenanceDirectory 'folded.trx'
+    Set-Content -LiteralPath $foldedProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)$softHyphen`" testedSha=`"$($run.testedSha)`" id=`"")
+    $foldedProvenanceRejected = $false
+    try { Read-NervTrxResults -Path @($foldedProvenanceTrx) -RunMetadata $run.Clone() | Out-Null }
+    catch { $foldedProvenanceRejected = $_.Exception.Message.Contains('Normalized TRX provenance does not match') }
+    Assert-True $foldedProvenanceRejected 'A persisted head SHA differing by an ignorable character must not be accepted as this run''s provenance; the comparison must be ordinal.'
+}
+finally {
+    if (Test-Path -LiteralPath $provenanceDirectory) { Remove-Item -LiteralPath $provenanceDirectory -Recurse -Force }
+}
 
 $parameterized = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized-results.trx')) -RunMetadata $run
 Assert-Equal 2 @($parameterized.displayName | Sort-Object -Unique).Count 'Parameterized display names must remain distinct.'
@@ -240,6 +342,82 @@ Assert-ViolationSet $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $shardViolations = Get-NervTestEvidenceViolations -Records $otherShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
 Assert-ViolationSet $shardViolations 'zero-execution'
+
+# Lane names are selectors, so the zero-execution gate's own lane matching must be ordinal too
+# (#1509). This is the same shape as the two probes above, with one ignorable character inserted: a
+# record from `postgres<U+00AD>-shard-1` is not execution of `postgres-shard-1`, and a culture-aware
+# `-ceq` would report the lane as covered and suppress the violation.
+$foldedLaneShard = @([pscustomobject]@{ lane = "postgres$softHyphen-shard-1"; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedLaneShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux') 'zero-execution'
+Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedLaneShard -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux') 'zero-execution'
+
+# …and so must the summary's own lane/selector merge, which is a second implementation of the same
+# decision: it groups records into a base lane and decides which violations belong to that group.
+$foldedSummaryRun = @{
+    workflowRunId = '1001'
+    runAttempt = 1
+    headSha = '0123456789abcdef0123456789abcdef01234567'
+    testedSha = '0123456789abcdef0123456789abcdef01234567'
+    lane = 'postgres-shard-1'
+    selectedLanes = @('postgres-shard-1')
+}
+# Cloned from a real parsed record so the summary sees the full retained schema; only the lane
+# differs between the probes.
+$passedRecordTemplate = @($records | Where-Object outcome -eq 'passed')[0]
+$executedShardRecordSource = $passedRecordTemplate.PSObject.Copy()
+$executedShardRecordSource.lane = 'postgres-shard-1'
+$executedShardRecord = @($executedShardRecordSource)
+$foldedViolations = @(
+    New-NervTestEvidenceViolation 'zero-execution' "postgres$softHyphen-shard-1" 'Folded selector must not be attributed to this lane.'
+)
+$foldedSelectorSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations $foldedViolations -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedSelectorSummary.selectedLaneResults[0].gateResult 'A violation whose id differs from the selector by an ignorable character belongs to a different selector; the summary selector set must be ordinal.'
+$foldedCodeViolations = @(
+    New-NervTestEvidenceViolation "zero-execution$softHyphen" 'postgres-shard-1' 'Folded violation code must not be read as zero-execution.'
+)
+$foldedCodeSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations $foldedCodeViolations -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedCodeSummary.selectedLaneResults[0].gateResult 'A violation code differing by an ignorable character is a different code; the summary code comparison must be ordinal.'
+$realZeroExecutionSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(New-NervTestEvidenceViolation 'zero-execution' 'postgres-shard-1' 'Real violation.') -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'zero-execution' $realZeroExecutionSummary.selectedLaneResults[0].gateResult 'The exact selector and code must still be attributed to the lane; ordinal comparison must not turn the summary into "nothing ever matches".'
+Assert-Equal 1 $foldedSelectorSummary.selectedLaneResults[0].executed 'The exact lane must still be counted as executed; ordinal grouping must not empty the lane.'
+$foldedLaneRecordSource = $passedRecordTemplate.PSObject.Copy()
+$foldedLaneRecordSource.lane = "postgres$softHyphen-shard-1"
+$foldedRecordLaneSummary = New-NervTestEvidenceSummary -Records @($foldedLaneRecordSource) -RunMetadata $foldedSummaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 0 $foldedRecordLaneSummary.selectedLaneResults[0].executed 'A record from a lane differing by an ignorable character must not be counted as this lane executing; the summary lane grouping must be ordinal.'
+
+# The `invalid-selection` half of the same gateResult decision (#1509 round 2). The probes above only
+# exercise the `zero-execution` branch, so the `unregistered-skip` branch had no control at all and
+# reverting its comparison to `-ceq` left the suite green. Three cases, because the branch makes two
+# ordinal decisions (code and selector id) and a positive control is needed so "always pass" cannot
+# satisfy the other two.
+$invalidSelectionSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation 'unregistered-skip' 'postgres-shard-1' 'Real invalid selection.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'invalid-selection' $invalidSelectionSummary.selectedLaneResults[0].gateResult 'An unregistered-skip violation carrying this lane selector must be reported as invalid-selection.'
+$foldedInvalidCodeSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation "unregistered-skip$softHyphen" 'postgres-shard-1' 'Folded code must not be read as unregistered-skip.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedInvalidCodeSummary.selectedLaneResults[0].gateResult 'A violation code differing by an ignorable character is a different code; the invalid-selection comparison must be ordinal.'
+$foldedInvalidSelectorSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation 'unregistered-skip' "postgres$softHyphen-shard-1" 'Folded selector must not be attributed to this lane.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedInvalidSelectorSummary.selectedLaneResults[0].gateResult 'An unregistered-skip id differing from the selector by an ignorable character belongs to a different selector.'
+
+# The selected-lane dedup that feeds the lane-contract loop (#1509 round 2). `Sort-Object -Unique`
+# folded the two spellings into one, so only one of them was ever matched against the lane patterns
+# and the other silently stopped being checked — an unregistered lane that reports nothing.
+$foldedSelectedLaneViolations = @(Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres', "postgres$softHyphen") -RunnerOs 'Linux')
+Assert-True (@($foldedSelectedLaneViolations | Where-Object { (Test-NervOrdinalEquals ([string]$_.code) 'unregistered-skip') -and (Test-NervOrdinalEquals ([string]$_.id) "postgres$softHyphen") }).Count -eq 1) 'A selected lane differing from a real lane by an ignorable character is its own lane and must be reported as matching no lane contract; the selected-lane dedup must be ordinal.'
+Assert-Equal 0 @(Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend', 'backend') -RunnerOs 'Linux' | Where-Object { Test-NervOrdinalEquals ([string]$_.code) 'unregistered-skip' }).Count 'Ordinal dedup must still collapse two identical lane spellings; the probe above must not pass by refusing to deduplicate at all.'
+
+# The policy schema's own source/rule cross-reference (#1509 round 2): `sourceId` is the first segment
+# of the frozen evidence key `sourceId|ruleId|identity`, and it was compared with `-ceq`, so a rule
+# pointing at `<source><U+00AD>` resolved to `<source>` and the mis-registration was invisible.
+$foldedSourceIdPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$foldedSourceIdPolicy.rules[0].sourceId = "$([string]$foldedSourceIdPolicy.rules[0].sourceId)$softHyphen"
+$foldedSourceIdViolations = @(Test-NervTestEvidencePolicy -Policy $foldedSourceIdPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+Assert-True (@($foldedSourceIdViolations | Where-Object { [string]$_.message -clike 'Rule sourceId must resolve*' }).Count -eq 1) 'A rule whose sourceId differs from a registered source by an ignorable character resolves to no source; the sourceId comparison must be ordinal.'
+Assert-True (@($foldedSourceIdViolations | Where-Object { [string]$_.message -clike 'Registered source is not referenced*' }).Count -eq 1) 'The reverse cross-reference must fail for the same reason; the source-to-rule comparison must be ordinal too.'
 
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
@@ -1302,6 +1480,276 @@ foreach ($registeredScriptPath in @(
 $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
 foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
+}
+
+# ---------------------------------------------------------------------------------------------
+# Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
+# slowestTests, which are retained artifacts. Until #1509 round 4 it had no behavioural coverage at
+# all: reversing the comparison, dropping the rank tie-break, and removing the TopCount truncation
+# each left the whole suite green. The ordinal sweep above can only prove the library contains no
+# culture-aware *construct* — it says nothing about whether the ordering is right, which is exactly
+# the failure class this issue exists to remove.
+#
+# One case pins all three at once. The input is fed in reverse, so an implementation that just
+# returns its argument fails too:
+#   - descending by metric      → 'Cherry' (9) must lead a field of 5s;
+#   - ordinal tie-break         → the 5s must come out A00…A23 then 'apple', because ordinal puts
+#                                 uppercase before lowercase (culture collation gives apple, A00…);
+#   - deterministic tie-break   → 25 rows tied at 5 (A00…A23 plus 'apple') inside a 26-row list, past
+#                                 the threshold where .NET's introsort stops being an insertion sort,
+#                                 so `return 0` in the comparator really does reorder them rather
+#                                 than accidentally staying stable;
+#   - TopCount truncation       → a second call with -Count 2 must return exactly two rows.
+#
+# The threshold is 16: `List<T>.Sort` runs introsort, which insertion-sorts any partition of 16 or
+# fewer elements, and insertion sort with a `return 0` comparator leaves the order untouched.
+# Measured on pwsh 7.6.4 by sorting N identical rows with a constant-zero comparator — stable for
+# every N ≤ 16, shuffled for every N in 17…34. 26 rows is the fixture size, so the margin is 10.
+# That margin is *not* self-evident from reading the case, and shrinking the tie group is a plausible
+# tidy-up: at 16 rows the `return 0` mutation passes and this case silently stops discriminating.
+# The meta-assertion below fails outright in that situation rather than going quietly green.
+$rankedTie = @(0..23 | ForEach-Object { [pscustomobject]@{ name = ('A{0:D2}' -f $_); elapsed = 5 } })
+$rankedInput = @(@([pscustomobject]@{ name = 'apple'; elapsed = 5 }) + $rankedTie + @([pscustomobject]@{ name = 'Cherry'; elapsed = 9 }))
+$rankedSortProbe = [Collections.Generic.List[object]]::new()
+for ($rankedProbeIndex = 0; $rankedProbeIndex -lt $rankedInput.Count; $rankedProbeIndex++) {
+    $rankedSortProbe.Add([pscustomobject]@{ Rank = $rankedProbeIndex })
+}
+$rankedProbeBefore = (@($rankedSortProbe | ForEach-Object { [string]$_.Rank }) -join ',')
+$rankedSortProbe.Sort([Comparison[object]] { param($Left, $Right) return 0 })
+$rankedProbeAfter = (@($rankedSortProbe | ForEach-Object { [string]$_.Rank }) -join ',')
+Assert-True (-not [string]::Equals($rankedProbeBefore, $rankedProbeAfter, [StringComparison]::Ordinal)) `
+    ("The ranked-tie fixture is $($rankedInput.Count) rows, which List<T>.Sort still insertion-sorts: a constant-zero comparator left the order unchanged, so the tie-break case below cannot detect that mutation. Grow the tie group back above the introsort threshold (16 on the measured runtime).")
+[array]::Reverse($rankedInput)
+$rankedAll = @(Get-NervOrdinalRankedTop -Items $rankedInput -Count 99 `
+    -MetricSelector { param($row) [double]$row.elapsed } -TieBreakSelector { param($row) [string]$row.name })
+$expectedRankedOrder = (@('Cherry') + @($rankedTie | ForEach-Object { [string]$_.name }) + @('apple')) -join '|'
+$actualRankedOrder = (@($rankedAll | ForEach-Object { [string]$_.name })) -join '|'
+Assert-True ([string]::Equals($actualRankedOrder, $expectedRankedOrder, [StringComparison]::Ordinal)) `
+    "Get-NervOrdinalRankedTop must rank descending by metric with a deterministic ordinal tie-break.`nExpected: $expectedRankedOrder`nActual:   $actualRankedOrder"
+$rankedTop2 = @(Get-NervOrdinalRankedTop -Items $rankedInput -Count 2 `
+    -MetricSelector { param($row) [double]$row.elapsed } -TieBreakSelector { param($row) [string]$row.name })
+Assert-True ([string]::Equals((@($rankedTop2 | ForEach-Object { [string]$_.name })) -join '|', 'Cherry|A00', [StringComparison]::Ordinal)) `
+    "Get-NervOrdinalRankedTop must truncate to -Count; got: $(@($rankedTop2 | ForEach-Object { [string]$_.name }) -join ', ')"
+
+# ---------------------------------------------------------------------------------------------
+# Ordinal sweep contract (#1509 rounds 2 and 3). The file-wide sweep of scripts/lib/TestEvidence.ps1
+# is only worth anything if it stays swept, and three prior rounds showed that a prose boundary
+# ("the rest is out of scope") drifts from the code within one PR. So the boundary is parsed
+# instead: every culture-aware identifier comparison in that library must either be gone or be a
+# named, justified exception here.
+#
+# The scan itself lives in scripts/lib/OrdinalComparisonContract.ps1, because
+# scripts/tests/backend-test-shards.Tests.ps1 makes the same claim about a different library and a
+# claim asserted by two hand-written scanners is two different claims. What that scan can and cannot
+# see is enumerated by the library and pinned below against synthetic sources, so "a contract exists"
+# can never be read as "the semantics are protected" — round 3 found the previous version blind to
+# `switch`, to `Sort-Object` without `-Unique`, to `Select-Object -Unique`, to `.StartsWith`/
+# `.EndsWith` without a [StringComparison], and to a written-out `[StringComparison]::CurrentCulture`.
+. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
+
+# Named exceptions, each identified by *where* it is and *what* it is: the enclosing function plus
+# the offending node's exact extent text. Text rather than line number, because a line number is
+# invalidated by any edit above it and then silently exempts something else; exact text rather than
+# a substring, because a substring exception can be widened from one expression to a bare cmdlet
+# name and quietly absorb an unrelated future call site. Site as well as text, because moving the
+# expression into another function has to be re-reviewed.
+$ordinalSweepExceptions = @(
+    @{
+        Site = 'New-NervTestEvidenceSummary'
+        Text = "Group-Object { Get-NervRetainedSkipReason `$_ }"
+        Reason = 'skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading. Only the grouping — the row ordering next to it is ordinal.'
+    }
+)
+
+# The exception table's identity, asserted verbatim. This is what replaces the old
+# `$ordinalSweepExceptions.Count -eq 1` (#1509 round 3): a count cannot tell *which* exception it is
+# counting, so the table could be held at one row while that row was broadened from one expression
+# to the whole `Group-Object` cmdlet — after which a genuinely new culture-aware grouping passes the
+# sweep with the count still equal to 1. Under this assertion any add, removal or edit — including
+# widening the Text — is a diff against a named contract.
+$expectedOrdinalSweepIdentity = @(
+    "New-NervTestEvidenceSummary::Group-Object { Get-NervRetainedSkipReason `$_ }::skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading. Only the grouping — the row ordering next to it is ordinal."
+) -join "`n"
+$actualOrdinalSweepIdentity = (@($ordinalSweepExceptions | ForEach-Object {
+    "$([string]$_.Site)::$([string]$_.Text)::$([string]$_.Reason)"
+}) -join "`n")
+Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweepIdentity, [StringComparison]::Ordinal)) `
+    "The ordinal sweep exception table changed. Expected:`n$expectedOrdinalSweepIdentity`nActual:`n$actualOrdinalSweepIdentity"
+
+# The scan face must stay callable from any session state (#1509 round 3, second CI-only defect).
+# The first version built its helpers as `{ … }.GetNewClosure()` and read its tables through
+# `$script:` variables; both bind to the session state captured when the library was dot-sourced, and
+# on the CI runner's PowerShell that binding could no longer see the library's own sibling functions
+# — `Get-NervOrdinalContractEnclosingSite` came back "not recognized" while the identical file ran
+# green locally on 7.6.4 under both `-File` and CI's `-command ". '…'"` form. Since the divergence is
+# not reproducible here, the invariant is asserted structurally instead of behaviourally: this
+# library binds nothing to a captured scope.
+# Scoped to these three files on purpose. `$script:` state and closures work in this repository —
+# FullStackSessionState.ps1, BackendTestShardTimings.ps1, ScriptAutomation.ps1 and
+# LeaderDemoTelemetrySimulator.ps1 all depend on them — so this is a ban on the construct in the
+# files that were measured failing, not a claim that the construct is broken. The root cause is
+# still unidentified, which is registered as a follow-up on issue #1509: what this guard pins is a
+# construct, not yet the real invariant.
+# The ban covers the library *and* the two contract tests that consume it, because the second CI red
+# was the test's own probe helper, not the library — the same construct, one file over.
+foreach ($capturedScopeCandidate in @(
+    'scripts/lib/OrdinalComparisonContract.ps1',
+    'scripts/tests/test-evidence.Tests.ps1',
+    'scripts/tests/backend-test-shards.Tests.ps1'
+)) {
+    $capturedScopeAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $repoRoot $capturedScopeCandidate), [ref] $null, [ref] $null)
+    $capturedScopeUses = @(
+        @($capturedScopeAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            [string]::Equals([string] $node.Member.Value, 'GetNewClosure', [StringComparison]::OrdinalIgnoreCase)
+        }, $true) | ForEach-Object { "GetNewClosure at line $($_.Extent.StartLineNumber)" })
+        @($capturedScopeAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            ([string] $node.VariablePath.UserPath).StartsWith('script:', [StringComparison]::OrdinalIgnoreCase)
+        }, $true) | ForEach-Object { "script-scope variable $($_.Extent.Text) at line $($_.Extent.StartLineNumber)" })
+    )
+    Assert-True ($capturedScopeUses.Count -eq 0) `
+        "$capturedScopeCandidate must not bind the ordinal sweep to a captured session state: $(@($capturedScopeUses) -join '; ')"
+}
+
+$evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+$evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
+Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
+# Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
+# hit more than once is exempting call sites the reviewer of the original never saw.
+foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
+    Assert-True ([int]$evidenceSweep.ExceptionHits[$exceptionKey] -eq 1) `
+        "Ordinal sweep exception '$exceptionKey' matched $($evidenceSweep.ExceptionHits[$exceptionKey]) call sites; it must match exactly one."
+}
+
+# ---------------------------------------------------------------------------------------------
+# Discrimination for the scan face itself. Without this the sweep passing means only "no findings",
+# which is equally true of a scanner that reports nothing. Each covered axis gets a source that must
+# be reported; each documented blind spot gets a source that must *not* be, which is what stops the
+# blind-spot list in docs/architecture/script-automation-governance.md from being aspirational.
+$sweepProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-ordinal-sweep-probe-{0}" -f [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $sweepProbeRoot -Force | Out-Null
+try {
+    $sweepProbePath = Join-Path $sweepProbeRoot 'probe.ps1'
+    # A plain function, not a `{ … }.GetNewClosure()` helper — the same CI-only defect this file
+    # asserts against for the library itself (#1509 round 3): a closure carries the session state it
+    # captured, and on the CI runner's PowerShell that state could not resolve the dot-sourced
+    # Get-NervOrdinalComparisonFindings, while the identical file ran green locally on 7.6.4 under
+    # both invocation forms. The structural guard above bans the construct in the library; this is
+    # the same discipline applied to the test's own helper.
+    function Invoke-NervSweepProbe {
+        param(
+            [Parameter(Mandatory)] [string] $ProbePath,
+            [Parameter(Mandatory)] [AllowEmptyString()] [string] $Source
+        )
+
+        [System.IO.File]::WriteAllText($ProbePath, $Source, [System.Text.UTF8Encoding]::new($false))
+        return @((Get-NervOrdinalComparisonFindings -ScriptPath $ProbePath -DisplayName 'probe.ps1').Findings)
+    }
+
+    $coveredProbes = [ordered]@{
+        'banned-c-operator' = '$result = $left -ceq $right'
+        'culture-operator-with-string-literal' = '$result = $left -eq ''passed'''
+        'sort-object' = '$result = @($items | Sort-Object Name)'
+        'group-object' = '$result = @($items | Group-Object lane)'
+        'compare-object' = '$result = Compare-Object $left $right'
+        'select-object-unique' = '$result = @($items | Select-Object -Unique)'
+        'where-object-comparison-switch' = '$result = @($items | Where-Object outcome -eq ''passed'')'
+        'switch-statement-string-clause' = 'switch ($outcome) { ''passed'' { 1 } default { 0 } }'
+        'string-method-without-ordinal-comparison' = '$result = $text.StartsWith(''^'')'
+        'ambiguous-method-with-string-literal' = '$result = $text.Contains(''SKIP'')'
+        'non-ordinal-stringcomparison' = '$result = [string]::Equals($left, $right, [StringComparison]::CurrentCulture)'
+    }
+    $declaredAxes = @(Get-NervOrdinalContractCoveredAxes)
+    Assert-True ([string]::Equals((@($coveredProbes.Keys) -join '|'), ($declaredAxes -join '|'), [StringComparison]::Ordinal)) `
+        "Get-NervOrdinalContractCoveredAxes and the discrimination probes must enumerate the same axes; declared [$($declaredAxes -join ', ')], probed [$(@($coveredProbes.Keys) -join ', ')]."
+    foreach ($axis in $coveredProbes.Keys) {
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $coveredProbes[$axis])
+        Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$axis]", [StringComparison]::Ordinal) }).Count -ge 1) `
+            "The ordinal sweep must report axis '$axis' for: $($coveredProbes[$axis])"
+    }
+
+    # The blind spots, asserted as blind spots. Each of these is a real culture-aware comparison the
+    # scan cannot distinguish from a safe one; the assertion is that the scan stays silent, so the day
+    # any of them becomes detectable this list and the documentation have to be edited together.
+    $blindSpotProbes = [ordered]@{
+        'both-operands-non-literal-eq' = '$result = $left -eq $right'
+        'both-operands-non-literal-in' = '$result = $candidate -in $known'
+        'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
+        'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'
+        'validateset-attribute' = 'function Invoke-Probe { param([ValidateSet(''all'', ''class'')] [string] $Kind) return $Kind }'
+        'sort-object-via-splatted-parameters' = '$splat = @{ Property = ''name'' }; $result = @($items | Sort-Object @splat | Select-Object @splat)'
+    }
+    $declaredBlindSpots = @(Get-NervOrdinalContractBlindSpots)
+    Assert-True ([string]::Equals((@($blindSpotProbes.Keys) -join '|'), ($declaredBlindSpots -join '|'), [StringComparison]::Ordinal)) `
+        "Get-NervOrdinalContractBlindSpots and the blind-spot probes must enumerate the same list; declared [$($declaredBlindSpots -join ', ')], probed [$(@($blindSpotProbes.Keys) -join ', ')]."
+    foreach ($blindSpot in $blindSpotProbes.Keys) {
+        # The assertion is "this probe produces no finding the list does not already account for" —
+        # deliberately *not* "no finding on a declared axis". The earlier spelling checked each
+        # finding against Get-NervOrdinalContractCoveredAxes, so a new detection under a new axis
+        # name that nobody had registered yet was invisible to it: measured in #1509 round 4 by
+        # teaching the scan to report `[ValidateSet]` without registering the axis — every test
+        # stayed green, and the list was not forced to change. Anchoring on the *permitted* findings
+        # instead makes the list live in both directions: gaining detection turns it red whether or
+        # not the new axis is declared, and losing the one permitted detection turns it red too.
+        #
+        # `Sort-Object @splat` is the one probe that is legitimately reported: the scan sees the
+        # Sort-Object call, what it cannot see is *which* properties are compared, so the splat is a
+        # blind spot for the Select-Object -Unique axis only. Stated as the exact permitted set
+        # rather than rounded off in either direction.
+        $permittedFindingAxes = if ([string]::Equals($blindSpot, 'sort-object-via-splatted-parameters', [StringComparison]::Ordinal)) {
+            @('sort-object')
+        }
+        else { @() }
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $blindSpotProbes[$blindSpot])
+        $unexpected = @($probeFindings | Where-Object {
+            $finding = $_
+            @($permittedFindingAxes | Where-Object { $finding.StartsWith("[$_]", [StringComparison]::Ordinal) }).Count -eq 0
+        })
+        Assert-True ($unexpected.Count -eq 0) `
+            "Blind spot '$blindSpot' is no longer a blind spot: $($unexpected -join '; '). Update Get-NervOrdinalContractBlindSpots and the governance document together."
+        foreach ($permittedAxis in $permittedFindingAxes) {
+            Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$permittedAxis]", [StringComparison]::Ordinal) }).Count -ge 1) `
+                "Blind spot '$blindSpot' is documented as still being reported on axis '$permittedAxis'; it no longer is, so the documented boundary is wrong."
+        }
+    }
+
+    # The anti-widening case for the exception table, run against the real table (#1509 round 3, M2).
+    # A source carrying both the exempt expression and an unrelated Group-Object must report exactly
+    # the unrelated one: if the exception ever matched on a substring, or on the cmdlet name, the
+    # second call site would be swallowed here and nowhere else.
+    $exemptionProbeSource = @'
+function New-NervTestEvidenceSummary {
+    $exempt = @($records | Group-Object { Get-NervRetainedSkipReason $_ })
+    $smuggled = @($records | Group-Object lane)
+    return @($exempt, $smuggled)
+}
+'@
+    [System.IO.File]::WriteAllText($sweepProbePath, $exemptionProbeSource, [System.Text.UTF8Encoding]::new($false))
+    $exemptionProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $ordinalSweepExceptions -DisplayName 'probe.ps1'
+    Assert-True ($exemptionProbe.Findings.Count -eq 1) `
+        "The named exception must exempt exactly its own expression; findings: $(@($exemptionProbe.Findings) -join '; ')"
+    Assert-True ($exemptionProbe.Findings[0].Contains('Group-Object lane', [StringComparison]::Ordinal)) `
+        "The unrelated Group-Object call must survive the exception; got: $($exemptionProbe.Findings[0])"
+
+    # …and the same expression in a different function is not the exempted one.
+    $misplacedExemptionSource = @'
+function Get-NervSomethingElse {
+    return @($records | Group-Object { Get-NervRetainedSkipReason $_ })
+}
+'@
+    [System.IO.File]::WriteAllText($sweepProbePath, $misplacedExemptionSource, [System.Text.UTF8Encoding]::new($false))
+    $misplacedProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $ordinalSweepExceptions -DisplayName 'probe.ps1'
+    Assert-True ($misplacedProbe.Findings.Count -eq 1) `
+        'An exception is bound to its site; the same expression in another function must still be reported.'
+}
+finally {
+    if (Test-Path -LiteralPath $sweepProbeRoot) {
+        Remove-Item -LiteralPath $sweepProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $newRepoCommandLogs = @(

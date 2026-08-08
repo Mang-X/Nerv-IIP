@@ -206,9 +206,278 @@ catch {
 }
 Assert-Contract ($driftText.Contains('executed assemblies it does not classify: Nerv.IIP.Drifted.Tests')) 'A shard running an assembly it does not classify must fail closed.'
 
-$classifiedProjects = @($fastShards.projects) + @($heavyLanes.projects)
-Assert-Contract (($classifiedProjects | Sort-Object -Unique).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
-Assert-Contract ($classifiedProjects.Count -eq 66) 'The checked-in backend test inventory must contain 66 classified projects.'
+# Ordinal identifier comparison (#1509). Every string these helpers compare is an identifier, and
+# PowerShell's defaults are culture-aware: `Sort-Object -Unique` folds two values the collation table
+# considers equivalent into one, and `-contains`/`-notcontains` report them as the same value. A
+# U+00AD soft hyphen is enough — measured, not assumed. Both probes below pass under a culture-aware
+# implementation and only fail under an ordinal one, which is what makes them regressions rather than
+# restatements: revert either helper and this block goes red.
+#
+# Ordinal is the axis under test here; *case* is deliberately not, and the fixture right below this
+# block is why. Keep the two apart when reading: the soft-hyphen probes must fail under a
+# culture-aware comparer, and the lowercase-storage probe must pass under a case-insensitive one.
+$ordinalSoftHyphen = [string][char]0x00AD
+$ordinalSelectorShard = [pscustomobject]@{
+    excludedTestClasses = @('Nerv.Probe.Ordinal.Alpha', "Nerv.Probe.Ordinal${ordinalSoftHyphen}.Alpha")
+    excludedTests = @()
+}
+$ordinalSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard)
+Assert-Contract ($ordinalSelectors.Count -eq 2) "Two exclusion selectors differing only by an ignorable character are two selectors; deduplication must be ordinal, kept $($ordinalSelectors.Count)."
+
+# The same function's -Kind keyword (#1509 round 3). [ValidateSet] compares culture-aware, so
+# `-Kind "all<U+00AD>"` is *accepted* by the attribute; the body's `-in` folded it back to 'all', and
+# the two agreed by accident. Making only the body ordinal would turn that into a silent empty
+# result — the worst outcome, since an empty exclusion set reads as "this shard excludes nothing" —
+# so an unmatched keyword throws. Both halves are asserted: the folded spelling fails loudly, and the
+# case-insensitivity [ValidateSet] does promise still works.
+$foldedKindText = ''
+try {
+    [void] (Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard -Kind "all$ordinalSoftHyphen")
+}
+catch {
+    $foldedKindText = $_.Exception.Message
+}
+Assert-Contract ($foldedKindText.Contains('Unsupported excluded-selector kind')) "A selector kind that only matches by culture folding must throw rather than silently select nothing. Reported: '$foldedKindText'."
+Assert-Contract (@(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard -Kind 'Class').Count -eq 2) 'The selector kind keyword stays case-insensitive, which is what [ValidateSet] promises.'
+
+$ordinalExecutionText = ''
+try {
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'ordinal' `
+        -ClassifiedProjects @('backend/tests/Nerv.Probe.Ordinal.Tests/Nerv.Probe.Ordinal.Tests.csproj') `
+        -ExecutedAssemblies @("Nerv.Probe.Ordinal${ordinalSoftHyphen}.Tests.dll")
+}
+catch {
+    $ordinalExecutionText = $_.Exception.Message
+}
+Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
+
+# …and the *other* side of the same guard, which had no probe at all (#1509 round 2): `$unexpected`
+# asks whether an executed assembly is one this shard classifies. Its membership test used to be the
+# same culture-aware `-contains`, so an assembly differing from a classified project by an ignorable
+# character was accepted as classified and the solution-filter/manifest drift went unreported. The
+# fixture keeps the exactly-matching assembly present so `$missing` stays empty and the throw can
+# only come from the drift branch.
+$ordinalDriftText = ''
+try {
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'ordinal-drift' `
+        -ClassifiedProjects @('backend/tests/Nerv.Probe.Drift.Tests/Nerv.Probe.Drift.Tests.csproj') `
+        -ExecutedAssemblies @('Nerv.Probe.Drift.Tests.dll', "Nerv.Probe.Drift${ordinalSoftHyphen}.Tests.dll")
+}
+catch {
+    $ordinalDriftText = $_.Exception.Message
+}
+Assert-Contract ($ordinalDriftText.Contains("executed assemblies it does not classify: Nerv.Probe.Drift${ordinalSoftHyphen}.Tests")) "An executed assembly differing from every classified project by an ignorable character is not classified by this shard; the drift membership test must be ordinal. Reported: '$ordinalDriftText'."
+# Positive control, so the probe above cannot pass by reporting every executed assembly as drift.
+Assert-BackendTestShardProjectExecution `
+    -ShardId 'ordinal-drift' `
+    -ClassifiedProjects @('backend/tests/Nerv.Probe.Drift.Tests/Nerv.Probe.Drift.Tests.csproj') `
+    -ExecutedAssemblies @('Nerv.Probe.Drift.Tests.dll')
+
+# The third ordinal decision in this library: the real-PostgreSQL selector gate. It asks whether every
+# discovered test actually appears in the TRX, and that membership used to be `-notcontains`. A test
+# whose TRX name differs from the discovered name by an ignorable character never ran under that
+# name, so the gate must still report it missing — which is the direction it exists to fail closed on.
+$ordinalSelectorExecutionText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Selector' `
+        -DiscoveredTests @('Nerv.Probe.Selector.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = "Nerv.Probe.Selector.Alpha$ordinalSoftHyphen"; outcome = 'Passed' })
+}
+catch {
+    $ordinalSelectorExecutionText = $_.Exception.Message
+}
+Assert-Contract ($ordinalSelectorExecutionText.Contains("must execute every discovered test as Passed; discovered=1, trx=1, missing=1")) 'A TRX test name differing from a discovered test by an ignorable character must not satisfy that test; the selector execution membership must be ordinal.'
+# Positive control, so the probe above cannot pass by rejecting everything.
+Assert-BackendTestShardSelectorExecution `
+    -Selector 'Nerv.Probe.Selector' `
+    -DiscoveredTests @('Nerv.Probe.Selector.Alpha') `
+    -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Selector.Alpha'; outcome = 'Passed' })
+
+# The *outcome* half of the same gate, which had no probe until #1509 round 3 and was the last
+# culture-aware comparison left in the library. It used to read `[string] $_.outcome -ne 'Passed'`,
+# and `"Passed$([char]0x00AD)" -ne 'Passed'` is False — so a result whose outcome token is not
+# `Passed` folded into the passing set, `$failedResults` came back empty and a heavy-lane run with a
+# failing test exited 0. Every neighbouring comparison in this function was already explicit; the one
+# that decides pass/fail was not.
+#
+# Two fixtures, because the two failure modes are different strings: an ignorable-character variant of
+# `Passed` (culture folding) and an outright `Failed` (the ordinary case, which the old code did
+# catch — kept so the probe cannot pass by rejecting everything that is not literally `Passed`).
+$foldedOutcomeText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Outcome' `
+        -DiscoveredTests @('Nerv.Probe.Outcome.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Outcome.Alpha'; outcome = "Passed$ordinalSoftHyphen" })
+}
+catch {
+    $foldedOutcomeText = $_.Exception.Message
+}
+Assert-Contract ($foldedOutcomeText.Contains('discovered=1, trx=1, missing=0, notPassed=1')) "An outcome that is not the literal token 'Passed' must count as not passed even when the collation table folds it into 'Passed'; the outcome comparison must be ordinal. Reported: '$foldedOutcomeText'."
+
+$failedOutcomeText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Outcome' `
+        -DiscoveredTests @('Nerv.Probe.Outcome.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Outcome.Alpha'; outcome = 'Failed' })
+}
+catch {
+    $failedOutcomeText = $_.Exception.Message
+}
+Assert-Contract ($failedOutcomeText.Contains('notPassed=1')) 'A Failed result must still fail the selector execution gate.'
+
+# ...and the case axis, which the fixture above deliberately does not exercise. VSTest writes the
+# TRX `storage` path lowercased, so the executed side of this comparison never carries the manifest's
+# casing: a real shard reports `nerv.iip.apphub.domain.tests.dll` against a classified
+# `Nerv.IIP.AppHub.Domain.Tests.csproj`. This file used to prove the guard only with a hand-written
+# fixture that kept the manifest casing, so a case-sensitive comparison passed here and failed every
+# real shard — run 31251016878 named all 36 platform projects as unexecuted while all 36 had passed.
+# The fixture below is the real shape, so that regression cannot come back green.
+$lowercaseStorageDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-storage-case-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $lowercaseStorageDirectory -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $lowercaseStorageDirectory 'shard.trx') -NoNewline -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000003" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest id="00000000-0000-0000-0000-000000000004" name="Case" storage="/home/runner/work/nerv-iip/nerv-iip/backend/tests/nerv.iip.apphub.domain.tests/bin/release/net10.0/nerv.iip.apphub.domain.tests.dll"><TestMethod className="Nerv.IIP.AppHub.Domain.Tests.SomeTests" name="Case" /></UnitTest>
+  </TestDefinitions>
+</TestRun>
+'@
+    $lowercaseAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $lowercaseStorageDirectory)
+    # Ordinal, per the #1507 ruling: `-ceq` only disables case-insensitivity and still folds
+    # ignorable characters, so it cannot pin an assembly name.
+    Assert-Contract ([string]::Equals((@($lowercaseAssemblies) -join '|'), 'nerv.iip.apphub.domain.tests.dll', [StringComparison]::Ordinal)) 'The TRX storage attribute must be read verbatim; VSTest writes it lowercased and this fixture pins that shape.'
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'storage-case' `
+        -ClassifiedProjects @('backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/Nerv.IIP.AppHub.Domain.Tests.csproj') `
+        -ExecutedAssemblies $lowercaseAssemblies
+
+    # Still discriminating: case folding must not turn the guard into "any assembly will do".
+    $lowercaseDriftText = ''
+    try {
+        Assert-BackendTestShardProjectExecution `
+            -ShardId 'storage-case' `
+            -ClassifiedProjects @('backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj') `
+            -ExecutedAssemblies $lowercaseAssemblies
+    }
+    catch {
+        $lowercaseDriftText = $_.Exception.Message
+    }
+    Assert-Contract ($lowercaseDriftText.Contains('produced no executed test result for classified projects: Nerv.IIP.AppHub.Web.Tests')) 'Case-insensitive assembly matching must still reject an assembly that is a different project.'
+
+    # Get-BackendTestShardExecutedAssemblies makes the same two-part decision when it deduplicates,
+    # and both halves are pinned here because the two failure modes point in opposite directions:
+    #   * culture-aware (`Sort-Object -Unique`) folds the soft-hyphen name into the plain one, so an
+    #     assembly that never ran is reported as the one that did — 1 entry instead of 2;
+    #   * strictly case-sensitive Ordinal keeps `NERV.…` and `nerv.…` apart, so one real assembly is
+    #     counted twice and the shard's executed set drifts from its manifest — 3 entries instead of 2.
+    # Only OrdinalIgnoreCase yields 2, which is what makes this one assertion discriminate both ways.
+    Set-Content -LiteralPath (Join-Path $lowercaseStorageDirectory 'dedup.trx') -NoNewline -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000005" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest id="00000000-0000-0000-0000-000000000006" name="Lower" storage="/w/bin/release/net10.0/nerv.probe.dedup.tests.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Lower" /></UnitTest>
+    <UnitTest id="00000000-0000-0000-0000-000000000007" name="Upper" storage="/w/bin/Release/net10.0/NERV.PROBE.DEDUP.TESTS.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Upper" /></UnitTest>
+    <UnitTest id="00000000-0000-0000-0000-000000000008" name="Ignorable" storage="/w/bin/release/net10.0/nerv.probe.dedup${ordinalSoftHyphen}.tests.dll"><TestMethod className="Nerv.Probe.Dedup.Tests.SomeTests" name="Ignorable" /></UnitTest>
+  </TestDefinitions>
+</TestRun>
+"@
+    $dedupAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $lowercaseStorageDirectory)
+    $dedupProbe = @($dedupAssemblies | Where-Object { $_.StartsWith('nerv.probe.dedup', [StringComparison]::OrdinalIgnoreCase) })
+    Assert-Contract ($dedupProbe.Count -eq 2) "Executed-assembly deduplication must be ordinal *and* case-insensitive: two spellings of one assembly collapse, an ignorable-character variant does not. Kept $($dedupProbe.Count)."
+    Assert-Contract (@($dedupProbe | Where-Object { $_.Contains($ordinalSoftHyphen) }).Count -eq 1) 'The ignorable-character assembly must survive deduplication as its own entry.'
+    Assert-Contract (@($dedupProbe | Where-Object { -not $_.Contains($ordinalSoftHyphen) }).Count -eq 1) 'The two case spellings of one assembly must collapse into a single entry.'
+}
+finally {
+    if (Test-Path -LiteralPath $lowercaseStorageDirectory) {
+        Remove-Item -LiteralPath $lowercaseStorageDirectory -Recurse -Force
+    }
+}
+
+# ...and the file-wide closing statement, parsed rather than asserted in prose (#1509 round 3).
+#
+# Three rounds of this review each produced a "the file is now clean" claim and each was measured
+# wrong afterwards, the last time on the one comparison that decides whether a heavy-lane failure is
+# reported. So the claim is a scan, over the same axes the TestEvidence.ps1 contract uses (`-c*`
+# operators, culture-aware operators against string literals, Sort-Object/Group-Object/Compare-Object/
+# Select-Object -Unique/Where-Object comparison switches, `switch` on string clauses, string methods
+# without an explicit [StringComparison], and a written-out non-ordinal [StringComparison]).
+#
+# Zero exceptions here, unlike TestEvidence.ps1's one: every string this library handles is an
+# identifier. What the scan cannot see is enumerated by Get-NervOrdinalContractBlindSpots and pinned
+# against synthetic sources in scripts/tests/test-evidence.Tests.ps1 — the same limits apply to this
+# file, and stating them once beats restating them differently in two places.
+. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
+$selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertionsPath -DisplayName 'BackendTestShardSelectors.ps1'
+Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
+
+$classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
+Assert-Contract ((Get-BackendTestShardUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
+
+# What the deleted assertion guarded, and who guards it now (#1509).
+#
+# This line used to read `$classifiedProjects.Count -eq 66`. The number is a *measurement* — how
+# many backend test projects exist today — so every added test project turned this gate red until a
+# human retyped it, which is the same "刷新仪式" #1507 removed from the timing data. But deleting a
+# red gate is not the same as removing the need for one, so state the guard explicitly:
+#
+#   * it caught a project silently dropped out of the manifest — now caught by
+#     `$missingFromManifest`, against the very solution the shards build;
+#   * it caught a manifest row naming a project that is not part of the backend test inventory —
+#     now caught by `$notInSolution`. That is deliberately *not* the same rule as the validator's
+#     "Classified projects are not discovered backend test projects": the validator's inventory is a
+#     filesystem glob for `**/*.Tests.csproj`, this one is membership of backend/Nerv.IIP.sln. A
+#     project that exists on disk but was never added to the solution passes the validator and fails
+#     here — and it is the one that matters, because a shard runs a `.slnf` filter over the solution,
+#     so an unlisted project is never built or tested no matter how many files sit next to it. Both
+#     are kept: they fail on different defects, and the cheaper of the two is the one already run by
+#     verify-backend-test-shards.ps1 in a separate job;
+#   * it never caught anything else, because "the count is 66" cannot distinguish which 66.
+#
+# Coverage goes up rather than down: the set comparison also fails when one project is swapped for
+# another (count unchanged, inventory wrong), which `-eq 66` could not see.
+#
+# The expected set is derived from backend/Nerv.IIP.sln rather than from a filesystem glob on
+# purpose. The validator already globs `**/*.Tests.csproj`; re-globbing here would assert this
+# file's own arithmetic. The solution is the artifact each shard's `.slnf` is a filter over, so a
+# project that is in the solution but unclassified is exactly the defect that reaches CI.
+#
+# The path is taken as the whole quoted run (`[^"]*`), not "up to the first space". A solution file
+# always quotes project paths, so the quotes are the real delimiter; excluding the space instead made
+# a project whose directory contains a space simply not match, which is a blind spot exactly where
+# the coverage check is supposed to be total.
+function Get-BackendSolutionTestProjects {
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $SolutionLines)
+
+    return @(
+        $SolutionLines | ForEach-Object {
+            if ($_ -match '"(?<path>[^"]*\.Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
+        }
+    )
+}
+
+# Control: a solution row whose path carries a space must still be derived. Under the old
+# `[^" ]*` spelling this line yields nothing and the project silently drops out of the expected set.
+$spacedSolutionLine = 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nerv.IIP.Spaced.Tests", "tests\Nerv IIP Spaced.Tests\Nerv.IIP.Spaced.Tests.csproj", "{00000000-0000-0000-0000-000000000009}"'
+Assert-Contract ([string]::Equals(((Get-BackendSolutionTestProjects -SolutionLines @($spacedSolutionLine)) -join '|'), 'backend/tests/Nerv IIP Spaced.Tests/Nerv.IIP.Spaced.Tests.csproj', [StringComparison]::Ordinal)) 'A backend test project whose solution path contains a space must still be derived from the solution; the path is delimited by quotes, not by whitespace.'
+
+$solutionTestProjects = Get-BackendTestShardUniqueSorted -Values @(
+    Get-BackendSolutionTestProjects -SolutionLines @(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln'))
+)
+Assert-Contract ($solutionTestProjects.Count -gt 0) 'The backend solution must list backend test projects; an empty derivation would make the coverage comparison below vacuous.'
+$classifiedProjectSet = Get-BackendTestShardMembershipSet -Values $classifiedProjects
+$solutionTestProjectSet = Get-BackendTestShardMembershipSet -Values $solutionTestProjects
+$missingFromManifest = @($solutionTestProjects | Where-Object { -not $classifiedProjectSet.Contains($_) })
+$notInSolution = @($classifiedProjects | Where-Object { -not $solutionTestProjectSet.Contains($_) })
+Assert-Contract ($missingFromManifest.Count -eq 0) "Every backend test project in backend/Nerv.IIP.sln must be classified by the shard manifest; unclassified: $($missingFromManifest -join ', ')."
+Assert-Contract ($notInSolution.Count -eq 0) "Every classified shard project must be a backend test project in backend/Nerv.IIP.sln; stale: $($notInSolution -join ', ')."
+# Report-only, deliberately: the inventory size is a measurement to read, never a gate to satisfy.
+Write-Host "  [report-only] classified backend test projects: $($classifiedProjects.Count)"
 Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj') 'MAN-662 shared test-infrastructure facts must run in the default fast gate.'
 Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj') 'MAN-662 FastEndpoints process-isolation facts must run in the default fast gate.'
 Assert-Contract (((@($fastShards.evidenceLane) | Sort-Object) -join '|') -ceq 'backend-shard-1|backend-shard-2|backend-shard-3|backend-shard-4') 'Every fast shard must own one MAN-661 schema-v1 backend shard lane.'
@@ -1020,6 +1289,46 @@ try {
         $blankMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $blankProbeSelector -Rules @($blankProbeRule))
         Assert-Contract ($blankMatches.Count -eq 0) "A blank policy identity must never be covered by any selector; selector '$blankProbeSelector' matched $($blankMatches.Count)."
     }
+
+    # (6) Identity padding, the last undefined corner of this derivation (#1509). A *blank* identity is
+    #     covered by nothing (above); a *padded* one used to be undefined — adding `.Trim()` to the
+    #     identity left this entire file green, so neither "compare as written" nor "normalize first"
+    #     was actually the contract. The ruling is compare-as-written, and it is asserted from both
+    #     ends so that a `.Trim()` on either side fails here: the unpadded selector must not reach the
+    #     padded identity, and the padded selector must not reach the unpadded identity. The
+    #     complementary half of the ruling — padding is rejected where the policy is authored — is
+    #     asserted against Test-NervTestEvidencePolicy in scripts/tests/test-evidence.Tests.ps1.
+    $paddedProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-padded-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @(' Nerv.Probe.Padded.Leading', 'Nerv.Probe.Padded.Trailing ')
+    }
+    foreach ($paddedProbeSelector in @('Nerv.Probe.Padded.Leading', 'Nerv.Probe.Padded.Trailing')) {
+        $paddedMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $paddedProbeSelector -Rules @($paddedProbeRule))
+        Assert-Contract ($paddedMatches.Count -eq 0) "A policy identity carrying leading or trailing whitespace is compared as written, so the unpadded selector '$paddedProbeSelector' must not reach it; matched $($paddedMatches.Count)."
+    }
+    #     The class-prefix branch is the asymmetric case and is pinned rather than waved past: a
+    #     *trailing*-padded identity still sits under its class prefix (the padding is past the dot),
+    #     while a *leading*-padded one does not, so the class selector must cover exactly one of the
+    #     two. Trimming the identity would make it cover both.
+    $paddedClassMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Padded' -Rules @($paddedProbeRule))
+    $paddedClassIdentities = @($paddedClassMatches | ForEach-Object { [string] $_.identity })
+    Assert-Contract ($paddedClassMatches.Count -eq 1) "A class selector must cover the trailing-padded identity and not the leading-padded one; matched $($paddedClassMatches.Count): [$($paddedClassIdentities -join ', ')]."
+    Assert-Contract ([string]::Equals([string] $paddedClassIdentities[0], 'Nerv.Probe.Padded.Trailing ', [StringComparison]::Ordinal)) "The covered identity must be carried through with its padding intact, not normalized; got '$([string] $paddedClassIdentities[0])'."
+    $unpaddedProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-unpadded-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @('Nerv.Probe.Unpadded.Method')
+    }
+    foreach ($paddedSelector in @(' Nerv.Probe.Unpadded.Method', 'Nerv.Probe.Unpadded.Method ', ' Nerv.Probe.Unpadded')) {
+        $paddedSelectorMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $paddedSelector -Rules @($unpaddedProbeRule))
+        Assert-Contract ($paddedSelectorMatches.Count -eq 0) "A padded selector must not be trimmed into a match against an unpadded identity; selector '$paddedSelector' matched $($paddedSelectorMatches.Count)."
+    }
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Unpadded.Method' -Rules @($unpaddedProbeRule)).Count -eq 1) 'The padding assertions must be discriminating: the unpadded selector still matches its unpadded identity.'
 
     # The gate itself, over the rearranged topology. The assertions above compare derivations; this
     # runs the real policy gate as a process and requires it to be satisfied by a shard layout it has
