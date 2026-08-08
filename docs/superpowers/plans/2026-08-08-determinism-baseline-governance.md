@@ -103,4 +103,3 @@ Replace all current claims that `path=pattern` alone prevents baseline self-exem
 - [ ] **Step 6: Verify and commit**
 
 Run `pwsh -NoProfile -File scripts/tests/check-backend-test-determinism.Tests.ps1`, `pwsh -NoProfile -File scripts/check-backend-test-determinism.ps1`, and `pwsh -NoProfile -File scripts/check-script-governance.ps1`. Commit only #1488 changes with a message that references `#1488`.
-
