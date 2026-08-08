@@ -757,11 +757,16 @@ jobs:
     name: Script Governance
     # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
     # include the evidence contract-test step; the 0.7m average this comment used to quote predates
-    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 43m and are per-step
-    # upper bounds only. MAN-669 PR-C added the two solution-configuration-membership steps; both
-    # run in under 5s locally (0.8s for the checker, 3.6s for its contract test), so the job budget
-    # is unchanged. #1509 added the scan-boundary contract step (4.7s locally); the job budget is
-    # unchanged for the same reason.
+    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 48m (10 steps: 3m
+    # checkout + 9 × 5m) and are per-step upper bounds only. That sum exceeding the job budget is
+    # correct for tier B and is *not* what scripts/lib/CiWorkflowBudgets.ps1 enforces: the
+    # "step budgets sum below the job budget" invariant is tier A only, i.e. jobs that publish
+    # evidence from an `if: always()` step which a job-level timeout would cancel. This job has no
+    # such step, so the gate never reads this number — keep it accurate by hand when adding a step.
+    # MAN-669 PR-C added the two solution-configuration-membership steps; both run in under 5s
+    # locally (0.8s for the checker, 3.6s for its contract test), so the job budget is unchanged.
+    # #1509 added the scan-boundary contract step (5.2s locally); the job budget is unchanged for the
+    # same reason, and the sum moved 43m → 48m.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
