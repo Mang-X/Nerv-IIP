@@ -760,7 +760,8 @@ jobs:
     # that step. The 10m job budget is the fail-fast bound; step budgets sum to 43m and are per-step
     # upper bounds only. MAN-669 PR-C added the two solution-configuration-membership steps; both
     # run in under 5s locally (0.8s for the checker, 3.6s for its contract test), so the job budget
-    # is unchanged.
+    # is unchanged. #1509 added the scan-boundary contract step (4.7s locally); the job budget is
+    # unchanged for the same reason.
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -778,6 +779,18 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      # The checker above only reports on the files it decides to scan; this step is what holds that
+      # decision still. #1509 narrowed the exclusion list to three entries and put scripts/lib under
+      # a declared library scope, and a boundary nobody re-checks drifts back — so the exclusion list
+      # and the library rule set are asserted here, in CI, not only in the local gate. Deliberately
+      # split out of scripts/tests/check-script-governance.Tests.ps1, which also drives the
+      # ScriptAutomation stream-drain and detached-process fixtures; this file is 4.7s of checker
+      # runs against small fixtures. Ruling: docs/architecture/script-automation-governance.md.
+      - name: Test script governance scan boundary
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/script-governance-scan-boundary.Tests.ps1
 
       - name: Test backend determinism checker
         timeout-minutes: 5

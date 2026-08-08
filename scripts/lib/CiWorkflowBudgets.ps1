@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: library
 #   SideEffects:
 #     - Reads GitHub Actions workflow files
 #   Writes:

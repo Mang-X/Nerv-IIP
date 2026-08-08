@@ -25,6 +25,7 @@
 | `verify` | 启动本地依赖、容器、临时 Web 服务、disposable database，运行端到端验收 | 连接客户数据环境、写未声明产物、使用生产库名、失败后留下自有进程 | `verify-iam-persistent-auth-foundation.ps1` |
 | `generate` | 导出 OpenAPI、生成 api-client、写入声明过的 generated/openapi 文件 | 伪装成只读验证、手改生成产物、绕过后端契约测试 | `export-gateway-openapi.ps1` |
 | `release-install` | 环境检查、配置生成、备份证据、migration bundle、seed、服务注册、健康检查、诊断包 | 直接拼 SQL 写业务表、绕过 EF migrations history 建表、默认测试密码、删除未知数据库、打印密钥 | 后续 `scripts/install/**` |
+| `library` | 被 dot-source 进调用方作用域的共享库；只提供函数，不作为程序被执行 | 作为入口脚本被直接运行、在 `scripts/lib/` 之外声明该分类 | `scripts/lib/TestEvidence.ps1` |
 
 ## 脚本声明
 
@@ -47,7 +48,7 @@
 #     - Docker Desktop
 ```
 
-`Category` 可以是单一分类，也可以用逗号声明复合分类（例如 `verify, generate`）；所有分类项都必须属于 `check`、`verify`、`generate`、`release-install`。`SideEffects` 必须说清楚是否会删除、重建或写入数据库。`Writes` 必须覆盖生成产物、日志目录和临时文件。`Cleanup` 必须说明脚本结束后会清理什么，以及哪些外部依赖会被保留。
+`Category` 可以是单一分类，也可以用逗号声明复合分类（例如 `verify, generate`、`library, generate`）；所有分类项都必须属于 `check`、`verify`、`generate`、`release-install`、`library`。`library` 只能由 `scripts/lib/` 下的文件声明，且该目录下的文件**必须**声明它（见下面的扫描边界）。`SideEffects` 必须说清楚是否会删除、重建或写入数据库。`Writes` 必须覆盖生成产物、日志目录和临时文件。`Cleanup` 必须说明脚本结束后会清理什么，以及哪些外部依赖会被保留。
 
 ## Helper 契约
 
@@ -66,13 +67,48 @@ helper 必须异步或文件重定向 stdout/stderr，避免子进程缓冲区�
 
 `scripts/check-script-governance.ps1` 使用 PowerShell parser/AST 检查脚本，而不是简单 grep。首批门禁规则：
 
-1. 除 helper 和门禁脚本自身外，脚本必须 dot-source `scripts/lib/ScriptAutomation.ps1`。
+1. 入口脚本必须 dot-source `scripts/lib/ScriptAutomation.ps1`；helper 自身、门禁脚本自身与 `scripts/lib/` 下的库不适用（库的规则差异见下面「`scripts/lib` 的治理扫描边界」）。
 2. 禁止直接调用 `dotnet`、`docker`、`pnpm`、`pwsh`、`powershell`、`Start-Job`、`Start-Process`、`Invoke-Expression`、`iex`。
 3. 禁止使用 `[scriptblock]::Create`、`System.Diagnostics.Process.Start`、`cmd /c` 和未登记的动态 invocation。
 4. 每个脚本必须包含 `Script-Governance` 声明块和有效 `Category`。
-5. legacy exemption 必须指向具体脚本和具体规则，不能使用通配符豁免整个目录。
+5. legacy exemption（`scripts/script-governance-baseline.json`）必须指向具体脚本和具体规则，不能使用通配符豁免整个目录。扫描边界（`$scanExclusions`）是另一回事：它决定「哪些文件进入扫描」，穷举为三条并被契约测试逐字锁定，见下节。
 
 PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当前仓库必须能在没有额外全局模块安装的机器上运行 fast gate。
+
+## `scripts/lib` 的治理扫描边界（#1509 裁决）
+
+原先 `check-script-governance.ps1` 把 `scripts/lib/*` 整体排除出默认扫描，结果是**全仓库影响面最大的一批文件反而完全不受管**：`ForbiddenCommand`、`DynamicInvocation`、`ForbiddenProcessStart`，乃至 `ParseError` 都对库文件不生效。#1509 的裁决是**收窄排除范围，让库进入扫描**，而不是把「库不受管」写成文档。
+
+### 排除清单（穷举，只有三条）
+
+| 排除项 | 理由 |
+| --- | --- |
+| `scripts/check-script-governance.ps1` | 门禁脚本本身：它把每个被禁命令名当字面量列出，无法做自己的被检对象。 |
+| `scripts/lib/ScriptAutomation.ps1` | 所有规则指向的那个 wrapper。`ForbiddenCommand`/`DynamicInvocation` 存在的目的就是把调用方赶进这个文件，对它本身施加即构造性循环。 |
+| `scripts/tests/*` | 测试脚本要把被治理的程序当**真进程**跑，并刻意构造非法 fixture；这两件事都是测试的目的，不是治理发现。 |
+
+清单是 `check-script-governance.ps1` 里一份具名数据（`$scanExclusions`），不是内联布尔链——`scripts/tests/check-script-governance.Tests.ps1` 逐字断言这三条，因此**放宽边界必然改到一条被命名的契约**，而不是改一处没人看的 `Where-Object`。
+
+### 库作用域（library scope）
+
+`scripts/lib/` 下的文件按 library scope 扫描。规则差异只有两条，其余（`ParseError`、`MissingGovernanceHeader`、`MissingCategory`/`InvalidCategory`、`ForbiddenCommand`、`ForbiddenDynamicScriptBlock`、`ForbiddenProcessStart`）与入口脚本完全一致：
+
+1. **`MissingHelper` 不适用。** 库是被 dot-source 进调用方作用域的，调用方已经加载了 wrapper；而且 `BackendTestShardSelectors.ps1`、`CiWorkflowBudgets.ps1` 这类库根本不调用任何外部进程，强塞一个用不到的 import 买不到任何东西。这条规则真正要防的「库绕过 wrapper 直接 shell out」并没有失守：`ForbiddenCommand`、`ForbiddenProcessStart` 和下面收窄后的 `DynamicInvocation` 在库作用域全部生效，而确实要 shell out 的库（`BackendTestShardTimings.ps1`、`FullStackSessionRuntime.ps1`）为自己的需要本来就 dot-source 了 wrapper。
+2. **`DynamicInvocation` 收窄为「注入式 action seam」。** 库可以 `& $Action`，条件是该变量在本文件里**可证明是 script block**：要么是 `[scriptblock]` 类型的参数，要么是被 `{ … }` 字面量（含 `.GetNewClosure()`）赋值的变量。这正是本仓库构造可测试库所依赖的注入 seam（见 `AGENTS.md` 后端测试确定性一节）。`& 'dotnet'`、`& "$exe"`、`& (Get-Command …)`、`& $stringVariable` 一律仍是违规——最后一种是 `ForbiddenCommand` 在结构上看不见的那个洞，所以这条规则必须留在库作用域，而不是整体豁免。
+
+library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/` 下的文件必须在自己的 header 里写 `Category: library`（否则报 `MissingLibraryCategory`），而目录之外的文件不能通过贴这个标签来蹭上述两条放宽（否则报 `InvalidCategory`）。放宽写在被放宽者自己的头部，改动可见。
+
+### 可执行守卫
+
+裁决的每一条都有会红的对照，全部在 `scripts/tests/check-script-governance.Tests.ps1`：
+
+- 排除清单逐字断言 → 往里加 `scripts/lib/*` 直接红；
+- 在 `scripts/lib/` 下临时种一个违规库文件，**默认扫描**（不带 `-Path`）必须报出它 → 边界被行为性放宽时红；
+- seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` 七个用例逐条对照 → 任何一条规则被削弱或过度收紧都红。
+
+### 已知残余
+
+同一文件里 `& $x` 与 `$x` 的真实内容仍受运行时决定：若有人写 `$x = { … }` 之后再重新赋值成字符串，AST 层面无法判否。该残余被接受，因为它需要一次刻意的、可见的重新赋值，而更常见的绕过路径（直呼命令、字面量调用、字符串变量调用）都已被上面的规则堵死。
 
 ## 端口、数据库与容器
 

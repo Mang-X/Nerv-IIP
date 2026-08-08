@@ -1,3 +1,14 @@
+# Script-Governance:
+#   Category: library
+#   SideEffects:
+#     - Issues leader-demo telemetry requests through a caller-injected HTTP action
+#   Writes:
+#     - None; callers own every output path
+#   Cleanup:
+#     - Owns no process; pacing and cancellation are caller-injected actions
+#   Requires:
+#     - PowerShell 7
+
 Set-StrictMode -Version Latest
 
 function Get-NervLeaderDemoTelemetryProfile {
