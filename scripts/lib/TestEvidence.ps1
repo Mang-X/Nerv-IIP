@@ -112,6 +112,53 @@ function Get-NervOrdinalSortedBy {
     return @(Get-NervOrdinalGroups -Items $Items -KeySelector $KeySelector | ForEach-Object { @($_.Group) })
 }
 
+function Get-NervOrdinalRankedTop {
+    <#
+        The "top N by a number, ties broken by an identifier" ordering, with no culture collation
+        anywhere in it.
+
+        `Sort-Object @{ Expression = 'elapsedMilliseconds'; Descending = $true }, @{ Expression =
+        'assembly' }` reads as if only the numeric key mattered, but the tie-break is a *string* key
+        and Sort-Object compares strings by culture collation — measured, `apple, Banana, Cherry`
+        under culture versus `Banana, Cherry, apple` ordinal. summary.json is a retained artifact, so
+        that made two runs of the same evidence lay out differently on differently-configured
+        machines (#1509 round 3; the sibling `assemblies` list next to it had already been moved to
+        Get-NervOrdinalSortedBy, these two rows had not).
+
+        The numeric rank is applied as an explicitly stable descending sort *after* an ordinal sort on
+        the tie-break key, so equal metrics keep ordinal order and nothing but a double comparison
+        decides the rest.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [object[]] $Items,
+        [Parameter(Mandatory)] [scriptblock] $MetricSelector,
+        [Parameter(Mandatory)] [scriptblock] $TieBreakSelector,
+        [Parameter(Mandatory)] [int] $Count
+    )
+
+    if ($Count -le 0) { return @() }
+    $ordered = @(Get-NervOrdinalSortedBy -Items @($Items) -KeySelector $TieBreakSelector)
+    if ($ordered.Count -eq 0) { return @() }
+
+    $decorated = [Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $ordered.Count; $index++) {
+        $decorated.Add([pscustomobject]@{
+            Rank = $index
+            Metric = [double](& $MetricSelector $ordered[$index])
+            Item = $ordered[$index]
+        })
+    }
+    $decorated.Sort([Comparison[object]] {
+        param($Left, $Right)
+        if ([double]$Right.Metric -gt [double]$Left.Metric) { return 1 }
+        if ([double]$Right.Metric -lt [double]$Left.Metric) { return -1 }
+        return [int]$Left.Rank - [int]$Right.Rank
+    })
+
+    $take = [Math]::Min($Count, $decorated.Count)
+    return @(0..($take - 1) | ForEach-Object { $decorated[$_].Item })
+}
+
 function Test-NervHasProperty {
     <#
         Whether an object carries a property under this name.
@@ -293,7 +340,11 @@ function Test-NervTestEvidencePolicy {
         }
         foreach ($patternName in @('testPattern', 'reasonPattern')) {
             $pattern = [string]$rule.$patternName
-            if (-not ($pattern.StartsWith('^') -and $pattern.EndsWith('$'))) {
+            # Ordinal (#1509 round 3): `.StartsWith('^')` with no [StringComparison] is culture-aware,
+            # and `"$([char]0x00AD)^x".StartsWith('^')` is True — an unanchored pattern prefixed with
+            # one ignorable character passes the anchor guard and then matches far more skip reasons
+            # than the rule froze. Both ends, same reason.
+            if (-not ($pattern.StartsWith('^', [StringComparison]::Ordinal) -and $pattern.EndsWith('$', [StringComparison]::Ordinal))) {
                 $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) "$patternName must be fully anchored."))
                 continue
             }
@@ -711,12 +762,15 @@ function Get-NervTestEvidenceViolations {
             realDependency = [bool]$laneMatches[0].realDependency
         })
     }
+    # Built once, not once per record: inside a Where-Object block this allocated a HashSet for every
+    # row it filtered (#1509 round 3 review). It is read-only from here on.
+    $executedOutcomes = Get-NervOrdinalSet -Values @('passed', 'failed')
     foreach ($laneGroup in @(Get-NervOrdinalGroups -Items @($selectedLaneContracts) -KeySelector { param($row) [string]$row.baseLane })) {
         if (-not [bool]$laneGroup.Group[0].realDependency) { continue }
         $selectors = @($laneGroup.Group | ForEach-Object { [string]$_.selectedLane })
         $baseLane = [string]$laneGroup.Name
         $executed = @($safeRecords | Where-Object {
-            if (-not (Get-NervOrdinalSet -Values @('passed', 'failed')).Contains([string]$_.outcome)) { return $false }
+            if (-not $executedOutcomes.Contains([string]$_.outcome)) { return $false }
             $recordLane = [string]$_.lane
             # Ordinal (#1509): a lane name is a selector, and this comparison decides whether a lane
             # counted as executed at all — the input to the `zero-execution` gate.
@@ -754,6 +808,8 @@ function New-NervTestEvidenceSummary {
     $passed = @($safeRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'passed' }).Count
     $failed = @($safeRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'failed' }).Count
     $skipped = @($safeRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' }).Count
+    # Built once, not once per filtered record (#1509 round 3 review); read-only from here on.
+    $executedOutcomes = Get-NervOrdinalSet -Values @('passed', 'failed')
     # Ordinal throughout (#1509): the lane, the selector set and the violation code are all
     # identifiers. `-ceq`/`-ccontains` only disable case-insensitivity and stay culture-aware, and
     # `Sort-Object -Unique`/`Group-Object` fold outright — so a selector differing by an ignorable
@@ -777,7 +833,7 @@ function New-NervTestEvidenceSummary {
             passed = @($laneRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'passed' }).Count
             failed = @($laneRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'failed' }).Count
             skipped = @($laneRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' }).Count
-            executed = @($laneRecords | Where-Object { (Get-NervOrdinalSet -Values @('passed', 'failed')).Contains([string]$_.outcome) }).Count
+            executed = @($laneRecords | Where-Object { $executedOutcomes.Contains([string]$_.outcome) }).Count
             total = $laneRecords.Count
             gateResult = if ($zeroExecution) { 'zero-execution' } elseif ($invalidSelection) { 'invalid-selection' } else { 'pass' }
         }
@@ -797,7 +853,7 @@ function New-NervTestEvidenceSummary {
             passed = @($items | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'passed' }).Count
             failed = @($items | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'failed' }).Count
             skipped = @($items | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' }).Count
-            executed = @($items | Where-Object { (Get-NervOrdinalSet -Values @('passed', 'failed')).Contains([string]$_.outcome) }).Count
+            executed = @($items | Where-Object { $executedOutcomes.Contains([string]$_.outcome) }).Count
             total = $items.Count
             testDurationMilliseconds = [double](($items | Measure-Object durationMilliseconds -Sum).Sum)
             elapsedMilliseconds = if (@($runRows).Count -gt 0) { [double](($runRows | Measure-Object elapsedMilliseconds -Sum).Sum) } else { 0.0 }
@@ -923,12 +979,25 @@ function New-NervTestEvidenceSummary {
         testDurationMilliseconds = if ($safeRecords.Count -gt 0) { [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum) } else { 0.0 }
         trxElapsedMilliseconds = if ($RunMetadata.ContainsKey('trxElapsedMilliseconds')) { [double]$RunMetadata.trxElapsedMilliseconds } else { $null }
         assemblies = $assemblies
-        slowestAssemblies = @($assemblies | Sort-Object @{ Expression = 'elapsedMilliseconds'; Descending = $true }, @{ Expression = 'assembly'; Descending = $false } | Select-Object -First $TopCount)
-        slowestTests = @($safeRecords | Sort-Object @{ Expression = 'durationMilliseconds'; Descending = $true }, @{ Expression = 'testName'; Descending = $false } | Select-Object -First $TopCount | ForEach-Object { [pscustomobject]@{ lane = $_.lane; testName = $_.testName; displayName = $_.displayName; assembly = $_.assembly; durationMilliseconds = $_.durationMilliseconds } })
-        # skipReasons groups on a *human-readable* reason, so it stays culture-aware on purpose: the
-        # key is prose, not an identifier, and folding two visually identical reasons into one row is
-        # the desired reading. skipClassification and skipPolicyId are identifiers and are not.
-        skipReasons = @($safeRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' } | Group-Object { Get-NervRetainedSkipReason $_ } | Sort-Object Name | ForEach-Object { [pscustomobject]@{ reason = $_.Name; count = $_.Count } })
+        # Ordinal tie-break (#1509 round 3): both rows are retained in summary.json, and the second
+        # sort key here is an identifier, so Sort-Object's culture collation made the artifact's byte
+        # layout depend on the machine's locale.
+        slowestAssemblies = @(Get-NervOrdinalRankedTop -Items @($assemblies) -Count $TopCount `
+            -MetricSelector { param($row) [double]$row.elapsedMilliseconds } `
+            -TieBreakSelector { param($row) [string]$row.assembly })
+        slowestTests = @(Get-NervOrdinalRankedTop -Items @($safeRecords) -Count $TopCount `
+            -MetricSelector { param($row) [double]$row.durationMilliseconds } `
+            -TieBreakSelector { param($row) [string]$row.testName } |
+            ForEach-Object { [pscustomobject]@{ lane = $_.lane; testName = $_.testName; displayName = $_.displayName; assembly = $_.assembly; durationMilliseconds = $_.durationMilliseconds } })
+        # skipReasons *groups* culture-aware on purpose: the key is prose, not an identifier, and
+        # folding two visually identical reasons into one reported row is the desired reading. That is
+        # the single named exception in the ordinal sweep contract. The *ordering* is a separate
+        # decision and gets no such licence — summary.json is retained, so the row order must not
+        # depend on the machine's collation (#1509 round 3). skipClassification and skipPolicyId are
+        # identifiers and are ordinal on both axes.
+        skipReasons = @(Get-NervOrdinalSortedBy -KeySelector { param($group) [string]$group.Name } -Items @(
+            $safeRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' } | Group-Object { Get-NervRetainedSkipReason $_ }
+        ) | ForEach-Object { [pscustomobject]@{ reason = $_.Name; count = $_.Count } })
         skipClassifications = @(Get-NervOrdinalGroups -Items @($safeRecords | Where-Object { (Test-NervOrdinalEquals ([string]$_.outcome) 'skipped') -and (Test-NervHasProperty -Object $_ -Name 'skipClassification') }) -KeySelector { param($row) [string]$row.skipClassification } | ForEach-Object { [pscustomobject]@{ classification = $_.Name; count = @($_.Group).Count } })
         skipPolicies = @(Get-NervOrdinalGroups -Items @($safeRecords | Where-Object { (Test-NervOrdinalEquals ([string]$_.outcome) 'skipped') -and (Test-NervHasProperty -Object $_ -Name 'skipPolicyId') }) -KeySelector { param($row) [string]$row.skipPolicyId } | ForEach-Object {
             [pscustomobject]@{ policyId = $_.Name; classification = [string]$_.Group[0].skipClassification; count = @($_.Group).Count }
@@ -1116,7 +1185,14 @@ function Write-NervTestEvidenceArtifacts {
             $fileName = "$($Summary.lane)-$assemblyName-$sha8-attempt-$($Summary.runAttempt).trx"
             $xmlRows = foreach ($record in $groupRecords) {
                 $name = [Security.SecurityElement]::Escape([string]$record.displayName)
-                $outcome = switch ([string]$record.outcome) { 'passed' { 'Passed' } 'failed' { 'Failed' } default { 'NotExecuted' } }
+                # Explicit ordinal comparisons rather than `switch` (#1509 round 3): PowerShell's
+                # switch matches culture-aware, and `-CaseSensitive` does not change that — measured,
+                # `switch ("failed$([char]0x00AD)")` still takes the 'failed' branch. Here that wrote a
+                # `Failed` outcome into a *retained* TRX for a record whose outcome token was not
+                # `failed`, i.e. the artifact stopped agreeing with the record it was built from.
+                $outcome = if (Test-NervOrdinalEquals ([string]$record.outcome) 'passed') { 'Passed' }
+                    elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { 'Failed' }
+                    else { 'NotExecuted' }
                 $duration = [TimeSpan]::FromTicks([long]$record.durationTicks).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
                 $message = if (Test-NervOrdinalEquals ([string]$record.outcome) 'skipped') { Get-NervRetainedSkipReason $record } elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { ConvertTo-NervRetainedFailureText ([string]$record.errorMessage) } else { $null }
                 $output = if ([string]::IsNullOrWhiteSpace($message)) { '' } else { "<Output><ErrorInfo><Message>$([Security.SecurityElement]::Escape($message))</Message></ErrorInfo></Output>" }

@@ -224,6 +224,22 @@ $ordinalSelectorShard = [pscustomobject]@{
 $ordinalSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard)
 Assert-Contract ($ordinalSelectors.Count -eq 2) "Two exclusion selectors differing only by an ignorable character are two selectors; deduplication must be ordinal, kept $($ordinalSelectors.Count)."
 
+# The same function's -Kind keyword (#1509 round 3). [ValidateSet] compares culture-aware, so
+# `-Kind "all<U+00AD>"` is *accepted* by the attribute; the body's `-in` folded it back to 'all', and
+# the two agreed by accident. Making only the body ordinal would turn that into a silent empty
+# result — the worst outcome, since an empty exclusion set reads as "this shard excludes nothing" —
+# so an unmatched keyword throws. Both halves are asserted: the folded spelling fails loudly, and the
+# case-insensitivity [ValidateSet] does promise still works.
+$foldedKindText = ''
+try {
+    [void] (Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard -Kind "all$ordinalSoftHyphen")
+}
+catch {
+    $foldedKindText = $_.Exception.Message
+}
+Assert-Contract ($foldedKindText.Contains('Unsupported excluded-selector kind')) "A selector kind that only matches by culture folding must throw rather than silently select nothing. Reported: '$foldedKindText'."
+Assert-Contract (@(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard -Kind 'Class').Count -eq 2) 'The selector kind keyword stays case-insensitive, which is what [ValidateSet] promises.'
+
 $ordinalExecutionText = ''
 try {
     Assert-BackendTestShardProjectExecution `
@@ -279,6 +295,40 @@ Assert-BackendTestShardSelectorExecution `
     -Selector 'Nerv.Probe.Selector' `
     -DiscoveredTests @('Nerv.Probe.Selector.Alpha') `
     -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Selector.Alpha'; outcome = 'Passed' })
+
+# The *outcome* half of the same gate, which had no probe until #1509 round 3 and was the last
+# culture-aware comparison left in the library. It used to read `[string] $_.outcome -ne 'Passed'`,
+# and `"Passed$([char]0x00AD)" -ne 'Passed'` is False — so a result whose outcome token is not
+# `Passed` folded into the passing set, `$failedResults` came back empty and a heavy-lane run with a
+# failing test exited 0. Every neighbouring comparison in this function was already explicit; the one
+# that decides pass/fail was not.
+#
+# Two fixtures, because the two failure modes are different strings: an ignorable-character variant of
+# `Passed` (culture folding) and an outright `Failed` (the ordinary case, which the old code did
+# catch — kept so the probe cannot pass by rejecting everything that is not literally `Passed`).
+$foldedOutcomeText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Outcome' `
+        -DiscoveredTests @('Nerv.Probe.Outcome.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Outcome.Alpha'; outcome = "Passed$ordinalSoftHyphen" })
+}
+catch {
+    $foldedOutcomeText = $_.Exception.Message
+}
+Assert-Contract ($foldedOutcomeText.Contains('discovered=1, trx=1, missing=0, notPassed=1')) "An outcome that is not the literal token 'Passed' must count as not passed even when the collation table folds it into 'Passed'; the outcome comparison must be ordinal. Reported: '$foldedOutcomeText'."
+
+$failedOutcomeText = ''
+try {
+    Assert-BackendTestShardSelectorExecution `
+        -Selector 'Nerv.Probe.Outcome' `
+        -DiscoveredTests @('Nerv.Probe.Outcome.Alpha') `
+        -TrxResults @([pscustomobject]@{ testName = 'Nerv.Probe.Outcome.Alpha'; outcome = 'Failed' })
+}
+catch {
+    $failedOutcomeText = $_.Exception.Message
+}
+Assert-Contract ($failedOutcomeText.Contains('notPassed=1')) 'A Failed result must still fail the selector execution gate.'
 
 # ...and the case axis, which the fixture above deliberately does not exercise. VSTest writes the
 # TRX `storage` path lowercased, so the executed side of this comparison never carries the manifest's
@@ -348,6 +398,23 @@ finally {
         Remove-Item -LiteralPath $lowercaseStorageDirectory -Recurse -Force
     }
 }
+
+# ...and the file-wide closing statement, parsed rather than asserted in prose (#1509 round 3).
+#
+# Three rounds of this review each produced a "the file is now clean" claim and each was measured
+# wrong afterwards, the last time on the one comparison that decides whether a heavy-lane failure is
+# reported. So the claim is a scan, over the same axes the TestEvidence.ps1 contract uses (`-c*`
+# operators, culture-aware operators against string literals, Sort-Object/Group-Object/Compare-Object/
+# Select-Object -Unique/Where-Object comparison switches, `switch` on string clauses, string methods
+# without an explicit [StringComparison], and a written-out non-ordinal [StringComparison]).
+#
+# Zero exceptions here, unlike TestEvidence.ps1's one: every string this library handles is an
+# identifier. What the scan cannot see is enumerated by Get-NervOrdinalContractBlindSpots and pinned
+# against synthetic sources in scripts/tests/test-evidence.Tests.ps1 — the same limits apply to this
+# file, and stating them once beats restating them differently in two places.
+. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
+$selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertionsPath -DisplayName 'BackendTestShardSelectors.ps1'
+Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
 
 $classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
 Assert-Contract ((Get-BackendTestShardUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'

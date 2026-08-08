@@ -250,6 +250,158 @@ function Invoke-FixtureShadowsFileLevelSeam {
 }
 '@)
 
+    # ---------------------------------------------------------------------------------------------
+    # The other spellings of "this scope binds that name" (#1509 round 3). Round 2 fixed the shadowing
+    # rule for `=` only, and the review then measured four more spellings that rebind a name locally
+    # while the checker still handed them the enclosing seam — and, in a real process, ran the external
+    # command. Every case below plants a file-level `$fixtureAction = { … }` seam and rebinds the name
+    # some other way, so it is exactly the round-2 case with the spelling changed.
+    $shadowSeamHeader = $libraryHeader + @'
+$fixtureAction = { 'seam' }
+
+'@
+    $shadowingSpellings = [ordered]@{
+        # ForEachStatementAst, not AssignmentStatementAst — invisible to a scan that only walks
+        # assignments, which is why the whole enumeration is written out in Get-ScopedSeamBindings.
+        'foreach-iteration-variable-shadows-seam' = @'
+function Invoke-FixtureForeachShadow {
+    foreach ($fixtureAction in @('dotnet')) { & $fixtureAction build }
+}
+'@
+        # VariablePath.UserPath keeps the scope qualifier, so `local:fixtureAction` never matched the
+        # `fixtureAction` that `& $fixtureAction` looks up. Four qualifiers, four cases: the
+        # normalization is one line and dropping it turns all four green at once, but a reviewer
+        # reading a single case cannot tell which qualifiers were considered.
+        'local-qualifier-shadows-seam' = @'
+function Invoke-FixtureLocalShadow {
+    $local:fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'script-qualifier-shadows-seam' = @'
+function Invoke-FixtureScriptShadow {
+    $script:fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'global-qualifier-shadows-seam' = @'
+function Invoke-FixtureGlobalShadow {
+    $global:fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'private-qualifier-shadows-seam' = @'
+function Invoke-FixturePrivateShadow {
+    $private:fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # Binding through a cmdlet rather than an operator.
+        'set-variable-shadows-seam' = @'
+function Invoke-FixtureSetVariableShadow {
+    Set-Variable -Name fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'new-variable-shadows-seam' = @'
+function Invoke-FixtureNewVariableShadow {
+    New-Variable -Name fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'data-statement-shadows-seam' = @'
+function Invoke-FixtureDataShadow {
+    data fixtureAction { 'dotnet' }
+    & $fixtureAction build
+}
+'@
+        # Compound assignment is an AssignmentStatementAst too, so this one was already covered; it is
+        # kept as the control that says so rather than being assumed.
+        'compound-assignment-shadows-seam' = @'
+function Invoke-FixtureCompoundShadow {
+    $fixtureAction += 'dotnet'
+    & $fixtureAction build
+}
+'@
+    }
+    foreach ($spelling in $shadowingSpellings.Keys) {
+        Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($shadowSeamHeader + $shadowingSpellings[$spelling])
+    }
+
+    # Normalizing the *binding* side is what makes the eight cases above shadow correctly, and it is
+    # deliberately not paired with normalizing the *invocation* side. Two cases, because they pin the
+    # two halves of that asymmetry and each is green if only the other filter is dropped:
+    #
+    #   1. a scope-qualified declaration binds the name but proves no seam, so an unqualified `& $x`
+    #      elsewhere is still a violation;
+    #   2. a scope-qualified *invocation* resolves through nothing this file proved, so it is a
+    #      violation even when the plain name is a proven seam in the same scope.
+    #
+    # Both are stricter than PowerShell's own resolution in one direction, which is the intended
+    # trade: a rule that only ever removes permissions cannot smuggle in a relaxation while claiming
+    # to fix a hole. Asserted so the tightening cannot be quietly dropped as inconvenient.
+    Invoke-LibraryScopeCase -Name 'qualified-declaration-proves-no-seam' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
+$script:fixtureAction = { 'seam' }
+
+function Invoke-FixtureQualifiedSeamDeclaration {
+    & $fixtureAction
+}
+'@)
+
+    Invoke-LibraryScopeCase -Name 'qualified-invocation-proves-nothing' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
+function Invoke-FixtureQualifiedSeamInvocation {
+    $fixtureSeam = { 'seam' }
+    & $script:fixtureSeam
+}
+'@)
+
+    # The automatic `$_` is not a binding the checker models, and it does not have to be: it names
+    # nothing this file can prove, so every spelling of it is a violation. Pinned because "we did not
+    # model $_" and "$_ is safe" are different claims.
+    $automaticVariableSpellings = [ordered]@{
+        'foreach-object-automatic-variable' = @'
+function Invoke-FixtureForEachObjectAutomatic {
+    @('dotnet') | ForEach-Object { & $_ build }
+}
+'@
+        'switch-automatic-variable' = @'
+function Invoke-FixtureSwitchAutomatic {
+    switch (@('dotnet')) { default { & $_ build } }
+}
+'@
+        'catch-automatic-variable' = @'
+function Invoke-FixtureCatchAutomatic {
+    try { throw 'x' } catch { & $_ }
+}
+'@
+    }
+    foreach ($spelling in $automaticVariableSpellings.Keys) {
+        Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + $automaticVariableSpellings[$spelling])
+    }
+
+    # …and the two residuals, pinned as *currently permitted* so that the documented "known residual"
+    # list and the implementation cannot drift apart in either direction. Both need a binding whose
+    # name only exists at run time, which is why the AST cannot see them; both are far more deliberate
+    # than the spellings above, which is why they are accepted rather than chased.
+    $residualSpellings = [ordered]@{
+        'residual-set-variable-computed-name' = @'
+function Invoke-FixtureComputedBindingName {
+    $name = 'fixtureAction'
+    Set-Variable -Name $name -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'residual-psvariable-set' = @'
+function Invoke-FixtureSessionStateBinding {
+    $ExecutionContext.SessionState.PSVariable.Set('fixtureAction', 'dotnet')
+    & $fixtureAction build
+}
+'@
+    }
+    foreach ($spelling in $residualSpellings.Keys) {
+        Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 0 -Body ($shadowSeamHeader + $residualSpellings[$spelling])
+    }
+
     # A nested script block inside the same function is still the same seam: the proof travels down
     # into `& { … }` bodies, so tightening the scope must not break the pattern libraries actually
     # use (a seam captured by a helper closure).

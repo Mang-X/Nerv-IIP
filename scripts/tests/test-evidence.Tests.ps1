@@ -1483,120 +1483,162 @@ foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-eviden
 }
 
 # ---------------------------------------------------------------------------------------------
-# Ordinal sweep contract (#1509 round 2). The file-wide sweep of scripts/lib/TestEvidence.ps1 is
-# only worth anything if it stays swept, and two prior rounds showed that a prose boundary ("the
-# rest is out of scope") drifts from the code within one PR. So the boundary is parsed instead:
-# every culture-aware identifier comparison in that library must either be gone or be a named,
-# justified exception here.
+# Ordinal sweep contract (#1509 rounds 2 and 3). The file-wide sweep of scripts/lib/TestEvidence.ps1
+# is only worth anything if it stays swept, and three prior rounds showed that a prose boundary
+# ("the rest is out of scope") drifts from the code within one PR. So the boundary is parsed
+# instead: every culture-aware identifier comparison in that library must either be gone or be a
+# named, justified exception here.
 #
-# What "culture-aware" means was measured, not assumed — the measurements are in the library's own
-# header. `-ceq`/`-cne` are banned outright with no exception path, because they read as "the strict
-# one" while still folding ignorable characters; that misreading is what put them in the file.
-$evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
-$evidenceLibraryParseErrors = $null
-$evidenceLibraryAst = [System.Management.Automation.Language.Parser]::ParseFile(
-    $evidenceLibraryPath, [ref] $null, [ref] $evidenceLibraryParseErrors)
-Assert-True (@($evidenceLibraryParseErrors).Count -eq 0) 'scripts/lib/TestEvidence.ps1 must parse for the ordinal sweep contract.'
+# The scan itself lives in scripts/lib/OrdinalComparisonContract.ps1, because
+# scripts/tests/backend-test-shards.Tests.ps1 makes the same claim about a different library and a
+# claim asserted by two hand-written scanners is two different claims. What that scan can and cannot
+# see is enumerated by the library and pinned below against synthetic sources, so "a contract exists"
+# can never be read as "the semantics are protected" — round 3 found the previous version blind to
+# `switch`, to `Sort-Object` without `-Unique`, to `Select-Object -Unique`, to `.StartsWith`/
+# `.EndsWith` without a [StringComparison], and to a written-out `[StringComparison]::CurrentCulture`.
+. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
 
-# Named exceptions, matched on the offending expression's exact text. Text, not line number: a line
-# number would be invalidated by any edit above it and would silently start exempting something
-# else. Each entry states what the key actually is and why culture-aware is the right reading.
+# Named exceptions, each identified by *where* it is and *what* it is: the enclosing function plus
+# the offending node's exact extent text. Text rather than line number, because a line number is
+# invalidated by any edit above it and then silently exempts something else; exact text rather than
+# a substring, because a substring exception can be widened from one expression to a bare cmdlet
+# name and quietly absorb an unrelated future call site. Site as well as text, because moving the
+# expression into another function has to be re-reviewed.
 $ordinalSweepExceptions = @(
     @{
+        Site = 'New-NervTestEvidenceSummary'
         Text = "Group-Object { Get-NervRetainedSkipReason `$_ }"
-        Reason = 'skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading.'
+        Reason = 'skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading. Only the grouping — the row ordering next to it is ordinal.'
     }
 )
 
-function Test-NervOrdinalContractStringOperand {
-    param([Parameter(Mandatory)] [AllowNull()] [System.Management.Automation.Language.Ast] $Node)
+# The exception table's identity, asserted verbatim. This is what replaces the old
+# `$ordinalSweepExceptions.Count -eq 1` (#1509 round 3): a count cannot tell *which* exception it is
+# counting, so the table could be held at one row while that row was broadened from one expression
+# to the whole `Group-Object` cmdlet — after which a genuinely new culture-aware grouping passes the
+# sweep with the count still equal to 1. Under this assertion any add, removal or edit — including
+# widening the Text — is a diff against a named contract.
+$expectedOrdinalSweepIdentity = @(
+    "New-NervTestEvidenceSummary::Group-Object { Get-NervRetainedSkipReason `$_ }::skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading. Only the grouping — the row ordering next to it is ordinal."
+) -join "`n"
+$actualOrdinalSweepIdentity = (@($ordinalSweepExceptions | ForEach-Object {
+    "$([string]$_.Site)::$([string]$_.Text)::$([string]$_.Reason)"
+}) -join "`n")
+Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweepIdentity, [StringComparison]::Ordinal)) `
+    "The ordinal sweep exception table changed. Expected:`n$expectedOrdinalSweepIdentity`nActual:`n$actualOrdinalSweepIdentity"
 
-    if ($null -eq $Node) { return $false }
-    if ($Node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
-        $Node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
-        return $true
-    }
-    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
-        $typeName = [string] $Node.Type.TypeName.FullName
-        return [string]::Equals($typeName, 'string', [StringComparison]::OrdinalIgnoreCase) -or
-            [string]::Equals($typeName, 'string[]', [StringComparison]::OrdinalIgnoreCase)
-    }
-    if ($Node -is [System.Management.Automation.Language.ArrayLiteralAst]) {
-        $elements = @($Node.Elements)
-        if ($elements.Count -eq 0) { return $false }
-        return @($elements | Where-Object { -not (Test-NervOrdinalContractStringOperand -Node $_) }).Count -eq 0
-    }
-    return $false
+$evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+$evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
+Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
+# Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
+# hit more than once is exempting call sites the reviewer of the original never saw.
+foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
+    Assert-True ([int]$evidenceSweep.ExceptionHits[$exceptionKey] -eq 1) `
+        "Ordinal sweep exception '$exceptionKey' matched $($evidenceSweep.ExceptionHits[$exceptionKey]) call sites; it must match exactly one."
 }
 
-$bannedOperators = @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin')
-$cultureAwareOperators = @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin')
-$whereObjectComparisonParameters = @(
-    'eq', 'ne', 'ceq', 'cne', 'contains', 'notcontains', 'ccontains', 'cnotcontains', 'in', 'notin', 'cin', 'cnotin')
-$ordinalSweepFindings = [System.Collections.Generic.List[string]]::new()
+# ---------------------------------------------------------------------------------------------
+# Discrimination for the scan face itself. Without this the sweep passing means only "no findings",
+# which is equally true of a scanner that reports nothing. Each covered axis gets a source that must
+# be reported; each documented blind spot gets a source that must *not* be, which is what stops the
+# blind-spot list in docs/architecture/script-automation-governance.md from being aspirational.
+$sweepProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-ordinal-sweep-probe-{0}" -f [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $sweepProbeRoot -Force | Out-Null
+try {
+    $sweepProbePath = Join-Path $sweepProbeRoot 'probe.ps1'
+    $invokeSweepProbe = {
+        param([string] $Source)
+        [System.IO.File]::WriteAllText($sweepProbePath, $Source, [System.Text.UTF8Encoding]::new($false))
+        return (Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -DisplayName 'probe.ps1').Findings
+    }.GetNewClosure()
 
-foreach ($binary in $evidenceLibraryAst.FindAll({
-    param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst]
-}, $true)) {
-    $operator = [string] $binary.Operator
-    $line = $binary.Extent.StartLineNumber
-    if (@($bannedOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -gt 0) {
-        $ordinalSweepFindings.Add("TestEvidence.ps1:$line uses -$($operator.ToLowerInvariant()); the c-prefixed operators only disable case-insensitivity and still fold ignorable characters. Use Test-NervOrdinalEquals / Get-NervOrdinalSet.")
-        continue
+    $coveredProbes = [ordered]@{
+        'banned-c-operator' = '$result = $left -ceq $right'
+        'culture-operator-with-string-literal' = '$result = $left -eq ''passed'''
+        'sort-object' = '$result = @($items | Sort-Object Name)'
+        'group-object' = '$result = @($items | Group-Object lane)'
+        'compare-object' = '$result = Compare-Object $left $right'
+        'select-object-unique' = '$result = @($items | Select-Object -Unique)'
+        'where-object-comparison-switch' = '$result = @($items | Where-Object outcome -eq ''passed'')'
+        'switch-statement-string-clause' = 'switch ($outcome) { ''passed'' { 1 } default { 0 } }'
+        'string-method-without-ordinal-comparison' = '$result = $text.StartsWith(''^'')'
+        'ambiguous-method-with-string-literal' = '$result = $text.Contains(''SKIP'')'
+        'non-ordinal-stringcomparison' = '$result = [string]::Equals($left, $right, [StringComparison]::CurrentCulture)'
     }
-    if (@($cultureAwareOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -eq 0) { continue }
-    if (-not ((Test-NervOrdinalContractStringOperand -Node $binary.Left) -or
-              (Test-NervOrdinalContractStringOperand -Node $binary.Right))) {
-        continue
-    }
-    $ordinalSweepFindings.Add("TestEvidence.ps1:$line compares strings with -$($operator.ToLowerInvariant()), which is culture-aware: $($binary.Extent.Text)")
-}
-
-foreach ($command in $evidenceLibraryAst.FindAll({
-    param($node) $node -is [System.Management.Automation.Language.CommandAst]
-}, $true)) {
-    $name = [string] $command.GetCommandName()
-    if ([string]::IsNullOrWhiteSpace($name)) { continue }
-    $line = $command.Extent.StartLineNumber
-    $parameterNames = @($command.CommandElements |
-        Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
-        ForEach-Object { [string] $_.ParameterName })
-    $hasParameter = {
-        param($candidate)
-        @($parameterNames | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+    $declaredAxes = @(Get-NervOrdinalContractCoveredAxes)
+    Assert-True ([string]::Equals((@($coveredProbes.Keys) -join '|'), ($declaredAxes -join '|'), [StringComparison]::Ordinal)) `
+        "Get-NervOrdinalContractCoveredAxes and the discrimination probes must enumerate the same axes; declared [$($declaredAxes -join ', ')], probed [$(@($coveredProbes.Keys) -join ', ')]."
+    foreach ($axis in $coveredProbes.Keys) {
+        $probeFindings = @(& $invokeSweepProbe $coveredProbes[$axis])
+        Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$axis]", [StringComparison]::Ordinal) }).Count -ge 1) `
+            "The ordinal sweep must report axis '$axis' for: $($coveredProbes[$axis])"
     }
 
-    $finding = $null
-    if ([string]::Equals($name, 'Sort-Object', [StringComparison]::OrdinalIgnoreCase) -and (& $hasParameter 'Unique')) {
-        $finding = "TestEvidence.ps1:$line deduplicates with Sort-Object -Unique, which folds ignorable characters. Use Get-NervOrdinalSorted -Unique."
+    # The blind spots, asserted as blind spots. Each of these is a real culture-aware comparison the
+    # scan cannot distinguish from a safe one; the assertion is that the scan stays silent, so the day
+    # any of them becomes detectable this list and the documentation have to be edited together.
+    $blindSpotProbes = [ordered]@{
+        'both-operands-non-literal-eq' = '$result = $left -eq $right'
+        'both-operands-non-literal-in' = '$result = $candidate -in $known'
+        'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
+        'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'
+        'validateset-attribute' = 'function Invoke-Probe { param([ValidateSet(''all'', ''class'')] [string] $Kind) return $Kind }'
+        'sort-object-via-splatted-parameters' = '$splat = @{ Property = ''name'' }; $result = @($items | Sort-Object @splat | Select-Object @splat)'
     }
-    elseif ([string]::Equals($name, 'Group-Object', [StringComparison]::OrdinalIgnoreCase)) {
-        $finding = "TestEvidence.ps1:$line groups with Group-Object, whose key comparison is culture-aware. Use Get-NervOrdinalGroups."
-    }
-    elseif ([string]::Equals($name, 'Compare-Object', [StringComparison]::OrdinalIgnoreCase)) {
-        $finding = "TestEvidence.ps1:$line diffs with Compare-Object, whose comparison is culture-aware."
-    }
-    elseif ([string]::Equals($name, 'Where-Object', [StringComparison]::OrdinalIgnoreCase)) {
-        # Where-Object's comparison switches are spelled without the token-kind prefix (`-eq`, not
-        # `Ieq`), so they need their own list; `-gt`/`-lt`/`-match` are numeric or regex and stay.
-        $comparisonParameter = @($parameterNames | Where-Object {
-            $candidate = $_
-            @($whereObjectComparisonParameters | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-        })
-        if ($comparisonParameter.Count -gt 0) {
-            $finding = "TestEvidence.ps1:$line filters with Where-Object -$($comparisonParameter[0]), which compares culture-aware. Use a script block with Test-NervOrdinalEquals."
+    $declaredBlindSpots = @(Get-NervOrdinalContractBlindSpots)
+    Assert-True ([string]::Equals((@($blindSpotProbes.Keys) -join '|'), ($declaredBlindSpots -join '|'), [StringComparison]::Ordinal)) `
+        "Get-NervOrdinalContractBlindSpots and the blind-spot probes must enumerate the same list; declared [$($declaredBlindSpots -join ', ')], probed [$(@($blindSpotProbes.Keys) -join ', ')]."
+    foreach ($blindSpot in $blindSpotProbes.Keys) {
+        # `Sort-Object @splat` is still reported as a Sort-Object call — what the scan cannot see is
+        # *which* properties are being compared, so the splatted case is a blind spot for
+        # Select-Object -Unique only. Assert what is actually true rather than rounding it off.
+        $expectedSilentAxes = if ([string]::Equals($blindSpot, 'sort-object-via-splatted-parameters', [StringComparison]::Ordinal)) {
+            @('select-object-unique')
         }
+        else { @(Get-NervOrdinalContractCoveredAxes) }
+        $probeFindings = @(& $invokeSweepProbe $blindSpotProbes[$blindSpot])
+        $unexpected = @($probeFindings | Where-Object {
+            $finding = $_
+            @($expectedSilentAxes | Where-Object { $finding.StartsWith("[$_]", [StringComparison]::Ordinal) }).Count -gt 0
+        })
+        Assert-True ($unexpected.Count -eq 0) `
+            "Blind spot '$blindSpot' is no longer a blind spot: $($unexpected -join '; '). Update Get-NervOrdinalContractBlindSpots and the governance document together."
     }
 
-    if ($null -eq $finding) { continue }
-    $commandText = [string] $command.Extent.Text
-    $exempted = @($ordinalSweepExceptions | Where-Object { $commandText.Contains([string]$_.Text, [StringComparison]::Ordinal) })
-    if ($exempted.Count -gt 0) { continue }
-    $ordinalSweepFindings.Add($finding)
+    # The anti-widening case for the exception table, run against the real table (#1509 round 3, M2).
+    # A source carrying both the exempt expression and an unrelated Group-Object must report exactly
+    # the unrelated one: if the exception ever matched on a substring, or on the cmdlet name, the
+    # second call site would be swallowed here and nowhere else.
+    $exemptionProbeSource = @'
+function New-NervTestEvidenceSummary {
+    $exempt = @($records | Group-Object { Get-NervRetainedSkipReason $_ })
+    $smuggled = @($records | Group-Object lane)
+    return @($exempt, $smuggled)
 }
+'@
+    [System.IO.File]::WriteAllText($sweepProbePath, $exemptionProbeSource, [System.Text.UTF8Encoding]::new($false))
+    $exemptionProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $ordinalSweepExceptions -DisplayName 'probe.ps1'
+    Assert-True ($exemptionProbe.Findings.Count -eq 1) `
+        "The named exception must exempt exactly its own expression; findings: $(@($exemptionProbe.Findings) -join '; ')"
+    Assert-True ($exemptionProbe.Findings[0].Contains('Group-Object lane', [StringComparison]::Ordinal)) `
+        "The unrelated Group-Object call must survive the exception; got: $($exemptionProbe.Findings[0])"
 
-Assert-True ($ordinalSweepFindings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($ordinalSweepFindings) -join "`n  ")"
-Assert-True ($ordinalSweepExceptions.Count -eq 1) 'The ordinal sweep exception list must stay exhaustive and reviewed; adding an entry is a deliberate change to a named contract.'
+    # …and the same expression in a different function is not the exempted one.
+    $misplacedExemptionSource = @'
+function Get-NervSomethingElse {
+    return @($records | Group-Object { Get-NervRetainedSkipReason $_ })
+}
+'@
+    [System.IO.File]::WriteAllText($sweepProbePath, $misplacedExemptionSource, [System.Text.UTF8Encoding]::new($false))
+    $misplacedProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $ordinalSweepExceptions -DisplayName 'probe.ps1'
+    Assert-True ($misplacedProbe.Findings.Count -eq 1) `
+        'An exception is bound to its site; the same expression in another function must still be reported.'
+}
+finally {
+    if (Test-Path -LiteralPath $sweepProbeRoot) {
+        Remove-Item -LiteralPath $sweepProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 $newRepoCommandLogs = @(
     if (Test-Path $repoScriptLogRoot) {

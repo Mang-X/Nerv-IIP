@@ -200,6 +200,37 @@ function Get-NearestScriptBlockScope {
     return $current
 }
 
+# The scope qualifiers that still name an ordinary PowerShell variable. `$local:a`, `$script:a`,
+# `$global:a`, `$private:a` and `$variable:a` all bind the name `a`; `$env:a` and `$function:a` are
+# provider drives and are not variable bindings at all, so a name carrying one of those is reported
+# as unresolvable (which fails closed: `& $env:x` proves nothing and stays a violation).
+$seamScopeQualifiers = @('local', 'script', 'global', 'private', 'using', 'variable')
+
+function Get-SeamBindingName {
+    <#
+        A binding's name with any scope qualifier removed, or $null when the path is not a variable.
+
+        Without this, `$local:action = 'dotnet'` recorded the binding under the literal name
+        `local:action`, which never matched the `action` that `& $action` looks up — so the local
+        rebinding did not shadow an enclosing `$action = { … }` seam and the invocation was licensed
+        while the *runtime* resolved it to the string. #1509 round 3 measured that with `$local:`,
+        `$script:`, `$global:` and `$private:`: the checker exited 0 and the process really ran the
+        external command.
+    #>
+    param([Parameter(Mandatory)] [System.Management.Automation.VariablePath] $VariablePath)
+
+    $userPath = [string] $VariablePath.UserPath
+    $separator = $userPath.IndexOf(':', [System.StringComparison]::Ordinal)
+    if ($separator -lt 0) { return $userPath }
+
+    $qualifier = $userPath.Substring(0, $separator)
+    if (@($seamScopeQualifiers | Where-Object { [string]::Equals($_, $qualifier, [System.StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) {
+        return $null
+    }
+
+    return $userPath.Substring($separator + 1)
+}
+
 function Get-ScopedSeamBindings {
     <#
         The variables one scope binds, split into "bound at all" and "proven to hold a script block".
@@ -207,6 +238,32 @@ function Get-ScopedSeamBindings {
         Both halves are needed because lookup has to model shadowing, not just visibility: a function
         that writes `$action = 'dotnet'` owns a *local* $action, so an enclosing `$action = { … }`
         seam is not what `& $action` reaches at run time and must not license it either.
+
+        "Binds" is enumerated, not assumed (#1509 round 3). PowerShell spells a binding in more ways
+        than `=`, and the first version of this function only knew AssignmentStatementAst, so
+        `foreach ($a in @('dotnet')) { & $a }`, `$local:a = 'dotnet'; & $a` and the `$script:` /
+        `$global:` / `$private:` spellings all failed to shadow an enclosing seam — measured, checker
+        exit 0 with the external command actually executing. Covered now:
+
+          =  and compound assignment      AssignmentStatementAst
+          param() and inline parameters   ParameterAst (attributed to the function body)
+          foreach ($x in …)               ForEachStatementAst.Variable
+          $local:/$script:/$global:/…     normalized by Get-SeamBindingName above
+          data $x { … }                   DataStatementAst.Variable
+          Set-Variable / New-Variable     with a literal -Name (or literal first positional)
+
+        Not covered, and pinned as such by executable cases in
+        scripts/tests/script-governance-scan-boundary.Tests.ps1: a Set-Variable/New-Variable whose
+        name is computed at run time, and $ExecutionContext.SessionState.PSVariable.Set(…). The
+        automatic `$_` is not a binding this function has to model — `& $_` names nothing this file
+        can prove, so it is a violation under every spelling (switch, catch, ForEach-Object), which
+        those cases also pin.
+
+        Only an *unqualified* declaration can enter the Seam half. `$script:x = { … }` therefore
+        shadows an outer `x` without licensing `& $x`, and `& $script:x` proves nothing at all. That
+        is deliberately stricter than before this change rather than equally permissive: the
+        qualified spellings are unused in this repository, and a rule that only ever removes
+        permissions cannot smuggle in a relaxation while claiming to fix a hole.
     #>
     param([Parameter(Mandatory)] [System.Management.Automation.Language.ScriptBlockAst] $Scope)
 
@@ -227,16 +284,68 @@ function Get-ScopedSeamBindings {
 
     foreach ($parameter in $parameters) {
         if ((Get-NearestScriptBlockScope -Node $parameter) -ne $Scope) { continue }
-        [void] $bindings.Bound.Add([string] $parameter.Name.VariablePath.UserPath)
+        $parameterName = Get-SeamBindingName -VariablePath $parameter.Name.VariablePath
+        if ($null -eq $parameterName) { continue }
+        [void] $bindings.Bound.Add($parameterName)
         if ($null -ne $parameter.StaticType -and $parameter.StaticType -eq [scriptblock]) {
-            [void] $bindings.Seam.Add([string] $parameter.Name.VariablePath.UserPath)
+            [void] $bindings.Seam.Add($parameterName)
+        }
+    }
+
+    # Iteration variables (`foreach ($a in …)`) and `data $a { … }` bind a name for the enclosing
+    # scope without ever being an AssignmentStatementAst.
+    foreach ($iteration in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.ForEachStatementAst] }, $true)) {
+        if ((Get-NearestScriptBlockScope -Node $iteration) -ne $Scope) { continue }
+        if ($null -eq $iteration.Variable) { continue }
+        $iterationName = Get-SeamBindingName -VariablePath $iteration.Variable.VariablePath
+        if ($null -ne $iterationName) { [void] $bindings.Bound.Add($iterationName) }
+    }
+
+    foreach ($dataStatement in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.DataStatementAst] }, $true)) {
+        if ((Get-NearestScriptBlockScope -Node $dataStatement) -ne $Scope) { continue }
+        if ([string]::IsNullOrWhiteSpace([string] $dataStatement.Variable)) { continue }
+        [void] $bindings.Bound.Add([string] $dataStatement.Variable)
+    }
+
+    # Set-Variable / New-Variable bind through a cmdlet. Only a literal name is resolvable here; a
+    # computed one is the documented residual.
+    foreach ($binder in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        if ((Get-NearestScriptBlockScope -Node $binder) -ne $Scope) { continue }
+        $binderName = [string] $binder.GetCommandName()
+        if (@('set-variable', 'new-variable', 'sv', 'nv') |
+                Where-Object { [string]::Equals($_, $binderName.ToLowerInvariant(), [System.StringComparison]::Ordinal) } |
+                Select-Object -First 1) {
+            $elements = @($binder.CommandElements)
+            $nameArgument = $null
+            for ($index = 1; $index -lt $elements.Count; $index++) {
+                $element = $elements[$index]
+                if ($element -is [System.Management.Automation.Language.CommandParameterAst] -and
+                    [string]::Equals([string] $element.ParameterName, 'Name', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $nameArgument = if ($null -ne $element.Argument) { $element.Argument } elseif (($index + 1) -lt $elements.Count) { $elements[$index + 1] } else { $null }
+                    break
+                }
+                if ($null -eq $nameArgument -and $element -isnot [System.Management.Automation.Language.CommandParameterAst]) {
+                    $nameArgument = $element
+                }
+            }
+            if ($nameArgument -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                $literalName = [string] $nameArgument.Value
+                if (-not [string]::IsNullOrWhiteSpace($literalName)) {
+                    [void] $bindings.Bound.Add($literalName.TrimStart('$'))
+                }
+            }
         }
     }
 
     foreach ($assignment in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $assignment) -ne $Scope) { continue }
         if ($assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
-        [void] $bindings.Bound.Add([string] $assignment.Left.VariablePath.UserPath)
+        $assignedName = Get-SeamBindingName -VariablePath $assignment.Left.VariablePath
+        if ($null -eq $assignedName) { continue }
+        [void] $bindings.Bound.Add($assignedName)
+        # Only an unqualified declaration can prove a seam; see the note in the docstring.
+        $isUnqualifiedDeclaration = [string]::Equals(
+            [string] $assignment.Left.VariablePath.UserPath, $assignedName, [System.StringComparison]::Ordinal)
         $right = $assignment.Right
         if ($right -is [System.Management.Automation.Language.CommandExpressionAst]) { $right = $right.Expression }
         # `{ … }.GetNewClosure()` is the same literal with its variables captured — still provably a
@@ -248,8 +357,8 @@ function Get-ScopedSeamBindings {
             [string]::Equals([string] $right.Member.Value, 'GetNewClosure', [System.StringComparison]::OrdinalIgnoreCase)) {
             $right = $right.Expression
         }
-        if ($right -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
-            [void] $bindings.Seam.Add([string] $assignment.Left.VariablePath.UserPath)
+        if ($isUnqualifiedDeclaration -and $right -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+            [void] $bindings.Seam.Add($assignedName)
         }
     }
 

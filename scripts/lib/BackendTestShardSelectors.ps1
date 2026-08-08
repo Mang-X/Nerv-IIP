@@ -86,11 +86,24 @@ function Get-BackendTestShardExcludedSelectors {
         [ValidateSet('all', 'class', 'method')] [string] $Kind = 'all'
     )
 
+    # `-in` is culture-aware, and so is [ValidateSet] itself: `-Kind "all$([char]0x00AD)"` is accepted
+    # by the attribute *and* folded into 'all' by `-in`, so the two agreed by accident. Making only
+    # the comparison ordinal would turn that into a silent empty result, so the keyword is matched
+    # OrdinalIgnoreCase (ValidateSet's own case contract, minus the collation folding) and anything
+    # that survives validation without matching a branch throws instead of returning nothing.
+    $kindComparison = [System.StringComparison]::OrdinalIgnoreCase
+    $isAll = [string]::Equals($Kind, 'all', $kindComparison)
+    $includeClasses = $isAll -or [string]::Equals($Kind, 'class', $kindComparison)
+    $includeMethods = $isAll -or [string]::Equals($Kind, 'method', $kindComparison)
+    if (-not ($includeClasses -or $includeMethods)) {
+        throw "Unsupported excluded-selector kind '$Kind'; [ValidateSet] compares culture-aware, so a folded spelling must fail loudly rather than select nothing."
+    }
+
     $selectors = @()
-    if ($Kind -in @('all', 'class')) {
+    if ($includeClasses) {
         $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTestClasses')
     }
-    if ($Kind -in @('all', 'method')) {
+    if ($includeMethods) {
         $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTests')
     }
 
@@ -189,8 +202,16 @@ function Get-BackendTestShardExecutedAssemblies {
     param([Parameter(Mandatory)] [string] $ResultsDirectory)
 
     $assemblies = [System.Collections.Generic.List[string]]::new()
-    foreach ($trxPath in @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse | Sort-Object FullName)) {
-        $document = [xml] (Get-Content -LiteralPath $trxPath.FullName -Raw)
+    # `Sort-Object FullName` orders by culture collation, so the read order of the TRX files depends
+    # on the machine's locale. It does not change *this* function's result — the output is re-sorted
+    # ordinally below — but it is the same construct #1509 is removing everywhere else, and a future
+    # edit that made the read order observable (a first-wins tie-break, say) would inherit the
+    # dependency silently. Ordinal, once, here.
+    $trxPaths = Get-BackendTestShardUniqueSorted -Values @(
+        Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse | ForEach-Object { [string] $_.FullName }
+    )
+    foreach ($trxPath in $trxPaths) {
+        $document = [xml] (Get-Content -LiteralPath $trxPath -Raw)
         foreach ($definition in @($document.GetElementsByTagName('UnitTest', '*'))) {
             $storage = [string] $definition.GetAttribute('storage')
             if (-not [string]::IsNullOrWhiteSpace($storage)) {
@@ -274,8 +295,19 @@ function Assert-BackendTestShardSelectorExecution {
     $matchedResults = @($TrxResults | Where-Object { ([string] $_.testName).StartsWith($Selector, [StringComparison]::Ordinal) })
     $executedNames = Get-BackendTestShardMembershipSet -Values @($matchedResults | ForEach-Object { [string] $_.testName })
     $missingTests = @($expectedTests | Where-Object { -not $executedNames.Contains($_) })
-    $failedResults = @($matchedResults | Where-Object { [string] $_.outcome -ne 'Passed' })
+    # Ordinal, and *not* `-ne 'Passed'`, which is culture-aware in the one direction that matters:
+    # `"Passed$([char]0x00AD)" -ne 'Passed'` evaluates to False, so a result whose outcome is not the
+    # literal token `Passed` folds into the passing set and this guard stops throwing — a failing
+    # test silently reported as a clean heavy-lane run. Every other comparison in this function was
+    # already explicit; this one was the leftover (#1509 round 3).
+    #
+    # Case-sensitive on purpose: VSTest writes the TRX `outcome` attribute as `Passed`/`Failed`/
+    # `NotExecuted`, so any other spelling is an unknown token and must count as *not passed*. The
+    # comparison therefore fails closed in both axes.
+    $failedResults = @($matchedResults | Where-Object {
+        -not [string]::Equals([string] $_.outcome, 'Passed', [System.StringComparison]::Ordinal)
+    })
     if ($missingTests.Count -gt 0 -or $failedResults.Count -gt 0) {
-        throw "Real PostgreSQL selector '$Selector' must execute every discovered test as Passed; discovered=$($expectedTests.Count), trx=$($matchedResults.Count), missing=$($missingTests.Count)."
+        throw "Real PostgreSQL selector '$Selector' must execute every discovered test as Passed; discovered=$($expectedTests.Count), trx=$($matchedResults.Count), missing=$($missingTests.Count), notPassed=$($failedResults.Count)."
     }
 }
