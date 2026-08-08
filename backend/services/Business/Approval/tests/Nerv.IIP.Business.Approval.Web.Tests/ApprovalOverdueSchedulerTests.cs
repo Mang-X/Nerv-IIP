@@ -127,7 +127,18 @@ public sealed class ApprovalOverdueSchedulerTests
                 new CheckOverdueApprovalStepsCommand("org-001", "env-dev"),
             ],
             sender.Commands);
+
         await scheduler.StopAsync(CancellationToken.None);
+
+        // Executable guard for the barrier's premise: this clock's only timer registrant is the scheduler's
+        // single PeriodicTimer (the sender never touches it; Eventually/Consistently poll TimeProvider.System),
+        // so the total is exactly 1 — a second registrant would otherwise satisfy WaitForTimerCountAsync(1)
+        // vacuously and turn this test intermittently red elsewhere. This scheduler's registration order is the
+        // mirror of the Inventory worker's, so the pre-shutdown race that makes the post-StopAsync position
+        // provably load-bearing there does not reproduce here — the position is taken anyway, as the one that
+        // holds structurally rather than by timing. The reasoning, the scope of the guard and the measurement
+        // behind them are recorded once in docs/architecture/backend-test-determinism.md, §MAN-808.
+        Assert.Equal(1, clock.TimersCreated);
     }
 
     [Fact]

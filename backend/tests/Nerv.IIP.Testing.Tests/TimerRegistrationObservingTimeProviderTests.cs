@@ -1,14 +1,15 @@
 namespace Nerv.IIP.Testing.Tests;
 
 /// <summary>
-/// The start-anchored constructor of <see cref="TimerRegistrationObservingTimeProvider"/>.
+/// The two constructors of <see cref="TimerRegistrationObservingTimeProvider"/>.
 /// </summary>
 /// <remarks>
 /// Why the anchor exists at all, and why it is a constructor parameter rather than a later
 /// <c>SetUtcNow</c> call, is documented once on that constructor — see
-/// <see cref="TimerRegistrationObservingTimeProvider"/>. These tests pin the three facts that
-/// documentation claims: the clock really starts where it is told, registrations are still published, and a
-/// non-positive budget is rejected.
+/// <see cref="TimerRegistrationObservingTimeProvider"/>. These tests pin the facts that documentation
+/// claims: the start-anchored clock really starts where it is told, registrations are still published from
+/// it, and <em>both</em> constructors reject a non-positive budget by the caller-facing
+/// <c>registrationBudget</c> parameter name.
 /// </remarks>
 public sealed class TimerRegistrationObservingTimeProviderTests
 {
@@ -33,10 +34,24 @@ public sealed class TimerRegistrationObservingTimeProviderTests
         Assert.Equal(anchor.AddMinutes(1), clock.GetUtcNow());
     }
 
-    [Fact]
-    public void AnchoredConstructor_RejectsANonPositiveRegistrationBudget()
+    /// <summary>
+    /// Both constructors reject a non-positive registration budget, and they reject it by the caller-facing
+    /// parameter name: a budget of zero or less would turn every <c>WaitFor…</c> barrier into an immediate
+    /// timeout, i.e. silently disable the very thing this provider exists for.
+    /// </summary>
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public void BothConstructors_RejectANonPositiveRegistrationBudget(long budgetTicks)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new TimerRegistrationObservingTimeProvider(DateTimeOffset.UtcNow, TimeSpan.Zero));
+        var budget = TimeSpan.FromTicks(budgetTicks);
+
+        var anchored = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TimerRegistrationObservingTimeProvider(DateTimeOffset.UtcNow, budget));
+        var unanchored = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new TimerRegistrationObservingTimeProvider(budget));
+
+        Assert.Equal("registrationBudget", anchored.ParamName);
+        Assert.Equal("registrationBudget", unanchored.ParamName);
     }
 }

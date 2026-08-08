@@ -323,7 +323,9 @@ public sealed class InventoryReservationExpirationTests
             // sole registrant, InventoryReservationMetrics holds the same TimeProvider but only ever reads
             // GetUtcNow() from it, and Eventually polls on TimeProvider.System. Handing this clock to a
             // second component that owns a timer would let that component's registration satisfy this
-            // barrier vacuously — re-derive the count then.
+            // barrier vacuously — re-derive the count then. That premise is pinned by the exact-count
+            // assertion after the second pass below, so breaking it fails deterministically instead of
+            // degrading into an intermittent red.
             await timeProvider.WaitForTimerCountAsync(1);
             timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -340,6 +342,15 @@ public sealed class InventoryReservationExpirationTests
         {
             await worker.StopAsync(CancellationToken.None);
         }
+
+        // Executable guard for the barrier's premise above: this clock's only timer registrant is the worker's
+        // single PeriodicTimer, so the total is exactly 1. It sits after StopAsync — and outside the
+        // try/finally, so a failing assertion above still surfaces as itself — because
+        // StopAsync(CancellationToken.None) waits for the loop to actually exit, which is what makes the count
+        // complete. Why an executable assertion rather than a comment, why this position rather than before the
+        // shutdown, what it does and does not pin, and the measurement behind it are recorded once in
+        // docs/architecture/backend-test-determinism.md, §MAN-808.
+        Assert.Equal(1, timeProvider.TimersCreated);
     }
 
     [Fact]
