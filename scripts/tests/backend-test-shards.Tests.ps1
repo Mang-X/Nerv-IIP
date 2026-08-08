@@ -206,9 +206,71 @@ catch {
 }
 Assert-Contract ($driftText.Contains('executed assemblies it does not classify: Nerv.IIP.Drifted.Tests')) 'A shard running an assembly it does not classify must fail closed.'
 
-$classifiedProjects = @($fastShards.projects) + @($heavyLanes.projects)
-Assert-Contract (($classifiedProjects | Sort-Object -Unique).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
-Assert-Contract ($classifiedProjects.Count -eq 66) 'The checked-in backend test inventory must contain 66 classified projects.'
+# Ordinal identifier comparison (#1509). Every string these helpers compare is an identifier, and
+# PowerShell's defaults are culture-aware: `Sort-Object -Unique` folds two values the collation table
+# considers equivalent into one, and `-contains`/`-notcontains` report them as the same value. A
+# U+00AD soft hyphen is enough — measured, not assumed. Both probes below pass under a culture-aware
+# implementation and only fail under an ordinal one, which is what makes them regressions rather than
+# restatements: revert either helper and this block goes red.
+$ordinalSoftHyphen = [string][char]0x00AD
+$ordinalSelectorShard = [pscustomobject]@{
+    excludedTestClasses = @('Nerv.Probe.Ordinal.Alpha', "Nerv.Probe.Ordinal${ordinalSoftHyphen}.Alpha")
+    excludedTests = @()
+}
+$ordinalSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard)
+Assert-Contract ($ordinalSelectors.Count -eq 2) "Two exclusion selectors differing only by an ignorable character are two selectors; deduplication must be ordinal, kept $($ordinalSelectors.Count)."
+
+$ordinalExecutionText = ''
+try {
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'ordinal' `
+        -ClassifiedProjects @('backend/tests/Nerv.Probe.Ordinal.Tests/Nerv.Probe.Ordinal.Tests.csproj') `
+        -ExecutedAssemblies @("Nerv.Probe.Ordinal${ordinalSoftHyphen}.Tests.dll")
+}
+catch {
+    $ordinalExecutionText = $_.Exception.Message
+}
+Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
+
+$classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
+Assert-Contract ((Get-BackendTestShardOrdinalUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
+
+# What the deleted assertion guarded, and who guards it now (#1509).
+#
+# This line used to read `$classifiedProjects.Count -eq 66`. The number is a *measurement* — how
+# many backend test projects exist today — so every added test project turned this gate red until a
+# human retyped it, which is the same "刷新仪式" #1507 removed from the timing data. But deleting a
+# red gate is not the same as removing the need for one, so state the guard explicitly:
+#
+#   * it caught a project silently dropped out of the manifest — now caught by
+#     `$missingFromManifest`, against the very solution the shards build;
+#   * it caught a manifest row naming a project that is not part of the backend test inventory —
+#     now caught by `$notInSolution`, and already by the validator's own
+#     "Classified projects are not discovered backend test projects" rule;
+#   * it never caught anything else, because "the count is 66" cannot distinguish which 66.
+#
+# Coverage goes up rather than down: the set comparison also fails when one project is swapped for
+# another (count unchanged, inventory wrong), which `-eq 66` could not see.
+#
+# The expected set is derived from backend/Nerv.IIP.sln rather than from a filesystem glob on
+# purpose. The validator already globs `**/*.Tests.csproj`; re-globbing here would assert this
+# file's own arithmetic. The solution is the artifact each shard's `.slnf` is a filter over, so a
+# project that is in the solution but unclassified is exactly the defect that reaches CI.
+$solutionTestProjects = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+    Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln') |
+        ForEach-Object {
+            if ($_ -match '"(?<path>[^" ]*\.Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
+        }
+)
+Assert-Contract ($solutionTestProjects.Count -gt 0) 'The backend solution must list backend test projects; an empty derivation would make the coverage comparison below vacuous.'
+$classifiedProjectSet = Get-BackendTestShardOrdinalSet -Values $classifiedProjects
+$solutionTestProjectSet = Get-BackendTestShardOrdinalSet -Values $solutionTestProjects
+$missingFromManifest = @($solutionTestProjects | Where-Object { -not $classifiedProjectSet.Contains($_) })
+$notInSolution = @($classifiedProjects | Where-Object { -not $solutionTestProjectSet.Contains($_) })
+Assert-Contract ($missingFromManifest.Count -eq 0) "Every backend test project in backend/Nerv.IIP.sln must be classified by the shard manifest; unclassified: $($missingFromManifest -join ', ')."
+Assert-Contract ($notInSolution.Count -eq 0) "Every classified shard project must be a backend test project in backend/Nerv.IIP.sln; stale: $($notInSolution -join ', ')."
+# Report-only, deliberately: the inventory size is a measurement to read, never a gate to satisfy.
+Write-Host "  [report-only] classified backend test projects: $($classifiedProjects.Count)"
 Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj') 'MAN-662 shared test-infrastructure facts must run in the default fast gate.'
 Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj') 'MAN-662 FastEndpoints process-isolation facts must run in the default fast gate.'
 Assert-Contract (((@($fastShards.evidenceLane) | Sort-Object) -join '|') -ceq 'backend-shard-1|backend-shard-2|backend-shard-3|backend-shard-4') 'Every fast shard must own one MAN-661 schema-v1 backend shard lane.'
@@ -1020,6 +1082,46 @@ try {
         $blankMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $blankProbeSelector -Rules @($blankProbeRule))
         Assert-Contract ($blankMatches.Count -eq 0) "A blank policy identity must never be covered by any selector; selector '$blankProbeSelector' matched $($blankMatches.Count)."
     }
+
+    # (6) Identity padding, the last undefined corner of this derivation (#1509). A *blank* identity is
+    #     covered by nothing (above); a *padded* one used to be undefined — adding `.Trim()` to the
+    #     identity left this entire file green, so neither "compare as written" nor "normalize first"
+    #     was actually the contract. The ruling is compare-as-written, and it is asserted from both
+    #     ends so that a `.Trim()` on either side fails here: the unpadded selector must not reach the
+    #     padded identity, and the padded selector must not reach the unpadded identity. The
+    #     complementary half of the ruling — padding is rejected where the policy is authored — is
+    #     asserted against Test-NervTestEvidencePolicy in scripts/tests/test-evidence.Tests.ps1.
+    $paddedProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-padded-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @(' Nerv.Probe.Padded.Leading', 'Nerv.Probe.Padded.Trailing ')
+    }
+    foreach ($paddedProbeSelector in @('Nerv.Probe.Padded.Leading', 'Nerv.Probe.Padded.Trailing')) {
+        $paddedMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $paddedProbeSelector -Rules @($paddedProbeRule))
+        Assert-Contract ($paddedMatches.Count -eq 0) "A policy identity carrying leading or trailing whitespace is compared as written, so the unpadded selector '$paddedProbeSelector' must not reach it; matched $($paddedMatches.Count)."
+    }
+    #     The class-prefix branch is the asymmetric case and is pinned rather than waved past: a
+    #     *trailing*-padded identity still sits under its class prefix (the padding is past the dot),
+    #     while a *leading*-padded one does not, so the class selector must cover exactly one of the
+    #     two. Trimming the identity would make it cover both.
+    $paddedClassMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Padded' -Rules @($paddedProbeRule))
+    $paddedClassIdentities = @($paddedClassMatches | ForEach-Object { [string] $_.identity })
+    Assert-Contract ($paddedClassMatches.Count -eq 1) "A class selector must cover the trailing-padded identity and not the leading-padded one; matched $($paddedClassMatches.Count): [$($paddedClassIdentities -join ', ')]."
+    Assert-Contract ([string]::Equals([string] $paddedClassIdentities[0], 'Nerv.Probe.Padded.Trailing ', [StringComparison]::Ordinal)) "The covered identity must be carried through with its padding intact, not normalized; got '$([string] $paddedClassIdentities[0])'."
+    $unpaddedProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-unpadded-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @('Nerv.Probe.Unpadded.Method')
+    }
+    foreach ($paddedSelector in @(' Nerv.Probe.Unpadded.Method', 'Nerv.Probe.Unpadded.Method ', ' Nerv.Probe.Unpadded')) {
+        $paddedSelectorMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $paddedSelector -Rules @($unpaddedProbeRule))
+        Assert-Contract ($paddedSelectorMatches.Count -eq 0) "A padded selector must not be trimmed into a match against an unpadded identity; selector '$paddedSelector' matched $($paddedSelectorMatches.Count)."
+    }
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Unpadded.Method' -Rules @($unpaddedProbeRule)).Count -eq 1) 'The padding assertions must be discriminating: the unpadded selector still matches its unpadded identity.'
 
     # The gate itself, over the rearranged topology. The assertions above compare derivations; this
     # runs the real policy gate as a process and requires it to be satisfied by a shard layout it has

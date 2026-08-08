@@ -108,6 +108,25 @@ $brokenCount = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Dept
 $brokenCount.rules[0].expectedRuntimeTestCount++
 Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenCount -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
 
+# Identity padding ruling (#1509). Every consumer of a frozen identity compares it as written —
+# ordinal equality or ordinal prefix, never trimmed (see Get-BackendTestShardPolicyIdentityMatches).
+# That is only safe if a padded identity cannot be authored in the first place, so the schema
+# rejects it here. Trailing padding is the case that used to pass silently: an anchored testPattern
+# ending in `.+$` consumes a trailing space, so the pattern check saw nothing wrong, while the shard
+# exclusion gate would then never match the row. Leading padding is asserted too, but it fails the
+# anchored pattern as well, so only its message is pinned rather than the exact violation set.
+$paddedIdentityPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$paddedIdentityPolicy.rules[0].testIdentities[0] = "$([string] $livePolicy.rules[0].testIdentities[0]) "
+$paddedIdentityViolations = @(Test-NervTestEvidencePolicy -Policy $paddedIdentityPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+# The named-message assertion comes first on purpose: it is the discriminating one, and asserting it
+# before the set keeps the failure readable when the padding rule is removed (an empty violation list
+# would otherwise fail inside Assert-ViolationSet as a null-input error).
+Assert-True (@($paddedIdentityViolations | Where-Object { [string]$_.message -clike '*must not carry leading or trailing whitespace*' }).Count -eq 1) 'A trailing-padded frozen identity must be rejected by the policy schema, not silently accepted by the anchored testPattern.'
+Assert-ViolationSet $paddedIdentityViolations 'unregistered-skip'
+$leadingPaddedPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$leadingPaddedPolicy.rules[0].testIdentities[0] = " $([string] $livePolicy.rules[0].testIdentities[0])"
+Assert-True (@((Test-NervTestEvidencePolicy -Policy $leadingPaddedPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) | Where-Object { [string]$_.message -clike '*must not carry leading or trailing whitespace*' }).Count -eq 1) 'A leading-padded frozen identity must be rejected for the padding itself, not only as a pattern mismatch.'
+
 $run = @{
     workflowRunId = '1001'
     runAttempt = 2
