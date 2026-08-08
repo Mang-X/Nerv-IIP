@@ -503,7 +503,7 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   `Backend test determinism check passed: files=577, findings=89, admitted=47.`，已按实测更正。同批复核的其余
   数字与实测吻合：`dotnet sln backend/Nerv.IIP.sln list` 为 162 个项目，按 `Test-IsTestProject` 口径选中 66 个，
   `backend/common/Testing/` 下 3 个项目全部落选；`backend/test-determinism-baseline.json` 为 47 行、全部
-  `StaticSetter`；上表丢 token 位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 2 一节；
+  `StaticSetter`；上表丢 token 位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 3 一节；
   此处保留的是第四轮走查当时的实测快照；当前契约见上面的 schema 3 一节。）
 - **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** grace 计时器是在**窗口关闭那一刻**才用注入的
   `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的 grace 计时器仍未
