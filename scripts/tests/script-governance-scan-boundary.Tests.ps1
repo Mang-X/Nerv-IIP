@@ -82,6 +82,120 @@ if (($excludedLibraryFiles -join '|') -ne 'scripts/lib/ScriptAutomation.ps1') {
 }
 
 # ---------------------------------------------------------------------------------------------
+# Get-SeamAssignmentTargets: the Left type set, as a contract rather than as a comment (#1509 round
+# 5).
+#
+# The function ends in `return $targets` for anything it did not recognise, which binds nothing —
+# fail *open*: an unenumerated Left shape silently stops shadowing an enclosing seam, and the case
+# fixtures below would all stay green because none of them spells that shape. "Only these seven can
+# occur" was measured on one parser version; that is a fact about today's PowerShell, not an
+# invariant the function enforces, and this whole PR's recurring failure mode has been exactly that
+# substitution. So the four things that make it an invariant are asserted here:
+#
+#   1. the dispatch set in the source is exactly the four types the walk branches on — deleting or
+#      renaming a branch turns this red before any behavioural case notices;
+#   2. ConvertExpressionAst really is a subclass of AttributedExpressionAst, which is the only reason
+#      four branches cover five named shapes;
+#   3. parsing a corpus of assignment spellings yields exactly the seven documented Left types, and
+#      every one of them is either dispatched on or explicitly ruled a non-binding — no shape is
+#      handled by falling off the end;
+#   4. the AST assembly contains no *other* concrete expression type that has never been ruled on.
+#      Only additions are failures: a type disappearing on a different runtime cannot introduce an
+#      unhandled Left shape, so the assertion is one-sided on purpose and does not go red merely
+#      because CI's pwsh differs from a developer's.
+$seamTargetsFunction = $checkerAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    [string]::Equals([string] $node.Name, 'Get-SeamAssignmentTargets', [StringComparison]::OrdinalIgnoreCase)
+}, $true)
+if (-not $seamTargetsFunction) {
+    throw 'The script governance checker must keep its Left-shape walk in a function named Get-SeamAssignmentTargets.'
+}
+# Only `-is` tests applied to the $Left parameter itself count as dispatch; the function also uses
+# `-is` on the ParenExpression pipeline internals, and folding those in would make the contract
+# assert something other than "which Left shapes are recognised".
+$dispatchedLeftTypes = @(
+    $seamTargetsFunction.Body.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+        $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Left', [StringComparison]::OrdinalIgnoreCase) -and
+        $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
+    }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' } | Sort-Object -Unique
+)
+$expectedDispatchedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
+if (-not [string]::Equals(($dispatchedLeftTypes -join '|'), ($expectedDispatchedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
+    throw "Get-SeamAssignmentTargets dispatches on [$($dispatchedLeftTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedLeftTypes -join ', ')]. Change both together."
+}
+if (-not [System.Management.Automation.Language.ConvertExpressionAst].IsSubclassOf([System.Management.Automation.Language.AttributedExpressionAst])) {
+    throw 'ConvertExpressionAst is no longer an AttributedExpressionAst; `[string] $a = …` now needs its own branch in Get-SeamAssignmentTargets.'
+}
+
+# The shapes that are recognised but bind nothing, named here because the implementation reaches them
+# by falling through and so contains no token a reader can grep for.
+$nonBindingLeftTypes = @('IndexExpressionAst', 'MemberExpressionAst')
+$leftShapeCorpus = @(
+    '$a = 1', '$a += 1', '$a ??= 1', '$a = $b = 1', '${a b} = 1', '$script:a = 1', '$env:X = 1',
+    '$a, $b = 1, 2', '($a, $b), $c = 1',
+    '[string] $a = 1', '[string[]] ($a, $b) = 1, 2', '[int] ($a) = 1', '[ref] $a = 1',
+    '[ValidateNotNullOrEmpty()] $a = 1',
+    '($a) = 1', '(($a)) = 1',
+    '$h[0] = 1', '$h[$i] = 1', '$h[0][1] = 1', '$global:h[0] = 1', '$h[0] ??= 1',
+    '$o.P = 1', '$o.B.C = 1', '$o?.P = 1', '$o::B = 1', '$o."$n" = 1', '$o[0].P = 1', '$o.P += 1'
+)
+$observedLeftTypes = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+foreach ($spelling in $leftShapeCorpus) {
+    $corpusErrors = $null
+    $corpusAst = [System.Management.Automation.Language.Parser]::ParseInput($spelling, [ref] $null, [ref] $corpusErrors)
+    if ($corpusErrors -and $corpusErrors.Count -gt 0) {
+        throw "Left-shape corpus entry '$spelling' no longer parses ($($corpusErrors[0].ErrorId)); the corpus must stay a corpus of real assignments."
+    }
+    $corpusAssignments = @($corpusAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true))
+    if ($corpusAssignments.Count -eq 0) {
+        throw "Left-shape corpus entry '$spelling' produced no AssignmentStatementAst."
+    }
+    foreach ($corpusAssignment in $corpusAssignments) { [void] $observedLeftTypes.Add($corpusAssignment.Left.GetType().Name) }
+}
+$expectedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ConvertExpressionAst', 'IndexExpressionAst', 'MemberExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
+if (-not [string]::Equals((@($observedLeftTypes) -join '|'), ($expectedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
+    throw "AssignmentStatementAst.Left shapes measured on PowerShell $($PSVersionTable.PSVersion): [$(@($observedLeftTypes) -join ', ')]; the ruling enumerates [$($expectedLeftTypes -join ', ')]. Rule on the difference in Get-SeamAssignmentTargets and docs/architecture/script-automation-governance.md."
+}
+foreach ($observedLeftType in @($observedLeftTypes)) {
+    $observedType = [System.Management.Automation.Language.AssignmentStatementAst].Assembly.GetType("System.Management.Automation.Language.$observedLeftType")
+    $isDispatched = @($expectedDispatchedLeftTypes | Where-Object {
+        $dispatchType = [System.Management.Automation.Language.AssignmentStatementAst].Assembly.GetType("System.Management.Automation.Language.$_")
+        $dispatchType.IsAssignableFrom($observedType)
+    }).Count -gt 0
+    $isRuledNonBinding = @($nonBindingLeftTypes | Where-Object { [string]::Equals($_, $observedLeftType, [StringComparison]::Ordinal) }).Count -gt 0
+    if ($isDispatched -eq $isRuledNonBinding) {
+        throw "Left shape '$observedLeftType' must be either dispatched on or explicitly ruled a non-binding, and exactly one of the two; dispatched=$isDispatched ruledNonBinding=$isRuledNonBinding."
+    }
+}
+
+# Every other concrete expression type in the AST assembly has been measured never to appear as a
+# Left. Frozen so that a PowerShell release adding an expression form forces someone to rule on it
+# instead of it landing in the fail-open tail. One-sided: extras are a failure, absences are not.
+$ruledOutExpressionTypes = @(
+    'ArrayExpressionAst', 'BaseCtorInvokeMemberExpressionAst', 'BinaryExpressionAst',
+    'ConstantExpressionAst', 'ErrorExpressionAst', 'ExpandableStringExpressionAst', 'HashtableAst',
+    'InvokeMemberExpressionAst', 'ScriptBlockExpressionAst', 'StringConstantExpressionAst',
+    'SubExpressionAst', 'TernaryExpressionAst', 'TypeExpressionAst', 'UnaryExpressionAst',
+    'UsingExpressionAst'
+)
+$knownExpressionTypes = @($expectedLeftTypes + $ruledOutExpressionTypes)
+$unruledExpressionTypes = @(
+    [System.Management.Automation.Language.ExpressionAst].Assembly.GetTypes() |
+        Where-Object { $_.IsPublic -and -not $_.IsAbstract -and $_.IsSubclassOf([System.Management.Automation.Language.ExpressionAst]) } |
+        ForEach-Object { $_.Name } |
+        Where-Object { $candidateType = $_; @($knownExpressionTypes | Where-Object { [string]::Equals($_, $candidateType, [StringComparison]::Ordinal) }).Count -eq 0 } |
+        Sort-Object
+)
+if ($unruledExpressionTypes.Count -gt 0) {
+    throw "PowerShell $($PSVersionTable.PSVersion) has expression AST types nobody has ruled on as an assignment Left: [$($unruledExpressionTypes -join ', ')]. Decide whether each can appear there, then add it to the corpus or to the ruled-out list."
+}
+
+# ---------------------------------------------------------------------------------------------
 # Fixtures live in a mirrored scripts/ tree under the platform temp directory, never in the
 # repository. The checker derives its repo root as `$PSScriptRoot/..` and its default -Path as
 # `$PSScriptRoot/.`, so a verbatim copy at <temp>/…/scripts/check-script-governance.ps1 classifies
@@ -271,8 +385,9 @@ function Invoke-FixtureForeachShadow {
         # VariablePath.UserPath keeps the scope qualifier, so `local:fixtureAction` never matched the
         # `fixtureAction` that `& $fixtureAction` looks up. One case per qualifier the checker
         # accepts (`using` is not one of them — `$using:a = 1` does not parse): the
-        # normalization is one line and dropping it turns all four green at once, but a reviewer
-        # reading a single case cannot tell which qualifiers were considered.
+        # normalization is one line and dropping it turns all five green at once (local, script,
+        # global, private, variable), but a reviewer reading a single case cannot tell which
+        # qualifiers were considered.
         'local-qualifier-shadows-seam' = @'
 function Invoke-FixtureLocalShadow {
     $local:fixtureAction = 'dotnet'
@@ -374,11 +489,17 @@ function Invoke-FixtureNestedLeftShapesShadow {
     }
 
     # The two Left shapes that are *not* bindings, asserted as such. `$a['k'] = …` and `$a.P = …`
-    # mutate the object the variable already refers to; the variable keeps holding the script block,
-    # so the enclosing seam is still what `& $a` resolves to and reporting a violation here would be
-    # wrong. Skipping them is therefore a decision, not an omission — treat either as a binding and
-    # these two turn red, which is what stops the "exhaustive over Left" claim from being exhaustive
-    # only in the permissive direction.
+    # name a member of whatever `$a` refers to; at the syntax level there is no binding of the name
+    # `a` to record, so reporting a violation here would be reporting one with nothing behind it.
+    # Skipping them is therefore a decision, not an omission — treat either as a binding and these
+    # two turn red, which is what stops the "exhaustive over Left" claim from being exhaustive only
+    # in the permissive direction.
+    #
+    # These cases assert the *syntactic* ruling and nothing more. They are emphatically not evidence
+    # that the variable still holds the seam at run time: `$r = [ref] $a; $r.Value = '/bin/echo'`
+    # replaces the binding through exactly this member-assignment spelling, measured executing the
+    # external command (#1509 round 5). That is a registered residual, pinned separately by
+    # `residual-ref-rebinding` below.
     $nonBindingLeftShapes = [ordered]@{
         'index-assignment-is-not-a-binding' = @'
 function Invoke-FixtureIndexAssignment {
@@ -460,10 +581,13 @@ function Invoke-FixtureCatchAutomatic {
         Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + $automaticVariableSpellings[$spelling])
     }
 
-    # …and the two residuals, pinned as *currently permitted* so that the documented "known residual"
-    # list and the implementation cannot drift apart in either direction. Both need a binding whose
-    # name only exists at run time, which is why the AST cannot see them; both are far more deliberate
-    # than the spellings above, which is why they are accepted rather than chased.
+    # …and the residuals, pinned as *currently permitted* so that the documented "known residual"
+    # list and the implementation cannot drift apart in either direction. Every one of them binds the
+    # name somewhere this file's AST does not say it is bound, which is why the walk above cannot see
+    # them; all are far more deliberate than the spellings above, which is why they are accepted
+    # rather than chased. Each was measured on pwsh 7.6.4 both exiting 0 here *and* really running the
+    # external command in a live process — a residual that could not actually be reached would be a
+    # comfortable fiction, so these are the uncomfortable ones written down.
     $residualSpellings = [ordered]@{
         'residual-set-variable-computed-name' = @'
 function Invoke-FixtureComputedBindingName {
@@ -475,6 +599,50 @@ function Invoke-FixtureComputedBindingName {
         'residual-psvariable-set' = @'
 function Invoke-FixtureSessionStateBinding {
     $ExecutionContext.SessionState.PSVariable.Set('fixtureAction', 'dotnet')
+    & $fixtureAction build
+}
+'@
+        # #1509 round 5. `[ref] $a` (and `Get-Variable a`) hand out the live PSVariable; writing
+        # `.Value` replaces the binding. The write is spelled as member assignment, which
+        # Get-SeamAssignmentTargets skips *because it is not a syntactic binding* — which is true, and
+        # is exactly why the run-time hole exists and is registered rather than argued away.
+        'residual-ref-rebinding' = @'
+function Invoke-FixtureRefRebinding {
+    $reference = [ref] $fixtureAction
+    $reference.Value = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # The pipeline processor creates the binding, so there is no AST node in the file that binds
+        # the name. -PipelineVariable is visible to *downstream* pipeline elements (measured: not to
+        # the producing command's own body, and torn down after the pipeline), so the reachable
+        # spelling is a downstream consumer.
+        'residual-pipeline-variable' = @'
+function Invoke-FixturePipelineVariable {
+    Write-Output 'dotnet' -PipelineVariable fixtureAction |
+        ForEach-Object { & $fixtureAction build }
+}
+'@
+        # -OutVariable is the same class of binding and, unlike -PipelineVariable, survives the
+        # pipeline — so the invocation does not even have to sit inside it.
+        'residual-out-variable' = @'
+function Invoke-FixtureOutVariable {
+    Write-Output 'dotnet' -OutVariable fixtureAction | Out-Null
+    & $fixtureAction build
+}
+'@
+        # Scope-qualified writes are modelled only in the scope that spells them. `$script:` in one
+        # function rebinds the file-level name that another function reads, but the two are different
+        # ScriptBlockAst scopes and the reader's scope chain never sees a binding. This is the case
+        # that keeps the `$script:` row in the covered table from being read as "cross-function
+        # `$script:` writes are handled" — they are not.
+        'residual-cross-scope-script-assignment' = @'
+function Set-FixtureCrossScopeAction {
+    $script:fixtureAction = 'dotnet'
+}
+
+function Invoke-FixtureCrossScopeAction {
+    Set-FixtureCrossScopeAction
     & $fixtureAction build
 }
 '@

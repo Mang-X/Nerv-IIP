@@ -1495,12 +1495,30 @@ foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-eviden
 #   - descending by metric      → 'Cherry' (9) must lead a field of 5s;
 #   - ordinal tie-break         → the 5s must come out A00…A23 then 'apple', because ordinal puts
 #                                 uppercase before lowercase (culture collation gives apple, A00…);
-#   - deterministic tie-break   → 26 tied rows, past the threshold where .NET's introsort stops
-#                                 being an insertion sort, so `return 0` in the comparator really
-#                                 does reorder them rather than accidentally staying stable;
+#   - deterministic tie-break   → 25 rows tied at 5 (A00…A23 plus 'apple') inside a 26-row list, past
+#                                 the threshold where .NET's introsort stops being an insertion sort,
+#                                 so `return 0` in the comparator really does reorder them rather
+#                                 than accidentally staying stable;
 #   - TopCount truncation       → a second call with -Count 2 must return exactly two rows.
+#
+# The threshold is 16: `List<T>.Sort` runs introsort, which insertion-sorts any partition of 16 or
+# fewer elements, and insertion sort with a `return 0` comparator leaves the order untouched.
+# Measured on pwsh 7.6.4 by sorting N identical rows with a constant-zero comparator — stable for
+# every N ≤ 16, shuffled for every N in 17…34. 26 rows is the fixture size, so the margin is 10.
+# That margin is *not* self-evident from reading the case, and shrinking the tie group is a plausible
+# tidy-up: at 16 rows the `return 0` mutation passes and this case silently stops discriminating.
+# The meta-assertion below fails outright in that situation rather than going quietly green.
 $rankedTie = @(0..23 | ForEach-Object { [pscustomobject]@{ name = ('A{0:D2}' -f $_); elapsed = 5 } })
 $rankedInput = @(@([pscustomobject]@{ name = 'apple'; elapsed = 5 }) + $rankedTie + @([pscustomobject]@{ name = 'Cherry'; elapsed = 9 }))
+$rankedSortProbe = [Collections.Generic.List[object]]::new()
+for ($rankedProbeIndex = 0; $rankedProbeIndex -lt $rankedInput.Count; $rankedProbeIndex++) {
+    $rankedSortProbe.Add([pscustomobject]@{ Rank = $rankedProbeIndex })
+}
+$rankedProbeBefore = (@($rankedSortProbe | ForEach-Object { [string]$_.Rank }) -join ',')
+$rankedSortProbe.Sort([Comparison[object]] { param($Left, $Right) return 0 })
+$rankedProbeAfter = (@($rankedSortProbe | ForEach-Object { [string]$_.Rank }) -join ',')
+Assert-True (-not [string]::Equals($rankedProbeBefore, $rankedProbeAfter, [StringComparison]::Ordinal)) `
+    ("The ranked-tie fixture is $($rankedInput.Count) rows, which List<T>.Sort still insertion-sorts: a constant-zero comparator left the order unchanged, so the tie-break case below cannot detect that mutation. Grow the tie group back above the introsort threshold (16 on the measured runtime).")
 [array]::Reverse($rankedInput)
 $rankedAll = @(Get-NervOrdinalRankedTop -Items $rankedInput -Count 99 `
     -MetricSelector { param($row) [double]$row.elapsed } -TieBreakSelector { param($row) [string]$row.name })

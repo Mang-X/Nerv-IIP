@@ -120,9 +120,25 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    | `Set-Variable` / `New-Variable`（**字面量** `-Name`） | `CommandAst` | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam` |
    | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | — | `residual-set-variable-computed-name`（断言**当前放行**） |
    | `$ExecutionContext.SessionState.PSVariable.Set(…)` | 同上 | ❌ 残余 | — | `residual-psvariable-set`（断言**当前放行**） |
+   | `[ref] $x` / `Get-Variable x` 后写 `.Value` | 运行期替换绑定；写法上是成员赋值 | ❌ 残余 | — | `residual-ref-rebinding`（断言**当前放行**） |
+   | `-PipelineVariable x`（下游元素消费） | 绑定由管道处理器创建，文件里没有对应 AST 节点 | ❌ 残余 | — | `residual-pipeline-variable`（断言**当前放行**） |
+   | `-OutVariable x` | 同上，且管道结束后仍然存在 | ❌ 残余 | — | `residual-out-variable`（断言**当前放行**） |
+   | A 函数里 `$script:x = …`，B 函数里 `& $x` | 跨 `ScriptBlockAst` 作用域，读的一侧看不到这次绑定 | ❌ 残余 | — | `residual-cross-scope-script-assignment`（断言**当前放行**） |
    | 自动变量 `$_`（管道 / `switch` / `catch`） | 不是本规则要建模的绑定 | n/a：`& $_` 一律违规 | — | `foreach-object-automatic-variable`、`switch-automatic-variable`、`catch-automatic-variable` |
 
-   **索引与成员赋值为什么显式跳过**：`$h['k'] = …` 与 `$o.P = …` 改的是变量已经指向的那个对象，变量本身仍然持有原值；外层 `$x = { … }` 依旧是 `& $x` 在运行期解析到的东西，把它们算成绑定反而会报一个不存在的违规。两条「断言当前放行」的用例把这个判断钉住——把任一种改成绑定，用例就红。
+   **索引与成员赋值为什么显式跳过**：`$h['k'] = …` 与 `$o.P = …` 在**语法层**不构成变量绑定——它们命名的是 `$h` / `$o` 所指对象的一个成员，文件里根本没有对名字 `h` / `o` 的绑定可记；算成绑定就会报一个背后什么都没有的违规。两条「断言当前放行」的用例把这个语法层判断钉住——把任一种改成绑定，用例就红。
+
+   这条**不等于**「所以变量在运行期必然仍持有原来的 seam」。那句话是假的，四轮里一直挂在这里当理由，五轮实测推翻（pwsh 7.6.4）：
+
+   ```powershell
+   $a = { 'seam' }; $r = [ref] $a; $r.Value = '/bin/echo'; & $a   # 真的执行 /bin/echo
+   ```
+
+   `[ref] $a` 与 `Get-Variable a` 交出的都是活的 `PSVariable`，写它的 `.Value` 就替换了绑定——用的正是这一分支跳过的成员赋值拼写；`scripts/lib/` 里 `[ref]` 有 18 处在用（全是 `TryParse`/`ParseFile` 出参）。运行期经 `PSVariable` 句柄改绑属于上表的**登记残余**，不在本 checker 的静态覆盖面内，由 `residual-ref-rebinding` 钉住；跳过成员赋值的正当性来自语法层，不来自这条假前提。
+
+   **`Left` 类型集合是被守住的，不只是被观察到的**：`Get-SeamAssignmentTargets` 对未识别的 Left 形状返回「什么都不绑」= fail open，未来 PowerShell 加一种表达式形状会静默失去遮蔽。`script-governance-scan-boundary.Tests.ps1` 里的 `Left type set` 契约把四件事变成断言：源码里对 `$Left` 的 `-is` 分派集合恰好是那四种、`ConvertExpressionAst` 确实继承 `AttributedExpressionAst`、一份 28 条拼写语料解析出的 Left 类型恰好是上表七种且每种要么被分派要么被显式判为非绑定、以及 AST 程序集里不存在第三类「没人裁决过」的具体表达式类型（只对**新增**报红，某个运行时缺类型不报红——缺类型不可能引入未处理的 Left 形状）。
+
+   **残余表按「先 seam 后改赋」写，但方向是双向的**：`$x = { … }` 之后再 `$x = 'dotnet'` 与 `$x = 'dotnet'` 之后再 `$x ??= { … }` 在本 checker 眼里同形——同一作用域内的赋值不分先后，只要有一条右侧是 script block 字面量就进 Seam 集合。后一种实测 exit 0 而运行期 `$x` 仍是 `'dotnet'`（`??=` 不触发），`& $x` 真的执行外部命令。条件性赋值（`??=`）与复合赋值（`+=`）在这一点上同形。
 
    **`$using:` 不在限定符表里**：`$using:a = 1` 在 PowerShell 7 是**parse error**（四轮实测），列进去只是个没有源码能走到的死分支；文档此前把它和另外五个真限定符一起打 ✅，实现里也确实带着它——那正是「措辞强于实现」的同一类问题，一并清掉。`$variable:` 是真的（实测 `$variable:a = 'x'` 之后 `$a` 读回 `x`），补一条用例。
 

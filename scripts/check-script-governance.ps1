@@ -259,11 +259,23 @@ function Get-SeamAssignmentTargets {
           $h['k'] = …                 IndexExpressionAst         binds nothing — see below
           $o.P = …                    MemberExpressionAst        binds nothing — see below
 
-        Index and member assignment mutate an object the variable already refers to; the variable
-        itself keeps whatever it held, so an enclosing `$a = { … }` seam is still what `& $a`
-        resolves to at run time and treating these as bindings would report a violation that is not
-        one. They are skipped explicitly rather than by falling off the end, and pinned by
-        `index-assignment-is-not-a-binding` / `member-assignment-is-not-a-binding`.
+        Index and member assignment are skipped because *at the syntax level* they are not variable
+        bindings: `$a['k'] = …` / `$a.P = …` name a member of whatever `$a` refers to, and there is no
+        binding of the name `a` for this function to record. Counting them would report a violation
+        with nothing behind it, so they are skipped explicitly rather than by falling off the end, and
+        pinned by `index-assignment-is-not-a-binding` / `member-assignment-is-not-a-binding`.
+
+        What this is *not* is a claim that the variable therefore still holds the seam at run time.
+        It does not follow, and it is false as measured (#1509 round 5, pwsh 7.6.4):
+
+            $a = { 'seam' }; $r = [ref] $a; $r.Value = '/bin/echo'; & $a   # runs /bin/echo
+
+        `[ref] $a` and `Get-Variable a` both hand out the live PSVariable, and writing `.Value` on it
+        replaces the binding — the very member-assignment spelling this arm skips. `[ref]` is in real
+        use in scripts/lib (18 occurrences, all `TryParse`/`ParseFile` out-parameters). Run-time
+        rebinding through a PSVariable handle is therefore a *registered residual* of this static
+        checker, listed with the other residuals in Get-ScopedSeamBindings below and pinned by
+        `residual-ref-rebinding`; it is not something the skip is safe because of.
 
         Only a bare, unqualified VariableExpressionAst may prove a seam. Every wrapper form binds the
         name — so it shadows an enclosing seam — but proves nothing, which keeps this change
@@ -316,7 +328,14 @@ function Get-SeamAssignmentTargets {
         return $targets
     }
 
-    # IndexExpressionAst / MemberExpressionAst and anything else: not a variable binding.
+    # IndexExpressionAst / MemberExpressionAst: not a variable binding, by the reasoning in the
+    # docstring. *Anything else* reaching here would bind nothing either — which is fail-open, not a
+    # decision: a Left shape nobody enumerated would silently stop shadowing an enclosing seam. The
+    # seven shapes above are all a pwsh 7.6.4 parser can put here (measured over a spelling corpus),
+    # but that is a fact about today's parser, not an invariant this function enforces. It is held by
+    # `Get-SeamAssignmentTargets Left type set` in
+    # scripts/tests/script-governance-scan-boundary.Tests.ps1, which goes red both if a branch here is
+    # deleted and if the AST assembly grows an expression type nobody has ruled on.
     return $targets
 }
 
@@ -344,18 +363,39 @@ function Get-ScopedSeamBindings {
           data $x { … }                   DataStatementAst.Variable
           Set-Variable / New-Variable     with a literal -Name (or literal first positional)
 
-        Not covered, and pinned as such by executable cases in
-        scripts/tests/script-governance-scan-boundary.Tests.ps1: a Set-Variable/New-Variable whose
-        name is computed at run time, and $ExecutionContext.SessionState.PSVariable.Set(…). The
-        automatic `$_` is not a binding this function has to model — `& $_` names nothing this file
-        can prove, so it is a violation under every spelling (switch, catch, ForEach-Object), which
-        those cases also pin.
+        Not covered — the registered residuals. Each was measured on pwsh 7.6.4 exiting 0 here *and*
+        really executing the external command, and each has an executable case in
+        scripts/tests/script-governance-scan-boundary.Tests.ps1 asserting that it is currently
+        permitted, so the list and the behaviour cannot drift apart in either direction:
+
+          Set-Variable/New-Variable -Name $computed  name exists only at run time
+          $ExecutionContext.SessionState.PSVariable.Set(…)          ditto
+          [ref] $a / Get-Variable a, then .Value = …  rebinding through the live PSVariable handle;
+                                                     spelled as member assignment, which the Left
+                                                     walk above skips by design
+          -PipelineVariable a, consumed downstream    the binding is created by the pipeline
+                                                     processor, not by any AST node in this file
+          -OutVariable a                             ditto, and it survives the pipeline
+          $script:a = … in one function, & $a in     the write and the read are in different
+          another                                    ScriptBlockAst scopes (see below)
+
+        What they have in common is that the name is bound somewhere this file's AST does not say it
+        is bound. They are accepted rather than chased because each is markedly more deliberate than
+        the spellings above; closing them needs data-flow, not another Left shape.
+
+        The automatic `$_` is not a binding this function has to model — `& $_` names nothing this
+        file can prove, so it is a violation under every spelling (switch, catch, ForEach-Object),
+        which those cases also pin.
 
         Only an *unqualified* declaration can enter the Seam half. `$script:x = { … }` therefore
-        shadows an outer `x` without licensing `& $x`, and `& $script:x` proves nothing at all. That
-        is deliberately stricter than before this change rather than equally permissive: the
-        qualified spellings are unused in this repository, and a rule that only ever removes
-        permissions cannot smuggle in a relaxation while claiming to fix a hole.
+        shadows an outer `x` without licensing `& $x` **in the scope that writes it**, and
+        `& $script:x` proves nothing at all. Scope-qualified writes are only modelled where they are
+        written: `$script:x = …` inside function A does not shadow anything for function B, even
+        though at run time it rebinds the same file-level `x` that B reads — the residual listed
+        above. That is deliberately stricter than before this change rather than equally permissive
+        wherever it does apply: the qualified spellings are unused in this repository, and a rule
+        that only ever removes permissions cannot smuggle in a relaxation while claiming to fix a
+        hole.
     #>
     param([Parameter(Mandatory)] [System.Management.Automation.Language.ScriptBlockAst] $Scope)
 
