@@ -171,7 +171,7 @@ function Invoke-FixtureStringVariable {
     # The seam proof is scoped, not file-wide (#1509 review). One function proving `$action` holds a
     # script block must not license a *different* function's `$action = 'dotnet'; & $action` — that
     # is the arbitrary-command hole the rule exists for, reachable by picking a popular parameter
-    # name. Widen Get-ScriptBlockVariableNames back to whole-file collection and this case turns
+    # name. Widen Get-ScopedSeamBindings back to whole-file collection and this case turns
     # green while the string-variable case above stays red, so it is the one that pins the scope.
     Invoke-LibraryScopeCase -Name 'cross-function-name-collision' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
 function Invoke-FixtureSeamOwner {
@@ -198,6 +198,55 @@ function Invoke-FixtureSeamParameterOwner {
 
 function Invoke-FixtureParameterBorrower {
     & $Action build
+}
+'@)
+
+    # The same leak in PowerShell's *other* spelling of a parameter list. An inline list hangs off the
+    # FunctionDefinitionAst rather than the body, so a scope walk that only looks for the nearest
+    # enclosing ScriptBlockAst files the parameter under the whole file and hands it to every sibling
+    # function — measured in #1509 round 2, where this exact fixture exited 0 while the `param()`
+    # spelling above exited 1 for byte-identical runtime semantics. Two spellings, two cases: the
+    # `param()` case alone cannot see this regression. The borrower deliberately does *not* rebind the
+    # name, so this case fails on the scope attribution alone rather than on the shadowing rule below.
+    Invoke-LibraryScopeCase -Name 'inline-parameter-cross-function-leak' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
+function Invoke-FixtureInlineParameterOwner([Parameter(Mandatory)] [scriptblock] $Action) {
+    & $Action
+}
+
+function Invoke-FixtureInlineParameterBorrower {
+    & $Action build
+}
+'@)
+
+    # …and the inline spelling must still *earn* the relaxation for its own body, so the case above
+    # is pinned by tightening the scope rather than by dropping inline parameters on the floor.
+    Invoke-LibraryScopeCase -Name 'inline-parameter-seam-allowed' -ExpectedExitCode 0 -Body ($libraryHeader + @'
+function Invoke-FixtureInlineParameterSeam([Parameter(Mandatory)] [scriptblock] $Action) {
+    & $Action
+}
+'@)
+
+    # A file-level `$action = { … }` is an enclosing scope, so it really is visible to a function that
+    # never rebinds the name — that half of the ruling is asserted here so the shadowing case below
+    # cannot be satisfied by simply refusing to walk outward.
+    Invoke-LibraryScopeCase -Name 'file-level-seam-visible-to-inner-scope' -ExpectedExitCode 0 -Body ($libraryHeader + @'
+$fixtureAction = { 'seam' }
+
+function Invoke-FixtureUsesFileLevelSeam {
+    & $fixtureAction
+}
+'@)
+
+    # …but a function that assigns the name owns a *local*, so the file-level seam is shadowed and
+    # must not license it. This is not the documented residual ("re-assigned later *in the same
+    # scope*"): here the seam and the string live in different scopes, and PowerShell resolves
+    # `& $fixtureAction` to the string. Drop the innermost-binding-wins rule and this exits 0.
+    Invoke-LibraryScopeCase -Name 'file-level-seam-shadowed-by-local' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
+$fixtureAction = { 'seam' }
+
+function Invoke-FixtureShadowsFileLevelSeam {
+    $fixtureAction = 'dotnet'
+    & $fixtureAction build
 }
 '@)
 

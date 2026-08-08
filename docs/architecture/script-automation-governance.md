@@ -89,12 +89,16 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 
 清单是 `check-script-governance.ps1` 里一份具名数据（`$scanExclusions`），不是内联布尔链——`scripts/tests/script-governance-scan-boundary.Tests.ps1` 逐字断言这三条，因此**放宽边界必然改到一条被命名的契约**，而不是改一处没人看的 `Where-Object`。
 
+**「穷举三条」说的是扫描边界，不是全部放宽杠杆**（#1509 二轮走查）。还有第四条独立的放宽通道：`scripts/script-governance-baseline.json` 的 `exemptions`——它不改变哪些文件被扫，而是逐「文件 × 规则」豁免已扫出的发现，且**不被上述三条守卫覆盖**（`script-governance-scan-boundary.Tests.ps1` 的镜像树里没有 baseline 文件，checker 缺文件即返回空豁免表，所以那些用例始终按「零 exemption」判定）。风险有限：豁免必须逐文件逐规则写明，不接受通配路径，改动落在被跟踪的 JSON 里可 review。但它确实存在，别把「三条」读成「全部」。
+
 ### 库作用域（library scope）
 
 `scripts/lib/` 下的文件按 library scope 扫描。规则差异只有两条，其余（`ParseError`、`MissingGovernanceHeader`、`MissingCategory`/`InvalidCategory`、`ForbiddenCommand`、`ForbiddenDynamicScriptBlock`、`ForbiddenProcessStart`）与入口脚本完全一致：
 
 1. **`MissingHelper` 不适用。** 库是被 dot-source 进调用方作用域的，调用方已经加载了 wrapper；而且 `BackendTestShardSelectors.ps1`、`CiWorkflowBudgets.ps1` 这类库根本不调用任何外部进程，强塞一个用不到的 import 买不到任何东西。这条规则真正要防的「库绕过 wrapper 直接 shell out」并没有失守：`ForbiddenCommand`、`ForbiddenProcessStart` 和下面收窄后的 `DynamicInvocation` 在库作用域全部生效，而确实要 shell out 的库（`BackendTestShardTimings.ps1`、`FullStackSessionRuntime.ps1`）为自己的需要本来就 dot-source 了 wrapper。
-2. **`DynamicInvocation` 收窄为「注入式 action seam」。** 库可以 `& $Action`，条件是该变量在**本次调用所在的作用域链上可证明是 script block**：要么是 `[scriptblock]` 类型的参数，要么是被 `{ … }` 字面量（含 `.GetNewClosure()`）赋值的变量。作用域单位是一个 `ScriptBlockAst`（函数体或 `{ … }` 字面量），查找沿包围链向外走——与 PowerShell 自身的作用域一致：外层的 seam 对内层可见，**兄弟函数的同名变量永远不可见**。这一条是刻意的：若按整文件收集，A 函数里的 `$action = { }` 就会替 B 函数里的 `$action = 'dotnet'; & $action` 放行，等于用一个流行参数名重新打开这条规则要堵的洞。这正是本仓库构造可测试库所依赖的注入 seam（见 `AGENTS.md` 后端测试确定性一节）。`& 'dotnet'`、`& "$exe"`、`& (Get-Command …)`、`& $stringVariable` 一律仍是违规——最后一种是 `ForbiddenCommand` 在结构上看不见的那个洞，所以这条规则必须留在库作用域，而不是整体豁免。
+2. **`DynamicInvocation` 收窄为「注入式 action seam」。** 库可以 `& $Action`，条件是该变量在**本次调用所在的作用域链上可证明是 script block**：要么是 `[scriptblock]` 类型的参数，要么是被 `{ … }` 字面量（含 `.GetNewClosure()`）赋值的变量。作用域单位是一个 `ScriptBlockAst`（函数体或 `{ … }` 字面量），查找沿包围链向外走——与 PowerShell 自身的作用域一致：外层的 seam 对内层可见，**兄弟函数的同名变量永远不可见**，且**内层一旦自己绑定同名变量就遮蔽外层**（最内层绑定说了算，与运行期解析一致：函数体里写 `$x = 'dotnet'` 就是一个局部，文件级的 `$x = { … }` 替它作不了保）。这一条是刻意的：若按整文件收集，A 函数里的 `$action = { }` 就会替 B 函数里的 `$action = 'dotnet'; & $action` 放行，等于用一个流行参数名重新打开这条规则要堵的洞。这正是本仓库构造可测试库所依赖的注入 seam（见 `AGENTS.md` 后端测试确定性一节）。`& 'dotnet'`、`& "$exe"`、`& (Get-Command …)`、`& $stringVariable` 一律仍是违规——最后一种是 `ForbiddenCommand` 在结构上看不见的那个洞，所以这条规则必须留在库作用域，而不是整体豁免。
+
+   **参数的两种拼写按同一个作用域判定。** PowerShell 的 `function Foo { param(...) }` 与 `function Foo(...)` 运行期语义完全相同，但 AST 不同：内联参数表挂在 `FunctionDefinitionAst` 上、位于函数体**之外**，因此「向外找最近的 `ScriptBlockAst`」会把它算到**文件级**、对所有兄弟函数可见。#1509 二轮实测到这个洞（内联拼写 exit 0，`param()` 拼写 exit 1）。现在两种拼写都归属函数体，`inline-parameter-cross-function-leak` 与 `cross-function-parameter-leak` 各钉一种。
 
 library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/` 下的文件必须在自己的 header 里写 `Category: library`（否则报 `MissingLibraryCategory`），而目录之外的文件不能通过贴这个标签来蹭上述两条放宽（否则报 `InvalidCategory`）。放宽写在被放宽者自己的头部，改动可见。
 
@@ -104,7 +108,9 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 - 排除清单逐字断言 → 往里加 `scripts/lib/*` 直接红；
 - 在 `scripts/lib/` 下临时种一个违规库文件，**默认扫描**（不带 `-Path`）必须报出它 → 边界被行为性放宽时红；
-- seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` / 跨函数同名变量不放行八个用例逐条对照 → 任何一条规则被削弱或过度收紧都红。
+- seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` / 跨函数同名变量不放行逐条对照 → 任何一条规则被削弱或过度收紧都红；
+- 参数两种拼写各一条（`cross-function-parameter-leak` 钉 `param()` 块、`inline-parameter-cross-function-leak` 钉内联参数表），外加 `inline-parameter-seam-allowed` 防止「靠丢掉内联参数」来假装收紧；
+- 遮蔽语义两条：`file-level-seam-visible-to-inner-scope`（外层 seam 对不重绑的内层仍可见，防止「干脆不向外走」的假收紧）与 `file-level-seam-shadowed-by-local`（内层重绑同名变量后外层 seam 失效）。
 
 **守卫落在哪里**：该文件是 CI `Script Governance` job 的一步（`.github/workflows/ci.yml`），同时进入本节末尾的 `compat-fast` 清单与 `scripts/check-script-compatibility.ps1`。它从 `check-script-governance.Tests.ps1` 拆出来，是因为后者还要驱动 ScriptAutomation 的流排空与游离进程夹具，比一条边界契约重得多。
 
@@ -112,9 +118,9 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 ### 已知残余
 
-**同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否。该残余被接受，因为它需要一次刻意的、可见的重新赋值，而更常见的绕过路径（直呼命令、字面量调用、字符串变量调用、借用兄弟函数的同名变量）都已被上面的规则堵死。
+**同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否。该残余被接受，因为它需要一次刻意的、可见的重新赋值，而更常见的绕过路径（直呼命令、字面量调用、字符串变量调用、借用兄弟函数的同名变量、借用文件级同名变量）都已被上面的规则堵死。
 
-这条残余的边界是**作用域**而不是文件：跨函数借名不在残余里，它是被 `cross-function-name-collision` 用例钉死的违规。措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。
+这条残余的边界是**同一个作用域**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）与「外层写 seam、内层改赋成字符串」都不在残余里，它们分别是被 `cross-function-name-collision` / `cross-function-parameter-leak` / `inline-parameter-cross-function-leak` / `file-level-seam-shadowed-by-local` 钉死的违规。措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。
 
 ## 端口、数据库与容器
 

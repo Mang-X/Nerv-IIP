@@ -176,33 +176,67 @@ function Test-IsExempted {
 # "a variable this file proves holds a script block *here*". A scope is one ScriptBlockAst: a
 # function body, or a `{ … }` literal. Lookup walks the enclosing chain outward, which is what
 # PowerShell's own scoping does, so an outer seam stays visible to an inner block while a sibling's
-# never is.
+# never is — and an inner *rebinding* shadows the outer seam, for the same reason.
 function Get-NearestScriptBlockScope {
     param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node)
 
+    $child = $Node
     $current = $Node.Parent
     while ($null -ne $current -and $current -isnot [System.Management.Automation.Language.ScriptBlockAst]) {
+        # An inline parameter list — `function Foo([scriptblock] $Action) { … }` — hangs off the
+        # FunctionDefinitionAst, *beside* the body rather than inside it. Walking straight on to the
+        # next enclosing ScriptBlockAst would therefore file that parameter under the whole file and
+        # make it visible to every sibling function, so `function Bar { $Action = 'dotnet'; & $Action }`
+        # passed while the byte-identical `param()` spelling failed (#1509 round 2, measured). The
+        # runtime scope of a parameter is the function body under either spelling; say so.
+        if ($current -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            -not [object]::ReferenceEquals($child, $current.Body)) {
+            return $current.Body
+        }
+        $child = $current
         $current = $current.Parent
     }
 
     return $current
 }
 
-function Get-ScopedScriptBlockVariableNames {
+function Get-ScopedSeamBindings {
+    <#
+        The variables one scope binds, split into "bound at all" and "proven to hold a script block".
+
+        Both halves are needed because lookup has to model shadowing, not just visibility: a function
+        that writes `$action = 'dotnet'` owns a *local* $action, so an enclosing `$action = { … }`
+        seam is not what `& $action` reaches at run time and must not license it either.
+    #>
     param([Parameter(Mandatory)] [System.Management.Automation.Language.ScriptBlockAst] $Scope)
 
-    $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    # PowerShell variable names are case-insensitive, so the sets are too.
+    $bindings = [pscustomobject]@{
+        Bound = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        Seam = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
 
-    foreach ($parameter in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.ParameterAst] }, $true)) {
+    # An inline parameter list is not inside the body's subtree, so FindAll over the scope cannot see
+    # it; it is added explicitly, and Get-NearestScriptBlockScope above agrees it belongs here.
+    $parameters = @($Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.ParameterAst] }, $true))
+    if ($Scope.Parent -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        [object]::ReferenceEquals($Scope.Parent.Body, $Scope) -and
+        $null -ne $Scope.Parent.Parameters) {
+        $parameters += @($Scope.Parent.Parameters)
+    }
+
+    foreach ($parameter in $parameters) {
         if ((Get-NearestScriptBlockScope -Node $parameter) -ne $Scope) { continue }
+        [void] $bindings.Bound.Add([string] $parameter.Name.VariablePath.UserPath)
         if ($null -ne $parameter.StaticType -and $parameter.StaticType -eq [scriptblock]) {
-            [void] $names.Add([string] $parameter.Name.VariablePath.UserPath)
+            [void] $bindings.Seam.Add([string] $parameter.Name.VariablePath.UserPath)
         }
     }
 
     foreach ($assignment in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $assignment) -ne $Scope) { continue }
         if ($assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+        [void] $bindings.Bound.Add([string] $assignment.Left.VariablePath.UserPath)
         $right = $assignment.Right
         if ($right -is [System.Management.Automation.Language.CommandExpressionAst]) { $right = $right.Expression }
         # `{ … }.GetNewClosure()` is the same literal with its variables captured — still provably a
@@ -215,11 +249,11 @@ function Get-ScopedScriptBlockVariableNames {
             $right = $right.Expression
         }
         if ($right -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
-            [void] $names.Add([string] $assignment.Left.VariablePath.UserPath)
+            [void] $bindings.Seam.Add([string] $assignment.Left.VariablePath.UserPath)
         }
     }
 
-    return ,$names
+    return $bindings
 }
 
 function Test-IsSeamVariableInvocation {
@@ -232,10 +266,15 @@ function Test-IsSeamVariableInvocation {
     $scope = Get-NearestScriptBlockScope -Node $Invocation
     while ($null -ne $scope) {
         if (-not $ScopeCache.ContainsKey($scope)) {
-            $ScopeCache[$scope] = Get-ScopedScriptBlockVariableNames -Scope $scope
+            $ScopeCache[$scope] = Get-ScopedSeamBindings -Scope $scope
         }
-        if ($ScopeCache[$scope].Contains($VariableName)) {
-            return $true
+        $bindings = $ScopeCache[$scope]
+        if ($bindings.Bound.Contains($VariableName)) {
+            # Innermost binding wins, the way PowerShell resolves the name at run time. Without this,
+            # a file-level `$action = { … }` licensed every function body's `$action = 'dotnet';
+            # & $action` — a leak the documented residual ("re-assigned later *in the same scope*")
+            # never covered.
+            return $bindings.Seam.Contains($VariableName)
         }
         $scope = Get-NearestScriptBlockScope -Node $scope
     }
