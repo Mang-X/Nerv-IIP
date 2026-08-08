@@ -6,11 +6,11 @@
 #   Writes:
 #     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
 #     - backend/common/Nerv.IIP.TemporarySolutionMembership/** (temporarily)
-#     - OS temporary directory: workflow, manifest, policy and shard TRX fixtures (temporarily)
+#     - OS temporary directory: workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes every temporary project, workflow, manifest, policy, TRX and collision fixture in finally
+#     - Removes every temporary project, workflow, manifest, policy, TRX, timing-cache and collision fixture in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -419,5 +419,279 @@ finally {
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
 }
+
+# ---------------------------------------------------------------------------------------------
+# #1507 — timing is a report-only cache keyed by assembly; policy keys carry no lane/shard dimension.
+#
+# The failure being regression-tested is concrete: MAN-663 changed the shared host and MAN-669 PR-A
+# re-homed assemblies between shards. Neither touched a test, yet both invalidated keys in a
+# committed timing snapshot, and clearing that required a human to regenerate and re-commit it. The
+# assertions below fix both halves of the cause — the measurement is no longer keyed on topology,
+# and a gap in it can no longer turn anything red.
+# ---------------------------------------------------------------------------------------------
+. (Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1')
+
+$balanceScript = Join-Path $repoRoot 'scripts/report-backend-test-shard-balance.ps1'
+$timingUpdateScript = Join-Path $repoRoot 'scripts/update-backend-test-shard-timings.ps1'
+Assert-Contract (Test-Path -LiteralPath $balanceScript -PathType Leaf) 'The report-only shard balance entry point is missing.'
+Assert-Contract (Test-Path -LiteralPath $timingUpdateScript -PathType Leaf) 'The shard timing cache refresher is missing.'
+
+# The policy gate and the timing report are deliberately separate programs. This is a boundary
+# assertion — which file may depend on which — and source text is the only place a dependency
+# boundary is visible; the behavioural half (a gap in timing data exits 0) is asserted below.
+$validatorSource = Get-Content -LiteralPath $validatorPath -Raw
+foreach ($timingToken in @('BackendTestShardTimings', 'test-evidence-baseline.json', 'elapsedMilliseconds', 'backend-test-shard-timings')) {
+    Assert-Contract (-not $validatorSource.Contains($timingToken)) "The shard policy hard gate must not consume timing data ('$timingToken'); timing lives in the report-only balance script."
+}
+
+function Invoke-ShardBalance {
+    param(
+        [string[]] $Arguments = @(),
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    try {
+        $result = Invoke-NativeCommandOutput `
+            -Command 'pwsh' `
+            -Arguments (@('-NoProfile', '-File', $balanceScript) + $Arguments) `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 300 `
+            -Name $Name
+        return [pscustomobject]@{ Passed = $true; Message = ("$($result.Stdout)" -replace '\s+', ' ') }
+    }
+    catch {
+        return [pscustomobject]@{ Passed = $false; Message = ("$($_.Exception.Message)" -replace '\s+', ' ') }
+    }
+}
+
+$timingFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-shard-timing-fixture-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $timingFixtureRoot -Force | Out-Null
+    $absentFallback = Join-Path $timingFixtureRoot 'no-such-snapshot.json'
+    $snapshot = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+    $allObservations = @(
+        foreach ($row in @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $snapshot)) {
+            [pscustomobject]@{ runId = 'fixture-run-1'; assembly = [string] $row.assembly; lane = [string] $row.lane; elapsedMilliseconds = [double] $row.elapsedMilliseconds }
+        }
+    )
+    Assert-Contract ($allObservations.Count -gt 0) 'The timing fixture needs at least one observation to be meaningful.'
+
+    # (a) Remove one assembly's timing data. The balance must degrade to a named report-only warning
+    #     plus an estimate and exit 0 — never red.
+    $businessCoreB = @($fastShards | Where-Object { [string] $_.id -ceq 'business-core-b' })[0]
+    $droppedAssembly = Get-NervShardTimingAssemblyKey -Name ([string] @($businessCoreB.projects)[0])
+    $reducedObservations = @($allObservations | Where-Object { [string] $_.assembly -cne $droppedAssembly })
+    Assert-Contract ($reducedObservations.Count -lt $allObservations.Count) "The missing-timing fixture must actually remove '$droppedAssembly'."
+    $reducedCachePath = Join-Path $timingFixtureRoot 'reduced-timings.json'
+    Set-Content -LiteralPath $reducedCachePath -NoNewline -Value (
+        (New-NervShardTimingCache -Observations $reducedObservations -Runs @([pscustomobject]@{ workflowRunId = 'fixture-run-1' })) | ConvertTo-Json -Depth 20
+    )
+    $reducedBalance = Invoke-ShardBalance -Name 'shard-balance-missing-assembly-timing' -Arguments @(
+        '-TimingCachePath', $reducedCachePath, '-FallbackEvidencePath', $absentFallback, '-NoRefresh'
+    )
+    Assert-Contract ($reducedBalance.Passed) 'A shard assembly with no timing observation must stay report-only and exit 0.'
+    Assert-Contract ($reducedBalance.Message.Contains('timing-assembly-missing')) 'Missing timing data must be reported with its structured warning code.'
+    Assert-Contract ($reducedBalance.Message.Contains($droppedAssembly)) 'The missing-timing warning must name the assembly it estimated.'
+    Assert-Contract ($reducedBalance.Message.Contains('report-only')) 'The missing-timing warning must say it is report-only.'
+
+    # No timing data at all — the offline / no-token / expired-artifact path — is also report-only.
+    $emptyCachePath = Join-Path $timingFixtureRoot 'empty-timings.json'
+    Set-Content -LiteralPath $emptyCachePath -NoNewline -Value (
+        (New-NervShardTimingCache -Observations @() -Runs @()) | ConvertTo-Json -Depth 20
+    )
+    $emptyBalance = Invoke-ShardBalance -Name 'shard-balance-no-timing-source' -Arguments @(
+        '-TimingCachePath', $emptyCachePath, '-FallbackEvidencePath', $absentFallback, '-NoRefresh'
+    )
+    Assert-Contract ($emptyBalance.Passed) 'A completely unavailable timing source must still exit 0.'
+    Assert-Contract ($emptyBalance.Message.Contains('timing-source-unavailable')) 'A completely unavailable timing source must be named, not silently estimated.'
+
+    # The committed snapshot is the offline fallback; with it, the real repository state reports with
+    # no missing-assembly warning at all, which is what "the 17/64 lost keys are gone" looks like.
+    $fallbackBalance = Invoke-ShardBalance -Name 'shard-balance-committed-fallback' -Arguments @(
+        '-TimingCachePath', (Join-Path $timingFixtureRoot 'no-such-cache.json'),
+        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json'),
+        '-NoRefresh'
+    )
+    Assert-Contract ($fallbackBalance.Passed) 'The balance report must fall back to the committed snapshot without failing.'
+    Assert-Contract ($fallbackBalance.Message.Contains('committed-evidence-snapshot')) 'The balance report must name the fallback timing source it used.'
+    Assert-Contract (-not $fallbackBalance.Message.Contains('timing-assembly-missing')) 'Every currently classified backend assembly must resolve a timing key from the committed snapshot.'
+
+    # The aggregation口径 itself, offline: two runs' extracted evidence bundles in, one median per
+    # assembly out. Also pins the two rules that are easy to get silently wrong — a bundle whose
+    # collection failed carries diagnostics rather than measurements and must not become a sample,
+    # and an assembly observed in two lanes of the *same* run is one sample of the summed work, not
+    # two samples of half of it.
+    $evidenceFixture = Join-Path $timingFixtureRoot 'evidence'
+    $runOne = Join-Path $evidenceFixture 'run-1'
+    $runTwo = Join-Path $evidenceFixture 'run-2'
+    New-Item -ItemType Directory -Path (Join-Path $runOne 'lane-a') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $runOne 'lane-b') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $runOne 'lane-failed') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $runTwo 'lane-a') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $runOne 'lane-a/summary.json') -NoNewline -Value (@{
+        collectionStatus = 'succeeded'; lane = 'backend-shard-1'
+        assemblies = @(
+            @{ lane = 'backend-shard-1'; assembly = 'Split.Tests.dll'; elapsedMilliseconds = 40 },
+            @{ lane = 'backend-shard-1'; assembly = 'Solo.Tests.dll'; elapsedMilliseconds = 1000 }
+        )
+    } | ConvertTo-Json -Depth 10)
+    Set-Content -LiteralPath (Join-Path $runOne 'lane-b/summary.json') -NoNewline -Value (@{
+        collectionStatus = 'succeeded'; lane = 'backend-shard-2'
+        assemblies = @(@{ lane = 'backend-shard-2'; assembly = 'Split.Tests.dll'; elapsedMilliseconds = 60 })
+    } | ConvertTo-Json -Depth 10)
+    Set-Content -LiteralPath (Join-Path $runOne 'lane-failed/summary.json') -NoNewline -Value (@{
+        collectionStatus = 'failed'; lane = 'backend-shard-3'
+        assemblies = @(@{ lane = 'backend-shard-3'; assembly = 'Solo.Tests.dll'; elapsedMilliseconds = 999999 })
+    } | ConvertTo-Json -Depth 10)
+    Set-Content -LiteralPath (Join-Path $runTwo 'lane-a/summary.json') -NoNewline -Value (@{
+        collectionStatus = 'succeeded'; lane = 'backend-shard-1'
+        assemblies = @(
+            @{ lane = 'backend-shard-1'; assembly = 'Split.Tests.dll'; elapsedMilliseconds = 200 },
+            @{ lane = 'backend-shard-1'; assembly = 'Solo.Tests.dll'; elapsedMilliseconds = 3000 }
+        )
+    } | ConvertTo-Json -Depth 10)
+
+    $aggregated = @(Merge-NervShardTimingObservations -Observations @(
+        @(Get-NervShardTimingObservationsFromEvidenceDirectory -Path $runOne -RunId 'run-1') +
+        @(Get-NervShardTimingObservationsFromEvidenceDirectory -Path $runTwo -RunId 'run-2')
+    ))
+    $splitRow = @($aggregated | Where-Object { [string] $_.assembly -ceq 'split.tests.dll' })
+    $soloRow = @($aggregated | Where-Object { [string] $_.assembly -ceq 'solo.tests.dll' })
+    Assert-Contract ($splitRow.Count -eq 1 -and $soloRow.Count -eq 1) 'Aggregation must produce exactly one row per assembly across runs.'
+    Assert-Contract ([double] $splitRow[0].elapsedMilliseconds -eq 150.0) "An assembly split across two lanes of one run must be summed first, then medianed; got $($splitRow[0].elapsedMilliseconds)."
+    Assert-Contract ([int] $splitRow[0].observationCount -eq 2) 'Two lanes of one run must count as one observation, not two.'
+    Assert-Contract ([double] $soloRow[0].elapsedMilliseconds -eq 2000.0) "Two runs must produce the median of the two values; got $($soloRow[0].elapsedMilliseconds)."
+    Assert-Contract ([int] $soloRow[0].observationCount -eq 2) 'A failed-collection bundle must not become a third observation.'
+
+    # (b) Simulate a shard rearrangement and prove the keys survive it.
+    $rearranged = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $donor = @($rearranged.fastShards | Where-Object { [string] $_.id -ceq 'business-core-a' })[0]
+    $receiver = @($rearranged.fastShards | Where-Object { [string] $_.id -ceq 'business-core-b' })[0]
+    $movedProject = [string] @($donor.projects)[0]
+    $donor.projects = @(@($donor.projects) | Where-Object { [string] $_ -cne $movedProject })
+    $receiver.projects = @(@($receiver.projects) + @($movedProject))
+    Assert-Contract (@($receiver.projects) -contains $movedProject -and -not (@($donor.projects) -contains $movedProject)) 'The rearrangement fixture must actually move a project between shards.'
+
+    $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+    foreach ($case in @(
+            @{ Name = 'original'; Manifest = ($manifest) },
+            @{ Name = 'rearranged'; Manifest = $rearranged }
+        )) {
+        $report = Get-NervShardBalanceReport -Manifest $case.Manifest -Timings $fullTimings
+        $lost = @($report.warnings | Where-Object { [string] $_.code -ceq 'timing-assembly-missing' })
+        Assert-Contract ($lost.Count -eq 0) "Shard layout '$($case.Name)' must resolve every timing key; lost $($lost.Count)."
+    }
+
+    # Control: the *old* lane+assembly key would have lost keys on exactly this rearrangement. Without
+    # this the assertion above would still pass if timing lookup were reduced to a no-op, and it is
+    # what goes red if anyone puts the lane back into the key.
+    $laneKeyedSnapshot = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($row in @($snapshot.assemblies)) {
+        [void] $laneKeyedSnapshot.Add("$([string] $row.lane)|$(Get-NervShardTimingAssemblyKey -Name ([string] $row.assembly))")
+    }
+    $laneKeyedLost = @(
+        foreach ($shard in @($rearranged.fastShards)) {
+            foreach ($project in @($shard.projects)) {
+                $laneKey = "$([string] $shard.evidenceLane)|$(Get-NervShardTimingAssemblyKey -Name ([string] $project))"
+                if (-not $laneKeyedSnapshot.Contains($laneKey)) { $laneKey }
+            }
+        }
+    )
+    Assert-Contract ($laneKeyedLost.Count -gt 0) 'The rearrangement fixture must be one that the old lane+assembly key would have failed on, otherwise the assembly-keyed assertion is vacuous.'
+
+    # Policy keys must be identical across the rearrangement. This is the "政策门禁零失键" acceptance:
+    # every fast-shard exclusion still resolves to exactly the same MAN-661 source/rule/test identities.
+    $evidencePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    function Get-ShardPolicyKeySet {
+        param(
+            [Parameter(Mandatory)] [object] $ShardManifest,
+            [Parameter(Mandatory)] [object] $EvidencePolicy
+        )
+
+        $keys = [System.Collections.Generic.List[string]]::new()
+        foreach ($shard in @($ShardManifest.fastShards)) {
+            foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
+                foreach ($rule in @($EvidencePolicy.rules)) {
+                    foreach ($identity in @($rule.testIdentities)) {
+                        if ([string] $identity -ceq $selector -or ([string] $identity).StartsWith("$selector.", [StringComparison]::Ordinal)) {
+                            [void] $keys.Add("$([string] $rule.sourceId)|$([string] $rule.id)|$identity")
+                        }
+                    }
+                }
+            }
+        }
+
+        return @($keys | Sort-Object -Unique)
+    }
+
+    $policyKeysBefore = @(Get-ShardPolicyKeySet -ShardManifest $manifest -EvidencePolicy $evidencePolicy)
+    $policyKeysAfter = @(Get-ShardPolicyKeySet -ShardManifest $rearranged -EvidencePolicy $evidencePolicy)
+    Assert-Contract ($policyKeysBefore.Count -gt 0) 'The policy key set must be non-empty, otherwise its stability is vacuous.'
+    Assert-Contract ((($policyKeysBefore -join "`n") -ceq ($policyKeysAfter -join "`n"))) 'A shard rearrangement must not change a single MAN-661 policy key.'
+
+    # The same statement about the policy file itself: a rule matches on test identity and reason, and
+    # its lane fields are logical lanes. A shard-suffixed lane in a rule would re-couple the two.
+    foreach ($rule in @($evidencePolicy.rules)) {
+        foreach ($laneValue in @(@($rule.allowedLanes) + @([string] $rule.requiredLane))) {
+            Assert-Contract (-not ([string] $laneValue -cmatch '-shard-[0-9]')) "Evidence policy rule '$($rule.id)' must key on a logical lane, never on a shard: '$laneValue'."
+        }
+        Assert-Contract (@($rule.testIdentities).Count -gt 0 -or [string] $rule.classification -ceq 'quarantined') "Evidence policy rule '$($rule.id)' must key on explicit test identities."
+    }
+
+    # The refresher's degradation path: with a `gh` that fails, the cache is simply not refreshed and
+    # the entry point still exits 0. Asserted with a stub on PATH rather than by calling GitHub, so
+    # the case is deterministic and offline. Restricted to the platforms the Backend Test Shard
+    # Governance job and local development actually run on: on Windows a PATH stub has to satisfy
+    # PATHEXT resolution through `Process.Start`, which is a different mechanism and would make this
+    # a test of the stub rather than of the degradation.
+    if (-not $IsWindows) {
+        $stubBin = Join-Path $timingFixtureRoot 'stub-bin'
+        New-Item -ItemType Directory -Path $stubBin -Force | Out-Null
+        $stubGh = Join-Path $stubBin 'gh'
+        Set-Content -LiteralPath $stubGh -NoNewline -Value "#!/bin/sh`necho 'stub gh: unavailable' 1>&2`nexit 1`n"
+        Invoke-NativeCommandOutput -Command 'chmod' -Arguments @('+x', $stubGh) -WorkingDirectory $repoRoot -Name 'shard-timings-stub-chmod' | Out-Null
+
+        $degradedCachePath = Join-Path $timingFixtureRoot 'degraded-timings.json'
+        $originalPath = $env:PATH
+        $degraded = $null
+        try {
+            $env:PATH = "$stubBin$([IO.Path]::PathSeparator)$originalPath"
+            try {
+                $result = Invoke-NativeCommandOutput `
+                    -Command 'pwsh' `
+                    -Arguments @('-NoProfile', '-File', $timingUpdateScript, '-OutputPath', $degradedCachePath) `
+                    -WorkingDirectory $repoRoot `
+                    -TimeoutSeconds 300 `
+                    -Name 'shard-timings-degraded-refresh'
+                $degraded = [pscustomobject]@{ Passed = $true; Message = ("$($result.Stdout)" -replace '\s+', ' ') }
+            }
+            catch {
+                $degraded = [pscustomobject]@{ Passed = $false; Message = ("$($_.Exception.Message)" -replace '\s+', ' ') }
+            }
+        }
+        finally {
+            $env:PATH = $originalPath
+        }
+
+        Assert-Contract ($degraded.Passed) 'An unavailable GitHub CLI must leave the timing refresher at exit 0; a timing cache miss is not a repository defect.'
+        Assert-Contract ($degraded.Message.Contains('was not refreshed')) 'The timing refresher must say it did not refresh instead of pretending it did.'
+        Assert-Contract (-not (Test-Path -LiteralPath $degradedCachePath)) 'A failed refresh must not write a cache file at all, so the previous cache stays authoritative.'
+    }
+
+    # Determinism debt rows are keyed on source path + pattern + line hash. No lane, no shard.
+    $determinismBaseline = Get-Content -LiteralPath (Join-Path $repoRoot 'backend/test-determinism-baseline.json') -Raw | ConvertFrom-Json
+    Assert-Contract (@($determinismBaseline.exceptions).Count -gt 0) 'The determinism baseline must carry rows for its key shape to be assertable.'
+    foreach ($exception in @($determinismBaseline.exceptions)) {
+        foreach ($property in @($exception.PSObject.Properties.Name)) {
+            Assert-Contract ($property -cnotmatch '(?i)lane|shard') "Determinism debt row '$($exception.path)' must not carry a lane or shard dimension: '$property'."
+        }
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string] $exception.path)) 'Every determinism debt row must key on a source path.'
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string] $exception.lineTextSha256)) 'Every determinism debt row must key on its line hash.'
+    }
+}
+finally {
+    Remove-Item -LiteralPath $timingFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Assert-Contract (-not (Test-Path -LiteralPath $timingFixtureRoot)) 'The shard timing fixtures must be cleaned up.'
 
 Write-Host 'Backend test shard manifest contract tests passed.'

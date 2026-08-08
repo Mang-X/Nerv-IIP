@@ -119,6 +119,8 @@ Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistenc
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/update-backend-test-shard-timings.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/report-backend-test-shard-balance.ps1'
 
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-script-governance-$([System.Guid]::NewGuid().ToString('N'))"
 try {
