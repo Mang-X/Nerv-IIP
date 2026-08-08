@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: library
 #   SideEffects:
 #     - Reads the shard manifest objects and TRX documents its callers hand it
 #   Writes:
@@ -8,6 +8,40 @@
 #     - No process or external resource ownership
 #   Requires:
 #     - PowerShell 7
+
+function Get-BackendTestShardOrdinalUniqueSorted {
+    <#
+        Deduplicates and orders identifiers by ordinal comparison.
+
+        Every string this library handles is an identifier — a test selector, an assembly file name,
+        a project file name — and identifiers are equal only when they are the same sequence of
+        characters. PowerShell's defaults disagree: `Sort-Object -Unique`, `-contains` and even
+        `-ceq` compare culture-aware, which folds characters the collation table calls ignorable.
+        Two selectors differing only by a U+00AD soft hyphen are folded into one that way, so one of
+        them silently stops being excluded — or, in Assert-BackendTestShardProjectExecution, an
+        assembly that never ran is accepted as having run. #1509 measured both.
+
+        Callers that need membership rather than ordering build a
+        [System.Collections.Generic.HashSet[string]] over [System.StringComparer]::Ordinal for the
+        same reason; the two regression assertions live in
+        scripts/tests/backend-test-shards.Tests.ps1 under "Ordinal identifier comparison".
+    #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values)
+
+    $unique = [System.Collections.Generic.List[string]]::new(
+        [System.Collections.Generic.HashSet[string]]::new([string[]] $Values, [System.StringComparer]::Ordinal))
+    $unique.Sort([System.StringComparer]::Ordinal)
+    return @($unique)
+}
+
+function Get-BackendTestShardOrdinalSet {
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values)
+
+    # Wrapped in a single-element array on the way out: PowerShell unrolls an IEnumerable return
+    # value, which would hand the caller a plain object[] (or $null for an empty set) and turn every
+    # `.Contains()` below into a culture-aware `-contains` at best and a null-reference at worst.
+    return ,([System.Collections.Generic.HashSet[string]]::new([string[]] $Values, [System.StringComparer]::Ordinal))
+}
 
 function Get-BackendTestShardOptionalArray {
     param(
@@ -37,11 +71,10 @@ function Get-BackendTestShardExcludedSelectors {
         $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTests')
     }
 
-    return @(
+    return Get-BackendTestShardOrdinalUniqueSorted -Values @(
         $selectors |
             Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
-            ForEach-Object { [string] $_ } |
-            Sort-Object -Unique
+            ForEach-Object { [string] $_ }
     )
 }
 
@@ -55,6 +88,16 @@ function Get-BackendTestShardPolicyIdentityMatches {
         including the empty selector it would otherwise compare equal to. Comparison is ordinal
         throughout: these are identifiers, and PowerShell's default — including `-ceq` — is
         culture-aware and folds ignorable characters.
+
+        Leading and trailing whitespace on an identity is significant here, not stripped (#1509).
+        A padded identity therefore matches nothing and its rule looks unexcludable — deliberately,
+        because the alternative is worse: trimming here would make two policy rows that MAN-661
+        stores as distinct strings resolve to the same selector, and the padding would survive in
+        the evidence key. The padding is rejected at the boundary instead, by
+        Test-NervTestEvidencePolicy in scripts/lib/TestEvidence.ps1, so a padded identity is a
+        policy-schema failure rather than a silently mismatching one, and this function never has to
+        guess which spelling was meant. scripts/test-evidence-policy.json has zero padded identities
+        today, so the ruling changes no existing row.
 
         Each clause above has an executable counterpart in scripts/tests/backend-test-shards.Tests.ps1
         under "Discrimination controls for the key derivation itself"; none of them is documentation
@@ -134,7 +177,7 @@ function Get-BackendTestShardExecutedAssemblies {
         }
     }
 
-    return @($assemblies | Sort-Object -Unique)
+    return Get-BackendTestShardOrdinalUniqueSorted -Values @($assemblies)
 }
 
 function Assert-BackendTestShardProjectExecution {
@@ -144,23 +187,25 @@ function Assert-BackendTestShardProjectExecution {
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ExecutedAssemblies
     )
 
-    $expected = @(
-        $ClassifiedProjects |
-            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) } |
-            Sort-Object -Unique
+    # Assembly names are identifiers, so both the deduplication and the membership tests below are
+    # ordinal. `-notcontains` is culture-aware: it reports an assembly that differs from a classified
+    # project only by an ignorable character as executed, which is exactly the direction this guard
+    # exists to fail closed on.
+    $expected = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+        $ClassifiedProjects | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
-    $observed = @(
-        $ExecutedAssemblies |
-            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) } |
-            Sort-Object -Unique
+    $observed = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+        $ExecutedAssemblies | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
+    $expectedSet = Get-BackendTestShardOrdinalSet -Values $expected
+    $observedSet = Get-BackendTestShardOrdinalSet -Values $observed
 
-    $missing = @($expected | Where-Object { $observed -notcontains $_ })
+    $missing = @($expected | Where-Object { -not $observedSet.Contains($_) })
     if ($missing.Count -gt 0) {
         throw "Fast shard '$ShardId' produced no executed test result for classified projects: $($missing -join ', '). Narrow the excluded real-dependency selectors or move the project to an explicit heavy lane."
     }
 
-    $unexpected = @($observed | Where-Object { $expected -notcontains $_ })
+    $unexpected = @($observed | Where-Object { -not $expectedSet.Contains($_) })
     if ($unexpected.Count -gt 0) {
         throw "Fast shard '$ShardId' executed assemblies it does not classify: $($unexpected -join ', '). The solution filter and the shard manifest have drifted."
     }
@@ -191,8 +236,8 @@ function Assert-BackendTestShardSelectorExecution {
 
     $expectedTests = @($DiscoveredTests | Where-Object { $_.StartsWith($Selector, [StringComparison]::Ordinal) })
     $matchedResults = @($TrxResults | Where-Object { ([string] $_.testName).StartsWith($Selector, [StringComparison]::Ordinal) })
-    $executedNames = @($matchedResults | ForEach-Object { [string] $_.testName })
-    $missingTests = @($expectedTests | Where-Object { $executedNames -notcontains $_ })
+    $executedNames = Get-BackendTestShardOrdinalSet -Values @($matchedResults | ForEach-Object { [string] $_.testName })
+    $missingTests = @($expectedTests | Where-Object { -not $executedNames.Contains($_) })
     $failedResults = @($matchedResults | Where-Object { [string] $_.outcome -ne 'Passed' })
     if ($missingTests.Count -gt 0 -or $failedResults.Count -gt 0) {
         throw "Real PostgreSQL selector '$Selector' must execute every discovered test as Passed; discovered=$($expectedTests.Count), trx=$($matchedResults.Count), missing=$($missingTests.Count)."

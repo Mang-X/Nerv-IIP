@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: library
 #   SideEffects:
 #     - Reads test policy, C# test sources, and VSTest evidence
 #   Writes:
@@ -170,11 +170,29 @@ function Test-NervTestEvidencePolicy {
         }
         $identities = if ($rule.PSObject.Properties.Name -contains 'testIdentities') { @($rule.testIdentities) } else { @() }
         $expectedCount = if ($rule.PSObject.Properties.Name -contains 'expectedRuntimeTestCount') { [int]$rule.expectedRuntimeTestCount } else { 0 }
-        if (@($identities).Count -eq 0 -or $expectedCount -ne @($identities).Count -or @($identities | Sort-Object -Unique).Count -ne @($identities).Count) {
+        # Uniqueness is ordinal: a frozen identity is an identifier, and `Sort-Object -Unique` is
+        # culture-aware, so two rows differing only by an ignorable character (U+00AD is the one
+        # #1509 measured) collapse into one and the count check reports the wrong reason.
+        $uniqueIdentities = [Collections.Generic.HashSet[string]]::new(
+            [string[]] @($identities | ForEach-Object { [string]$_ }), [StringComparer]::Ordinal)
+        if (@($identities).Count -eq 0 -or $expectedCount -ne @($identities).Count -or $uniqueIdentities.Count -ne @($identities).Count) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) 'Rule must freeze a non-empty unique test identity set and exact expectedRuntimeTestCount.'))
         }
         foreach ($identity in $identities) {
-            if ([string]$identity -cnotmatch [string]$rule.testPattern) {
+            # Padding ruling (#1509): every consumer compares a frozen identity by ordinal equality
+            # or ordinal prefix — Get-BackendTestShardPolicyIdentityMatches, the runtime rule matcher
+            # below, the shard exclusion gate. None of them trims, and none of them should: trimming
+            # at the point of comparison would let two rows MAN-661 stores as distinct strings
+            # resolve to the same selector while the padding survives into the evidence key. So the
+            # padding is rejected here, at the only boundary where the policy text is authored, and
+            # `identity as written == identity as compared` holds everywhere downstream. An anchored
+            # testPattern already rejects *leading* whitespace as a side effect; trailing whitespace
+            # used to pass, because `.+$` happily consumes it.
+            $identityText = [string]$identity
+            if ($identityText.Length -ne $identityText.Trim().Length) {
+                $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) "Frozen test identity '$identityText' must not carry leading or trailing whitespace; identities are compared as written."))
+            }
+            if ($identityText -cnotmatch [string]$rule.testPattern) {
                 $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$rule.id) "Frozen test identity '$identity' does not match testPattern."))
             }
         }
