@@ -1535,22 +1535,30 @@ Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweep
 # green locally on 7.6.4 under both `-File` and CI's `-command ". '…'"` form. Since the divergence is
 # not reproducible here, the invariant is asserted structurally instead of behaviourally: this
 # library binds nothing to a captured scope.
-$contractLibraryPath = Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1'
-$contractLibraryAst = [System.Management.Automation.Language.Parser]::ParseFile($contractLibraryPath, [ref] $null, [ref] $null)
-$capturedScopeUses = @(
-    @($contractLibraryAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
-        [string]::Equals([string] $node.Member.Value, 'GetNewClosure', [StringComparison]::OrdinalIgnoreCase)
-    }, $true) | ForEach-Object { "GetNewClosure at line $($_.Extent.StartLineNumber)" })
-    @($contractLibraryAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
-        ([string] $node.VariablePath.UserPath).StartsWith('script:', [StringComparison]::OrdinalIgnoreCase)
-    }, $true) | ForEach-Object { "script-scope variable $($_.Extent.Text) at line $($_.Extent.StartLineNumber)" })
-)
-Assert-True ($capturedScopeUses.Count -eq 0) `
-    "scripts/lib/OrdinalComparisonContract.ps1 must not bind to a captured session state: $(@($capturedScopeUses) -join '; ')"
+# The ban covers the library *and* the two contract tests that consume it, because the second CI red
+# was the test's own probe helper, not the library — the same construct, one file over.
+foreach ($capturedScopeCandidate in @(
+    'scripts/lib/OrdinalComparisonContract.ps1',
+    'scripts/tests/test-evidence.Tests.ps1',
+    'scripts/tests/backend-test-shards.Tests.ps1'
+)) {
+    $capturedScopeAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $repoRoot $capturedScopeCandidate), [ref] $null, [ref] $null)
+    $capturedScopeUses = @(
+        @($capturedScopeAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            [string]::Equals([string] $node.Member.Value, 'GetNewClosure', [StringComparison]::OrdinalIgnoreCase)
+        }, $true) | ForEach-Object { "GetNewClosure at line $($_.Extent.StartLineNumber)" })
+        @($capturedScopeAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            ([string] $node.VariablePath.UserPath).StartsWith('script:', [StringComparison]::OrdinalIgnoreCase)
+        }, $true) | ForEach-Object { "script-scope variable $($_.Extent.Text) at line $($_.Extent.StartLineNumber)" })
+    )
+    Assert-True ($capturedScopeUses.Count -eq 0) `
+        "$capturedScopeCandidate must not bind the ordinal sweep to a captured session state: $(@($capturedScopeUses) -join '; ')"
+}
 
 $evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
@@ -1571,11 +1579,21 @@ $sweepProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-ordinal
 New-Item -ItemType Directory -Path $sweepProbeRoot -Force | Out-Null
 try {
     $sweepProbePath = Join-Path $sweepProbeRoot 'probe.ps1'
-    $invokeSweepProbe = {
-        param([string] $Source)
-        [System.IO.File]::WriteAllText($sweepProbePath, $Source, [System.Text.UTF8Encoding]::new($false))
-        return (Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -DisplayName 'probe.ps1').Findings
-    }.GetNewClosure()
+    # A plain function, not a `{ … }.GetNewClosure()` helper — the same CI-only defect this file
+    # asserts against for the library itself (#1509 round 3): a closure carries the session state it
+    # captured, and on the CI runner's PowerShell that state could not resolve the dot-sourced
+    # Get-NervOrdinalComparisonFindings, while the identical file ran green locally on 7.6.4 under
+    # both invocation forms. The structural guard above bans the construct in the library; this is
+    # the same discipline applied to the test's own helper.
+    function Invoke-NervSweepProbe {
+        param(
+            [Parameter(Mandatory)] [string] $ProbePath,
+            [Parameter(Mandatory)] [AllowEmptyString()] [string] $Source
+        )
+
+        [System.IO.File]::WriteAllText($ProbePath, $Source, [System.Text.UTF8Encoding]::new($false))
+        return @((Get-NervOrdinalComparisonFindings -ScriptPath $ProbePath -DisplayName 'probe.ps1').Findings)
+    }
 
     $coveredProbes = [ordered]@{
         'banned-c-operator' = '$result = $left -ceq $right'
@@ -1594,7 +1612,7 @@ try {
     Assert-True ([string]::Equals((@($coveredProbes.Keys) -join '|'), ($declaredAxes -join '|'), [StringComparison]::Ordinal)) `
         "Get-NervOrdinalContractCoveredAxes and the discrimination probes must enumerate the same axes; declared [$($declaredAxes -join ', ')], probed [$(@($coveredProbes.Keys) -join ', ')]."
     foreach ($axis in $coveredProbes.Keys) {
-        $probeFindings = @(& $invokeSweepProbe $coveredProbes[$axis])
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $coveredProbes[$axis])
         Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$axis]", [StringComparison]::Ordinal) }).Count -ge 1) `
             "The ordinal sweep must report axis '$axis' for: $($coveredProbes[$axis])"
     }
@@ -1621,7 +1639,7 @@ try {
             @('select-object-unique')
         }
         else { @(Get-NervOrdinalContractCoveredAxes) }
-        $probeFindings = @(& $invokeSweepProbe $blindSpotProbes[$blindSpot])
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $blindSpotProbes[$blindSpot])
         $unexpected = @($probeFindings | Where-Object {
             $finding = $_
             @($expectedSilentAxes | Where-Object { $finding.StartsWith("[$_]", [StringComparison]::Ordinal) }).Count -gt 0
