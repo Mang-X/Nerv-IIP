@@ -670,6 +670,13 @@ function New-NervTestEvidenceSummary {
         # One assembly classified into two lanes would give two rows that are not the same
         # measurement. Prefer this lane's row; with no lane match the comparison is genuinely
         # ambiguous and stays report-only unavailable rather than picking one arbitrarily.
+        #
+        # `Merge-NervShardTimingObservations` in scripts/lib/BackendTestShardTimings.ps1 resolves the
+        # very same situation by *summing* the two rows, and the divergence is intentional. That one
+        # builds a shard budget, where the answer wanted is total work and two lanes are two halves
+        # of one number. This one compares one lane's run against one baseline row, where the answer
+        # wanted is a row identity — summing would invent a measurement nobody took. Neither rule is
+        # a fallback for the other; changing either does not imply changing the other.
         [object[]]$previous = if (@($assemblyMatches).Count -le 1) {
             @($assemblyMatches)
         }

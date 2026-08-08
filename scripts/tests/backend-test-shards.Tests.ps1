@@ -462,28 +462,49 @@ $timingFunctionNames = @(
 )
 Assert-Contract ($timingFunctionNames.Count -gt 0) 'The timing library must define functions for the dependency-boundary assertion to have anything to look for.'
 
-$validatorCommands = @($validatorAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
-foreach ($command in $validatorCommands) {
-    $commandName = [string] $command.GetCommandName()
-    Assert-Contract (-not ($timingFunctionNames -ccontains $commandName)) "The shard policy hard gate must not call the timing library function '$commandName'; timing lives in the report-only balance script."
-    # A dot-source is a CommandAst whose invocation operator is `.`; its single argument is the path.
+# The scan covers the gate **and every repository library it dot-sources**. Scanning only the entry
+# point leaves the hole open exactly one hop down: a call to a timing function placed inside
+# BackendTestShardSelectors.ps1 is just as much a dependency of the gate, and the entry point's AST
+# cannot see it. The library set is derived from the gate's own dot-source statements rather than
+# listed here, so a new library joins the scan by being dot-sourced.
+$repoLibraries = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts/lib') -Filter '*.ps1' -File | Sort-Object FullName)
+$boundaryScanPaths = [System.Collections.Generic.List[string]]::new()
+[void] $boundaryScanPaths.Add([string] $validatorPath)
+foreach ($command in @($validatorAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
     if ($command.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Dot) { continue }
-    $dotSourced = ($command.Extent.Text -replace '\\', '/')
-    Assert-Contract (-not $dotSourced.Contains('BackendTestShardTimings')) 'The shard policy hard gate must not dot-source the timing library; timing lives in the report-only balance script.'
+    $dotSourceText = ($command.Extent.Text -replace '\\', '/')
+    foreach ($library in $repoLibraries) {
+        if ($dotSourceText.Contains([string] $library.BaseName)) { [void] $boundaryScanPaths.Add([string] $library.FullName) }
+    }
 }
+$boundaryScanPaths = @($boundaryScanPaths | Sort-Object -Unique)
+Assert-Contract (@($boundaryScanPaths).Count -gt 1) 'The dependency-boundary scan must reach at least one library the gate dot-sources; otherwise it silently degraded to scanning the entry point alone.'
 
-# String literals only — the parser hands back the *value* of a literal and never the text of a
-# comment, so this is precise where the old raw-text scan was not.
-$validatorLiterals = @(
-    $validatorAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
-        $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]
-    }, $true) | ForEach-Object { [string] $_.Extent.Text }
-)
-foreach ($timingToken in @('test-evidence-baseline.json', 'backend-test-shard-timings', 'elapsedMilliseconds')) {
-    $offending = @($validatorLiterals | Where-Object { $_.Contains($timingToken) })
-    Assert-Contract ($offending.Count -eq 0) "The shard policy hard gate must not name timing data ('$timingToken') in an evaluated string; timing lives in the report-only balance script."
+foreach ($scanPath in $boundaryScanPaths) {
+    $scanName = [System.IO.Path]::GetFileName($scanPath)
+    $scanAst = [System.Management.Automation.Language.Parser]::ParseFile($scanPath, [ref] $null, [ref] $null)
+    foreach ($command in @($scanAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+        $commandName = [string] $command.GetCommandName()
+        Assert-Contract (-not ($timingFunctionNames -ccontains $commandName)) "The shard policy hard gate must not call the timing library function '$commandName' (found in $scanName); timing lives in the report-only balance script."
+        # A dot-source is a CommandAst whose invocation operator is `.`; its single argument is the path.
+        if ($command.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Dot) { continue }
+        $dotSourced = ($command.Extent.Text -replace '\\', '/')
+        Assert-Contract (-not $dotSourced.Contains('BackendTestShardTimings')) "The shard policy hard gate must not dot-source the timing library (found in $scanName); timing lives in the report-only balance script."
+    }
+
+    # String literals only — the parser hands back the *value* of a literal and never the text of a
+    # comment, so this is precise where the old raw-text scan was not.
+    $scanLiterals = @(
+        $scanAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
+            $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]
+        }, $true) | ForEach-Object { [string] $_.Extent.Text }
+    )
+    foreach ($timingToken in @('test-evidence-baseline.json', 'backend-test-shard-timings', 'elapsedMilliseconds')) {
+        $offending = @($scanLiterals | Where-Object { $_.Contains($timingToken) })
+        Assert-Contract ($offending.Count -eq 0) "The shard policy hard gate must not name timing data ('$timingToken') in an evaluated string (found in $scanName); timing lives in the report-only balance script."
+    }
 }
 
 $timingFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-shard-timing-fixture-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -502,7 +523,7 @@ try {
     #     plus an estimate and exit 0 — never red.
     $businessCoreB = @($fastShards | Where-Object { [string] $_.id -ceq 'business-core-b' })[0]
     $droppedAssembly = Get-NervShardTimingAssemblyKey -Name ([string] @($businessCoreB.projects)[0])
-    $reducedObservations = @($allObservations | Where-Object { [string] $_.assembly -cne $droppedAssembly })
+    $reducedObservations = @($allObservations | Where-Object { -not [string]::Equals([string] $_.assembly, $droppedAssembly, [StringComparison]::Ordinal) })
     Assert-Contract ($reducedObservations.Count -lt $allObservations.Count) "The missing-timing fixture must actually remove '$droppedAssembly'."
     $reducedCachePath = Join-Path $timingFixtureRoot 'reduced-timings.json'
     Set-Content -LiteralPath $reducedCachePath -NoNewline -Value (
@@ -735,13 +756,78 @@ try {
     Assert-Contract ((@($receiver.excludedTestLanes) -contains $donorExtraLane) -and -not (@($donor.excludedTestLanes) -contains $donorExtraLane)) "The rearrangement fixture must move heavy lane '$donorExtraLane' with the project that requires it, otherwise it never reaches the excludedTestLanes coupling point."
 
     $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+
+    # What a rearrangement must not do is **lose a key**: an assembly must resolve to the same timing
+    # key, and that key to the same measurement, whichever shard happens to hold it.
+    #
+    # That is a different statement from "every assembly has a measurement". A *coverage gap*
+    # (`timing-assembly-missing`) means the source never observed that assembly at all — which is
+    # exactly what adding a backend test project produces, and exactly what the balance report is
+    # allowed to estimate over. Asserting zero gaps here is the deleted red gate wearing another
+    # costume: it would turn "someone added a test project" into a red Backend Test Shard Governance
+    # job until a human regenerated and re-committed the snapshot, which is the #1507 ceremony. The
+    # same rule is stated in prose in docs/architecture/test-evidence-governance.md.
+    #
+    # So the gap count is printed for a human reading the job log, and only key stability is asserted.
+    $keyResolutionByLayout = [ordered]@{}
     foreach ($case in @(
             @{ Name = 'original'; Manifest = ($manifest) },
             @{ Name = 'rearranged'; Manifest = $rearranged }
         )) {
         $report = Get-NervShardBalanceReport -Manifest $case.Manifest -Timings $fullTimings
-        $lost = @($report.warnings | Where-Object { [string] $_.code -ceq 'timing-assembly-missing' })
-        Assert-Contract ($lost.Count -eq 0) "Shard layout '$($case.Name)' must resolve every timing key; lost $($lost.Count)."
+        $coverageGaps = @($report.warnings | Where-Object { [string]::Equals([string] $_.code, 'timing-assembly-missing', [StringComparison]::Ordinal) })
+        Write-Host "  [report-only] shard layout '$($case.Name)' timing coverage gaps: $($coverageGaps.Count)"
+
+        $resolution = [ordered]@{}
+        foreach ($shard in @($case.Manifest.fastShards)) {
+            foreach ($project in @($shard.projects)) {
+                $timingKey = Get-NervShardTimingAssemblyKey -Name ([string] $project)
+                $resolution[$timingKey] = if ($fullTimings.rows.ContainsKey($timingKey)) {
+                    ([double] $fullTimings.rows[$timingKey]).ToString([System.Globalization.CultureInfo]::InvariantCulture)
+                }
+                else { '<no-observation>' }
+            }
+        }
+        $keyResolutionByLayout[[string] $case.Name] = $resolution
+    }
+
+    $originalResolution = $keyResolutionByLayout['original']
+    $rearrangedResolution = $keyResolutionByLayout['rearranged']
+    $originalKeyText = (@($originalResolution.Keys) | Sort-Object) -join "`n"
+    $rearrangedKeyText = (@($rearrangedResolution.Keys) | Sort-Object) -join "`n"
+    Assert-Contract (@($originalResolution.Keys).Count -gt 0) 'The timing-key stability check must resolve at least one key, otherwise it is vacuous.'
+    Assert-Contract ([string]::Equals($originalKeyText, $rearrangedKeyText, [StringComparison]::Ordinal)) 'A shard rearrangement must not change the set of timing keys the layout resolves to.'
+    foreach ($timingKey in @($originalResolution.Keys)) {
+        Assert-Contract ([string]::Equals([string] $originalResolution[$timingKey], [string] $rearrangedResolution[$timingKey], [StringComparison]::Ordinal)) "Timing key '$timingKey' must resolve to the same measurement before and after the rearrangement; got '$($originalResolution[$timingKey])' vs '$($rearrangedResolution[$timingKey])'."
+    }
+
+    # The non-trivial half of the same claim, and the reason the loop above is not just "the same
+    # project set produces the same keys": the moved assembly's measurement must move *with it*,
+    # exactly. Run against a synthetic lookup that prices every classified assembly distinctly, so
+    # this can never depend on how complete the committed snapshot happens to be (a gap would make
+    # the shard totals include estimates and the shift inexact — i.e. it would re-couple this
+    # assertion to snapshot coverage, which is the thing being removed). A lookup reduced to a no-op,
+    # to a constant, or one that dropped the moved row cannot produce the exact expected shift.
+    $syntheticRows = @{}
+    $syntheticPrice = 1000.0
+    foreach ($shard in @($manifest.fastShards)) {
+        foreach ($project in @($shard.projects)) {
+            $syntheticRows[(Get-NervShardTimingAssemblyKey -Name ([string] $project))] = $syntheticPrice
+            $syntheticPrice += 7.0
+        }
+    }
+    $syntheticTimings = [pscustomobject][ordered]@{ source = 'synthetic-fixture'; sourceDetail = ''; generatedAtUtc = $null; rows = $syntheticRows }
+    $movedAssemblyPrice = [double] $syntheticRows[(Get-NervShardTimingAssemblyKey -Name $movedProject)]
+    $syntheticBefore = Get-NervShardBalanceReport -Manifest $manifest -Timings $syntheticTimings
+    $syntheticAfter = Get-NervShardBalanceReport -Manifest $rearranged -Timings $syntheticTimings
+    Assert-Contract (@($syntheticBefore.warnings).Count -eq 0 -and @($syntheticAfter.warnings).Count -eq 0) 'The synthetic attribution fixture must price every classified assembly, otherwise an estimate would make the expected shift inexact.'
+    foreach ($shardId in @(@($syntheticBefore.shards | ForEach-Object { [string] $_.id }))) {
+        $beforeTotal = [double] @($syntheticBefore.shards | Where-Object { [string]::Equals([string] $_.id, $shardId, [StringComparison]::Ordinal) })[0].totalMilliseconds
+        $afterTotal = [double] @($syntheticAfter.shards | Where-Object { [string]::Equals([string] $_.id, $shardId, [StringComparison]::Ordinal) })[0].totalMilliseconds
+        $expectedDelta = if ([string]::Equals($shardId, [string] $donor.id, [StringComparison]::Ordinal)) { - $movedAssemblyPrice }
+            elseif ([string]::Equals($shardId, [string] $receiver.id, [StringComparison]::Ordinal)) { $movedAssemblyPrice }
+            else { 0.0 }
+        Assert-Contract ([Math]::Abs(($afterTotal - $beforeTotal) - $expectedDelta) -lt 0.05) "Shard '$shardId' must change by exactly the moved assembly's measurement across the rearrangement; expected $expectedDelta ms, got $($afterTotal - $beforeTotal) ms."
     }
 
     # Control: the *old* lane+assembly key would have lost keys on exactly this rearrangement. Without
@@ -795,7 +881,7 @@ try {
     $policyKeysBefore = @(Get-ShardPolicyKeySet -ShardManifest $manifest -EvidencePolicy $evidencePolicy)
     $policyKeysAfter = @(Get-ShardPolicyKeySet -ShardManifest $rearranged -EvidencePolicy $evidencePolicy)
     Assert-Contract ($policyKeysBefore.Count -gt 0) 'The policy key set must be non-empty, otherwise its stability is vacuous.'
-    Assert-Contract ((($policyKeysBefore -join "`n") -ceq ($policyKeysAfter -join "`n"))) 'A shard rearrangement must not change a single MAN-661 policy key.'
+    Assert-Contract ([string]::Equals(($policyKeysBefore -join "`n"), ($policyKeysAfter -join "`n"), [StringComparison]::Ordinal)) 'A shard rearrangement must not change a single MAN-661 policy key.'
 
     # Control, and the reason the assertion above is not a tautology: run the *same* derivation with
     # the lane spliced back into the key and the same rearrangement does lose keys. Without this, a
@@ -805,6 +891,81 @@ try {
     $laneKeyedPolicyAfter = [System.Collections.Generic.HashSet[string]]::new([string[]] @(Get-ShardPolicyKeySet -ShardManifest $rearranged -EvidencePolicy $evidencePolicy -KeyOnLane))
     $laneKeyedPolicyLost = @($laneKeyedPolicyBefore | Where-Object { -not $laneKeyedPolicyAfter.Contains([string] $_) })
     Assert-Contract ($laneKeyedPolicyLost.Count -gt 0) 'The rearrangement must be one a lane-coupled policy key would have failed on, otherwise the lane-free assertion above proves nothing.'
+
+    # Discrimination controls for the key derivation itself.
+    #
+    # The two assertions above compare *sets* across a rearrangement, and a set comparison is blind
+    # to most ways of breaking a key: a key that dropped `identity` and degenerated to
+    # `source|rule` is still perfectly rearrangement-invariant, and so is one that returned a
+    # constant for every match. Mutation testing on scripts/lib/BackendTestShardSelectors.ps1 found
+    # exactly that — four of six mutations survived. The three checks below close it by asserting the
+    # key's *structure*, its *cardinality*, and the *case sensitivity* of the match that feeds it.
+
+    # (1) Structure: the key is reversibly sourceId|ruleId|identity, in that order, and nothing else.
+    #     Test identities, rule ids and source ids are C#/ kebab identifiers and never contain `|`,
+    #     which is what makes the split a faithful inverse. This is what catches a key that returns a
+    #     constant, an empty string, drops a segment, or splices in an extra field such as
+    #     `requiredLane` — the last of which is why the "carries no lane" claim in
+    #     docs/architecture/test-evidence-governance.md is now enforced rather than merely written.
+    $structuralKeyChecks = 0
+    foreach ($shard in @($manifest.fastShards)) {
+        foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $shard)) {
+            foreach ($match in @(Get-BackendTestShardPolicyIdentityMatches -Selector $selector -Rules @($evidencePolicy.rules))) {
+                $key = Get-BackendTestShardPolicyIdentityKey -Match $match
+                $segments = @([string] $key -split '\|')
+                Assert-Contract (@($segments).Count -eq 3) "Policy key for '$([string] $match.identity)' must be exactly three segments (sourceId|ruleId|identity); got $(@($segments).Count) in '$key'."
+                Assert-Contract ([string]::Equals([string] $segments[0], [string] $match.sourceId, [StringComparison]::Ordinal)) "Policy key segment 1 must be the registering sourceId; expected '$([string] $match.sourceId)', got '$([string] $segments[0])'."
+                Assert-Contract ([string]::Equals([string] $segments[1], [string] $match.ruleId, [StringComparison]::Ordinal)) "Policy key segment 2 must be the ruleId; expected '$([string] $match.ruleId)', got '$([string] $segments[1])'."
+                Assert-Contract ([string]::Equals([string] $segments[2], [string] $match.identity, [StringComparison]::Ordinal)) "Policy key segment 3 must be the frozen test identity; expected '$([string] $match.identity)', got '$([string] $segments[2])'."
+                Assert-Contract (-not ([string] $key -cmatch '-shard-[0-9]')) "Policy key '$key' must carry no shard topology."
+                $structuralKeyChecks++
+            }
+        }
+    }
+    Assert-Contract ($structuralKeyChecks -gt 0) 'The structural policy-key contract must actually evaluate a key.'
+
+    # (2) Cardinality: distinct (sourceId, ruleId, identity) triples must produce distinct keys. A key
+    #     that dropped a segment would collapse triples onto one another, which the structural check
+    #     above already catches but this one catches independently of the key's internal spelling —
+    #     it is the property the two set comparisons actually rely on.
+    $allPolicyTriples = [System.Collections.Generic.List[string]]::new()
+    $allPolicyKeys = [System.Collections.Generic.List[string]]::new()
+    foreach ($rule in @($evidencePolicy.rules)) {
+        foreach ($identity in @(Get-BackendTestShardOptionalArray -Object $rule -PropertyName 'testIdentities')) {
+            $syntheticMatch = [pscustomobject][ordered]@{
+                selector = [string] $identity
+                sourceId = [string] $rule.sourceId
+                ruleId = [string] $rule.id
+                identity = [string] $identity
+                requiredLane = [string] $rule.requiredLane
+                classification = [string] $rule.classification
+            }
+            [void] $allPolicyTriples.Add("$([string] $rule.sourceId)`u{241F}$([string] $rule.id)`u{241F}$([string] $identity)")
+            [void] $allPolicyKeys.Add([string] (Get-BackendTestShardPolicyIdentityKey -Match $syntheticMatch))
+        }
+    }
+    $distinctTriples = @([System.Collections.Generic.HashSet[string]]::new([string[]] @($allPolicyTriples), [System.StringComparer]::Ordinal)).Count
+    $distinctKeys = @([System.Collections.Generic.HashSet[string]]::new([string[]] @($allPolicyKeys), [System.StringComparer]::Ordinal)).Count
+    Assert-Contract ($distinctTriples -gt 1) 'The policy must carry more than one distinct identity triple for key cardinality to be assertable.'
+    Assert-Contract ($distinctKeys -eq $distinctTriples) "Every distinct (sourceId, ruleId, identity) triple must produce its own key; $distinctTriples triples collapsed to $distinctKeys keys."
+
+    # (3) Case sensitivity of the match. `Get-BackendTestShardPolicyIdentityMatches` is what decides
+    #     *which* identities a selector governs, so a comparison relaxed to OrdinalIgnoreCase would
+    #     silently widen every exclusion — and no set comparison across a rearrangement can see that,
+    #     because it widens both sides equally. Asserted on a probe rule rather than on the real
+    #     policy so the case-only variants are guaranteed to exist.
+    $caseProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @('Nerv.Probe.Alpha.Beta')
+    }
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Alpha.Beta' -Rules @($caseProbeRule)).Count -eq 1) 'An exact method selector must match its frozen identity.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Alpha' -Rules @($caseProbeRule)).Count -eq 1) 'A class selector must match the identities beneath it.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'nerv.probe.alpha.beta' -Rules @($caseProbeRule)).Count -eq 0) 'A selector differing only in case must not match; policy identities are ordinal identifiers, not case-folded names.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'nerv.probe.alpha' -Rules @($caseProbeRule)).Count -eq 0) 'A class selector differing only in case must not match either.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.AlphaOther' -Rules @($caseProbeRule)).Count -eq 0) 'A sibling class sharing a prefix must not be swallowed by the trailing-dot rule.'
 
     # The gate itself, over the rearranged topology. The assertions above compare derivations; this
     # runs the real policy gate as a process and requires it to be satisfied by a shard layout it has
@@ -904,7 +1065,7 @@ try {
 
     $donorLaneVerdicts = @(Get-HardGateVerdicts -Matches $movedIdentities -EvidencePolicy $evidencePolicy -Lane ([string] $donor.evidenceLane))
     $receiverLaneVerdicts = @(Get-HardGateVerdicts -Matches $movedIdentities -EvidencePolicy $evidencePolicy -Lane ([string] $receiver.evidenceLane))
-    Assert-Contract ((($donorLaneVerdicts -join "`n") -ceq ($receiverLaneVerdicts -join "`n"))) "Moving a project between shards must not change a single unregistered-skip / illegal-quarantine / zero-execution verdict; donor lane reported [$($donorLaneVerdicts -join ', ')] and receiver lane [$($receiverLaneVerdicts -join ', ')]."
+    Assert-Contract ([string]::Equals(($donorLaneVerdicts -join "`n"), ($receiverLaneVerdicts -join "`n"), [StringComparison]::Ordinal)) "Moving a project between shards must not change a single unregistered-skip / illegal-quarantine / zero-execution verdict; donor lane reported [$($donorLaneVerdicts -join ', ')] and receiver lane [$($receiverLaneVerdicts -join ', ')]."
     Assert-Contract (@($donorLaneVerdicts | Where-Object { $_.StartsWith('unregistered-skip|', [StringComparison]::Ordinal) }).Count -eq 0) 'A registered skip must stay registered under the shard lane that owns it.'
 
     # Control: both verdict sets above are legitimately *empty* — a registered skip in an allowed
@@ -912,7 +1073,118 @@ try {
     # This proves the fixture is live: the same records under a lane the rules do not allow do
     # produce `unregistered-skip`, so "identical and empty" is a result rather than a dead input.
     $foreignLaneVerdicts = @(Get-HardGateVerdicts -Matches $movedIdentities -EvidencePolicy $evidencePolicy -Lane 'connector-host')
-    Assert-Contract (@($foreignLaneVerdicts | Where-Object { $_.StartsWith('unregistered-skip|', [StringComparison]::Ordinal) }).Count -gt 0) 'The hard-gate fixture must be able to produce a violation at all, otherwise the equal-verdicts assertion above compares two empty sets for free.'
+    $foreignUnregisteredSkips = @($foreignLaneVerdicts | Where-Object { $_.StartsWith('unregistered-skip|', [StringComparison]::Ordinal) })
+    Assert-Contract ($foreignUnregisteredSkips.Count -gt 0) 'The hard-gate fixture must be able to produce a violation at all, otherwise the equal-verdicts assertion above compares two empty sets for free.'
+    Write-Host "  [live-verdict] unregistered-skip: $($foreignUnregisteredSkips.Count)"
+
+    # The fixture above only ever emits `unregistered-skip`. `illegal-quarantine` and
+    # `zero-execution` were, in every lane it evaluates, empty on both sides — so those two thirds of
+    # "the three hard gates are unchanged" were two empty sets agreeing, which is not a test. #1507's
+    # acceptance is per gate, so each gate gets a fixture that actually emits its own verdict, plus a
+    # control proving the fixture responds to its input rather than returning a constant.
+
+    # --- Hard gate 2: illegal-quarantine. ---
+    # Quarantine legality is decided from the policy row's own metadata (issue, exit condition, an
+    # unexpired ISO date) and reads no lane at all, so the shard dimension cannot reach it. Asserted
+    # rather than assumed: the same expired row is evaluated under the donor lane and the receiver
+    # lane. The probe row's patterns and identity deliberately match nothing real, so it cannot also
+    # become a second applicable rule for some genuine skip and turn this into an unregistered-skip
+    # fixture by accident.
+    function New-ProbeQuarantineRule {
+        param([Parameter(Mandatory)] [AllowNull()] [string] $ExpiresOn)
+
+        return [pscustomobject][ordered]@{
+            id = 'probe-quarantine'
+            sourceId = 'probe-quarantine'
+            classification = 'quarantined'
+            testPattern = '^Nerv\.Probe\.Quarantine\..+$'
+            reasonPattern = '^Probe quarantine fixture\.$'
+            allowedLanes = @('backend')
+            requiredLane = ''
+            allowedOperatingSystems = @()
+            responsibilityIssue = 'MAN-1507'
+            expiresOn = $ExpiresOn
+            exitCondition = 'Probe fixture only; never satisfied.'
+            testIdentities = @('Nerv.Probe.Quarantine.Frozen')
+            expectedRuntimeTestCount = 1
+        }
+    }
+
+    function Get-ProbeQuarantineVerdicts {
+        param(
+            [Parameter(Mandatory)] [object] $QuarantineRule,
+            [Parameter(Mandatory)] [string] $Lane
+        )
+
+        $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+        $probePolicy.rules = @(@($probePolicy.rules) + @($QuarantineRule))
+        return @(
+            Get-NervTestEvidenceViolations -Records @() -Policy $probePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux' |
+                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" } |
+                Sort-Object
+        )
+    }
+
+    $expiredQuarantineRule = New-ProbeQuarantineRule -ExpiresOn '2000-01-01'
+    $donorQuarantineVerdicts = @(Get-ProbeQuarantineVerdicts -QuarantineRule $expiredQuarantineRule -Lane ([string] $donor.evidenceLane))
+    $receiverQuarantineVerdicts = @(Get-ProbeQuarantineVerdicts -QuarantineRule $expiredQuarantineRule -Lane ([string] $receiver.evidenceLane))
+    $illegalQuarantineVerdicts = @($donorQuarantineVerdicts | Where-Object { $_.StartsWith('illegal-quarantine|', [StringComparison]::Ordinal) })
+    Assert-Contract ($illegalQuarantineVerdicts.Count -gt 0) 'The illegal-quarantine fixture must actually produce that verdict, otherwise the cross-lane comparison below is two empty sets.'
+    Assert-Contract ([string]::Equals(($donorQuarantineVerdicts -join "`n"), ($receiverQuarantineVerdicts -join "`n"), [StringComparison]::Ordinal)) "Moving a project between shards must not change an illegal-quarantine verdict; donor lane reported [$($donorQuarantineVerdicts -join ', ')] and receiver lane [$($receiverQuarantineVerdicts -join ', ')]."
+    Write-Host "  [live-verdict] illegal-quarantine: $($illegalQuarantineVerdicts.Count)"
+
+    # Control: the same row with valid unexpired metadata must produce nothing. Without it the
+    # assertion above would still pass if the gate had degenerated into "always report".
+    $liveQuarantineRule = New-ProbeQuarantineRule -ExpiresOn ([DateTimeOffset]::UtcNow.AddDays(30).UtcDateTime.ToString('yyyy-MM-dd'))
+    $liveQuarantineVerdicts = @(Get-ProbeQuarantineVerdicts -QuarantineRule $liveQuarantineRule -Lane ([string] $donor.evidenceLane))
+    Assert-Contract (@($liveQuarantineVerdicts | Where-Object { $_.StartsWith('illegal-quarantine|', [StringComparison]::Ordinal) }).Count -eq 0) 'A quarantine row with an issue, an exit condition and an unexpired date must not be reported illegal; otherwise the fixture proves only that the gate always fires.'
+
+    # --- Hard gate 3: zero-execution. ---
+    # This gate speaks only about `realDependency: true` lanes, so it cannot be reached through the
+    # donor/receiver fast-shard lanes — those are `realDependency: false` by contract. The shard
+    # dimension reaches it through the lane a *record* carries: re-homing the work that certifies a
+    # real-dependency lane must not change whether that lane counts as having executed.
+    function Get-ProbeZeroExecutionVerdicts {
+        param(
+            [Parameter(Mandatory)] [object] $EvidencePolicy,
+            [Parameter(Mandatory)] [AllowEmptyString()] [string] $ExecutedRecordLane,
+            [Parameter(Mandatory)] [string] $SelectedLane
+        )
+
+        $records = @(
+            if (-not [string]::IsNullOrEmpty($ExecutedRecordLane)) {
+                [pscustomobject][ordered]@{
+                    lane = $ExecutedRecordLane
+                    testName = 'Nerv.Probe.RealDependency.Executes'
+                    outcome = 'passed'
+                    skipReason = ''
+                }
+            }
+        )
+        return @(
+            Get-NervTestEvidenceViolations -Records $records -Policy $EvidencePolicy -SelectedLanes @($SelectedLane) -RunnerOs 'Linux' |
+                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" } |
+                Sort-Object
+        )
+    }
+
+    $realDependencyLane = 'postgres'
+    $zeroExecutionFromShard1 = @(Get-ProbeZeroExecutionVerdicts -EvidencePolicy $evidencePolicy -ExecutedRecordLane 'backend-shard-1' -SelectedLane $realDependencyLane)
+    $zeroExecutionFromShard4 = @(Get-ProbeZeroExecutionVerdicts -EvidencePolicy $evidencePolicy -ExecutedRecordLane 'backend-shard-4' -SelectedLane $realDependencyLane)
+    $zeroExecutionVerdicts = @($zeroExecutionFromShard1 | Where-Object { $_.StartsWith('zero-execution|', [StringComparison]::Ordinal) })
+    Assert-Contract ($zeroExecutionVerdicts.Count -gt 0) 'The zero-execution fixture must actually produce that verdict, otherwise the cross-shard comparison below is two empty sets.'
+    Assert-Contract ([string]::Equals(($zeroExecutionFromShard1 -join "`n"), ($zeroExecutionFromShard4 -join "`n"), [StringComparison]::Ordinal)) "Which fast shard ran the unrelated work must not change a zero-execution verdict for a selected real-dependency lane; got [$($zeroExecutionFromShard1 -join ', ')] vs [$($zeroExecutionFromShard4 -join ', ')]."
+    Write-Host "  [live-verdict] zero-execution: $($zeroExecutionVerdicts.Count)"
+
+    # Controls. First that the gate is not a constant: work attributed to the selected lane clears
+    # it. Then the positive form of the same re-homing invariance — the logical lane and every shard
+    # spelling of it certify identically, which is the property that lets `-shard-N` exist at all.
+    $zeroExecutionSatisfied = @(Get-ProbeZeroExecutionVerdicts -EvidencePolicy $evidencePolicy -ExecutedRecordLane $realDependencyLane -SelectedLane $realDependencyLane)
+    Assert-Contract (@($zeroExecutionSatisfied | Where-Object { $_.StartsWith('zero-execution|', [StringComparison]::Ordinal) }).Count -eq 0) 'A passed result in the selected real-dependency lane must clear zero-execution; otherwise the fixture proves only that the gate always fires.'
+    foreach ($shardSpelling in @("$realDependencyLane-shard-1", "$realDependencyLane-shard-2", "$realDependencyLane-shard-11")) {
+        $spelledVerdicts = @(Get-ProbeZeroExecutionVerdicts -EvidencePolicy $evidencePolicy -ExecutedRecordLane $shardSpelling -SelectedLane $realDependencyLane)
+        Assert-Contract ([string]::Equals(($spelledVerdicts -join "`n"), ($zeroExecutionSatisfied -join "`n"), [StringComparison]::Ordinal)) "A real-dependency lane certified from shard spelling '$shardSpelling' must produce the same verdicts as the logical lane; got [$($spelledVerdicts -join ', ')]."
+    }
 
     # The same statement about the policy file itself: a rule matches on test identity and reason, and
     # its lane fields are logical lanes. A shard-suffixed lane in a rule would re-couple the two.

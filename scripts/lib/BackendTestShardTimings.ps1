@@ -1,3 +1,24 @@
+# Script-Governance:
+#   Category: check, generate
+#   SideEffects:
+#     - Runs `gh` (via Invoke-NativeCommandOutput) to list and download main-run evidence artifacts
+#     - Expands downloaded artifact archives under a caller-supplied working directory
+#   Writes:
+#     - The -OutputPath that Update-NervShardTimingCache is given (callers use the gitignored
+#       artifacts/ tree); no repository-tracked file
+#   Cleanup:
+#     - Owns no long-lived process; temporary extraction directories are removed by the caller
+#   Requires:
+#     - PowerShell 7
+#     - GitHub CLI only for a refresh; every read path degrades to report-only without it
+#
+# Header note: scripts/check-script-governance.ps1 skips scripts/lib/* in its default sweep, so this
+# block is not what makes the gate pass. It is here because this is the highest-side-effect library
+# in the directory — it starts a child process and writes files — and its governance-adjacent peers
+# (TestEvidence.ps1, CiWorkflowBudgets.ps1) carry the same block. Running the checker with an
+# explicit -Path on this file therefore reports only MissingHelper, which every library here shares:
+# a library is dot-sourced *by* an entry point that has already loaded ScriptAutomation.ps1.
+#
 # Backend test shard timing cache (#1507).
 #
 # THE BOUNDARY THIS FILE EXISTS TO DRAW
@@ -200,11 +221,19 @@ function Merge-NervShardTimingObservations {
           * observations of one assembly inside one run are summed first (an assembly classified into
             two lanes would otherwise be counted as two independent samples of half the work);
           * the per-assembly statistic across runs is the median.
+
+        The lane an observation carries is deliberately dropped here rather than recorded on the
+        row. The cache is a *budget*: what a shard costs is the sum of the work in it, so an assembly
+        split across two lanes contributes one summed number and there is no single lane to name.
+        `New-NervTestEvidenceSummary` in scripts/lib/TestEvidence.ps1 does the opposite with the same
+        input — it keeps lane on the row and uses it to disambiguate, reporting
+        `ambiguous-assembly-in-baseline` when it cannot — because that comparison is per lane and
+        needs the row's *identity*, not a total. Both rules are correct for their own job; neither is
+        a fallback for the other.
     #>
     param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Observations)
 
     $perRun = @{}
-    $lanes = @{}
     foreach ($observation in @($Observations)) {
         $key = [string] $observation.assembly
         if ([string]::IsNullOrWhiteSpace($key)) { continue }
@@ -212,7 +241,6 @@ function Merge-NervShardTimingObservations {
         if (-not $perRun.ContainsKey($key)) { $perRun[$key] = @{} }
         if (-not $perRun[$key].ContainsKey($runId)) { $perRun[$key][$runId] = 0.0 }
         $perRun[$key][$runId] = [double] $perRun[$key][$runId] + [double] $observation.elapsedMilliseconds
-        if (-not [string]::IsNullOrWhiteSpace([string] $observation.lane)) { $lanes[$key] = [string] $observation.lane }
     }
 
     return @(
@@ -222,7 +250,6 @@ function Merge-NervShardTimingObservations {
                 assembly = $key
                 elapsedMilliseconds = [Math]::Round((Get-NervShardTimingMedian -Values $values), 4)
                 observationCount = $values.Count
-                lastObservedLane = if ($lanes.ContainsKey($key)) { [string] $lanes[$key] } else { '' }
             }
         }
     )
@@ -632,9 +659,24 @@ function Update-NervShardTimingCache {
         }
 
         $cache = New-NervShardTimingCache -Observations @($observations) -Runs @($usedRuns) -GeneratedAtUtc $GeneratedAtUtc
-        $outputParent = Split-Path -Parent ([IO.Path]::GetFullPath($OutputPath))
+        # Temp-then-replace rather than writing the destination in place. A direct write that fails
+        # part-way (full disk, killed process) leaves a truncated file where a *complete previous
+        # cache* used to be, and a truncated cache reads as a cache miss — so a failed refresh would
+        # silently destroy good data instead of leaving it alone. Everything else in this file is
+        # built on "a refresh that cannot happen changes nothing"; this keeps that true for a refresh
+        # that starts and then dies. `File.Move -Force` is atomic within a volume, and the temp file
+        # is a sibling so it always is one.
+        $resolvedOutputPath = [IO.Path]::GetFullPath($OutputPath)
+        $outputParent = Split-Path -Parent $resolvedOutputPath
         [IO.Directory]::CreateDirectory($outputParent) | Out-Null
-        [IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath), (($cache | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+        $stagingPath = "$resolvedOutputPath.$([Guid]::NewGuid().ToString('N')).tmp"
+        try {
+            [IO.File]::WriteAllText($stagingPath, (($cache | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+            [IO.File]::Move($stagingPath, $resolvedOutputPath, $true)
+        }
+        finally {
+            if ([IO.File]::Exists($stagingPath)) { Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue }
+        }
         return $cache
     }
     catch {

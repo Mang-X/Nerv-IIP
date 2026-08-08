@@ -797,7 +797,7 @@ try {
     # one the snapshot recorded it under (#1507). This is the whole-pipeline version of the unit
     # assertion above: if the lane ever re-enters the comparison key, this end-to-end case goes red.
     $committedRow = @($committedBaseline.assemblies | Sort-Object lane, assembly | Select-Object -First 1)[0]
-    $committedLane = @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object | Where-Object { $_ -cne [string]$committedRow.lane })[0]
+    $committedLane = @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object | Where-Object { -not [string]::Equals([string]$_, [string]$committedRow.lane, [StringComparison]::Ordinal) })[0]
     Assert-True (-not [string]::IsNullOrWhiteSpace($committedLane)) 'The committed-snapshot collector case needs a second authenticated lane to report from.'
     $committedAssembly = [string]$committedRow.assembly
     $committedRaw = Join-Path $collectorRoot 'committed-baseline-raw'

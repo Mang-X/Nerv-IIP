@@ -1,3 +1,14 @@
+# Script-Governance:
+#   Category: check
+#   SideEffects:
+#     - Reads the shard manifest objects and TRX documents its callers hand it
+#   Writes:
+#     - None
+#   Cleanup:
+#     - No process or external resource ownership
+#   Requires:
+#     - PowerShell 7
+
 function Get-BackendTestShardOptionalArray {
     param(
         [Parameter(Mandatory)] [object] $Object,
@@ -80,11 +91,23 @@ function Get-BackendTestShardPolicyIdentityKey {
     <#
         The identity of one policy match, as a single comparable string.
 
+        Called only by scripts/tests/backend-test-shards.Tests.ps1 today: the gate itself needs the
+        *matches* (Get-BackendTestShardPolicyIdentityMatches, which it does call), not a flattened
+        key. It lives here rather than in the test because a key the test builds for itself would be
+        the test asserting its own arithmetic — and because the thing being frozen is what a policy
+        row's identity *is*, which is a property of the derivation, not of one test.
+
         It carries the registering source, the rule and the frozen test identity — and deliberately
         carries no lane and no shard. That absence is the whole #1507 property: re-homing a project
         between shards changes which shard *holds* an exclusion, never which policy row governs it,
         so a rearrangement cannot invalidate a key. See docs/architecture/test-evidence-governance.md
         ("Timing data is a cache, not a governed asset").
+
+        "No lane and no shard" is enforced, not just written down: scripts/tests/backend-test-shards.Tests.ps1
+        splits the key back into its three segments and compares each against the match it came from,
+        so a fourth field — `requiredLane` is the tempting one — fails there. That is a statement
+        about the *key*; lane keeps its separate job as a rule's applicability condition inside
+        `Test-NervRuleApplies`, which is what the `zero-execution` hard gate is built on.
     #>
     param([Parameter(Mandatory)] [object] $Match)
 
