@@ -46,9 +46,9 @@ $solutionPath = Join-Path $backendRoot 'Nerv.IIP.sln'
 $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAddress', 'StaticSetter')
 
 # Two classifications, deliberately disjoint metadata:
-#   expiring-debt — an admitted debt. Carries an owner who outlives the registering change, an exit
-#                   condition, and a date after which the checker fails. This is the default and the
-#                   only classification that may grow.
+#   expiring-debt — an admitted debt. Carries distinct registering and owning issues, the offline
+#                   registration date, an exit condition, and an expiry no more than 45 days after
+#                   registration. This is the default and the only classification that may grow.
 #   permanent     — the flagged construct is the audited primitive itself: its implementation, or its
 #                   own self-test. There is nothing to expire towards, so a date would be a lie;
 #                   instead it carries a rationale and is only legal for an allow-listed
@@ -58,7 +58,7 @@ $permanentClassification = 'permanent'
 $allowedClassifications = @($expiringClassification, $permanentClassification)
 $commonBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'classification', 'reason')
 $commonStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'classification', 'reason')
-$expiringOnlyFields = @('ownerIssue', 'exitCondition', 'expiresOn')
+$expiringOnlyFields = @('ownerIssue', 'registeredByIssue', 'exitCondition', 'registeredOn', 'expiresOn')
 $permanentOnlyFields = @('rationale')
 
 function Resolve-RepoInputPath {
@@ -711,8 +711,8 @@ function Read-Baseline {
     }
 
     $schema = Get-PropertyValue -Object $baseline -Name 'schema'
-    if ($schema -isnot [long] -or $schema -ne 2) {
-        $Errors.Add('schema must equal 2 as a JSON number.')
+    if ($schema -isnot [long] -or $schema -ne 3) {
+        $Errors.Add('schema must equal 3 as a JSON number.')
     }
 
     $exceptionsValue = Get-PropertyValue -Object $baseline -Name 'exceptions'
@@ -811,8 +811,10 @@ function Read-Baseline {
         $pattern = $stringValues['pattern']
         $hash = $stringValues['lineTextSha256']
         $ownerIssue = $stringValues['ownerIssue']
+        $registeredByIssue = $stringValues['registeredByIssue']
         $reason = $stringValues['reason']
         $exitCondition = $stringValues['exitCondition']
+        $registeredOn = $stringValues['registeredOn']
         $expiresOn = $stringValues['expiresOn']
         $rationale = $stringValues['rationale']
 
@@ -843,22 +845,56 @@ function Read-Baseline {
             }
         }
         else {
-            # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The
-            # owner must outlive the change that registered the debt, so a row may not point at its
-            # own issue.
-            if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
+            # Both issue fields are checked offline. Keeping the registering change distinct from
+            # the follow-up owner prevents a debt row from self-guaranteeing its own cleanup.
+            $ownerIssueValid = $ownerIssue -cmatch '^(MAN-\d+|#\d+)$'
+            if (-not $ownerIssueValid) {
                 $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
                 $rowValid = $false
             }
 
+            $registeredByIssueValid = $registeredByIssue -cmatch '^(MAN-\d+|#\d+)$'
+            if (-not $registeredByIssueValid) {
+                $Errors.Add("exception[$index] registeredByIssue must be a MAN issue key or a #<number> GitHub issue.")
+                $rowValid = $false
+            }
+            elseif ($ownerIssueValid -and $registeredByIssue -ceq $ownerIssue) {
+                $Errors.Add("exception[$index] registeredByIssue must differ from ownerIssue.")
+                $rowValid = $false
+            }
+
+            $registrationDate = [DateOnly]::MinValue
+            $registrationDateValid = [DateOnly]::TryParseExact($registeredOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $registrationDate)
+            if (-not $registrationDateValid) {
+                $Errors.Add("exception[$index] registeredOn must use yyyy-MM-dd.")
+                $rowValid = $false
+            }
+            elseif ($registrationDate -gt $today) {
+                $Errors.Add("exception[$index] registeredOn must not be in the future: $registeredOn.")
+                $rowValid = $false
+            }
+
             $expiry = [DateOnly]::MinValue
-            if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
+            $expiryValid = [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)
+            if (-not $expiryValid) {
                 $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
                 $rowValid = $false
             }
-            elseif ($expiry -lt $today) {
-                $Errors.Add("exception[$index] expired on $expiresOn.")
-                $rowValid = $false
+            else {
+                if ($expiry -lt $today) {
+                    $Errors.Add("exception[$index] expired on $expiresOn.")
+                    $rowValid = $false
+                }
+                if ($registrationDateValid) {
+                    if ($expiry -lt $registrationDate) {
+                        $Errors.Add("exception[$index] expiresOn must be on or after registeredOn.")
+                        $rowValid = $false
+                    }
+                    elseif (($expiry.DayNumber - $registrationDate.DayNumber) -gt 45) {
+                        $Errors.Add("exception[$index] expiresOn must be no later than 45 days after registeredOn.")
+                        $rowValid = $false
+                    }
+                }
             }
         }
 
@@ -879,8 +915,10 @@ function Read-Baseline {
                 OccurrenceCount = $occurrenceCount
                 Classification = $classification
                 OwnerIssue = $ownerIssue
+                RegisteredByIssue = $registeredByIssue
                 Reason = $reason
                 ExitCondition = $exitCondition
+                RegisteredOn = $registeredOn
                 ExpiresOn = $expiresOn
                 Rationale = $rationale
             })

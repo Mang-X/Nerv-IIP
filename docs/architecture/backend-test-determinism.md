@@ -234,11 +234,11 @@ MAN-661 独占 required-lane/opt-in-lane policy、machine-readable quarantine re
 
 上面五条只描述第三批各自的位点。以下是 baseline 治理规则与 MAN-662 的运行历史，它们属于 baseline 章节的散文，与 `ConcurrentLifecycleSaveGate` 这道并发屏障无关：
 
-owner 必须在登记它的变更合并之后依然存在——用当前 PR 自己的票做 owner，等于合并当天债务就没有责任人。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
+owner 必须在登记它的变更合并之后依然存在：`registeredByIssue` 记录登记变更，`ownerIssue` 记录独立跟进责任，两者相同即是自担保并被 checker 拒绝。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
 
 Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
 
-## baseline schema 2：`expiring-debt` 与 `permanent` 两种分类（#1471）
+## baseline schema 3：有界 `expiring-debt` 与 `permanent`（#1471 / #1487）
 
 #1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把 setter 写得更礼貌」——checker 命中的是**赋值语句本身**，
 包一层 try/finally 或在旁边 `await using` 一个 scope 都不会让它消失。真正的出路只有两条，本次两条都用上了：
@@ -266,16 +266,18 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
    occurrence）是这条机制的实现本身，也就是仓库指定的静态写入落点，没有别处可搬；`BoundedObservationWindow.cs`
    的 1 行是有界轮询原语的 poll interval（见下一节「共享测试基建已纳入扫描」）。三者都不会随任何后续重构消失，
    给它们一个到期日是编造 deadline 而不是设 deadline。
-   为此 baseline schema 升到 **2**，每行必须显式声明 `classification`：
+   #1471 曾把 baseline 升到 schema 2，引入显式 `classification` 与两种互斥分类；#1487 在不改变分类边界的前提下把当前 schema 升到 **3**，为到期债务增加登记身份与登记日期，并限制离线可验证的最大寿命：
 
    | classification | 必填 | 禁止 | 到期硬失败 |
    |---|---|---|---|
-   | `expiring-debt` | `ownerIssue`、`exitCondition`、`expiresOn` | `rationale` | 是 |
-   | `permanent` | `rationale` | `ownerIssue`、`exitCondition`、`expiresOn` | 否 |
+   | `expiring-debt` | `ownerIssue`、`registeredByIssue`、`exitCondition`、`registeredOn`、`expiresOn` | `rationale` | 是 |
+   | `permanent` | `rationale` | `ownerIssue`、`registeredByIssue`、`exitCondition`、`registeredOn`、`expiresOn` | 否 |
 
-   两组元数据**互斥**：permanent 行带 `expiresOn`、或 debt 行带 `rationale`，都直接判失败，而不是挑一个生效——
+   两组元数据**互斥**：permanent 行带任何登记/债务字段、或 debt 行带 `rationale`，都直接判失败，而不是挑一个生效——
    混用会让人以为该行是按另一套规则审过的。`classification` 缺失或取值不在这两者之内同样失败，所以
-   schema 1 的旧行不会被当成默认 debt 悄悄放行。
+   旧 schema 的行不会被当成默认 debt 悄悄放行。
+
+   schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须不同；`registeredOn`/`expiresOn` 均以 invariant `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；expiry 不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。checker 不访问 GitHub 或 Linear：它只验证 baseline 自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
 
    防止 permanent 退化成万能豁免，靠三道锁：
    - **`路径=pattern` 白名单由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
@@ -295,7 +297,8 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
      文件必须失败、**白名单未覆盖的 pattern（同一路径）必须失败、把该 pattern 写进白名单后必须通过**（这一对
      锁住 pattern 一级，白名单退回只锁 path 即变红）、白名单条目格式错误或 pattern 不受支持必须失败、
      permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification` 失败、
-     debt 行带 `rationale` 失败。
+     debt 行带 `rationale` 失败；schema 3 另以真实 checker 覆盖登记票自担保、两项登记字段缺失/畸形、未来登记日、
+     expiry 早于登记日、46 天超限，并以正好 45 天作为通过对照。
 
    通过输出也随之细化为 `... admitted=N, expiringDebtRows=X, permanentRows=Y.`，「到期债务是否归零」在门禁输出里
    一眼可读，不必去数 JSON。
@@ -495,7 +498,7 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   数字与实测吻合：`dotnet sln backend/Nerv.IIP.sln list` 为 162 个项目，按 `Test-IsTestProject` 口径选中 66 个，
   `backend/common/Testing/` 下 3 个项目全部落选；`backend/test-determinism-baseline.json` 为 47 行、全部
   `StaticSetter`；上表丢 token 位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 2 一节；
-  此处保留的是第四轮走查当时的实测快照。）
+  此处保留的是第四轮走查当时的实测快照；当前契约见上面的 schema 3 一节。）
 - **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** grace 计时器是在**窗口关闭那一刻**才用注入的
   `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的 grace 计时器仍未
   到期；若在飞观测永不返回，调用会**永久挂起而不是变红**——正是 MAN-799 与 MAN-663 各踩过一次的「计时器晚注册」
