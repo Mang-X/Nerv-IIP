@@ -376,7 +376,11 @@ function Read-NervTrxResults {
         $persistedHeadSha = $root.GetAttribute('headSha')
         $persistedTestedSha = $root.GetAttribute('testedSha')
         if (-not [string]::IsNullOrWhiteSpace($persistedHeadSha) -or -not [string]::IsNullOrWhiteSpace($persistedTestedSha)) {
-            if ($persistedHeadSha -cne [string]$RunMetadata.headSha -or $persistedTestedSha -cne [string]$RunMetadata.testedSha) {
+            # Ordinal (#1509): a commit SHA is an identifier and this is the guard that stops a
+            # normalized TRX from being read under someone else's provenance. `-cne` is culture-aware,
+            # so a persisted SHA carrying an ignorable character would compare equal and pass.
+            if (-not [string]::Equals($persistedHeadSha, [string]$RunMetadata.headSha, [StringComparison]::Ordinal) -or
+                -not [string]::Equals($persistedTestedSha, [string]$RunMetadata.testedSha, [StringComparison]::Ordinal)) {
                 throw [IO.InvalidDataException]::new("Normalized TRX provenance does not match run metadata in '$([IO.Path]::GetFullPath($trxPath))'.")
             }
         }
@@ -504,14 +508,24 @@ function Test-NervRuleApplies {
         [Parameter(Mandatory)] [string] $RunnerOs
     )
 
-    $baseLanes = @($SelectedLanes | ForEach-Object { $_ -replace '-shard-[1-9][0-9]*$', '' })
-    if (@($Rule.allowedLanes).Count -gt 0 -and @($baseLanes | Where-Object { @($Rule.allowedLanes) -ccontains $_ }).Count -eq 0) {
+    # Ordinal membership, not `-ccontains` (#1509): lane names, the required lane and the runner OS
+    # are identifiers, and the `c` prefix only turns off case-insensitivity — the comparison stays
+    # culture-aware, so a lane carrying an ignorable character resolves to a rule that does not
+    # govern it. This is the applicability condition the `zero-execution` hard gate is built on, so a
+    # fold here silently changes which rule applies.
+    $baseLanes = @($SelectedLanes | ForEach-Object { [string]($_ -replace '-shard-[1-9][0-9]*$', '') })
+    $allowedLanes = [Collections.Generic.HashSet[string]]::new(
+        [string[]] @(@($Rule.allowedLanes) | ForEach-Object { [string]$_ }), [StringComparer]::Ordinal)
+    if ($allowedLanes.Count -gt 0 -and @($baseLanes | Where-Object { $allowedLanes.Contains($_) }).Count -eq 0) {
         return $false
     }
-    if (-not [string]::IsNullOrWhiteSpace([string]$Rule.requiredLane) -and @($baseLanes) -ccontains [string]$Rule.requiredLane) {
+    $baseLaneSet = [Collections.Generic.HashSet[string]]::new([string[]] $baseLanes, [StringComparer]::Ordinal)
+    if (-not [string]::IsNullOrWhiteSpace([string]$Rule.requiredLane) -and $baseLaneSet.Contains([string]$Rule.requiredLane)) {
         return $false
     }
-    if (@($Rule.allowedOperatingSystems).Count -gt 0 -and -not (@($Rule.allowedOperatingSystems) -ccontains $RunnerOs)) {
+    $allowedOperatingSystems = [Collections.Generic.HashSet[string]]::new(
+        [string[]] @(@($Rule.allowedOperatingSystems) | ForEach-Object { [string]$_ }), [StringComparer]::Ordinal)
+    if ($allowedOperatingSystems.Count -gt 0 -and -not $allowedOperatingSystems.Contains($RunnerOs)) {
         return $false
     }
     return $true
@@ -535,7 +549,11 @@ function Get-NervTestEvidenceViolations {
 
     foreach ($record in @($safeRecords | Where-Object outcome -eq 'skipped')) {
         $matchedRules = @($Policy.rules | Where-Object {
-            @($_.testIdentities) -ccontains [string]$record.testName -and
+            # The frozen-identity comparison itself, and therefore the one the padding ruling above
+            # depends on: an identity is matched as written, by ordinal equality. `-ccontains` folds
+            # ignorable characters, which would let a runtime skip claim a rule that froze a
+            # different string.
+            @(@($_.testIdentities) | Where-Object { [string]::Equals([string]$_, [string]$record.testName, [StringComparison]::Ordinal) }).Count -gt 0 -and
             [string]$record.testName -cmatch [string]$_.testPattern -and
             [string]$record.skipReason -cmatch [string]$_.reasonPattern -and
             (Test-NervRuleApplies -Rule $_ -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
@@ -569,10 +587,12 @@ function Get-NervTestEvidenceViolations {
         $executed = @($safeRecords | Where-Object {
             if ($_.outcome -notin @('passed', 'failed')) { return $false }
             $recordLane = [string]$_.lane
-            if ($selectors.Count -eq 1 -and [string]$selectors[0] -cne $baseLane) {
-                return $recordLane -ceq [string]$selectors[0]
+            # Ordinal (#1509): a lane name is a selector, and this comparison decides whether a lane
+            # counted as executed at all — the input to the `zero-execution` gate.
+            if ($selectors.Count -eq 1 -and -not [string]::Equals([string]$selectors[0], $baseLane, [StringComparison]::Ordinal)) {
+                return [string]::Equals($recordLane, [string]$selectors[0], [StringComparison]::Ordinal)
             }
-            return ($recordLane -replace '-shard-[1-9][0-9]*$', '') -ceq $baseLane
+            return [string]::Equals([string]($recordLane -replace '-shard-[1-9][0-9]*$', ''), $baseLane, [StringComparison]::Ordinal)
         }).Count
         if ($executed -eq 0) {
             $violationId = if ($selectors.Count -eq 1) { [string]$selectors[0] } else { $baseLane }
@@ -607,9 +627,14 @@ function New-NervTestEvidenceSummary {
     $selectedLaneResults = @($selectedLanes | Group-Object { $_ -replace '-shard-[1-9][0-9]*$', '' } | Sort-Object Name | ForEach-Object {
         $baseLane = [string]$_.Name
         [string[]] $selectors = @($_.Group | Sort-Object -Unique)
-        $laneRecords = @($safeRecords | Where-Object { ([string]$_.lane -replace '-shard-[1-9][0-9]*$', '') -ceq $baseLane })
-        $zeroExecution = @($safeViolations | Where-Object { $_.code -ceq 'zero-execution' -and ([string]$_.id -ceq $baseLane -or $selectors -ccontains [string]$_.id) }).Count -gt 0
-        $invalidSelection = @($safeViolations | Where-Object { $_.code -ceq 'unregistered-skip' -and $selectors -ccontains [string]$_.id }).Count -gt 0
+        # Ordinal throughout (#1509): the lane, the selector set and the violation code are all
+        # identifiers. `-ceq`/`-ccontains` only disable case-insensitivity and stay culture-aware, so
+        # a selector differing by an ignorable character would be folded into this group and the
+        # reported gateResult would belong to a different lane.
+        $selectorSet = [Collections.Generic.HashSet[string]]::new([string[]] $selectors, [StringComparer]::Ordinal)
+        $laneRecords = @($safeRecords | Where-Object { [string]::Equals([string]([string]$_.lane -replace '-shard-[1-9][0-9]*$', ''), $baseLane, [StringComparison]::Ordinal) })
+        $zeroExecution = @($safeViolations | Where-Object { [string]::Equals([string]$_.code, 'zero-execution', [StringComparison]::Ordinal) -and ([string]::Equals([string]$_.id, $baseLane, [StringComparison]::Ordinal) -or $selectorSet.Contains([string]$_.id)) }).Count -gt 0
+        $invalidSelection = @($safeViolations | Where-Object { [string]::Equals([string]$_.code, 'unregistered-skip', [StringComparison]::Ordinal) -and $selectorSet.Contains([string]$_.id) }).Count -gt 0
         [pscustomobject][ordered]@{
             baseLane = $baseLane
             selectors = $selectors
