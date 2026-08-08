@@ -35,9 +35,15 @@
 #>
 
 # These are functions rather than `$script:` arrays for the same reason Add-NervOrdinalContractFinding
-# is a function rather than a closure: a dot-sourced library's script-scope variables resolve against
-# whatever session state the caller dot-sourced it into, and this file has already been bitten once by
-# assuming that binding holds. A function call is looked up the same way from every caller.
+# is a function rather than a closure: *this library*, dot-sourced the way its two contract tests
+# dot-source it, was measured failing that way on the CI runner — the sibling function could not be
+# resolved from the captured scope while the identical file ran green locally under both invocation
+# forms. The root cause was never reproduced here, so this is deliberately not stated as a general
+# rule about dot-sourced libraries: FullStackSessionState.ps1, BackendTestShardTimings.ps1,
+# ScriptAutomation.ps1 and LeaderDemoTelemetrySimulator.ps1 all use `$script:` state or closures in
+# this repository and work. The narrow claim is what is defended: a plain function call resolves the
+# same way from every caller, which removes the variable this file was bitten by without asserting
+# anything about the others.
 function Get-NervOrdinalContractBannedOperators { return @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin') }
 function Get-NervOrdinalContractCultureOperators { return @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin') }
 function Get-NervOrdinalContractWhereSwitches {
@@ -155,12 +161,14 @@ function Add-NervOrdinalContractFinding {
         Records one finding, unless a named exception claims this exact node.
 
         A plain function rather than a `{ … }.GetNewClosure()` helper (#1509 round 3, second CI-only
-        defect): a closure rebinds the script block to the session state captured at creation time,
-        and on the CI runner's PowerShell that binding could no longer resolve the sibling functions
-        of this very library — `Get-NervOrdinalContractEnclosingSite` came back "not recognized"
-        while the same file ran green locally on 7.6.4 under both `-File` and the `-command ". '…'"`
-        form CI uses. Passing the two accumulators as parameters is version-independent: both are
-        reference types, so the caller sees the mutations.
+        defect): in *this* file, dot-sourced the way its contract tests dot-source it, the closure
+        form could not resolve the library's own sibling functions on the CI runner —
+        `Get-NervOrdinalContractEnclosingSite` came back "not recognized" while the same file ran
+        green locally on 7.6.4 under both `-File` and the `-command ". '…'"` form CI uses. The root
+        cause was never reproduced locally, so the claim stays that narrow rather than becoming a
+        rule about closures in general; see the note above Get-NervOrdinalContractBannedOperators.
+        Passing the two accumulators as parameters removes the question entirely: both are reference
+        types, so the caller sees the mutations without anything being captured.
     #>
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $Findings,
@@ -191,7 +199,9 @@ function Get-NervOrdinalComparisonFindings {
 
         -Exceptions takes rows of @{ Text = <exact extent text>; Site = <enclosing function name or
         '<file>'>; Reason = <why culture-aware is the right reading here> }. The match is *exact
-        ordinal equality* on the offending node's own extent text, not a substring test: a substring
+        ordinal equality* — the lookup table is built with [StringComparer]::Ordinal, since a bare
+        `@{}` would have made this claim OrdinalIgnoreCase — on the offending node's own extent
+        text, not a substring test: a substring
         match lets an exception be widened from one expression to a whole cmdlet name ("Group-Object")
         and silently absorb a future, unrelated call site. Site has to agree too, so moving the
         exempt expression into another function re-reports it.
@@ -213,7 +223,11 @@ function Get-NervOrdinalComparisonFindings {
 
     $label = if ([string]::IsNullOrWhiteSpace($DisplayName)) { [System.IO.Path]::GetFileName($ScriptPath) } else { $DisplayName }
     $findings = [System.Collections.Generic.List[string]]::new()
-    $exceptionHits = @{}
+    # Ordinal, explicitly. A bare `@{}` is a Hashtable with PowerShell's case-insensitive comparer,
+    # so the docstring's "exact ordinal equality" was OrdinalIgnoreCase in fact (#1509 round 4). An
+    # exception is a licence to keep one culture-aware expression, and this file's whole argument is
+    # that the comparison deciding such a thing must be the one that was written down.
+    $exceptionHits = [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal)
     foreach ($exception in @($Exceptions)) {
         if ($null -eq $exception) { continue }
         $exceptionHits["$([string]$exception.Site)|$([string]$exception.Text)"] = 0

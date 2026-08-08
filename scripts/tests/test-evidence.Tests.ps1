@@ -1483,6 +1483,37 @@ foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-eviden
 }
 
 # ---------------------------------------------------------------------------------------------
+# Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
+# slowestTests, which are retained artifacts. Until #1509 round 4 it had no behavioural coverage at
+# all: reversing the comparison, dropping the rank tie-break, and removing the TopCount truncation
+# each left the whole suite green. The ordinal sweep above can only prove the library contains no
+# culture-aware *construct* — it says nothing about whether the ordering is right, which is exactly
+# the failure class this issue exists to remove.
+#
+# One case pins all three at once. The input is fed in reverse, so an implementation that just
+# returns its argument fails too:
+#   - descending by metric      → 'Cherry' (9) must lead a field of 5s;
+#   - ordinal tie-break         → the 5s must come out A00…A23 then 'apple', because ordinal puts
+#                                 uppercase before lowercase (culture collation gives apple, A00…);
+#   - deterministic tie-break   → 26 tied rows, past the threshold where .NET's introsort stops
+#                                 being an insertion sort, so `return 0` in the comparator really
+#                                 does reorder them rather than accidentally staying stable;
+#   - TopCount truncation       → a second call with -Count 2 must return exactly two rows.
+$rankedTie = @(0..23 | ForEach-Object { [pscustomobject]@{ name = ('A{0:D2}' -f $_); elapsed = 5 } })
+$rankedInput = @(@([pscustomobject]@{ name = 'apple'; elapsed = 5 }) + $rankedTie + @([pscustomobject]@{ name = 'Cherry'; elapsed = 9 }))
+[array]::Reverse($rankedInput)
+$rankedAll = @(Get-NervOrdinalRankedTop -Items $rankedInput -Count 99 `
+    -MetricSelector { param($row) [double]$row.elapsed } -TieBreakSelector { param($row) [string]$row.name })
+$expectedRankedOrder = (@('Cherry') + @($rankedTie | ForEach-Object { [string]$_.name }) + @('apple')) -join '|'
+$actualRankedOrder = (@($rankedAll | ForEach-Object { [string]$_.name })) -join '|'
+Assert-True ([string]::Equals($actualRankedOrder, $expectedRankedOrder, [StringComparison]::Ordinal)) `
+    "Get-NervOrdinalRankedTop must rank descending by metric with a deterministic ordinal tie-break.`nExpected: $expectedRankedOrder`nActual:   $actualRankedOrder"
+$rankedTop2 = @(Get-NervOrdinalRankedTop -Items $rankedInput -Count 2 `
+    -MetricSelector { param($row) [double]$row.elapsed } -TieBreakSelector { param($row) [string]$row.name })
+Assert-True ([string]::Equals((@($rankedTop2 | ForEach-Object { [string]$_.name })) -join '|', 'Cherry|A00', [StringComparison]::Ordinal)) `
+    "Get-NervOrdinalRankedTop must truncate to -Count; got: $(@($rankedTop2 | ForEach-Object { [string]$_.name }) -join ', ')"
+
+# ---------------------------------------------------------------------------------------------
 # Ordinal sweep contract (#1509 rounds 2 and 3). The file-wide sweep of scripts/lib/TestEvidence.ps1
 # is only worth anything if it stays swept, and three prior rounds showed that a prose boundary
 # ("the rest is out of scope") drifts from the code within one PR. So the boundary is parsed
@@ -1535,6 +1566,12 @@ Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweep
 # green locally on 7.6.4 under both `-File` and CI's `-command ". '…'"` form. Since the divergence is
 # not reproducible here, the invariant is asserted structurally instead of behaviourally: this
 # library binds nothing to a captured scope.
+# Scoped to these three files on purpose. `$script:` state and closures work in this repository —
+# FullStackSessionState.ps1, BackendTestShardTimings.ps1, ScriptAutomation.ps1 and
+# LeaderDemoTelemetrySimulator.ps1 all depend on them — so this is a ban on the construct in the
+# files that were measured failing, not a claim that the construct is broken. The root cause is
+# still unidentified, which is registered as a follow-up on issue #1509: what this guard pins is a
+# construct, not yet the real invariant.
 # The ban covers the library *and* the two contract tests that consume it, because the second CI red
 # was the test's own probe helper, not the library — the same construct, one file over.
 foreach ($capturedScopeCandidate in @(
@@ -1632,20 +1669,34 @@ try {
     Assert-True ([string]::Equals((@($blindSpotProbes.Keys) -join '|'), ($declaredBlindSpots -join '|'), [StringComparison]::Ordinal)) `
         "Get-NervOrdinalContractBlindSpots and the blind-spot probes must enumerate the same list; declared [$($declaredBlindSpots -join ', ')], probed [$(@($blindSpotProbes.Keys) -join ', ')]."
     foreach ($blindSpot in $blindSpotProbes.Keys) {
-        # `Sort-Object @splat` is still reported as a Sort-Object call — what the scan cannot see is
-        # *which* properties are being compared, so the splatted case is a blind spot for
-        # Select-Object -Unique only. Assert what is actually true rather than rounding it off.
-        $expectedSilentAxes = if ([string]::Equals($blindSpot, 'sort-object-via-splatted-parameters', [StringComparison]::Ordinal)) {
-            @('select-object-unique')
+        # The assertion is "this probe produces no finding the list does not already account for" —
+        # deliberately *not* "no finding on a declared axis". The earlier spelling checked each
+        # finding against Get-NervOrdinalContractCoveredAxes, so a new detection under a new axis
+        # name that nobody had registered yet was invisible to it: measured in #1509 round 4 by
+        # teaching the scan to report `[ValidateSet]` without registering the axis — every test
+        # stayed green, and the list was not forced to change. Anchoring on the *permitted* findings
+        # instead makes the list live in both directions: gaining detection turns it red whether or
+        # not the new axis is declared, and losing the one permitted detection turns it red too.
+        #
+        # `Sort-Object @splat` is the one probe that is legitimately reported: the scan sees the
+        # Sort-Object call, what it cannot see is *which* properties are compared, so the splat is a
+        # blind spot for the Select-Object -Unique axis only. Stated as the exact permitted set
+        # rather than rounded off in either direction.
+        $permittedFindingAxes = if ([string]::Equals($blindSpot, 'sort-object-via-splatted-parameters', [StringComparison]::Ordinal)) {
+            @('sort-object')
         }
-        else { @(Get-NervOrdinalContractCoveredAxes) }
+        else { @() }
         $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $blindSpotProbes[$blindSpot])
         $unexpected = @($probeFindings | Where-Object {
             $finding = $_
-            @($expectedSilentAxes | Where-Object { $finding.StartsWith("[$_]", [StringComparison]::Ordinal) }).Count -gt 0
+            @($permittedFindingAxes | Where-Object { $finding.StartsWith("[$_]", [StringComparison]::Ordinal) }).Count -eq 0
         })
         Assert-True ($unexpected.Count -eq 0) `
             "Blind spot '$blindSpot' is no longer a blind spot: $($unexpected -join '; '). Update Get-NervOrdinalContractBlindSpots and the governance document together."
+        foreach ($permittedAxis in $permittedFindingAxes) {
+            Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$permittedAxis]", [StringComparison]::Ordinal) }).Count -ge 1) `
+                "Blind spot '$blindSpot' is documented as still being reported on axis '$permittedAxis'; it no longer is, so the documented boundary is wrong."
+        }
     }
 
     # The anti-widening case for the exception table, run against the real table (#1509 round 3, M2).

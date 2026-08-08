@@ -201,10 +201,16 @@ function Get-NearestScriptBlockScope {
 }
 
 # The scope qualifiers that still name an ordinary PowerShell variable. `$local:a`, `$script:a`,
-# `$global:a`, `$private:a` and `$variable:a` all bind the name `a`; `$env:a` and `$function:a` are
-# provider drives and are not variable bindings at all, so a name carrying one of those is reported
-# as unresolvable (which fails closed: `& $env:x` proves nothing and stays a violation).
-$seamScopeQualifiers = @('local', 'script', 'global', 'private', 'using', 'variable')
+# `$global:a`, `$private:a` and `$variable:a` all bind the name `a` — all five measured by reading
+# the plain `$a` back out afterwards — while `$env:a` and `$function:a` are provider drives and are
+# not variable bindings at all, so a name carrying one of those is reported as unresolvable (which
+# fails closed: `& $env:x` proves nothing and stays a violation).
+#
+# `using` is deliberately absent: `$using:a = 1` is a *parse error* on PowerShell 7 ("the input to an
+# assignment operator must be an object that is able to accept assignments"), so listing it bought a
+# branch no source can reach. #1509 round 4 measured that; it was carried here as a dead entry while
+# the governance document ticked it off alongside the five real ones.
+$seamScopeQualifiers = @('local', 'script', 'global', 'private', 'variable')
 
 function Get-SeamBindingName {
     <#
@@ -231,6 +237,89 @@ function Get-SeamBindingName {
     return $userPath.Substring($separator + 1)
 }
 
+function Get-SeamAssignmentTargets {
+    <#
+        Every variable name an assignment's left-hand side binds, with whether that spelling is
+        allowed to *prove* a seam.
+
+        This is written as an exhaustive walk over the AST shapes `AssignmentStatementAst.Left` can
+        take, not as a list of the spellings someone happened to report. Three rounds of #1509 each
+        added the two or three spellings the previous review had named, and each time the next review
+        found another (round 2: parameters; round 3: `foreach` and scope qualifiers; round 4:
+        multiple and type-constrained assignment) — the enumeration has to come from the type
+        hierarchy or it stays one review behind.
+
+        Left is one of exactly these, measured by parsing each spelling on PowerShell 7:
+
+          $a = …                      VariableExpressionAst      binds, may prove a seam
+          $a, $b = …                  ArrayLiteralAst            binds each element
+          [string] $a = …             ConvertExpressionAst       binds the child
+          [ValidateNotNull()] $a = …  AttributedExpressionAst    binds the child (Convert's base type)
+          ($a) = … / ($a, $b) = …     ParenExpressionAst         binds through the wrapped pipeline
+          $h['k'] = …                 IndexExpressionAst         binds nothing — see below
+          $o.P = …                    MemberExpressionAst        binds nothing — see below
+
+        Index and member assignment mutate an object the variable already refers to; the variable
+        itself keeps whatever it held, so an enclosing `$a = { … }` seam is still what `& $a`
+        resolves to at run time and treating these as bindings would report a violation that is not
+        one. They are skipped explicitly rather than by falling off the end, and pinned by
+        `index-assignment-is-not-a-binding` / `member-assignment-is-not-a-binding`.
+
+        Only a bare, unqualified VariableExpressionAst may prove a seam. Every wrapper form binds the
+        name — so it shadows an enclosing seam — but proves nothing, which keeps this change
+        monotone in the same direction as round 3's qualifier ruling: it only ever removes
+        permissions. It is also the honest reading for the one wrapper where the answer is knowable
+        and *negative*: `[string] $a = { … }` binds a string, not a script block.
+    #>
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Left,
+        [bool] $CanProveSeam = $true
+    )
+
+    $targets = [System.Collections.Generic.List[object]]::new()
+
+    if ($Left -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        $name = Get-SeamBindingName -VariablePath $Left.VariablePath
+        if ($null -eq $name) { return $targets }
+        $isUnqualified = [string]::Equals(
+            [string] $Left.VariablePath.UserPath, $name, [System.StringComparison]::Ordinal)
+        $targets.Add([pscustomobject]@{ Name = $name; CanProveSeam = ($CanProveSeam -and $isUnqualified) })
+        return $targets
+    }
+
+    if ($Left -is [System.Management.Automation.Language.ArrayLiteralAst]) {
+        foreach ($element in @($Left.Elements)) {
+            foreach ($target in @(Get-SeamAssignmentTargets -Left $element -CanProveSeam $false)) {
+                $targets.Add($target)
+            }
+        }
+        return $targets
+    }
+
+    # ConvertExpressionAst derives from AttributedExpressionAst, so this arm covers both.
+    if ($Left -is [System.Management.Automation.Language.AttributedExpressionAst]) {
+        foreach ($target in @(Get-SeamAssignmentTargets -Left $Left.Child -CanProveSeam $false)) {
+            $targets.Add($target)
+        }
+        return $targets
+    }
+
+    if ($Left -is [System.Management.Automation.Language.ParenExpressionAst]) {
+        $pipeline = $Left.Pipeline
+        if ($pipeline -is [System.Management.Automation.Language.PipelineAst] -and
+            @($pipeline.PipelineElements).Count -eq 1 -and
+            @($pipeline.PipelineElements)[0] -is [System.Management.Automation.Language.CommandExpressionAst]) {
+            foreach ($target in @(Get-SeamAssignmentTargets -Left (@($pipeline.PipelineElements)[0]).Expression -CanProveSeam $false)) {
+                $targets.Add($target)
+            }
+        }
+        return $targets
+    }
+
+    # IndexExpressionAst / MemberExpressionAst and anything else: not a variable binding.
+    return $targets
+}
+
 function Get-ScopedSeamBindings {
     <#
         The variables one scope binds, split into "bound at all" and "proven to hold a script block".
@@ -245,7 +334,10 @@ function Get-ScopedSeamBindings {
         `$global:` / `$private:` spellings all failed to shadow an enclosing seam — measured, checker
         exit 0 with the external command actually executing. Covered now:
 
-          =  and compound assignment      AssignmentStatementAst
+          =  and compound assignment      AssignmentStatementAst, every Left shape — see
+                                          Get-SeamAssignmentTargets, which walks the type hierarchy
+                                          instead of listing spellings (round 4 found two more:
+                                          `$a, $b = …` and `[string] $a = …`)
           param() and inline parameters   ParameterAst (attributed to the function body)
           foreach ($x in …)               ForEachStatementAst.Variable
           $local:/$script:/$global:/…     normalized by Get-SeamBindingName above
@@ -312,9 +404,11 @@ function Get-ScopedSeamBindings {
     foreach ($binder in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $binder) -ne $Scope) { continue }
         $binderName = [string] $binder.GetCommandName()
-        if (@('set-variable', 'new-variable', 'sv', 'nv') |
-                Where-Object { [string]::Equals($_, $binderName.ToLowerInvariant(), [System.StringComparison]::Ordinal) } |
-                Select-Object -First 1) {
+        # `.Count -gt 0`, the same membership idiom every other decision in this file uses. The
+        # `Where-Object … | Select-Object -First 1` spelling this replaces was equivalent but
+        # divergent, and a reader had to check whether the difference carried meaning (#1509 round 4).
+        if (@(@('set-variable', 'new-variable', 'sv', 'nv') |
+                Where-Object { [string]::Equals($_, $binderName.ToLowerInvariant(), [System.StringComparison]::Ordinal) }).Count -gt 0) {
             $elements = @($binder.CommandElements)
             $nameArgument = $null
             for ($index = 1; $index -lt $elements.Count; $index++) {
@@ -339,13 +433,10 @@ function Get-ScopedSeamBindings {
 
     foreach ($assignment in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $assignment) -ne $Scope) { continue }
-        if ($assignment.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
-        $assignedName = Get-SeamBindingName -VariablePath $assignment.Left.VariablePath
-        if ($null -eq $assignedName) { continue }
-        [void] $bindings.Bound.Add($assignedName)
-        # Only an unqualified declaration can prove a seam; see the note in the docstring.
-        $isUnqualifiedDeclaration = [string]::Equals(
-            [string] $assignment.Left.VariablePath.UserPath, $assignedName, [System.StringComparison]::Ordinal)
+        # Every shape Left can take, enumerated from the AST type hierarchy rather than from the
+        # spellings a review has named so far; see Get-SeamAssignmentTargets.
+        $assignmentTargets = @(Get-SeamAssignmentTargets -Left $assignment.Left)
+        if ($assignmentTargets.Count -eq 0) { continue }
         $right = $assignment.Right
         if ($right -is [System.Management.Automation.Language.CommandExpressionAst]) { $right = $right.Expression }
         # `{ … }.GetNewClosure()` is the same literal with its variables captured — still provably a
@@ -357,8 +448,12 @@ function Get-ScopedSeamBindings {
             [string]::Equals([string] $right.Member.Value, 'GetNewClosure', [System.StringComparison]::OrdinalIgnoreCase)) {
             $right = $right.Expression
         }
-        if ($isUnqualifiedDeclaration -and $right -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
-            [void] $bindings.Seam.Add($assignedName)
+        $rightIsScriptBlock = $right -is [System.Management.Automation.Language.ScriptBlockExpressionAst]
+        foreach ($assignmentTarget in $assignmentTargets) {
+            [void] $bindings.Bound.Add([string] $assignmentTarget.Name)
+            if ($assignmentTarget.CanProveSeam -and $rightIsScriptBlock) {
+                [void] $bindings.Seam.Add([string] $assignmentTarget.Name)
+            }
         }
     }
 

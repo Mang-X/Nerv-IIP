@@ -100,22 +100,35 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 
    **参数的两种拼写按同一个作用域判定。** PowerShell 的 `function Foo { param(...) }` 与 `function Foo(...)` 运行期语义完全相同，但 AST 不同：内联参数表挂在 `FunctionDefinitionAst` 上、位于函数体**之外**，因此「向外找最近的 `ScriptBlockAst`」会把它算到**文件级**、对所有兄弟函数可见。#1509 二轮实测到这个洞（内联拼写 exit 0，`param()` 拼写 exit 1）。现在两种拼写都归属函数体，`inline-parameter-cross-function-leak` 与 `cross-function-parameter-leak` 各钉一种。
 
-   **「绑定一个名字」的拼写是被枚举出来的，不是被假设的**（#1509 三轮）。二轮只修了 `=` 这一种拼写的遮蔽，三轮实测另外八种拼写照样 exit 0，**并且被测进程真的执行了外部命令**。当前实现覆盖：
+   **「绑定一个名字」的拼写从 AST 类型穷举，不再逐轮追加**（#1509 四轮）。二轮只修了 `=`；三轮实测另外八种拼写照样 exit 0；四轮又实测出两种（`$a, $b = …` 多重赋值、`[string] $a = …` 类型化赋值）依然 exit 0，**并且被测进程真的执行了外部命令**。每一轮都只补了上一轮被点名的那几种，所以每一轮都落后一轮。现在 `AssignmentStatementAst.Left` 交给 `Get-SeamAssignmentTargets` **按类型层次递归展开**，下表的 Left 形状是把 `Left` 能取的类型写全的结果，而不是被报告过的拼写清单：
 
-   | 拼写 | AST | 实现覆盖 | 钉住它的用例 |
-   | --- | --- | --- | --- |
-   | `$x = …` / `$x += …` | `AssignmentStatementAst` | ✅ | `file-level-seam-shadowed-by-local`、`compound-assignment-shadows-seam` |
-   | `param($x)` | `ParameterAst`（`param()` 块） | ✅ | `cross-function-parameter-leak` |
-   | `function F($x)` | `ParameterAst`（内联表） | ✅ | `inline-parameter-cross-function-leak` |
-   | `foreach ($x in …)` | `ForEachStatementAst.Variable` | ✅ | `foreach-iteration-variable-shadows-seam` |
-   | `$local:` / `$script:` / `$global:` / `$private:` / `$using:` / `$variable:` | 限定符归一化后比对 | ✅ | `{local,script,global,private}-qualifier-shadows-seam` 各一条 |
-   | `data $x { … }` | `DataStatementAst.Variable` | ✅ | `data-statement-shadows-seam` |
-   | `Set-Variable` / `New-Variable`（**字面量** `-Name`） | `CommandAst` | ✅ | `set-variable-shadows-seam`、`new-variable-shadows-seam` |
-   | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | `residual-set-variable-computed-name`（断言**当前放行**） |
-   | `$ExecutionContext.SessionState.PSVariable.Set(…)` | 同上 | ❌ 残余 | `residual-psvariable-set`（断言**当前放行**） |
-   | 自动变量 `$_`（管道 / `switch` / `catch`） | 不是本规则要建模的绑定 | n/a：`& $_` 一律违规 | `foreach-object-automatic-variable`、`switch-automatic-variable`、`catch-automatic-variable` |
+   | 拼写 | AST | 是否算绑定 | 能否证明 seam | 钉住它的用例 |
+   | --- | --- | --- | --- | --- |
+   | `$x = …` / `$x += …` | `VariableExpressionAst` | ✅ | ✅（未加限定符时） | `file-level-seam-shadowed-by-local`、`compound-assignment-shadows-seam` |
+   | `$x, $y = …` | `ArrayLiteralAst`（逐元素递归） | ✅ | ❌ | `multiple-assignment-shadows-seam` |
+   | `[string] $x = …` | `ConvertExpressionAst`（剥壳递归） | ✅ | ❌ | `type-constrained-assignment-shadows-seam`、`type-constrained-declaration-proves-no-seam` |
+   | `[ValidateNotNullOrEmpty()] $x = …` | `AttributedExpressionAst`（`Convert` 的基类，同一分支） | ✅ | ❌ | `attributed-assignment-shadows-seam` |
+   | `($x) = …` / `($x, $y) = …` | `ParenExpressionAst`（穿过 pipeline 递归） | ✅ | ❌ | `parenthesized-assignment-shadows-seam` |
+   | `[string[]] ($x, $y) = …` | 三层嵌套 | ✅ | ❌ | `nested-left-shapes-shadow-seam`（只有递归展开才红） |
+   | `$h['k'] = …` | `IndexExpressionAst` | ❌ **显式跳过** | — | `index-assignment-is-not-a-binding`（断言**当前放行**） |
+   | `$o.P = …` | `MemberExpressionAst` | ❌ **显式跳过** | — | `member-assignment-is-not-a-binding`（断言**当前放行**） |
+   | `param($x)` | `ParameterAst`（`param()` 块） | ✅ | 仅 `[scriptblock]` 参数 | `cross-function-parameter-leak` |
+   | `function F($x)` | `ParameterAst`（内联表） | ✅ | 仅 `[scriptblock]` 参数 | `inline-parameter-cross-function-leak` |
+   | `foreach ($x in …)` | `ForEachStatementAst.Variable` | ✅ | ❌ | `foreach-iteration-variable-shadows-seam` |
+   | `$local:` / `$script:` / `$global:` / `$private:` / `$variable:` | 限定符归一化后比对 | ✅ | ❌ | `{local,script,global,private,variable}-qualifier-shadows-seam` 各一条 |
+   | `data $x { … }` | `DataStatementAst.Variable` | ✅ | ❌ | `data-statement-shadows-seam` |
+   | `Set-Variable` / `New-Variable`（**字面量** `-Name`） | `CommandAst` | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam` |
+   | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | — | `residual-set-variable-computed-name`（断言**当前放行**） |
+   | `$ExecutionContext.SessionState.PSVariable.Set(…)` | 同上 | ❌ 残余 | — | `residual-psvariable-set`（断言**当前放行**） |
+   | 自动变量 `$_`（管道 / `switch` / `catch`） | 不是本规则要建模的绑定 | n/a：`& $_` 一律违规 | — | `foreach-object-automatic-variable`、`switch-automatic-variable`、`catch-automatic-variable` |
 
-   限定符只归一化**绑定**这一侧，不归一化**调用**这一侧：`$script:x = { … }` 会遮蔽外层的 `x` 但不能证明 seam，`& $script:x` 什么也证明不了。这比改动前更严，不是等价替换——目的是让这次修改**只减不增**权限，不至于一边宣称补洞一边夹带放宽。两条对照分别钉住这两半（`qualified-declaration-proves-no-seam`、`qualified-invocation-proves-nothing`）；本仓库当前没有任何 scope-qualified 的 `& $…` 调用。
+   **索引与成员赋值为什么显式跳过**：`$h['k'] = …` 与 `$o.P = …` 改的是变量已经指向的那个对象，变量本身仍然持有原值；外层 `$x = { … }` 依旧是 `& $x` 在运行期解析到的东西，把它们算成绑定反而会报一个不存在的违规。两条「断言当前放行」的用例把这个判断钉住——把任一种改成绑定，用例就红。
+
+   **`$using:` 不在限定符表里**：`$using:a = 1` 在 PowerShell 7 是**parse error**（四轮实测），列进去只是个没有源码能走到的死分支；文档此前把它和另外五个真限定符一起打 ✅，实现里也确实带着它——那正是「措辞强于实现」的同一类问题，一并清掉。`$variable:` 是真的（实测 `$variable:a = 'x'` 之后 `$a` 读回 `x`），补一条用例。
+
+   **包壳的拼写只遮蔽、不证明**：只有**裸的、未加限定符的** `VariableExpressionAst` 能进 Seam 集合。`[string] $x = { … }` 绑定的是字符串而不是 script block，这是包壳里唯一答案可知而且为**否**的一种；其余包壳一律按同一方向处理，保证这次修改与三轮的限定符裁决一样**只减不增**权限。`type-constrained-declaration-proves-no-seam` 钉住这一半。
+
+   限定符只归一化**绑定**这一侧，不归一化**调用**这一侧：`$script:x = { … }` 会遮蔽外层的 `x` 但不能证明 seam，`& $script:x` 什么也证明不了。两条对照分别钉住这两半（`qualified-declaration-proves-no-seam`、`qualified-invocation-proves-nothing`）；本仓库当前没有任何 scope-qualified 的 `& $…` 调用。
 
 library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/` 下的文件必须在自己的 header 里写 `Category: library`（否则报 `MissingLibraryCategory`），而目录之外的文件不能通过贴这个标签来蹭上述两条放宽（否则报 `InvalidCategory`）。放宽写在被放宽者自己的头部，改动可见。
 
@@ -128,7 +141,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 - seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` / 跨函数同名变量不放行逐条对照 → 任何一条规则被削弱或过度收紧都红；
 - 参数两种拼写各一条（`cross-function-parameter-leak` 钉 `param()` 块、`inline-parameter-cross-function-leak` 钉内联参数表），外加 `inline-parameter-seam-allowed` 防止「靠丢掉内联参数」来假装收紧；
 - 遮蔽语义两条：`file-level-seam-visible-to-inner-scope`（外层 seam 对不重绑的内层仍可见，防止「干脆不向外走」的假收紧）与 `file-level-seam-shadowed-by-local`（内层重绑同名变量后外层 seam 失效）；
-- 上表每一种**绑定拼写**各一条（八条遮蔽用例 + 一条复合赋值控制组），两条残余拼写各一条「断言当前放行」的用例，三条自动变量 `$_` 各一条「断言当前拦截」的用例，限定符归一化的两半各一条。共同的性质是：**行为一变就红**，无论变松还是变紧。
+- 上表每一行各有对照：算绑定的拼写各一条遮蔽用例（含复合赋值这个控制组），两种显式跳过的 Left 形状各一条「断言当前放行」的用例，两条残余拼写各一条「断言当前放行」的用例，三条自动变量 `$_` 各一条「断言当前拦截」的用例，限定符归一化的两半各一条，包壳不证明 seam 一条。共同的性质是：**行为一变就红**，无论变松还是变紧。
 
 **守卫落在哪里**：该文件是 CI `Script Governance` job 的一步（`.github/workflows/ci.yml`），同时进入本节末尾的 `compat-fast` 清单与 `scripts/check-script-compatibility.ps1`。它从 `check-script-governance.Tests.ps1` 拆出来，是因为后者还要驱动 ScriptAutomation 的流排空与游离进程夹具，比一条边界契约重得多。
 
@@ -142,7 +155,11 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 2. **`Set-Variable` / `New-Variable` 的名字是算出来的**（`-Name $computed`）：绑定的名字只在运行期存在。用例 `residual-set-variable-computed-name`。
 3. **`$ExecutionContext.SessionState.PSVariable.Set(…)`**：同上。用例 `residual-psvariable-set`。
 
-这三条的共同边界是**同一个作用域**或**运行期才成立的名字**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable` 这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。
+这三条的共同边界是**同一个作用域**或**运行期才成立的名字**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable` / 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
+
+索引赋值 `$h['k'] = …` 与成员赋值 `$o.P = …` 也不是残余，它们是**判定为不构成变量绑定**（理由见上表下方那段），各有一条「断言当前放行」的用例；这与「看不见所以放过」是两件事。
+
+措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。这条规矩本 PR 自己已经违反过四次（二轮：参数拼写；三轮：八种绑定拼写；四轮：多重/类型化赋值、`$using:` 死条目），每一次都是文档先写了一个实现还没到的强度。四轮之后上表的每一行都对应实现里的一个分支或一次显式跳过，且每一行都有具名用例。
 
 ## 标识符比较的序数收口（#1509）
 
@@ -168,6 +185,8 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 以下构造扫不出来。它们不是待办清单，而是**当前行为**：每一条各有一条合成源码用例断言扫描面**保持沉默**，哪天其中一条变得可检测，用例就红、这份清单必须与实现一起改。
 
+这条「双向活」在 #1509 四轮之前只成立一半：用例原先是拿每条 finding 去比**已声明的覆盖轴**，于是「新增了检测能力、但没登记轴名」这个方向抓不到（实测：给 `[ValidateSet]` 加检测、轴名不登记 → 全绿；登记进 `CoveredAxes` 才红）。现在断言改成钉**允许出现的 finding 集合**（除 `sort-object-via-splatted-parameters` 允许 `sort-object` 一条外，其余一律零 finding），因此无论新轴是否登记，多出任何 finding 都红；反过来，那一条被允许的 finding 消失也红。
+
 | 盲区 | 例子 | 为什么扫不出 |
 | --- | --- | --- |
 | `both-operands-non-literal-eq` | `$left -eq $right` | 两侧都是变量，AST 判不出是不是字符串比较 |
@@ -183,7 +202,7 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 | 文件 | 声明 | 由谁执行 |
 | --- | --- | --- |
-| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`（按人读文案**分组**；同一行的**排序**不在豁免内）。豁免按「函数名 + 表达式原文精确相等」匹配，不是子串，且必须恰好命中一处。 | `scripts/tests/test-evidence.Tests.ps1` |
+| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`（按人读文案**分组**；同一行的**排序**不在豁免内）。豁免按「函数名 + 表达式原文精确相等」匹配，不是子串，且必须恰好命中一处；「精确相等」是真序数（查表用 `[StringComparer]::Ordinal` 构造，裸 `@{}` 的默认比较器是 OrdinalIgnoreCase，#1509 四轮更正）。 | `scripts/tests/test-evidence.Tests.ps1` |
 | `scripts/lib/BackendTestShardSelectors.ps1` | 全文件按上述扫描面**零发现**，**零豁免**——这个库处理的每一个字符串都是标识符。 | `scripts/tests/backend-test-shards.Tests.ps1` |
 
 两份声明的强度都以上表的盲区为上界；盲区之外的构造，声明成立。
@@ -244,7 +263,7 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `collect-test-evidence.ps1` | `check` + `generate` | 已受治理 | 读取 job-local raw TRX，执行 skip/zero-execution 门禁，并只写声明过的脱敏 evidence tree、Step Summary 与确定性 failure sibling；artifact writer 只消费已解析 records/summary，不接收或复制 raw TRX path；CI Script Governance 直接执行其语义契约测试。 |
 | `generate-test-evidence-baseline.ps1` | `generate` | 已受治理 | committed evidence snapshot 的唯一写入口；只接受 EvidenceRoot authority 或只读 GitHub Actions console provenance，禁止手改该文件。**#1507 起该 snapshot 是离线兜底而不是治理资产**：重生成属可选维护，任何拓扑/宿主变更都不再欠一次刷新，也没有任何门禁以它的覆盖面为判据（主耗时来源是 `update-backend-test-shard-timings.ps1` 的自动缓存）。runner 环境**按 lane 逐条**从各自 summary 读入并写进 `source.laneProvenance`（baseline schema 2），绝不取 `$first` 的值冒充整份 baseline —— 拆分理由见 `test-evidence-governance.md` 的「Run identity versus per-job environment」。 |
 | `scripts/lib/TestEvidence.ps1` | `check` library | 已受治理 | 提供 TRX 解析、policy、摘要/脱敏 artifact、provenance 与 baseline 纯函数；quarantine metadata 的 policy/runtime 两调用点复用同一纯校验，runner normalization 读取显式 regex result，不依赖 PowerShell 自动 `$Matches`；provenance 分「run 身份」（8 字段跨 lane 严格等值）与「per-job 环境」（`runnerOs`/`runnerImage`/`dotnetSdk`，只逐条校形、按 lane 记录），`Assert-NervEvidenceSourceSummaries` 只返回收窄后的 run 身份对象，调用方拿不到任何 per-job 字段；`source.laneProvenance` 的 lane 集合必须与 baseline 记录的 assemblies lane 集合**双向精确相等**（缺 lane、多 lane、重复 lane 全拒），每行 `jobName` 按 `Get-NervTestEvidenceLaneJobs` 允许表逐 lane 复核（不得为空、臆造或借用兄弟 lane）；读取侧只接受 baseline `schemaVersion` 1 或 2，其余（含缺失）降级为 `unsupported-baseline-schema-version` 的 report-only 不可用而非照常比较；**耗时比较键自 #1507 起是「程序集」单键**（lane 仍作为 provenance 留在行上，只在同一程序集出现两行时用来消歧，两行都不属当前 lane 则报 `ambiguous-assembly-in-baseline` 而不是随便挑一行），因此换片、改宿主都不再失键；调用方必须先加载 `ScriptAutomation.ps1`。**#1509 起本文件的标识符/身份语义比较由一份被解析的契约兜底**（收口声明见下），走 `Test-NervOrdinalEquals`/`Get-NervOrdinalSet`/`Get-NervOrdinalSorted`/`Get-NervOrdinalGroups`/`Get-NervOrdinalSortedBy`/`Get-NervOrdinalRankedTop`/`Test-NervHasProperty` 七个原语；具名豁免现为 1 条——按人读文案**分组**的 `skipReasons`（prose 不是标识符）；同一行的**排序**不在豁免内，留存产物的字节顺序必须序数。 |
-| `scripts/lib/OrdinalComparisonContract.ps1` | `check` library | 已受治理 | #1509 的序数比较扫描面：`Get-NervOrdinalComparisonFindings` 解析一个 PowerShell 文件并报出 culture-aware 的标识符比较；`Get-NervOrdinalContractCoveredAxes` / `Get-NervOrdinalContractBlindSpots` 把「能扫到什么」和「扫不到什么」都做成可枚举的数据，由调用方用合成源码逐条正反对照。具名豁免按「函数名 + 表达式原文精确相等」匹配（不是子串——子串豁免能被放宽成裸 cmdlet 名并顺带吞掉未来的调用点，#1509 三轮实证），且必须恰好命中一处，死豁免与过宽豁免都会红。它存在的理由是 `test-evidence.Tests.ps1` 与 `backend-test-shards.Tests.ps1` 对两个不同的库做同一句声明——两份手写扫描器等于两句不同的声明。纯函数，只解析不执行。 |
+| `scripts/lib/OrdinalComparisonContract.ps1` | `check` library | 已受治理 | #1509 的序数比较扫描面：`Get-NervOrdinalComparisonFindings` 解析一个 PowerShell 文件并报出 culture-aware 的标识符比较；`Get-NervOrdinalContractCoveredAxes` / `Get-NervOrdinalContractBlindSpots` 把「能扫到什么」和「扫不到什么」都做成可枚举的数据，由调用方用合成源码逐条正反对照。具名豁免按「函数名 + 表达式原文精确相等」匹配（不是子串——子串豁免能被放宽成裸 cmdlet 名并顺带吞掉未来的调用点，#1509 三轮实证；「精确相等」由 `[StringComparer]::Ordinal` 构造的查表兑现，四轮更正了裸 `@{}` 实为 OrdinalIgnoreCase 这个口径差），且必须恰好命中一处，死豁免与过宽豁免都会红。它存在的理由是 `test-evidence.Tests.ps1` 与 `backend-test-shards.Tests.ps1` 对两个不同的库做同一句声明——两份手写扫描器等于两句不同的声明。纯函数，只解析不执行。 |
 | `scripts/lib/CiWorkflowBudgets.ps1` | `check` library | 已受治理 | MAN-799 CI timeout 预算不变量的纯读取与校验函数；结构化读取 `.github/workflows/ci.yml`，step 数与原文交叉核对不上、或 job header 读不出时直接抛错（fail closed），绝不静默返回“零违规”；tier A/B 分档同样 fail closed——`if:` 只要可能在失败后仍运行（`always()`/`!cancelled()`/`failure()` 的任意合法写法，含 `${{ }}` 包裹、复合表达式、尾随注释），或无法判定，一律按 tier A 处理；`needs:`/`strategy.matrix` 等 job 级序列不计入 step 数；由 `scripts/tests/test-evidence.Tests.ps1` 调用，因此随 Script Governance job 一起在 CI 执行。 |
 | `scripts/tests/test-evidence.Tests.ps1` | `check` | 已受治理/CI 接线 | fixture 证明三项硬门禁、双 SHA、baseline authority、selected-lane/shard 语义、脱敏与 normalized roundtrip，并锁定无 raw-path writer 参数、Ubuntu major normalization、quarantine 到期边界与两调用点错误契约；另以 AST 契约钉住 `scripts/lib/TestEvidence.ps1` 的序数比较边界（扫描面见「标识符比较的序数收口」；豁免表按「函数名 + 表达式原文精确相等」匹配，不按行号也不按子串，现为 1 条，且必须恰好命中一处），并用合成源码对扫描面本身做正反鉴别：每条覆盖轴必须报出、每条已登记盲区必须沉默、命名豁免不得吞掉同函数里另一处 `Group-Object`；由 Script Governance job 和 `compat-fast` 执行并保留真实退出码。 |
 | `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |

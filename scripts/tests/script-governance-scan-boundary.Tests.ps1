@@ -269,7 +269,8 @@ function Invoke-FixtureForeachShadow {
 }
 '@
         # VariablePath.UserPath keeps the scope qualifier, so `local:fixtureAction` never matched the
-        # `fixtureAction` that `& $fixtureAction` looks up. Four qualifiers, four cases: the
+        # `fixtureAction` that `& $fixtureAction` looks up. One case per qualifier the checker
+        # accepts (`using` is not one of them — `$using:a = 1` does not parse): the
         # normalization is one line and dropping it turns all four green at once, but a reviewer
         # reading a single case cannot tell which qualifiers were considered.
         'local-qualifier-shadows-seam' = @'
@@ -315,6 +316,12 @@ function Invoke-FixtureDataShadow {
     & $fixtureAction build
 }
 '@
+        'variable-qualifier-shadows-seam' = @'
+function Invoke-FixtureVariableQualifierShadow {
+    $variable:fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
         # Compound assignment is an AssignmentStatementAst too, so this one was already covered; it is
         # kept as the control that says so rather than being assumed.
         'compound-assignment-shadows-seam' = @'
@@ -323,12 +330,86 @@ function Invoke-FixtureCompoundShadow {
     & $fixtureAction build
 }
 '@
+        # ---------------------------------------------------------------------------------------
+        # AssignmentStatementAst.Left is itself an expression with several shapes, and rounds 2–4
+        # each shipped a fix covering only the shapes that review had named. These four are the rest
+        # of the hierarchy (#1509 round 4 measured the first two exiting 0 with the external command
+        # really running); Get-SeamAssignmentTargets now walks the type hierarchy, so the case list
+        # and the implementation are enumerations of the same thing.
+        'multiple-assignment-shadows-seam' = @'
+function Invoke-FixtureMultipleAssignmentShadow {
+    $fixtureAction, $other = @('dotnet', 'x')
+    & $fixtureAction build
+}
+'@
+        'type-constrained-assignment-shadows-seam' = @'
+function Invoke-FixtureTypeConstrainedShadow {
+    [string] $fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'attributed-assignment-shadows-seam' = @'
+function Invoke-FixtureAttributedShadow {
+    [ValidateNotNullOrEmpty()] $fixtureAction = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'parenthesized-assignment-shadows-seam' = @'
+function Invoke-FixtureParenthesizedShadow {
+    ($fixtureAction) = 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # …and the three wrappers nested, which only shadows if the walk is recursive rather than a
+        # one-level unwrap.
+        'nested-left-shapes-shadow-seam' = @'
+function Invoke-FixtureNestedLeftShapesShadow {
+    [string[]] ($fixtureAction, $other) = @('dotnet', 'x')
+    & $fixtureAction build
+}
+'@
     }
     foreach ($spelling in $shadowingSpellings.Keys) {
         Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($shadowSeamHeader + $shadowingSpellings[$spelling])
     }
 
-    # Normalizing the *binding* side is what makes the eight cases above shadow correctly, and it is
+    # The two Left shapes that are *not* bindings, asserted as such. `$a['k'] = …` and `$a.P = …`
+    # mutate the object the variable already refers to; the variable keeps holding the script block,
+    # so the enclosing seam is still what `& $a` resolves to and reporting a violation here would be
+    # wrong. Skipping them is therefore a decision, not an omission — treat either as a binding and
+    # these two turn red, which is what stops the "exhaustive over Left" claim from being exhaustive
+    # only in the permissive direction.
+    $nonBindingLeftShapes = [ordered]@{
+        'index-assignment-is-not-a-binding' = @'
+function Invoke-FixtureIndexAssignment {
+    $fixtureAction[0] = 'dotnet'
+    & $fixtureAction
+}
+'@
+        'member-assignment-is-not-a-binding' = @'
+function Invoke-FixtureMemberAssignment {
+    $fixtureAction.Extra = 'dotnet'
+    & $fixtureAction
+}
+'@
+    }
+    foreach ($shape in $nonBindingLeftShapes.Keys) {
+        Invoke-LibraryScopeCase -Name $shape -ExpectedExitCode 0 -Body ($shadowSeamHeader + $nonBindingLeftShapes[$shape])
+    }
+
+    # Wrapped spellings bind the name but prove nothing, so a seam declared through one of them is
+    # still a violation. That asymmetry is the same "only ever remove permissions" trade the scope
+    # qualifiers were given in round 3, and it is the honest reading for the one wrapper whose answer
+    # is knowable and negative: `[string] $x = { … }` binds a string. Pinned so a later change cannot
+    # quietly turn the wrappers into seam proofs while pointing at the shadowing cases as evidence.
+    Invoke-LibraryScopeCase -Name 'type-constrained-declaration-proves-no-seam' -ExpectedExitCode 1 -ExpectedRule 'DynamicInvocation' -Body ($libraryHeader + @'
+function Invoke-FixtureTypeConstrainedSeamDeclaration {
+    [scriptblock] $fixtureSeam = { 'seam' }
+    & $fixtureSeam
+}
+'@)
+
+    # Normalizing the *binding* side is what makes the qualifier cases above shadow correctly, and it is
     # deliberately not paired with normalizing the *invocation* side. Two cases, because they pin the
     # two halves of that asymmetry and each is green if only the other filter is dropped:
     #

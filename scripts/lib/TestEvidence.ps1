@@ -165,11 +165,19 @@ function Test-NervHasProperty {
 
         OrdinalIgnoreCase, and both halves are deliberate: PowerShell resolves `$x.Foo` and `$x.foo`
         to the same member, so case carries no information here — but `-contains` over
-        `PSObject.Properties.Name` is *culture-aware*, and so is the `PSObject.Properties[$Name]`
-        indexer (both measured: a name carrying U+00AD resolves to the plain one). A JSON document
-        that spells `expiresOn` with an embedded ignorable character would therefore be accepted as
-        carrying the real field, and the value read back through the same folding lookup — a
-        mis-spelled key silently governing a quarantine. The member collection is walked instead.
+        `PSObject.Properties.Name` is *culture-aware*, measured: with `$o` carrying `expiresOn`,
+        `$o.PSObject.Properties.Name -contains "expiresOn$([char]0x00AD)"` is True. That is the
+        spelling this function replaces, and the failure it prevents: a JSON document spelling
+        `expiresOn` with an embedded ignorable character would be accepted as carrying the real
+        field — a mis-spelled key silently governing a quarantine.
+
+        Correction (#1509 round 4): an earlier version of this comment also claimed the
+        `PSObject.Properties[$Name]` indexer folds, and called it measured. It does not — on pwsh
+        7.6.4 / macOS the same probe returns $null, so only the `-contains` half was ever real. The
+        member walk is kept anyway, for a reason that does not depend on that claim: the indexer's
+        comparer is an implementation detail of PSMemberInfoCollection, not a documented contract,
+        while an explicit [StringComparison] argument is the same on every runtime. This function is
+        the one place the answer is decided, so it states its comparison instead of inheriting one.
     #>
     param([Parameter(Mandatory)] [AllowNull()] [object] $Object, [Parameter(Mandatory)] [string] $Name)
     if ($null -eq $Object) { return $false }
